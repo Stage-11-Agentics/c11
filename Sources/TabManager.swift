@@ -1366,6 +1366,8 @@ class TabManager: ObservableObject {
     @discardableResult
     func addWorkspace(
         workingDirectory overrideWorkingDirectory: String? = nil,
+        rootDirectory overrideRootDirectory: String? = nil,
+        establishRootFromWorkingDirectory: Bool = true,
         initialTerminalCommand: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
         select: Bool = true,
@@ -1381,6 +1383,9 @@ class TabManager: ObservableObject {
         sentryBreadcrumb("workspace.create", data: surfaceShapeSummary(tabCount: nextTabCount))
         let explicitWorkingDirectory = normalizedWorkingDirectory(overrideWorkingDirectory)
         let workingDirectory = explicitWorkingDirectory ?? preferredWorkingDirectoryForNewTab(snapshot: snapshot)
+        let explicitRootDirectory = normalizedWorkingDirectory(overrideRootDirectory)
+        let rootDirectory = explicitRootDirectory
+            ?? (establishRootFromWorkingDirectory ? explicitWorkingDirectory : nil)
         let inheritedConfig = inheritedTerminalConfigForNewWorkspace(snapshot: snapshot)
         let ordinal = Self.nextPortOrdinal
         Self.nextPortOrdinal += 1
@@ -1388,6 +1393,7 @@ class TabManager: ObservableObject {
             title: defaultTitle,
             stableDefaultTitle: defaultTitle,
             workingDirectory: workingDirectory,
+            rootDirectory: rootDirectory,
             portOrdinal: ordinal,
             configTemplate: inheritedConfig,
             initialTerminalCommand: initialTerminalCommand,
@@ -5560,6 +5566,7 @@ extension TabManager {
             hasher.combine(workspace.id)
             hasher.combine(workspace.focusedPanelId)
             hasher.combine(workspace.currentDirectory)
+            hasher.combine(workspace.rootDirectory ?? "")
             hasher.combine(workspace.customTitle ?? "")
             hasher.combine(workspace.customColor ?? "")
             hasher.combine(workspace.isPinned)
@@ -5665,6 +5672,7 @@ extension TabManager {
                 title: workspaceSnapshot.stableDefaultTitle ?? workspaceSnapshot.processTitle,
                 stableDefaultTitle: workspaceSnapshot.stableDefaultTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
+                rootDirectory: workspaceSnapshot.rootDirectory,
                 portOrdinal: ordinal
             )
             workspace.owningTabManager = self

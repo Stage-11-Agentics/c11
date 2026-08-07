@@ -5,6 +5,16 @@ import Foundation
 import Bonsplit
 import WebKit
 
+private enum AgentLaunchContextSnapshot {
+    case success(
+        tabManager: TabManager,
+        paneId: UUID?,
+        workspaceRoot: String?,
+        launchingSurfaceCwd: String?
+    )
+    case failure(TerminalController.V2CallResult)
+}
+
 // C11-159: the socket command dispatch, relocated verbatim out of
 // TerminalController.swift. Holds the v1 (`processCommand`) and v2
 // (`processV2Command`) entry points, the off-main socket-worker fast paths, the
@@ -58,6 +68,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
         case "surface.clear_history":
             return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
+        case "agent.launch":
+            return v2Result(id: request.id, v2AgentLaunch(params: request.params))
+        case "config.launch":
+            return v2Result(id: request.id, v2ConfigLaunch(params: request.params))
         // C11-165 COR-3: off-main handlers that block on a user click / async
         // submission. Each must have a matching entry in socketWorkerV2Methods;
         // a mismatch here would return method_not_found instead of executing.
@@ -991,9 +1005,13 @@ extension TerminalController {
     /// stamp metadata, and type the composed command, atomically server-side.
     /// Parsing/planning runs off-main; only surface creation + stamping is
     /// main-synced (socket threading policy).
-    func v2AgentLaunch(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
-            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+    nonisolated func v2AgentLaunch(params: [String: Any]) -> V2CallResult {
+        guard !Thread.isMainThread else {
+            return .err(
+                code: "internal_error",
+                message: "agent.launch must execute on the socket worker",
+                data: nil
+            )
         }
         guard let kindRaw = v2RawString(params, "type")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !kindRaw.isEmpty else {
@@ -1059,20 +1077,114 @@ extension TerminalController {
         let launchSuppressed = params["suppressed"] as? Bool ?? false
 
         let newWorkspace = v2Bool(params, "new_workspace") ?? false
-        let paneParam = v2UUID(params, "pane_id")
-        if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
-            return .err(code: "invalid_params", message: "new_workspace is mutually exclusive with pane_id/workspace_id", data: nil)
+
+        let cwdOverride: String?
+        switch CwdParamResolution.resolve(params["cwd"]) {
+        case .inherit:
+            cwdOverride = nil
+        case .path(let path):
+            cwdOverride = path
+        case .invalid(let code, let message, let path):
+            return .err(
+                code: code,
+                message: message,
+                data: path.map { ["path": $0] }
+            )
         }
 
-        var cwdOverride: String?
-        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
-            return err
+        // Resolve inherited cwd from the surface that invoked the CLI, not the
+        // app process. This snapshot is the only main-thread work before launch
+        // planning; git/config I/O remains off-main.
+        let contextGate = FailClosedCommitGate<AgentLaunchContextSnapshot> {
+            MainActor.assumeIsolated {
+                guard let tabManager = self.v2ResolveTabManager(params: params) else {
+                    return .failure(.err(
+                        code: "unavailable",
+                        message: "TabManager not available",
+                        data: nil
+                    ))
+                }
+                let paneParam = self.v2UUID(params, "pane_id")
+                if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
+                    return .failure(.err(
+                        code: "invalid_params",
+                        message: "new_workspace is mutually exclusive with pane_id/workspace_id",
+                        data: nil
+                    ))
+                }
+                let callerWorkspace = launchCallerSurfaceId.flatMap {
+                    AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: $0,
+                        preferredWorkspaceId: nil
+                    )?.workspace
+                }
+                let fallbackWorkspace: Workspace? = {
+                    if newWorkspace {
+                        // A background caller may live outside the selected
+                        // workspace. Its workspace root is the inherited
+                        // launch context; selected is only the no-caller
+                        // compatibility fallback.
+                        if let callerWorkspace { return callerWorkspace }
+                        guard let selectedId = tabManager.selectedTabId else { return nil }
+                        return tabManager.tabs.first(where: { $0.id == selectedId })
+                    }
+                    return self.v2ResolveWorkspace(params: params, tabManager: tabManager)
+                }()
+                // The target workspace owns the stable root. The actual calling
+                // surface owns the compatibility fallback when one is available.
+                let workspaceRoot = fallbackWorkspace?.rootDirectory
+                let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
+                let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
+                    callerSurfaceId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                )
+                return .success(
+                    tabManager: tabManager,
+                    paneId: paneParam,
+                    workspaceRoot: workspaceRoot,
+                    launchingSurfaceCwd: launchingSurfaceCwd
+                )
+            }
+        }
+        contextGate.enqueueOnMain()
+        guard let contextSnapshot = contextGate.wait(timeout: 8) else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
+        }
+        let tabManager: TabManager
+        let paneParam: UUID?
+        let workspaceRoot: String?
+        let launchingSurfaceCwd: String?
+        switch contextSnapshot {
+        case .success(let manager, let paneId, let root, let surfaceCwd):
+            tabManager = manager
+            paneParam = paneId
+            workspaceRoot = root
+            launchingSurfaceCwd = surfaceCwd
+        case .failure(let error):
+            return error
+        }
+
+        let cwdResolution = AgentLaunchWorkingDirectoryResolver.resolve(
+            explicitCwd: cwdOverride,
+            workspaceRoot: workspaceRoot,
+            launchingSurfaceCwd: launchingSurfaceCwd
+        )
+        let gitContext = cwdResolution.path.flatMap {
+            GitContextResolver.resolve(cwd: $0)
+        }
+        let cwdDecision = AgentLaunchWorkingDirectoryResolver.decision(
+            for: cwdResolution,
+            gitContext: gitContext
+        )
+        let cwdWarning: AgentLaunchWorkingDirectoryWarning?
+        switch cwdDecision {
+        case .allow(let warning):
+            cwdWarning = warning
         }
 
         // Config + (for custom kinds) template I/O happens here, off-main.
-        let lookupCwd = cwdOverride ?? FileManager.default.currentDirectoryPath
         let userDefault = DefaultAgentConfigStore.shared.current
-        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
+        let projectConfigMatch = DefaultAgentProjectConfig.find(for: cwdResolution)
+        let projectConfig = projectConfigMatch?.config
         let userTemplate: UserAgentLaunchTemplate? =
             AgentType(rawValue: kindRaw) == nil ? UserAgentLaunchTemplate.load(kind: kindRaw) : nil
 
@@ -1112,13 +1224,16 @@ extension TerminalController {
         }
 
         var warnings = plan.warnings
+        if let cwdWarning {
+            warnings.append(cwdWarning.message)
+        }
         if let binaryWarning = Self.agentLaunchBinaryWarning(launchLine: plan.launchLine) {
             warnings.append(binaryWarning)
         }
 
         let title = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
-        guard v2MainSyncWithDeadline({
+        let commit: @MainActor () -> V2CallResult = {
+            var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
             if launchFlagReason != nil,
                let launchCallerSurfaceId,
                AppDelegate.shared?.workspaceContainingPanel(
@@ -1130,7 +1245,7 @@ extension TerminalController {
                     message: "Calling surface not found",
                     data: nil
                 )
-                return
+                return result
             }
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
@@ -1148,7 +1263,8 @@ extension TerminalController {
                 // autoWelcome is suppressed: this workspace hosts an agent,
                 // not the onboarding grid.
                 let created = tabManager.addWorkspace(
-                    workingDirectory: cwdOverride,
+                    workingDirectory: cwdResolution.path,
+                    establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
                     initialTerminalEnvironment: plan.env,
                     select: focus,
                     eagerLoadTerminal: !focus,
@@ -1156,7 +1272,7 @@ extension TerminalController {
                 )
                 guard let initialPanel = created.focusedTerminalPanel else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal surface", data: nil)
-                    return
+                    return result
                 }
                 ws = created
                 panel = initialPanel
@@ -1164,7 +1280,7 @@ extension TerminalController {
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
-                    return
+                    return result
                 }
                 if focus {
                     self.v2MaybeFocusWindow(for: tabManager)
@@ -1178,16 +1294,16 @@ extension TerminalController {
                 }()
                 guard let paneId else {
                     result = .err(code: "not_found", message: "Pane not found", data: nil)
-                    return
+                    return result
                 }
                 guard let created = target.newTerminalSurface(
                     inPane: paneId,
                     focus: focus,
-                    workingDirectory: cwdOverride,
+                    workingDirectory: cwdResolution.path,
                     startupEnvironment: plan.env
                 ) else {
                     result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
-                    return
+                    return result
                 }
                 ws = target
                 panel = created
@@ -1243,10 +1359,10 @@ extension TerminalController {
                 )
             } catch let error as SurfaceMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
-                return
+                return result
             } catch {
                 result = .err(code: "internal_error", message: "\(error)", data: nil)
-                return
+                return result
             }
 
             if let delayedPrompt = plan.delayedPrompt {
@@ -1284,7 +1400,11 @@ extension TerminalController {
                 "pane_ref": paneUUID.map { self.v2Ref(kind: .pane, uuid: $0) } ?? NSNull(),
                 "surface_id": panel.id.uuidString,
                 "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
-                "warnings": warnings
+                "cwd": self.v2OrNull(cwdResolution.path),
+                "cwd_source": self.v2OrNull(cwdResolution.source?.rawValue),
+                "config_source": self.v2OrNull(projectConfigMatch?.sourcePath),
+                "warnings": warnings,
+                "warning_details": cwdWarning.map { [$0.payload] } ?? []
             ])
 
             // C11-178 rail-1: record the resolved launch. `plan` exposes model/
@@ -1323,10 +1443,19 @@ extension TerminalController {
                     try? AgentConfigLibraryStore.shared.recordRecent(recent)
                 }
             }
-        }) != nil else {
-            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
+            return result
         }
-        return result
+        let commitGate = FailClosedCommitGate<V2CallResult> {
+            MainActor.assumeIsolated {
+                commit()
+            }
+        }
+        commitGate.enqueueOnMain()
+        return commitGate.wait(timeout: 8) ?? .err(
+            code: "main_thread_timeout",
+            message: "main thread did not begin the agent launch before the deadline",
+            data: nil
+        )
     }
 
     /// Best-effort binary availability check for the launch line's argv[0].

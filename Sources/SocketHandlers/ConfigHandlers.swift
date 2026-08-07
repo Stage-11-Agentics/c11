@@ -8,9 +8,9 @@
 //
 // Threading (socket policy): the eight read/mutation methods are file I/O with
 // no AppKit touch → registered in `TerminalController.socketWorkerV2Methods` and
-// executed off-main by `socketWorkerV2Response`. `config.launch` alone creates a
-// surface, so it runs on the main actor via `v2DispatchExtracted` →
-// `v2DispatchConfig`.
+// executed off-main by `socketWorkerV2Response`. `config.launch` joins that
+// worker path because its delegated `agent.launch` performs config + git I/O;
+// both short-hop to main only for bounded snapshots and surface creation.
 
 import Foundation
 
@@ -43,11 +43,9 @@ extension ConfigCommandCore {
 
 extension TerminalController {
 
-    /// Main-actor router for the `config.*` domain. Only `config.launch` needs
-    /// the main actor (surface creation); the read/mutation methods are handled
-    /// off-main via `socketWorkerV2Response` and should never reach here, but we
-    /// answer them defensively (they are pure file I/O) so a routing change can't
-    /// silently 404 them.
+    /// Main-actor fallback router for the `config.*` domain. Every config method,
+    /// including launch planning, is normally handled by `socketWorkerV2Response`;
+    /// launch itself hops to main only for bounded snapshots and creation.
     func v2DispatchConfig(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
         case "config.launch":
@@ -127,12 +125,12 @@ extension TerminalController {
         }
     }
 
-    // MARK: - config.launch (main actor; thin client over agent.launch)
+    // MARK: - config.launch (socket worker; thin client over agent.launch)
 
     /// Resolve a saved config by name|id, translate its full recipe into
     /// `agent.launch` params, and delegate to `v2AgentLaunch` — so error codes,
     /// placement, identity stamp, and stats recording are all the one composer.
-    func v2ConfigLaunch(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2ConfigLaunch(params: [String: Any]) -> V2CallResult {
         guard let ref = (params["config"] as? String)?.nonEmpty else {
             return .err(code: "invalid_params", message: "config.launch requires 'config' (name|id)", data: nil)
         }

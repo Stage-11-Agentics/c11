@@ -8,6 +8,182 @@ import XCTest
 
 final class DefaultAgentResolverTests: XCTestCase {
 
+    // MARK: - launch cwd
+
+    func testLaunchCwdPrecedenceExplicitThenWorkspaceThenSurface() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "/explicit",
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/explicit", source: .explicit)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/root", source: .workspaceRoot)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: nil,
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/surface", source: .launchingSurface)
+        )
+    }
+
+    func testExistingSurfaceLaunchCwdUsesExplicitThenTargetSurface() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: "/explicit",
+                targetSurfaceCwd: "/target-surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/explicit", source: .explicit)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: nil,
+                targetSurfaceCwd: "/target-surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/target-surface", source: .launchingSurface)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: nil,
+                targetSurfaceCwd: nil
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: nil, source: nil)
+        )
+    }
+
+    func testInheritedLinkedWorktreeWarnsWithCodeAndPathThenProceeds() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/agent-tree/subdir",
+            source: .launchingSurface
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "agent-tree",
+                absolutePath: "/tmp/agent-tree",
+                branch: .attached("feature/other-agent")
+            )
+        )
+
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected a warning-only linked-worktree decision")
+        }
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
+        XCTAssertEqual(warning.cwd, "/tmp/agent-tree/subdir")
+        XCTAssertEqual(warning.worktreePath, "/tmp/agent-tree")
+        XCTAssertEqual(warning.worktreeBasename, "agent-tree")
+        XCTAssertEqual(warning.branch, "feature/other-agent")
+        XCTAssertEqual(warning.cwdSource, .launchingSurface)
+        XCTAssertFalse(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("/tmp/agent-tree"))
+        XCTAssertTrue(warning.message.contains("launch is proceeding"))
+
+        let payload = warning.payload
+        XCTAssertEqual(payload["code"] as? String, "linked_worktree_cwd")
+        let data = payload["data"] as? [String: Any]
+        XCTAssertEqual(data?["worktree_path"] as? String, "/tmp/agent-tree")
+        XCTAssertEqual(data?["cwd_source"] as? String, "launching_surface")
+        XCTAssertEqual(data?["explicit_intent"] as? Bool, false)
+    }
+
+    func testWorkspaceRootLinkedWorktreeCountsAsExplicitIntentAndWarns() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/root-tree",
+            source: .workspaceRoot
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "root-tree",
+                absolutePath: "/tmp/root-tree",
+                branch: .attached("feature/root-tree")
+            )
+        )
+
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected a warning-only workspace-root decision")
+        }
+        XCTAssertEqual(warning.cwdSource, .workspaceRoot)
+        XCTAssertTrue(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("workspace root (explicit intent)"))
+        XCTAssertTrue(warning.message.contains("/tmp/root-tree"))
+    }
+
+    func testExplicitLinkedWorktreeIsAllowedWithOneWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/agent-tree",
+            source: .explicit
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "agent-tree",
+                absolutePath: "/tmp/agent-tree",
+                branch: .detached(shortSHA: "abc1234")
+            )
+        )
+
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected an explicit warning and allowed launch")
+        }
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
+        XCTAssertEqual(warning.branch, "detached @ abc1234")
+        XCTAssertEqual(warning.cwdSource, .explicit)
+        XCTAssertTrue(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("explicit --cwd"))
+    }
+
+    func testNoBranchLinkedWorktreeStillCarriesNamedWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/no-branch-tree",
+            source: .launchingSurface
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "no-branch-tree",
+                absolutePath: "/tmp/no-branch-tree",
+                branch: .noBranch
+            )
+        )
+
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected no-branch warning")
+        }
+        XCTAssertEqual(warning.branch, "no branch")
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
+    }
+
+    func testMainCheckoutIsAllowedWithoutWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/main",
+            source: .launchingSurface
+        )
+        let context = ResolvedGitContext(outer: .mainCheckout(branch: .attached("main")))
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
+            .allow(warning: nil)
+        )
+    }
+
     // MARK: - precedence
 
     func testResolvesUserDefaultWhenNoProjectConfig() {

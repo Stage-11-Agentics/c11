@@ -28,6 +28,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2WorkspaceReorder(params: params))
         case "workspace.rename":
             return v2Result(id: id, self.v2WorkspaceRename(params: params))
+        case "workspace.set_root":
+            return v2Result(id: id, self.v2WorkspaceSetRoot(params: params))
         case "workspace.action":
             return v2Result(id: id, self.v2WorkspaceAction(params: params))
         case "workspace.next":
@@ -85,6 +87,7 @@ extension TerminalController {
                     "listening_ports": ws.listeningPorts,
                     "remote": ws.remoteStatusPayload(),
                     "current_directory": v2OrNull(ws.currentDirectory),
+                    "root_directory": v2OrNull(ws.rootDirectory),
                     "custom_color": v2OrNull(ws.customColor)
                 ]
             }
@@ -115,17 +118,36 @@ extension TerminalController {
             guard !key.isEmpty else { return }
             result[key] = pair.value
         }
-        let cwd: String?
+        let rawCwd: Any?
         if let workingDirectory {
-            cwd = workingDirectory
+            rawCwd = workingDirectory
         } else if let raw = params["cwd"] {
             guard let str = raw as? String else {
                 return .err(code: "invalid_params", message: "cwd must be a string", data: nil)
             }
-            cwd = str
+            rawCwd = str
         } else {
-            cwd = nil
+            rawCwd = nil
         }
+
+        var cwd: String?
+        if let err = v2ResolveWorkspaceDirectoryParam(rawCwd, field: "cwd", resolved: &cwd) {
+            return err
+        }
+        let rootWasSpecified = params.keys.contains("root_directory") || rawCwd != nil
+        var rootDirectory: String?
+        if params.keys.contains("root_directory") {
+            if let err = v2ResolveWorkspaceDirectoryParam(
+                params["root_directory"],
+                field: "root_directory",
+                resolved: &rootDirectory
+            ) {
+                return err
+            }
+        } else {
+            rootDirectory = cwd
+        }
+        let initialWorkingDirectory = cwd ?? rootDirectory
 
         // Layout path: let WorkspaceLayoutExecutor own creation so exactly one workspace is created.
         // Pre-creating a workspace here causes a ghost tab on every successful layout apply (B1).
@@ -170,6 +192,12 @@ extension TerminalController {
                     }
                 }
             }
+            if rootWasSpecified, let wsUUID {
+                v2MainSync {
+                    tabManager.tabs.first(where: { $0.id == wsUUID })?
+                        .setRootDirectory(rootDirectory)
+                }
+            }
 
             let windowId = v2ResolveWindowId(tabManager: tabManager)
             return .ok([
@@ -178,6 +206,7 @@ extension TerminalController {
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "title": v2OrNull(appliedLayoutTitle),
+                "root_directory": v2OrNull(rootDirectory),
                 "layout_result": resultAny
             ])
         }
@@ -192,7 +221,9 @@ extension TerminalController {
         let shouldFocus = v2FocusAllowed()
         guard v2MainSyncWithDeadline({
             let ws = tabManager.addWorkspace(
-                workingDirectory: cwd,
+                workingDirectory: initialWorkingDirectory,
+                rootDirectory: rootDirectory,
+                establishRootFromWorkingDirectory: false,
                 initialTerminalCommand: initialCommand,
                 initialTerminalEnvironment: initialEnv,
                 select: shouldFocus,
@@ -217,7 +248,8 @@ extension TerminalController {
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": newId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: newId),
-            "title": v2OrNull(customTitle)
+            "title": v2OrNull(customTitle),
+            "root_directory": v2OrNull(rootDirectory)
         ])
     }
 
@@ -278,6 +310,7 @@ extension TerminalController {
                     "pinned": workspace.isPinned,
                     "listening_ports": workspace.listeningPorts,
                     "remote": workspace.remoteStatusPayload(),
+                    "root_directory": v2OrNull(workspace.rootDirectory),
                 ]
             }
         }
@@ -489,6 +522,74 @@ extension TerminalController {
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "title": title
         ])
+    }
+
+    private func v2WorkspaceSetRoot(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
+        }
+        guard params.keys.contains("root_directory") else {
+            return .err(code: "invalid_params", message: "Missing root_directory", data: nil)
+        }
+
+        var rootDirectory: String?
+        if let err = v2ResolveWorkspaceDirectoryParam(
+            params["root_directory"],
+            field: "root_directory",
+            resolved: &rootDirectory
+        ) {
+            return err
+        }
+
+        var updated = false
+        v2MainSync {
+            guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
+            workspace.setRootDirectory(rootDirectory)
+            updated = true
+        }
+        guard updated else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": workspaceId.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId)
+            ])
+        }
+
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
+        return .ok([
+            "workspace_id": workspaceId.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
+            "window_id": v2OrNull(windowId?.uuidString),
+            "window_ref": v2Ref(kind: .window, uuid: windowId),
+            "root_directory": v2OrNull(rootDirectory)
+        ])
+    }
+
+    private func v2ResolveWorkspaceDirectoryParam(
+        _ raw: Any?,
+        field: String,
+        resolved: inout String?
+    ) -> V2CallResult? {
+        resolved = nil
+        if raw is NSNull { return nil }
+        switch CwdParamResolution.resolve(raw) {
+        case .inherit:
+            return nil
+        case .path(let path):
+            resolved = path
+            return nil
+        case .invalid(let code, let message, let path):
+            let fieldMessage = field == "cwd"
+                ? message
+                : message.replacingOccurrences(of: "cwd", with: field)
+            return .err(
+                code: code,
+                message: fieldMessage,
+                data: path.map { ["path": $0] }
+            )
+        }
     }
 
     private func v2WorkspaceNext(params: [String: Any]) -> V2CallResult {

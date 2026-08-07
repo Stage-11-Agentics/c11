@@ -1966,6 +1966,11 @@ class TerminalController {
         "surface.send_key",
         "surface.read_text",
         "surface.clear_history",
+        // Launch planning reads project config and probes git; keep those
+        // bounded I/O operations off-main, then hop to main only for model/UI
+        // snapshots and the final surface creation.
+        "agent.launch",
+        "config.launch",
         // C11-165 COR-3: these block their caller on a semaphore waiting for a
         // user click / async submission; on the default (main-actor) policy
         // that wait freezes the app. Run them off-main; each hops to main only
@@ -1974,7 +1979,8 @@ class TerminalController {
         "feedback.submit",
         // C11-180: `config.*` reads + mutations are pure state-root file I/O with
         // no AppKit touch → off-main per the socket threading policy. `config.launch`
-        // is deliberately ABSENT (it creates a surface → main actor).
+        // also starts here because it delegates to agent.launch, whose config/git
+        // planning stays off-main before a bounded main-thread creation commit.
         "config.list",
         "config.recent",
         "config.stats",
@@ -2552,7 +2558,7 @@ class TerminalController {
         return nil
     }
 
-    func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
+    nonisolated func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
         guard let raw = params[key] else { return nil }
         if let dict = raw as? [String: String] {
             return dict
@@ -2573,7 +2579,7 @@ class TerminalController {
         return action.lowercased().replacingOccurrences(of: "-", with: "_")
     }
 
-    func v2RawString(_ params: [String: Any], _ key: String) -> String? {
+    nonisolated func v2RawString(_ params: [String: Any], _ key: String) -> String? {
         params[key] as? String
     }
 
@@ -9069,21 +9075,27 @@ class TerminalController {
             return "ERROR: failed to read --prompt-file: \(promptFileArg ?? "")"
         }
 
-        // Resolve the agent config. Use --cwd for project-config lookup when
-        // provided; otherwise fall back to the process cwd.
-        let lookupCwd = cwdArg ?? FileManager.default.currentDirectoryPath
-        let userDefault = DefaultAgentConfigStore.shared.current
-        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
-        let resolved = DefaultAgentResolver.resolve(
-            explicitAgent: explicitAgent,
-            userDefault: userDefault,
-            projectConfig: projectConfig
-        )
-        guard !resolved.launch.bareCommand.isEmpty else {
-            return "ERROR: resolved agent has empty command (configure it in Settings → Default Agent)"
-        }
-
         if let inSurfaceArg {
+            // The existing surface owns the effective cwd when --cwd is
+            // omitted. Resolve that in-memory context before project-config
+            // I/O so lookup origin and the shell that receives the command do
+            // not diverge. Never substitute the GUI app process's cwd.
+            let targetContext = existingSurfaceLaunchCwd(
+                surfaceArg: inSurfaceArg,
+                explicitCwd: cwdArg
+            )
+            if let error = targetContext.error { return error }
+
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.findMatch(from: targetContext.cwd)?.config
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: explicitAgent,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            guard !resolved.launch.bareCommand.isEmpty else {
+                return "ERROR: resolved agent has empty command (configure it in Settings → Default Agent)"
+            }
             let outcome = launchInExistingSurface(
                 surfaceArg: inSurfaceArg,
                 agent: resolved.agent,
@@ -9130,11 +9142,50 @@ class TerminalController {
                 }
                 // CLI-originated launch → tag `.launchAgent` (not `.aButton`), so
                 // the stats rail distinguishes button-clicks from CLI launches.
-                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent, source: .launchAgent)
-                result = "OK"
+                let launched = tab.launchAgentSurface(
+                    inPane: pane,
+                    explicitAgent: explicitAgent,
+                    source: .launchAgent
+                )
+                result = launched
+                    ? "OK"
+                    : "ERROR: resolved agent has empty command (configure it in Settings → Default Agent)"
             }
             return result
         }
+    }
+
+    /// Resolve config lookup provenance for `default-agent launch --in-surface`.
+    /// This is deliberately memory-only; project-config filesystem I/O remains
+    /// outside the main-thread snapshot.
+    private func existingSurfaceLaunchCwd(
+        surfaceArg: String,
+        explicitCwd: String?
+    ) -> (cwd: String?, error: String?) {
+        guard let surfaceId = UUID(uuidString: surfaceArg) else {
+            return (nil, "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)")
+        }
+        guard let tabManager = tabManager else {
+            return (nil, "ERROR: TabManager not available")
+        }
+
+        var foundSurface = false
+        var targetSurfaceCwd: String?
+        v2MainSync {
+            for workspace in tabManager.tabs where workspace.terminalPanel(for: surfaceId) != nil {
+                foundSurface = true
+                targetSurfaceCwd = workspace.inheritedCwdForAgentLaunch(callerSurfaceId: surfaceId)
+                break
+            }
+        }
+        guard foundSurface else {
+            return (nil, "ERROR: surface not found: \(surfaceId.uuidString)")
+        }
+        let resolution = AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+            explicitCwd: explicitCwd,
+            targetSurfaceCwd: targetSurfaceCwd
+        )
+        return (resolution.path, nil)
     }
 
     /// Launch into an existing surface's PTY. Composes `[cd <cwd> && ]<launcher>[ <quoted-prompt>]`,

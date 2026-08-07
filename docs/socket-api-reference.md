@@ -74,7 +74,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 ### Agents (`agent.*`) — 1
 
-- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. See `docs/launch-agent-reference.md`.
+- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
 
 ### System (`system.*`) — 5
 
@@ -92,7 +92,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `window.focus`
 - `window.list`
 
-### Workspaces (`workspace.*`) — 25
+### Workspaces (`workspace.*`) — 26
 
 - `workspace.action`
 - `workspace.apply`
@@ -119,6 +119,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `workspace.select`
 - `workspace.set_custom_color`
 - `workspace.set_metadata`
+- `workspace.set_root`
 
 ### Surfaces (`surface.*`) — 25
 
@@ -366,4 +367,3 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `debug.terminals`
 - `debug.type`
 - `debug.window.screenshot`
-

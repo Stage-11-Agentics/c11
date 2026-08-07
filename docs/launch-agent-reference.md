@@ -118,8 +118,34 @@ flag renders after `--model`/`--effort` and before the positional prompt.
   the ghostty spawn command — a spawn command execs over the shell, so agent
   exit would kill the surface, and it skips shell rc.
 
-`--cwd <path>` sets the working directory (resolved CLI-side relative to the
-caller, validated server-side). Launches never steal focus or selection — 
+The launch cwd resolves in this order:
+
+1. explicit `--cwd <path>` (resolved CLI-side relative to the caller and
+   validated server-side),
+2. the target workspace's stable root directory, when set,
+3. the launching surface's cwd (the compatibility fallback for rootless
+   workspaces).
+
+Set a root during creation with `c11 new-workspace --root <path>` (or `--cwd`,
+which establishes the same root by default), then edit or clear it with
+`c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`.
+
+Any resolved cwd inside a linked git worktree proceeds with one coded warning.
+The warning names the absolute worktree path and carries code
+`linked_worktree_cwd`. Explicit `--cwd` remains permitted; a configured
+workspace root also counts as explicit intent. A launching-surface cwd is
+marked inherited, but is warning-only because linked worktrees are the normal
+Lattice delegator shape.
+
+Project `.c11/agents.json` discovery uses this same resolved cwd, so the config
+selected for a launch cannot silently come from the GUI app process's cwd. If
+no cwd resolves, project lookup is skipped and the user default applies. The
+walk remains deepest-first through ancestors toward `/`; this newly makes
+ancestor configs reachable from real project paths. A malformed config remains
+a silent miss. Project config is executable launch policy (`command` and env
+overrides); trust gating is pre-existing and remains outside this change.
+
+Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
 the new surface is created unfocused regardless of flags (`--no-focus` is
 accepted as a no-op for symmetry with `new-surface`).
@@ -177,6 +203,22 @@ Human-readable by default; `--json` prints one object:
   "workspace_ref": "workspace:4",
   "pane_ref": "pane:9",
   "surface_ref": "surface:341",
+  "cwd": "/path/to/project",
+  "cwd_source": "workspace_root",
+  "config_source": "/path/to/project/.c11/agents.json",
+  "warnings": ["workspace root (explicit intent) '/path/to/project' selects linked git worktree '/path/to/project' on 'fix/example'; launch is proceeding."],
+  "warning_details": [{
+    "code": "linked_worktree_cwd",
+    "message": "workspace root (explicit intent) '/path/to/project' selects linked git worktree '/path/to/project' on 'fix/example'; launch is proceeding.",
+    "data": {
+      "cwd": "/path/to/project",
+      "worktree_path": "/path/to/project",
+      "worktree_basename": "project",
+      "branch": "fix/example",
+      "cwd_source": "workspace_root",
+      "explicit_intent": true
+    }
+  }],
   "workspace_id": "…", "pane_id": "…", "surface_id": "…"
 }
 ```
@@ -202,7 +244,10 @@ socket call. A launch binary that can't be found is a **warning**, not an
 error — the app-process PATH is poorer than the login-shell PATH a pane
 actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
 and the launch proceeds (a truly missing binary shows the shell error in the
-pane).
+pane). A linked-worktree cwd is also reported once in this legacy warnings
+array and as a structured `warning_details` entry with code
+`linked_worktree_cwd`. The CLI prints the coded warning once to stderr in both
+human and `--json` modes while the launch proceeds.
 
 ## Launch templates
 
@@ -297,14 +342,17 @@ same (resolve via `system.tree` or `c11 identify`).
 
 The handler performs resolution, surface creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to
-sequence create → stamp → send itself. Response is the JSON object above.
+sequence create → stamp → send itself. Response is the JSON object above;
+`config_source` is the matched `.c11/agents.json` path or null.
 Follows the socket threading policy (parse/validate off-main; UI mutation
 scheduled on main) and the no-focus-steal policy.
 
 ## Relationship to existing commands
 
-- `c11 default-agent launch` — unchanged; still "launch the operator's default."
-  Internally both share `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
+- `c11 default-agent launch` — still "launch the operator's default." Its
+  `--in-surface` rail now resolves project config from explicit `--cwd` or the
+  target surface's cwd, never the GUI app process cwd. Internally both share
+  `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
 - The A button — unchanged; same resolver, same stamping.
 - `$C11_DEFAULT_AGENT_LAUNCH` — unchanged; the per-shell export still reflects
   the operator's default agent only.

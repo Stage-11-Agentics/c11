@@ -71,6 +71,7 @@ extension TerminalController {
             "workspace.move_to_window",
             "workspace.reorder",
             "workspace.rename",
+            "workspace.set_root",
             "workspace.action",
             "workspace.next",
             "workspace.previous",
@@ -301,6 +302,7 @@ extension TerminalController {
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
                     "workspace_id": wsId.uuidString,
                     "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
+                    "root_directory": v2OrNull(ws.rootDirectory),
                     "pane_id": v2OrNull(paneUUID?.uuidString),
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "surface_id": v2OrNull(surfaceUUID?.uuidString),
@@ -331,7 +333,8 @@ extension TerminalController {
                         "window_id": v2OrNull(callerWindowId?.uuidString),
                         "window_ref": v2Ref(kind: .window, uuid: callerWindowId),
                         "workspace_id": wsId.uuidString,
-                        "workspace_ref": v2Ref(kind: .workspace, uuid: wsId)
+                        "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
+                        "root_directory": v2OrNull(ws.rootDirectory)
                     ]
 
                     if let surfaceId, ws.panels[surfaceId] != nil {

@@ -63,12 +63,12 @@ Auto-exported into every c11 surface child process.
 ## Discovery & state
 
 ```bash
-c11 identify                         # JSON: caller's workspace/surface/pane refs + focused context
+c11 identify                         # JSON: caller/focused refs + each workspace's root_directory
 c11 tree                             # Current workspace with ASCII floor plan (default)
 c11 tree --window                    # All workspaces in current window
 c11 tree --all                       # Every window
 c11 tree --json                      # Structured JSON with pixel/percent coordinates
-c11 list-workspaces                  # Workspace list (* = selected)
+c11 list-workspaces                  # Workspace list (* = selected); --json includes root_directory
 c11 list-panes                       # Panes in current workspace (* = focused)
 c11 list-pane-surfaces               # Surfaces in current pane
 c11 current-workspace                # Current workspace ref
@@ -111,7 +111,8 @@ actually produced a tree.
 ```bash
 # Create
 c11 <path>                           # Open directory in new workspace (launches c11 if needed)
-c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <path|name>]
+c11 new-workspace [--cwd <path>] [--root <path>] [--command <text>] [--title <text>] [--layout <path|name>]
+c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any pane; the new pane is always a terminal
 c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
 c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
@@ -131,6 +132,13 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
     # priority missions only); --suppressed marks the worker parent-owned. Semantics:
     # the attention model in SKILL.md.
+    # cwd precedence: explicit --cwd > workspace root > launching surface cwd.
+    # Linked-worktree cwd values proceed with a coded warning naming the worktree path.
+    # Explicit --cwd and workspace-root provenance count as explicit intent; a
+    # launching-surface cwd is inherited. warning_details carries code/path/source
+    # in --json, and the coded warning is also printed once to stderr.
+    # Project .c11/agents.json lookup uses that resolved cwd (never the GUI process
+    # cwd); config_source reports the matched file path or null in --json.
 
 # Saved agent configs (the model picker's CLI, design §6)
 c11 config list [--json]                          # saved configs + default(mode) + most-recent

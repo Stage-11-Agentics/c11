@@ -1161,6 +1161,35 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(resolved)
     }
 
+    func testWorkspaceRootRoundTripsAndOlderSnapshotDefaultsToNoRoot() throws {
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        snapshot.windows[0].tabManager.workspaces[0].rootDirectory = "/tmp/project-root"
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
+        XCTAssertEqual(
+            decoded.windows[0].tabManager.workspaces[0].rootDirectory,
+            "/tmp/project-root"
+        )
+
+        var json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        var windows = try XCTUnwrap(json["windows"] as? [[String: Any]])
+        var window = windows[0]
+        var tabManager = try XCTUnwrap(window["tabManager"] as? [String: Any])
+        var workspaces = try XCTUnwrap(tabManager["workspaces"] as? [[String: Any]])
+        workspaces[0].removeValue(forKey: "rootDirectory")
+        tabManager["workspaces"] = workspaces
+        window["tabManager"] = tabManager
+        windows[0] = window
+        json["windows"] = windows
+
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+        let legacyDecoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: legacyData)
+        XCTAssertNil(legacyDecoded.windows[0].tabManager.workspaces[0].rootDirectory)
+    }
+
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
         let workspace = SessionWorkspaceSnapshot(
             id: UUID(),

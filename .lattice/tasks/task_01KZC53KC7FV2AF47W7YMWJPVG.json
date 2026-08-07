@@ -1,0 +1,42 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-08-06T18:24:27Z",
+  "created_by": "agent:trident-pane-C11-195",
+  "custom_fields": {},
+  "description": "Found by the C11-195 trident plan review (pack: notes/trident-review-C11-195-plan-pack-20260806-1405/, item I6). Workspace.swift:~12488 resolves project .c11/agents.json via resolverCwdForAgentLaunch(), which reads the focused panel's directory and never consults workspace.rootDirectory. Once C11-194 lands, a workspace with an explicit root resolves project config from the ROOT when launched via CLI but from the shell's wandered cwd when launched via the A button \u2014 same operator, same workspace, two different agents. Likely a one-line fix: put rootDirectory at the front of resolverCwdForAgentLaunch()'s ladder. Verified against fix/C11-193-launch-agent-cwd by 4 of 9 reviewers.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KZC53KC7FV2AF47W7YMWJPVG",
+  "last_event_id": "ev_01KZC53ZJS7NGW12832SSQDE98",
+  "last_status_changed_at": "2026-08-06T18:24:27Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-08-06T18:24:39Z",
+      "created_by": "agent:trident-pane-C11-195",
+      "note": null,
+      "target_task_id": "task_01KZBZY4WBCMG252XSJPJC1CPA",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-08-06T18:24:40Z",
+      "created_by": "agent:trident-pane-C11-195",
+      "note": null,
+      "target_task_id": "task_01KZAV3DFHX3WHKJG4F5075C66",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-201",
+  "status": "backlog",
+  "tags": null,
+  "title": "A button: resolverCwdForAgentLaunch ignores workspace.rootDirectory (diverges from CLI after C11-194)",
+  "type": "bug",
+  "updated_at": "2026-08-06T18:24:40Z",
+  "urgency": null
+}

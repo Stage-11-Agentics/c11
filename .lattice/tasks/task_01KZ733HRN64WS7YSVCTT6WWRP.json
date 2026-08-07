@@ -1,9 +1,10 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": "agent:c11-192",
   "branch_links": [],
   "c11_surface": "36285AD8-EC64-4A08-858C-F20D5283095A",
   "c11_workspace": "7B4D2337-7CE2-4C91-A460-9633F016C8BC",
-  "comment_count": 7,
+  "comment_count": 11,
   "complexity": "medium",
   "created_at": "2026-08-04T19:13:16Z",
   "created_by": "agent:sentry-audit",
@@ -23,7 +24,7 @@
     }
   ],
   "id": "task_01KZ733HRN64WS7YSVCTT6WWRP",
-  "last_event_id": "ev_01KZC3NEMBY4W6V2YETB43JMMC",
+  "last_event_id": "ev_01KZCC57BJWD8WBFCZ45GRP35K",
   "last_status_changed_at": "2026-08-04T20:37:00Z",
   "linked_files": [],
   "needs_human": null,
@@ -39,8 +40,8 @@
     "performance",
     "swiftui"
   ],
-  "title": "Main thread wedges 10s in swift_getTypeByMangledName under SwiftUI.Button.body (875 Sentry events, 7 users)",
+  "title": "Main-thread hang reports all collapse into one Sentry issue: fingerprint and render the wedged stack, not the watchdog's",
   "type": "bug",
-  "updated_at": "2026-08-06T17:59:15Z",
+  "updated_at": "2026-08-06T20:27:40Z",
   "urgency": null
 }

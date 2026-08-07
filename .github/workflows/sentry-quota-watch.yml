@@ -1,0 +1,74 @@
+name: Sentry quota watch
+
+# The recurrence detector for the 2026-08 quota incident, in which c11's error
+# monitoring was blind for over a week and nothing surfaced it. Sentry accepts an
+# event at the edge with HTTP 200 and a real event id, then drops it server-side
+# when the org is over quota — the sender cannot tell, and neither can a human
+# who is not specifically looking. This looks, daily, so nobody has to remember.
+#
+# It also watches for the inverse failure, which is subtler: a client that has
+# gone SILENT. Zero events is indistinguishable from a quiet week until you ask.
+
+on:
+  schedule:
+    # 14:00 UTC daily — late enough that a full day of traffic is in the window.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The org token (SENTRY_AUTH_TOKEN, used for dSYM upload) is 403 on
+      # /customers, /stats_v2 and /projects — reads need the *user* token.
+      # Until that secret exists this job reports skipped rather than red, so a
+      # missing secret does not look like a failing check forever.
+      - name: Check for the read token
+        id: token
+        env:
+          SENTRY_USER_AUTH_TOKEN: ${{ secrets.SENTRY_USER_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SENTRY_USER_AUTH_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SENTRY_USER_AUTH_TOKEN is not set; skipping the quota watch."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the recurrence checks
+        if: steps.token.outputs.present == 'true'
+        id: check
+        continue-on-error: true
+        env:
+          SENTRY_USER_AUTH_TOKEN: ${{ secrets.SENTRY_USER_AUTH_TOKEN }}
+        run: |
+          set -o pipefail
+          ./scripts/telemetry/sentry-position.py --check --period 24h \
+            | tee /tmp/sentry-position.txt
+
+      - name: Open or update an issue when a check fails
+        if: steps.token.outputs.present == 'true' && steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Sentry quota watch: a check is failing"
+          BODY=$(printf 'The daily Sentry recurrence check failed.\n\n```\n%s\n```\n\nRun: %s/%s/actions/runs/%s\n' \
+            "$(cat /tmp/sentry-position.txt)" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label sentry || \
+              gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: Fail the run when a check failed
+        if: steps.token.outputs.present == 'true' && steps.check.outcome == 'failure'
+        run: exit 1

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T19:17:08Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZC8427CQKJHR8JQT9WQJPPF",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC8427CQKJHR8JQT9WQJPPF.md",
+    "size_bytes": 457
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Approved after operator rework; C11-194 retains shared resolver ownership.",
+  "tags": [],
+  "title": "Final-head review at 500158c5a",
+  "token_usage": null,
+  "type": "note"
+}

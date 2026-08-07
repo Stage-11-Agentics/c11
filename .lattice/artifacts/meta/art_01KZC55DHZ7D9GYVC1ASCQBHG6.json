@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T18:25:27Z",
+  "created_by": "agent:trident-pane-C11-195",
+  "custom_fields": {},
+  "id": "art_01KZC55DHZ7D9GYVC1ASCQBHG6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC55DHZ7D9GYVC1ASCQBHG6.md",
+    "size_bytes": 40482
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "9-agent trident plan review, verdict revise-then-proceed: 6 blockers + 6 importants + 4 mediums + 1 clear win applied to plan rev 2; 8 items surfaced to operator",
+  "tags": [],
+  "title": "Trident plan review \u2014 action synthesis (rev 1 plan)",
+  "token_usage": null,
+  "type": "file"
+}

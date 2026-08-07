@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T19:18:03Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZC85QHA8NQDZ5G07A6RHD44",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC85QHA8NQDZ5G07A6RHD44.md",
+    "size_bytes": 601
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Approved: config provenance follows C11-194 resolution and never GUI process cwd.",
+  "tags": [],
+  "title": "Final project-config review at 500158c5a",
+  "token_usage": null,
+  "type": "note"
+}

@@ -44,6 +44,24 @@ selection and the reporting rule. Deep review: merge as-is, nothing blocking.
 pids. Its approach is corrected there — ~79% of those episodes name none of our code at any stack
 depth, so it needs a profiler against a driven repro, not more frames.
 
+## Acceptance: clause 1 is void, and why
+
+The ticket's ACCEPTANCE had two clauses.
+
+**Clause 1 — "a reproduction (many tabs + tab bar interaction) that stalls main >1s before the
+change and does not after" — is VOID.** It was written against the tab-bar preference-storm
+hypothesis, and there is no such storm to reproduce: the bucket is 0.2% of episodes and the code
+path is idempotent. This is a declared waiver, not an oversight. The repro obligation does not
+disappear — it **transfers to C11-202** (`task_01KZF332EFFVN656Q6ZSSW9RZQ`), where a driven repro
+plus a profiler is the stated approach and where the stall it would reproduce actually lives.
+
+**Clause 2 — Sentry recurrence judged by issue presence and user count, not event count — stands**
+and is sharpened below.
+
+The B1-B7 / I1-I6 rework contract from the 2026-08-04 trident review is **moot**, not outstanding:
+it was written against the `ghostty_surface_set_display_id` plan, which the operator split into
+C11-200 and which merged as #403. Nothing in it survives into this ticket's scope.
+
 Verification for this ticket lands on the first release carrying #402 + #411: C11-30 should stop
 accumulating and split per cause, with `runloop-idle` a fraction of its former volume. Judge by
 issue presence and user count per bucket, not total event count.

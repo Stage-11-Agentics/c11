@@ -1,0 +1,1 @@
+Merged after C11-194 through PR #407 at 5c0dba2dd5a9f9102359df7b95c4a3fa2a1fa755 from exact validated head 75026e96ef3448aa5b460a129584ee6344c206fc. Project .c11/agents.json lookup now follows the resolved launch cwd and reports config_source; tagged runtime printed the configured sentinel and linked-worktree pwd. All post-merge main workflows succeeded.

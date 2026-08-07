@@ -1,0 +1,1 @@
+Merged first through PR #407 at 5c0dba2dd5a9f9102359df7b95c4a3fa2a1fa755 from exact validated head 75026e96ef3448aa5b460a129584ee6344c206fc. Workspace-root precedence, persistence, JSON provenance, and tagged runtime cwd behavior verified; post-merge main CI, Mailbox parity, Build GhosttyKit, and macOS Compatibility all succeeded.

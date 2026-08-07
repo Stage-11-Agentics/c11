@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-07T21:59:54Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZF3TT6X0EJD9NN436WDEG19",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZF3TT6X0EJD9NN436WDEG19.md",
+    "size_bytes": 332
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged first through PR #407 at 5c0dba2dd5a9f9102359df7b95c4a3fa2a1fa755 from exact validated head 75026e96ef3448aa5b460a129584ee6344c206fc. Workspace-root precedence, persistence, JSON provenance, an",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

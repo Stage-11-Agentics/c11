@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-07T22:00:02Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZF3V1PWPEM506X7K6432SHX",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZF3V1PWPEM506X7K6432SHX.md",
+    "size_bytes": 356
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged after C11-194 through PR #407 at 5c0dba2dd5a9f9102359df7b95c4a3fa2a1fa755 from exact validated head 75026e96ef3448aa5b460a129584ee6344c206fc. Project .c11/agents.json lookup now follows the res",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

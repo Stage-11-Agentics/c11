@@ -1,7 +1,7 @@
 {
   "assigned_to": "agent:c11-190",
   "branch_links": [],
-  "comment_count": 11,
+  "comment_count": 12,
   "complexity": null,
   "created_at": "2026-08-04T18:00:19Z",
   "created_by": "agent:ace801-finish",
@@ -26,7 +26,7 @@
     }
   ],
   "id": "task_01KZ6YXZRV8SH2V7FJJKPM7QCJ",
-  "last_event_id": "ev_01KZC54XP19DHCTYP1DVBY36MP",
+  "last_event_id": "ev_01KZCSCWJWNR4VW98X1Z316Q5H",
   "last_status_changed_at": "2026-08-06T17:59:57Z",
   "linked_files": [],
   "needs_human": null,
@@ -39,6 +39,6 @@
   "tags": null,
   "title": "Sentry: verify c11 events are stored again and bounded once #401 ships",
   "type": "task",
-  "updated_at": "2026-08-06T18:25:10Z",
+  "updated_at": "2026-08-07T00:19:03Z",
   "urgency": null
 }

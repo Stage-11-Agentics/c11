@@ -1,0 +1,1 @@
+Merged after C11-194 through PR #407 at 5c0dba2dd5a9f9102359df7b95c4a3fa2a1fa755 from exact validated head 75026e96ef3448aa5b460a129584ee6344c206fc. Linked-worktree launches proceed while emitting named linked_worktree_cwd warnings to stderr and structured JSON; explicit --cwd and explicit workspace-root intent remain permitted. All post-merge main workflows succeeded.

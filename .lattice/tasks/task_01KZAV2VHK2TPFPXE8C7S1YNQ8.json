@@ -1,13 +1,13 @@
 {
   "assigned_to": "agent:codex-c11-launch-cwd",
   "branch_links": [],
-  "comment_count": 8,
+  "comment_count": 9,
   "complexity": null,
   "created_at": "2026-08-06T06:10:02Z",
   "created_by": "agent:ace791-implementer",
   "custom_fields": {},
   "description": "`c11 launch-agent` resolves the child's working directory from the LAUNCHING SURFACE's cwd.\nIn a worktree fleet that means the default behaviour is to drop a new agent into whatever\nworktree its parent happens to be working in \u2014 i.e. another agent's ACTIVE, dirty branch.\n\nHIT FOR REAL, 2026-08-05 (Acetate). An orchestrator working in\n`acetate-worktrees/lyrics-accuracy` (branch `fix/ACE-791-whisper-tuning`, uncommitted\nchanges present) launched three Codex implementers. All three started INSIDE that worktree.\nTwo had their briefs swallowed by a Codex version-update prompt and were left sitting at a\nbare shell in the parent's tree. Nothing was damaged \u2014 one agent only read files, and the\nparent committed its outstanding work before re-briefing \u2014 but any edit would have collided\nwith an in-flight lane, and the collision would have been attributed to the wrong agent.\n\nWHY IT IS WORTH A GUARD RATHER THAN JUST A BETTER DEFAULT: the failure is SILENT. The child\ngets a perfectly working shell in a directory it has no way of knowing is contested. It has\nno signal, the parent has no signal, and the damage surfaces later as unexplained changes in\nsomeone else's branch \u2014 the most expensive shape of bug to trace. A default expresses a\npreference; a guard enforces the invariant the fleet actually depends on, which is NOT\n\"children start at the project root\" but \"NO TWO AGENTS MUTATE THE SAME TREE\". It also holds\nwhen someone passes `--cwd` explicitly, which a default cannot.\n\nDETECTION IS ONE COMPARISON \u2014 a linked worktree has a `.git` FILE, not a directory:\n\n    git rev-parse --git-dir         # .../acetate/.git/worktrees/lyrics-accuracy\n    git rev-parse --git-common-dir  # .../acetate/.git\n\nThey differ if and only if the cwd is a LINKED worktree (they are equal in the main\ncheckout). Verified on this machine.\n\nPROPOSED BEHAVIOUR: when the resolved cwd is a linked worktree, refuse \u2014 or warn very\nloudly \u2014 and name the branch so the message is actionable:\n\n    cwd is a linked git worktree on 'fix/ACE-791-whisper-tuning' \u2014 this is likely another\n    agent's active tree. Pass --cwd explicitly to override.\n\nAn explicit `--cwd` pointing at a linked worktree should still be ALLOWED (spawning a helper\ninto your own worktree is legitimate) but should say so once, so it is a choice rather than\nan accident. Only the INHERITED case should be refused outright.\n\nRELATED: the sibling ticket on defaulting to the workspace directory. These are complements,\nnot alternatives \u2014 the default decides where agents usually land, the guard decides what can\nnever happen quietly.",
-  "done_at": null,
+  "done_at": "2026-08-07T22:00:02Z",
   "evidence_refs": [
     {
       "id": "art_01KZBZXVRDHEP9G6TJB0Z4BWH1",
@@ -63,11 +63,21 @@
       "id": "art_01KZC858TPZTTGVW92DMQX6RRD",
       "role": "validation",
       "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KZF3V1PWNDFX47SJJZZZ17R0",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZF3V1PWNDFX47SJJZZZ17QZ",
+      "role": "review",
+      "source_type": "artifact"
     }
   ],
   "id": "task_01KZAV2VHK2TPFPXE8C7S1YNQ8",
-  "last_event_id": "ev_01KZC858XN1RP1ANK9EF8232QA",
-  "last_status_changed_at": "2026-08-06T19:17:48Z",
+  "last_event_id": "ev_01KZF3V1PWNDFX47SJJZZZ17R3",
+  "last_status_changed_at": "2026-08-07T22:00:02Z",
   "linked_files": [],
   "needs_human": null,
   "priority": "high",
@@ -80,13 +90,13 @@
       "type": "related_to"
     }
   ],
-  "reopened_count": 1,
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-193",
-  "status": "pr_open",
+  "status": "done",
   "tags": null,
   "title": "launch-agent: refuse to start an agent in another agent's linked worktree",
   "type": "task",
-  "updated_at": "2026-08-06T19:17:48Z",
+  "updated_at": "2026-08-07T22:00:02Z",
   "urgency": null
 }

@@ -303,6 +303,7 @@ enum CodexModelsCacheParser {
                 .compactMap { $0["effort"] as? String }
                 .filter { !$0.isEmpty }
 
+            let upgrade = entry["upgrade"] as? [String: Any]
             out.append(RawCatalogRecord(
                 harness: "codex",
                 rawID: slug,
@@ -310,7 +311,9 @@ enum CodexModelsCacheParser {
                 contextWindow: entry["context_window"] as? Int,
                 efforts: levels.isEmpty ? .none : .values(levels),
                 defaultEffort: (entry["default_reasoning_level"] as? String) ?? "",
-                upgradeTo: ((entry["upgrade"] as? [String: Any])?["model"] as? String) ?? "",
+                upgradeTo: (upgrade?["model"] as? String) ?? "",
+                upgradeNote: (upgrade?["migration_markdown"] as? String) ?? "",
+                publisherRank: entry["priority"] as? Int,
                 providerHint: "openai"
             ))
         }
@@ -343,12 +346,18 @@ enum ModelCatalogDeclarations {
     /// so **the id is unconfirmed** — it follows the family's convention and is
     /// a guess. That is safe only because the row cannot be selected; if Astra
     /// ships, replace this with whatever slug the cache then carries.
+    ///
+    /// The rank places it just after Luna (codex ranks Sol 1, Terra 2, Luna 3)
+    /// so the row sits with the family it belongs to. Unranked, it would drift
+    /// into the alphabetical tail among OpenRouter's OpenAI ids, where nobody
+    /// would find it.
     static let codexComingSoon: [RawCatalogRecord] = [
         RawCatalogRecord(
             harness: "codex",
             rawID: "gpt-5.6-astra",
             displayName: "GPT-5.6 Astra",
             isComingSoon: true,
+            publisherRank: 4,
             providerHint: "openai"
         ),
     ]

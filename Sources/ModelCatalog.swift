@@ -100,6 +100,14 @@ struct RawCatalogRecord: Equatable, Codable {
     /// The model the publisher says to move to, `""` when not deprecated.
     /// Codex ships this on `gpt-5.4` and `gpt-5.4-mini`.
     var upgradeTo: String
+    /// The publisher's own deprecation copy, `""` when there is none. Vendor
+    /// prose beats anything c11 would compose.
+    var upgradeNote: String
+    /// Where the publisher ranks this model in its own catalog, lower first.
+    /// `nil` when the publisher does not rank. Today only codex publishes one
+    /// (`priority`), but the column is source-agnostic: any parser can fill it
+    /// and ranked models will float above unranked ones within their provider.
+    var publisherRank: Int?
     /// Provider for rows whose `rawID` carries no namespace (`k3`, `opus`).
     /// Ignored when `rawID` is namespaced.
     var providerHint: String
@@ -113,6 +121,8 @@ struct RawCatalogRecord: Equatable, Codable {
         defaultEffort: String = "",
         isComingSoon: Bool = false,
         upgradeTo: String = "",
+        upgradeNote: String = "",
+        publisherRank: Int? = nil,
         providerHint: String = ""
     ) {
         self.harness = harness
@@ -123,6 +133,8 @@ struct RawCatalogRecord: Equatable, Codable {
         self.defaultEffort = defaultEffort
         self.isComingSoon = isComingSoon
         self.upgradeTo = upgradeTo
+        self.upgradeNote = upgradeNote
+        self.publisherRank = publisherRank
         self.providerHint = providerHint
     }
 
@@ -131,7 +143,7 @@ struct RawCatalogRecord: Equatable, Codable {
     // a picker-open path.
     enum CodingKeys: String, CodingKey {
         case harness, rawID, displayName, contextWindow, efforts, defaultEffort
-        case isComingSoon, upgradeTo, providerHint
+        case isComingSoon, upgradeTo, upgradeNote, publisherRank, providerHint
     }
 
     init(from decoder: Decoder) throws {
@@ -144,6 +156,8 @@ struct RawCatalogRecord: Equatable, Codable {
         defaultEffort = (try? c.decode(String.self, forKey: .defaultEffort)) ?? ""
         isComingSoon = (try? c.decode(Bool.self, forKey: .isComingSoon)) ?? false
         upgradeTo = (try? c.decode(String.self, forKey: .upgradeTo)) ?? ""
+        upgradeNote = (try? c.decode(String.self, forKey: .upgradeNote)) ?? ""
+        publisherRank = try? c.decodeIfPresent(Int.self, forKey: .publisherRank)
         providerHint = (try? c.decode(String.self, forKey: .providerHint)) ?? ""
     }
 
@@ -157,6 +171,8 @@ struct RawCatalogRecord: Equatable, Codable {
         try c.encode(defaultEffort, forKey: .defaultEffort)
         try c.encode(isComingSoon, forKey: .isComingSoon)
         try c.encode(upgradeTo, forKey: .upgradeTo)
+        try c.encode(upgradeNote, forKey: .upgradeNote)
+        try c.encodeIfPresent(publisherRank, forKey: .publisherRank)
         try c.encode(providerHint, forKey: .providerHint)
     }
 }
@@ -374,11 +390,13 @@ struct ModelCatalogIndex: Equatable {
     private let effortsByKey: [String: [String: ModelEffortSupport]]
     private let defaultEffortsByKey: [String: [String: String]]
     private let upgradeByKey: [String: String]
+    private let upgradeNoteByKey: [String: String]
+    private let publisherRankByKey: [String: Int]
 
     static let empty = ModelCatalogIndex(
         source: .empty, generatedAt: nil, providers: [],
         modelsByProvider: [:], harnessesByKey: [:], flagValuesByKey: [:], effortsByKey: [:],
-        defaultEffortsByKey: [:], upgradeByKey: [:]
+        defaultEffortsByKey: [:], upgradeByKey: [:], upgradeNoteByKey: [:], publisherRankByKey: [:]
     )
 
     fileprivate init(
@@ -390,7 +408,9 @@ struct ModelCatalogIndex: Equatable {
         flagValuesByKey: [String: [String: String]],
         effortsByKey: [String: [String: ModelEffortSupport]],
         defaultEffortsByKey: [String: [String: String]],
-        upgradeByKey: [String: String]
+        upgradeByKey: [String: String],
+        upgradeNoteByKey: [String: String],
+        publisherRankByKey: [String: Int]
     ) {
         self.source = source
         self.generatedAt = generatedAt
@@ -401,6 +421,8 @@ struct ModelCatalogIndex: Equatable {
         self.effortsByKey = effortsByKey
         self.defaultEffortsByKey = defaultEffortsByKey
         self.upgradeByKey = upgradeByKey
+        self.upgradeNoteByKey = upgradeNoteByKey
+        self.publisherRankByKey = publisherRankByKey
     }
 
     var isEmpty: Bool { providers.isEmpty }
@@ -444,6 +466,19 @@ struct ModelCatalogIndex: Equatable {
         return (value?.isEmpty ?? true) ? nil : value
     }
 
+    /// The publisher's own deprecation copy, ready to show verbatim. `nil` when
+    /// the model is current or the publisher wrote none.
+    func upgradeNote(for model: CatalogModel) -> String? {
+        let value = upgradeNoteByKey[ModelCatalogIdentity.key(provider: model.provider, id: model.id)]
+        return (value?.isEmpty ?? true) ? nil : value
+    }
+
+    /// Where the publisher ranks this model in its own catalog, lower first.
+    /// `nil` when no source ranked it — those sort after every ranked model.
+    func publisherRank(for model: CatalogModel) -> Int? {
+        publisherRankByKey[ModelCatalogIdentity.key(provider: model.provider, id: model.id)]
+    }
+
     func model(provider: String, id: String) -> CatalogModel? {
         let canonical = ModelCatalogProviders.canonical(provider)
         return modelsByProvider[canonical]?.first { $0.id == id }
@@ -480,6 +515,8 @@ enum ModelCatalogBuilder {
         var effortsByKey: [String: [String: ModelEffortSupport]] = [:]
         var defaultEffortsByKey: [String: [String: String]] = [:]
         var upgradeByKey: [String: String] = [:]
+        var upgradeNoteByKey: [String: String] = [:]
+        var publisherRankByKey: [String: Int] = [:]
 
         for (key, rawGroup) in groups {
             guard let (provider, id) = identity[key] else { continue }
@@ -517,6 +554,12 @@ enum ModelCatalogBuilder {
                 if !record.upgradeTo.isEmpty, (upgradeByKey[key] ?? "").isEmpty {
                     upgradeByKey[key] = record.upgradeTo
                 }
+                if !record.upgradeNote.isEmpty, (upgradeNoteByKey[key] ?? "").isEmpty {
+                    upgradeNoteByKey[key] = record.upgradeNote
+                }
+                if let rank = record.publisherRank, publisherRankByKey[key] == nil {
+                    publisherRankByKey[key] = rank
+                }
             }
 
             let evidence = Set(group.map(\.harness))
@@ -549,9 +592,20 @@ enum ModelCatalogBuilder {
             defaultEffortsByKey[key] = defaultEfforts
         }
 
+        // Publisher rank first, then alphabetical. A vendor that ranks its own
+        // catalog knows better than we do which models the operator reaches
+        // for: codex ranks Sol 1, Terra 2, Luna 3 and its retiring 5.x line
+        // 16-26, whereas plain alphabetical order floats `gpt-5.3-codex-spark`
+        // and `gpt-5.4` above the entire GPT-5.6 family. Unranked models keep
+        // alphabetical order below the ranked block.
         for (provider, models) in modelsByProvider {
-            modelsByProvider[provider] = models.sorted {
-                $0.id.localizedCaseInsensitiveCompare($1.id) == .orderedAscending
+            modelsByProvider[provider] = models.sorted { lhs, rhs in
+                let lk = ModelCatalogIdentity.key(provider: lhs.provider, id: lhs.id)
+                let rk = ModelCatalogIdentity.key(provider: rhs.provider, id: rhs.id)
+                let lr = publisherRankByKey[lk], rr = publisherRankByKey[rk]
+                if let lr, let rr, lr != rr { return lr < rr }
+                if (lr == nil) != (rr == nil) { return lr != nil }
+                return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
             }
         }
 
@@ -564,7 +618,9 @@ enum ModelCatalogBuilder {
             flagValuesByKey: flagValuesByKey,
             effortsByKey: effortsByKey,
             defaultEffortsByKey: defaultEffortsByKey,
-            upgradeByKey: upgradeByKey
+            upgradeByKey: upgradeByKey,
+            upgradeNoteByKey: upgradeNoteByKey,
+            publisherRankByKey: publisherRankByKey
         )
     }
 
@@ -600,12 +656,17 @@ enum ModelCatalogBuilder {
 /// the two can never drift into different shapes. One record per line:
 ///
 ///     harness, rawID, displayName, context, efforts, flags, providerHint,
-///     defaultEffort, upgradeTo
+///     defaultEffort, upgradeTo, publisherRank, upgradeNote
 ///
 /// `efforts` is `-` (unspecified), `0` (explicitly none), or a comma list.
 /// `flags` is empty or `soon`. Trailing columns are optional, so a cache
 /// written by an older build still decodes. Blank lines and `#` comments are
 /// skipped, so a generated file can carry a provenance header.
+///
+/// Fields are backslash-escaped for tab, newline and carriage return, because
+/// publisher prose (codex's `migration_markdown`) is multi-line and a
+/// line-based format cannot carry it raw. Escaping is a no-op for every field
+/// that contains none of those, so it does not churn the committed snapshot.
 enum ModelCatalogRecordCodec {
 
     static func encode(_ records: [RawCatalogRecord]) -> String {
@@ -620,6 +681,8 @@ enum ModelCatalogRecordCodec {
                 r.providerHint,
                 r.defaultEffort,
                 r.upgradeTo,
+                r.publisherRank.map(String.init) ?? "",
+                escape(r.upgradeNote),
             ]
             // Trailing empties are dropped. Decode treats a missing trailing
             // column as its default, so this is lossless — and it keeps a
@@ -646,8 +709,49 @@ enum ModelCatalogRecordCodec {
                 defaultEffort: f.count > 7 ? f[7] : "",
                 isComingSoon: f.count > 5 && f[5] == "soon",
                 upgradeTo: f.count > 8 ? f[8] : "",
+                upgradeNote: f.count > 10 ? unescape(f[10]) : "",
+                publisherRank: f.count > 9 ? Int(f[9]) : nil,
                 providerHint: f.count > 6 ? f[6] : ""
             ))
+        }
+        return out
+    }
+
+    static func escape(_ value: String) -> String {
+        guard value.contains(where: { $0 == "\\" || $0 == "\t" || $0 == "\n" || $0 == "\r" }) else {
+            return value
+        }
+        var out = ""
+        out.reserveCapacity(value.count + 8)
+        for character in value {
+            switch character {
+            case "\\": out += "\\\\"
+            case "\t": out += "\\t"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            default:   out.append(character)
+            }
+        }
+        return out
+    }
+
+    static func unescape(_ value: String) -> String {
+        guard value.contains("\\") else { return value }
+        var out = ""
+        out.reserveCapacity(value.count)
+        var iterator = value.makeIterator()
+        while let character = iterator.next() {
+            guard character == "\\" else { out.append(character); continue }
+            switch iterator.next() {
+            case "n":  out.append("\n")
+            case "t":  out.append("\t")
+            case "r":  out.append("\r")
+            case "\\": out.append("\\")
+            // An unknown escape keeps both characters rather than eating them:
+            // a decoder must never silently mangle content it does not know.
+            case let other?: out.append("\\"); out.append(other)
+            case nil:  out.append("\\")
+            }
         }
         return out
     }

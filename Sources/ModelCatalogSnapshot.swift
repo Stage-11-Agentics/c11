@@ -71,7 +71,7 @@ import Foundation
 
 enum ModelCatalogSnapshot {
     /// When the capture behind this snapshot was taken.
-    static let generatedAtISO8601 = "2026-08-09T01:27:56Z"
+    static let generatedAtISO8601 = "2026-08-09T01:35:29Z"
     static let generatedAt: Date? = ISO8601DateFormatter().date(from: generatedAtISO8601)
 
     /// Raw rows, decoded once.
@@ -83,15 +83,15 @@ claude-code	opus	Opus		-		anthropic
 claude-code	sonnet	Sonnet		-		anthropic
 claude-code	haiku	Haiku		-		anthropic
 claude-code	fable	Fable		-		anthropic
-codex	gpt-5.6-astra	GPT-5.6 Astra		-	soon	openai
-codex	gpt-5.3-codex-spark	GPT-5.3-Codex-Spark	128000	low,medium,high,xhigh		openai	high
-codex	gpt-5.4	GPT-5.4	272000	low,medium,high,xhigh		openai	medium	gpt-5.6-terra
-codex	gpt-5.4-mini	GPT-5.4-Mini	272000	low,medium,high,xhigh		openai	medium	gpt-5.6-luna
-codex	gpt-5.5	GPT-5.5	272000	low,medium,high,xhigh		openai	medium
-codex	gpt-5.6-luna	GPT-5.6-Luna	272000	low,medium,high,xhigh,max		openai	medium
-codex	gpt-5.6-sol	GPT-5.6-Sol	272000	low,medium,high,xhigh,max,ultra		openai	low
-codex	gpt-5.6-sol-wm	GPT-5.6-Sol-WM	272000	low,medium,high,xhigh,max,ultra		openai	low
-codex	gpt-5.6-terra	GPT-5.6-Terra	272000	low,medium,high,xhigh,max,ultra		openai	medium
+codex	gpt-5.6-astra	GPT-5.6 Astra		-	soon	openai			4
+codex	gpt-5.3-codex-spark	GPT-5.3-Codex-Spark	128000	low,medium,high,xhigh		openai	high		26
+codex	gpt-5.4	GPT-5.4	272000	low,medium,high,xhigh		openai	medium	gpt-5.6-terra	16	GPT-5.4 will be deprecated soon\n\nCodex now uses GPT-5.6 Terra in place of GPT-5.4. Switch to GPT-5.6 Terra to continue.\n
+codex	gpt-5.4-mini	GPT-5.4-Mini	272000	low,medium,high,xhigh		openai	medium	gpt-5.6-luna	23	GPT-5.4 Mini will be deprecated soon\n\nCodex now uses GPT-5.6 Luna in place of GPT-5.4 Mini. Switch to GPT-5.6 Luna to continue.\n
+codex	gpt-5.5	GPT-5.5	272000	low,medium,high,xhigh		openai	medium		7
+codex	gpt-5.6-luna	GPT-5.6-Luna	272000	low,medium,high,xhigh,max		openai	medium		3
+codex	gpt-5.6-sol	GPT-5.6-Sol	272000	low,medium,high,xhigh,max,ultra		openai	low		1
+codex	gpt-5.6-sol-wm	GPT-5.6-Sol-WM	272000	low,medium,high,xhigh,max,ultra		openai	low		1
+codex	gpt-5.6-terra	GPT-5.6-Terra	272000	low,medium,high,xhigh,max,ultra		openai	medium		2
 grok	grok-4.5			-		xai
 kimi	k3	K3	1048576	low,high,max		moonshot	high
 kimi	k3-256k	K3-256k	262144	low,high,max		moonshot	high

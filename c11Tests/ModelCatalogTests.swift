@@ -178,6 +178,23 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(records.first { $0.rawID == "gpt-5.4" }?.upgradeTo, "gpt-5.6-terra")
         XCTAssertEqual(records.first { $0.rawID == "gpt-5.4-mini" }?.upgradeTo, "gpt-5.6-luna")
         XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-sol" }?.upgradeTo, "")
+
+        // The vendor's own copy, multi-line, carried verbatim.
+        let note = try XCTUnwrap(records.first { $0.rawID == "gpt-5.4" }?.upgradeNote)
+        XCTAssertTrue(note.hasPrefix("GPT-5.4 will be deprecated soon"))
+        XCTAssertTrue(note.contains("\n"))
+        XCTAssertTrue(note.contains("Switch to GPT-5.6 Terra to continue."))
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-sol" }?.upgradeNote, "")
+    }
+
+    func testCodexCacheParserReadsPublisherPriority() throws {
+        let records = CodexModelsCacheParser.parse(try fixture("codex-models-cache.json"))
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-sol" }?.publisherRank, 1)
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-terra" }?.publisherRank, 2)
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-luna" }?.publisherRank, 3)
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.3-codex-spark" }?.publisherRank, 26)
+        // A routing alias shares its target's rank rather than getting its own.
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-sol-wm" }?.publisherRank, 1)
     }
 
     func testCodexCacheParserSurvivesAMissingOrJunkFile() {
@@ -413,12 +430,45 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertNil(index.model(provider: "openai", id: "codex-auto-review"))
     }
 
+    // MARK: - Ordering
+
+    func testPublisherRankedModelsLeadTheirProviderInThePublishersOwnOrder() throws {
+        let index = try fixtureIndex()
+        // Alphabetical order alone would float gpt-5.3-codex-spark and gpt-5.4
+        // above the whole GPT-5.6 family, which is backwards every time the
+        // operator opens the picker. Codex's own ranking fixes it.
+        XCTAssertEqual(Array(index.models(forProvider: "openai").prefix(9).map(\.id)), [
+            "gpt-5.6-sol", "gpt-5.6-sol-wm", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-astra",
+            "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark",
+        ])
+    }
+
+    func testUnrankedModelsFollowRankedOnesAndStayAlphabetical() throws {
+        let index = try fixtureIndex()
+        let openai = index.models(forProvider: "openai")
+        let ranks = openai.map { index.publisherRank(for: $0) }
+        let firstUnranked = try XCTUnwrap(ranks.firstIndex(where: { $0 == nil }))
+        XCTAssertTrue(ranks[firstUnranked...].allSatisfy { $0 == nil }, "ranked and unranked models interleave")
+        let tail = openai[firstUnranked...].map(\.id)
+        XCTAssertEqual(tail, tail.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+
+        // A provider nobody ranks keeps plain alphabetical order.
+        let moonshot = index.models(forProvider: "moonshot").map(\.id)
+        XCTAssertEqual(moonshot, moonshot.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+    }
+
     func testAstraIsTheOneComingSoonRow() throws {
         let index = try fixtureIndex()
         let astra = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-astra"))
         XCTAssertTrue(astra.isComingSoon)
         XCTAssertEqual(index.harnesses(forModel: astra), ["codex"])
         XCTAssertEqual(index.allModels.filter(\.isComingSoon).map(\.id), ["gpt-5.6-astra"])
+        // It sits with the family it belongs to, not adrift in the tail.
+        let openai = index.models(forProvider: "openai").map(\.id)
+        XCTAssertEqual(
+            openai.firstIndex(of: "gpt-5.6-astra").map { openai[$0 - 1] },
+            "gpt-5.6-luna"
+        )
     }
 
     func testCodexEffortLaddersAndDefaultsSurviveTheMerge() throws {
@@ -446,6 +496,15 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(index.upgradeTarget(for: mini), "gpt-5.6-luna")
         let current = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-sol"))
         XCTAssertNil(index.upgradeTarget(for: current))
+        XCTAssertNil(index.upgradeNote(for: current))
+
+        // Vendor copy survives the merge intact, newlines and all.
+        let note = try XCTUnwrap(index.upgradeNote(for: old))
+        XCTAssertEqual(
+            note,
+            "GPT-5.4 will be deprecated soon\n\nCodex now uses GPT-5.6 Terra in place of GPT-5.4. "
+                + "Switch to GPT-5.6 Terra to continue.\n"
+        )
     }
 
     func testClaudeFamiliesAndAstraSurviveWhenNothingEnumerates() {
@@ -638,11 +697,31 @@ final class ModelCatalogTests: XCTestCase {
                              contextWindow: 262_144, efforts: .none, providerHint: "moonshot"),
             RawCatalogRecord(harness: "codex", rawID: "gpt-5.4", displayName: "GPT-5.4",
                              contextWindow: 272_000, efforts: .values(["low", "medium", "high", "xhigh"]),
-                             defaultEffort: "medium", upgradeTo: "gpt-5.6-terra", providerHint: "openai"),
+                             defaultEffort: "medium", upgradeTo: "gpt-5.6-terra",
+                             upgradeNote: "Line one.\n\nLine two with a \\ backslash and a \ttab.\n",
+                             publisherRank: 16, providerHint: "openai"),
             RawCatalogRecord(harness: "codex", rawID: "gpt-5.6-astra", displayName: "GPT-5.6 Astra",
-                             efforts: .unspecified, isComingSoon: true, providerHint: "openai"),
+                             efforts: .unspecified, isComingSoon: true, publisherRank: 4,
+                             providerHint: "openai"),
         ]
-        XCTAssertEqual(ModelCatalogRecordCodec.decode(ModelCatalogRecordCodec.encode(records)), records)
+        let encoded = ModelCatalogRecordCodec.encode(records)
+        // Publisher prose is multi-line; the line-based format must not be able
+        // to lose or split a record because of it.
+        XCTAssertEqual(encoded.split(separator: "\n").count, records.count)
+        XCTAssertEqual(ModelCatalogRecordCodec.decode(encoded), records)
+    }
+
+    func testFieldEscapingIsALosslessNoOpForOrdinaryValues() {
+        for value in ["", "gpt-5.6-sol", "K2.7 Coding", "openrouter/~anthropic/claude-opus-latest"] {
+            XCTAssertEqual(ModelCatalogRecordCodec.escape(value), value, value)
+            XCTAssertEqual(ModelCatalogRecordCodec.unescape(value), value, value)
+        }
+        for value in ["a\nb", "a\tb", "a\\b", "a\\nb", "\r\n", "trailing\\"] {
+            XCTAssertEqual(
+                ModelCatalogRecordCodec.unescape(ModelCatalogRecordCodec.escape(value)), value,
+                value.debugDescription
+            )
+        }
     }
 
     func testACacheWrittenByAnOlderBuildStillDecodes() {

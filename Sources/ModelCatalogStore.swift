@@ -53,6 +53,9 @@ final class ModelCatalogStore: ModelCatalogProviding, @unchecked Sendable {
     ///     temporary directory in tests.
     ///   - runner: subprocess seam. `nil` disables live enumeration entirely
     ///     (cache + snapshot only), which is what tests want by default.
+    ///   - reader: read-only file seam for harnesses that cache their catalog
+    ///     on disk (codex). Tests must inject one so a run never depends on the
+    ///     machine's real `~/.codex/models_cache.json`.
     ///   - snapshot: records compiled into the binary.
     ///   - snapshotGeneratedAt: provenance for `snapshot`, compared against the
     ///     cache's own stamp so an app update carrying a fresher snapshot wins
@@ -62,13 +65,14 @@ final class ModelCatalogStore: ModelCatalogProviding, @unchecked Sendable {
     init(
         directory: URL? = nil,
         runner: ModelCatalogCommandRunning? = ProcessModelCatalogCommandRunner(),
+        reader: ModelCatalogFileReading = FileManagerCatalogReader(),
         snapshot: [RawCatalogRecord] = ModelCatalogSnapshot.records,
         snapshotGeneratedAt: Date? = ModelCatalogSnapshot.generatedAt,
         loadCacheAsynchronously: Bool = true
     ) {
         let root = directory ?? ModelCatalogStore.defaultDirectory()
         self.cacheURL = root?.appendingPathComponent(ModelCatalogStore.fileName, isDirectory: false)
-        self.enumerator = runner.map { ModelCatalogEnumerator(runner: $0) }
+        self.enumerator = runner.map { ModelCatalogEnumerator(runner: $0, reader: reader) }
         self._records = snapshot
         self._index = ModelCatalogBuilder.build(
             records: snapshot,

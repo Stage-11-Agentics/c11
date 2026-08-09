@@ -66,6 +66,28 @@ else
   run_capture kimi     kimi-provider-list.json kimi provider list --json
   run_capture grok     grok-models.txt        grok models
 
+  # codex publishes no list command; it caches the authoritative one. Read
+  # only, and drop `base_instructions` / `model_messages` on the way in: those
+  # are OpenAI's Codex system prompts, ~330 KB of vendor text the catalog never
+  # reads and that has no business in a public repo. Everything the parser
+  # touches is preserved, so the snapshot is identical either way.
+  codex_cache="${CODEX_HOME:-$HOME/.codex}/models_cache.json"
+  if [[ -r "$codex_cache" ]]; then
+    python3 - "$codex_cache" "$capture_dir/codex-models-cache.json" <<'PY'
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+doc = json.load(open(src))
+for model in doc.get("models", []):
+    for field in ("base_instructions", "model_messages"):
+        model.pop(field, None)
+json.dump(doc, open(dst, "w"), indent=2, sort_keys=True)
+open(dst, "a").write("\n")
+PY
+    echo "    codex: $(wc -l <"$capture_dir/codex-models-cache.json" | tr -d ' ') lines (prompt fields dropped)"
+  else
+    echo "    codex: no cache at $codex_cache — skipped" >&2
+  fi
+
   if [[ "$keep_fixtures" -eq 0 ]]; then
     echo "==> refreshing $fixtures"
     mkdir -p "$fixtures"

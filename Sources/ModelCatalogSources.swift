@@ -179,7 +179,7 @@ enum OmpModelsParser {
 /// `kimi provider list --json` prints `{ providers: …, models: { "<provider>/<alias>":
 /// { model, maxContextSize, capabilities, displayName, supportEfforts?, defaultEffort? } } }`.
 ///
-/// `supportEfforts` is present on the K3 aliases and absent on the K2.7 ones,
+/// `supportEfforts` (with `defaultEffort`) is present on the K3 aliases and absent on the K2.7 ones,
 /// which are `always_thinking` — absence is Kimi declaring "no effort control",
 /// so it maps to `.none`, not `.unspecified`. (`~/.kimi-code/config.toml`
 /// carries the same `support_efforts` / `default_effort` values; the CLI is the
@@ -209,6 +209,7 @@ enum KimiProviderListParser {
                 displayName: (entry["displayName"] as? String) ?? "",
                 contextWindow: entry["maxContextSize"] as? Int,
                 efforts: efforts,
+                defaultEffort: (entry["defaultEffort"] as? String) ?? "",
                 providerHint: "moonshot"
             ))
         }
@@ -250,13 +251,81 @@ enum GrokModelsParser {
     }
 }
 
-// MARK: - Declared catalogs (no enumeration command exists)
+// MARK: - codex
 
-/// The two harnesses that cannot be asked. `claude` has no model-listing
-/// command and takes family aliases rather than ids; `codex` has none either.
-/// These are declarations, not a fallback table: they merge into the same
-/// catalog as the enumerated rows and dedupe against them (all nine GPT-5.6
-/// variants also appear in opencode's and pi's live output).
+/// The codex CLI has no model-listing command, but it caches the authoritative
+/// list it fetched from the service at `~/.codex/models_cache.json`:
+///
+///     { "fetched_at": …, "etag": …, "client_version": …,
+///       "models": [ { "slug", "display_name", "description", "visibility",
+///                     "context_window", "supported_reasoning_levels": [{effort, …}],
+///                     "default_reasoning_level", "upgrade": {model, …}, … } ] }
+///
+/// Reading it is inside the CLAUDE.md rule, which forbids *writes* to tenant
+/// config, not reads. c11 never writes this file and degrades silently when it
+/// is absent.
+///
+/// This replaces a declared GPT-5.6 list that was wrong: the `-fast` and `-pro`
+/// variants exist in OpenAI's *API* catalog (which is what opencode enumerates)
+/// but the codex CLI does not offer them, so declaring them would have put
+/// unlaunchable rows under the harness the operator uses most.
+enum CodexModelsCacheParser {
+
+    /// Default path. Honors `CODEX_HOME` the way the codex CLI does.
+    static var defaultPath: String {
+        let env = ProcessInfo.processInfo.environment
+        if let home = env["CODEX_HOME"], !home.isEmpty {
+            return (home as NSString).appendingPathComponent("models_cache.json")
+        }
+        return NSString(string: "~/.codex/models_cache.json").expandingTildeInPath
+    }
+
+    /// Slugs that are routing/internal models rather than operator choices.
+    /// `codex-auto-review` is the automatic approval-review model codex runs on
+    /// its own behalf. It is also `visibility: "hide"` — but so is
+    /// `gpt-5.6-sol-wm`, which *is* an operator choice, so the slug list is the
+    /// filter and visibility is deliberately not.
+    static let internalSlugs: Set<String> = ["codex-auto-review"]
+
+    static func parse(_ text: String) -> [RawCatalogRecord] {
+        guard let data = ModelCatalogParsing.jsonObjectSlice(text),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = root["models"] as? [[String: Any]] else { return [] }
+
+        var out: [RawCatalogRecord] = []
+        for entry in models {
+            guard let slug = entry["slug"] as? String, !slug.isEmpty,
+                  !internalSlugs.contains(slug) else { continue }
+
+            // Per-model effort ladders, and they genuinely differ: Sol and
+            // Terra reach `ultra`, Luna stops at `max`, the 5.x line at `xhigh`.
+            let levels = (entry["supported_reasoning_levels"] as? [[String: Any]] ?? [])
+                .compactMap { $0["effort"] as? String }
+                .filter { !$0.isEmpty }
+
+            out.append(RawCatalogRecord(
+                harness: "codex",
+                rawID: slug,
+                displayName: (entry["display_name"] as? String) ?? "",
+                contextWindow: entry["context_window"] as? Int,
+                efforts: levels.isEmpty ? .none : .values(levels),
+                defaultEffort: (entry["default_reasoning_level"] as? String) ?? "",
+                upgradeTo: ((entry["upgrade"] as? [String: Any])?["model"] as? String) ?? "",
+                providerHint: "openai"
+            ))
+        }
+        return out
+    }
+}
+
+// MARK: - Declared catalogs (nothing to enumerate)
+
+/// What no catalog can answer for us.
+///
+/// Claude Code takes family aliases rather than model ids and publishes no list
+/// anywhere, so its four families are declared outright. Codex's Astra is
+/// declared because it does not exist yet. Everything else, including the rest
+/// of the Codex line, is read from a publisher.
 enum ModelCatalogDeclarations {
 
     /// Claude Code's four families (ticket D1 — confirmed correct as-is).
@@ -269,32 +338,33 @@ enum ModelCatalogDeclarations {
         RawCatalogRecord(harness: "claude-code", rawID: "fable", displayName: "Fable", providerHint: "anthropic"),
     ]
 
-    /// Codex's GPT-5.6 line (ticket D2): three variants × base/-fast/-pro, plus
-    /// Astra as a dimmed coming-soon row. Astra is absent from every live
-    /// catalog today; the id follows the family's own convention.
-    static let codex: [RawCatalogRecord] = {
-        var out: [RawCatalogRecord] = []
-        for variant in ["sol", "luna", "terra"] {
-            for (suffix, label) in [("", ""), ("-fast", " Fast"), ("-pro", " Pro")] {
-                out.append(RawCatalogRecord(
-                    harness: "codex",
-                    rawID: "gpt-5.6-\(variant)\(suffix)",
-                    displayName: "GPT-5.6 \(variant.prefix(1).uppercased() + variant.dropFirst())\(label)",
-                    providerHint: "openai"
-                ))
-            }
-        }
-        out.append(RawCatalogRecord(
+    /// Astra: a dimmed, non-selectable "coming soon" row the operator asked
+    /// for. It is absent from `models_cache.json` and from every live catalog,
+    /// so **the id is unconfirmed** — it follows the family's convention and is
+    /// a guess. That is safe only because the row cannot be selected; if Astra
+    /// ships, replace this with whatever slug the cache then carries.
+    static let codexComingSoon: [RawCatalogRecord] = [
+        RawCatalogRecord(
             harness: "codex",
             rawID: "gpt-5.6-astra",
             displayName: "GPT-5.6 Astra",
             isComingSoon: true,
             providerHint: "openai"
-        ))
-        return out
-    }()
+        ),
+    ]
 
-    static var all: [RawCatalogRecord] { claudeCode + codex }
+    /// Last resort for codex, used only when `models_cache.json` is unreadable
+    /// *and* neither the disk cache nor the compiled snapshot has any codex
+    /// rows — a fresh machine whose codex has never talked to the service. It
+    /// is deliberately just the current frontier slugs: a fallback should offer
+    /// what the operator would actually launch, not a museum.
+    static let codexFallback: [RawCatalogRecord] = [
+        RawCatalogRecord(harness: "codex", rawID: "gpt-5.6-sol", displayName: "GPT-5.6-Sol", providerHint: "openai"),
+        RawCatalogRecord(harness: "codex", rawID: "gpt-5.6-terra", displayName: "GPT-5.6-Terra", providerHint: "openai"),
+        RawCatalogRecord(harness: "codex", rawID: "gpt-5.6-luna", displayName: "GPT-5.6-Luna", providerHint: "openai"),
+    ]
+
+    static var all: [RawCatalogRecord] { claudeCode + codexComingSoon }
 }
 
 // MARK: - Command runner seam
@@ -305,6 +375,20 @@ enum ModelCatalogDeclarations {
 /// exit, or a timeout.
 protocol ModelCatalogCommandRunning {
     func run(tool: String, arguments: [String], timeout: TimeInterval) -> String?
+}
+
+/// Read seam for catalogs a harness caches on disk instead of printing
+/// (codex). Read-only by construction: there is no write method.
+protocol ModelCatalogFileReading {
+    func contents(atPath path: String) -> String?
+}
+
+struct FileManagerCatalogReader: ModelCatalogFileReading {
+    func contents(atPath path: String) -> String? {
+        guard let data = FileManager.default.contents(atPath: path),
+              let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
+        return text
+    }
 }
 
 /// Production runner.
@@ -428,13 +512,30 @@ struct ModelCatalogEnumerator {
         Command(harness: "grok", tool: "grok", arguments: ["models"], parse: GrokModelsParser.parse),
     ]
 
+    /// Catalogs a harness caches on disk rather than printing.
+    struct FileSource {
+        let harness: String
+        let path: String
+        let parse: (String) -> [RawCatalogRecord]
+    }
+
+    static var fileSources: [FileSource] {
+        [FileSource(harness: "codex", path: CodexModelsCacheParser.defaultPath, parse: CodexModelsCacheParser.parse)]
+    }
+
     let runner: ModelCatalogCommandRunning
+    let reader: ModelCatalogFileReading
     /// Per-command budget. Generous because these CLIs cold-start a JS runtime;
     /// still bounded, and never on a UI path.
     let timeout: TimeInterval
 
-    init(runner: ModelCatalogCommandRunning, timeout: TimeInterval = 20) {
+    init(
+        runner: ModelCatalogCommandRunning,
+        reader: ModelCatalogFileReading = FileManagerCatalogReader(),
+        timeout: TimeInterval = 20
+    ) {
         self.runner = runner
+        self.reader = reader
         self.timeout = timeout
     }
 
@@ -448,28 +549,47 @@ struct ModelCatalogEnumerator {
         return records.isEmpty ? nil : records
     }
 
+    /// Records for one file-backed harness, or `nil` when the file is missing
+    /// or unparseable.
+    func enumerate(_ source: FileSource) -> [RawCatalogRecord]? {
+        guard let text = reader.contents(atPath: source.path) else { return nil }
+        let records = source.parse(text)
+        return records.isEmpty ? nil : records
+    }
+
     /// Every enumerable harness, keyed by harness. Missing keys are failures.
     func enumerateAll() -> [String: [RawCatalogRecord]] {
         var out: [String: [RawCatalogRecord]] = [:]
         for command in Self.commands {
             if let records = enumerate(command) { out[command.harness] = records }
         }
+        for source in Self.fileSources {
+            if let records = enumerate(source) { out[source.harness] = records }
+        }
         return out
     }
 
     /// Merge freshly enumerated harnesses over a previous record set, keeping
     /// the previous rows for any harness that failed this pass, and re-adding
-    /// the declared harnesses. This is the degradation rule: a refresh can only
+    /// the declared rows. This is the degradation rule: a refresh can only
     /// improve the catalog, never shrink it because a CLI was slow once.
+    ///
+    /// The codex fallback is the one exception to "declared rows are always
+    /// added": it applies only when no codex rows survive from either side, so
+    /// a machine whose codex has never cached a catalog still offers something,
+    /// while every machine that has one uses the real list.
     static func merged(
         live: [String: [RawCatalogRecord]],
         previous: [RawCatalogRecord]
     ) -> [RawCatalogRecord] {
         var byHarness: [String: [RawCatalogRecord]] = [:]
-        for record in previous where !isDeclared(record.harness) {
+        for record in previous where !isDeclared(record) {
             byHarness[record.harness, default: []].append(record)
         }
         for (harness, records) in live { byHarness[harness] = records }
+        if (byHarness["codex"] ?? []).isEmpty {
+            byHarness["codex"] = ModelCatalogDeclarations.codexFallback
+        }
         // Stable order so the cache and the committed snapshot are diffable.
         let enumerated = byHarness.keys.sorted().flatMap {
             (byHarness[$0] ?? []).sorted { $0.rawID < $1.rawID }
@@ -477,7 +597,9 @@ struct ModelCatalogEnumerator {
         return ModelCatalogDeclarations.all + enumerated
     }
 
-    static func isDeclared(_ harness: String) -> Bool {
-        harness == "claude-code" || harness == "codex"
+    /// A row that comes from `ModelCatalogDeclarations.all` rather than from a
+    /// publisher, and so is re-added on every merge instead of carried over.
+    static func isDeclared(_ record: RawCatalogRecord) -> Bool {
+        record.harness == "claude-code" || record.isComingSoon
     }
 }

@@ -91,8 +91,15 @@ struct RawCatalogRecord: Equatable, Codable {
     var contextWindow: Int?
     /// What this harness says about the model's effort levels.
     var efforts: ModelEffortSupport
+    /// The level this harness picks when the operator does not, `""` when the
+    /// harness publishes none. Kimi and Codex both publish one, and they differ
+    /// per model (Codex defaults Sol to `low` and Terra to `medium`).
+    var defaultEffort: String
     /// Declared-but-unreleased (Codex's Astra). Dimmed, non-selectable.
     var isComingSoon: Bool
+    /// The model the publisher says to move to, `""` when not deprecated.
+    /// Codex ships this on `gpt-5.4` and `gpt-5.4-mini`.
+    var upgradeTo: String
     /// Provider for rows whose `rawID` carries no namespace (`k3`, `opus`).
     /// Ignored when `rawID` is namespaced.
     var providerHint: String
@@ -103,7 +110,9 @@ struct RawCatalogRecord: Equatable, Codable {
         displayName: String = "",
         contextWindow: Int? = nil,
         efforts: ModelEffortSupport = .unspecified,
+        defaultEffort: String = "",
         isComingSoon: Bool = false,
+        upgradeTo: String = "",
         providerHint: String = ""
     ) {
         self.harness = harness
@@ -111,7 +120,9 @@ struct RawCatalogRecord: Equatable, Codable {
         self.displayName = displayName
         self.contextWindow = contextWindow
         self.efforts = efforts
+        self.defaultEffort = defaultEffort
         self.isComingSoon = isComingSoon
+        self.upgradeTo = upgradeTo
         self.providerHint = providerHint
     }
 
@@ -119,7 +130,8 @@ struct RawCatalogRecord: Equatable, Codable {
     // failing the whole decode: a corrupt cache must degrade, never throw into
     // a picker-open path.
     enum CodingKeys: String, CodingKey {
-        case harness, rawID, displayName, contextWindow, efforts, isComingSoon, providerHint
+        case harness, rawID, displayName, contextWindow, efforts, defaultEffort
+        case isComingSoon, upgradeTo, providerHint
     }
 
     init(from decoder: Decoder) throws {
@@ -129,7 +141,9 @@ struct RawCatalogRecord: Equatable, Codable {
         displayName = (try? c.decode(String.self, forKey: .displayName)) ?? ""
         contextWindow = try? c.decodeIfPresent(Int.self, forKey: .contextWindow)
         efforts = ModelEffortSupport.decode((try? c.decode(String.self, forKey: .efforts)) ?? "-")
+        defaultEffort = (try? c.decode(String.self, forKey: .defaultEffort)) ?? ""
         isComingSoon = (try? c.decode(Bool.self, forKey: .isComingSoon)) ?? false
+        upgradeTo = (try? c.decode(String.self, forKey: .upgradeTo)) ?? ""
         providerHint = (try? c.decode(String.self, forKey: .providerHint)) ?? ""
     }
 
@@ -140,7 +154,9 @@ struct RawCatalogRecord: Equatable, Codable {
         try c.encode(displayName, forKey: .displayName)
         try c.encodeIfPresent(contextWindow, forKey: .contextWindow)
         try c.encode(efforts.encoded, forKey: .efforts)
+        try c.encode(defaultEffort, forKey: .defaultEffort)
         try c.encode(isComingSoon, forKey: .isComingSoon)
+        try c.encode(upgradeTo, forKey: .upgradeTo)
         try c.encode(providerHint, forKey: .providerHint)
     }
 }
@@ -356,10 +372,13 @@ struct ModelCatalogIndex: Equatable {
     private let harnessesByKey: [String: [String]]
     private let flagValuesByKey: [String: [String: String]]
     private let effortsByKey: [String: [String: ModelEffortSupport]]
+    private let defaultEffortsByKey: [String: [String: String]]
+    private let upgradeByKey: [String: String]
 
     static let empty = ModelCatalogIndex(
         source: .empty, generatedAt: nil, providers: [],
-        modelsByProvider: [:], harnessesByKey: [:], flagValuesByKey: [:], effortsByKey: [:]
+        modelsByProvider: [:], harnessesByKey: [:], flagValuesByKey: [:], effortsByKey: [:],
+        defaultEffortsByKey: [:], upgradeByKey: [:]
     )
 
     fileprivate init(
@@ -369,7 +388,9 @@ struct ModelCatalogIndex: Equatable {
         modelsByProvider: [String: [CatalogModel]],
         harnessesByKey: [String: [String]],
         flagValuesByKey: [String: [String: String]],
-        effortsByKey: [String: [String: ModelEffortSupport]]
+        effortsByKey: [String: [String: ModelEffortSupport]],
+        defaultEffortsByKey: [String: [String: String]],
+        upgradeByKey: [String: String]
     ) {
         self.source = source
         self.generatedAt = generatedAt
@@ -378,6 +399,8 @@ struct ModelCatalogIndex: Equatable {
         self.harnessesByKey = harnessesByKey
         self.flagValuesByKey = flagValuesByKey
         self.effortsByKey = effortsByKey
+        self.defaultEffortsByKey = defaultEffortsByKey
+        self.upgradeByKey = upgradeByKey
     }
 
     var isEmpty: Bool { providers.isEmpty }
@@ -403,6 +426,22 @@ struct ModelCatalogIndex: Equatable {
     /// can fall back to the harness manifest's own values.
     func effortSupport(for model: CatalogModel, harness: String) -> ModelEffortSupport {
         effortsByKey[ModelCatalogIdentity.key(provider: model.provider, id: model.id)]?[harness] ?? .unspecified
+    }
+
+    /// The effort level `harness` itself picks for this model when the operator
+    /// does not — Codex defaults Sol to `low` and Terra to `medium`, Kimi
+    /// defaults both K3 aliases to `high`. `nil` when the harness publishes no
+    /// default; the caller then falls back to the harness manifest.
+    func defaultEffort(for model: CatalogModel, harness: String) -> String? {
+        let value = defaultEffortsByKey[ModelCatalogIdentity.key(provider: model.provider, id: model.id)]?[harness]
+        return (value?.isEmpty ?? true) ? nil : value
+    }
+
+    /// The model the publisher says to move to, for a model it is deprecating
+    /// (`gpt-5.4` → `gpt-5.6-terra`). `nil` for everything current.
+    func upgradeTarget(for model: CatalogModel) -> String? {
+        let value = upgradeByKey[ModelCatalogIdentity.key(provider: model.provider, id: model.id)]
+        return (value?.isEmpty ?? true) ? nil : value
     }
 
     func model(provider: String, id: String) -> CatalogModel? {
@@ -439,6 +478,8 @@ enum ModelCatalogBuilder {
         var harnessesByKey: [String: [String]] = [:]
         var flagValuesByKey: [String: [String: String]] = [:]
         var effortsByKey: [String: [String: ModelEffortSupport]] = [:]
+        var defaultEffortsByKey: [String: [String: String]] = [:]
+        var upgradeByKey: [String: String] = [:]
 
         for (key, rawGroup) in groups {
             guard let (provider, id) = identity[key] else { continue }
@@ -461,6 +502,7 @@ enum ModelCatalogBuilder {
             // the shallower spelling: it is the direct route, not the gateway.
             var flagValues: [String: String] = [:]
             var efforts: [String: ModelEffortSupport] = [:]
+            var defaultEfforts: [String: String] = [:]
             for record in group {
                 let existing = flagValues[record.harness]
                 if existing == nil || segmentCount(record.rawID) < segmentCount(existing!) {
@@ -468,6 +510,12 @@ enum ModelCatalogBuilder {
                 }
                 if efforts[record.harness] == nil || efforts[record.harness] == .unspecified {
                     efforts[record.harness] = record.efforts
+                }
+                if !record.defaultEffort.isEmpty, (defaultEfforts[record.harness] ?? "").isEmpty {
+                    defaultEfforts[record.harness] = record.defaultEffort
+                }
+                if !record.upgradeTo.isEmpty, (upgradeByKey[key] ?? "").isEmpty {
+                    upgradeByKey[key] = record.upgradeTo
                 }
             }
 
@@ -498,6 +546,7 @@ enum ModelCatalogBuilder {
             harnessesByKey[key] = ordered
             flagValuesByKey[key] = flagValues
             effortsByKey[key] = efforts
+            defaultEffortsByKey[key] = defaultEfforts
         }
 
         for (provider, models) in modelsByProvider {
@@ -513,7 +562,9 @@ enum ModelCatalogBuilder {
             modelsByProvider: modelsByProvider,
             harnessesByKey: harnessesByKey,
             flagValuesByKey: flagValuesByKey,
-            effortsByKey: effortsByKey
+            effortsByKey: effortsByKey,
+            defaultEffortsByKey: defaultEffortsByKey,
+            upgradeByKey: upgradeByKey
         )
     }
 
@@ -548,16 +599,18 @@ enum ModelCatalogBuilder {
 /// Tab-separated codec shared by the compiled snapshot and the disk cache, so
 /// the two can never drift into different shapes. One record per line:
 ///
-///     harness \t rawID \t displayName \t context \t efforts \t flags \t providerHint
+///     harness, rawID, displayName, context, efforts, flags, providerHint,
+///     defaultEffort, upgradeTo
 ///
 /// `efforts` is `-` (unspecified), `0` (explicitly none), or a comma list.
-/// `flags` is empty or `soon`. Blank lines and `#` comments are skipped, so a
-/// generated file can carry a provenance header.
+/// `flags` is empty or `soon`. Trailing columns are optional, so a cache
+/// written by an older build still decodes. Blank lines and `#` comments are
+/// skipped, so a generated file can carry a provenance header.
 enum ModelCatalogRecordCodec {
 
     static func encode(_ records: [RawCatalogRecord]) -> String {
         records.map { r in
-            [
+            var fields = [
                 r.harness,
                 r.rawID,
                 r.displayName,
@@ -565,7 +618,16 @@ enum ModelCatalogRecordCodec {
                 r.efforts.encoded,
                 r.isComingSoon ? "soon" : "",
                 r.providerHint,
-            ].joined(separator: "\t")
+                r.defaultEffort,
+                r.upgradeTo,
+            ]
+            // Trailing empties are dropped. Decode treats a missing trailing
+            // column as its default, so this is lossless — and it keeps a
+            // schema addition from rewriting all ~1,400 lines of the committed
+            // snapshot, which is the difference between a reviewable diff and
+            // an unreadable one.
+            while fields.count > 2, fields[fields.count - 1].isEmpty { fields.removeLast() }
+            return fields.joined(separator: "\t")
         }.joined(separator: "\n")
     }
 
@@ -581,7 +643,9 @@ enum ModelCatalogRecordCodec {
                 displayName: f.count > 2 ? f[2] : "",
                 contextWindow: f.count > 3 ? Int(f[3]) : nil,
                 efforts: ModelEffortSupport.decode(f.count > 4 ? f[4] : "-"),
+                defaultEffort: f.count > 7 ? f[7] : "",
                 isComingSoon: f.count > 5 && f[5] == "soon",
+                upgradeTo: f.count > 8 ? f[8] : "",
                 providerHint: f.count > 6 ? f[6] : ""
             ))
         }

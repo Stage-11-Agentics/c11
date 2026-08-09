@@ -23,6 +23,7 @@ struct ModelCatalogSnapshotGen {
         ("omp", "omp-models.txt", OmpModelsParser.parse),
         ("kimi", "kimi-provider-list.json", KimiProviderListParser.parse),
         ("grok", "grok-models.txt", GrokModelsParser.parse),
+        ("codex", "codex-models-cache.json", CodexModelsCacheParser.parse),
     ]
 
     static func main() {

@@ -37,6 +37,7 @@ final class ModelCatalogTests: XCTestCase {
             "omp": OmpModelsParser.parse(try fixture("omp-models.txt")),
             "kimi": KimiProviderListParser.parse(try fixture("kimi-provider-list.json")),
             "grok": GrokModelsParser.parse(try fixture("grok-models.txt")),
+            "codex": CodexModelsCacheParser.parse(try fixture("codex-models-cache.json")),
         ]
         return ModelCatalogBuilder.build(
             records: ModelCatalogEnumerator.merged(live: live, previous: []),
@@ -114,13 +115,95 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(k3.displayName, "K3")
         XCTAssertEqual(k3.contextWindow, 1_048_576)
         XCTAssertEqual(k3.efforts, .values(["low", "high", "max"]))
+        XCTAssertEqual(k3.defaultEffort, "high")
 
         // The two K2.7 aliases are `always_thinking` and publish no
         // supportEfforts: an explicit "no effort control", not "unknown".
         let k27 = try XCTUnwrap(records.first { $0.rawID == "kimi-for-coding" })
         XCTAssertEqual(k27.displayName, "K2.7 Coding")
         XCTAssertEqual(k27.contextWindow, 262_144)
-        XCTAssertEqual(k27.efforts, .none)
+        XCTAssertEqual(k27.efforts, ModelEffortSupport.none)
+        XCTAssertEqual(k27.defaultEffort, "")
+    }
+
+    // MARK: - codex (read from ~/.codex/models_cache.json, never written)
+
+    func testCodexCacheParserReadsTheAuthoritativeSlugList() throws {
+        let records = CodexModelsCacheParser.parse(try fixture("codex-models-cache.json"))
+        // Exactly what the codex CLI offers today. Notably absent: any `-fast`
+        // or `-pro` variant. Those live in OpenAI's API catalog (which is what
+        // opencode enumerates) and are not codex models; declaring them would
+        // have put unlaunchable rows under the operator's main harness.
+        XCTAssertEqual(records.map(\.rawID), [
+            "gpt-5.6-sol", "gpt-5.6-sol-wm", "gpt-5.6-terra", "gpt-5.6-luna",
+            "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark",
+        ])
+        XCTAssertFalse(records.contains { $0.rawID.hasSuffix("-fast") || $0.rawID.hasSuffix("-pro") })
+        XCTAssertTrue(records.allSatisfy { $0.harness == "codex" && $0.providerHint == "openai" })
+    }
+
+    func testCodexCacheParserExcludesTheInternalReviewModel() throws {
+        let text = try fixture("codex-models-cache.json")
+        XCTAssertTrue(text.contains("codex-auto-review"), "fixture should still carry the row we filter")
+        XCTAssertFalse(CodexModelsCacheParser.parse(text).contains { $0.rawID == "codex-auto-review" })
+        // `visibility: "hide"` is not the filter: it would also drop
+        // gpt-5.6-sol-wm, which is an operator choice.
+        XCTAssertTrue(CodexModelsCacheParser.parse(text).contains { $0.rawID == "gpt-5.6-sol-wm" })
+    }
+
+    func testCodexCacheParserReadsPerModelEffortLaddersAndDefaults() throws {
+        let records = CodexModelsCacheParser.parse(try fixture("codex-models-cache.json"))
+        let sol = try XCTUnwrap(records.first { $0.rawID == "gpt-5.6-sol" })
+        XCTAssertEqual(sol.displayName, "GPT-5.6-Sol")
+        XCTAssertEqual(sol.contextWindow, 272_000)
+        XCTAssertEqual(sol.efforts, .values(["low", "medium", "high", "xhigh", "max", "ultra"]))
+        XCTAssertEqual(sol.defaultEffort, "low")
+
+        // The ladders genuinely differ per model, which a hardcoded list could
+        // not have expressed: Luna stops at `max`, the 5.x line at `xhigh`.
+        XCTAssertEqual(
+            records.first { $0.rawID == "gpt-5.6-luna" }?.efforts,
+            .values(["low", "medium", "high", "xhigh", "max"])
+        )
+        XCTAssertEqual(
+            records.first { $0.rawID == "gpt-5.5" }?.efforts,
+            .values(["low", "medium", "high", "xhigh"])
+        )
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-terra" }?.defaultEffort, "medium")
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.3-codex-spark" }?.defaultEffort, "high")
+    }
+
+    func testCodexCacheParserReadsDeprecationUpgrades() throws {
+        let records = CodexModelsCacheParser.parse(try fixture("codex-models-cache.json"))
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.4" }?.upgradeTo, "gpt-5.6-terra")
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.4-mini" }?.upgradeTo, "gpt-5.6-luna")
+        XCTAssertEqual(records.first { $0.rawID == "gpt-5.6-sol" }?.upgradeTo, "")
+    }
+
+    func testCodexCacheParserSurvivesAMissingOrJunkFile() {
+        XCTAssertTrue(CodexModelsCacheParser.parse("").isEmpty)
+        XCTAssertTrue(CodexModelsCacheParser.parse("no such file").isEmpty)
+        XCTAssertTrue(CodexModelsCacheParser.parse(#"{"models": "not an array"}"#).isEmpty)
+        XCTAssertTrue(CodexModelsCacheParser.parse(#"{"models": [{"display_name": "no slug"}]}"#).isEmpty)
+    }
+
+    func testCodexFallsBackToFrontierSlugsOnlyWhenNothingElseHasCodexRows() {
+        // Fresh machine: no cache file, no previous rows.
+        let bare = ModelCatalogEnumerator.merged(live: [:], previous: [])
+        XCTAssertEqual(
+            bare.filter { $0.harness == "codex" && !$0.isComingSoon }.map(\.rawID),
+            ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
+        )
+        // Snapshot or cache already has codex rows: the fallback stays out of
+        // the way rather than re-adding models the publisher may have retired.
+        let carried = ModelCatalogEnumerator.merged(
+            live: [:],
+            previous: [RawCatalogRecord(harness: "codex", rawID: "gpt-5.7-nova", providerHint: "openai")]
+        )
+        XCTAssertEqual(
+            carried.filter { $0.harness == "codex" && !$0.isComingSoon }.map(\.rawID),
+            ["gpt-5.7-nova"]
+        )
     }
 
     func testKimiParserToleratesLeadingShellNoise() throws {
@@ -301,39 +384,77 @@ final class ModelCatalogTests: XCTestCase {
     func testUnspecifiedEffortIsDistinctFromExplicitlyNone() throws {
         let index = try fixtureIndex()
         let sol = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-sol"))
-        // codex publishes nothing per model: fall back to the manifest's values.
-        XCTAssertEqual(index.effortSupport(for: sol, harness: "codex"), .unspecified)
+        // pi publishes a yes/no thinking flag, not levels: nothing to say, so
+        // fall back to pi's manifest values.
+        XCTAssertEqual(index.effortSupport(for: sol, harness: "pi"), .unspecified)
         // omp publishes `-` for it: no levels on that route.
         XCTAssertEqual(index.effortSupport(for: sol, harness: "omp"), ModelEffortSupport.none)
         // A harness that never saw the model reports nothing rather than lying.
         XCTAssertEqual(index.effortSupport(for: sol, harness: "grok"), .unspecified)
+        // Claude's families are declared with no per-model levels at all.
+        let opus = try XCTUnwrap(index.model(provider: "anthropic", id: "opus"))
+        XCTAssertEqual(index.effortSupport(for: opus, harness: "claude-code"), .unspecified)
         XCTAssertEqual(ModelEffortSupport.none.levels, [])
         XCTAssertEqual(ModelEffortSupport.unspecified.levels, [])
     }
 
     // MARK: - Declared catalogs
 
-    func testCodexDeclaresNineGPT56VariantsPlusComingSoonAstra() throws {
+    func testOnlyCodexsRealSlugsOfferCodexAsAHarness() throws {
         let index = try fixtureIndex()
-        let expected = ["sol", "luna", "terra"].flatMap { v in
-            ["", "-fast", "-pro"].map { "gpt-5.6-\(v)\($0)" }
-        }
-        for id in expected {
+        for id in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.3-codex-spark"] {
             let model = try XCTUnwrap(index.model(provider: "openai", id: id), id)
-            XCTAssertFalse(model.isComingSoon, id)
-            XCTAssertTrue(index.harnesses(forModel: model).contains("codex"), id)
+            XCTAssertEqual(model.harness, "codex", id)
         }
+        // opencode and pi carry the API-only `-fast`/`-pro` ids, so they remain
+        // selectable models — just never under codex.
+        let fast = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-sol-fast"))
+        XCTAssertFalse(index.harnesses(forModel: fast).contains("codex"))
+        XCTAssertNil(index.model(provider: "openai", id: "codex-auto-review"))
+    }
+
+    func testAstraIsTheOneComingSoonRow() throws {
+        let index = try fixtureIndex()
         let astra = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-astra"))
         XCTAssertTrue(astra.isComingSoon)
+        XCTAssertEqual(index.harnesses(forModel: astra), ["codex"])
         XCTAssertEqual(index.allModels.filter(\.isComingSoon).map(\.id), ["gpt-5.6-astra"])
     }
 
-    func testDeclaredHarnessesAreAlwaysPresentEvenWhenNothingEnumerates() {
+    func testCodexEffortLaddersAndDefaultsSurviveTheMerge() throws {
+        let index = try fixtureIndex()
+        let sol = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-sol"))
+        XCTAssertEqual(sol.supportedEfforts, ["low", "medium", "high", "xhigh", "max", "ultra"])
+        XCTAssertEqual(index.defaultEffort(for: sol, harness: "codex"), "low")
+        XCTAssertEqual(index.defaultEffort(for: sol, harness: "opencode"), nil)
+        XCTAssertEqual(sol.contextWindow, 272_000)
+
+        let terra = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-terra"))
+        XCTAssertEqual(index.defaultEffort(for: terra, harness: "codex"), "medium")
+
+        let k3 = try XCTUnwrap(index.model(provider: "moonshot", id: "k3"))
+        XCTAssertEqual(index.defaultEffort(for: k3, harness: "kimi"), "high")
+        let k27 = try XCTUnwrap(index.model(provider: "moonshot", id: "kimi-for-coding"))
+        XCTAssertNil(index.defaultEffort(for: k27, harness: "kimi"))
+    }
+
+    func testDeprecatedCodexModelsCarryTheirUpgradeTarget() throws {
+        let index = try fixtureIndex()
+        let old = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.4"))
+        XCTAssertEqual(index.upgradeTarget(for: old), "gpt-5.6-terra")
+        let mini = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.4-mini"))
+        XCTAssertEqual(index.upgradeTarget(for: mini), "gpt-5.6-luna")
+        let current = try XCTUnwrap(index.model(provider: "openai", id: "gpt-5.6-sol"))
+        XCTAssertNil(index.upgradeTarget(for: current))
+    }
+
+    func testClaudeFamiliesAndAstraSurviveWhenNothingEnumerates() {
         let records = ModelCatalogEnumerator.merged(live: [:], previous: [])
         XCTAssertEqual(Set(records.map(\.harness)), ["claude-code", "codex"])
         let index = ModelCatalogBuilder.build(records: records, source: .live)
         XCTAssertEqual(index.providers, ["openai", "anthropic"])
         XCTAssertNotNil(index.model(provider: "anthropic", id: "opus"))
+        XCTAssertNotNil(index.model(provider: "openai", id: "gpt-5.6-astra"))
     }
 
     // MARK: - Degradation
@@ -356,13 +477,13 @@ final class ModelCatalogTests: XCTestCase {
 
     func testEnumeratorTreatsMissingBinaryTimeoutAndGarbageAsNoData() {
         let runner = StubRunner(responses: [:])
-        let enumerator = ModelCatalogEnumerator(runner: runner, timeout: 0.1)
+        let enumerator = ModelCatalogEnumerator(runner: runner, reader: StubReader(), timeout: 0.1)
         XCTAssertTrue(enumerator.enumerateAll().isEmpty)
 
         let garbage = StubRunner(responses: ModelCatalogEnumerator.commands.reduce(into: [:]) {
             $0[$1.tool] = "zsh: command not found\n"
         })
-        XCTAssertTrue(ModelCatalogEnumerator(runner: garbage).enumerateAll().isEmpty)
+        XCTAssertTrue(ModelCatalogEnumerator(runner: garbage, reader: StubReader()).enumerateAll().isEmpty)
     }
 
     func testStoreFallsBackToTheSnapshotWhenNoCLIAnswers() throws {
@@ -371,6 +492,7 @@ final class ModelCatalogTests: XCTestCase {
         let store = ModelCatalogStore(
             directory: dir,
             runner: StubRunner(responses: [:]),
+            reader: StubReader(),
             snapshot: snapshot,
             snapshotGeneratedAt: nil,
             loadCacheAsynchronously: false
@@ -405,7 +527,7 @@ final class ModelCatalogTests: XCTestCase {
             "grok": try fixture("grok-models.txt"),
         ])
         let store = ModelCatalogStore(
-            directory: dir, runner: runner, snapshot: [], snapshotGeneratedAt: nil,
+            directory: dir, runner: runner, reader: StubReader(), snapshot: [], snapshotGeneratedAt: nil,
             loadCacheAsynchronously: false
         )
         XCTAssertTrue(store.index.isEmpty)
@@ -460,6 +582,7 @@ final class ModelCatalogTests: XCTestCase {
         let store = ModelCatalogStore(
             directory: dir,
             runner: StubRunner(responses: ["grok": try fixture("grok-models.txt")]),
+            reader: StubReader(),
             snapshot: [],
             snapshotGeneratedAt: nil,
             loadCacheAsynchronously: false
@@ -510,13 +633,26 @@ final class ModelCatalogTests: XCTestCase {
         let records = [
             RawCatalogRecord(harness: "kimi", rawID: "k3", displayName: "K3",
                              contextWindow: 1_048_576, efforts: .values(["low", "high", "max"]),
-                             providerHint: "moonshot"),
+                             defaultEffort: "high", providerHint: "moonshot"),
             RawCatalogRecord(harness: "kimi", rawID: "kimi-for-coding", displayName: "K2.7 Coding",
                              contextWindow: 262_144, efforts: .none, providerHint: "moonshot"),
+            RawCatalogRecord(harness: "codex", rawID: "gpt-5.4", displayName: "GPT-5.4",
+                             contextWindow: 272_000, efforts: .values(["low", "medium", "high", "xhigh"]),
+                             defaultEffort: "medium", upgradeTo: "gpt-5.6-terra", providerHint: "openai"),
             RawCatalogRecord(harness: "codex", rawID: "gpt-5.6-astra", displayName: "GPT-5.6 Astra",
                              efforts: .unspecified, isComingSoon: true, providerHint: "openai"),
         ]
         XCTAssertEqual(ModelCatalogRecordCodec.decode(ModelCatalogRecordCodec.encode(records)), records)
+    }
+
+    func testACacheWrittenByAnOlderBuildStillDecodes() {
+        // Trailing columns were added after the first shipped format; a cache
+        // missing them must degrade to defaults, not be discarded.
+        let old = ModelCatalogRecordCodec.decode("kimi\tk3\tK3\t1048576\tlow,high,max\t\tmoonshot")
+        XCTAssertEqual(old.count, 1)
+        XCTAssertEqual(old.first?.efforts, .values(["low", "high", "max"]))
+        XCTAssertEqual(old.first?.defaultEffort, "")
+        XCTAssertEqual(old.first?.upgradeTo, "")
     }
 
     func testRecordCodecSkipsCommentsBlanksAndTruncatedRows() {
@@ -544,11 +680,24 @@ final class ModelCatalogTests: XCTestCase {
                 "omp": OmpModelsParser.parse(try fixture("omp-models.txt")),
                 "kimi": KimiProviderListParser.parse(try fixture("kimi-provider-list.json")),
                 "grok": GrokModelsParser.parse(try fixture("grok-models.txt")),
+                "codex": CodexModelsCacheParser.parse(try fixture("codex-models-cache.json")),
             ],
             previous: []
         )
         XCTAssertEqual(ModelCatalogSnapshot.records, expected)
         XCTAssertNotNil(ModelCatalogSnapshot.generatedAt)
+    }
+
+    func testTheCommittedCodexFixtureCarriesNoVendorPromptText() throws {
+        // The generator drops `base_instructions` and `model_messages` on the
+        // way in: those are OpenAI's Codex system prompts, ~330 KB the catalog
+        // never reads and that must not be redistributed from a public repo.
+        let text = try fixture("codex-models-cache.json")
+        XCTAssertFalse(text.contains("base_instructions"))
+        XCTAssertFalse(text.contains("model_messages"))
+        XCTAssertFalse(text.contains("You are Codex"))
+        // Everything the parser reads is still there.
+        XCTAssertEqual(CodexModelsCacheParser.parse(text).count, 8)
     }
 
     func testTokenCountParsesPublisherAbbreviations() {
@@ -579,5 +728,13 @@ final class ModelCatalogTests: XCTestCase {
         func run(tool: String, arguments: [String], timeout: TimeInterval) -> String? {
             responses[tool]
         }
+    }
+
+    /// Read seam stub. The default is an empty map, which stands in for "this
+    /// machine has no codex cache" and keeps every test off the operator's real
+    /// `~/.codex/models_cache.json`.
+    private struct StubReader: ModelCatalogFileReading {
+        var files: [String: String] = [:]
+        func contents(atPath path: String) -> String? { files[path] }
     }
 }

@@ -2530,6 +2530,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Register fenced code renderers for the markdown panel content pipeline.
         FencedCodeRendererRegistry.shared.register(MermaidRenderer.shared)
 
+        // C11-203 Part D: build the model catalog index off-main so the first
+        // agent-config editor open finds it ready. Parsing the compiled
+        // snapshot is ~13 ms in Release and ~30 ms in Debug; cheap, but not on
+        // a UI path. No subprocesses here — live re-enumeration is a separate,
+        // explicitly-triggered refresh.
+        ModelCatalogStore.warm()
+
         // C11-25: begin per-surface CPU/RSS sampling. Background timer; the
         // sidebar reads samples via `SurfaceMetricsSampler.shared.sample(...)`
         // during body eval. Idempotent — safe across UI tests that
@@ -7826,9 +7833,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     enum SavedConfigLaunchResult {
         case launched
         case noWorkspace
-        /// The recipe couldn't launch: an empty resolved command, or an
-        /// unresolvable/unknown harness. `launchAgentSurface` declined it.
-        case cannotLaunch
+        /// The recipe couldn't launch. Carries the launch path's own decline
+        /// (C11-203 A1) so the editor states the actual reason — an empty
+        /// resolved command, a surface that wouldn't open, an unknown harness —
+        /// instead of one generic sentence for all three.
+        case cannotLaunch(Workspace.AgentLaunchDecline)
     }
 
     /// C11-182 seam: launch a chosen saved config as a new agent surface in the
@@ -7843,8 +7852,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
               let pane = workspace.bonsplitController.focusedPaneId else {
             return .noWorkspace
         }
-        return workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
-            ? .launched : .cannotLaunch
+        switch workspace.attemptAgentSurfaceLaunch(
+            inPane: pane,
+            explicitConfig: saved,
+            source: .configEditor
+        ) {
+        case .launched:
+            return .launched
+        case .declined(let reason):
+            return .cannotLaunch(reason)
+        }
     }
 
     func refreshMenuBarExtraForDebug() {

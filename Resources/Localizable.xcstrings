@@ -707,6 +707,292 @@
         }
       }
     },
+    "agentConfigEditor.default.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't set the default — please try again."
+          }
+        }
+      }
+    },
+    "agentConfigEditor.default.unlaunchable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That config can't launch as written, so it can't be the default — give it a command first."
+          }
+        }
+      }
+    },
+    "agentConfigEditor.effort.inheritResolved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "inherit · %@"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.effort.kimiHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kimi has no effort flag — rides %@ in the launch environment"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.harness.alternate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "also serves it"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.harness.default": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "default for this model"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.harness.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the last question — which shell runs it"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.harness.onlyOne": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the only harness that serves this model"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.launch.declined": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved, but it didn't launch. %@"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.comingSoon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "coming soon"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.noMatches": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no models match"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.pickProvider": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pick a provider above, or search every catalog from here"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.searchAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "search every provider's models…"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.searchProvider": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "search %lld %@ models…"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.model.upgradeTo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "→ %@"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.newItem": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New item"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provider"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pick the brain — model, effort and harness follow"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.inherit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inherit"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.inheritNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "harness picks its own"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.modelCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld models"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.more": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More…"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.moreCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.provider.overflowRow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld)"
+          }
+        }
+      }
+    },
+    "agentConfigEditor.refusal.customCommandEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Custom config needs a launch command — open Advanced and give it one, or pick a harness that ships its own."
+          }
+        }
+      }
+    },
+    "agentConfigEditor.unsaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unsaved"
+          }
+        }
+      }
+    },
     "agentLaunch.decline.emptyCommand": {
       "extractionState": "manual",
       "localizations": {

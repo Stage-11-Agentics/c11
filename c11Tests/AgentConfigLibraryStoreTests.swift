@@ -71,9 +71,11 @@ final class AgentConfigLibraryStoreTests: XCTestCase {
         XCTAssertNil(json["recent"])
     }
 
-    /// A hand-authored §2.1 fixture: follow-recent default, a blank-slate
-    /// (`replace` + "") config, `field_sources`, and `initial_prompt`/`env`
-    /// overlays. The `systemPrompt` key is camelCase exactly as §2.1 writes it.
+    /// A hand-authored §2.1 fixture carrying a legacy `follow-recent` default, a
+    /// blank-slate (`replace` + "") config, `field_sources`, and
+    /// `initial_prompt`/`env` overlays. The `systemPrompt` key is camelCase
+    /// exactly as §2.1 writes it. C11-203 B2: the retired mode migrates to
+    /// pinned on read, and every other field survives untouched.
     func testAuthoredSchemaFixtureRoundTrips() throws {
         let fixture = """
         {
@@ -105,7 +107,9 @@ final class AgentConfigLibraryStoreTests: XCTestCase {
 
         XCTAssertEqual(file.schemaVersion, 1)
         XCTAssertEqual(file.configs.count, 3)
-        XCTAssertEqual(file.default.mode, .followRecent)
+        // Legacy mode migrated, `config_id` preserved — no heal-to-factory.
+        XCTAssertEqual(file.default.mode, .pinned)
+        XCTAssertEqual(file.default.configId, "01JOPUS")
 
         // Blank-slate case actually decodes: replace + empty text, not nil.
         let greg = try XCTUnwrap(file.configs.first { $0.name == "Gregorovich" })
@@ -168,53 +172,75 @@ final class AgentConfigLibraryStoreTests: XCTestCase {
         XCTAssertNil(seed.config.env)
     }
 
-    func testEffectiveDefaultFollowRecentReturnsRecentConfig() throws {
+    /// C11-203 B2: `recent` is telemetry, not a resolution input. A file whose
+    /// `recent` names a different config still resolves to the pin.
+    func testEffectiveDefaultIgnoresRecent() throws {
         let opus = SavedAgentConfig(id: "OPUS", name: "Opus deep", order: 0,
             config: AgentLaunchConfig(harness: "claude-code", model: "opus", effort: "high"))
         let codex = SavedAgentConfig(id: "CDX", name: "Codex hi", order: 1,
             config: AgentLaunchConfig(harness: "codex", model: "gpt-5.2", effort: "high"))
         let file = AgentConfigLibraryFile(
             configs: [opus, codex],
-            default: AgentConfigDefault(mode: .followRecent, configId: "OPUS"),
+            default: AgentConfigDefault(mode: .pinned, configId: "OPUS"),
             recent: RecentAgentConfig(configId: "CDX", harness: "codex", model: "gpt-5.2")
         )
         try store.write(file)
         let resolved = store.effectiveDefault()
-        XCTAssertEqual(resolved.id, "CDX")
-        XCTAssertEqual(resolved.config.harness, "codex")
+        XCTAssertEqual(resolved.id, "OPUS")
+        XCTAssertEqual(resolved.config.harness, "claude-code")
+        // The record itself is still persisted for `c11 config recent`.
+        XCTAssertEqual(store.current.recent?.configId, "CDX")
     }
 
-    func testEffectiveDefaultFollowRecentNilRecentFallsBackToPinned() throws {
-        let opus = SavedAgentConfig(id: "OPUS", name: "Opus deep", order: 0,
-            config: AgentLaunchConfig(harness: "claude-code", model: "opus"))
-        let file = AgentConfigLibraryFile(
-            configs: [opus],
-            default: AgentConfigDefault(mode: .followRecent, configId: "OPUS"),
-            recent: nil
-        )
-        try store.write(file)
+    /// A legacy on-disk `follow-recent` file resolves to its pinned config and
+    /// keeps every saved config — the migration must never look like corruption.
+    func testLegacyFollowRecentFileMigratesWithoutDataLoss() throws {
+        let fixture = """
+        {
+          "schema_version": 1,
+          "configs": [
+            { "id": "OPUS", "name": "Opus deep", "order": 0, "harness": "claude-code", "model": "opus" },
+            { "id": "CDX", "name": "Codex hi", "order": 1, "harness": "codex", "model": "gpt-5.2" }
+          ],
+          "default": { "mode": "follow-recent", "config_id": "OPUS" },
+          "recent": { "config_id": "CDX", "harness": "codex", "model": "gpt-5.2" }
+        }
+        """.data(using: .utf8)!
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try fixture.write(to: store.fileURL, options: .atomic)
+
+        let file = store.current
+        XCTAssertEqual(file.configs.map(\.id), ["OPUS", "CDX"])   // nothing dropped
+        XCTAssertEqual(file.default.mode, .pinned)
         XCTAssertEqual(store.effectiveDefault().id, "OPUS")
+        XCTAssertEqual(file.recent?.configId, "CDX")               // telemetry kept
+
+        // Re-writing normalizes the mode on disk without touching the pointer.
+        try store.write(file)
+        let raw = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: store.fileURL)) as? [String: Any]
+        )
+        let def = try XCTUnwrap(raw["default"] as? [String: Any])
+        XCTAssertEqual(def["mode"] as? String, "pinned")
+        XCTAssertEqual(def["config_id"] as? String, "OPUS")
     }
 
-    func testEffectiveDefaultFollowRecentSynthesizesWhenConfigMissing() throws {
-        let opus = SavedAgentConfig(id: "OPUS", name: "Opus deep", order: 0,
-            config: AgentLaunchConfig(harness: "claude-code", model: "opus"))
-        // recent points at a config id no longer in the library, but carries axes.
-        let file = AgentConfigLibraryFile(
-            configs: [opus],
-            default: AgentConfigDefault(mode: .followRecent, configId: "OPUS"),
-            recent: RecentAgentConfig(configId: "GONE", harness: "codex", model: "gpt-5.2", effort: "high")
-        )
-        try store.write(file)
-        let resolved = store.effectiveDefault()
-        XCTAssertEqual(resolved.config.harness, "codex")
-        XCTAssertEqual(resolved.config.model, "gpt-5.2")
-        XCTAssertEqual(resolved.config.effort, "high")
-        // Synthesized transient: no library order, blank id (the dangling
-        // recent.config_id is not carried through as a re-resolvable id).
-        XCTAssertEqual(resolved.order, -1)
-        XCTAssertEqual(resolved.id, "")
-        XCTAssertTrue(resolved.name.contains("gpt-5.2"))
+    /// An unknown future mode is treated the same way: pinned, no data loss.
+    func testUnknownDefaultModeMigratesToPinned() throws {
+        let fixture = """
+        {
+          "schema_version": 1,
+          "configs": [
+            { "id": "OPUS", "name": "Opus deep", "order": 0, "harness": "claude-code", "model": "opus" }
+          ],
+          "default": { "mode": "some-future-mode", "config_id": "OPUS" }
+        }
+        """.data(using: .utf8)!
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try fixture.write(to: store.fileURL, options: .atomic)
+        XCTAssertEqual(store.current.configs.count, 1)
+        XCTAssertEqual(store.current.default.mode, .pinned)
+        XCTAssertEqual(store.effectiveDefault().id, "OPUS")
     }
 
     func testEffectiveDefaultPinnedDanglingIdFallsBackToFactory() throws {
@@ -263,6 +289,163 @@ final class AgentConfigLibraryStoreTests: XCTestCase {
         try store.write(file)
         XCTAssertFalse(store.current.hasResolvablePinnedDefault)
         XCTAssertEqual(store.effectiveDefault().name, "Opus deep")  // factory heal
+    }
+
+    // MARK: - C11-203 A2: healing an unlaunchable library
+
+    /// The real specimen captured from the operator's
+    /// `~/Library/Application Support/c11/agent-configs.json` on 2026-08-08: the
+    /// factory seed rewritten to `harness: "custom"` with the model dropped, and
+    /// still pinned — the exact state that left the A button dead. Inlined
+    /// verbatim so the fixture needs no test-bundle resource.
+    private static let corruptSpecimen = """
+    {
+      "configs" : [
+        {
+          "harness" : "custom",
+          "id" : "0000000000AGENTOPUSDEEP001",
+          "name" : "Opus deep",
+          "order" : 0
+        },
+        {
+          "harness" : "omp",
+          "id" : "01KZHX6WJAETWCCQV7PJ74JNBR",
+          "name" : "oh-my-pi",
+          "order" : 1
+        },
+        {
+          "harness" : "codex",
+          "id" : "01KZHXSAYF5BCJ1P6SF6MAME83",
+          "name" : "Codex",
+          "order" : 2
+        }
+      ],
+      "default" : {
+        "config_id" : "0000000000AGENTOPUSDEEP001",
+        "mode" : "pinned"
+      },
+      "recent" : {
+        "config_id" : "0000000000AGENTOPUSDEEP001",
+        "field_sources" : {
+          "effort" : "launch",
+          "model" : "launch"
+        },
+        "harness" : "custom",
+        "observed_at" : "2026-08-06T18:41:21.516Z",
+        "source" : "launch"
+      },
+      "schema_version" : 1
+    }
+    """
+
+    private func writeSpecimen() throws {
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try Data(Self.corruptSpecimen.utf8).write(to: store.fileURL, options: .atomic)
+    }
+
+    /// The specimen's pinned default is unlaunchable as written, which is what
+    /// left the A button silently dead. On load it heals back to the seed recipe
+    /// and resolves to a launchable claude-code launch.
+    func testCorruptFactorySeedHealsOnLoad() throws {
+        try writeSpecimen()
+        let resolved = store.effectiveDefault()
+        XCTAssertEqual(resolved.id, AgentConfigLibraryFile.factorySeedConfigId)
+        XCTAssertEqual(resolved.config.harness, "claude-code")
+        XCTAssertEqual(resolved.config.model, "opus")
+        XCTAssertFalse(resolved.config.isProvablyUnlaunchable)
+        // The operator's other configs and their order are untouched.
+        XCTAssertEqual(store.current.configs.map(\.id), [
+            AgentConfigLibraryFile.factorySeedConfigId,
+            "01KZHX6WJAETWCCQV7PJ74JNBR",
+            "01KZHXSAYF5BCJ1P6SF6MAME83",
+        ])
+        // The operator's name for the seed row survives the recipe repair.
+        XCTAssertEqual(resolved.name, "Opus deep")
+    }
+
+    /// The heal is not a read-only illusion: the next mutation persists it, so a
+    /// second process (the CLI, app-down) reads the repaired recipe too.
+    func testHealPersistsOnNextWrite() throws {
+        try writeSpecimen()
+        try store.recordRecent(RecentAgentConfig(harness: "claude-code"))
+        let reopened = AgentConfigLibraryStore(directory: tempDir)
+        let seed = try XCTUnwrap(reopened.current.configs.first {
+            $0.id == AgentConfigLibraryFile.factorySeedConfigId
+        })
+        XCTAssertEqual(seed.config.harness, "claude-code")
+        XCTAssertEqual(seed.config.model, "opus")
+    }
+
+    /// A seed row the operator deliberately re-pointed at a *launchable* recipe
+    /// is theirs; the heal only fires on the unlaunchable state.
+    func testHealLeavesLaunchableFactorySeedAlone() throws {
+        let edited = SavedAgentConfig(
+            id: AgentConfigLibraryFile.factorySeedConfigId, name: "Sonnet quick", order: 0,
+            config: AgentLaunchConfig(harness: "claude-code", model: "sonnet"))
+        try store.write(AgentConfigLibraryFile(
+            configs: [edited],
+            default: AgentConfigDefault(mode: .pinned, configId: edited.id)))
+        XCTAssertEqual(store.effectiveDefault().config.model, "sonnet")
+        XCTAssertEqual(store.current.configs[0].name, "Sonnet quick")
+    }
+
+    /// An operator-authored unlaunchable config is never rewritten — it stays in
+    /// the library, editable — but it cannot hold the default.
+    func testOperatorAuthoredUnlaunchableConfigIsKeptButNotResolved() throws {
+        let broken = SavedAgentConfig(id: "BROKEN", name: "Aider", order: 0,
+            config: AgentLaunchConfig(harness: "custom"))
+        let good = SavedAgentConfig(id: "GOOD", name: "Codex", order: 1,
+            config: AgentLaunchConfig(harness: "codex"))
+        try store.write(AgentConfigLibraryFile(
+            configs: [broken, good],
+            default: AgentConfigDefault(mode: .pinned, configId: "BROKEN")))
+
+        let file = store.current
+        // Kept verbatim.
+        XCTAssertEqual(file.configs.first { $0.id == "BROKEN" }?.config,
+                       AgentLaunchConfig(harness: "custom"))
+        // But it is not what a plain left-click launches.
+        XCTAssertEqual(file.default.configId, "GOOD")
+        XCTAssertEqual(store.effectiveDefault().id, "GOOD")
+    }
+
+    /// A custom config that carries its own command is launchable, so it keeps
+    /// the pin — the escape hatch still works.
+    func testCustomConfigWithCommandStaysPinned() throws {
+        let aider = SavedAgentConfig(id: "AIDER", name: "Aider", order: 0,
+            config: AgentLaunchConfig(harness: "custom", command: "aider --model sonnet"))
+        try store.write(AgentConfigLibraryFile(
+            configs: [aider],
+            default: AgentConfigDefault(mode: .pinned, configId: "AIDER")))
+        XCTAssertEqual(store.effectiveDefault().id, "AIDER")
+        XCTAssertFalse(aider.config.isProvablyUnlaunchable)
+    }
+
+    /// With nothing launchable to fall back to, the pointer is left alone rather
+    /// than invented — the launch path surfaces the decline (A1).
+    func testAllUnlaunchableLeavesPointerAlone() throws {
+        let broken = SavedAgentConfig(id: "BROKEN", name: "Aider", order: 0,
+            config: AgentLaunchConfig(harness: "custom", command: "   "))
+        try store.write(AgentConfigLibraryFile(
+            configs: [broken],
+            default: AgentConfigDefault(mode: .pinned, configId: "BROKEN")))
+        XCTAssertEqual(store.current.default.configId, "BROKEN")
+        XCTAssertEqual(store.effectiveDefault().id, "BROKEN")
+    }
+
+    func testSetDefaultRefusesUnlaunchableConfig() throws {
+        let good = SavedAgentConfig(id: "GOOD", name: "Codex", order: 0,
+            config: AgentLaunchConfig(harness: "codex"))
+        let broken = SavedAgentConfig(id: "BROKEN", name: "Aider", order: 1,
+            config: AgentLaunchConfig(harness: "custom"))
+        try store.write(AgentConfigLibraryFile(
+            configs: [good, broken],
+            default: AgentConfigDefault(mode: .pinned, configId: "GOOD")))
+        XCTAssertThrowsError(try store.setDefault(configId: "BROKEN")) { error in
+            XCTAssertEqual(error as? AgentConfigLibraryStore.StoreError,
+                           .configUnlaunchable("BROKEN"))
+        }
+        XCTAssertEqual(store.current.default.configId, "GOOD")  // pointer untouched
     }
 
     // MARK: - AC #4: mutators + file-is-the-contract
@@ -332,18 +515,15 @@ final class AgentConfigLibraryStoreTests: XCTestCase {
         }
     }
 
-    func testSetDefaultPinsAndSetModeToggles() throws {
+    func testSetDefaultPins() throws {
         let a = SavedAgentConfig(id: "A", name: "A", order: 0, config: AgentLaunchConfig(harness: "codex"))
         let b = SavedAgentConfig(id: "B", name: "B", order: 1, config: AgentLaunchConfig(harness: "grok"))
         try store.write(AgentConfigLibraryFile(
-            configs: [a, b], default: AgentConfigDefault(mode: .followRecent, configId: "A")))
+            configs: [a, b], default: AgentConfigDefault(mode: .pinned, configId: "A")))
         try store.setDefault(configId: "B")
-        XCTAssertEqual(store.current.default.mode, .pinned)  // setDefault forces pinned
+        XCTAssertEqual(store.current.default.mode, .pinned)
         XCTAssertEqual(store.current.default.configId, "B")
-
-        try store.setMode(.followRecent)
-        XCTAssertEqual(store.current.default.mode, .followRecent)
-        XCTAssertEqual(store.current.default.configId, "B")  // config unchanged
+        XCTAssertEqual(store.effectiveDefault().id, "B")
     }
 
     func testSetDefaultMissingThrows() throws {

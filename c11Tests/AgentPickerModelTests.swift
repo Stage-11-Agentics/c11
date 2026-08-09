@@ -33,17 +33,13 @@ final class AgentPickerModelTests: XCTestCase {
     /// the rest so the test is deterministic.
     private func env(
         installed: @escaping (String) -> Bool = { _ in true },
-        cost: @escaping (String?) -> (inUSD: Double, outUSD: Double)? = { _ in nil },
-        now: Date = Date(timeIntervalSince1970: 1_000_000),
-        statsHeadline: String? = nil
+        cost: @escaping (String?) -> (inUSD: Double, outUSD: Double)? = { _ in nil }
     ) -> AgentPickerEnvironment {
         AgentPickerEnvironment(
             displayName: names,
             provider: { AgentLaunchStats.provider(harness: $0, model: $1) },
             isInstalled: installed,
-            costFor: cost,
-            now: now,
-            statsHeadline: statsHeadline
+            costFor: cost
         )
     }
 
@@ -84,7 +80,7 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.content.shortlist.count, 2)
     }
 
-    // MARK: 2. Default marking (pinned + follow-recent)
+    // MARK: 2. Default marking
 
     func testPinnedDefaultMarked() {
         let configs = sampleConfigs()
@@ -93,23 +89,31 @@ final class AgentPickerModelTests: XCTestCase {
             effectiveDefault: configs[0], env: env()
         )
         XCTAssertTrue(m.content.shortlist[0].isPinnedDefault)
-        XCTAssertFalse(m.content.shortlist[0].isRecentDefault)
         XCTAssertFalse(m.content.shortlist[1].isPinnedDefault)
-        XCTAssertFalse(m.content.followRecent)
+        // Exactly one row carries the dot.
+        XCTAssertEqual(m.content.shortlist.filter(\.isPinnedDefault).count, 1)
     }
 
-    func testFollowRecentMarksRecentConfig() {
+    /// C11-203 B1: a `recent` record on disk is telemetry now, so it changes
+    /// nothing the popover renders — no extra row, no extra nav slot.
+    func testRecentRecordDoesNotAffectRenderedContent() {
         let configs = sampleConfigs()
-        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2", effort: "high")
-        let m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .followRecent, configId: "c1"), recent: recent),
-            effectiveDefault: configs[3], env: env()
+        let base = AgentPickerModel(
+            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
+            effectiveDefault: configs[0], env: env()
         )
-        XCTAssertTrue(m.content.followRecent)
-        XCTAssertTrue(m.content.shortlist[3].isRecentDefault) // c4
-        XCTAssertFalse(m.content.shortlist[3].isPinnedDefault) // not pinned when following
-        // In follow-recent mode nothing carries the pinned dot.
-        XCTAssertTrue(m.content.shortlist.allSatisfy { !$0.isPinnedDefault })
+        let withRecent = AgentPickerModel(
+            library: library(
+                configs,
+                default: .init(mode: .pinned, configId: "c1"),
+                recent: RecentAgentConfig(
+                    configId: "c4", harness: "codex", model: "gpt-5.2", effort: "high",
+                    observedAt: Date(timeIntervalSince1970: 999_000)
+                )
+            ),
+            effectiveDefault: configs[0], env: env()
+        )
+        XCTAssertEqual(base.content, withRecent.content)
     }
 
     // MARK: 3. Provider derivation (real helper) + sub-line
@@ -206,58 +210,11 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(AgentPickerModel.fmt(2.50), "2.5")   // trailing zero dropped ≥1
     }
 
-    // MARK: 6. Recent row
+    // MARK: 6. Keyboard state machine
 
-    func testRecentRowFieldsAndLiveHint() {
-        let configs = sampleConfigs()
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        let recent = RecentAgentConfig(
-            configId: "c4", harness: "codex", model: "gpt-5.2", effort: "high",
-            observedAt: now.addingTimeInterval(-120) // 2 minutes ago
-        )
-        let m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
-            effectiveDefault: configs[0], env: env(now: now)
-        )
-        let r = try! XCTUnwrap(m.content.recent)
-        XCTAssertEqual(r.name, "Codex hi")
-        XCTAssertEqual(r.relativeTime, "2m ago")
-        XCTAssertEqual(r.subLine, "codex · gpt-5.2 · high")
-        XCTAssertTrue(r.showLiveHint)                    // codex is not live
-        XCTAssertEqual(r.harnessDisplayName, "Codex")
-    }
-
-    func testRecentRowClaudeHasNoLiveHint() {
-        let configs = sampleConfigs()
-        let recent = RecentAgentConfig(configId: "c1", harness: "claude-code", model: "opus")
-        let m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
-            effectiveDefault: configs[0], env: env()
-        )
-        XCTAssertFalse(try XCTUnwrap(m.content.recent).showLiveHint) // claude-code IS live
-    }
-
-    func testNoRecentYieldsNilRow() {
-        let configs = sampleConfigs()
-        let m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
-            effectiveDefault: configs[0], env: env()
-        )
-        XCTAssertNil(m.content.recent)
-    }
-
-    func testRelativeTimeBuckets() {
-        let now = Date(timeIntervalSince1970: 2_000_000)
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-10), now: now), "just now")
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-300), now: now), "5m ago")
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-7200), now: now), "2h ago")
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-172_800), now: now), "2d ago")
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: nil, now: now), "just now")
-    }
-
-    // MARK: 7. Keyboard state machine
-
-    func testArrowNavigationClampsAcrossRecent() {
+    /// C11-203 B1: the recent row is gone, so ↑↓ clamps at the last shortlist
+    /// row — a `recent` record on disk must not add a phantom nav slot.
+    func testArrowNavigationClampsAtLastShortlistRow() {
         let configs = sampleConfigs() // 5 configs
         let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
         var m = AgentPickerModel(
@@ -267,10 +224,25 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.selectedIndex, -1)
         _ = m.handleKey(.down); XCTAssertEqual(m.selectedIndex, 0)
         for _ in 0..<10 { _ = m.handleKey(.down) }
-        XCTAssertEqual(m.selectedIndex, 5) // 5 shortlist (0..4) + recent (5), clamped
-        _ = m.handleKey(.up); XCTAssertEqual(m.selectedIndex, 4)
+        XCTAssertEqual(m.selectedIndex, 4) // last shortlist row, clamped
+        // The row past the old recent slot resolves to the last config, not a
+        // phantom recent target.
+        XCTAssertEqual(m.handleKey(.enter), .launch(configs[4]))
+        _ = m.handleKey(.up); XCTAssertEqual(m.selectedIndex, 3)
         for _ in 0..<10 { _ = m.handleKey(.up) }
         XCTAssertEqual(m.selectedIndex, 0) // clamps at 0, never back to -1
+    }
+
+    func testArrowNavigationOnEmptyLibraryStaysUnfocused() {
+        let seed = AgentConfigLibraryFile.factory.configs[0]
+        var m = AgentPickerModel(
+            library: library([], default: .init(mode: .pinned, configId: seed.id)),
+            effectiveDefault: seed, env: env()
+        )
+        XCTAssertEqual(m.handleKey(.down), PickerAction.none)
+        XCTAssertEqual(m.selectedIndex, -1)
+        // ⏎ with nothing to focus still acts on the effective default.
+        XCTAssertEqual(m.handleKey(.enter), .launch(seed))
     }
 
     func testEnterLaunchesSelectedElseEffectiveDefault() {
@@ -295,18 +267,6 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[0]))
     }
 
-    func testEnterOnRecentRowLaunchesRecent() {
-        let configs = sampleConfigs()
-        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
-        var m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
-            effectiveDefault: configs[0], env: env()
-        )
-        for _ in 0..<6 { _ = m.handleKey(.down) } // land on recent row (index 5)
-        XCTAssertEqual(m.selectedIndex, 5)
-        XCTAssertEqual(m.handleKey(.enter), .launch(configs[3])) // c4
-    }
-
     func testDigitKeysLaunchNth() {
         let configs = sampleConfigs()
         var m = AgentPickerModel(
@@ -327,7 +287,7 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.handleKey(.escape), .close)
     }
 
-    // MARK: 8. Not-installed
+    // MARK: 7. Not-installed
 
     func testNotInstalledRowStillPinsButPlainLaunchRefuses() {
         let configs = sampleConfigs()
@@ -348,81 +308,7 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[3]))
     }
 
-    // MARK: 9. Stats headline passthrough
-
-    func testStatsHeadlineSurfaced() {
-        let configs = sampleConfigs()
-        let m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
-            effectiveDefault: configs[0],
-            env: env(statsHeadline: "87% Opus · 474 launches")
-        )
-        XCTAssertEqual(m.content.statsHeadline, "87% Opus · 474 launches")
-    }
-
-    // MARK: 10. Review-regression: recent-row + default Enter honor pin/installed (F1/F2)
-
-    func testOptionEnterOnRecentRowPinsNotLaunch() {
-        let configs = sampleConfigs()
-        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
-        var m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
-            effectiveDefault: configs[0], env: env()
-        )
-        for _ in 0..<6 { _ = m.handleKey(.down) } // recent row (index 5)
-        XCTAssertEqual(m.selectedIndex, 5)
-        XCTAssertEqual(m.recentClickAction(), .launch(configs[3]))
-        // ⌥⏎ on the recent row PINS (was: silently launched).
-        XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3]))
-    }
-
-    func testNotInstalledRecentRowRefusesKeyboardAndPointerLaunch() {
-        let configs = sampleConfigs()
-        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
-        var m = AgentPickerModel(
-            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
-            effectiveDefault: configs[0],
-            env: env(installed: { $0 != "codex" }) // codex not installed
-        )
-        for _ in 0..<6 { _ = m.handleKey(.down) }
-        XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[3]))
-        XCTAssertEqual(m.recentClickAction(), .notInstalled(configs[3]))
-        XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3])) // ⌥⏎ still pins
-    }
-
-    func testRecentAvailabilityFollowsCurrentSavedRecipeHarness() throws {
-        let current = cfg(
-            "c1",
-            "Edited since launch",
-            order: 0,
-            harness: "kimi",
-            model: "k2.5"
-        )
-        let recent = RecentAgentConfig(
-            configId: "c1",
-            harness: "claude-code",
-            model: "opus"
-        )
-        var m = AgentPickerModel(
-            library: library(
-                [current],
-                default: .init(mode: .followRecent, configId: "c1"),
-                recent: recent
-            ),
-            effectiveDefault: current,
-            env: env(installed: { $0 != "kimi" })
-        )
-
-        // The row keeps historical launch axes as provenance, but its disabled
-        // state and activation follow the current saved recipe that will launch.
-        let row = try XCTUnwrap(m.content.recent)
-        XCTAssertEqual(row.subLine, "claude code · opus")
-        XCTAssertFalse(row.isInstalled)
-        _ = m.handleKey(.down) // shortlist
-        _ = m.handleKey(.down) // recent
-        XCTAssertEqual(m.handleKey(.enter), .notInstalled(current))
-        XCTAssertEqual(m.recentClickAction(), .notInstalled(current))
-    }
+    // MARK: 8. Review-regression: default Enter honors pin/installed (F1/F2)
 
     func testEnterDefaultRespectsInstalledGuard() {
         let configs = sampleConfigs() // default c1 = claude-code
@@ -435,39 +321,25 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[0]))
     }
 
-    func testTransientFollowRecentDefaultRespectsInstalledGuard() {
+    /// An effective default with a blank id (no matching shortlist row) still
+    /// runs through the installed guard rather than launching blind.
+    func testUnmatchedEffectiveDefaultRespectsInstalledGuard() {
         let configs = sampleConfigs()
         let transient = cfg(
             "",
-            "Recent router",
+            "Ad-hoc router",
             order: -1,
             harness: "opencode",
             model: "openai/gpt-5.2"
         )
         var m = AgentPickerModel(
-            library: library(
-                configs,
-                default: .init(mode: .followRecent, configId: "c1"),
-                recent: RecentAgentConfig(
-                    configId: nil,
-                    harness: "opencode",
-                    model: "openai/gpt-5.2"
-                )
-            ),
+            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
             effectiveDefault: transient,
             env: env(installed: { $0 != "opencode" })
         )
 
         XCTAssertEqual(m.selectedIndex, -1)
         XCTAssertEqual(m.handleKey(.enter), .notInstalled(transient))
-    }
-
-    func testRelativeTimeBucketTopsClamp() {
-        let now = Date(timeIntervalSince1970: 3_000_000)
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-3599), now: now), "59m ago")   // not "60m ago"
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-86_399), now: now), "23h ago") // not "24h ago"
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-3600), now: now), "1h ago")
-        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-86_400), now: now), "1d ago")
     }
 
     func testCommandEnterOpensViewAllNeverLaunches() {

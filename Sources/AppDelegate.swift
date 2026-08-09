@@ -7805,13 +7805,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// C11-182 seam: open the Settings Saved Configs editor sheet, focused on a
-    /// config / a new config / the stats view. Navigates Settings to the Agents
-    /// page, then posts the open-sheet notification the section observes (the
-    /// warm-mount fast path) while also stashing the request for the section to
-    /// drain on appear (the cold-mount path). The single call the C11-181
-    /// A-button popover's "View all" / "Launch stats" makes; `origin: .popover`
-    /// lets the sheet order the Settings window out on close so the popover
-    /// returns as the one visible surface.
+    /// config or a new config. Navigates Settings to the Agents page, then posts
+    /// the open-sheet notification the section observes (the warm-mount fast
+    /// path) while also stashing the request for the section to drain on appear
+    /// (the cold-mount path). The single call the C11-181 A-button popover's
+    /// "Edit Launch Agents" row makes; `origin: .popover` lets the sheet order
+    /// the Settings window out on close so the popover returns as the one
+    /// visible surface.
     @MainActor
     func openAgentConfigEditor(focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin = .popover) {
         pendingAgentConfigEditorFocus = (focus, origin)

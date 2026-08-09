@@ -253,21 +253,68 @@ final class AgentLaunchOverlayCompositionTests: XCTestCase {
         XCTAssertEqual(store.effectiveDefault().config.model, "sonnet")
     }
 
-    func testEffectiveDefaultFollowRecentResolvesRecentConfig() throws {
+    /// C11-203 B2: recording a launch no longer moves the effective default —
+    /// `recent` is telemetry, the pin is the answer.
+    func testRecordingRecentDoesNotMoveEffectiveDefault() throws {
         let (store, dir) = tempStore()
         defer { try? FileManager.default.removeItem(at: dir) }
         let added = try store.add(saved(overlay(model: "sonnet"), name: "Sonnet mid", id: ""))
-        try store.setMode(.followRecent)
         try store.recordRecent(RecentAgentConfig(configId: added.id, harness: "claude-code", model: "sonnet", observedAt: Date(), source: "launch"))
-        XCTAssertEqual(store.effectiveDefault().id, added.id, "follow-recent resolves the recent config id")
+        XCTAssertEqual(store.effectiveDefault().name, "Opus deep", "the pin still wins")
+        XCTAssertEqual(store.current.recent?.configId, added.id, "the observation is still recorded")
     }
 
-    func testEffectiveDefaultFollowRecentWithNoRecentFallsBackToPinned() throws {
-        let (store, dir) = tempStore()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try store.setMode(.followRecent)
-        // No recent recorded → pinned factory seed.
-        XCTAssertEqual(store.effectiveDefault().name, "Opus deep")
+    // MARK: - C11-203 A1: a declined launch always names its reason
+
+    /// The contract is "never a silent no-op": every decline `launchAgentSurface`
+    /// can return must carry a non-empty, distinguishable operator-facing
+    /// sentence, and the two harness-bearing cases must name the harness so the
+    /// operator knows which recipe to fix.
+    func testEveryLaunchDeclineHasADistinctNonEmptyMessage() {
+        let declines: [Workspace.AgentLaunchDecline] = [
+            .emptyCommand(harness: "custom"),
+            .surfaceCreationFailed,
+            .unresolvableRecipe(harness: "aider"),
+        ]
+        let messages = declines.map(\.message)
+        for message in messages {
+            XCTAssertFalse(
+                message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "a decline with no message is the silent no-op this ticket removes"
+            )
+        }
+        XCTAssertEqual(Set(messages).count, declines.count, "reasons must be distinguishable")
+        XCTAssertTrue(messages[0].contains("custom"))
+        XCTAssertTrue(messages[2].contains("aider"))
+    }
+
+    /// `.launched` is the only outcome that reports a launch, and it is the only
+    /// one without a reason to show.
+    func testLaunchOutcomeMapsToDidLaunchAndDecline() {
+        let launched = Workspace.AgentSurfaceLaunchOutcome.launched
+        XCTAssertTrue(launched.didLaunch)
+        XCTAssertNil(launched.decline)
+
+        let declined = Workspace.AgentSurfaceLaunchOutcome
+            .declined(.emptyCommand(harness: "custom"))
+        XCTAssertFalse(declined.didLaunch)
+        XCTAssertEqual(declined.decline, .emptyCommand(harness: "custom"))
+    }
+
+    /// A refused pin (C11-203 A2) explains itself too, and says something
+    /// different from a generic store failure.
+    func testPinRefusalMessagesNameTheConfigAndDifferByCause() {
+        let unlaunchable = Workspace.pinRefusalMessage(
+            for: AgentConfigLibraryStore.StoreError.configUnlaunchable("BROKEN"),
+            configName: "Aider"
+        )
+        let generic = Workspace.pinRefusalMessage(
+            for: AgentConfigLibraryStore.StoreError.configNotFound("BROKEN"),
+            configName: "Aider"
+        )
+        XCTAssertTrue(unlaunchable.contains("Aider"))
+        XCTAssertTrue(generic.contains("Aider"))
+        XCTAssertNotEqual(unlaunchable, generic)
     }
 
     // MARK: - Tooltip formatter (§5.3 v1)

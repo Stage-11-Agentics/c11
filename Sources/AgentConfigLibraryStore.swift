@@ -76,6 +76,28 @@ struct AgentLaunchConfig: Codable, Equatable {
         self.initialPrompt = initialPrompt
         self.env = env
     }
+
+    /// The one harness kind whose factory command is empty by definition — the
+    /// operator supplies the whole command line. Spelled here (not as
+    /// `AgentType.custom`) because this file compiles into the CLI target,
+    /// which does not link the app-only `AgentType`.
+    static let customHarnessKey = "custom"
+
+    /// Whether this recipe is unlaunchable *from the store's own vantage*
+    /// (C11-203 A2). `custom` carries no factory command, so a `custom` recipe
+    /// with no command of its own resolves to an empty shell command and can
+    /// never launch — exactly the state that bricked the A button on the
+    /// operator's machine.
+    ///
+    /// Deliberately conservative: every other harness inherits a
+    /// manifest/Settings command this Foundation-only file cannot see, so it
+    /// answers `false` for them and the resolver stays authoritative at launch
+    /// time (where A1's visible decline covers whatever this misses).
+    var isProvablyUnlaunchable: Bool {
+        guard harness == AgentLaunchConfig.customHarnessKey else { return false }
+        let trimmed = command?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty
+    }
 }
 
 /// A named launch recipe in the library. On disk the recipe fields are
@@ -147,13 +169,15 @@ struct SavedAgentConfig: Codable, Equatable {
 // MARK: - Default pointer + mode
 
 /// The default pointer (design §2.2). `config_id` is always a saved config's
-/// id; the mode decides what a plain left-click launches.
+/// id, and a plain left-click launches it.
 struct AgentConfigDefault: Codable, Equatable {
+    /// The only resolution mode. A single case rather than a dropped field:
+    /// `mode` stays in the on-disk schema (so `c11 config list --json` and any
+    /// older build reading the file still see a value they understand), it just
+    /// has one legal value now.
     enum Mode: String, Codable {
         /// Left-click launches the explicitly chosen config.
         case pinned
-        /// Left-click launches whatever `recent` holds.
-        case followRecent = "follow-recent"
     }
 
     var mode: Mode
@@ -164,19 +188,34 @@ struct AgentConfigDefault: Codable, Equatable {
         case configId = "config_id"
     }
 
-    init(mode: Mode, configId: String) {
+    init(mode: Mode = .pinned, configId: String) {
         self.mode = mode
         self.configId = configId
+    }
+
+    /// Migrate legacy pointers on read (C11-203 B2). Files written before
+    /// follow-recent was retired carry `"mode": "follow-recent"`; a synthesized
+    /// `Codable` would throw on that value, failing the *whole file* decode and
+    /// healing the operator's library to factory — silent data loss. Any mode
+    /// this build does not know (legacy or future) resolves to `pinned`, and
+    /// `config_id` — the part that actually names the operator's choice — is
+    /// preserved verbatim.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.configId = try c.decode(String.self, forKey: .configId)
+        let raw = try c.decodeIfPresent(String.self, forKey: .mode)
+        self.mode = raw.flatMap(Mode.init(rawValue:)) ?? .pinned
     }
 }
 
 // MARK: - Most-recent
 
-/// The most-recent observed launch (design §2.3), persisted across relaunch so
-/// `follow-recent` resumes where the operator left off. Carries `field_sources`
-/// so the UI can distinguish live-observed from launch-captured fields (§4).
+/// The most-recent observed launch (design §2.3), persisted across relaunch.
+/// Carries `field_sources` so a reader can distinguish live-observed from
+/// launch-captured fields (§4).
 ///
-/// This store persists and returns `recent`; it never *produces* it — the
+/// Durable telemetry only: nothing in the resolution path reads it. This store
+/// persists and returns `recent`; it never *produces* it — the
 /// launch-composition layer calls `recordRecent` with a resolved observation.
 struct RecentAgentConfig: Codable, Equatable {
     var configId: String?
@@ -285,6 +324,49 @@ struct AgentConfigLibraryFile: Codable, Equatable {
     /// heals), but a wrong schema version is treated as corrupt upstream.
     var hasResolvablePinnedDefault: Bool {
         configs.contains { $0.id == `default`.configId }
+    }
+
+    // MARK: Corruption healing (C11-203 A2)
+
+    /// The lowest-ordered config that is not provably unlaunchable, or `nil`
+    /// when every saved config is broken.
+    var firstLaunchableConfig: SavedAgentConfig? {
+        configs
+            .filter { !$0.config.isProvablyUnlaunchable }
+            .min { $0.order < $1.order }
+    }
+
+    /// Repair the two corruption classes this file can detect on its own, so a
+    /// drifted library can never brick the A button (C11-203 A2). Pure: the
+    /// store applies it on read, and the next write persists the result.
+    ///
+    /// 1. **The factory seed drifted to an unlaunchable recipe.**
+    ///    `factorySeedConfigId` is c11's own row, not the operator's — the
+    ///    observed specimen had it rewritten to `harness: "custom"` with the
+    ///    model dropped. Restore the seed *recipe*; the operator's `name` and
+    ///    `order` for that row are theirs and are preserved.
+    /// 2. **The pinned default names an unlaunchable config.**
+    ///    Operator-authored recipes are never rewritten — they stay in the
+    ///    library, editable. Only the pointer moves, to the lowest-ordered
+    ///    launchable config. If nothing is launchable the pointer is left alone
+    ///    and the launch path surfaces a visible decline (A1).
+    ///
+    /// A *dangling* pointer is deliberately not healed here: `pinnedConfig`
+    /// already answers it with the factory seed, and rewriting the operator's
+    /// pointer to some unrelated row would be a louder change than the read
+    /// fallback it already has.
+    func healed() -> AgentConfigLibraryFile {
+        var file = self
+        if let i = file.configs.firstIndex(where: { $0.id == Self.factorySeedConfigId }),
+           file.configs[i].config.isProvablyUnlaunchable {
+            file.configs[i].config = Self.factory.configs[0].config
+        }
+        if let pinned = file.configs.first(where: { $0.id == file.default.configId }),
+           pinned.config.isProvablyUnlaunchable,
+           let fallback = file.firstLaunchableConfig {
+            file.default = AgentConfigDefault(mode: .pinned, configId: fallback.id)
+        }
+        return file
     }
 }
 
@@ -414,6 +496,9 @@ struct AgentConfigLibraryStore: Sendable {
         case writeFailed(String, underlying: String)
         case configNotFound(String)
         case indexOutOfRange(Int)
+        /// The config cannot launch as written, so it may not become the pinned
+        /// default (C11-203 A2 — an unlaunchable pin is what killed the A button).
+        case configUnlaunchable(String)
 
         var code: String {
             switch self {
@@ -422,6 +507,7 @@ struct AgentConfigLibraryStore: Sendable {
             case .writeFailed:           return "agent_config_write_failed"
             case .configNotFound:        return "agent_config_not_found"
             case .indexOutOfRange:       return "agent_config_index_out_of_range"
+            case .configUnlaunchable:    return "agent_config_unlaunchable"
             }
         }
 
@@ -437,6 +523,8 @@ struct AgentConfigLibraryStore: Sendable {
                 return "agent config '\(id)' not found"
             case .indexOutOfRange(let index):
                 return "reorder index \(index) out of range"
+            case .configUnlaunchable(let id):
+                return "agent config '\(id)' cannot launch as written (custom harness with no command) and cannot be the default"
             }
         }
     }
@@ -481,9 +569,14 @@ struct AgentConfigLibraryStore: Sendable {
 
     // MARK: Read
 
-    /// The current library, recomputed from disk on every access. A missing,
-    /// unreadable, malformed, or wrong-`schema_version` file heals to
-    /// `.factory` — this never throws (design §5.6).
+    /// The current library, recomputed from disk on every access and passed
+    /// through `healed()` (C11-203 A2) so a drifted factory seed or an
+    /// unlaunchable pin can never reach a launch path. A missing, unreadable,
+    /// malformed, or wrong-`schema_version` file heals to `.factory` — this
+    /// never throws (design §5.6).
+    ///
+    /// Healing is read-only: mutators load through `current`, so the repair
+    /// persists on the next write rather than turning a getter into a writer.
     var current: AgentConfigLibraryFile {
         guard let data = try? Data(contentsOf: fileURL) else {
             return .factory
@@ -492,63 +585,26 @@ struct AgentConfigLibraryStore: Sendable {
               file.schemaVersion == AgentConfigLibraryFile.currentSchemaVersion else {
             return .factory
         }
-        return file
+        return file.healed()
     }
 
-    /// The config a plain left-click launches (design §3):
-    ///
-    ///     effectiveDefault = (mode == .followRecent && recent != nil)
-    ///                        ? <config from recent> : <pinned config>
-    ///
-    /// - `pinned`: the config whose id equals `default.config_id`; if that id
-    ///   names no config, fall back to the factory seed (never crash).
-    /// - `follow-recent` with a `recent.config_id` still present in the
-    ///   library: that saved config.
-    /// - `follow-recent` with recent axes but no resolvable config id:
-    ///   synthesize a transient config from the observed axes (design §8
-    ///   residual: recent-row with no config id shows resolved axes, no name).
-    /// - `follow-recent` with no recent at all: the pinned config.
+    /// The config a plain left-click launches (design §3, as narrowed by
+    /// C11-203 B2): always the pinned config. The config whose id equals
+    /// `default.config_id`; if that id names no config, the factory seed (never
+    /// crash).
     func effectiveDefault() -> SavedAgentConfig {
-        let file = current
-        switch file.default.mode {
-        case .pinned:
-            return pinnedConfig(in: file)
-        case .followRecent:
-            guard let recent = file.recent else {
-                return pinnedConfig(in: file)
-            }
-            if let id = recent.configId, let match = file.configs.first(where: { $0.id == id }) {
-                return match
-            }
-            // No resolvable saved config: build a transient recipe from the
-            // observed axes. Requires at least a harness to be meaningful;
-            // otherwise fall back to the pinned config.
-            guard let harness = recent.harness else {
-                return pinnedConfig(in: file)
-            }
-            let name = [recent.model, recent.effort]
-                .compactMap { $0 }
-                .joined(separator: " · ")
-            // Transient, not a persisted library entry: blank the id (the
-            // `recent.config_id` it came from dangles) and mark `order: -1` so
-            // no consumer mistakes it for a re-resolvable saved config.
-            return SavedAgentConfig(
-                id: "",
-                name: name.isEmpty ? harness : name,
-                order: -1,
-                config: AgentLaunchConfig(
-                    harness: harness,
-                    model: recent.model,
-                    effort: recent.effort
-                )
-            )
-        }
+        pinnedConfig(in: current)
     }
 
-    /// The pinned config, or the factory seed if the pointer dangles.
+    /// The pinned config, or the factory seed if the pointer dangles. Also
+    /// falls back when the pointed-to config is provably unlaunchable and a
+    /// launchable sibling exists — `current` already heals that case, but this
+    /// keeps the fallback correct for a caller that composed a file by hand
+    /// (C11-203 A2).
     private func pinnedConfig(in file: AgentConfigLibraryFile) -> SavedAgentConfig {
         if let match = file.configs.first(where: { $0.id == file.default.configId }) {
-            return match
+            guard match.config.isProvablyUnlaunchable else { return match }
+            return file.firstLaunchableConfig ?? match
         }
         return AgentConfigLibraryFile.factory.configs[0]
     }
@@ -645,27 +701,26 @@ struct AgentConfigLibraryStore: Sendable {
         try save(file)
     }
 
-    /// Pin a config as the default (mode → `.pinned`). Throws if the id names
-    /// no config.
+    /// Pin a config as the default. Throws if the id names no config, or if the
+    /// config is provably unlaunchable (C11-203 A2): pinning a recipe that
+    /// resolves to an empty command is exactly the state that left the A button
+    /// silently dead, so the store refuses it at the write rather than healing
+    /// it back on every subsequent read.
     func setDefault(configId: String) throws {
         var file = current
-        guard file.configs.contains(where: { $0.id == configId }) else {
+        guard let target = file.configs.first(where: { $0.id == configId }) else {
             throw StoreError.configNotFound(configId)
+        }
+        guard !target.config.isProvablyUnlaunchable else {
+            throw StoreError.configUnlaunchable(configId)
         }
         file.default = AgentConfigDefault(mode: .pinned, configId: configId)
         try save(file)
     }
 
-    /// Switch the default mode without changing which config is pinned.
-    func setMode(_ mode: AgentConfigDefault.Mode) throws {
-        var file = current
-        file.default.mode = mode
-        try save(file)
-    }
-
-    /// Persist the most-recent observation (design §2.3/§4). The
-    /// launch-composition layer calls this with a resolved observation; the
-    /// store only writes it.
+    /// Persist the most-recent observation (design §2.3/§4). Durable telemetry:
+    /// nothing reads it back for resolution. The launch-composition layer calls
+    /// this with a resolved observation; the store only writes it.
     func recordRecent(_ recent: RecentAgentConfig) throws {
         var file = current
         file.recent = recent

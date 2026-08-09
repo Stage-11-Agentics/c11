@@ -172,10 +172,7 @@ func runConfigCommand(commandArgs: [String], jsonOutput: Bool) throws {
                      human: "reordered config '\(moved.name)' to index \(to)")
 
         case "default":
-            if cfgFlag(args, "--follow-recent") {
-                try core.setFollowRecent()
-                cfgPrint(json: json, object: ["mode": "follow-recent"], human: "default now follows most-recent")
-            } else if cfgFlag(args, "--pin-current") {
+            if cfgFlag(args, "--pin-current") {
                 // Deviation (§6 extended): optional name overrides the auto label.
                 let saved = try core.pinCurrent(name: cfgFirstPositional(args))
                 cfgPrint(json: json, object: ["pinned": (try? ConfigJSON.object(from: saved)) ?? [:]],
@@ -185,7 +182,7 @@ func runConfigCommand(commandArgs: [String], jsonOutput: Bool) throws {
                 cfgPrint(json: json, object: ["pinned": (try? ConfigJSON.object(from: saved)) ?? [:]],
                          human: "default pinned to '\(saved.name)' (\(saved.id))")
             } else {
-                throw CLIError(message: "config default requires <name|id>, --follow-recent, or --pin-current")
+                throw CLIError(message: "config default requires <name|id> or --pin-current")
             }
 
         case "launch":

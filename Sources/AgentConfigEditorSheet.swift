@@ -14,8 +14,6 @@ enum AgentConfigEditorFocus: Equatable {
     case config(String)
     /// Start a new config.
     case new
-    /// Open the launch-stats view.
-    case stats
 }
 
 /// Where an open request came from, so close can restore the right surface.
@@ -31,7 +29,7 @@ enum AgentConfigEditorRequest {
     static let openName = Notification.Name("c11.agentConfigEditor.open")
     static let closedName = Notification.Name("c11.agentConfigEditor.closed")
 
-    private static let focusKindKey = "focusKind"   // "config" | "new" | "stats"
+    private static let focusKindKey = "focusKind"   // "config" | "new"
     private static let focusIdKey = "focusId"       // config id for .config
     private static let originKey = "origin"
     private static let returnToPopoverKey = "returnToPopover"
@@ -41,7 +39,6 @@ enum AgentConfigEditorRequest {
         switch focus {
         case .config(let id): info[focusKindKey] = "config"; info[focusIdKey] = id
         case .new:            info[focusKindKey] = "new"
-        case .stats:          info[focusKindKey] = "stats"
         }
         NotificationCenter.default.post(name: openName, object: nil, userInfo: info)
     }
@@ -51,8 +48,7 @@ enum AgentConfigEditorRequest {
         case "config":
             if let id = note.userInfo?[focusIdKey] as? String { return .config(id) }
             return .new
-        case "stats": return .stats
-        default:      return .new
+        default: return .new
         }
     }
 
@@ -254,11 +250,6 @@ final class AgentConfigLibraryViewModel: ObservableObject {
         try? store.setDefault(configId: id)
         reload()
     }
-
-    func setFollowRecent(_ on: Bool) {
-        try? store.setMode(on ? .followRecent : .pinned)
-        reload()
-    }
 }
 
 // MARK: - Editor draft
@@ -302,9 +293,9 @@ private enum EditorTheme {
 
 // MARK: - The editor sheet
 
-/// Tier 2 of the model picker (design §5.4/§5.5): the Saved Configs editor +
-/// launch stats view, reproduced from the binding prototype. Presented as a
-/// `.sheet` from the Settings section.
+/// Tier 2 of the model picker (design §5.4): the Saved Configs editor,
+/// reproduced from the binding prototype. Presented as a `.sheet` from the
+/// Settings section.
 struct AgentConfigEditorSheet: View {
     @ObservedObject var library: AgentConfigLibraryViewModel
     let initialFocus: AgentConfigEditorFocus
@@ -314,7 +305,6 @@ struct AgentConfigEditorSheet: View {
 
     @StateObject private var installed = AgentInstalledProbe.shared
     @State private var draft: EditorDraft = .new()
-    @State private var statsMode = false
     @State private var advancedOpen = false
     @State private var modelFilter = ""
     @State private var savedFlashId: String?
@@ -327,27 +317,19 @@ struct AgentConfigEditorSheet: View {
             HStack(spacing: 0) {
                 libraryRail
                 Divider().overlay(BrandColors.ruleSwiftUI)
-                Group {
-                    if statsMode {
-                        LaunchStatsView()
-                    } else {
-                        editor
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                editor
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            if !statsMode {
-                if let launchFeedback {
-                    HStack {
-                        Text(launchFeedback).font(.system(size: 10.5))
-                            .foregroundStyle(BrandColors.goldSwiftUI)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 22).padding(.top, 6)
+            if let launchFeedback {
+                HStack {
+                    Text(launchFeedback).font(.system(size: 10.5))
+                        .foregroundStyle(BrandColors.goldSwiftUI)
+                    Spacer()
                 }
-                Divider().overlay(BrandColors.ruleSwiftUI)
-                footer
+                .padding(.horizontal, 22).padding(.top, 6)
             }
+            Divider().overlay(BrandColors.ruleSwiftUI)
+            footer
         }
         .frame(width: EditorTheme.sheetWidth)
         .frame(maxHeight: 640)
@@ -361,9 +343,7 @@ struct AgentConfigEditorSheet: View {
     private var hiddenKeyboardCatchers: some View {
         ZStack {
             Button("", action: backOut).keyboardShortcut(.cancelAction).hidden()
-            if !statsMode {
-                Button("", action: saveAndLaunch).keyboardShortcut(.defaultAction).hidden()
-            }
+            Button("", action: saveAndLaunch).keyboardShortcut(.defaultAction).hidden()
         }
         .frame(width: 0, height: 0)
     }
@@ -385,16 +365,11 @@ struct AgentConfigEditorSheet: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(statsMode
-                     ? String(localized: "agentConfigEditor.stats.title", defaultValue: "Launch Stats")
-                     : String(localized: "agentConfigEditor.title", defaultValue: "Agent Configurations"))
+                Text(String(localized: "agentConfigEditor.title", defaultValue: "Agent Configurations"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI)
-                Text(statsMode
-                     ? String(localized: "agentConfigEditor.stats.subtitle",
-                               defaultValue: "Every launch through any path appends to agent-launches.jsonl — these are lifetime numbers.")
-                     : String(localized: "agentConfigEditor.subtitle",
-                               defaultValue: "Every saved recipe layers over its harness's Settings — set a field to override, leave it to inherit."))
+                Text(String(localized: "agentConfigEditor.subtitle",
+                            defaultValue: "Every saved recipe layers over its harness's Settings — set a field to override, leave it to inherit."))
                     .font(.system(size: 11.5, weight: .light))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.6))
             }
@@ -475,7 +450,7 @@ struct AgentConfigEditorSheet: View {
     }
 
     private func rowBackground(_ config: SavedAgentConfig) -> Color {
-        if !statsMode, draft.sourceId == config.id { return EditorTheme.goldFaint }
+        if draft.sourceId == config.id { return EditorTheme.goldFaint }
         if savedFlashId == config.id { return EditorTheme.goldFaint }
         return .clear
     }
@@ -521,17 +496,6 @@ struct AgentConfigEditorSheet: View {
             }
             .menuStyle(.borderlessButton).fixedSize()
 
-            Button {
-                library.setFollowRecent(library.defaultState.mode != .followRecent)
-            } label: {
-                HStack(spacing: 6) {
-                    checkbox(on: library.defaultState.mode == .followRecent)
-                    Text(String(localized: "agentConfigEditor.followRecent", defaultValue: "follow most recent"))
-                        .font(.system(size: 10.5)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-                }
-            }
-            .buttonStyle(.plain)
-
             Spacer()
 
             Button(String(localized: "agentConfigEditor.save", defaultValue: "Save"), action: saveOnly)
@@ -548,16 +512,6 @@ struct AgentConfigEditorSheet: View {
         .background(BrandColors.surfaceSwiftUI.opacity(0.6))
     }
 
-    private func checkbox(on: Bool) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(on ? BrandColors.goldSwiftUI : Color.clear)
-                .frame(width: 13, height: 13)
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(on ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI, lineWidth: 1))
-            if on { Text("✓").font(.system(size: 9)).foregroundStyle(BrandColors.blackSwiftUI) }
-        }
-    }
-
     // MARK: Actions
 
     private func applyFocus(_ focus: AgentConfigEditorFocus) {
@@ -567,13 +521,10 @@ struct AgentConfigEditorSheet: View {
             else { newConfig() }
         case .new:
             newConfig()
-        case .stats:
-            statsMode = true
         }
     }
 
     private func selectConfig(_ config: SavedAgentConfig) {
-        statsMode = false
         draft = .from(config)
         advancedOpen = false
         modelFilter = ""
@@ -581,7 +532,6 @@ struct AgentConfigEditorSheet: View {
     }
 
     private func newConfig() {
-        statsMode = false
         draft = .new()
         advancedOpen = false
         modelFilter = ""
@@ -599,7 +549,6 @@ struct AgentConfigEditorSheet: View {
     }
 
     private func saveAndLaunch() {
-        guard !statsMode else { return }
         launchFeedback = nil
         guard let saved = library.save(draft) else {
             launchFeedback = saveFailedMessage
@@ -1161,103 +1110,3 @@ private struct FlowChipsRaw<Content: View>: View {
         HStack(spacing: 6) { content }
     }
 }
-
-// MARK: - Launch stats view (design §5.5)
-
-/// The launch-stats view rendered inside the sheet: window chips (today/30d/all),
-/// gold leader bars, and the agent-launches.jsonl provenance line. Reads the
-/// C11-178 aggregate through `AgentLaunchStatsStore.shared`.
-struct LaunchStatsView: View {
-    @State private var window: StatsWindow = .all
-    @State private var bars: [StatsBarRow] = []
-    @State private var total = 0
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 7) {
-                    windowChip(.today, String(localized: "agentConfigEditor.stats.today", defaultValue: "today"))
-                    windowChip(.days(30), String(localized: "agentConfigEditor.stats.30d", defaultValue: "30d"))
-                    windowChip(.all, String(localized: "agentConfigEditor.stats.all", defaultValue: "all time"))
-                    Spacer()
-                    Text(String(format: String(localized: "agentConfigEditor.stats.query",
-                                               defaultValue: "by model · c11 config stats --window %@"), windowFlag))
-                        .font(.system(size: 10)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
-                }
-                .padding(.top, 12).padding(.bottom, 16)
-
-                if bars.isEmpty {
-                    Text(String(localized: "agentConfigEditor.stats.empty",
-                                defaultValue: "no launches recorded yet — launch an agent and it lands here"))
-                        .font(.system(size: 11)).foregroundStyle(BrandColors.dimSwiftUI).padding(.vertical, 20)
-                } else {
-                    ForEach(bars, id: \.label) { row in barRow(row) }
-                }
-
-                Text(String(format: String(localized: "agentConfigEditor.stats.provenance",
-                                           defaultValue: "%d launches · %@ · source: agent-launches.jsonl — every path (A button, CLI, socket, blueprint, fader) records"),
-                            total, windowLabel))
-                    .font(.system(size: 10.5)).foregroundStyle(BrandColors.dimSwiftUI).padding(.top, 14)
-            }
-            .padding(.horizontal, 22).padding(.bottom, 18)
-        }
-        .task(id: windowFlag) { await reload() }
-    }
-
-    private func barRow(_ row: StatsBarRow) -> some View {
-        HStack(spacing: 11) {
-            Text(row.label).font(.system(size: 11.5)).foregroundStyle(BrandColors.whiteSwiftUI)
-                .frame(width: 92, alignment: .trailing)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3).fill(BrandColors.surface2SwiftUI)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(row.isLeader
-                              ? LinearGradient(colors: [BrandColors.goldSwiftUI.opacity(0.55), BrandColors.goldSwiftUI],
-                                               startPoint: .leading, endPoint: .trailing)
-                              : LinearGradient(colors: [BrandColors.surface3SwiftUI, BrandColors.surface3SwiftUI],
-                                               startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, geo.size.width * row.widthOfMax))
-                }
-            }
-            .frame(height: 14)
-            Text("\(Int((row.shareOfTotal * 100).rounded()))% (\(row.count))")
-                .font(.system(size: 10.5)).foregroundStyle(BrandColors.dimSwiftUI)
-                .frame(width: 110, alignment: .leading)
-        }
-        .padding(.bottom, 9)
-    }
-
-    private func windowChip(_ w: StatsWindow, _ label: String) -> some View {
-        Button { window = w } label: {
-            Text(label).font(.system(size: 11))
-                .foregroundStyle(window == w ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI.opacity(0.75))
-                .padding(.horizontal, 11).padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 5).fill(window == w ? BrandColors.goldSwiftUI.opacity(0.10) : BrandColors.surface2SwiftUI))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(window == w ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var windowFlag: String {
-        switch window { case .today: return "today"; case .days: return "30d"; case .all: return "all" }
-    }
-    private var windowLabel: String {
-        switch window {
-        case .today: return String(localized: "agentConfigEditor.stats.label.today", defaultValue: "today")
-        case .days: return String(localized: "agentConfigEditor.stats.label.30d", defaultValue: "last 30d")
-        case .all: return String(localized: "agentConfigEditor.stats.label.all", defaultValue: "all time")
-        }
-    }
-
-    private func reload() async {
-        let w = window
-        let result: LaunchStatsResult? = await Task.detached(priority: .userInitiated) {
-            AgentLaunchStatsStore.shared?.stats(window: w, by: .model)
-        }.value
-        guard let result else { bars = []; total = 0; return }
-        bars = LaunchStatsBars.statsBars(from: result)
-        total = result.count
-    }
-}
-

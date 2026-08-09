@@ -153,14 +153,6 @@ final class ConfigCommandCoreTests: XCTestCase {
         XCTAssertEqual(library.current.default.configId, saved.id)
     }
 
-    func testFollowRecentSetsModeOnly() throws {
-        let (core, library, _) = makeCore()
-        let pinnedId = library.current.default.configId
-        try core.setFollowRecent()
-        XCTAssertEqual(library.current.default.mode, .followRecent)
-        XCTAssertEqual(library.current.default.configId, pinnedId)   // pin unchanged
-    }
-
     func testPinCurrentSnapshotsRecentAndPins() throws {
         let (core, library, _) = makeCore()
         try library.recordRecent(RecentAgentConfig(configId: nil, harness: "codex", model: "gpt-5.2", effort: nil, observedAt: Date(), source: "launch"))

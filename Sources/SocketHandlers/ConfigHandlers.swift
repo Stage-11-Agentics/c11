@@ -102,16 +102,12 @@ extension TerminalController {
                 let moved = try core.reorder(nameOrId: ref, to: to)
                 return .ok(try ConfigJSON.object(from: moved))
             case "config.default":
-                if boolParam(params, "follow_recent") {
-                    try core.setFollowRecent()
-                    return .ok(["mode": "follow-recent"])
-                }
                 if boolParam(params, "pin_current") {
                     let saved = try core.pinCurrent(name: (params["name"] as? String)?.nonEmpty)
                     return .ok(["pinned": try ConfigJSON.object(from: saved)])
                 }
                 guard let ref = (params["config"] as? String)?.nonEmpty else {
-                    return .err(code: "invalid_params", message: "config.default requires 'config' (name|id), 'follow_recent', or 'pin_current'", data: nil)
+                    return .err(code: "invalid_params", message: "config.default requires 'config' (name|id) or 'pin_current'", data: nil)
                 }
                 let saved = try core.setDefault(nameOrId: ref)
                 return .ok(["pinned": try ConfigJSON.object(from: saved)])

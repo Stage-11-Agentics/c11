@@ -88,6 +88,7 @@
 		C11840000000000000000005 /* AttentionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000006 /* AttentionModelTests.swift */; };
 		5A86082FF691F6FBCBDE52CB /* AgentLaunchOverlayCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0C8786B9F13542B2C4D9D35 /* AgentLaunchOverlayCompositionTests.swift */; };
 		5AE9C6CE7FCF928F695FE26D /* MainThreadHangMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */; };
+		A1C1196000000000000001AA /* ExpiringValueCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C1196000000000000002AA /* ExpiringValueCache.swift */; };
 		5AEB95ABF100C21BFCDB40E4 /* C11ThemeLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F015 /* C11ThemeLoaderTests.swift */; };
 		5C4604660F7CC322D5590BD7 /* AgentDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4202C77B3590FB8D760708 /* AgentDetectorTests.swift */; };
 		5E5FA83B76AB6FA59171D8C2 /* HealthFlagsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH014BF1A1B2C3D4E5F60718 /* HealthFlagsTests.swift */; };
@@ -436,6 +437,7 @@
 		E81B5FA9C3AF8FAB6C10C623 /* WorkspaceApplyPlanCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8002BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlanCodableTests.swift */; };
 		E883012FE2EFF094545647F6 /* Pi.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE86A069B4ECE7503CE20B95 /* Pi.swift */; };
 		E9E24C866C5E61B887F6E726 /* MainThreadHangDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E223B0BAFC30EA2CC0F9BAC3 /* MainThreadHangDetectorTests.swift */; };
+		A1C1196000000000000003AA /* ExpiringValueCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C1196000000000000004AA /* ExpiringValueCacheTests.swift */; };
 		EAD9B00B1CD68D5F1C61CEDF /* ConversationStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B9B8C3641F9801C6A45757 /* ConversationStrategyTests.swift */; };
 		EC224F7B0F7E77A981DFEC5A /* StateDirectoryMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B78D8232EFC5CF6A718EA7 /* StateDirectoryMigrationTests.swift */; };
 		F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */; };
@@ -910,9 +912,11 @@
 		E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuKeyEquivalentRoutingUITests.swift; sourceTree = "<group>"; };
 		E1B94CA7E57E1FD8FFF1217B /* OmpScraper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpScraper.swift; path = Conversation/Scrapers/OmpScraper.swift; sourceTree = "<group>"; };
 		E223B0BAFC30EA2CC0F9BAC3 /* MainThreadHangDetectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainThreadHangDetectorTests.swift; sourceTree = "<group>"; };
+		A1C1196000000000000004AA /* ExpiringValueCacheTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExpiringValueCacheTests.swift; sourceTree = "<group>"; };
 		E25359D87534E2AF54EA0E5F /* SurfaceActivityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SurfaceActivityTests.swift; sourceTree = "<group>"; };
 		E2BDE4F4D562EC49C639CF86 /* Kimi.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Kimi.swift; path = Conversation/Strategies/Kimi.swift; sourceTree = "<group>"; };
 		EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainThreadHangMonitor.swift; sourceTree = "<group>"; };
+		A1C1196000000000000002AA /* ExpiringValueCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExpiringValueCache.swift; sourceTree = "<group>"; };
 		EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWidthPolicyTests.swift; sourceTree = "<group>"; };
 		EE5E15A4988E33E201CBAE37 /* SocketSurfaceRefValidatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketSurfaceRefValidatorTests.swift; sourceTree = "<group>"; };
 		EFAF4E88F20968661D2D0886 /* MarkdownFeedbackHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownFeedbackHandlers.swift; sourceTree = "<group>"; };
@@ -1233,6 +1237,7 @@
 				54017DD4C9F6BE7CFA98C2F7 /* Opencode.swift */,
 				AD94535AC5F0BF88B5CDEDDF /* ClaudeCodeScraper.swift */,
 				EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */,
+				A1C1196000000000000002AA /* ExpiringValueCache.swift */,
 				51C0D2C1212976BCF837B620 /* HangBacktrace.c */,
 				BE61F2503F50546EC21A9868 /* HangBacktrace.h */,
 				0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */,
@@ -1465,6 +1470,7 @@
 				7B4202C77B3590FB8D760708 /* AgentDetectorTests.swift */,
 				C11191F0100000000000001 /* GhosttyDisplayIDGateTests.swift */,
 				E223B0BAFC30EA2CC0F9BAC3 /* MainThreadHangDetectorTests.swift */,
+				A1C1196000000000000004AA /* ExpiringValueCacheTests.swift */,
 				4B2DBF12A2F90CBDE7F6A289 /* PaneSizePolicyTests.swift */,
 				FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */,
 				A2CADD0C9B7E43A29D723366 /* SurfaceTypeAvailabilityTests.swift */,
@@ -1812,6 +1818,7 @@
 				5C4604660F7CC322D5590BD7 /* AgentDetectorTests.swift in Sources */,
 				C11191A0100000000000001 /* GhosttyDisplayIDGateTests.swift in Sources */,
 				E9E24C866C5E61B887F6E726 /* MainThreadHangDetectorTests.swift in Sources */,
+				A1C1196000000000000003AA /* ExpiringValueCacheTests.swift in Sources */,
 				756290E56A4FC7D6546C1D46 /* PaneSizePolicyTests.swift in Sources */,
 				ACB000000000000000000102 /* BrowserCompanionPolicyTests.swift in Sources */,
 				FE01AA00000000000000B001 /* SendKeyVocabularyTests.swift in Sources */,
@@ -2009,6 +2016,7 @@
 				60785E8E82CF86BCF4A26738 /* Opencode.swift in Sources */,
 				767FF8ADAC0F182A4534E12B /* ClaudeCodeScraper.swift in Sources */,
 				5AE9C6CE7FCF928F695FE26D /* MainThreadHangMonitor.swift in Sources */,
+				A1C1196000000000000001AA /* ExpiringValueCache.swift in Sources */,
 				5535B0220F7520ADFB17EC99 /* HangBacktrace.c in Sources */,
 				27AE9B7E020D938C6013B312 /* PaneSizePolicy.swift in Sources */,
 				ACB000000000000000000101 /* AgentCompanionContext.swift in Sources */,

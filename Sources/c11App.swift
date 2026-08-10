@@ -6660,7 +6660,19 @@ struct SettingsView: View {
     }
 
     private func refreshDetectedImportBrowsers() {
-        detectedImportBrowsers = InstalledBrowserDetector.detectInstalledBrowsers()
+        // C11-196: the detector probes a dozen browser bundle identifiers through
+        // `NSWorkspace.urlForApplication(withBundleIdentifier:)`, each one a
+        // synchronous XPC round trip to `launchservicesd`. Settings opened this
+        // on the main thread from `.onAppear`; the browser panel's own empty-state
+        // detector already runs it detached, so match that.
+        Task {
+            let browsers = await Task.detached(priority: .utility) {
+                InstalledBrowserDetector.detectInstalledBrowsers()
+            }.value
+            await MainActor.run {
+                detectedImportBrowsers = browsers
+            }
+        }
     }
 }
 

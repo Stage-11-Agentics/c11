@@ -4991,7 +4991,10 @@ struct ContentView: View {
               focusedPanelContext?.panel.panelType == .terminal else {
             return []
         }
-        return TerminalDirectoryOpenTarget.availableTargets()
+        // C11-196: cached. The uncached probe issues one synchronous
+        // LaunchServices XPC round trip per editor it cannot find on disk, and
+        // this runs on every command-palette keystroke.
+        return TerminalDirectoryOpenTarget.availableTargetsCached()
     }
 
     private func commandPaletteCommandsContext(
@@ -5214,7 +5217,7 @@ struct ContentView: View {
             snapshot.setBool(CommandPaletteContextKeys.panelHasUnread, hasUnread)
 
             if panelIsTerminal {
-                let availableTargets = terminalOpenTargets ?? TerminalDirectoryOpenTarget.availableTargets()
+                let availableTargets = terminalOpenTargets ?? TerminalDirectoryOpenTarget.availableTargetsCached()
                 for target in TerminalDirectoryOpenTarget.commandPaletteShortcutTargets {
                     snapshot.setBool(
                         CommandPaletteContextKeys.terminalOpenTargetAvailable(target),
@@ -14913,8 +14916,56 @@ private struct DraggableFolderIconRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: DraggableFolderNSView, context: Context) {
-        nsView.directory = directory
-        nsView.updateIcon()
+        // C11-196: this fires on every SwiftUI update pass for the sidebar, and
+        // the icon lookup underneath is a synchronous LaunchServices/IconServices
+        // XPC round trip. Only re-resolve when the path actually changed.
+        nsView.setDirectory(directory)
+    }
+}
+
+/// C11-196: `NSWorkspace.icon(forFile:)` reaches IconServices/LaunchServices over
+/// synchronous XPC. The sidebar asked for the same handful of directory icons on
+/// every render pass, on every path-menu popup, and again on every drag start.
+/// Memoize by path so one lookup serves them all.
+///
+/// Entries expire so an operator who assigns a custom folder icon sees it without
+/// relaunching; `NSCache` additionally evicts under memory pressure.
+enum FolderIconCache {
+    static let entryTTL: TimeInterval = 300
+
+    private final class Entry {
+        let image: NSImage
+        let storedAt: TimeInterval
+
+        init(image: NSImage, storedAt: TimeInterval) {
+            self.image = image
+            self.storedAt = storedAt
+        }
+    }
+
+    private static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 256
+        return cache
+    }()
+
+    /// A correctly sized icon for `path`, reusing a cached lookup when possible.
+    ///
+    /// The returned image is a copy: callers set `size` on it, and the cached
+    /// base image must not be resized out from under other callers.
+    static func icon(forPath path: String, size: CGFloat) -> NSImage {
+        let key = path as NSString
+        let now = ProcessInfo.processInfo.systemUptime
+        let base: NSImage
+        if let entry = cache.object(forKey: key), now - entry.storedAt < entryTTL {
+            base = entry.image
+        } else {
+            base = NSWorkspace.shared.icon(forFile: path)
+            cache.setObject(Entry(image: base, storedAt: now), forKey: key)
+        }
+        let sized = (base.copy() as? NSImage) ?? base
+        sized.size = NSSize(width: size, height: size)
+        return sized
     }
 }
 
@@ -14923,7 +14974,8 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
         override var mouseDownCanMoveWindow: Bool { false }
     }
 
-    var directory: String
+    private(set) var directory: String
+    private var iconDirectory: String?
     private var imageView: FolderIconImageView!
     private var previousWindowMovableState: Bool?
     private weak var suppressedWindow: NSWindow?
@@ -14966,10 +15018,18 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
         updateIcon()
     }
 
+    /// Point the view at a new directory, refreshing the icon only when the path
+    /// actually changed. SwiftUI calls this on every update pass.
+    func setDirectory(_ newDirectory: String) {
+        guard newDirectory != directory else { return }
+        directory = newDirectory
+        updateIcon()
+    }
+
     func updateIcon() {
-        let icon = NSWorkspace.shared.icon(forFile: directory)
-        icon.size = NSSize(width: 16, height: 16)
-        imageView.image = icon
+        guard iconDirectory != directory || imageView.image == nil else { return }
+        imageView.image = FolderIconCache.icon(forPath: directory, size: 16)
+        iconDirectory = directory
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
@@ -15013,8 +15073,7 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
         let fileURL = URL(fileURLWithPath: directory)
         let draggingItem = NSDraggingItem(pasteboardWriter: fileURL as NSURL)
 
-        let iconImage = NSWorkspace.shared.icon(forFile: directory)
-        iconImage.size = NSSize(width: 32, height: 32)
+        let iconImage = FolderIconCache.icon(forPath: directory, size: 32)
         draggingItem.setDraggingFrame(bounds, contents: iconImage)
 
         let session = beginDraggingSession(with: [draggingItem], event: event, source: self)
@@ -15054,8 +15113,7 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
 
         // Add path components (current dir at top, root at bottom - matches native macOS)
         for pathURL in pathComponents {
-            let icon = NSWorkspace.shared.icon(forFile: pathURL.path)
-            icon.size = NSSize(width: 16, height: 16)
+            let icon = FolderIconCache.icon(forPath: pathURL.path, size: 16)
 
             let displayName: String
             if pathURL.path == "/" {

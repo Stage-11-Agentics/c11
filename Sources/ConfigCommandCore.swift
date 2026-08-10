@@ -325,14 +325,6 @@ struct ConfigCommandCore {
         return target
     }
 
-    func setFollowRecent() throws {
-        do {
-            try library.setMode(.followRecent)
-        } catch let e as AgentConfigLibraryStore.StoreError {
-            throw ConfigCoreError.store(code: e.code, message: e.description)
-        }
-    }
-
     /// Snapshot the most-recent observation into a new saved config and pin it
     /// (design §2.2 "pin current creates/updates one"; §6 `--pin-current`).
     /// `name` overrides the auto-generated `"Current: <model|harness>"` label.
@@ -584,9 +576,8 @@ extension ConfigListResult {
                 lines.append("  " + parts.joined(separator: "  ") + "   [\(c.id)]")
             }
         }
-        let mode = file.default.mode == .followRecent ? "follow-recent" : "pinned"
         let defName = configs.first(where: { $0.id == file.default.configId })?.name ?? file.default.configId
-        lines.append("Default: \(defName) (\(mode))")
+        lines.append("Default: \(defName) (\(file.default.mode.rawValue))")
         if let r = file.recent {
             let axes = [r.model, r.effort].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             lines.append("Most recent: \(r.harness ?? "—")\(axes.isEmpty ? "" : " · \(axes)")")

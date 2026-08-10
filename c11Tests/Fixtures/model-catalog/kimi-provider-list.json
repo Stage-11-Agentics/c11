@@ -1,0 +1,78 @@
+{
+  "providers": {
+    "managed:kimi-code": {
+      "type": "kimi",
+      "apiKey": "",
+      "baseUrl": "https://api.kimi.com/coding/v1",
+      "oauth": {
+        "storage": "file",
+        "key": "oauth/kimi-code"
+      }
+    }
+  },
+  "models": {
+    "kimi-code/kimi-for-coding": {
+      "provider": "managed:kimi-code",
+      "model": "kimi-for-coding",
+      "maxContextSize": 262144,
+      "capabilities": [
+        "thinking",
+        "always_thinking",
+        "image_in",
+        "video_in",
+        "tool_use"
+      ],
+      "displayName": "K2.7 Coding"
+    },
+    "kimi-code/kimi-for-coding-highspeed": {
+      "provider": "managed:kimi-code",
+      "model": "kimi-for-coding-highspeed",
+      "maxContextSize": 262144,
+      "capabilities": [
+        "thinking",
+        "always_thinking",
+        "image_in",
+        "video_in",
+        "tool_use"
+      ],
+      "displayName": "K2.7 Coding Highspeed"
+    },
+    "kimi-code/k3": {
+      "provider": "managed:kimi-code",
+      "model": "k3",
+      "maxContextSize": 1048576,
+      "capabilities": [
+        "thinking",
+        "always_thinking",
+        "image_in",
+        "video_in",
+        "tool_use"
+      ],
+      "displayName": "K3",
+      "supportEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "defaultEffort": "high"
+    },
+    "kimi-code/k3-256k": {
+      "provider": "managed:kimi-code",
+      "model": "k3-256k",
+      "maxContextSize": 262144,
+      "capabilities": [
+        "thinking",
+        "always_thinking",
+        "image_in",
+        "tool_use"
+      ],
+      "displayName": "K3-256k",
+      "supportEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "defaultEffort": "high"
+    }
+  }
+}

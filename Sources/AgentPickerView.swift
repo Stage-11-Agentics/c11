@@ -36,21 +36,21 @@ private enum PickerPalette {
 /// wire in. Reference type so the NSEvent key monitor can capture it safely.
 final class AgentPickerController: ObservableObject {
     @Published var model: AgentPickerModel
-    /// Transient inline notice shown above the footer after a plain launch of a
-    /// not-installed row (§5.6). Auto-clears; a newer notice supersedes the timer.
-    @Published var notInstalledNotice: String?
+    /// Inline notice shown above the footer: the not-installed hint (§5.6), a
+    /// refused pin, or the reason a launch declined (C11-203 A1). Never nil
+    /// silently — every path that refuses to act writes one.
+    @Published var notice: String?
     private var noticeGeneration = 0
 
-    /// Launch a specific config now (row click / ⏎ / 1–9 / recent).
-    var onLaunch: (SavedAgentConfig) -> Void = { _ in }
+    /// Launch a specific config now (row click / ⏎ / 1–9). Returns `nil` when
+    /// the launch happened, or the operator-facing reason it declined — the
+    /// popover stays open and shows it (C11-203 A1).
+    var onLaunch: (SavedAgentConfig) -> String? = { _ in nil }
     /// Pin a config as default without launching (pin glyph / ⌥-click / ⌥⏎).
-    var onPin: (SavedAgentConfig) -> Void = { _ in }
-    /// Flip follow-recent mode.
-    var onToggleFollowRecent: () -> Void = {}
-    /// Open the tier-2 configure sheet (C11-182 seam).
+    /// Returns `nil` on success, or the reason the pin was refused.
+    var onPin: (SavedAgentConfig) -> String? = { _ in nil }
+    /// Open the tier-2 "Edit Launch Agents" sheet (C11-182 seam).
     var onViewAll: () -> Void = {}
-    /// Open the stats view (C11-182 seam).
-    var onStats: () -> Void = {}
     /// Surface the "not installed" hint for a plain launch of a dim row (§5.6).
     var onNotInstalledHint: (SavedAgentConfig) -> Void = { _ in }
     /// Dismiss the popover (set by the presenter).
@@ -79,54 +79,69 @@ final class AgentPickerController: ObservableObject {
 
     func clickPinGlyph(_ row: AgentPickerRow) { pin(row.config) }
 
-    func clickRecent() {
-        dispatch(model.recentClickAction())
-    }
-
-    func toggleFollowRecent() {
-        onToggleFollowRecent(); refresh()
-    }
-
     private func pin(_ config: SavedAgentConfig) {
-        onPin(config); refresh()
+        if let refusal = onPin(config) {
+            showNotice(refusal)
+        } else {
+            // A successful action clears whatever refusal was on screen, so the
+            // notice bar always describes the last thing that happened.
+            clearNotice()
+        }
+        refresh()
     }
 
     private func dispatch(_ action: PickerAction) {
         switch action {
-        case .launch(let c): onLaunch(c); onClose()
+        case .launch(let c):
+            // Close only on an actual launch. A decline keeps the popover up and
+            // states its reason, so no gesture can end in nothing (C11-203 A1).
+            if let reason = onLaunch(c) { showNotice(reason) } else { onClose() }
         case .pin(let c): pin(c)                     // stays open, ● moves (prototype)
         case .notInstalled(let c): showNotInstalledNotice(for: c); onNotInstalledHint(c)
-        case .toggleFollowRecent: toggleFollowRecent()
         case .viewAll: onViewAll(); onClose()
-        case .stats: onStats(); onClose()
         case .close: onClose()
         case .none: break
         }
+    }
+
+    /// Show an inline notice. `autoDismissAfter` clears it on a timer (the
+    /// not-installed hint's existing behavior); the default is sticky, because a
+    /// refusal the operator has to act on should not evaporate mid-read.
+    func showNotice(_ text: String, autoDismissAfter seconds: TimeInterval? = nil) {
+        notice = text
+        noticeGeneration += 1
+        guard let seconds else { return }
+        let generation = noticeGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.notice = nil
+        }
+    }
+
+    /// Drop the current notice and invalidate any pending auto-dismiss timer.
+    func clearNotice() {
+        notice = nil
+        noticeGeneration += 1
     }
 
     private func showNotInstalledNotice(for config: SavedAgentConfig) {
         let harness = AgentRegistry.shared.manifest(forKind: config.config.harness)?.displayName
             ?? AgentType(rawValue: config.config.harness)?.displayName
             ?? config.config.harness
-        notInstalledNotice = String(
-            localized: "agentPicker.notice.notInstalled",
-            defaultValue: "\(harness) isn't on PATH — install it, or pin the row as default anyway"
+        showNotice(
+            String(
+                localized: "agentPicker.notice.notInstalled",
+                defaultValue: "\(harness) isn't on PATH — install it, or pin the row as default anyway"
+            ),
+            autoDismissAfter: 4
         )
-        noticeGeneration += 1
-        let generation = noticeGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-            guard let self, self.noticeGeneration == generation else { return }
-            self.notInstalledNotice = nil
-        }
     }
 
     /// Refresh the model in place (preserving the keyboard cursor) after a mutation.
     private func refresh() {
         guard var next = rebuild() else { return }
         let sel = model.selectedIndex
-        // Max nav index = last shortlist row, plus the recent row when present.
-        let maxSel = next.content.shortlist.count - 1 + (next.content.recent != nil ? 1 : 0)
-        next.selectedIndex = min(max(sel, -1), maxSel)
+        next.selectedIndex = min(max(sel, -1), next.content.shortlist.count - 1)
         model = next
     }
 }
@@ -148,16 +163,7 @@ struct AgentPickerView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             shortlistSection
-            if let recent = content.recent {
-                sectionRule(String(localized: "agentPicker.recent.section", defaultValue: "recent"))
-                RecentRowView(
-                    row: recent,
-                    isFocused: controller.model.selectedIndex == content.shortlist.count,
-                    showsCostColumn: showsCostColumn,
-                    onClick: { controller.clickRecent() }
-                )
-            }
-            if let notice = controller.notInstalledNotice {
+            if let notice = controller.notice {
                 noticeBar(notice)
             }
             footer
@@ -176,8 +182,8 @@ struct AgentPickerView: View {
 
     /// The saved-config rows. Up to 8 render inline; past that the list scrolls
     /// inside a fixed viewport (with a half-row peek so the overflow is visible)
-    /// and keyboard navigation keeps the focused row in view. Recent, footer,
-    /// and hints stay pinned below the scroll region.
+    /// and keyboard navigation keeps the focused row in view. The notice bar,
+    /// footer, and hints stay pinned below the scroll region.
     @ViewBuilder private var shortlistSection: some View {
         if content.shortlist.count > Self.maxVisibleShortlistRows {
             ScrollViewReader { proxy in
@@ -198,7 +204,7 @@ struct AgentPickerView: View {
     /// The `$in/$out` column renders only when at least one visible row has a
     /// catalog price — an unfilled catalog must not reserve dead trailing space.
     private var showsCostColumn: Bool {
-        content.shortlist.contains { $0.cost != nil } || content.recent?.cost != nil
+        content.shortlist.contains { $0.cost != nil }
     }
 
     private var shortlistRows: some View {
@@ -206,7 +212,6 @@ struct AgentPickerView: View {
             PickerRowView(
                 row: row,
                 isFocused: controller.model.selectedIndex == idx,
-                followRecent: content.followRecent,
                 showsCostColumn: showsCostColumn,
                 onClick: { opt in controller.clickRow(row, option: opt) },
                 onPin: { controller.clickPinGlyph(row) }
@@ -235,11 +240,6 @@ struct AgentPickerView: View {
             Text(String(localized: "agentPicker.header.launchAgent", defaultValue: "Launch agent"))
                 .ucLabel(color: BrandColors.whiteSwiftUI.opacity(0.7))
             Spacer()
-            if content.followRecent {
-                Text(String(localized: "agentPicker.header.following", defaultValue: "◉ following recent"))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(BrandColors.goldSwiftUI)
-            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
@@ -247,43 +247,15 @@ struct AgentPickerView: View {
         .overlay(alignment: .bottom) { ruleLine }
     }
 
-    private func sectionRule(_ label: String) -> some View {
-        HStack(spacing: 8) {
-            line
-            Text(label).ucLabel()
-            line
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
-        .background(BrandColors.blackSwiftUI.opacity(0.5))
-    }
-
+    /// One row: the tier-2 editor. The popover is header, saved-agent rows, this
+    /// (C11-203 B2/B3/B4 retired the follow-recent checkbox and the stats row).
     private var footer: some View {
-        VStack(spacing: 0) {
-            FooterRow(
-                icon: .checkbox(content.followRecent),
-                label: String(localized: "agentPicker.footer.followRecent", defaultValue: "Default follows most recent"),
-                trailingText: content.followRecent
-                    ? String(localized: "agentPicker.footer.followRecent.hint", defaultValue: "A launches whatever you last launched")
-                    : nil,
-                trailingKbd: nil,
-                action: { controller.toggleFollowRecent() }
-            )
-            FooterRow(
-                icon: .glyph("✎"),
-                label: String(localized: "agentPicker.footer.viewAll", defaultValue: "View all models & configs…"),
-                trailingText: nil,
-                trailingKbd: "⌘⏎",
-                action: { controller.onViewAll(); controller.onClose() }
-            )
-            FooterRow(
-                icon: .glyph("▤"),
-                label: String(localized: "agentPicker.footer.stats", defaultValue: "Launch stats"),
-                trailingText: content.statsHeadline,
-                trailingKbd: nil,
-                action: { controller.onStats(); controller.onClose() }
-            )
-        }
+        FooterRow(
+            glyph: "✎",
+            label: String(localized: "agentPicker.footer.editLaunchAgents", defaultValue: "Edit Launch Agents"),
+            trailingKbd: "⌘⏎",
+            action: { controller.onViewAll(); controller.onClose() }
+        )
         .background(BrandColors.blackSwiftUI.opacity(0.6))
         .overlay(alignment: .top) { ruleLine }
     }
@@ -293,7 +265,8 @@ struct AgentPickerView: View {
             KeyCap("↑↓"); hintText(String(localized: "agentPicker.hint.select", defaultValue: "select")); dot
             KeyCap("⏎"); hintText(String(localized: "agentPicker.hint.launch", defaultValue: "launch")); dot
             KeyCap("⌥⏎"); hintText(String(localized: "agentPicker.hint.setDefault", defaultValue: "set default")); dot
-            KeyCap("1–9"); hintText(String(localized: "agentPicker.hint.launchNth", defaultValue: "launch nth"))
+            KeyCap("1–9"); hintText(String(localized: "agentPicker.hint.launchNth", defaultValue: "launch nth")); dot
+            KeyCap("⌘⏎"); hintText(String(localized: "agentPicker.hint.edit", defaultValue: "edit"))
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
@@ -310,7 +283,6 @@ struct AgentPickerView: View {
     private var dot: some View {
         Text("·").foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.25))
     }
-    private var line: some View { Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1) }
     private var ruleLine: some View { Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1) }
 }
 
@@ -319,7 +291,6 @@ struct AgentPickerView: View {
 private struct PickerRowView: View {
     let row: AgentPickerRow
     let isFocused: Bool
-    let followRecent: Bool
     let showsCostColumn: Bool
     let onClick: (Bool) -> Void
     let onPin: () -> Void
@@ -334,9 +305,7 @@ private struct PickerRowView: View {
                     Text(row.name)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundStyle(BrandColors.whiteSwiftUI)
-                    if row.isRecentDefault && followRecent {
-                        DefaultTag(String(localized: "agentPicker.tag.recentDefault", defaultValue: "recent→default"))
-                    } else if row.isPinnedDefault {
+                    if row.isPinnedDefault {
                         DefaultTag(String(localized: "agentPicker.tag.default", defaultValue: "default"))
                     }
                     if !row.isInstalled {
@@ -392,66 +361,6 @@ private struct PickerRowView: View {
     }
 }
 
-// MARK: - Recent row
-
-private struct RecentRowView: View {
-    let row: AgentPickerRecentRow
-    let isFocused: Bool
-    let showsCostColumn: Bool
-    let onClick: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text("↻")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(row.name)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(BrandColors.whiteSwiftUI)
-                    Text(row.relativeTime)
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-                    if !row.isInstalled {
-                        Text(String(localized: "agentPicker.notInstalled", defaultValue: "NOT INSTALLED"))
-                            .font(.system(size: 8.5, design: .monospaced))
-                            .tracking(0.5)
-                            .foregroundStyle(BrandColors.dimSwiftUI)
-                    }
-                }
-                SubLine(row.subLine, brightenProvider: false)
-            }
-            Spacer(minLength: 6)
-            HStack(spacing: 7) {
-                if row.showLiveHint { LiveHintBadge(harness: row.harnessDisplayName) }
-                if showsCostColumn {
-                    Text(row.cost ?? "")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
-                        .frame(minWidth: 82, alignment: .trailing)
-                }
-                // Empty key-cap slot so the recent cost aligns with shortlist costs.
-                Color.clear.frame(width: 16, height: 1)
-            }
-        }
-        .padding(.leading, 10)
-        .padding(.trailing, 12)
-        .padding(.vertical, 8)
-        .opacity(row.isInstalled ? 1 : 0.42)
-        .background(isFocused ? BrandColors.goldFaintSwiftUI : (hovering && row.isInstalled ? BrandColors.whiteSwiftUI.opacity(0.03) : Color.clear))
-        .overlay(alignment: .leading) {
-            if isFocused { Rectangle().fill(BrandColors.goldSwiftUI).frame(width: 2) }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { onClick() }
-    }
-}
-
 // MARK: - Small components
 
 private struct PinCell: View {
@@ -493,14 +402,7 @@ private struct DefaultTag: View {
 /// `harness · provider · model` with the provider segment brightened (prototype).
 private struct SubLine: View {
     let text: String
-    /// Shortlist sub-lines are `harness · provider · model` — brighten the middle
-    /// (provider). The recent sub-line is `harness · model · effort`, which has no
-    /// provider span, so it stays fully dim (prototype `.cfg-sub` with no `.prov`).
-    let brightenProvider: Bool
-    init(_ text: String, brightenProvider: Bool = true) {
-        self.text = text
-        self.brightenProvider = brightenProvider
-    }
+    init(_ text: String) { self.text = text }
     var body: some View {
         let parts = text.components(separatedBy: " · ")
         return HStack(spacing: 0) {
@@ -508,7 +410,7 @@ private struct SubLine: View {
                 if i > 0 {
                     Text(" · ").foregroundStyle(PickerPalette.subDim)
                 }
-                Text(part).foregroundStyle(brightenProvider && parts.count == 3 && i == 1 ? PickerPalette.subProvider : PickerPalette.subDim)
+                Text(part).foregroundStyle(parts.count == 3 && i == 1 ? PickerPalette.subProvider : PickerPalette.subDim)
             }
         }
         .font(.system(size: 10.5, design: .monospaced))
@@ -558,31 +460,11 @@ private struct KeyCap: View {
     }
 }
 
-/// The quiet ⓘ hint on a non-claude recent row (design §8.4).
-private struct LiveHintBadge: View {
-    let harness: String
-    @State private var hovering = false
-    var body: some View {
-        Text("i")
-            .font(.system(size: 8.5, design: .monospaced))
-            .foregroundStyle(hovering ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI)
-            .frame(width: 13, height: 13)
-            .overlay(Circle().stroke(hovering ? BrandColors.goldFaintSwiftUI : BrandColors.ruleSwiftUI, lineWidth: 0.5))
-            .onHover { hovering = $0 }
-            .help(String(
-                localized: "agentPicker.recent.liveHint",
-                defaultValue: "\(harness) does not report live model changes — this value was captured at launch. A mid-session /model switch inside the TUI is not observed."
-            ))
-    }
-}
-
 // MARK: - Footer row
 
 private struct FooterRow: View {
-    enum Icon { case checkbox(Bool), glyph(String) }
-    let icon: Icon
+    let glyph: String
     let label: String
-    let trailingText: String?
     let trailingKbd: String?
     let action: () -> Void
 
@@ -590,14 +472,14 @@ private struct FooterRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            iconView.frame(width: 16)
+            Text(glyph)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(hovering ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI)
+                .frame(width: 16)
             Text(label)
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(hovering ? BrandColors.whiteSwiftUI : BrandColors.whiteSwiftUI.opacity(0.8))
             Spacer(minLength: 6)
-            if let t = trailingText {
-                Text(t).font(.system(size: 10, design: .monospaced)).foregroundStyle(BrandColors.dimSwiftUI)
-            }
             if let k = trailingKbd { KeyCap(k) }
         }
         .padding(.horizontal, 14)
@@ -606,30 +488,6 @@ private struct FooterRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { action() }
-    }
-
-    @ViewBuilder private var iconView: some View {
-        switch icon {
-        case .checkbox(let on): CheckboxGlyph(on: on)
-        case .glyph(let g):
-            Text(g).font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(hovering ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI)
-        }
-    }
-}
-
-private struct CheckboxGlyph: View {
-    let on: Bool
-    var body: some View {
-        RoundedRectangle(cornerRadius: 3)
-            .fill(on ? BrandColors.goldSwiftUI : Color.clear)
-            .frame(width: 13, height: 13)
-            .overlay(RoundedRectangle(cornerRadius: 3).stroke(on ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI, lineWidth: 1))
-            .overlay(
-                Text(on ? "✓" : "")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(BrandColors.blackSwiftUI)
-            )
     }
 }
 

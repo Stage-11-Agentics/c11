@@ -12454,7 +12454,7 @@ extension Workspace: BonsplitDelegate {
             guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
             _ = newMarkdownSurface(inPane: pane)
         case "agent":
-            launchAgentSurface(inPane: pane)
+            launchDefaultAgentFromTabBar(inPane: pane)
         case "newTab":
             createNewTabOfFocusedKind(inPane: pane)
         default:
@@ -12462,9 +12462,82 @@ extension Workspace: BonsplitDelegate {
         }
     }
 
+    /// Why a UI-initiated agent launch declined (C11-203 A1). Every non-launch
+    /// return from `attemptAgentSurfaceLaunch` names itself, so no operator
+    /// gesture can end in a silent no-op — the defect class the dead A button
+    /// belonged to. Modeled on `AppDelegate.SavedConfigLaunchResult`, which the
+    /// editor sheet already renders honestly.
+    enum AgentLaunchDecline: Equatable {
+        /// The resolved shell command was empty: a `custom` harness with no
+        /// command of its own, or a harness whose Settings command was blanked.
+        case emptyCommand(harness: String)
+        /// `newTerminalSurface` refused to create the surface.
+        case surfaceCreationFailed
+        /// An explicit recipe the overlay resolver could not materialize (an
+        /// unknown harness in a hand-edited `agent-configs.json`).
+        case unresolvableRecipe(harness: String)
+
+        /// One operator-facing sentence: what happened, and the next move.
+        var message: String {
+            switch self {
+            case .emptyCommand(let harness):
+                return String(
+                    format: String(
+                        localized: "agentLaunch.decline.emptyCommand",
+                        defaultValue: "This config resolves to an empty command (%@) — set a launch command for it under Edit Launch Agents."
+                    ),
+                    harness
+                )
+            case .surfaceCreationFailed:
+                return String(
+                    localized: "agentLaunch.decline.surfaceFailed",
+                    defaultValue: "Couldn't open a terminal surface for the agent — try again, or use a different pane."
+                )
+            case .unresolvableRecipe(let harness):
+                return String(
+                    format: String(
+                        localized: "agentLaunch.decline.unresolvableRecipe",
+                        defaultValue: "c11 doesn't know the harness '%@' this config names — pick a known harness under Edit Launch Agents."
+                    ),
+                    harness
+                )
+            }
+        }
+    }
+
+    /// The outcome of an agent-surface launch attempt (C11-203 A1).
+    enum AgentSurfaceLaunchOutcome: Equatable {
+        case launched
+        case declined(AgentLaunchDecline)
+
+        var didLaunch: Bool { self == .launched }
+        /// The decline reason, or `nil` when the launch happened.
+        var decline: AgentLaunchDecline? {
+            if case .declined(let reason) = self { return reason }
+            return nil
+        }
+    }
+
+    /// Launch an agent surface. Returns `true` when a launch was actually
+    /// performed; `false` when it declined. Callers that can show the operator
+    /// *why* should use `attemptAgentSurfaceLaunch` instead — this boolean
+    /// wrapper exists for the paths (socket `agent.launch`, the CLI's
+    /// new-surface path) that already report their own errors.
+    @discardableResult
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) -> Bool {
+        attemptAgentSurfaceLaunch(
+            inPane: pane,
+            explicitAgent: explicitAgent,
+            explicitConfig: explicitConfig,
+            source: source
+        ).didLaunch
+    }
+
     /// Create a new terminal and immediately send the configured agent launch
-    /// command. Uses the same "queue sendText before ready, flush on ready"
-    /// pattern as the welcome workspace.
+    /// command, reporting the decline reason when it doesn't happen (C11-203
+    /// A1). Uses the same "queue sendText before ready, flush on ready" pattern
+    /// as the welcome workspace. Every UI gesture routes through here so it can
+    /// surface a reason instead of dying in a guard.
     ///
     /// `explicitAgent` lets the caller override the configured default —
     /// used by the right-click menu's "launch this one now" affordance and
@@ -12477,13 +12550,12 @@ extension Workspace: BonsplitDelegate {
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
     ///   are honestly distinguished in the stats rail.
-    /// Launch an agent surface. Returns `true` when a launch was actually
-    /// performed; `false` when it declined (empty resolved command, surface
-    /// creation failed, or an `explicitConfig` whose recipe couldn't be
-    /// resolved) — the "Save & Launch" caller surfaces that as feedback rather
-    /// than a silent no-op.
-    @discardableResult
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) -> Bool {
+    func attemptAgentSurfaceLaunch(
+        inPane pane: PaneID,
+        explicitAgent: AgentType? = nil,
+        explicitConfig: SavedAgentConfig? = nil,
+        source: AgentLaunchSource = .aButton
+    ) -> AgentSurfaceLaunchOutcome {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
 
@@ -12523,11 +12595,11 @@ extension Workspace: BonsplitDelegate {
             resolvedEffort = overlay.mergedConfig.effort.trimmingCharacters(in: .whitespacesAndNewlines)
             resolvedSystemPromptMode = overlay.mergedConfig.systemPrompt?.mode.rawValue
             savedConfigId = saved.id.isEmpty ? nil : saved.id
-        } else if explicitConfig != nil {
+        } else if let explicitConfig {
             // A caller asked to launch a specific recipe that the resolver could
             // not materialize (unknown harness in a hand-edited agent-configs.json).
             // Decline rather than silently launching the default agent instead.
-            return false
+            return .declined(.unresolvableRecipe(harness: explicitConfig.config.harness))
         } else {
             let resolved = DefaultAgentResolver.resolve(
                 explicitAgent: explicitAgent,
@@ -12543,11 +12615,15 @@ extension Workspace: BonsplitDelegate {
             savedConfigId = nil
         }
 
-        guard !launch.command.isEmpty else { return false }
+        guard !launch.command.isEmpty else {
+            return .declined(.emptyCommand(harness: agent.rawValue))
+        }
         guard let panel = newTerminalSurface(
             inPane: pane,
             startupEnvironment: launch.envOverrides
-        ) else { return false }
+        ) else {
+            return .declined(.surfaceCreationFailed)
+        }
         // By default no orientation prompt is baked (see `c11OrientPrompt`),
         // so the agent boots straight to ready with no dead-time. c11 stamps
         // the identity the sidebar needs itself — no agent round-trip: the
@@ -12567,23 +12643,20 @@ extension Workspace: BonsplitDelegate {
             configId: savedConfigId,
             source: source
         )
-        // C11-179 (R2): keep the follow-recent pointer that `effectiveDefault()`
-        // reads — `recent` in `agent-configs.json` — live for A-button-lineage
-        // launches. (The stats rail's own `recent` in `agent-launch-stats.json`
-        // is durable-telemetry only and is NEVER read for resolution, so the two
-        // homes cannot cause a follow-recent divergence.) Off-main, best-effort.
+        // C11-179 (R2): keep `recent` in `agent-configs.json` current for
+        // A-button-lineage launches. Durable telemetry only since C11-203 B2 —
+        // nothing resolves through it — but it is still the record `c11 config
+        // recent` / `--pin-current` read. Off-main, best-effort.
         recordOverlayRecent(
             harness: agent.rawValue,
             model: resolvedModel,
             effort: resolvedEffort,
             configId: savedConfigId
         )
-        // The tooltip carries the resolved default (§5.3 v1); in follow-recent
-        // mode this launch changes what the next left-click launches, so refresh
-        // this workspace's A-button tooltip. Cheap: `refreshSplitButtonTooltips`
-        // diffs and no-ops when unchanged.
+        // The tooltip carries the resolved default (§5.3 v1). Cheap:
+        // `refreshSplitButtonTooltips` diffs and no-ops when unchanged.
         refreshSplitButtonTooltips()
-        return true
+        return .launched
     }
 
     /// C11-178/179: emit a rail-1 launch-stats record for an A-button-lineage
@@ -12612,9 +12685,8 @@ extension Workspace: BonsplitDelegate {
     }
 
     /// C11-179 (R2): persist the observed launch as `recent` in
-    /// `agent-configs.json` (the single home `effectiveDefault()`'s follow-recent
-    /// branch reads). Off-main, best-effort — a telemetry hiccup never fails a
-    /// launch. Empty `harness` is a no-op guard.
+    /// `agent-configs.json`. Off-main, best-effort — a telemetry hiccup never
+    /// fails a launch. Empty `harness` is a no-op guard.
     private func recordOverlayRecent(
         harness: String,
         model: String,
@@ -12717,6 +12789,22 @@ extension Workspace: BonsplitDelegate {
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }
 
+    /// The A button's plain left-click (C11-203 A1). A launch that declines used
+    /// to return into the void: no surface, no error, nothing on screen. Now the
+    /// decline opens the picker carrying the reason as its notice bar — the
+    /// operator sees *why* nothing launched and is already standing in the one
+    /// surface that can fix it (pick another row, or Edit Launch Agents).
+    private func launchDefaultAgentFromTabBar(inPane pane: PaneID) {
+        let outcome = attemptAgentSurfaceLaunch(inPane: pane)
+        guard let decline = outcome.decline else { return }
+        presentAgentPicker(
+            inPane: pane,
+            window: NSApp.currentEvent?.window,
+            anchoringTo: nil,
+            notice: decline.message
+        )
+    }
+
     func splitTabBar(_ controller: BonsplitController, didRightClickNewTabButton kind: String, inPane pane: PaneID, buttonScreenRect: CGRect) {
         // C11-181: a right-click on the A button opens the rich launch picker
         // popover — it replaces both the old 9-harness menu AND its
@@ -12729,12 +12817,15 @@ extension Workspace: BonsplitDelegate {
 
     /// Present the tier-1 agent launch picker popover anchored to the A button
     /// (design §5.1). `anchorScreenRect` is the right-clicked button's frame;
-    /// `nil` (⌘⇧A / menu) anchors at the window's top-trailing corner. Row click
-    /// = launch now; pin / ⌥-click = set default without launching (C11-181).
+    /// `nil` (⌘⇧A / menu / a declined left-click) anchors at the window's
+    /// top-trailing corner. Row click = launch now; pin / ⌥-click = set default
+    /// without launching (C11-181). `notice` seeds the inline notice bar, which
+    /// is how a declined A-button launch explains itself (C11-203 A1).
     func presentAgentPicker(
         inPane pane: PaneID,
         window requestedWindow: NSWindow? = nil,
-        anchoringTo anchorScreenRect: NSRect? = nil
+        anchoringTo anchorScreenRect: NSRect? = nil,
+        notice: String? = nil
     ) {
         guard let window = requestedWindow ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
 
@@ -12745,50 +12836,74 @@ extension Workspace: BonsplitDelegate {
         let controller = AgentPickerController(model: makeAgentPickerModel())
         controller.rebuild = { [weak self] in self?.makeAgentPickerModel() }
         controller.onLaunch = { [weak self] config in
-            guard let self else { return }
+            // A deallocated workspace is still a decline, not a launch — say so
+            // rather than closing the popover as if something happened.
+            guard let self else { return AgentLaunchDecline.surfaceCreationFailed.message }
             // The A button belongs to a pane. Focus it at launch time so the
             // new agent cannot land as a hidden/background tab — but not at
             // popover-open time, so peeking at the picker from an unfocused
             // pane and pressing Esc doesn't steal the pane focus.
             self.bonsplitController.focusPane(pane)
-            self.launchAgentSurface(inPane: pane, explicitConfig: config, source: .aButton)
+            // A decline keeps the popover open and returns its reason; the
+            // controller renders it in the notice bar (C11-203 A1).
+            return self.attemptAgentSurfaceLaunch(
+                inPane: pane, explicitConfig: config, source: .aButton
+            ).decline?.message
         }
         controller.onPin = { [weak self] config in
-            try? AgentConfigLibraryStore.shared.setDefault(configId: config.id)
+            do {
+                try AgentConfigLibraryStore.shared.setDefault(configId: config.id)
+            } catch {
+                // Pinning an unlaunchable recipe is refused at the store; say so
+                // rather than letting the ● quietly fail to move (C11-203 A2).
+                return Workspace.pinRefusalMessage(for: error, configName: config.name)
+            }
             self?.refreshSplitButtonTooltips()
+            return nil
         }
-        controller.onToggleFollowRecent = {
-            let current = AgentConfigLibraryStore.shared.current.default.mode
-            try? AgentConfigLibraryStore.shared.setMode(current == .followRecent ? .pinned : .followRecent)
-        }
-        // Tier-2 (configure sheet / stats view) is C11-182, now on main. "View
-        // all" opens the editor focused on the current default (or a new config
-        // when the effective default is a transient with no id); "Launch stats"
-        // opens the stats view. `origin: .popover` lets the sheet order Settings
-        // out on close. The Launch-stats row also shows a real inline headline.
-        let armEditorReturn = { [weak self, weak window] in
+        // Tier-2 ("Edit Launch Agents") is C11-182, now on main: it opens the
+        // editor focused on the current default (or a new config when the
+        // effective default is a transient with no id). `origin: .popover` lets
+        // the sheet order Settings out on close.
+        controller.onViewAll = { [weak self, weak window] in
             AgentPickerPresenter.shared.armReturnToPicker {
                 guard let self, let window else { return }
                 self.presentAgentPicker(inPane: pane, window: window, anchoringTo: nil)
             }
-        }
-        controller.onViewAll = {
-            armEditorReturn()
             let eff = AgentConfigLibraryStore.shared.effectiveDefault()
             let focus: AgentConfigEditorFocus = eff.id.isEmpty ? .new : .config(eff.id)
             AppDelegate.shared?.openAgentConfigEditor(focus: focus, origin: .popover)
         }
-        controller.onStats = {
-            armEditorReturn()
-            AppDelegate.shared?.openAgentConfigEditor(focus: .stats, origin: .popover)
-        }
-        // Not-installed feedback is the controller's inline notice (no beep).
+        // All refusals — not-installed, a declined launch, a refused pin — land
+        // in the controller's inline notice bar (no beep, no silence).
+        if let notice { controller.showNotice(notice) }
 
         AgentPickerPresenter.shared.present(controller: controller, in: window, anchoringTo: anchorScreenRect)
     }
 
+    /// Operator-facing sentence for a refused pin (C11-203 A2).
+    nonisolated static func pinRefusalMessage(for error: Error, configName: String) -> String {
+        if let storeError = error as? AgentConfigLibraryStore.StoreError,
+           case .configUnlaunchable = storeError {
+            return String(
+                format: String(
+                    localized: "agentPicker.notice.pinUnlaunchable",
+                    defaultValue: "'%@' can't launch as written, so it can't be the default — give it a launch command first."
+                ),
+                configName
+            )
+        }
+        return String(
+            format: String(
+                localized: "agentPicker.notice.pinFailed",
+                defaultValue: "Couldn't set '%@' as the default — please try again."
+            ),
+            configName
+        )
+    }
+
     /// Build the picker view-model from the current library, registry, a cached
-    /// PATH install probe, the (absent-today) cost catalog, and the stats headline.
+    /// PATH install probe, and the (absent-today) cost catalog.
     private func makeAgentPickerModel() -> AgentPickerModel {
         let library = AgentConfigLibraryStore.shared.current
         let effective = AgentConfigLibraryStore.shared.effectiveDefault()
@@ -12799,25 +12914,9 @@ extension Workspace: BonsplitDelegate {
             },
             provider: { AgentLaunchStats.provider(harness: $0, model: $1) },
             isInstalled: { AgentHarnessInstallProbe.isInstalled($0) },
-            costFor: { ModelCostCatalogStore.shared?.cost(forModel: $0) },
-            now: Date(),
-            statsHeadline: Self.agentPickerStatsHeadline()
+            costFor: { ModelCostCatalogStore.shared?.cost(forModel: $0) }
         )
         return AgentPickerModel(library: library, effectiveDefault: effective, env: env)
-    }
-
-    /// Inline "N% Model · M launches" from the lifetime stats aggregate (C11-178).
-    /// `nil` (no store / no launches) → the headline is omitted.
-    private static func agentPickerStatsHeadline() -> String? {
-        guard let store = AgentLaunchStatsStore.shared else { return nil }
-        let result = store.stats(window: .all, by: .model)
-        guard result.count > 0, let leader = result.tally.max(by: { $0.value < $1.value }) else { return nil }
-        let pct = Int((Double(leader.value) / Double(result.count) * 100).rounded())
-        let model = leader.key.prefix(1).uppercased() + leader.key.dropFirst()
-        return String(
-            localized: "agentPicker.stats.headline",
-            defaultValue: "\(pct)% \(model) · \(result.count) launches"
-        )
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestClosePane pane: PaneID) {

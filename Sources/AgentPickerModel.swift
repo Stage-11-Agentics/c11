@@ -3,9 +3,9 @@ import Foundation
 // MARK: - Agent launch picker: pure view-model (C11-181, tier 1)
 //
 // The UI-agnostic heart of the A-button launch popover. It turns the saved-config
-// library (`AgentConfigLibraryFile`) into rendered shortlist + recent rows, derives
-// the display facets the manifest does not model (provider, live-ness, cost — design
-// §1.2/§8.4/§5.6), and runs the keyboard-navigation state machine (↑↓/⏎/⌥⏎/1–9/esc).
+// library (`AgentConfigLibraryFile`) into rendered shortlist rows, derives the
+// display facets the manifest does not model (provider, cost — design §1.2/§5.6),
+// and runs the keyboard-navigation state machine (↑↓/⏎/⌥⏎/1–9/esc).
 //
 // No AppKit / SwiftUI: every dependency is injected via `AgentPickerEnvironment`, so
 // this whole file is exercised in `c11LogicTests` without constructing a Workspace or
@@ -58,43 +58,15 @@ struct AgentPickerRow: Equatable {
     var keyBadge: Int
     /// The pinned default (● pin-dot, `default` tag).
     var isPinnedDefault: Bool
-    /// Marked when follow-recent resolves the effective default to this row
-    /// (`recent→default` tag).
-    var isRecentDefault: Bool
     /// Harness installed on PATH. `false` → dim + "NOT INSTALLED", still pinnable.
     var isInstalled: Bool
 }
 
-/// The RECENT row (design §5.1 / §8.4). `nil` config = ad-hoc launch with no saved id.
-struct AgentPickerRecentRow: Equatable {
-    /// The saved config the recent launch resolved to, or `nil` (ad-hoc).
-    var config: SavedAgentConfig?
-    /// Display name (config name, or "Ad-hoc").
-    var name: String
-    /// Relative time, e.g. "just now" / "2m ago".
-    var relativeTime: String
-    /// `harness · model[ · effort]` sub-line.
-    var subLine: String
-    /// Cost, or `nil` when the catalog is absent.
-    var cost: String?
-    /// Show the quiet ⓘ "does not report live model" hint — every non-claude-code
-    /// harness (design §8.4: only claude-code reports live).
-    var showLiveHint: Bool
-    /// Harness display name for the ⓘ tooltip.
-    var harnessDisplayName: String
-    /// Installed on PATH (dims the row when false).
-    var isInstalled: Bool
-}
-
-/// The full rendered content of the popover, independent of keyboard selection.
+/// The full rendered content of the popover, independent of keyboard selection:
+/// the saved-agent rows and nothing else (C11-203 B1/B4 retired the recent
+/// section and the launch-stats headline).
 struct AgentPickerContent: Equatable {
     var shortlist: [AgentPickerRow]
-    var recent: AgentPickerRecentRow?
-    /// `follow-recent` mode is on (header shows "◉ following recent", footer checkbox on).
-    var followRecent: Bool
-    /// Inline "N% Model · M launches" headline on the Launch-stats row, or `nil`
-    /// when the stats store is unavailable / empty (degrade).
-    var statsHeadline: String?
 }
 
 /// A key the popover reacts to — decoupled from `NSEvent` so the state machine is
@@ -113,12 +85,8 @@ enum PickerAction: Equatable {
     case launch(SavedAgentConfig)
     /// Set this config as the pinned default without launching (pin glyph / ⌥-click / ⌥⏎).
     case pin(SavedAgentConfig)
-    /// Flip the default's follow-recent mode.
-    case toggleFollowRecent
-    /// Open the tier-2 configure sheet (C11-182 seam).
+    /// Open the tier-2 "Edit Launch Agents" sheet (C11-182 seam).
     case viewAll
-    /// Open the stats view (C11-182 seam).
-    case stats
     /// Dismiss the popover.
     case close
     /// A launch was requested for a harness that is not installed. The caller
@@ -139,11 +107,6 @@ struct AgentPickerEnvironment {
     /// Per-model cost lookup (real: token-cost catalog when it exists; today always
     /// `nil` → cost column omitted, design §5.6).
     var costFor: (String?) -> (inUSD: Double, outUSD: Double)?
-    /// "Now" for relative-time formatting (injectable for deterministic tests).
-    var now: Date
-    /// Inline stats headline, precomputed by the caller from `AgentLaunchStatsStore`
-    /// (kept out of the pure model so it stays store-free). `nil` = omit.
-    var statsHeadline: String?
 }
 
 /// The keyboard-navigable picker state. Value type: the view holds it in `@State`
@@ -151,18 +114,15 @@ struct AgentPickerEnvironment {
 struct AgentPickerModel {
     /// Shortlist configs in library `order` (the launch/pin targets, 1–9).
     let configs: [SavedAgentConfig]
-    /// The recent launch's resolved config, if any (nav index == configs.count).
-    let recentConfig: SavedAgentConfig?
     /// What ⏎ launches when nothing is keyboard-selected (design §5.1).
     let effectiveDefault: SavedAgentConfig
-    /// Installed state for the effective default, including transient
-    /// follow-recent recipes whose blank id cannot be found in the shortlist.
+    /// Installed state for the effective default, which may be a recipe whose
+    /// blank id cannot be found in the shortlist.
     private let effectiveDefaultIsInstalled: Bool
     /// Precomputed render content.
     let content: AgentPickerContent
 
-    /// -1 = nothing focused (open state); 0..<configs.count = a shortlist row;
-    /// configs.count = the recent row.
+    /// -1 = nothing focused (open state); 0..<configs.count = a shortlist row.
     var selectedIndex: Int = -1
 
     // MARK: Build
@@ -175,14 +135,10 @@ struct AgentPickerModel {
         self.effectiveDefault = effectiveDefault
         self.effectiveDefaultIsInstalled = env.isInstalled(effectiveDefault.config.harness)
 
-        let followRecent = library.default.mode == .followRecent
-        let pinnedId = library.default.mode == .pinned ? library.default.configId : nil
-        let recentCfgId = library.recent?.configId
+        let pinnedId = library.default.configId
 
         var rows: [AgentPickerRow] = []
         for (i, cfg) in sorted.enumerated() {
-            let isPinned = pinnedId == cfg.id
-            let isRecentDefault = followRecent && recentCfgId != nil && recentCfgId == cfg.id
             rows.append(
                 AgentPickerRow(
                     config: cfg,
@@ -192,36 +148,20 @@ struct AgentPickerModel {
                     sysChip: Self.sysChip(for: cfg.config.systemPrompt),
                     cost: Self.costString(cfg.config.model, env: env),
                     keyBadge: i + 1,
-                    isPinnedDefault: isPinned,
-                    isRecentDefault: isRecentDefault,
+                    isPinnedDefault: pinnedId == cfg.id,
                     isInstalled: env.isInstalled(cfg.config.harness)
                 )
             )
         }
-        self.content = AgentPickerContent(
-            shortlist: rows,
-            recent: Self.recentRow(from: library.recent, configs: sorted, env: env),
-            followRecent: followRecent,
-            statsHeadline: env.statsHeadline
-        )
-        // The recent nav target is the resolved saved config (ad-hoc = nil).
-        if let rid = recentCfgId, let match = sorted.first(where: { $0.id == rid }) {
-            self.recentConfig = match
-        } else {
-            self.recentConfig = nil
-        }
+        self.content = AgentPickerContent(shortlist: rows)
     }
 
     // MARK: Keyboard state machine
 
-    /// Whether the recent row participates in ↑↓ navigation.
-    private var hasRecent: Bool { content.recent != nil }
+    /// The highest valid nav index (the last shortlist row).
+    private var maxIndex: Int { configs.count - 1 }
 
-    /// The highest valid nav index (recent row is one past the shortlist).
-    private var maxIndex: Int { configs.count - 1 + (hasRecent ? 1 : 0) }
-
-    /// The config currently focused, or `nil` when nothing is (index -1) or the
-    /// recent row (handled separately).
+    /// The config currently focused, or `nil` when nothing is (index -1).
     private var selectedConfig: SavedAgentConfig? {
         guard selectedIndex >= 0, selectedIndex < configs.count else { return nil }
         return configs[selectedIndex]
@@ -247,16 +187,9 @@ struct AgentPickerModel {
             let cfg = configs[n - 1]
             return launchOrNoop(cfg) // installed → launch, else no-op (caller may hint)
         case .enter:
-            // ⌘⏎ opens the tier-2 configure sheet (View all) — never launches
+            // ⌘⏎ opens the tier-2 "Edit Launch Agents" sheet — never launches
             // (prototype: `if (e.metaKey){ openSheet(...); return; }`).
             if command { return .viewAll }
-            // Recent row focused → pin (⌥) or launch it, honoring the installed
-            // guard exactly like the shortlist/digit paths (prototype: `if altKey
-            // pin; else if installed launch`).
-            if hasRecent, selectedIndex == configs.count {
-                guard let rc = recentConfig else { return .none }
-                return option ? .pin(rc) : launchOrNoop(rc)
-            }
             // A shortlist row focused → pin (⌥) or launch it.
             if let cfg = selectedConfig {
                 return option ? .pin(cfg) : launchOrNoop(cfg)
@@ -270,13 +203,6 @@ struct AgentPickerModel {
             // pinned default no-ops symmetrically with its 1–9 digit.
             return launchOrNoop(effectiveDefault)
         }
-    }
-
-    /// Pointer activation for the recent row follows the same installed guard as
-    /// keyboard activation.
-    func recentClickAction() -> PickerAction {
-        guard let recentConfig else { return .none }
-        return launchOrNotInstalled(recentConfig)
     }
 
     /// Launch iff installed; a plain launch of a not-installed harness returns an
@@ -361,46 +287,5 @@ struct AgentPickerModel {
             return two.hasSuffix("0") ? String(two.dropLast()) : two
         }
         return String(format: "%.2f", n)
-    }
-
-    static func recentRow(from recent: RecentAgentConfig?, configs: [SavedAgentConfig], env: AgentPickerEnvironment) -> AgentPickerRecentRow? {
-        guard let recent, let harness = nonEmpty(recent.harness) else { return nil }
-        let cfg = recent.configId.flatMap { id in configs.first(where: { $0.id == id }) }
-        var subParts = [env.displayName(harness).lowercased(), modelLabel(recent.model)]
-        if let effort = nonEmpty(recent.effort) { subParts.append(effort) }
-        return AgentPickerRecentRow(
-            config: cfg,
-            name: cfg?.name ?? String(localized: "agentPicker.recent.adhoc", defaultValue: "Ad-hoc"),
-            relativeTime: relativeTime(from: recent.observedAt, now: env.now),
-            subLine: subParts.joined(separator: " · "),
-            cost: costString(recent.model, env: env),
-            showLiveHint: harness != AgentType.claudeCode.rawValue,
-            harnessDisplayName: env.displayName(harness),
-            // A saved recent row launches the saved recipe as it exists now
-            // (matching `effectiveDefault()`), so availability must follow that
-            // current harness too. The historical harness/model remain visible
-            // provenance in the sub-line.
-            isInstalled: env.isInstalled(cfg?.config.harness ?? harness)
-        )
-    }
-
-    /// "just now" (<45s) · "Nm ago" (<60m) · "Nh ago" (<24h) · "Nd ago". `nil`
-    /// observation → "just now".
-    static func relativeTime(from date: Date?, now: Date) -> String {
-        guard let date else { return String(localized: "agentPicker.recent.justNow", defaultValue: "just now") }
-        let secs = max(0, now.timeIntervalSince(date))
-        if secs < 45 { return String(localized: "agentPicker.recent.justNow", defaultValue: "just now") }
-        if secs < 3600 {
-            // Clamp so the top of the bucket (e.g. 59m59s) shows "59m ago", never
-            // "60m ago" — 3600s rolls cleanly to "1h ago".
-            let m = min(59, Int((secs / 60).rounded()))
-            return String(localized: "agentPicker.recent.minutesAgo", defaultValue: "\(m)m ago")
-        }
-        if secs < 86_400 {
-            let h = min(23, Int((secs / 3600).rounded()))
-            return String(localized: "agentPicker.recent.hoursAgo", defaultValue: "\(h)h ago")
-        }
-        let d = Int((secs / 86_400).rounded())
-        return String(localized: "agentPicker.recent.daysAgo", defaultValue: "\(d)d ago")
     }
 }

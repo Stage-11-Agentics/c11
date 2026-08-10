@@ -1426,9 +1426,10 @@ extension TerminalController {
                 )
                 DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: launchSource) }
             }
-            // C11-180 (R2): a `config launch` keeps the follow-recent pointer in
-            // `agent-configs.json` live so `effectiveDefault()` resolves against a
-            // fresh observation. Off the critical path; never fails the launch.
+            // C11-180 (R2): a `config launch` keeps `recent` in
+            // `agent-configs.json` current — durable telemetry and the record
+            // `c11 config recent` / `--pin-current` read. Off the critical path;
+            // never fails the launch.
             if let launchConfigId {
                 let recent = RecentAgentConfig(
                     configId: launchConfigId,

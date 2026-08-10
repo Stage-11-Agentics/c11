@@ -141,7 +141,7 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # cwd); config_source reports the matched file path or null in --json.
 
 # Saved agent configs (the model picker's CLI, design §6)
-c11 config list [--json]                          # saved configs + default(mode) + most-recent
+c11 config list [--json]                          # saved configs + pinned default + most-recent
 c11 config recent [--json]                        # observed most-recent, with per-field source
 c11 config stats [--window today|all|<N>d] [--by model|harness|provider] [--json]
 c11 config save <name> --harness <k> [--model <id>] [--effort <tier>] \
@@ -150,7 +150,7 @@ c11 config save <name> --harness <k> [--model <id>] [--effort <tier>] \
 c11 config edit <name|id> [ …same field flags… ]  # supply only what changes; empty string clears to inherit
 c11 config rm <name|id>
 c11 config reorder <name|id> --to <index>
-c11 config default <name|id> | --follow-recent | --pin-current [<name>]
+c11 config default <name|id> | --pin-current [<name>]   # the default is always a pinned config
 c11 config launch <name|id> [--pane <id|ref> | --workspace <id|ref> | --new-workspace] \
     [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--json]
     # A saved config is a full launch recipe (harness + model/effort/system-prompt +

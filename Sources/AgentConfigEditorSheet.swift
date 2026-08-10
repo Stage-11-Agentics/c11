@@ -14,8 +14,6 @@ enum AgentConfigEditorFocus: Equatable {
     case config(String)
     /// Start a new config.
     case new
-    /// Open the launch-stats view.
-    case stats
 }
 
 /// Where an open request came from, so close can restore the right surface.
@@ -31,7 +29,7 @@ enum AgentConfigEditorRequest {
     static let openName = Notification.Name("c11.agentConfigEditor.open")
     static let closedName = Notification.Name("c11.agentConfigEditor.closed")
 
-    private static let focusKindKey = "focusKind"   // "config" | "new" | "stats"
+    private static let focusKindKey = "focusKind"   // "config" | "new"
     private static let focusIdKey = "focusId"       // config id for .config
     private static let originKey = "origin"
     private static let returnToPopoverKey = "returnToPopover"
@@ -41,7 +39,6 @@ enum AgentConfigEditorRequest {
         switch focus {
         case .config(let id): info[focusKindKey] = "config"; info[focusIdKey] = id
         case .new:            info[focusKindKey] = "new"
-        case .stats:          info[focusKindKey] = "stats"
         }
         NotificationCenter.default.post(name: openName, object: nil, userInfo: info)
     }
@@ -51,8 +48,7 @@ enum AgentConfigEditorRequest {
         case "config":
             if let id = note.userInfo?[focusIdKey] as? String { return .config(id) }
             return .new
-        case "stats": return .stats
-        default:      return .new
+        default: return .new
         }
     }
 
@@ -203,12 +199,24 @@ final class AgentConfigLibraryViewModel: ObservableObject {
         configs.first { $0.id == defaultState.configId }
     }
 
+    /// The configs that may hold the pinned default. An unlaunchable recipe is
+    /// refused by the store (`StoreError.configUnlaunchable`, C11-203 A2), so
+    /// offering it in the Default menu would only produce a click that quietly
+    /// does nothing — the defect class this ticket exists to kill.
+    var pinnableConfigs: [SavedAgentConfig] {
+        configs.filter { !$0.config.isProvablyUnlaunchable }
+    }
+
     /// Save the draft (add when `sourceId == nil`, else update in place). Returns
-    /// the stored config (with its resolved id), or nil on a store error.
+    /// the stored config (with its resolved id), or nil on a store error or a
+    /// recipe the editor refuses to write (C11-203 C4). Callers show the
+    /// specific refusal via `AgentConfigAxes.saveRefusal`; this guard is the
+    /// backstop so no path can write an unlaunchable recipe over a working one.
     @discardableResult
     func save(_ draft: EditorDraft) -> SavedAgentConfig? {
         let name = draft.resolvedName
         let config = draft.normalizedConfig
+        guard AgentConfigAxes.saveRefusal(for: config) == nil else { return nil }
         do {
             // Update path: only when the id still exists in the on-disk file.
             if let id = draft.sourceId {
@@ -250,14 +258,36 @@ final class AgentConfigLibraryViewModel: ObservableObject {
         reload()
     }
 
-    func setDefault(id: String) {
-        try? store.setDefault(configId: id)
+    /// Pin a config as the default. Returns an operator-facing sentence when the
+    /// store refuses, `nil` on success. A bare `try?` here would swallow
+    /// `StoreError.configUnlaunchable` and leave the ● quietly failing to move
+    /// — a silent no-op in exactly the class of bug C11-203 exists to kill.
+    @discardableResult
+    func setDefault(id: String) -> String? {
+        do {
+            try store.setDefault(configId: id)
+        } catch let error as AgentConfigLibraryStore.StoreError {
+            switch error {
+            case .configUnlaunchable:
+                return String(
+                    localized: "agentConfigEditor.default.unlaunchable",
+                    defaultValue: "That config can't launch as written, so it can't be the default — give it a command first."
+                )
+            default:
+                return defaultPinFailedMessage
+            }
+        } catch {
+            return defaultPinFailedMessage
+        }
         reload()
+        return nil
     }
 
-    func setFollowRecent(_ on: Bool) {
-        try? store.setMode(on ? .followRecent : .pinned)
-        reload()
+    private var defaultPinFailedMessage: String {
+        String(
+            localized: "agentConfigEditor.default.failed",
+            defaultValue: "Couldn't set the default — please try again."
+        )
     }
 }
 
@@ -302,9 +332,9 @@ private enum EditorTheme {
 
 // MARK: - The editor sheet
 
-/// Tier 2 of the model picker (design §5.4/§5.5): the Saved Configs editor +
-/// launch stats view, reproduced from the binding prototype. Presented as a
-/// `.sheet` from the Settings section.
+/// Tier 2 of the model picker (design §5.4): the Saved Configs editor,
+/// reproduced from the binding prototype. Presented as a `.sheet` from the
+/// Settings section.
 struct AgentConfigEditorSheet: View {
     @ObservedObject var library: AgentConfigLibraryViewModel
     let initialFocus: AgentConfigEditorFocus
@@ -314,11 +344,24 @@ struct AgentConfigEditorSheet: View {
 
     @StateObject private var installed = AgentInstalledProbe.shared
     @State private var draft: EditorDraft = .new()
-    @State private var statsMode = false
+    /// The chosen provider axis (C11-203 C1). Editor-only state: the file
+    /// schema stores harness/model, so this is derived when a config is
+    /// selected and cascaded downward while editing.
+    @State private var provider: String?
     @State private var advancedOpen = false
     @State private var modelFilter = ""
     @State private var savedFlashId: String?
     @State private var launchFeedback: String?
+    /// Bumped when a background catalog refresh lands, so the provider/model
+    /// controls re-read the store. The catalog is not observable and a refresh
+    /// is ~5 s of subprocesses: the editor renders from cache immediately and
+    /// updates in place rather than blocking on it.
+    @State private var catalogVersion = 0
+
+    /// The live model catalog (Part D). Read through the editor's wider
+    /// protocol so the pure axis logic in `AgentConfigAxes` can be tested
+    /// against a stub that never shells out.
+    private var catalog: any EditorModelCatalog { ModelCatalogStore.shared }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -327,45 +370,48 @@ struct AgentConfigEditorSheet: View {
             HStack(spacing: 0) {
                 libraryRail
                 Divider().overlay(BrandColors.ruleSwiftUI)
-                Group {
-                    if statsMode {
-                        LaunchStatsView()
-                    } else {
-                        editor
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                editor
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            if !statsMode {
-                if let launchFeedback {
-                    HStack {
-                        Text(launchFeedback).font(.system(size: 10.5))
-                            .foregroundStyle(BrandColors.goldSwiftUI)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 22).padding(.top, 6)
+            if let launchFeedback {
+                HStack {
+                    Text(launchFeedback).font(.system(size: 10.5))
+                        .foregroundStyle(BrandColors.goldSwiftUI)
+                    Spacer()
                 }
-                Divider().overlay(BrandColors.ruleSwiftUI)
-                footer
+                .padding(.horizontal, 22).padding(.top, 6)
             }
+            Divider().overlay(BrandColors.ruleSwiftUI)
+            footer
         }
         .frame(width: EditorTheme.sheetWidth)
         .frame(maxHeight: 640)
         .background(BrandColors.surfaceSwiftUI)
         .environment(\.colorScheme, .dark)
         .overlay(hiddenKeyboardCatchers)
-        .onAppear { installed.startIfNeeded(); applyFocus(initialFocus) }
+        .onAppear {
+            installed.startIfNeeded()
+            applyFocus(initialFocus)
+            refreshCatalogIfStale()
+        }
     }
 
-    // Hidden buttons that catch Return (Save & Launch) and Escape (Back).
+    // Hidden buttons that catch Return (Save) and Escape (Back). Return is
+    // bound here only — the visible Save button draws the ⏎ glyph but must not
+    // declare a second `.defaultAction` (C11-203 F2).
     private var hiddenKeyboardCatchers: some View {
         ZStack {
             Button("", action: backOut).keyboardShortcut(.cancelAction).hidden()
-            if !statsMode {
-                Button("", action: saveAndLaunch).keyboardShortcut(.defaultAction).hidden()
-            }
+            Button("", action: saveOnly).keyboardShortcut(.defaultAction).hidden()
         }
         .frame(width: 0, height: 0)
+    }
+
+    /// Kick a background re-enumeration of the harness CLIs when the cached
+    /// catalog is old. Completion lands on the main queue and only bumps a
+    /// counter; nothing here blocks the sheet appearing.
+    private func refreshCatalogIfStale() {
+        ModelCatalogStore.shared.refreshIfStale { catalogVersion &+= 1 }
     }
 
     // MARK: Header
@@ -385,16 +431,11 @@ struct AgentConfigEditorSheet: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(statsMode
-                     ? String(localized: "agentConfigEditor.stats.title", defaultValue: "Launch Stats")
-                     : String(localized: "agentConfigEditor.title", defaultValue: "Agent Configurations"))
+                Text(String(localized: "agentConfigEditor.title", defaultValue: "Agent Configurations"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI)
-                Text(statsMode
-                     ? String(localized: "agentConfigEditor.stats.subtitle",
-                               defaultValue: "Every launch through any path appends to agent-launches.jsonl — these are lifetime numbers.")
-                     : String(localized: "agentConfigEditor.subtitle",
-                               defaultValue: "Every saved recipe layers over its harness's Settings — set a field to override, leave it to inherit."))
+                Text(String(localized: "agentConfigEditor.subtitle",
+                            defaultValue: "Every saved recipe layers over its harness's Settings — set a field to override, leave it to inherit."))
                     .font(.system(size: 11.5, weight: .light))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.6))
             }
@@ -425,6 +466,14 @@ struct AgentConfigEditorSheet: View {
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 }
                 .onMove { library.move(fromOffsets: $0, toOffset: $1) }
+                // The unsaved draft rides outside the movable ForEach so drag
+                // indices keep matching the stored configs one-for-one.
+                if isEditingNewConfig {
+                    provisionalRow
+                        .listRowBackground(EditorTheme.goldFaint)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -474,8 +523,51 @@ struct AgentConfigEditorSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// Whether the draft has never been written, i.e. the rail must show the
+    /// provisional row (C11-203 F1). `store.add` appends, so the row sits where
+    /// the config will actually land.
+    private var isEditingNewConfig: Bool { draft.sourceId == nil }
+
+    /// The unsaved draft, shown in the left list so "New config" produces
+    /// visible, selected feedback instead of silently swapping the right pane.
+    /// It exists only in this view: abandoning the sheet leaves no junk row.
+    private var provisionalRow: some View {
+        HStack(spacing: 8) {
+            Text("＋").font(.system(size: 10)).foregroundStyle(BrandColors.goldSwiftUI.opacity(0.7))
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 1.5) {
+                HStack(spacing: 6) {
+                    Text(provisionalName).font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(BrandColors.whiteSwiftUI)
+                    Text(String(localized: "agentConfigEditor.unsaved", defaultValue: "unsaved"))
+                        .font(.system(size: 8.5, weight: .medium)).textCase(.uppercase).tracking(0.8)
+                        .foregroundStyle(BrandColors.goldSwiftUI)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .overlay(RoundedRectangle(cornerRadius: 3)
+                            .stroke(BrandColors.goldSwiftUI.opacity(0.55), lineWidth: 1))
+                }
+                Text(sublineText(draft.config))
+                    .font(.system(size: 9.5)).foregroundStyle(BrandColors.dimSwiftUI)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .overlay(RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .foregroundStyle(BrandColors.goldSwiftUI.opacity(0.45))
+            .padding(.horizontal, 4))
+    }
+
+    private var provisionalName: String {
+        let typed = draft.name.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty
+            ? String(localized: "agentConfigEditor.newItem", defaultValue: "New item")
+            : typed
+    }
+
     private func rowBackground(_ config: SavedAgentConfig) -> Color {
-        if !statsMode, draft.sourceId == config.id { return EditorTheme.goldFaint }
+        if draft.sourceId == config.id { return EditorTheme.goldFaint }
         if savedFlashId == config.id { return EditorTheme.goldFaint }
         return .clear
     }
@@ -489,10 +581,15 @@ struct AgentConfigEditorSheet: View {
     private var editor: some View {
         AgentConfigRecipeEditor(
             draft: $draft,
+            provider: $provider,
             advancedOpen: $advancedOpen,
             modelFilter: $modelFilter,
-            installed: installed
+            installed: installed,
+            catalog: catalog
         )
+        // A landed refresh changes what the catalog answers; the id forces the
+        // provider/model controls to re-read it.
+        .id(catalogVersion)
     }
 
     // MARK: Footer
@@ -503,8 +600,11 @@ struct AgentConfigEditorSheet: View {
                 .font(.system(size: 9, weight: .medium)).textCase(.uppercase).tracking(1.2)
                 .foregroundStyle(BrandColors.dimSwiftUI)
             Menu {
-                ForEach(library.configs, id: \.id) { config in
-                    Button(config.name) { library.setDefault(id: config.id) }
+                // Only launchable configs are offered: the store refuses to pin
+                // anything else, and a menu entry that quietly fails is the
+                // silent no-op C11-203 is about (A2 / defect 2).
+                ForEach(library.pinnableConfigs, id: \.id) { config in
+                    Button(config.name) { pinDefault(config.id) }
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -521,24 +621,16 @@ struct AgentConfigEditorSheet: View {
             }
             .menuStyle(.borderlessButton).fixedSize()
 
-            Button {
-                library.setFollowRecent(library.defaultState.mode != .followRecent)
-            } label: {
-                HStack(spacing: 6) {
-                    checkbox(on: library.defaultState.mode == .followRecent)
-                    Text(String(localized: "agentConfigEditor.followRecent", defaultValue: "follow most recent"))
-                        .font(.system(size: 10.5)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-                }
-            }
-            .buttonStyle(.plain)
-
             Spacer()
 
-            Button(String(localized: "agentConfigEditor.save", defaultValue: "Save"), action: saveOnly)
+            // Save is the primary act (C11-203 F2): most edits end here, and
+            // launching is the occasional follow-on, not the default gesture.
+            Button(String(localized: "agentConfigEditor.saveLaunch", defaultValue: "Save & Launch"),
+                   action: saveAndLaunch)
                 .buttonStyle(.bordered)
-            Button(action: saveAndLaunch) {
+            Button(action: saveOnly) {
                 HStack(spacing: 8) {
-                    Text(String(localized: "agentConfigEditor.saveLaunch", defaultValue: "Save & Launch"))
+                    Text(String(localized: "agentConfigEditor.save", defaultValue: "Save"))
                     Text("\u{23CE}").opacity(0.55).font(.system(size: 11))
                 }
             }
@@ -546,16 +638,6 @@ struct AgentConfigEditorSheet: View {
         }
         .padding(.horizontal, 22).padding(.vertical, 12)
         .background(BrandColors.surfaceSwiftUI.opacity(0.6))
-    }
-
-    private func checkbox(on: Bool) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(on ? BrandColors.goldSwiftUI : Color.clear)
-                .frame(width: 13, height: 13)
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(on ? BrandColors.goldSwiftUI : BrandColors.dimSwiftUI, lineWidth: 1))
-            if on { Text("✓").font(.system(size: 9)).foregroundStyle(BrandColors.blackSwiftUI) }
-        }
     }
 
     // MARK: Actions
@@ -567,45 +649,50 @@ struct AgentConfigEditorSheet: View {
             else { newConfig() }
         case .new:
             newConfig()
-        case .stats:
-            statsMode = true
         }
     }
 
     private func selectConfig(_ config: SavedAgentConfig) {
-        statsMode = false
         draft = .from(config)
+        provider = AgentConfigAxes.derivedProvider(for: config.config, catalog: catalog)
         advancedOpen = false
         modelFilter = ""
         launchFeedback = nil
     }
 
     private func newConfig() {
-        statsMode = false
         draft = .new()
+        provider = AgentConfigAxes.derivedProvider(for: draft.config, catalog: catalog)
         advancedOpen = false
         modelFilter = ""
         launchFeedback = nil
     }
 
-    private func saveOnly() {
+    /// Save, refusing a recipe that could never launch (C11-203 C4). The
+    /// refusal is stated in the same feedback line the launch declines use, so
+    /// the operator always learns why nothing happened.
+    @discardableResult
+    private func persistDraft() -> SavedAgentConfig? {
         launchFeedback = nil
+        if let refusal = AgentConfigAxes.saveRefusal(for: draft.normalizedConfig) {
+            launchFeedback = refusal.message
+            return nil
+        }
         guard let saved = library.save(draft) else {
             launchFeedback = saveFailedMessage
-            return
+            return nil
         }
         draft.sourceId = saved.id
+        return saved
+    }
+
+    private func saveOnly() {
+        guard let saved = persistDraft() else { return }
         flashSaved(saved.id)
     }
 
     private func saveAndLaunch() {
-        guard !statsMode else { return }
-        launchFeedback = nil
-        guard let saved = library.save(draft) else {
-            launchFeedback = saveFailedMessage
-            return
-        }
-        draft.sourceId = saved.id
+        guard let saved = persistDraft() else { return }
         // Never silently no-op (design MINOR-5): keep the sheet open + explain
         // when there is nothing to launch into or the recipe can't launch.
         switch AppDelegate.shared?.launchSavedAgentConfig(saved) ?? .noWorkspace {
@@ -615,11 +702,20 @@ struct AgentConfigEditorSheet: View {
             flashSaved(saved.id)
             launchFeedback = String(localized: "agentConfigEditor.launch.noWorkspace",
                                     defaultValue: "Saved. No workspace open to launch into — open one, then launch.")
-        case .cannotLaunch:
+        case .cannotLaunch(let reason):
+            // The launch path names its own decline (C11-203 A1), so the sheet
+            // states the actual reason instead of a generic sentence.
             flashSaved(saved.id)
-            launchFeedback = String(localized: "agentConfigEditor.launch.cannotLaunch",
-                                    defaultValue: "Saved. This recipe can't launch — check the harness and its command under Advanced.")
+            launchFeedback = String(
+                format: String(localized: "agentConfigEditor.launch.declined",
+                               defaultValue: "Saved, but it didn't launch. %@"),
+                reason.message
+            )
         }
+    }
+
+    private func pinDefault(_ id: String) {
+        launchFeedback = library.setDefault(id: id)
     }
 
     private var saveFailedMessage: String {
@@ -638,25 +734,44 @@ struct AgentConfigEditorSheet: View {
     }
 }
 
-// MARK: - Recipe editor (axis-dependency order, design §5.4)
+// MARK: - Recipe editor (provider-first axis order, C11-203 Part C)
 
-/// The right-hand recipe editor: harness → model → effort → system prompt →
-/// advanced, each overridable field carrying an inherit/override state chip.
+/// The right-hand recipe editor: provider → model → effort → harness → system
+/// prompt → advanced, each overridable field carrying an inherit/override
+/// state chip.
+///
+/// The order is the operator's framing, not an implementation convenience:
+/// pick the brain, pick how hard it thinks, then decide which shell runs it.
+/// Harness is the last question and is filtered by what can actually serve the
+/// chosen model, so every pair the editor offers is a pair that launches.
 struct AgentConfigRecipeEditor: View {
     @Binding var draft: EditorDraft
+    @Binding var provider: String?
     @Binding var advancedOpen: Bool
     @Binding var modelFilter: String
     @ObservedObject var installed: AgentInstalledProbe
+    let catalog: any EditorModelCatalog
 
     private var harness: String { draft.config.harness }
+
+    /// The four-axis state the pure cascade operates on.
+    private var selection: AgentConfigAxisSelection {
+        AgentConfigAxisSelection(provider: provider, config: draft.config)
+    }
+
+    private func apply(_ next: AgentConfigAxisSelection) {
+        provider = next.provider
+        draft.config = next.config
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 15) {
                 nameField
-                harnessField
+                providerField
                 modelField
                 effortField
+                harnessField
                 systemPromptField
                 advancedField
             }
@@ -703,38 +818,353 @@ struct AgentConfigRecipeEditor: View {
         }
     }
 
-    // MARK: Harness grid
+    // MARK: Provider (the root axis, C11-203 C1)
+
+    private var providerField: some View {
+        let options = AgentConfigAxes.providerOptions(selected: provider, catalog: catalog)
+        return VStack(alignment: .leading, spacing: 6) {
+            fieldLabel(String(localized: "agentConfigEditor.provider", defaultValue: "Provider"),
+                       trailing: AnyView(
+                        Text(String(localized: "agentConfigEditor.provider.hint",
+                                    defaultValue: "pick the brain — model, effort and harness follow"))
+                            .font(.system(size: 9, weight: .light)).foregroundStyle(Color(white: 0.29))))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 4), spacing: 7) {
+                providerCard(nil)
+                ForEach(options.prominent, id: \.self) { key in providerCard(key) }
+                if !options.overflow.isEmpty { overflowProviderCard(options.overflow) }
+            }
+        }
+    }
+
+    private func providerCard(_ key: String?) -> some View {
+        let isSel = provider == key
+        let count = key.map { catalog.models(forProvider: $0).count } ?? 0
+        return Button {
+            select(provider: key)
+        } label: {
+            providerCardBody(
+                title: key.map(ModelCatalogProviders.displayName)
+                    ?? String(localized: "agentConfigEditor.provider.inherit", defaultValue: "Inherit"),
+                subtitle: key == nil
+                    ? String(localized: "agentConfigEditor.provider.inheritNote",
+                             defaultValue: "harness picks its own")
+                    : String(format: String(localized: "agentConfigEditor.provider.modelCount",
+                                            defaultValue: "%lld models"), count),
+                isSelected: isSel
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The long tail. Forty of the catalog's providers publish five models or
+    /// fewer, so they live behind one menu rather than forty cards.
+    private func overflowProviderCard(_ keys: [String]) -> some View {
+        Menu {
+            ForEach(keys, id: \.self) { key in
+                Button(String(format: String(localized: "agentConfigEditor.provider.overflowRow",
+                                             defaultValue: "%@ (%lld)"),
+                              ModelCatalogProviders.displayName(key),
+                              catalog.models(forProvider: key).count)) {
+                    select(provider: key)
+                }
+            }
+        } label: {
+            providerCardBody(
+                title: String(localized: "agentConfigEditor.provider.more", defaultValue: "More…"),
+                subtitle: String(format: String(localized: "agentConfigEditor.provider.moreCount",
+                                                defaultValue: "%lld more"), keys.count),
+                isSelected: false
+            )
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+    }
+
+    private func providerCardBody(title: String, subtitle: String, isSelected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(BrandColors.whiteSwiftUI).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            Text(subtitle)
+                .font(.system(size: 9))
+                .foregroundStyle(isSelected ? BrandColors.goldSwiftUI.opacity(0.75) : BrandColors.dimSwiftUI)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 7).fill(isSelected ? EditorTheme.goldGhost : BrandColors.surface2SwiftUI))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(isSelected ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                                                          lineWidth: isSelected ? 1.2 : 1))
+        .contentShape(Rectangle())
+    }
+
+    private func select(provider key: String?) {
+        apply(AgentConfigAxes.selectingProvider(key, in: selection, catalog: catalog))
+        modelFilter = ""
+    }
+
+    // MARK: Model
+
+    private var modelField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel(String(localized: "agentConfigEditor.model", defaultValue: "Model"),
+                       trailing: overrideChip(draft.config.model != nil))
+            if AgentConfigAxes.acceptsModel(forHarness: harness) {
+                modelPanel
+            } else {
+                axisOff(String(localized: "agentConfigEditor.model.none",
+                               defaultValue: "no model flag — this harness launches whatever its own config selects"))
+            }
+        }
+    }
+
+    private var modelPanel: some View {
+        let models = AgentConfigAxes.modelOptions(provider: provider, query: modelFilter, catalog: catalog)
+        let current = AgentConfigAxes.resolvedModel(for: selection, catalog: catalog)
+        return VStack(spacing: 0) {
+            TextField(modelSearchPlaceholder, text: $modelFilter)
+                .textFieldStyle(.plain).font(.system(size: 11.5))
+                .foregroundStyle(BrandColors.whiteSwiftUI)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .overlay(Rectangle().frame(height: 1).foregroundStyle(BrandColors.ruleSwiftUI), alignment: .bottom)
+            ScrollView {
+                VStack(spacing: 0) {
+                    if modelFilter.isEmpty { inheritModelRow }
+                    if models.isEmpty {
+                        axisOff(modelFilter.isEmpty
+                                ? String(localized: "agentConfigEditor.model.pickProvider",
+                                         defaultValue: "pick a provider above, or search every catalog from here")
+                                : String(localized: "agentConfigEditor.model.noMatches",
+                                         defaultValue: "no models match"))
+                            .padding(.horizontal, 12)
+                    }
+                    ForEach(models, id: \.rowIdentity) { model in
+                        catalogModelRow(model, isSelected: current == model)
+                    }
+                }
+            }
+            .frame(maxHeight: 218)
+        }
+        .background(BrandColors.surface2SwiftUI)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(BrandColors.ruleSwiftUI, lineWidth: 1))
+    }
+
+    private var modelSearchPlaceholder: String {
+        if let provider {
+            return String(format: String(localized: "agentConfigEditor.model.searchProvider",
+                                         defaultValue: "search %lld %@ models…"),
+                          catalog.models(forProvider: provider).count,
+                          ModelCatalogProviders.displayName(provider))
+        }
+        return String(localized: "agentConfigEditor.model.searchAll",
+                      defaultValue: "search every provider's models…")
+    }
+
+    private var inheritModelRow: some View {
+        let base = AgentConfigAxes.inheritedModelBase(forHarness: harness,
+                                                      from: DefaultAgentConfigStore.shared.current)
+        let note = base.map {
+            String(format: String(localized: "agentConfigEditor.model.inheritNote",
+                                  defaultValue: "harness Settings → %@"), $0)
+        } ?? String(localized: "agentConfigEditor.model.inheritSettings", defaultValue: "harness Settings")
+        return modelRowChrome(
+            isSelected: draft.config.model == nil,
+            isEnabled: true,
+            label: String(localized: "agentConfigEditor.model.inherit", defaultValue: "Inherit"),
+            note: note,
+            trailing: nil
+        ) {
+            apply(AgentConfigAxes.selectingModel(nil, in: selection, catalog: catalog))
+        }
+    }
+
+    private func catalogModelRow(_ model: CatalogModel, isSelected: Bool) -> some View {
+        let name = model.displayName.isEmpty ? model.id : model.displayName
+        let note = name == model.id ? nil : model.id
+        // The trailing slot is the row's one variable affordance: coming-soon,
+        // the publisher's deprecation pointer, or the context window.
+        let trailing: String? = {
+            if model.isComingSoon {
+                return String(localized: "agentConfigEditor.model.comingSoon", defaultValue: "coming soon")
+            }
+            if let successor = catalog.publishedUpgradeTarget(for: model) {
+                return String(format: String(localized: "agentConfigEditor.model.upgradeTo",
+                                             defaultValue: "→ %@"), successor)
+            }
+            return model.contextWindow.map(Self.contextLabel)
+        }()
+        return modelRowChrome(
+            isSelected: isSelected,
+            isEnabled: !model.isComingSoon,
+            label: name,
+            note: note,
+            trailing: trailing
+        ) {
+            apply(AgentConfigAxes.selectingModel(model, in: selection, catalog: catalog))
+        }
+        // The vendor's own deprecation copy beats anything c11 would compose,
+        // and it is far too long for the row — so it rides as the tooltip.
+        .help(catalog.publishedUpgradeNote(for: model) ?? "")
+    }
+
+    /// `1048576` → `1.0M`, `262144` → `262K`. Approximate on purpose: this is a
+    /// sub-line hint, not a quota.
+    static func contextLabel(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_048_576) }
+        if tokens >= 1_000 { return "\(tokens / 1024)K" }
+        return "\(tokens)"
+    }
+
+    private func modelRowChrome(
+        isSelected: Bool,
+        isEnabled: Bool,
+        label: String,
+        note: String?,
+        trailing: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(isSelected ? "✓" : "").font(.system(size: 10))
+                    .foregroundStyle(BrandColors.goldSwiftUI).frame(width: 14)
+                Text(label).font(.system(size: 12))
+                    .foregroundStyle(isSelected ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI)
+                    .lineLimit(1)
+                if let note {
+                    Text(note).font(.system(size: 9.5)).foregroundStyle(BrandColors.dimSwiftUI)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if let trailing {
+                    Text(trailing).font(.system(size: 9)).foregroundStyle(BrandColors.dimSwiftUI)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(isSelected ? EditorTheme.goldFaint : Color.clear)
+            .opacity(isEnabled ? 1 : 0.4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+
+    // MARK: Effort (Part E1 — hidden outright when the pair has no effort)
+
+    @ViewBuilder private var effortField: some View {
+        if let options = AgentConfigAxes.effortOptions(for: selection, catalog: catalog) {
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel(String(localized: "agentConfigEditor.effort", defaultValue: "Effort"),
+                           trailing: overrideChip(draft.config.effort != nil))
+                effortChips(options)
+                effortHint
+            }
+        }
+    }
+
+    private func effortChips(_ chips: [String]) -> some View {
+        FlowChipsRaw {
+            chip(label: inheritEffortLabel, selected: draft.config.effort == nil) { selectEffort(nil) }
+            ForEach(chips, id: \.self) { value in
+                chip(label: value, selected: draft.config.effort == value) { selectEffort(value) }
+            }
+        }
+    }
+
+    /// "inherit" says nothing about what will actually run. The publisher's own
+    /// default for the pair (codex runs Sol at `low`, Terra at `medium`) is
+    /// shown on the chip rather than written into the recipe, so inherit stays
+    /// inherit.
+    private var inheritEffortLabel: String {
+        let plain = String(localized: "agentConfigEditor.effort.inherit", defaultValue: "inherit")
+        guard let resolved = AgentConfigAxes.inheritedEffortLabel(
+            for: selection,
+            from: DefaultAgentConfigStore.shared.current,
+            catalog: catalog
+        ) else { return plain }
+        return String(format: String(localized: "agentConfigEditor.effort.inheritResolved",
+                                     defaultValue: "inherit · %@"), resolved)
+    }
+
+    private func selectEffort(_ value: String?) {
+        apply(AgentConfigAxes.selectingEffort(value, in: selection, catalog: catalog))
+    }
+
+    @ViewBuilder private var effortHint: some View {
+        let hint: String? = {
+            switch harness {
+            case "codex":
+                return String(localized: "agentConfigEditor.effort.codexHint",
+                              defaultValue: "rides -c model_reasoning_effort=… — codex enforces values")
+            case "pi", "omp":
+                return String(localized: "agentConfigEditor.effort.thinkingHint", defaultValue: "rides --thinking")
+            case AgentConfigAxes.kimiHarnessKey:
+                return String(format: String(localized: "agentConfigEditor.effort.kimiHint",
+                                             defaultValue: "kimi has no effort flag — rides %@ in the launch environment"),
+                              AgentConfigAxes.kimiEffortEnvKey)
+            default: return nil
+            }
+        }()
+        if let hint {
+            Text(hint).font(.system(size: 9.5)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
+        }
+    }
+
+    // MARK: Harness (the last question, Part C2)
 
     private var harnessField: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let options = AgentConfigAxes.harnessOptions(for: selection, catalog: catalog)
+        return VStack(alignment: .leading, spacing: 6) {
             fieldLabel(String(localized: "agentConfigEditor.harness", defaultValue: "Harness"),
                        trailing: AnyView(
                         Text(String(localized: "agentConfigEditor.harness.hint",
-                                    defaultValue: "the root axis — gates everything below"))
+                                    defaultValue: "the last question — which shell runs it"))
                             .font(.system(size: 9, weight: .light)).foregroundStyle(Color(white: 0.29))))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 3), spacing: 7) {
-                ForEach(AgentType.allCases) { type in
-                    harnessCard(type)
+            if options.count == 1, let only = options.first {
+                resolvedHarnessRow(only)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 3), spacing: 7) {
+                    ForEach(options, id: \.self) { key in
+                        harnessCard(key, isDefault: key == options.first)
+                    }
                 }
             }
         }
     }
 
-    private func harnessCard(_ type: AgentType) -> some View {
-        let k = type.rawValue
-        let isSel = harness == k
-        let isInstalled = installed.isInstalled(harness: k)
+    /// Exactly one harness can serve the pair: state it rather than presenting
+    /// a one-option choice (Part C2).
+    private func resolvedHarnessRow(_ key: String) -> some View {
+        HStack(spacing: 8) {
+            Text(Self.harnessDisplayName(key)).font(.system(size: 12, weight: .medium))
+                .foregroundStyle(BrandColors.goldSwiftUI)
+            Text(String(localized: "agentConfigEditor.harness.onlyOne",
+                        defaultValue: "the only harness that serves this model"))
+                .font(.system(size: 9.5)).foregroundStyle(BrandColors.dimSwiftUI)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 7).fill(EditorTheme.goldGhost))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(BrandColors.goldSwiftUI, lineWidth: 1.2))
+    }
+
+    private func harnessCard(_ key: String, isDefault: Bool) -> some View {
+        let isSel = harness == key
+        let isInstalled = installed.isInstalled(harness: key)
         return Button {
-            draft.config = AgentConfigAxes.reconcileHarnessSwitch(draft.config, to: k)
-            modelFilter = ""
+            apply(AgentConfigAxes.selectingHarness(key, in: selection, catalog: catalog))
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(type.displayName).font(.system(size: 11.5, weight: .medium))
+                    Text(Self.harnessDisplayName(key)).font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(BrandColors.whiteSwiftUI)
                     Spacer(minLength: 0)
                 }
-                Text(providerSubline(k))
+                Text(isDefault
+                     ? String(localized: "agentConfigEditor.harness.default", defaultValue: "default for this model")
+                     : String(localized: "agentConfigEditor.harness.alternate", defaultValue: "also serves it"))
                     .font(.system(size: 9))
                     .foregroundStyle(isSel ? BrandColors.goldSwiftUI.opacity(0.75) : BrandColors.dimSwiftUI)
                     .lineLimit(1)
@@ -756,198 +1186,10 @@ struct AgentConfigRecipeEditor: View {
         .buttonStyle(.plain)
     }
 
-    private func providerSubline(_ k: String) -> String {
-        switch AgentConfigAxes.providerClass(forHarness: k) {
-        case .router:
-            return String(localized: "agentConfigEditor.provider.router",
-                          defaultValue: "OpenRouter · provider by model prefix")
-        case .fixed(let label):
-            return label
-        case .custom:
-            return String(localized: "agentConfigEditor.provider.custom", defaultValue: "operator-defined")
-        }
-    }
-
-    // MARK: Model
-
-    private var modelField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            fieldLabel(String(localized: "agentConfigEditor.model", defaultValue: "Model"),
-                       trailing: overrideChip(draft.config.model != nil))
-            modelControl
-        }
-    }
-
-    @ViewBuilder private var modelControl: some View {
-        switch AgentConfigAxes.modelAxis(forHarness: harness) {
-        case .families(let families):
-            familiesPanel(families)
-        case .router:
-            routerPanel
-        case .freeform(let providerLabel):
-            freeformModel(providerLabel)
-        case .none:
-            axisOff(String(localized: "agentConfigEditor.model.none",
-                           defaultValue: "no model flag — this harness launches whatever its own config selects"))
-        }
-    }
-
-    private func familiesPanel(_ families: [ClaudeModelFamily]) -> some View {
-        let base = AgentConfigAxes.inheritedModelBase(forHarness: harness,
-                                                      from: DefaultAgentConfigStore.shared.current) ?? "opus"
-        return VStack(alignment: .leading, spacing: 5) {
-            VStack(spacing: 0) {
-                modelRow(value: nil,
-                         label: String(localized: "agentConfigEditor.model.inherit", defaultValue: "Inherit"),
-                         note: String(format: String(localized: "agentConfigEditor.model.inheritNote",
-                                                      defaultValue: "harness Settings → %@"), base))
-                ForEach(families) { family in
-                    modelRow(value: family.rawValue, label: family.displayName, note: nil)
-                }
-            }
-            .background(BrandColors.surface2SwiftUI)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(BrandColors.ruleSwiftUI, lineWidth: 1))
-            Text(String(format: String(localized: "agentConfigEditor.model.familyHint",
-                                        defaultValue: "family alias · claude --model %@ resolves to the latest release; no c11 change on new model drops"),
-                        draft.config.model ?? "opus"))
-                .font(.system(size: 9.5)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-        }
-    }
-
-    private var routerPanel: some View {
-        VStack(spacing: 0) {
-            TextField(String(localized: "agentConfigEditor.model.filter",
-                             defaultValue: "filter models… (provider rides the prefix)"),
-                      text: $modelFilter)
-                .textFieldStyle(.plain).font(.system(size: 11.5))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .overlay(Rectangle().frame(height: 1).foregroundStyle(BrandColors.ruleSwiftUI), alignment: .bottom)
-            ScrollView {
-                VStack(spacing: 0) {
-                    if modelFilter.isEmpty {
-                        modelRow(value: nil,
-                                 label: String(localized: "agentConfigEditor.model.inherit", defaultValue: "Inherit"),
-                                 note: String(localized: "agentConfigEditor.model.inheritSettings",
-                                              defaultValue: "harness Settings"))
-                    }
-                    ForEach(AgentConfigAxes.routerModelCatalog, id: \.provider) { group in
-                        let visible = group.models.filter {
-                            modelFilter.isEmpty || $0.lowercased().contains(modelFilter.lowercased())
-                        }
-                        if !visible.isEmpty {
-                            HStack {
-                                Text("\(group.provider)/").font(.system(size: 9, weight: .medium))
-                                    .tracking(1.3).textCase(.uppercase).foregroundStyle(BrandColors.dimSwiftUI)
-                                Spacer()
-                                Text(String(localized: "agentConfigEditor.model.providerTag", defaultValue: "provider"))
-                                    .font(.system(size: 9)).foregroundStyle(BrandColors.dimSwiftUI)
-                            }
-                            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
-                            .background(BrandColors.surfaceSwiftUI.opacity(0.5))
-                            ForEach(visible, id: \.self) { model in
-                                let name = model.contains("/") ? String(model.split(separator: "/")[1]) : model
-                                modelRow(value: model, label: name, note: nil)
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 218)
-        }
-        .background(BrandColors.surface2SwiftUI)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(BrandColors.ruleSwiftUI, lineWidth: 1))
-    }
-
-    private func modelRow(value: String?, label: String, note: String?) -> some View {
-        let isSel = draft.config.model == value
-        return Button {
-            draft.config.model = value
-        } label: {
-            HStack(spacing: 10) {
-                Text(isSel ? "✓" : "").font(.system(size: 10)).foregroundStyle(BrandColors.goldSwiftUI).frame(width: 14)
-                Text(label).font(.system(size: 12))
-                    .foregroundStyle(isSel ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI)
-                if let note {
-                    Text(note).font(.system(size: 9.5)).foregroundStyle(BrandColors.dimSwiftUI)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(isSel ? EditorTheme.goldFaint : Color.clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func freeformModel(_ providerLabel: String) -> some View {
-        let suggestions = AgentConfigAxes.freeformSuggestions(forHarness: harness)
-        let modelBinding = Binding<String>(
-            get: { draft.config.model ?? "" },
-            set: { draft.config.model = $0.isEmpty ? nil : $0 }
-        )
-        return VStack(alignment: .leading, spacing: 7) {
-            TextField(String(format: String(localized: "agentConfigEditor.model.freeformPlaceholder",
-                                            defaultValue: "inherit — %@ default"),
-                             AgentRegistry.shared.manifest(forKind: harness)?.displayName ?? harness),
-                      text: modelBinding)
-                .textFieldStyle(.plain).font(.system(size: 12))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(textFieldFill)
-            if !suggestions.isEmpty {
-                FlowChips(items: suggestions, selected: draft.config.model) { model in
-                    draft.config.model = model
-                }
-            }
-        }
-    }
-
-    // MARK: Effort
-
-    private var effortField: some View {
-        let chips = AgentConfigAxes.effortChipValues(forHarness: harness)
-        let hasAxis = !(AgentConfigAxes.effortAxis(forHarness: harness) == .none)
-        return VStack(alignment: .leading, spacing: 6) {
-            fieldLabel(String(localized: "agentConfigEditor.effort", defaultValue: "Effort"),
-                       trailing: hasAxis ? overrideChip(draft.config.effort != nil) : nil)
-            if chips.isEmpty {
-                axisOff(String(format: String(localized: "agentConfigEditor.effort.none",
-                                              defaultValue: "no effort axis on %@"),
-                               AgentRegistry.shared.manifest(forKind: harness)?.displayName ?? harness))
-            } else {
-                effortChips(chips)
-                effortHint
-            }
-        }
-    }
-
-    private func effortChips(_ chips: [String]) -> some View {
-        FlowChipsRaw {
-            chip(label: String(localized: "agentConfigEditor.effort.inherit", defaultValue: "inherit"),
-                 selected: draft.config.effort == nil) { draft.config.effort = nil }
-            ForEach(chips, id: \.self) { value in
-                chip(label: value, selected: draft.config.effort == value) { draft.config.effort = value }
-            }
-        }
-    }
-
-    @ViewBuilder private var effortHint: some View {
-        let hint: String? = {
-            switch harness {
-            case "codex":
-                return String(localized: "agentConfigEditor.effort.codexHint",
-                              defaultValue: "rides -c model_reasoning_effort=… — codex enforces values")
-            case "pi", "omp":
-                return String(localized: "agentConfigEditor.effort.thinkingHint", defaultValue: "rides --thinking")
-            default: return nil
-            }
-        }()
-        if let hint {
-            Text(hint).font(.system(size: 9.5)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-        }
+    static func harnessDisplayName(_ key: String) -> String {
+        AgentType(rawValue: key)?.displayName
+            ?? AgentRegistry.shared.manifest(forKind: key)?.displayName
+            ?? key
     }
 
     // MARK: System prompt
@@ -1127,137 +1369,22 @@ enum EnvText {
     }
 }
 
-// MARK: - Chip flow layouts
+// MARK: - Catalog row identity
 
-/// A simple wrapping row of selectable suggestion chips.
-private struct FlowChips: View {
-    let items: [String]
-    let selected: String?
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        FlowChipsRaw {
-            ForEach(items, id: \.self) { item in
-                Button { onSelect(item) } label: {
-                    Text(item).font(.system(size: 11))
-                        .foregroundStyle(selected == item ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI.opacity(0.75))
-                        .padding(.horizontal, 11).padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(selected == item ? BrandColors.goldSwiftUI.opacity(0.10) : BrandColors.surface2SwiftUI))
-                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(selected == item ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI, lineWidth: 1))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
+fileprivate extension CatalogModel {
+    /// Stable `ForEach` identity. `id` alone is not unique across a
+    /// whole-catalog search: two providers can publish the same bare model id.
+    var rowIdentity: String { provider + "/" + id }
 }
 
+// MARK: - Chip flow layouts
+
 /// A single horizontal row of chip content. Today's chip counts (≤7 effort
-/// tiers, ≤3 suggestions) fit the editor's width inside the 860-pt sheet, so no
-/// wrapping is needed; revisit if a harness ever declares many more.
+/// tiers) fit the editor's width inside the 860-pt sheet, so no wrapping is
+/// needed; revisit if a harness ever declares many more.
 private struct FlowChipsRaw<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         HStack(spacing: 6) { content }
     }
 }
-
-// MARK: - Launch stats view (design §5.5)
-
-/// The launch-stats view rendered inside the sheet: window chips (today/30d/all),
-/// gold leader bars, and the agent-launches.jsonl provenance line. Reads the
-/// C11-178 aggregate through `AgentLaunchStatsStore.shared`.
-struct LaunchStatsView: View {
-    @State private var window: StatsWindow = .all
-    @State private var bars: [StatsBarRow] = []
-    @State private var total = 0
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 7) {
-                    windowChip(.today, String(localized: "agentConfigEditor.stats.today", defaultValue: "today"))
-                    windowChip(.days(30), String(localized: "agentConfigEditor.stats.30d", defaultValue: "30d"))
-                    windowChip(.all, String(localized: "agentConfigEditor.stats.all", defaultValue: "all time"))
-                    Spacer()
-                    Text(String(format: String(localized: "agentConfigEditor.stats.query",
-                                               defaultValue: "by model · c11 config stats --window %@"), windowFlag))
-                        .font(.system(size: 10)).foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
-                }
-                .padding(.top, 12).padding(.bottom, 16)
-
-                if bars.isEmpty {
-                    Text(String(localized: "agentConfigEditor.stats.empty",
-                                defaultValue: "no launches recorded yet — launch an agent and it lands here"))
-                        .font(.system(size: 11)).foregroundStyle(BrandColors.dimSwiftUI).padding(.vertical, 20)
-                } else {
-                    ForEach(bars, id: \.label) { row in barRow(row) }
-                }
-
-                Text(String(format: String(localized: "agentConfigEditor.stats.provenance",
-                                           defaultValue: "%d launches · %@ · source: agent-launches.jsonl — every path (A button, CLI, socket, blueprint, fader) records"),
-                            total, windowLabel))
-                    .font(.system(size: 10.5)).foregroundStyle(BrandColors.dimSwiftUI).padding(.top, 14)
-            }
-            .padding(.horizontal, 22).padding(.bottom, 18)
-        }
-        .task(id: windowFlag) { await reload() }
-    }
-
-    private func barRow(_ row: StatsBarRow) -> some View {
-        HStack(spacing: 11) {
-            Text(row.label).font(.system(size: 11.5)).foregroundStyle(BrandColors.whiteSwiftUI)
-                .frame(width: 92, alignment: .trailing)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3).fill(BrandColors.surface2SwiftUI)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(row.isLeader
-                              ? LinearGradient(colors: [BrandColors.goldSwiftUI.opacity(0.55), BrandColors.goldSwiftUI],
-                                               startPoint: .leading, endPoint: .trailing)
-                              : LinearGradient(colors: [BrandColors.surface3SwiftUI, BrandColors.surface3SwiftUI],
-                                               startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, geo.size.width * row.widthOfMax))
-                }
-            }
-            .frame(height: 14)
-            Text("\(Int((row.shareOfTotal * 100).rounded()))% (\(row.count))")
-                .font(.system(size: 10.5)).foregroundStyle(BrandColors.dimSwiftUI)
-                .frame(width: 110, alignment: .leading)
-        }
-        .padding(.bottom, 9)
-    }
-
-    private func windowChip(_ w: StatsWindow, _ label: String) -> some View {
-        Button { window = w } label: {
-            Text(label).font(.system(size: 11))
-                .foregroundStyle(window == w ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI.opacity(0.75))
-                .padding(.horizontal, 11).padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 5).fill(window == w ? BrandColors.goldSwiftUI.opacity(0.10) : BrandColors.surface2SwiftUI))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(window == w ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var windowFlag: String {
-        switch window { case .today: return "today"; case .days: return "30d"; case .all: return "all" }
-    }
-    private var windowLabel: String {
-        switch window {
-        case .today: return String(localized: "agentConfigEditor.stats.label.today", defaultValue: "today")
-        case .days: return String(localized: "agentConfigEditor.stats.label.30d", defaultValue: "last 30d")
-        case .all: return String(localized: "agentConfigEditor.stats.label.all", defaultValue: "all time")
-        }
-    }
-
-    private func reload() async {
-        let w = window
-        let result: LaunchStatsResult? = await Task.detached(priority: .userInitiated) {
-            AgentLaunchStatsStore.shared?.stats(window: w, by: .model)
-        }.value
-        guard let result else { bars = []; total = 0; return }
-        bars = LaunchStatsBars.statsBars(from: result)
-        total = result.count
-    }
-}
-

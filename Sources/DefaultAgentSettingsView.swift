@@ -262,11 +262,6 @@ struct DefaultAgentSettingsSection: View {
                          ?? String(localized: "settings.savedConfigs.none", defaultValue: "—"))
                 }
                 .fixedSize()
-                Toggle(String(localized: "settings.savedConfigs.followRecent", defaultValue: "follow most recent"),
-                       isOn: Binding(
-                        get: { library.defaultState.mode == .followRecent },
-                        set: { library.setFollowRecent($0) }))
-                    .toggleStyle(.checkbox).controlSize(.small)
                 Spacer()
             }
 
@@ -277,15 +272,12 @@ struct DefaultAgentSettingsSection: View {
                     Label(String(localized: "settings.savedConfigs.new", defaultValue: "New config"),
                           systemImage: "plus")
                 }
-                Button(String(localized: "settings.savedConfigs.viewAll", defaultValue: "View all models & configs…")) {
+                Button(String(localized: "settings.savedConfigs.editLaunchAgents", defaultValue: "Edit Launch Agents")) {
                     // Land on the pinned config, else the first — never a blank
                     // new draft (that is what "New config" is for).
                     openEditor(library.pinnedConfig.map { .config($0.id) }
                                ?? library.configs.first.map { .config($0.id) }
                                ?? .new)
-                }
-                Button(String(localized: "settings.savedConfigs.stats", defaultValue: "Launch stats")) {
-                    openEditor(.stats)
                 }
                 Spacer()
             }

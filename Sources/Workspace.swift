@@ -12882,7 +12882,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     /// Operator-facing sentence for a refused pin (C11-203 A2).
-    static func pinRefusalMessage(for error: Error, configName: String) -> String {
+    nonisolated static func pinRefusalMessage(for error: Error, configName: String) -> String {
         if let storeError = error as? AgentConfigLibraryStore.StoreError,
            case .configUnlaunchable = storeError {
             return String(

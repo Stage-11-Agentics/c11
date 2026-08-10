@@ -184,6 +184,8 @@ final class MainThreadHangSignatureTests: XCTestCase {
     }
 
     func testIdleRunLoopIsSeparatedFromAWedgeInCompute() {
+        // Verbatim shape of every `runloop-idle` report Sentry has received: the
+        // mach_msg leaf is reached from the app's own outermost event loop.
         let d = describe([
             "0   libsystem_kernel.dylib   0x0000000187861c34 mach_msg2_trap + 8",
             "1   libsystem_kernel.dylib   0x000000018786a9c0 mach_msg_overwrite + 480",
@@ -191,8 +193,48 @@ final class MainThreadHangSignatureTests: XCTestCase {
             "3   CoreFoundation   0x00000001879630d8 __CFRunLoopServiceMachPort + 160",
             "4   CoreFoundation   0x00000001879619c4 __CFRunLoopRun + 1188",
             "9   AppKit   0x000000018c43c35c _DPSBlockUntilNextEventMatchingListInMode + 228",
+            "13   AppKit   0x000000019391713c -[NSApplication run] + 368",
         ])
         XCTAssertEqual(d.cause, "runloop-idle")
+    }
+
+    /// A run loop we entered *inside* a callback is a real block, not a late
+    /// heartbeat, so it must not land in the bucket that never reports.
+    func testANestedRunLoopIsNotClassifiedAsIdle() {
+        // c11's socket handler spinning CFRunLoopRun on main while it waits for
+        // a WKWebView callback: 70 episodes across 12 pids in the local log.
+        let socketCommand = describe([
+            "0   libsystem_kernel.dylib   0x0000000187861c34 mach_msg2_trap + 8",
+            "1   libsystem_kernel.dylib   0x000000018786a9c0 mach_msg_overwrite + 480",
+            "2   libsystem_kernel.dylib   0x0000000187861fc0 mach_msg + 24",
+            "3   CoreFoundation   0x00000001879630d8 __CFRunLoopServiceMachPort + 160",
+            "4   CoreFoundation   0x00000001879619c4 __CFRunLoopRun + 1188",
+            "6   CoreFoundation   0x00000001879c81c4 CFRunLoopRun + 64",
+            "7   c11   0x0000000102a1cbd4 $s3c1118TerminalControllerC15v2AwaitCallback + 92",
+            "8   c11   0x0000000102a1cc00 $s3c1118TerminalControllerC15v2RunJavaScript + 40",
+        ])
+        XCTAssertNotEqual(socketCommand.cause, "runloop-idle")
+        XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: socketCommand.cause))
+        XCTAssertEqual(
+            socketCommand.culprit,
+            "$s3c1118TerminalControllerC15v2AwaitCallback",
+            "the c11 frame that entered the nested loop is what names this block"
+        )
+
+        // A modal alert's nested loop: 4,747 captures in the local log, up to
+        // 6.8 hours each, previously filed as benign idle.
+        let modalAlert = describe([
+            "0   libsystem_kernel.dylib   0x0000000187861c34 mach_msg2_trap + 8",
+            "1   libsystem_kernel.dylib   0x000000018786a9c0 mach_msg_overwrite + 480",
+            "2   libsystem_kernel.dylib   0x0000000187861fc0 mach_msg + 24",
+            "3   CoreFoundation   0x00000001879630d8 __CFRunLoopServiceMachPort + 160",
+            "4   CoreFoundation   0x00000001879619c4 __CFRunLoopRun + 1188",
+            "6   HIToolbox   0x000000019c2db560 RunCurrentEventLoopInMode + 320",
+            "9   AppKit   0x000000018c43c35c -[NSApplication _doModalLoop:peek:] + 228",
+            "11   c11   0x0000000102a1cbd4 $s3c1112BrowserPanelC24presentInsecureHTTPAlert + 64",
+        ])
+        XCTAssertNotEqual(modalAlert.cause, "runloop-idle")
+        XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: modalAlert.cause))
     }
 
     func testSwiftUIGraphWorkIsNarrowedByHostPhase() {
@@ -337,46 +379,24 @@ final class MainThreadHangSignatureTests: XCTestCase {
 
 /// The run-loop-idle reporting rule.
 ///
-/// `runloop-idle` means main is parked at the top of the run loop with the
-/// watchdog's heartbeat still undelivered: a late ack, not a wedge. It was 46.5%
-/// of 5,311 local episodes and the largest single slice of the aggregate Sentry
-/// hang issue — and behind an unwatched window it is App Nap and timer coalescing
-/// working as designed, invisible to anyone.
-final class MainThreadHangVisibilityTests: XCTestCase {
+/// `runloop-idle` means main is parked in `-[NSApplication run]` waiting for the
+/// next event: an app ready to serve the user, not a wedge. It was 46.5% of 5,311
+/// local episodes and the largest single slice of the aggregate Sentry hang issue,
+/// and it carries no frame of ours, no phase and no culprit, so no report derived
+/// from it can name a cause. It never reports; the local hang log and PostHog keep
+/// the whole population.
+final class MainThreadHangReportingRuleTests: XCTestCase {
 
-    private let watched = AppVisibility(appIsActive: true, hasVisibleWindow: true)
-
-    func testAnUnwatchedIdleRunLoopIsNotWorthReporting() {
-        for visibility in [
-            AppVisibility.unwatched,
-            AppVisibility(appIsActive: true, hasVisibleWindow: false),
-            AppVisibility(appIsActive: false, hasVisibleWindow: true),
-        ] {
-            XCTAssertFalse(MainThreadHangMonitor.isWorthReporting(
-                cause: MainThreadHangSignature.runLoopIdleCause, visibility: visibility
-            ))
-        }
-    }
-
-    func testAWatchedIdleRunLoopStillReports() {
-        // Same stack, but the window was in front of a human: the UI went dead
-        // while they were looking at it, which is a real report.
-        XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(
-            cause: MainThreadHangSignature.runLoopIdleCause, visibility: watched
+    func testAnIdleRunLoopIsNeverWorthReporting() {
+        XCTAssertFalse(MainThreadHangMonitor.isWorthReporting(
+            cause: MainThreadHangSignature.runLoopIdleCause
         ))
     }
 
-    func testEveryOtherCauseReportsRegardlessOfWhoWasLooking() {
+    func testEveryOtherCauseReports() {
         for cause in ["swiftui-update", "appkit", "lock-wait", "xpc-sync-wait", "generic-metadata", "other", "unknown"] {
-            XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: cause, visibility: .unwatched), cause)
+            XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: cause), cause)
         }
-    }
-
-    func testWatchedRequiresBothFrontmostAndOnScreen() {
-        XCTAssertTrue(watched.isWatched)
-        XCTAssertFalse(AppVisibility(appIsActive: true, hasVisibleWindow: false).isWatched)
-        XCTAssertFalse(AppVisibility(appIsActive: false, hasVisibleWindow: true).isWatched)
-        XCTAssertFalse(AppVisibility.unwatched.isWatched)
     }
 }
 

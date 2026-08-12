@@ -136,6 +136,19 @@ browser surface communicates with c11 via `WKContentController` script
 message handlers configured per-panel; new handlers must be added to
 this doc when introduced (the diff signal in section 9 catches this).
 
+Browser-triggered modals (the `http://` navigation warning, JavaScript
+`alert`/`confirm`/`prompt`) are raised by page content or by
+socket-driven navigation, neither of which implies a human is present.
+They are presented only as sheets, via `browserPresentModalAlert`, and
+never with `NSAlert.runModal()` — a nested main-thread run loop is a
+denial-of-service against the whole app, not a security control. When
+no window exists to host the sheet, the decision resolves with its
+**safe default rather than prompting**: for the insecure-HTTP prompt
+that is Cancel, so the navigation is denied and the host is *not*
+added to the allowlist. An unattended app therefore cannot be walked
+into an `http://` allowlist entry by a page that raises a prompt
+nobody can answer.
+
 Outbound hand-off: the browser toolbar's "Open in Default Browser"
 button (v0.51.0) passes the panel's current URL to
 `NSWorkspace.shared.open(_:)`. It is operator-gesture-gated (explicit

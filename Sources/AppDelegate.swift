@@ -522,6 +522,43 @@ enum TerminalDirectoryOpenTarget: String, CaseIterable {
         Set(commandPaletteShortcutTargets.filter { $0.isAvailable(in: environment) })
     }
 
+    // C11-196: `availableTargets` probes all fourteen editor targets, and every
+    // target that is not found on a candidate path falls back to
+    // `NSWorkspace.fullPath(forApplication:)`, a synchronous XPC round trip to
+    // `launchservicesd`. The command palette rebuilt this set on every keystroke,
+    // so a query in a terminal pane could issue a dozen unbounded LaunchServices
+    // waits per character typed on the main thread.
+    //
+    // The set only changes when the operator installs or removes an editor, so a
+    // short TTL is ample. Callers get the previous answer immediately and the
+    // recompute happens on a utility queue; only the very first call in a process
+    // pays the blocking probe.
+    static let availableTargetsCacheTTL: TimeInterval = 60
+
+    static let sharedAvailableTargetsCache = ExpiringValueCache<Set<TerminalDirectoryOpenTarget>>(
+        ttl: availableTargetsCacheTTL
+    )
+
+    static func availableTargetsCached(
+        in environment: DetectionEnvironment = .live,
+        cache: ExpiringValueCache<Set<TerminalDirectoryOpenTarget>>? = nil,
+        scheduleRefresh: (@escaping () -> Void) -> Void = { work in
+            DispatchQueue.global(qos: .utility).async(execute: work)
+        }
+    ) -> Set<Self> {
+        let cache = cache ?? sharedAvailableTargetsCache
+        guard cache.peek() != nil else {
+            // Cold start: nothing has ever been probed, so block once and seed
+            // the cache rather than reporting "no editors installed".
+            return cache.value(orCompute: { availableTargets(in: environment) })
+        }
+        let cached = cache.valueRefreshingInBackground(
+            scheduleRefresh: scheduleRefresh,
+            refresh: { availableTargets(in: environment) }
+        )
+        return cached ?? availableTargets(in: environment)
+    }
+
     var commandPaletteCommandId: String {
         "palette.terminalOpenDirectory.\(rawValue)"
     }
@@ -7746,10 +7783,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func syncMenuBarExtraVisibility(defaults: UserDefaults = .standard) {
-        if MenuBarExtraSettings.shouldInstallMenuBarExtra(
-            activationPolicy: NSApp.activationPolicy(),
+        // C11-196: this runs on every `UserDefaults.didChangeNotification`, which
+        // c11 emits constantly (window frames, sidebar widths, per-pane state).
+        // Read the activation policy from `AppPresentationPolicy` rather than
+        // `NSApp.activationPolicy()`; the latter is a synchronous XPC round trip
+        // to `launchservicesd` and was captured blocking main for 23.8 s here.
+        let shouldInstall = MenuBarExtraSettings.shouldInstallMenuBarExtra(
+            activationPolicy: AppPresentationPolicy.effectiveActivationPolicy(),
             defaults: defaults
-        ) {
+        )
+
+        // Nothing to do when the resolved answer matches the installed state.
+        // Skipping here also keeps `setupMenuBarExtra()` off the notification
+        // storm's hot path.
+        if shouldInstall == (menuBarExtraController != nil) { return }
+
+        if shouldInstall {
             setupMenuBarExtra()
             return
         }
@@ -13787,8 +13836,47 @@ enum AppPresentationPolicy {
         application: NSApplication = .shared
     ) {
         let targetPolicy = activationPolicy(isRunningUnderXCTest: isRunningUnderXCTest)
-        guard application.activationPolicy() != targetPolicy else { return }
+        let currentPolicy = application.activationPolicy()
+        guard currentPolicy != targetPolicy else {
+            recordActivationPolicy(currentPolicy)
+            return
+        }
         application.setActivationPolicy(targetPolicy)
+        recordActivationPolicy(targetPolicy)
+    }
+
+    // C11-196: `NSApplication.activationPolicy()` forwards to
+    // `-[NSRunningApplication activationPolicy]`, which faults in dynamic
+    // properties through `_LSCopyApplicationInformation`, a synchronous XPC
+    // round trip to `launchservicesd`. Sentry captured main parked there for
+    // 23.8 s inside `syncMenuBarExtraVisibility`, which runs on every
+    // `UserDefaults.didChangeNotification`.
+    //
+    // c11 is the only writer of its own activation policy (`apply` above is the
+    // sole `setActivationPolicy` call site), so the value we last set is
+    // authoritative and can be served without re-asking LaunchServices.
+    private static let policyLock = NSLock()
+    private static var recordedPolicy: NSApplication.ActivationPolicy?
+
+    static func recordActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        policyLock.lock()
+        recordedPolicy = policy
+        policyLock.unlock()
+    }
+
+    /// The app's activation policy without a LaunchServices round trip when one
+    /// has already been observed or set. Falls back to the live (blocking) query
+    /// exactly once, then caches it.
+    static func effectiveActivationPolicy(
+        application: NSApplication = .shared
+    ) -> NSApplication.ActivationPolicy {
+        policyLock.lock()
+        let cached = recordedPolicy
+        policyLock.unlock()
+        if let cached { return cached }
+        let live = application.activationPolicy()
+        recordActivationPolicy(live)
+        return live
     }
 }
 

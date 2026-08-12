@@ -2823,7 +2823,9 @@ class TabManager: ObservableObject {
             cancelButton.keyEquivalent = "\u{1b}"
         }
 
-        if NSApp.activationPolicy() == .regular {
+        // C11-196: `NSApp.activationPolicy()` is a synchronous LaunchServices XPC
+        // round trip; read the policy c11 itself set instead.
+        if AppPresentationPolicy.effectiveActivationPolicy() == .regular {
             NSApp.activate(ignoringOtherApps: true)
         }
 

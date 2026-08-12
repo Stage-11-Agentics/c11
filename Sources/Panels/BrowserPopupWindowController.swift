@@ -359,11 +359,17 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
             }
         }
 
-        if let window = webView.window {
-            alert.beginSheetModal(for: window, completionHandler: handleResponse)
-            return
-        }
-        handleResponse(alert.runModal())
+        // Never app-modal: a popup can be navigated with no window on screen,
+        // and `runModal()` would freeze every surface in the app until someone
+        // dismissed an alert they cannot see. With no window to sheet onto the
+        // safe default is Cancel, which leaves the navigation blocked.
+        browserPresentModalAlert(
+            alert,
+            preferredWindow: webView.window ?? panel,
+            safeDefaultResponse: BrowserInsecureHTTPPromptPolicy.unpromptedResponse,
+            reasonForLog: "insecure HTTP popup navigation to \(host)",
+            completion: handleResponse
+        )
     }
 }
 
@@ -426,11 +432,15 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
         for webView: WKWebView,
         completion: @escaping (NSApplication.ModalResponse) -> Void
     ) {
-        if let window = webView.window {
-            alert.beginSheetModal(for: window, completionHandler: completion)
-            return
-        }
-        completion(alert.runModal())
+        // Same rule as the main browser: sheet it, or cancel it. A popup JS
+        // dialog must never spin an app-modal run loop on the main thread.
+        browserPresentModalAlert(
+            alert,
+            preferredWindow: webView.window,
+            safeDefaultResponse: .alertSecondButtonReturn,
+            reasonForLog: "popup javascript dialog",
+            completion: completion
+        )
     }
 
     func webView(

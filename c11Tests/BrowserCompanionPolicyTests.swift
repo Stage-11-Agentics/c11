@@ -407,3 +407,104 @@ final class BrowserCompanionPolicyTests: XCTestCase {
         )
     }
 }
+
+/// C11-204: browser modals must never be presented app-modally, so the host
+/// window selection has to be explicit about when there is nothing to sheet
+/// onto and the decision must fall back to its safe default instead.
+final class BrowserModalHostWindowSelectionTests: XCTestCase {
+    private func candidate(
+        preferred: Bool = false,
+        key: Bool = false,
+        main: Bool = false,
+        visible: Bool = true,
+        miniaturized: Bool = false,
+        sheet: Bool = false,
+        titled: Bool = true
+    ) -> BrowserModalHostWindowCandidate {
+        BrowserModalHostWindowCandidate(
+            isPreferred: preferred,
+            isKey: key,
+            isMain: main,
+            isVisible: visible,
+            isMiniaturized: miniaturized,
+            isSheet: sheet,
+            hasTitleBar: titled
+        )
+    }
+
+    func testNoCandidatesYieldsNoHostWindow() {
+        XCTAssertNil(browserSelectModalHostWindowIndex([]))
+    }
+
+    func testAllWindowsHiddenYieldsNoHostWindow() {
+        let candidates = [
+            candidate(preferred: true, visible: false),
+            candidate(key: true, visible: false),
+            candidate(visible: false)
+        ]
+        XCTAssertNil(browserSelectModalHostWindowIndex(candidates))
+    }
+
+    func testMiniaturizedAndSheetWindowsAreNotEligible() {
+        let candidates = [
+            candidate(preferred: true, miniaturized: true),
+            candidate(key: true, sheet: true)
+        ]
+        XCTAssertNil(browserSelectModalHostWindowIndex(candidates))
+    }
+
+    func testPreferredWindowWinsOverKeyAndMain() {
+        let candidates = [
+            candidate(key: true),
+            candidate(main: true),
+            candidate(preferred: true)
+        ]
+        XCTAssertEqual(browserSelectModalHostWindowIndex(candidates), 2)
+    }
+
+    func testFallsBackToKeyThenMainWhenPreferredIsUnusable() {
+        let withKey = [
+            candidate(preferred: true, visible: false),
+            candidate(main: true),
+            candidate(key: true)
+        ]
+        XCTAssertEqual(browserSelectModalHostWindowIndex(withKey), 2)
+
+        let withoutKey = [
+            candidate(preferred: true, miniaturized: true),
+            candidate(),
+            candidate(main: true)
+        ]
+        XCTAssertEqual(browserSelectModalHostWindowIndex(withoutKey), 2)
+    }
+
+    /// The app is backgrounded during agent-driven navigation, so neither key
+    /// nor main window exists. Any ordinary visible window still beats no
+    /// prompt at all, and a titled window beats an untitled overlay.
+    func testBackgroundedAppStillFindsAnOrdinaryWindow() {
+        let candidates = [
+            candidate(titled: false),
+            candidate(titled: true)
+        ]
+        XCTAssertEqual(browserSelectModalHostWindowIndex(candidates), 1)
+    }
+
+    func testUntitledWindowIsUsedAsALastResort() {
+        let candidates = [candidate(titled: false)]
+        XCTAssertEqual(browserSelectModalHostWindowIndex(candidates), 0)
+    }
+
+    /// Cancel, so an unpromptable insecure-HTTP navigation is denied rather
+    /// than proceeding, and the host is never added to the allowlist.
+    func testUnpromptedInsecureHTTPResponseIsADenialThatDoesNotAllowlist() {
+        let response = BrowserInsecureHTTPPromptPolicy.unpromptedResponse
+        XCTAssertNotEqual(response, .alertFirstButtonReturn)
+        XCTAssertNotEqual(response, .alertSecondButtonReturn)
+        XCTAssertFalse(
+            browserShouldPersistInsecureHTTPAllowlistSelection(
+                response: response,
+                suppressionEnabled: true
+            )
+        )
+    }
+}

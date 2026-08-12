@@ -1234,7 +1234,11 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
         XCTAssertEqual(alertSpy.runModalCallCount, 0)
     }
 
-    func testInsecureHTTPPromptFallsBackToRunModalWithoutWindow() {
+    /// C11-204: with no window to sheet onto there is nobody to answer the
+    /// prompt, so the navigation is denied outright. Going app-modal here
+    /// would spin a nested run loop and freeze every surface in the app until
+    /// a human found an alert they could not see.
+    func testInsecureHTTPPromptNeverGoesAppModalWithoutWindow() {
         let panel = BrowserPanel(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
@@ -1246,7 +1250,9 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
         panel.presentInsecureHTTPAlertForTesting(url: URL(string: "http://example.com")!)
 
         XCTAssertEqual(alertSpy.beginSheetModalCallCount, 0)
-        XCTAssertEqual(alertSpy.runModalCallCount, 1)
+        XCTAssertEqual(alertSpy.runModalCallCount, 0)
+        XCTAssertFalse(panel.shouldRenderWebView, "Denied insecure navigation must not load")
+        XCTAssertNil(panel.currentURL)
     }
 }
 

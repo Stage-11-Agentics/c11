@@ -827,6 +827,112 @@ func browserShouldPersistInsecureHTTPAllowlistSelection(
     return response == .alertFirstButtonReturn || response == .alertSecondButtonReturn
 }
 
+// MARK: - Browser modal hosting
+
+enum BrowserInsecureHTTPPromptPolicy {
+    /// The response applied when the insecure-HTTP prompt cannot be shown to
+    /// anyone: the Cancel button, so the navigation is denied and the host is
+    /// not added to the allowlist.
+    static let unpromptedResponse: NSApplication.ModalResponse = .alertThirdButtonReturn
+}
+
+/// The properties of an `NSWindow` that decide whether it can host a browser
+/// modal as a sheet, captured as a value so the selection policy is testable
+/// without AppKit.
+struct BrowserModalHostWindowCandidate: Equatable {
+    /// The window that owns the content the modal is about (the panel's own
+    /// web view window). Preferred over anything else when it is usable.
+    var isPreferred: Bool = false
+    var isKey: Bool = false
+    var isMain: Bool = false
+    var isVisible: Bool = false
+    var isMiniaturized: Bool = false
+    /// A sheet cannot host another sheet.
+    var isSheet: Bool = false
+    /// Titled windows are ordinary operator-facing windows; untitled ones are
+    /// usually overlays or helper panels, so they are a last resort.
+    var hasTitleBar: Bool = false
+}
+
+/// Picks the index of the window a browser modal should be sheeted onto, or
+/// `nil` when the app currently has no window a human could answer on.
+///
+/// Callers must never fall back to `NSAlert.runModal()` when this returns
+/// `nil`. `runModal()` spins a nested run loop on the main thread and freezes
+/// every terminal, pane, and agent in the app until a human dismisses it, and
+/// browser navigation is routinely driven over the c11 socket with the window
+/// backgrounded and nobody watching. When there is no host window, resolve the
+/// decision with its safe default instead of prompting.
+func browserSelectModalHostWindowIndex(_ candidates: [BrowserModalHostWindowCandidate]) -> Int? {
+    func rank(_ candidate: BrowserModalHostWindowCandidate) -> Int {
+        if candidate.isPreferred { return 0 }
+        if candidate.isKey { return 1 }
+        if candidate.isMain { return 2 }
+        if candidate.hasTitleBar { return 3 }
+        return 4
+    }
+
+    var bestIndex: Int?
+    var bestRank = Int.max
+    for (index, candidate) in candidates.enumerated() {
+        guard candidate.isVisible, !candidate.isMiniaturized, !candidate.isSheet else { continue }
+        let candidateRank = rank(candidate)
+        if candidateRank < bestRank {
+            bestRank = candidateRank
+            bestIndex = index
+        }
+    }
+    return bestIndex
+}
+
+/// Resolves the window a browser modal should be sheeted onto, preferring the
+/// window that owns the content the modal is about. Returns `nil` when the app
+/// has no usable window, which means the caller must resolve without prompting.
+func browserModalHostWindow(preferring preferred: NSWindow?) -> NSWindow? {
+    var windows: [NSWindow] = []
+    if let preferred {
+        windows.append(preferred)
+    }
+    if let app = NSApp {
+        windows.append(contentsOf: app.windows.filter { $0 !== preferred })
+    }
+    let candidates = windows.map { window in
+        BrowserModalHostWindowCandidate(
+            isPreferred: window === preferred,
+            isKey: window.isKeyWindow,
+            isMain: window.isMainWindow,
+            isVisible: window.isVisible,
+            isMiniaturized: window.isMiniaturized,
+            isSheet: window.isSheet,
+            hasTitleBar: window.styleMask.contains(.titled)
+        )
+    }
+    guard let index = browserSelectModalHostWindowIndex(candidates) else { return nil }
+    return windows[index]
+}
+
+/// Presents `alert` as a sheet on a usable window, or resolves with
+/// `safeDefaultResponse` when there is none.
+///
+/// This is the only sanctioned way to present a browser-triggered `NSAlert`:
+/// browser modals can be raised by page content or by socket-driven
+/// navigation, neither of which implies a human is present to dismiss them.
+/// The completion always runs exactly once, never from a nested run loop.
+func browserPresentModalAlert(
+    _ alert: NSAlert,
+    preferredWindow: NSWindow?,
+    safeDefaultResponse: NSApplication.ModalResponse,
+    reasonForLog: @autoclosure () -> String,
+    completion: @escaping (NSApplication.ModalResponse) -> Void
+) {
+    if let window = browserModalHostWindow(preferring: preferredWindow) {
+        alert.beginSheetModal(for: window, completionHandler: completion)
+        return
+    }
+    NSLog("BrowserPanel: no window available for browser modal, applying safe default (%@)", reasonForLog())
+    completion(safeDefaultResponse)
+}
+
 func browserPreparedNavigationRequest(_ request: URLRequest) -> URLRequest {
     var preparedRequest = request
     // Match browser behavior for ordinary loads while preserving method/body/headers.
@@ -2252,7 +2358,7 @@ final class BrowserPanel: Panel, ObservableObject {
     private let pageZoomStep: CGFloat = 0.1
     private var insecureHTTPBypassHostOnce: String?
     private var insecureHTTPAlertFactory: () -> NSAlert
-    private var insecureHTTPAlertWindowProvider: () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow }
+    private var insecureHTTPAlertWindowProvider: () -> NSWindow? = { browserModalHostWindow(preferring: nil) }
     // Persist user intent across WebKit detach/reattach churn (split/layout updates).
     @Published private(set) var preferredDeveloperToolsVisible: Bool = false
     private var preferredDeveloperToolsPresentation: DeveloperToolsPresentation = .unknown
@@ -2726,7 +2832,7 @@ final class BrowserPanel: Panel, ObservableObject {
         installDetachedDeveloperToolsWindowCloseObserver()
         applyBrowserThemeModeIfNeeded()
         insecureHTTPAlertWindowProvider = { [weak self] in
-            self?.webView.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            browserModalHostWindow(preferring: self?.webView.window)
         }
 
         // Initialize the per-surface lifecycle controller AFTER all stored
@@ -3937,7 +4043,14 @@ final class BrowserPanel: Panel, ObservableObject {
             return
         }
 
-        handleResponse(alert.runModal())
+        // No window can host the sheet, so there is nobody to answer the
+        // prompt. Never fall back to app-modal `runModal()`: it spins a nested
+        // run loop on main and wedges every surface in the app until a human
+        // dismisses an alert they cannot see. Socket-driven navigation lands
+        // here whenever the window is backgrounded, so take the safe default
+        // and leave the navigation blocked.
+        NSLog("BrowserPanel: blocked insecure HTTP navigation to %@ without prompting (no window available)", host)
+        handleResponse(BrowserInsecureHTTPPromptPolicy.unpromptedResponse)
     }
 
     private func handleInsecureHTTPAlertResponse(
@@ -5570,7 +5683,7 @@ extension BrowserPanel {
     func resetInsecureHTTPAlertHooksForTesting() {
         insecureHTTPAlertFactory = { NSAlert() }
         insecureHTTPAlertWindowProvider = { [weak self] in
-            self?.webView.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            browserModalHostWindow(preferring: self?.webView.window)
         }
     }
 
@@ -6312,11 +6425,17 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
         for webView: WKWebView,
         completion: @escaping (NSApplication.ModalResponse) -> Void
     ) {
-        if let window = webView.window {
-            alert.beginSheetModal(for: window, completionHandler: completion)
-            return
-        }
-        completion(alert.runModal())
+        // A page can raise a JS dialog at any time, including in a detached or
+        // backgrounded web view. Sheet it onto a real window when one exists,
+        // otherwise dismiss it as cancelled: app-modal `runModal()` would block
+        // the whole app on an alert nobody can see.
+        browserPresentModalAlert(
+            alert,
+            preferredWindow: webView.window,
+            safeDefaultResponse: .alertSecondButtonReturn,
+            reasonForLog: "javascript dialog",
+            completion: completion
+        )
     }
 
     /// Called when the page requests a new window (window.open(), target=_blank, etc.).

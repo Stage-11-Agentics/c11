@@ -102,10 +102,22 @@ enum MainThreadHangSignature {
     /// How far down "which module is main working in" is decided.
     private static let moduleWindow = 8
 
-    /// Main parked at the top of the run loop. Named because the reporting path
-    /// treats it differently from every other cause: it is a late heartbeat, not
-    /// a wedged thread.
+    /// Main parked at the top of the app's **outermost** event loop. Named
+    /// because the reporting path treats it differently from every other cause:
+    /// it is a late heartbeat, not a wedged thread.
+    ///
+    /// The `-[NSApplication run]` requirement in `cause` is what makes that
+    /// claim true. Without it the bucket also swallows every *nested* run loop
+    /// the app enters on purpose (a modal alert, a menu track, a socket command
+    /// spinning `CFRunLoopRun` on main), which are real blocks with our own
+    /// frames on the stack. On 7,926 real captures the frame separates the two
+    /// populations exactly: present on all 2,895 outermost-idle captures and on
+    /// none of the 5,031 nested ones.
     static let runLoopIdleCause = "runloop-idle"
+
+    /// The frame that proves the run loop being serviced is the app's own top
+    /// level, not one nested inside a callback.
+    private static let outermostEventLoopSymbol = "-[NSApplication run]"
 
     /// `backtrace_symbols` emits `"%-4d%-35s 0x%016lx %s + %lu"`. The load
     /// address is the only reliable delimiter: image names may contain spaces
@@ -151,11 +163,14 @@ enum MainThreadHangSignature {
         }) {
             return rule.cause
         }
-        // Parked at the top of the run loop waiting for work: main is idle, and
-        // the watchdog's heartbeat should have been serviced. Its own bucket so
-        // it can be judged separately from a thread wedged in compute.
+        // Parked at the top of the app's own event loop waiting for work: main
+        // is idle, and the watchdog's heartbeat should have been serviced. Its
+        // own bucket so it can be judged separately from a thread wedged in
+        // compute. A *nested* run loop reaches the same mach_msg leaf but is a
+        // genuine block, so it must fall through to the module rules below.
         if leaf.symbol.contains("mach_msg2_trap"),
-           window.contains(where: { $0.symbol.contains("CFRunLoopServiceMachPort") }) {
+           window.contains(where: { $0.symbol.contains("CFRunLoopServiceMachPort") }),
+           window.contains(where: { $0.symbol.contains(outermostEventLoopSymbol) }) {
             return runLoopIdleCause
         }
         let modules = frames.prefix(moduleWindow).map(\.module)
@@ -284,13 +299,14 @@ struct MainThreadHangDetector {
 /// Sampled on the main thread from AppKit notifications and read by the watchdog
 /// while main is wedged — AppKit is main-thread-only, and the value wanted is
 /// precisely the last one main managed to publish before it stopped answering.
+///
+/// Rides along as the `hang.app_active` / `hang.window_visible` tags and in the
+/// local log header: a stall behind an occluded window and one under the
+/// operator's cursor are different bugs with identical stacks. It does not gate
+/// reporting: which cause a capture is, not who was looking, decides that.
 struct AppVisibility: Equatable {
     let appIsActive: Bool
     let hasVisibleWindow: Bool
-
-    /// Frontmost *and* showing something. Either alone is not a viewer: a
-    /// fully-occluded active app is as invisible as a backgrounded one.
-    var isWatched: Bool { appIsActive && hasVisibleWindow }
 
     static let unwatched = AppVisibility(appIsActive: false, hasVisibleWindow: false)
 }
@@ -559,7 +575,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         signature: MainThreadHangDescriptor,
         visibility: AppVisibility
     ) {
-        if shouldReportHangToSentry(gapMs: gapMs, cause: signature.cause, visibility: visibility) {
+        if shouldReportHangToSentry(gapMs: gapMs, cause: signature.cause) {
             let top = MainThreadHangSignature
                 .reportedStack(stack, ownModule: ProcessInfo.processInfo.processName)
                 .joined(separator: "\n")
@@ -611,33 +627,37 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// charging it here as well would spend two slots of the global allowance
     /// on every hang report.
     ///
-    /// `runloop-idle` never reports from behind an unwatched window: main is
-    /// parked at the top of the run loop with the heartbeat still undelivered,
-    /// which is a late ack, not a wedge. Off-screen that is App Nap and timer
-    /// coalescing doing their job. It was **46.5% of 5,311 local episodes** — the
+    /// `runloop-idle` never reports, whoever was looking. The stack it is
+    /// classified from is main sitting in `-[NSApplication run]` → `_DPSNextEvent`,
+    /// blocked on the event port: an app *ready to dequeue the next user event*.
+    /// Whatever delayed the heartbeat (the background-QoS watchdog thread losing
+    /// the CPU, App Nap, timer coalescing), it was not main being unavailable to
+    /// anyone, so "was the window watched" does not change the verdict.
+    ///
+    /// It is also unactionable by construction: the capture carries no frame of
+    /// ours below `main`, no phase and no culprit, and every event is byte-for-byte
+    /// the same 21 frames. An issue that can only ever say "main was idle" cannot
+    /// drive a fix, and under the global `SentryEventBudgetGate` ceiling it spends
+    /// budget a real wedge needed. It was **46.5% of 5,311 local episodes**, the
     /// single largest slice of what made the aggregate hang issue c11's
-    /// highest-volume report — and none of it was a freeze anyone could see. With
-    /// the window in front of a human the same stack does mean something (the UI
-    /// went dead while they watched), so that half still reports.
+    /// highest-volume report.
+    ///
+    /// The population is not lost: every capture still lands in the local hang log
+    /// and in PostHog, which carries the same `cause` label.
     ///
     /// Called only from the watchdog thread, which captures serially.
-    private func shouldReportHangToSentry(
-        gapMs: Double,
-        cause: String,
-        visibility: AppVisibility
-    ) -> Bool {
+    private func shouldReportHangToSentry(gapMs: Double, cause: String) -> Bool {
         guard gapMs >= sentryReportThresholdMs else { return false }
-        guard Self.isWorthReporting(cause: cause, visibility: visibility) else { return false }
+        guard Self.isWorthReporting(cause: cause) else { return false }
         guard !reportedCurrentEpisode else { return false }
         reportedCurrentEpisode = true
         return true
     }
 
     /// Pure half of the rule above, so it can be tested without a watchdog.
-    /// Every cause but `runloop-idle` reports regardless of who was looking.
-    static func isWorthReporting(cause: String, visibility: AppVisibility) -> Bool {
-        guard cause == MainThreadHangSignature.runLoopIdleCause else { return true }
-        return visibility.isWatched
+    /// Every cause but `runloop-idle` reports.
+    static func isWorthReporting(cause: String) -> Bool {
+        cause != MainThreadHangSignature.runLoopIdleCause
     }
 
     // MARK: Local log

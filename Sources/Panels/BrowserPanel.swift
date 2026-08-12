@@ -10395,6 +10395,16 @@ final class BrowserDataImportCoordinator {
         )
         alert.informativeText = lines.joined(separator: "\n")
         alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
-        alert.runModal()
+        // The operator started the import but this fires from the import task,
+        // seconds or minutes later, by which point they may be elsewhere. An
+        // app-modal alert here would freeze every surface until they came
+        // back, so sheet it, or drop it if there is no window left to sheet on.
+        browserPresentModalAlert(
+            alert,
+            preferredWindow: nil,
+            safeDefaultResponse: .alertFirstButtonReturn,
+            reasonForLog: "browser import outcome",
+            completion: { _ in }
+        )
     }
 }

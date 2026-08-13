@@ -1255,14 +1255,14 @@ final class SocketClient {
         if Self.traceEnabled {
             let refs = refTokens(from: params).joined(separator: " ")
             let refsStr = refs.isEmpty ? "" : "(\(refs)) "
-            FileHandle.standardError.write(
+            FileHandle.standardError.c11SafeWrite(
                 Data("[c11-trace] -> \(method) \(refsStr)socket=\(path)\n".utf8)
             )
         }
         defer {
             if Self.traceEnabled {
                 let ms = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
-                FileHandle.standardError.write(
+                FileHandle.standardError.c11SafeWrite(
                     Data("[c11-trace] <- \(method) elapsed=\(ms)ms status=\(traceStatus)\n".utf8)
                 )
             }
@@ -1533,7 +1533,7 @@ struct CMUXCLI {
                 defaultValue: "c11: using socket \(resolvedPath) (auto-discovered)"
             )
         }
-        FileHandle.standardError.write(Data((line + "\n").utf8))
+        FileHandle.standardError.c11SafeWrite(Data((line + "\n").utf8))
     }
 
     func run() throws {
@@ -2354,13 +2354,13 @@ struct CMUXCLI {
                       let message = warning["message"] as? String,
                       !message.isEmpty else { continue }
                 detailedMessages.insert(message)
-                FileHandle.standardError.write(
+                FileHandle.standardError.c11SafeWrite(
                     Data(("warning[" + code + "]: " + message + "\n").utf8)
                 )
             }
             if let warnings = launchPayload["warnings"] as? [String] {
                 for warning in warnings where !warning.isEmpty && !detailedMessages.contains(warning) {
-                    FileHandle.standardError.write(Data(("warning: " + warning + "\n").utf8))
+                    FileHandle.standardError.c11SafeWrite(Data(("warning: " + warning + "\n").utf8))
                 }
             }
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
@@ -5066,7 +5066,7 @@ struct CMUXCLI {
     /// stdout. The warning is also present in the JSON payload for scripted callers.
     private func printSizeWarning(_ payload: [String: Any]) {
         guard let warning = payload["size_warning"] as? String, !warning.isEmpty else { return }
-        FileHandle.standardError.write(Data(("note: " + warning + "\n").utf8))
+        FileHandle.standardError.c11SafeWrite(Data(("note: " + warning + "\n").utf8))
     }
 
     private func debugString(_ value: Any?) -> String? {
@@ -5659,7 +5659,7 @@ struct CMUXCLI {
                 print("OK \(key) applied=true source=\(source)")
             } else {
                 let reasonText = reason ?? "unknown"
-                FileHandle.standardError.write(Data("Error: \(key) applied=false reason=\(reasonText)\n".utf8))
+                FileHandle.standardError.c11SafeWrite(Data("Error: \(key) applied=false reason=\(reasonText)\n".utf8))
                 exit(1)
             }
         }
@@ -5923,7 +5923,7 @@ struct CMUXCLI {
                 _ = try client.sendV2(method: "workspace.close", params: ["workspace_id": workspaceId])
             } catch {
                 let warning = "Warning: failed to rollback workspace \(workspaceId): \(error)\n"
-                FileHandle.standardError.write(Data(warning.utf8))
+                FileHandle.standardError.c11SafeWrite(Data(warning.utf8))
             }
             throw error
         }
@@ -17492,18 +17492,53 @@ private extension String {
     }
 }
 
+extension FileHandle {
+    /// Broken-pipe-safe write.
+    ///
+    /// `FileHandle.write(_:)` is `-[NSConcreteFileHandle writeData:]`, which *raises*
+    /// `NSFileHandleOperationException` when the far end of the pipe is gone. An ObjC
+    /// exception cannot unwind through Swift frames — there is no landing pad, so the
+    /// throw goes `__cxa_throw` -> `failed_throw` -> `std::terminate` -> `abort`, and
+    /// `NSSetUncaughtExceptionHandler` never gets to convert it into a clean exit.
+    /// Observed 2026-08-12: a CLI process SIGABRTed at Resources/bin/c11 when its
+    /// stderr pipe closed as the app shut down (crash report c11-2026-08-12-185921).
+    ///
+    /// Writing through `write(2)` keeps the failure a return value. SIGPIPE is already
+    /// `SIG_IGN` in `main()`, so a closed reader surfaces as `EPIPE` and is dropped —
+    /// a CLI whose reader has gone away must exit quietly, not abort.
+    func c11SafeWrite(_ data: Data) {
+        let fd = fileDescriptor
+        data.withUnsafeBytes { raw in
+            guard var ptr = raw.baseAddress else { return }
+            var remaining = raw.count
+            while remaining > 0 {
+                let written = Darwin.write(fd, ptr, remaining)
+                if written > 0 {
+                    ptr = ptr.advanced(by: written)
+                    remaining -= written
+                } else if written < 0 && errno == EINTR {
+                    continue
+                } else {
+                    return // EPIPE / EBADF / anything else: drop it, never raise
+                }
+            }
+        }
+    }
+}
+
 @main
 struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
         NSSetUncaughtExceptionHandler { exception in
-            // NSFileHandle.writeData: raises NSFileHandleOperationException when writing to a
-            // closed pipe. SIGPIPE is already SIG_IGN; treat a broken-pipe write as a clean exit.
+            // Belt-and-braces only: an ObjC exception raised through Swift frames aborts
+            // before reaching here (see `c11SafeWrite`), so the real guarantee is that
+            // CLI writes go through `c11SafeWrite` and never raise in the first place.
             if exception.name == .fileHandleOperationException {
                 exit(0)
             }
-            FileHandle.standardError.write(
+            FileHandle.standardError.c11SafeWrite(
                 Data("c11: uncaught exception \(exception.name): \(exception.reason ?? "(none)")\n".utf8)
             )
             exit(1)
@@ -17513,7 +17548,7 @@ struct CMUXTermMain {
         do {
             try cli.run()
         } catch {
-            FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
+            FileHandle.standardError.c11SafeWrite(Data("Error: \(error)\n".utf8))
             exit(1)
         }
     }

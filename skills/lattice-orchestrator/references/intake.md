@@ -37,6 +37,40 @@ lattice link <id> depends_on <other-id> --actor "agent:orchestrator-intake"
 - **Fidelity:** verbose (full description, acceptance criteria by ID, "Plan: filled in by delegator's plan phase", depends-on) or minimal (one line + BUILDPLAN anchor). Either way the ticket must reference its SPEC criteria IDs — the Result Validator maps audit rows through them.
 - Unavoidable shared-file edits (from the BUILDPLAN) flagged in the affected tickets so dispatch serializes them.
 
+## External work and delivery receipts (pilot convention)
+
+Lattice tickets remain the canonical work-item record for an ordinary run. When a
+workflow consumes externally-created items that must not mint tickets (eval defects,
+security findings, imported review comments), give each item a deterministic source
+ID and append state events to:
+
+```text
+.lattice/orchestration/external-work/<source-or-run>.jsonl
+```
+
+The coordinator is the single writer. Each `external-work.v1` line carries `at`,
+`work_item`, `event`, and the facts learned at that event. Keep source severity and
+wording; terminal events record an explicit disposition. This is a pilot seam for
+the next few runs, not a second ticket database and not yet a Lattice CLI schema.
+
+Whether the work item is a ticket or external, delivery evidence appends to:
+
+```text
+.lattice/orchestration/delivery-receipts.jsonl
+```
+
+Each `delivery-receipt.v1` line records one verified event (`pr_opened`, `reviewed`,
+`gated`, or `merged`) and includes `at`, `work_item`, `repo`, `branch`, `base_sha`,
+`head_sha`, and `pr`. Review events add reviewer, verdict, reviewed head, and artifact;
+gate events add command, status, gated head, and artifact; merge events add merge SHA
+and time. Append; never rewrite an old receipt after a rebase or push. The next event
+supersedes it visibly. The Orchestrator writes receipts from verified git/PR/artifact
+state, not from a delegator's prose report.
+
+```json
+{"schema":"delivery-receipt.v1","at":"2026-08-14T12:00:00Z","work_item":"MRQ-123","event":"gated","repo":"owner/repo","branch":"fix/mrq-123","base_sha":"abc123","head_sha":"def456","pr":240,"command":"npm run pr-gate","status":"pass","artifact":".lattice/artifacts/gate-240.txt"}
+```
+
 ## Validation plan (`.lattice/orchestration/validation-plan.md`)
 
 `EVALUATION.md` re-expressed for the terminal audit. Schema is load-bearing:
@@ -48,7 +82,15 @@ Source spec: [SPEC.md](../../SPEC.md) · Source evaluation: [EVALUATION.md](../.
 | # | Criterion (ID) | Verification method | Artifact to inspect | Pass condition | runnable_at |
 ```
 
-- `runnable_at` has exactly two values: **`pre-merge-static`** (answerable from `gh pr diff` + reading source — the Result Validator runs these) and **`post-merge-smoke`** (needs the merged tree, cross-applied PRs, or a human driving — the operator runs these after merge; the Validator lists them verbatim as the smoke checklist). Tag honestly: a static row that secretly needs a merged tree ships a partial-inspection failure into Phase 2. `felt` and `operator-assisted` criteria are smoke-side by construction; for `external-oracle` rows, name the oracle and who supplies it.
+- `runnable_at` has exactly three values: **`pre-merge-static`** (answerable from
+  `gh pr diff` + reading source), **`pre-merge-runtime`** (requires the exact PR head
+  running locally through a CLI, simulator, local server, or approved browser), and
+  **`post-merge-smoke`** (needs the assembled merged tree, production/external state,
+  or a human driving). The Result Validator runs both pre-merge classes and lists the
+  last class verbatim for the operator. Tag honestly: rendered behavior is not static,
+  and a cross-PR flow is not proven by one branch. `felt` and operator-only criteria
+  remain smoke-side; for `external-oracle` rows, name the oracle, who supplies it, and
+  whether approval already covers the interaction.
 - Every criterion gets ≥1 row (a criterion too vague to row-ify goes back to the contract's author). Verification methods are concrete and reproducible — "looks correct" is not a method. Pass conditions are single-line and testable — if you can't write one, the row is a wish. The artifact column names the PR via ticket ID; the Validator resolves it.
 - The Validator will not invent rows; what's written here is exactly what gets audited.
 - Operator reviews the draft: row count, coverage, sharpen or accept (default accept-as-is).
@@ -59,7 +101,8 @@ Source spec: [SPEC.md](../../SPEC.md) · Source evaluation: [EVALUATION.md](../.
 ## Configuration
 Autonomy · N · PR merge policy · Git remote (verified) · Terminal pre-merge status ·
 Ticket fidelity · plan_review_mode / review_mode (from .lattice/config.json) ·
-Master Validator · Result Validator · auto-close surfaces · c11 workspace ref
+Master Validator · Result Validator · auto-close surfaces · c11 workspace ref ·
+runtime/browser approval scope · delivery-receipt path
 
 ## Workspace panes (c11 refs)
 main_view_area / control_surface / delegate_view_area_1..3 / workspace / lattice_dashboard_port

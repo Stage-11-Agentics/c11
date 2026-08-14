@@ -25,9 +25,12 @@ Load context cold, in this order:
   3. .lattice/orchestration/validation-plan.md  ← this is your work queue
   4. .lattice/orchestration/run-state.md (for the ticket list)
 
-For each row in validation-plan.md WITH `runnable_at: pre-merge-static`:
+For each row in validation-plan.md WITH `runnable_at: pre-merge-static` OR
+`runnable_at: pre-merge-runtime`:
   1. Resolve the "Artifact to inspect" column — usually a ticket ID. Use `(cd <REPO_ROOT> && lattice show <TICKET-ID> --json)` to find the PR URL, then `gh pr view <url>` or `gh pr diff <url>` to inspect.
-  2. Run the named verification method against the artifact.
+  2. Run the named verification method against the exact PR head. Runtime rows use
+     an isolated checkout and the approved local CLI/server/browser scope recorded
+     in run-state; missing approval is Blocked, never silently downgraded to static.
   3. Record pass / fail / partial.
 
 Skip `runnable_at: post-merge-smoke` rows — they require a merged tree or operator-driven UI walkthrough. Collect them into a separate § "Operator smoke-pass checklist" in the report (see template). The Operator runs them post-merge; you stub them with the verification method copied through verbatim.
@@ -45,10 +48,11 @@ c11 send-key --workspace $WS --surface $RV_SURF enter
 
 ## Audit protocol
 
-**Walk every `runnable_at: pre-merge-static` row in `validation-plan.md`.** For each:
+**Walk every `pre-merge-static` and `pre-merge-runtime` row in
+`validation-plan.md`.** For each:
 
 1. **Resolve the artifact.** If the row references `PR for TT-3`, run `(cd <REPO_ROOT> && lattice show TT-3 --json | jq '.data.artifact_info[] | select(.role == "pr")')` to get the PR URL.
-2. **Inspect.** `gh pr view <url>` for description + diff summary; `gh pr diff <url>` for the diff; clone-and-checkout if you need to run the code; `gh pr checks <url>` for CI status.
+2. **Inspect.** `gh pr view <url>` for description + diff summary; `gh pr diff <url>` for the diff; `gh pr checks <url>` for CI status. For runtime rows, create an isolated exact-head checkout and use the named local runtime/rendered path. Never drive production unless the plan explicitly names and authorizes that external mutation.
 3. **Verify.** Run the row's verification method exactly. Don't substitute a different method because it's faster — the validation plan is the contract.
 4. **Record.** One of:
    - **Pass** — verification succeeded.
@@ -84,7 +88,9 @@ The Validator stays the singleton report-writer. The sub-agents are temporary fa
 
 **Don't invent rows.** If the run produced behavior the validation plan didn't anticipate, note it in the "Drift" section of the report — don't silently add a row. The validation plan is the audit contract.
 
-**Don't silently skip pre-merge-static rows.** If a row is genuinely un-verifiable (e.g., the artifact column references a PR that was never opened), record it as **Blocked** with the reason.
+**Don't silently skip either pre-merge class.** If a row is genuinely un-verifiable
+(missing PR, runtime cannot start, browser approval absent), record it as **Blocked**
+with the reason. Static inspection is not partial credit for a runtime criterion.
 
 ## Validation Report template
 

@@ -123,6 +123,29 @@ birth, and delivers the prompt one-shot via argv where the agent supports it —
 no ready-state race. `--json` returns the new surface/pane/workspace refs for
 follow-up `send`/`read-screen`. Full reference: `docs/launch-agent-reference.md`.
 
+### Positive launch receipt
+
+`launch-agent` returning a surface ref proves that c11 created a surface and
+delivered a prompt. It does **not** prove that the child read the brief, landed in
+the intended cwd, resolved the intended work item, or is looking at the expected
+git head. For consequential work, the launch prompt requires one positive receipt
+back to the parent before the child proceeds:
+
+```text
+READY <work-item> CWD <absolute-path> HEAD <sha-or-na> BASE <sha-or-na> MODE <active|standby>
+```
+
+For a reviewer, use the sharper verb `REVIEWING` and include the exact head and
+base being reviewed. Long-lived prepared seats report `MODE standby` and name the
+mutation they have **not** started. The parent verifies the receipt against its own
+expected values; a visible TUI, an idle status chip, or a successful launch response
+is not a substitute.
+
+c11 owns the surface/liveness fact. The workflow that launched the child owns the
+work-specific fields and decides what must match before work can continue. Put the
+receipt channel in the prompt: direct `c11 send` to the parent, a metadata handoff,
+or a workflow artifact. Do not make the child guess where acknowledgement belongs.
+
 The manual pattern below remains for launches into an *existing* surface, or
 when you need custom composition.
 
@@ -359,3 +382,6 @@ When spawning sub-agents in c11, include these as first-class instructions in th
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `c11 send`.
 5. **Do not make silent splits.** For multiple related outputs, prefer tabs over splits. Propose layouts when they would help; do not impose them.
 6. **Read the room before reshaping it.** `c11 tree --json` gives pixel and percent coordinates for every pane — check whether a new split will fit before asking for one.
+7. **Require a positive receipt for consequential work.** State the exact work item,
+   cwd, head/base (when git-backed), mode, and return channel. Do not treat surface
+   creation as proof that the child oriented successfully.

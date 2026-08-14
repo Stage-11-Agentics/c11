@@ -2,6 +2,24 @@
 
 The run log behind the skill's rules. Each entry preserves the story that shaped (or validated) a rule; the skill itself carries only the timeless statement. New entries accrue at closeout audits; a footgun mitigated three times in one run, or seen across two runs, promotes to a permanent rule in the references with its story recorded here.
 
+## Marquee eval round 10 (2026-08-14)
+
+- **Parallel build, serial landing:** 18 small PRs landed in 4h15m (median cycle
+  9m44s), but late queued reviews repeatedly became obsolete as `main` advanced.
+  One final branch's two-dot diff changed meaning after another PR merged; rebasing,
+  fresh exact-head review, and a fresh gate caught it before merge. Source of the
+  landing-train convention.
+- **Launch is not acknowledgement:** a reviewer surface existed but never established
+  that it had the intended cwd/head. The run recovered by replacing it, but paid the
+  latency and ambiguity. Source of the positive launch receipt.
+- **External defects still need durable state:** 22 evaluator defects across six
+  areas ended as patches or evidence-backed non-code dispositions without minting
+  Lattice tickets. Source of the external-work pilot ledger and generic delivery
+  receipts; hold CLI/schema productization until several rounds stabilize the fields.
+- **Rendered evidence is its own modality:** an independent reviewer caught a global
+  CSS leak that source-local reasoning and the gate missed. Source of the explicit
+  `pre-merge-runtime` validation class.
+
 ## Overtone V1.1 (2026-05-23)
 
 - **600-second code-review rule:** `lattice code-review` from a worktree hung three times in one run (OVR-51 first cycle, OVR-39, OVR-52). The prior soft guidance ("if it hangs >5–10 min, consider falling back") was treated as soft — every instance polled indefinitely until orchestrator-nudged. Promoted to a hard timeout + immediate own-reviewer fallback.

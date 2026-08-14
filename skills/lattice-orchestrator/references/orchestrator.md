@@ -30,6 +30,11 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
 11. **Cadence:** `/loop` with a 60-second tick; never bash `sleep`/`watch`/`lattice watch --exec` (subprocess loops die on compaction, can't re-enter the model, and are invisible to the harness). **Once you say `Loop ended`, you're dead** — no `send-key` revives a terminated loop, so do post-PR cleanup before ending it. (Codex has no `/loop`; use explicit `codex exec` re-invocations and flag the difference.)
 12. **Stop after the completion comment.** Sub-agents do not bump status and do not address the operator; the delegator is the only interface upward. Read-before-Write on pre-existing files (plan files are scaffolded at ticket creation — the path always exists).
 13. **Flag only human-required blockers:** on hitting a blocker only the operator can clear (a decision, a credential, an account swap), `c11 raise-flag --surface "$MY_SURF" "<one-line reason>"` in addition to the Lattice `needs_human` escalation, and `c11 lower-flag` once unblocked. Recoverable blockers go to the parent (delegator or Orchestrator), never to a flag. Do not launch delegators `--suppressed` by default — the operator watches these panes directly; suppression is reserved for workers whose completion the launching agent alone consumes (see the c11 skill's attention model).
+14. **Positive launch receipt:** before consequential work, the child returns
+    `READY <ticket> CWD <abs-worktree> HEAD <sha> BASE <sha> MODE active` to the
+    Orchestrator on the named channel. Reviewers use `REVIEWING`. Standby seats use
+    `MODE standby` and name the mutation not started. The parent verifies the fields;
+    surface creation and an idle TUI prove only liveness.
 
 ## Spawning: atomic cwd binding
 
@@ -53,7 +58,7 @@ Base is `<remote>/main` — or the parent's branch for press-ahead children. The
 
 ## The dispatch loop
 
-Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) auto-merge pass if enabled; (5) auto-close finished surfaces (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
+Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) landing-train pass if auto-merge is enabled; (5) auto-close finished surfaces (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
 
 **Cadence:** active dispatch 270s (inside the 5-minute prompt-cache window); quiescent 1200–1800s; never 300s (pays the cache miss without amortizing it). End the loop explicitly at run completion; silence after closeout is correct.
 
@@ -105,6 +110,13 @@ The single highest-leverage discipline in an auto-merge run — never act on wha
 - Merging: capture the HTTP code (`-w "%{http_code}"`); **never `curl -sf` a merge** — `-f` swallows the error body that says what failed. Re-GET the PR and assert `.merged == true` before `lattice complete`.
 - Before pushing any shared branch: `git log <remote>/main..HEAD` contains only intended commits, and `git rev-parse --show-toplevel` is the expected checkout. Never wrap a commit/push in or after `cd <root-repo>` — a commit inheriting the root cwd lands on the root checkout's `main`, the feature branch looks empty, and the work hides on the wrong branch.
 - Review evidence is part of verified state: fresh (postdates the last `→ review` transition), names the merged commit, and its newest verdict is PASS — see "A fired review is not a finished review" under Reviews. "An artifact with role `review` exists" verifies nothing.
+- Gate evidence is exact-head state too: the receipt's gated head equals the PR head,
+  its parsed status is passing under the project's documented vocabulary, and no push
+  happened afterward. A timeout/unknown result and a green run on an earlier head are
+  both non-evidence.
+- Every PR/review/gate/merge transition appends a machine-readable delivery receipt
+  per `references/intake.md`. Receipts are projections of verified state, never a
+  substitute for checking it.
 
 ## Press-ahead
 
@@ -112,9 +124,36 @@ Spawn dependents when a dependency reaches `review` or the terminal pre-merge st
 
 **Planning-only variant (merge-barrier runs).** When the run config forbids cutting dependent branches before the dependency merges, press-ahead still applies to *planning*: spawn the dependent delegators at the dependency's `review` in a **scratch-sandbox cwd** (no worktree, no branch), reading the in-review branch's code shape read-only, writing plans to the board, and halting at `planned` until an explicit `RESUME IMPLEMENTATION` message names their post-merge worktree. Costs zero barrier wall-clock; the sandbox cwd also means a confused delegator has no repo to damage. After every transition, audit all unspawned tickets; default to spawning; don't wait for operator approval to start an unblocked ticket. Children branch **off the in-review parent** (`git worktree add ... -b <child> <remote>/<parent-branch>`), never off main — they inherit the parent's interfaces import-stable. The child PR body names its anchor ("based on #N — merge that first; this rebases"), and the anchor is recorded in run-state's ticket table.
 
-## Auto-merge (opt-in at Phase 0)
+## Landing train and auto-merge (opt-in at Phase 0)
 
-Per PR, in dependency order (parent first): verify state (above) → mergeability check with plain `curl -s` (`.mergeable`, `.has_merge_conflicts`) → squash-merge with the HTTP code captured → re-GET `.merged == true` → `lattice complete <ID> --review "Merged via auto-merge (PR #N, squash)" --actor ...` → close the delegator surface. Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`. After merging a parent: the child rebases onto the new `<remote>/main`, `git push --force-with-lease`, then **wait out the forge's mergeability recompute** (~5–15s Forgejo, 10–25s GitHub) before merging the child.
+Build, ordinary review, and local validation may proceed in parallel. **Final landing
+is serial.** Maintain one dependency-ordered ready queue and grant the front PR the
+only finalization slot. This prevents every queued branch from repeatedly paying an
+exact review/gate against a base another merge is about to replace.
+
+For the front PR only:
+
+1. Fetch `<remote>` and compare the PR with current `<remote>/main`. Rebase once if
+   required, push with Clause 10, and record the resulting base/head pair.
+2. Obtain fresh review evidence naming that exact head. Require the reviewer's
+   positive `REVIEWING <work-item> CWD <path> HEAD <head> BASE <base>` receipt before
+   spending the review cycle.
+3. Run the project gate on the same head and append its parsed status. Any push,
+   conflict resolution, or generated-file change invalidates both review and gate.
+4. Re-check verified state and mergeability with plain `curl -s` (`.mergeable`,
+   `.has_merge_conflicts`), squash-merge with the HTTP code captured, then re-GET and
+   assert `.merged == true`.
+5. Append the merge receipt, `lattice complete <ID> --review "Merged via auto-merge
+   (PR #N, squash)" --actor ...`, close the delegator surface, and release the slot.
+
+Do not final-review several queued PRs "to save time"; that creates stale evidence
+as soon as the first one lands. Early reviews remain valuable for finding design and
+implementation defects, but only the front-of-train exact-head review and gate
+authorize merge. After merging a parent, a dependent child rebases onto the new
+`<remote>/main`, `git push --force-with-lease`, waits out the forge's mergeability
+recompute (~5–15s Forgejo, 10–25s GitHub), and then enters the front slot.
+
+Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
 
 - **Additive-registration conflicts** (`__init__.py` re-exports, CLI/plugin registries): resolve as the union, ordered by ticket ID — the standing pattern. Real semantic conflicts → escalate with a `🛑` banner.
 - **A squash-merged parent is NOT an ancestor of its children.** `git merge-base --is-ancestor` returns false even though the content landed, and child PRs show phantom diffs. Don't gate on ancestry after squash — gate on validating the assembled tree.

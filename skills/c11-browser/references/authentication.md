@@ -79,6 +79,11 @@ c11 browser surface:7 state save ./2fa-state.json
 
 ## Cookie-Based Auth
 
+A cookie flagged `Secure` is never sent over plain `http://`, and WKWebView does not exempt
+`localhost` or `127.0.0.1` the way Chrome does. Against a local dev server that sets `Secure`
+session cookies, authenticated pages will keep landing on the login route no matter how the
+cookie was set; drive that server's API with `curl`/`fetch` instead, or serve it over HTTPS.
+
 ```bash
 c11 browser surface:7 cookies set session_token "abc123xyz"
 c11 browser surface:7 goto https://app.example.com/dashboard

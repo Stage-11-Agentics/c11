@@ -1496,7 +1496,7 @@ class TerminalController {
         }
     }
 
-    private func writeSocketResponse(_ response: String, to socket: Int32) {
+    private nonisolated static func writeSocketResponse(_ response: String, to socket: Int32) {
         let payload = response + "\n"
         payload.withCString { ptr in
             _ = write(socket, ptr, strlen(ptr))
@@ -1776,14 +1776,18 @@ class TerminalController {
 
             consecutiveFailures = 0
 
-            // Capture peer PID immediately — before the client can disconnect.
-            // ncat --send-only closes the connection right after writing, so by
-            // the time a new thread starts the peer may already be gone.
-            let peerPid = getPeerPid(clientSocket)
+            // This thread lives as long as the listener, so drain per connection
+            // rather than at thread exit (C11-211).
+            autoreleasepool {
+                // Capture peer PID immediately — before the client can disconnect.
+                // ncat --send-only closes the connection right after writing, so by
+                // the time a new thread starts the peer may already be gone.
+                let peerPid = getPeerPid(clientSocket)
 
-            // Handle client in new thread
-            Thread.detachNewThread { [weak self] in
-                self?.handleClient(clientSocket, peerPid: peerPid)
+                // Handle client in new thread
+                Thread.detachNewThread { [weak self] in
+                    self?.handleClient(clientSocket, peerPid: peerPid)
+                }
             }
         }
     }
@@ -1902,31 +1906,55 @@ class TerminalController {
             }
         }
 
+        var authenticated = false
+        Self.serveCommandLines(
+            socket: socket,
+            shouldContinue: { withListenerState { isRunning } },
+            respond: { command in
+                if let authResponse = authResponseIfNeeded(for: command, authenticated: &authenticated) {
+                    return authResponse
+                }
+                return processCommandUsingSocketExecutionPolicy(command)
+            }
+        )
+    }
+
+    /// Serves one client connection: reads newline-framed commands until EOF, a read
+    /// error, or `shouldContinue()` returns false, and writes back `respond`'s answer
+    /// to each non-empty, trimmed command.
+    ///
+    /// Runs on the connection's own thread, whose root autorelease pool only drains
+    /// when the thread exits, i.e. when the client disconnects. A client can hold one
+    /// connection open for days (a deck polling `surface.read_text` every few
+    /// seconds), so each read drains its own pool; otherwise every command's JSON
+    /// parse and encode buffers stay alive until disconnect (C11-211).
+    nonisolated static func serveCommandLines(
+        socket: Int32,
+        shouldContinue: () -> Bool,
+        respond: (String) -> String
+    ) {
         var buffer = [UInt8](repeating: 0, count: 4096)
         var pending = ""
-        var authenticated = false
 
-        while withListenerState({ isRunning }) {
-            let bytesRead = read(socket, &buffer, buffer.count - 1)
-            guard bytesRead > 0 else { break }
+        while shouldContinue() {
+            let keepReading: Bool = autoreleasepool {
+                let bytesRead = read(socket, &buffer, buffer.count - 1)
+                guard bytesRead > 0 else { return false }
 
-            let chunk = String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? ""
-            pending.append(chunk)
+                let chunk = String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? ""
+                pending.append(chunk)
 
-            while let newlineIndex = pending.firstIndex(of: "\n") {
-                let line = String(pending[..<newlineIndex])
-                pending = String(pending[pending.index(after: newlineIndex)...])
-                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
+                while let newlineIndex = pending.firstIndex(of: "\n") {
+                    let line = String(pending[..<newlineIndex])
+                    pending = String(pending[pending.index(after: newlineIndex)...])
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
 
-                if let authResponse = authResponseIfNeeded(for: trimmed, authenticated: &authenticated) {
-                    writeSocketResponse(authResponse, to: socket)
-                    continue
+                    writeSocketResponse(respond(trimmed), to: socket)
                 }
-
-                let response = processCommandUsingSocketExecutionPolicy(trimmed)
-                writeSocketResponse(response, to: socket)
+                return true
             }
+            guard keepReading else { break }
         }
     }
 

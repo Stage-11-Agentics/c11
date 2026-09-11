@@ -238,6 +238,16 @@ When the ghostty submodule SHA changes, `scripts/ghosttykit-checksums.txt` must 
 
 **Expected CI pattern after a ghostty bump:** run 1 will show the three guard jobs red (they fire before the 10-minute Zig build finishes). After `build-ghosttykit` completes, it downloads or uses the just-built tarball, computes the SHA256, and pushes the checksum commit. Run 2 (triggered by that push) goes fully green. Run 1 red is expected — check whether `build-ghosttykit` is still in progress before treating it as a real failure.
 
+**Run 2 can sit in `action_required` instead of starting.** The checksum commit is authored by `github-actions[bot]`, and GitHub holds the PR workflows it triggers for approval; `gh pr checks` then reports nothing and `gh run list --branch <branch>` shows every workflow as `completed action_required`. Approve them and they queue immediately:
+
+```bash
+for id in $(gh run list --branch <branch> --limit 5 --json databaseId,conclusion --jq '.[] | select(.conclusion=="action_required") | .databaseId'); do
+  gh api -X POST repos/Stage-11-Agentics/c11/actions/runs/$id/approve
+done
+```
+
+(C11-212, 2026-09-11: run 2 waited ~15 minutes in that state before anyone noticed.)
+
 **`GHOSTTY_RELEASE_TOKEN` is not configured on this fork.** Any workflow step using that secret will get an empty `GH_TOKEN` and fail with exit code 4. xcframework releases are published to `Stage-11-Agentics/c11` using `GITHUB_TOKEN` with `permissions: contents: write`. If you copy a workflow from upstream that references `GHOSTTY_RELEASE_TOKEN`, replace it.
 
 **Artifact releases must never hold the `latest` slot.** Sparkle's feed URL is `https://github.com/Stage-11-Agentics/c11/releases/latest/download/appcast.xml`, so whichever release GitHub calls *latest* must be a real versioned release carrying an `appcast.xml` asset. Any workflow that publishes a build artifact as a GitHub release (`xcframework-*`, nightlies, anything future) has to pass `--prerelease --latest=false` (or `prerelease: true` / `make_latest: false` for `action-gh-release`). Getting this wrong 404s the feed and every shipped c11 reports `SUSparkleErrorDomain(2001)` on update check, with no other symptom. Quick check: `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` should always print a `v*` tag.

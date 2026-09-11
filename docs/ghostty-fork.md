@@ -124,6 +124,17 @@ The fork branch HEAD is now the section 7 c11 theme picker helper commit.
   - Adds `page_rows` to `FlattenedHighlight.Chunk` for reverse-search multi-chunk fixup.
   - Regression test added to `sliding_window.zig`.
 
+### 9) Surface free-text C ABI alignment
+
+- Commit: `d4431f804` (C11-212: match free-text export to C ABI)
+- File:
+  - `src/apprt/embedded.zig`
+- Summary:
+  - Adds the surface parameter declared by `ghostty.h` to the exported
+    `ghostty_surface_free_text` function and continues to deinitialize the returned text buffer.
+  - Matches the upstream two-parameter export exactly; this patch drops out on the next rebase onto
+    a base that already has it.
+
 ## Upstreamed fork changes
 
 ### cursor-click-to-move respects OSC 133 click-to-move
@@ -163,5 +174,9 @@ These files change frequently upstream; be careful when rebasing the fork:
     Any upstream change to `SlidingWindow` or `SlidingWindow.Meta` must preserve this field.
     The field is populated in `append()` under the terminal lock; do not move the assignment outside
     that lock boundary.
+
+- `src/apprt/embedded.zig`
+  - The `ghostty_surface_free_text` export in section 9 is identical to upstream and should be
+    dropped when rebasing onto a base that already has the two-parameter form.
 
 If you resolve a conflict, update this doc with what changed.

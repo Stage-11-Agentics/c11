@@ -494,6 +494,151 @@ final class BrowserModalHostWindowSelectionTests: XCTestCase {
         XCTAssertEqual(browserSelectModalHostWindowIndex(candidates), 0)
     }
 
+    /// C11-207: the consent covers one *navigation*, not one WebKit navigation
+    /// action. `navigate(to:)` and `decidePolicyFor` both check it, and a
+    /// dev-server redirect (`/` -> `/login`) puts it through `decidePolicyFor`
+    /// twice, so no check may consume it.
+    func testConsentSurvivesEveryCheckWithinOneNavigation() {
+        let consentHost: String? = "192.168.1.5"
+        let requested = URL(string: "http://192.168.1.5:8000/")!
+        let sameHostRedirect = URL(string: "http://192.168.1.5:8000/login")!
+
+        XCTAssertTrue(browserMatchesOneTimeInsecureHTTPBypass(requested, bypassHost: consentHost))
+        XCTAssertTrue(browserMatchesOneTimeInsecureHTTPBypass(sameHostRedirect, bypassHost: consentHost))
+        XCTAssertFalse(browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: sameHostRedirect,
+            consentHost: consentHost
+        ))
+    }
+
+    /// The consent is released when the navigation it covered settles, so it
+    /// cannot silently apply to a later navigation to the same host.
+    func testConsentIsReleasedWhenItsOwnNavigationSettles() {
+        let consentHost: String? = "192.168.1.5"
+
+        XCTAssertTrue(browserShouldClearInsecureHTTPConsent(
+            settledURL: URL(string: "http://192.168.1.5:8000/login")!,
+            consentHost: consentHost
+        ))
+        // A load finishing elsewhere in the surface must not drop an unused
+        // grant.
+        XCTAssertFalse(browserShouldClearInsecureHTTPConsent(
+            settledURL: URL(string: "https://example.com/")!,
+            consentHost: consentHost
+        ))
+        XCTAssertFalse(browserShouldClearInsecureHTTPConsent(settledURL: nil, consentHost: consentHost))
+        XCTAssertFalse(browserShouldClearInsecureHTTPConsent(
+            settledURL: URL(string: "http://192.168.1.5:8000/")!,
+            consentHost: nil
+        ))
+    }
+
+    /// A navigation somewhere else supersedes an unused grant rather than
+    /// letting it linger on the panel.
+    func testNavigatingElsewhereSupersedesAnUnusedConsent() {
+        XCTAssertTrue(browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: URL(string: "http://192.168.1.6:8000/")!,
+            consentHost: "192.168.1.5"
+        ))
+        XCTAssertTrue(browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: URL(string: "https://example.com/")!,
+            consentHost: "192.168.1.5"
+        ))
+        XCTAssertFalse(browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: URL(string: "http://192.168.1.5:8000/deep")!,
+            consentHost: "192.168.1.5"
+        ))
+        XCTAssertFalse(browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: URL(string: "http://192.168.1.5:8000/")!,
+            consentHost: nil
+        ))
+    }
+
+    /// The consent is scoped to one host, so a redirect to plain HTTP elsewhere
+    /// is still evaluated on its own merits.
+    func testOneTimeBypassDoesNotCoverADifferentHost() {
+        XCTAssertFalse(
+            browserMatchesOneTimeInsecureHTTPBypass(
+                URL(string: "http://192.168.1.6:8000/")!,
+                bypassHost: "192.168.1.5"
+            )
+        )
+        XCTAssertFalse(
+            browserMatchesOneTimeInsecureHTTPBypass(
+                URL(string: "https://192.168.1.5:8000/")!,
+                bypassHost: "192.168.1.5"
+            )
+        )
+    }
+
+    /// C11-207: loopback stays allowed by default (the dev-server case agents
+    /// hit constantly); a LAN host does not, which is the navigation that used
+    /// to fail silently.
+    func testDefaultAllowlistAllowsLoopbackAndStillBlocksLANHosts() {
+        let defaultAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
+        for allowed in ["http://127.0.0.1:8000/", "http://localhost:3000/", "http://[::1]:9000/"] {
+            XCTAssertFalse(
+                browserShouldBlockInsecureHTTPURL(URL(string: allowed)!, rawAllowlist: defaultAllowlist),
+                "\(allowed) should be allowed by the default allowlist"
+            )
+        }
+        for blocked in ["http://192.168.1.5:8000/", "http://10.0.0.9:3000/", "http://example.com/"] {
+            XCTAssertTrue(
+                browserShouldBlockInsecureHTTPURL(URL(string: blocked)!, rawAllowlist: defaultAllowlist),
+                "\(blocked) should still require consent"
+            )
+        }
+    }
+
+    /// C11-207: the socket error an agent receives must name both the reason
+    /// and the remedy, because the CLI renders only `code: message` and drops
+    /// the structured `data`.
+    func testInsecureHTTPBlockedErrorNamesTheReasonAndTheRemedy() {
+        let failure = browserInsecureHTTPBlockedError(
+            host: "192.168.1.5",
+            urlString: "http://192.168.1.5:8000/",
+            reason: .noWindowToPrompt
+        )
+
+        XCTAssertEqual(failure.code, "insecure_http_blocked")
+        XCTAssertTrue(failure.message.contains("192.168.1.5"))
+        XCTAssertTrue(failure.message.contains("no window available to prompt"))
+        XCTAssertTrue(failure.message.contains("--allow-insecure-http"))
+
+        XCTAssertEqual(failure.data["host"] as? String, "192.168.1.5")
+        XCTAssertEqual(failure.data["url"] as? String, "http://192.168.1.5:8000/")
+        XCTAssertEqual(failure.data["reason"] as? String, "no_window_to_prompt")
+        XCTAssertEqual(failure.data["hint"] as? String, browserInsecureHTTPOptInHint)
+    }
+
+    /// A pending prompt is reported rather than returned as a bare success, so
+    /// an agent knows a human still has to answer before the page loads.
+    func testPromptPendingPayloadNamesTheHostAndTheOptIn() {
+        let payload = browserInsecureHTTPPromptPendingPayload(host: "192.168.1.5")
+        XCTAssertEqual(payload["status"] as? String, "prompted")
+        XCTAssertEqual(payload["host"] as? String, "192.168.1.5")
+        XCTAssertEqual(payload["hint"] as? String, browserInsecureHTTPOptInHint)
+    }
+
+    /// `browser.open_split` keeps its promise (a surface exists) even when the
+    /// initial navigation was refused, so the refusal rides in the payload and
+    /// the caller keeps the refs it needs to retry or clean up.
+    func testDispositionPayloadReportsBlockedPromptedAndNothingForProceeded() {
+        XCTAssertNil(browserInsecureHTTPPayload(for: .proceeded))
+        XCTAssertNil(browserInsecureHTTPPayload(for: nil))
+
+        let prompted = browserInsecureHTTPPayload(for: .prompting(host: "192.168.1.5"))
+        XCTAssertEqual(prompted?["status"] as? String, "prompted")
+
+        let blocked = browserInsecureHTTPPayload(
+            for: .blocked(host: "192.168.1.5", reason: .noWindowToPrompt)
+        )
+        XCTAssertEqual(blocked?["status"] as? String, "blocked")
+        XCTAssertEqual(blocked?["host"] as? String, "192.168.1.5")
+        XCTAssertEqual(blocked?["reason"] as? String, "no_window_to_prompt")
+        XCTAssertEqual(blocked?["hint"] as? String, browserInsecureHTTPOptInHint)
+    }
+
     /// Cancel, so an unpromptable insecure-HTTP navigation is denied rather
     /// than proceeding, and the host is never added to the allowlist.
     func testUnpromptedInsecureHTTPResponseIsADenialThatDoesNotAllowlist() {

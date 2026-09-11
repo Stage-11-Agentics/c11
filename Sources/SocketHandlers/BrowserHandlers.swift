@@ -667,6 +667,11 @@ extension TerminalController {
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let respectExternalOpenRules = v2Bool(params, "respect_external_open_rules") ?? false
+        let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
+        let insecureHTTPConsentHost: String? = {
+            guard allowInsecureHTTP, let url, url.scheme?.lowercased() == "http" else { return nil }
+            return BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "")
+        }()
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser", data: nil)
         v2MainSync {
@@ -721,11 +726,21 @@ extension TerminalController {
             var placementStrategy = "split_right"
             let createdPanel: BrowserPanel?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                createdPanel = ws.newBrowserSurface(inPane: targetPane, url: url, focus: true)
+                createdPanel = ws.newBrowserSurface(
+                    inPane: targetPane,
+                    url: url,
+                    focus: true,
+                    bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
+                )
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
-                createdPanel = ws.newBrowserSplit(from: sourceSurfaceId, orientation: .horizontal, url: url)
+                createdPanel = ws.newBrowserSplit(
+                    from: sourceSurfaceId,
+                    orientation: .horizontal,
+                    url: url,
+                    bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
+                )
             }
 
             guard let browserPanelId = createdPanel?.id else {
@@ -735,7 +750,7 @@ extension TerminalController {
 
             let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
             let windowId = v2ResolveWindowId(tabManager: tabManager)
-            result = .ok([
+            var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -752,7 +767,16 @@ extension TerminalController {
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
-            ])
+            ]
+            // This verb's promise is "a browser surface exists", and it does
+            // even when the initial navigation was refused. Report the refusal
+            // in the payload rather than as an error, so the caller keeps the
+            // surface/pane refs it needs to retry with `allow_insecure_http`
+            // or to close the surface.
+            if let insecureHTTP = browserInsecureHTTPPayload(for: createdPanel?.lastNavigationDisposition) {
+                payload["insecure_http"] = insecureHTTP
+            }
+            result = .ok(payload)
         }
         return result
     }
@@ -768,11 +792,25 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing url", data: nil)
         }
 
+        let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
+
         var result: V2CallResult = .err(code: "not_found", message: "Surface not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
-            browserPanel.navigateSmart(url)
+            let disposition = browserPanel.navigateSmart(url, allowInsecureHTTP: allowInsecureHTTP)
+            if case .blocked(let host, let reason) = disposition {
+                let failure = browserInsecureHTTPBlockedError(
+                    host: host,
+                    urlString: url,
+                    reason: reason
+                )
+                var data = failure.data
+                data["surface_id"] = surfaceId.uuidString
+                data["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
+                result = .err(code: failure.code, message: failure.message, data: data)
+                return
+            }
             var payload: [String: Any] = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -781,6 +819,9 @@ extension TerminalController {
                 "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))
             ]
+            if let insecureHTTP = browserInsecureHTTPPayload(for: disposition) {
+                payload["insecure_http"] = insecureHTTP
+            }
             v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
             result = .ok(payload)
         }

@@ -101,11 +101,19 @@ extension TerminalController {
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
-            result = .ok([
+            var payload: [String: Any] = [
                 "workspace_id": ws.id.uuidString,
                 "surface_id": surfaceId.uuidString,
                 "url": browserPanel.currentURL?.absoluteString ?? ""
-            ])
+            ]
+            // An insecure-HTTP navigation can be refused asynchronously (a
+            // redirect blocked after the navigate call already returned). This
+            // is the query agents poll after navigating, so it is where that
+            // outcome is legible.
+            if let insecureHTTP = browserInsecureHTTPPayload(for: browserPanel.lastNavigationDisposition) {
+                payload["insecure_http"] = insecureHTTP
+            }
+            result = .ok(payload)
         }
         return result
     }

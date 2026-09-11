@@ -8856,6 +8856,7 @@ final class Workspace: Identifiable, ObservableObject {
         url: URL? = nil,
         preferredProfileID: UUID? = nil,
         focus: Bool = true,
+        bypassInsecureHTTPHostOnce: String? = nil,
         pendingHibernate: Bool = false
     ) -> BrowserPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
@@ -8868,6 +8869,7 @@ final class Workspace: Identifiable, ObservableObject {
                 sourcePanelId: panelId
             ),
             initialURL: url,
+            bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
             isRemoteWorkspace: isRemoteWorkspace,
             remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil,

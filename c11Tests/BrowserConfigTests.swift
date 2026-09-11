@@ -1254,6 +1254,91 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
         XCTAssertFalse(panel.shouldRenderWebView, "Denied insecure navigation must not load")
         XCTAssertNil(panel.currentURL)
     }
+
+    /// C11-207: with no window to prompt on, the caller is told why nothing
+    /// happened instead of watching a page that never loads.
+    func testUnpromptableNavigationReportsABlockedDisposition() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        panel.configureInsecureHTTPAlertHooksForTesting(
+            alertFactory: { BrowserInsecureHTTPAlertSpy() },
+            windowProvider: { nil }
+        )
+
+        let disposition = panel.navigateSmart("http://192.0.2.1:8000/")
+
+        XCTAssertEqual(disposition, .blocked(host: "192.0.2.1", reason: .noWindowToPrompt))
+        XCTAssertEqual(panel.lastNavigationDisposition, disposition)
+        XCTAssertFalse(panel.shouldRenderWebView)
+    }
+
+    /// C11-207: a merely backgrounded window still hosts the sheet, so the
+    /// caller is told a human has to answer rather than getting a bare OK.
+    func testPromptableNavigationReportsAPendingPrompt() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        let alertSpy = BrowserInsecureHTTPAlertSpy()
+        alertSpy.nextResponse = .alertThirdButtonReturn
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        panel.configureInsecureHTTPAlertHooksForTesting(
+            alertFactory: { alertSpy },
+            windowProvider: { window }
+        )
+
+        let disposition = panel.navigateSmart("http://192.0.2.1:8000/")
+
+        XCTAssertEqual(disposition, .prompting(host: "192.0.2.1"))
+        XCTAssertEqual(alertSpy.beginSheetModalCallCount, 1)
+    }
+
+    /// C11-207: the explicit opt-in navigates without prompting, and the
+    /// one-time bypass must survive the caller-side pre-check so WebKit's
+    /// `decidePolicyFor` (the single consuming gate) still sees it.
+    func testAllowInsecureHTTPOptInNavigatesWithoutPromptingAndKeepsTheBypass() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        let alertSpy = BrowserInsecureHTTPAlertSpy()
+        panel.configureInsecureHTTPAlertHooksForTesting(
+            alertFactory: { alertSpy },
+            windowProvider: { nil }
+        )
+
+        // TEST-NET-1 (RFC 5737), unroutable, so the real load WebKit starts
+        // fails fast instead of hanging on DNS during teardown. Every assertion
+        // below is synchronous and does not depend on the load.
+        let disposition = panel.navigateSmart("http://192.0.2.1:8000/", allowInsecureHTTP: true)
+
+        XCTAssertEqual(disposition, .proceeded)
+        XCTAssertEqual(alertSpy.beginSheetModalCallCount, 0)
+        XCTAssertEqual(alertSpy.runModalCallCount, 0)
+        XCTAssertTrue(panel.shouldRenderWebView)
+        XCTAssertTrue(
+            panel.hasPendingInsecureHTTPConsentForTesting(host: "192.0.2.1"),
+            "The delegate gate must still be able to consume the bypass"
+        )
+    }
+
+    /// C11-207: the same pre-check bug broke the shipped "Proceed in c11"
+    /// new-tab path, whose bypass is seeded through `BrowserPanel.init`.
+    func testInitSeededBypassSurvivesTheInitialNavigation() {
+        let panel = BrowserPanel(
+            workspaceId: UUID(),
+            initialURL: URL(string: "http://192.0.2.1:8000/")!,
+            bypassInsecureHTTPHostOnce: "192.0.2.1"
+        )
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        XCTAssertEqual(panel.lastNavigationDisposition, .proceeded)
+        XCTAssertTrue(panel.hasPendingInsecureHTTPConsentForTesting(host: "192.0.2.1"))
+    }
 }
 
 

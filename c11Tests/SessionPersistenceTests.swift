@@ -1408,6 +1408,108 @@ final class SocketListenerAcceptPolicyTests: XCTestCase {
     }
 }
 
+/// C11-211: the per-connection command loop runs on a dedicated thread whose root
+/// autorelease pool only drains when the thread exits. These tests drive
+/// `TerminalController.serveCommandLines` over a socketpair on such a thread, the
+/// way `handleClient` does in production.
+final class SocketClientCommandLoopTests: XCTestCase {
+    private final class Tracker: NSObject {}
+
+    /// Weak reference readable from the test thread while the loop thread writes it.
+    private final class WeakBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private weak var value: Tracker?
+        func set(_ tracker: Tracker) { lock.lock(); value = tracker; lock.unlock() }
+        var isAlive: Bool { lock.lock(); defer { lock.unlock() }; return value != nil }
+    }
+
+    private var fds: [Int32] = [-1, -1]
+    private var loopDone: XCTestExpectation!
+
+    override func setUp() {
+        super.setUp()
+        fds = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+    }
+
+    override func tearDown() {
+        for fd in fds where fd >= 0 { close(fd) }
+        super.tearDown()
+    }
+
+    /// Starts the command loop on a detached thread, like the accept loop does.
+    private func startLoop(respond: @escaping (String) -> String) {
+        let serverFD = fds[1]
+        let done = expectation(description: "command loop exits")
+        loopDone = done
+        Thread.detachNewThread {
+            TerminalController.serveCommandLines(
+                socket: serverFD,
+                shouldContinue: { true },
+                respond: respond
+            )
+            done.fulfill()
+        }
+    }
+
+    private func send(_ text: String) {
+        let bytes = Array(text.utf8)
+        XCTAssertEqual(write(fds[0], bytes, bytes.count), bytes.count)
+    }
+
+    private func readLine() -> String? {
+        var line: [UInt8] = []
+        var byte: UInt8 = 0
+        while read(fds[0], &byte, 1) == 1 {
+            if byte == UInt8(ascii: "\n") { return String(decoding: line, as: UTF8.self) }
+            line.append(byte)
+        }
+        return nil
+    }
+
+    private func closeClientAndWaitForLoopExit() {
+        close(fds[0])
+        fds[0] = -1
+        wait(for: [loopDone], timeout: 2)
+    }
+
+    func testCommandAutoreleasedObjectsAreReleasedWhileConnectionStaysOpen() {
+        let box = WeakBox()
+        startLoop { command in
+            let tracker = Tracker()
+            box.set(tracker)
+            // Hand the only other reference to the current autorelease pool, the
+            // same way JSONSerialization and bridged strings leave debris there.
+            _ = Unmanaged.passRetained(tracker).autorelease()
+            return "ok:\(command)"
+        }
+
+        send("ping\n")
+        XCTAssertEqual(readLine(), "ok:ping")
+
+        // The response is written before the pool pops, so allow the loop thread
+        // a moment. Without a per-command pool the tracker lives until the client
+        // disconnects, which here is never during the wait.
+        let deadline = Date().addingTimeInterval(2)
+        while box.isAlive && Date() < deadline { usleep(1_000) }
+        XCTAssertFalse(box.isAlive, "autoreleased object outlived its command on a held connection")
+
+        closeClientAndWaitForLoopExit()
+    }
+
+    func testFramesTrimsAndSkipsBlankLinesAcrossReads() {
+        startLoop { "echo:\($0)" }
+
+        send("one\n\n   two  \nthr")
+        XCTAssertEqual(readLine(), "echo:one")
+        XCTAssertEqual(readLine(), "echo:two")
+        send("ee\n")
+        XCTAssertEqual(readLine(), "echo:three")
+
+        closeClientAndWaitForLoopExit()
+    }
+}
+
 final class SidebarDragFailsafePolicyTests: XCTestCase {
     func testRequestsClearWhenMonitorStartsAfterMouseRelease() {
         XCTAssertTrue(

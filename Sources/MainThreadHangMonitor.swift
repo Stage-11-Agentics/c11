@@ -429,18 +429,22 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         let tick = tickIntervalMs / 1000.0
         while true {
             Thread.sleep(forTimeInterval: tick)
-            sendHeartbeat()
+            // This thread never exits, so its root pool never drains; each hang
+            // capture symbolicates and writes the log from here (C11-211).
+            autoreleasepool {
+                sendHeartbeat()
 
-            let now = ProcessInfo.processInfo.systemUptime
-            lock.lock(); let ack = lastAckUptime; lock.unlock()
+                let now = ProcessInfo.processInfo.systemUptime
+                lock.lock(); let ack = lastAckUptime; lock.unlock()
 
-            switch detector.evaluate(nowUptime: now, lastAckUptime: ack) {
-            case .none:
-                break
-            case .capture(let gapMs, let recapture):
-                handleHang(gapMs: gapMs, recapture: recapture)
-            case .recovered(let durationMs):
-                handleRecovery(durationMs: durationMs)
+                switch detector.evaluate(nowUptime: now, lastAckUptime: ack) {
+                case .none:
+                    break
+                case .capture(let gapMs, let recapture):
+                    handleHang(gapMs: gapMs, recapture: recapture)
+                case .recovered(let durationMs):
+                    handleRecovery(durationMs: durationMs)
+                }
             }
         }
     }

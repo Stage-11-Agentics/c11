@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-09-11
+
+Headline: **c11 stops growing by gigabytes a day when something stays connected to its socket.**
+
+### Fixed
+
+- **Memory no longer climbs for as long as a client holds its connection open.** Each socket connection is served on its own thread, and a thread's autorelease pool is only emptied when that thread exits — so a dashboard, deck, or status display that connects once and stays connected pinned every command's JSON buffers until it disconnected. One measured install was leaking about 3 GB/day and had reached 12.5 GB after six days of uptime. Commands now release their memory on every pass through the connection loop, as do the socket accept loop and the hang-monitor watchdog. ([#428](https://github.com/Stage-11-Agentics/c11/pull/428)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.64.0] - 2026-08-12
 
 Headline: **The app stops wedging, and the A button actually launches an agent.** Four separate paths that could freeze c11's main thread — for minutes, and in one measured episode for nearly seven hours — are closed, while the A button goes from silently dead to a one-click launcher whose every refusal states a reason.

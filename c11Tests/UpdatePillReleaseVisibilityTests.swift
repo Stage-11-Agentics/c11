@@ -71,21 +71,22 @@ final class BrowserInsecureHTTPSettingsTests: XCTestCase {
         XCTAssertEqual(prepared.cachePolicy, .useProtocolCachePolicy)
     }
 
-    func testOneTimeBypassIsConsumedAfterFirstNavigation() throws {
+    func testOneTimeBypassCoversOneNavigationThenExpires() throws {
         let insecureURL = try XCTUnwrap(URL(string: "http://neverssl.com"))
-        var bypassHostOnce: String? = "neverssl.com"
+        let bypassHostOnce: String? = "neverssl.com"
 
-        XCTAssertTrue(browserShouldConsumeOneTimeInsecureHTTPBypass(
-            insecureURL,
-            bypassHostOnce: &bypassHostOnce
-        ))
-        XCTAssertNil(bypassHostOnce)
+        // Covers the navigation, including the repeat checks a redirect chain
+        // puts it through.
+        XCTAssertTrue(browserMatchesOneTimeInsecureHTTPBypass(insecureURL, bypassHost: bypassHostOnce))
+        XCTAssertTrue(browserMatchesOneTimeInsecureHTTPBypass(insecureURL, bypassHost: bypassHostOnce))
 
-        // Subsequent visits should prompt again unless host was saved.
-        XCTAssertFalse(browserShouldConsumeOneTimeInsecureHTTPBypass(
-            insecureURL,
-            bypassHostOnce: &bypassHostOnce
+        // Released when that navigation settles; subsequent visits prompt again
+        // unless the host was saved to the allowlist.
+        XCTAssertTrue(browserShouldClearInsecureHTTPConsent(
+            settledURL: insecureURL,
+            consentHost: bypassHostOnce
         ))
+        XCTAssertFalse(browserMatchesOneTimeInsecureHTTPBypass(insecureURL, bypassHost: nil))
         XCTAssertTrue(browserShouldBlockInsecureHTTPURL(insecureURL, rawAllowlist: nil))
     }
 

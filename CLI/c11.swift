@@ -1330,6 +1330,12 @@ final class SocketClient {
                 throw CLIError(message: timeoutMessage(method: method, params: params, elapsedMs: elapsedMs))
             }
             traceStatus = "error"
+            // Structured `data` is otherwise dropped on the floor, so surface
+            // the one field that tells the caller what to do next.
+            let hint = (error["data"] as? [String: Any])?["hint"] as? String
+            if let hint, !hint.isEmpty, !message.contains(hint) {
+                throw CLIError(message: "\(code): \(message)\n\(hint)")
+            }
             throw CLIError(message: "\(code): \(message)")
         }
 
@@ -6837,6 +6843,27 @@ struct CMUXCLI {
         func nonFlagArgs(_ values: [String]) -> [String] {
             values.filter { !$0.hasPrefix("-") }
         }
+        // A plain-HTTP navigation to a non-allowlisted host either waits on a
+        // human or is refused outright, and in both cases nothing has loaded.
+        // Without this the non-JSON caller sees a bare "OK" for a page that is
+        // not there.
+        func browserInsecureHTTPPendingSuffix(_ payload: [String: Any]) -> String {
+            guard let info = payload["insecure_http"] as? [String: Any] else { return "" }
+            let host = (info["host"] as? String) ?? "this host"
+            switch info["status"] as? String {
+            case "prompted":
+                return " (insecure-http prompt pending for \(host); a human must answer it,"
+                    + " or retry with --allow-insecure-http)"
+            case "blocked":
+                return " (insecure-http navigation to \(host) was blocked: no window available to"
+                    + " prompt; retry with --allow-insecure-http)"
+            default:
+                return ""
+            }
+        }
+        func browserNavigateFallbackText(_ payload: [String: Any]) -> String {
+            "OK" + browserInsecureHTTPPendingSuffix(payload)
+        }
 
         if subcommand == "identify" {
             let surface = try normalizeSurfaceHandle(surfaceRaw, client: client, allowFocused: true)
@@ -6857,7 +6884,8 @@ struct CMUXCLI {
         if subcommand == "open" || subcommand == "open-split" || subcommand == "new" {
             // Parse routing flags before URL assembly so they never leak into the URL string.
             let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
-            let (windowOpt, urlArgs) = parseOption(argsAfterWorkspace, name: "--window")
+            let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
+            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterWindow, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_RESPECT_EXTERNAL_OPEN_RULES"] else {
@@ -6877,8 +6905,12 @@ struct CMUXCLI {
                 guard !url.isEmpty else {
                     throw CLIError(message: "browser <surface> open requires a URL")
                 }
-                let payload = try client.sendV2(method: "browser.navigate", params: ["surface_id": sid, "url": url])
-                output(payload, fallback: "OK")
+                var navigateParams: [String: Any] = ["surface_id": sid, "url": url]
+                if allowInsecureHTTP {
+                    navigateParams["allow_insecure_http"] = true
+                }
+                let payload = try client.sendV2(method: "browser.navigate", params: navigateParams)
+                output(payload, fallback: browserNavigateFallbackText(payload))
                 return
             }
 
@@ -6898,6 +6930,9 @@ struct CMUXCLI {
             if respectExternalOpenRules {
                 params["respect_external_open_rules"] = true
             }
+            if allowInsecureHTTP {
+                params["allow_insecure_http"] = true
+            }
             if let windowRaw = windowOpt {
                 if let window = try normalizeWindowHandle(windowRaw, client: client) {
                     params["window_id"] = window
@@ -6907,17 +6942,16 @@ struct CMUXCLI {
             let surfaceText = formatHandle(payload, kind: "surface", idFormat: effectiveIDFormat) ?? "unknown"
             let paneText = formatHandle(payload, kind: "pane", idFormat: effectiveIDFormat) ?? "unknown"
             let placement = ((payload["created_split"] as? Bool) == true) ? "split" : "reuse"
-            output(payload, fallback: "OK surface=\(surfaceText) pane=\(paneText) placement=\(placement)")
+            let openFallback = "OK surface=\(surfaceText) pane=\(paneText) placement=\(placement)"
+                + browserInsecureHTTPPendingSuffix(payload)
+            output(payload, fallback: openFallback)
             return
         }
 
         if subcommand == "goto" || subcommand == "navigate" {
             let sid = try requireSurface()
-            var urlArgs = subArgs
-            let snapshotAfter = urlArgs.last == "--snapshot-after"
-            if snapshotAfter {
-                urlArgs.removeLast()
-            }
+            let (argsAfterSnapshot, snapshotAfter) = parseFlag(subArgs, name: "--snapshot-after")
+            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterSnapshot, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !url.isEmpty else {
                 throw CLIError(message: "browser \(subcommand) requires a URL")
@@ -6926,8 +6960,11 @@ struct CMUXCLI {
             if snapshotAfter {
                 params["snapshot_after"] = true
             }
+            if allowInsecureHTTP {
+                params["allow_insecure_http"] = true
+            }
             let payload = try client.sendV2(method: "browser.navigate", params: params)
-            output(payload, fallback: "OK")
+            output(payload, fallback: browserNavigateFallbackText(payload))
             return
         }
 
@@ -9806,9 +9843,11 @@ struct CMUXCLI {
             `open`/`open-split`/`new`/`identify` can run without an explicit surface.
 
             Subcommands:
-              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>]
+              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--allow-insecure-http]
                 open/open-split/new default to $CMUX_WORKSPACE_ID when --workspace is omitted and --window is not set
-              goto|navigate <url> [--snapshot-after]
+              goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
+                --allow-insecure-http consents to one plain-http navigation to that host without
+                prompting a human (loopback hosts are already allowed by default)
               back|forward|reload [--snapshot-after]
               url|get-url
               focus-webview | is-webview-focused
@@ -17405,9 +17444,9 @@ struct CMUXCLI {
           markdown [open] <path>             (open markdown file in formatted viewer panel with live reload)
 
           browser [--surface <id|ref|index> | <surface>] <subcommand> ...
-          browser open [url]                   (create browser split in caller's workspace; if surface supplied, behaves like navigate)
-          browser open-split [url]
-          browser goto|navigate <url> [--snapshot-after]
+          browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if surface supplied, behaves like navigate)
+          browser open-split [url] [--allow-insecure-http]
+          browser goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
           browser back|forward|reload [--snapshot-after]
           browser url|get-url
           browser snapshot [--interactive|-i] [--cursor] [--compact] [--max-depth <n>] [--selector <css>]

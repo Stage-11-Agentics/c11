@@ -805,18 +805,47 @@ func browserShouldBlockInsecureHTTPURL(
     return !BrowserInsecureHTTPSettings.isHostAllowed(host, rawAllowlist: rawAllowlist)
 }
 
-func browserShouldConsumeOneTimeInsecureHTTPBypass(
+/// Whether a granted one-time insecure-HTTP consent covers `url`.
+///
+/// Deliberately non-mutating. The grant is scoped to **one navigation**, not to
+/// one WebKit navigation action: a dev server that answers `/` with a 302 to
+/// `/login` runs `decidePolicyFor` twice for the same navigation, and a check
+/// that consumed the grant on the first call would block the redirect that the
+/// operator (or the agent's `--allow-insecure-http`) just consented to. The
+/// grant is released when the navigation settles instead
+/// (`browserShouldClearInsecureHTTPConsent`).
+func browserMatchesOneTimeInsecureHTTPBypass(
     _ url: URL,
-    bypassHostOnce: inout String?
+    bypassHost: String?
 ) -> Bool {
-    guard let bypassHost = bypassHostOnce else { return false }
+    guard let bypassHost else { return false }
     guard url.scheme?.lowercased() == "http",
           let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
         return false
     }
-    guard host == bypassHost else { return false }
-    bypassHostOnce = nil
-    return true
+    return host == bypassHost
+}
+
+/// Whether a settled navigation releases the consent that allowed it. Only the
+/// consented host releases it, so an unrelated load finishing elsewhere in the
+/// surface cannot drop a grant that has not been used yet.
+func browserShouldClearInsecureHTTPConsent(
+    settledURL: URL?,
+    consentHost: String?
+) -> Bool {
+    guard let consentHost, let settledURL else { return false }
+    guard let host = BrowserInsecureHTTPSettings.normalizeHost(settledURL.host ?? "") else { return false }
+    return host == consentHost
+}
+
+/// Whether a newly requested navigation supersedes an unused consent. A grant
+/// for one host must never leak into a navigation somewhere else.
+func browserShouldSupersedeInsecureHTTPConsent(
+    requestedURL: URL,
+    consentHost: String?
+) -> Bool {
+    guard consentHost != nil else { return false }
+    return !browserMatchesOneTimeInsecureHTTPBypass(requestedURL, bypassHost: consentHost)
 }
 
 func browserShouldPersistInsecureHTTPAllowlistSelection(
@@ -834,6 +863,119 @@ enum BrowserInsecureHTTPPromptPolicy {
     /// anyone: the Cancel button, so the navigation is denied and the host is
     /// not added to the allowlist.
     static let unpromptedResponse: NSApplication.ModalResponse = .alertThirdButtonReturn
+}
+
+/// Why an insecure-HTTP navigation did not load.
+enum BrowserInsecureHTTPBlockReason: String {
+    /// The app had no visible, non-miniaturized window to sheet the prompt
+    /// onto, so there was nobody who could have answered it.
+    case noWindowToPrompt = "no_window_to_prompt"
+    /// A human saw the prompt and declined it.
+    case declinedByOperator = "declined_by_operator"
+    /// A human answered the prompt by handing the URL to the default browser,
+    /// so nothing loaded in this surface.
+    case openedExternally = "opened_externally"
+    /// The URL is plain HTTP with no host that can be checked against the
+    /// allowlist, so there is nothing to name in a prompt and nothing
+    /// `--allow-insecure-http` could consent to.
+    case unparsableHost = "unparsable_host"
+}
+
+/// What a navigation request actually did, so a socket caller learns the
+/// outcome instead of watching a page that never loads.
+enum BrowserNavigationDisposition: Equatable {
+    /// The load was handed to WebKit.
+    case proceeded
+    /// A plain-HTTP prompt was sheeted onto a window; a human still has to
+    /// answer it before anything loads.
+    case prompting(host: String)
+    /// The navigation was refused without prompting.
+    case blocked(host: String, reason: BrowserInsecureHTTPBlockReason)
+}
+
+/// The advice appended to every blocked/pending insecure-HTTP report. Socket
+/// callers are the ones who hit these paths, and the CLI drops structured
+/// error `data`, so the remedy has to travel in readable text.
+let browserInsecureHTTPOptInHint =
+    "Pass --allow-insecure-http (socket: allow_insecure_http: true) to consent to this one "
+    + "navigation, or add the host to Settings > Browser > insecure HTTP allowlist to allow it "
+    + "permanently. Loopback hosts (localhost, 127.0.0.1, ::1) are allowed by default."
+
+/// Builds the structured socket error for an insecure-HTTP navigation that was
+/// refused without prompting. Pure so the contract is testable without AppKit.
+func browserInsecureHTTPBlockedError(
+    host: String,
+    urlString: String,
+    reason: BrowserInsecureHTTPBlockReason
+) -> (code: String, message: String, data: [String: Any]) {
+    let why: String
+    let remedy: String
+    switch reason {
+    case .noWindowToPrompt:
+        why = "no window available to prompt"
+        remedy = browserInsecureHTTPOptInHint
+    case .declinedByOperator:
+        why = "declined by the operator"
+        remedy = browserInsecureHTTPOptInHint
+    case .openedExternally:
+        why = "the operator opened it in the default browser instead"
+        remedy = browserInsecureHTTPOptInHint
+    case .unparsableHost:
+        why = "the URL has no usable host"
+        // The opt-in cannot help here: it is keyed on a normalized host, and
+        // there is none.
+        remedy = "Use a URL with a parsable host."
+    }
+    return (
+        code: "insecure_http_blocked",
+        message: "insecure HTTP navigation to \(host) blocked: \(why). \(remedy)",
+        data: [
+            "host": host,
+            "url": urlString,
+            "reason": reason.rawValue,
+            "hint": remedy
+        ]
+    )
+}
+
+/// The payload fragment reporting that a plain-HTTP prompt is sheeted and
+/// waiting on a human.
+func browserInsecureHTTPPromptPendingPayload(host: String) -> [String: Any] {
+    [
+        "status": "prompted",
+        "host": host,
+        "hint": browserInsecureHTTPOptInHint
+    ]
+}
+
+/// The payload fragment reporting a refused navigation on a verb whose promise
+/// (a surface exists) was still kept, so the caller keeps the surface refs it
+/// needs to retry or clean up.
+func browserInsecureHTTPBlockedPayload(
+    host: String,
+    reason: BrowserInsecureHTTPBlockReason
+) -> [String: Any] {
+    [
+        "status": "blocked",
+        "host": host,
+        "reason": reason.rawValue,
+        "hint": browserInsecureHTTPOptInHint
+    ]
+}
+
+/// The `insecure_http` fragment for a disposition, or nil when the navigation
+/// simply proceeded.
+func browserInsecureHTTPPayload(
+    for disposition: BrowserNavigationDisposition?
+) -> [String: Any]? {
+    switch disposition {
+    case .prompting(let host):
+        return browserInsecureHTTPPromptPendingPayload(host: host)
+    case .blocked(let host, let reason):
+        return browserInsecureHTTPBlockedPayload(host: host, reason: reason)
+    case .proceeded, nil:
+        return nil
+    }
 }
 
 /// The properties of an `NSWindow` that decide whether it can host a browser
@@ -2357,6 +2499,12 @@ final class BrowserPanel: Panel, ObservableObject {
     private let maxPageZoom: CGFloat = 5.0
     private let pageZoomStep: CGFloat = 0.1
     private var insecureHTTPBypassHostOnce: String?
+    /// The outcome of the most recent navigation decision on this panel.
+    /// Socket callers whose navigation happens inside `init` (a browser surface
+    /// created with a URL) read this back after construction; the navigation
+    /// delegate updates it too, so an asynchronously blocked redirect is not
+    /// lost either.
+    private(set) var lastNavigationDisposition: BrowserNavigationDisposition?
     private var insecureHTTPAlertFactory: () -> NSAlert
     private var insecureHTTPAlertWindowProvider: () -> NSWindow? = { browserModalHostWindow(preferring: nil) }
     // Persist user intent across WebKit detach/reattach churn (split/layout updates).
@@ -2755,6 +2903,11 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         navDelegate.handleBlockedInsecureHTTPNavigation = { [weak self] request, intent in
             self?.presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
+        }
+        navDelegate.didSettleNavigation = { [weak self] settledURL in
+            MainActor.assumeIsolated {
+                self?.releaseInsecureHTTPConsentIfSettled(settledURL: settledURL)
+            }
         }
         navDelegate.didTerminateWebContentProcess = { [weak self] webView in
             self?.replaceWebViewAfterContentProcessTermination(for: webView)
@@ -3829,13 +3982,19 @@ final class BrowserPanel: Panel, ObservableObject {
     // MARK: - Navigation
 
     /// Navigate to a URL
-    func navigate(to url: URL, recordTypedNavigation: Bool = false) {
+    @discardableResult
+    func navigate(to url: URL, recordTypedNavigation: Bool = false) -> BrowserNavigationDisposition {
+        supersedeInsecureHTTPConsentIfNeeded(for: url)
         let request = URLRequest(url: url)
         if shouldBlockInsecureHTTPNavigation(to: url) {
-            presentInsecureHTTPAlert(for: request, intent: .currentTab, recordTypedNavigation: recordTypedNavigation)
-            return
+            return presentInsecureHTTPAlert(
+                for: request,
+                intent: .currentTab,
+                recordTypedNavigation: recordTypedNavigation
+            )
         }
         navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
+        return record(disposition: .proceeded)
     }
 
     private func navigateWithoutInsecureHTTPPrompt(
@@ -3969,36 +4128,83 @@ final class BrowserPanel: Panel, ObservableObject {
     /// Navigate with smart URL/search detection
     /// - If input looks like a URL, navigate to it
     /// - Otherwise, perform a web search
-    func navigateSmart(_ input: String) {
+    @discardableResult
+    func navigateSmart(_ input: String, allowInsecureHTTP: Bool = false) -> BrowserNavigationDisposition {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return .proceeded }
 
         if let url = resolveNavigableURL(from: trimmed) {
-            navigate(to: url, recordTypedNavigation: true)
-            return
+            if allowInsecureHTTP {
+                consentToInsecureHTTP(for: url)
+            }
+            return navigate(to: url, recordTypedNavigation: true)
         }
 
         let engine = BrowserSearchSettings.currentSearchEngine()
-        guard let searchURL = engine.searchURL(query: trimmed) else { return }
-        navigate(to: searchURL)
+        guard let searchURL = engine.searchURL(query: trimmed) else { return .proceeded }
+        return navigate(to: searchURL)
+    }
+
+    /// Consent, on the caller's own authority, to one plain-HTTP navigation to
+    /// `url`'s host. Host-scoped and released when that navigation settles, and
+    /// never written to the persistent allowlist: a redirect to plain HTTP on a
+    /// *different* host still prompts or blocks.
+    func consentToInsecureHTTP(for url: URL) {
+        guard url.scheme?.lowercased() == "http",
+              let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else { return }
+        insecureHTTPBypassHostOnce = host
+    }
+
+    /// Drop an unused consent when a navigation somewhere else supersedes it.
+    private func supersedeInsecureHTTPConsentIfNeeded(for url: URL) {
+        if browserShouldSupersedeInsecureHTTPConsent(
+            requestedURL: url,
+            consentHost: insecureHTTPBypassHostOnce
+        ) {
+            insecureHTTPBypassHostOnce = nil
+        }
+    }
+
+    /// Release the consent once the navigation it covered has settled, so it
+    /// cannot silently apply to a later navigation to the same host.
+    func releaseInsecureHTTPConsentIfSettled(settledURL: URL?) {
+        if browserShouldClearInsecureHTTPConsent(
+            settledURL: settledURL,
+            consentHost: insecureHTTPBypassHostOnce
+        ) {
+            insecureHTTPBypassHostOnce = nil
+        }
     }
 
     func resolveNavigableURL(from input: String) -> URL? {
         resolveBrowserNavigableURL(input)
     }
 
+    /// The single insecure-HTTP gate, run by both the caller-side pre-check and
+    /// WebKit's `decidePolicyFor` (which fires again for every redirect hop).
+    /// Nothing here consumes the consent; `releaseInsecureHTTPConsentIfSettled`
+    /// does that once the navigation finishes or fails.
     private func shouldBlockInsecureHTTPNavigation(to url: URL) -> Bool {
-        if browserShouldConsumeOneTimeInsecureHTTPBypass(url, bypassHostOnce: &insecureHTTPBypassHostOnce) {
+        if browserMatchesOneTimeInsecureHTTPBypass(url, bypassHost: insecureHTTPBypassHostOnce) {
             return false
         }
         return browserShouldBlockInsecureHTTPURL(url)
     }
 
-    private func requestNavigation(_ request: URLRequest, intent: BrowserInsecureHTTPNavigationIntent) {
-        guard let url = request.url else { return }
+    @discardableResult
+    private func record(disposition: BrowserNavigationDisposition) -> BrowserNavigationDisposition {
+        lastNavigationDisposition = disposition
+        return disposition
+    }
+
+    @discardableResult
+    private func requestNavigation(
+        _ request: URLRequest,
+        intent: BrowserInsecureHTTPNavigationIntent
+    ) -> BrowserNavigationDisposition {
+        guard let url = request.url else { return .proceeded }
         if shouldBlockInsecureHTTPNavigation(to: url) {
-            presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
-            return
+            return presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
         }
         switch intent {
         case .currentTab:
@@ -4006,15 +4212,35 @@ final class BrowserPanel: Panel, ObservableObject {
         case .newTab:
             openLinkInNewTab(url: url)
         }
+        return record(disposition: .proceeded)
     }
 
+    @discardableResult
     private func presentInsecureHTTPAlert(
         for request: URLRequest,
         intent: BrowserInsecureHTTPNavigationIntent,
         recordTypedNavigation: Bool
-    ) {
-        guard let url = request.url else { return }
-        guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else { return }
+    ) -> BrowserNavigationDisposition {
+        guard let url = request.url else { return .proceeded }
+        guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
+            // A plain-HTTP URL with no parsable host is blocked by
+            // `browserShouldBlockInsecureHTTPURL` and there is nothing to name
+            // in a prompt, so report it with the raw URL as the host. The
+            // opt-in cannot rescue this one: consent is keyed on a normalized
+            // host, so the reason has to say so rather than advertise a flag
+            // that would be a no-op.
+            return record(
+                disposition: .blocked(host: url.absoluteString, reason: .unparsableHost)
+            )
+        }
+
+        // A navigation that reaches the prompt is by construction not covered
+        // by the current consent, so drop a stale grant here too. This is the
+        // one release path the delegate can reach: a cross-host redirect it
+        // cancels surfaces as WebKitErrorDomain 102, which
+        // `didFailProvisionalNavigation` early-returns on before
+        // `didSettleNavigation` fires.
+        supersedeInsecureHTTPConsentIfNeeded(for: url)
 
         let alert = insecureHTTPAlertFactory()
         alert.alertStyle = .warning
@@ -4039,18 +4265,25 @@ final class BrowserPanel: Panel, ObservableObject {
         }
 
         if let alertWindow = insecureHTTPAlertWindowProvider() {
+            // Record before presenting: the completion can fire synchronously
+            // (a test spy, or any future immediate-answer path), and recording
+            // afterwards would stamp `.prompting` over the answer.
+            record(disposition: .prompting(host: host))
             alert.beginSheetModal(for: alertWindow, completionHandler: handleResponse)
-            return
+            return .prompting(host: host)
         }
 
         // No window can host the sheet, so there is nobody to answer the
         // prompt. Never fall back to app-modal `runModal()`: it spins a nested
         // run loop on main and wedges every surface in the app until a human
-        // dismisses an alert they cannot see. Socket-driven navigation lands
-        // here whenever the window is backgrounded, so take the safe default
-        // and leave the navigation blocked.
+        // dismisses an alert they cannot see. A merely backgrounded window
+        // still hosts the sheet (see `browserSelectModalHostWindowIndex`); this
+        // branch is the hidden app, the miniaturized window, the last window
+        // closed. Take the safe default and leave the navigation blocked — the
+        // caller is told why via the returned disposition.
         NSLog("BrowserPanel: blocked insecure HTTP navigation to %@ without prompting (no window available)", host)
         handleResponse(BrowserInsecureHTTPPromptPolicy.unpromptedResponse)
+        return record(disposition: .blocked(host: host, reason: .noWindowToPrompt))
     }
 
     private func handleInsecureHTTPAlertResponse(
@@ -4068,10 +4301,16 @@ final class BrowserPanel: Panel, ObservableObject {
         ) {
             BrowserInsecureHTTPSettings.addAllowedHost(host)
         }
+        // Every answer resolves the prompt, so `lastNavigationDisposition`
+        // (what `browser.url.get` reports) must stop saying a human still has
+        // to act. Recording only the proceed case would leave an agent polling
+        // "nothing loads until a human answers" after the human answered.
         switch response {
         case .alertFirstButtonReturn:
+            record(disposition: .blocked(host: host, reason: .openedExternally))
             NSWorkspace.shared.open(url)
         case .alertSecondButtonReturn:
+            record(disposition: .proceeded)
             switch intent {
             case .currentTab:
                 insecureHTTPBypassHostOnce = host
@@ -4080,6 +4319,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 openLinkInNewTab(url: url, bypassInsecureHTTPHostOnce: host)
             }
         default:
+            record(disposition: .blocked(host: host, reason: .declinedByOperator))
             return
         }
     }
@@ -5687,6 +5927,13 @@ extension BrowserPanel {
         }
     }
 
+    /// Whether a one-time insecure-HTTP consent for `host` is still pending,
+    /// i.e. the caller-side pre-check left it for WebKit's `decidePolicyFor`
+    /// to consume.
+    func hasPendingInsecureHTTPConsentForTesting(host: String) -> Bool {
+        insecureHTTPBypassHostOnce == BrowserInsecureHTTPSettings.normalizeHost(host)
+    }
+
     func presentInsecureHTTPAlertForTesting(
         url: URL,
         recordTypedNavigation: Bool = false
@@ -6084,6 +6331,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var openInNewTab: ((URL) -> Void)?
     var shouldBlockInsecureHTTPNavigation: ((URL) -> Bool)?
     var handleBlockedInsecureHTTPNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
+    /// Fired synchronously when a main-frame navigation settles (finished or
+    /// genuinely failed), so a one-time insecure-HTTP consent is released only
+    /// after the redirect chain it covered is over.
+    var didSettleNavigation: ((URL?) -> Void)?
     /// Direct reference to the download delegate — must be set synchronously in didBecome callbacks.
     var downloadDelegate: WKDownloadDelegate?
     /// The URL of the last navigation that was attempted. Used to preserve the omnibar URL
@@ -6095,6 +6346,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        didSettleNavigation?(webView.url)
         didFinish?(webView)
     }
 
@@ -6103,6 +6355,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         // Treat committed-navigation failures the same as provisional ones so
         // stale favicon/title state from the prior page gets cleared.
         let failedURL = webView.url?.absoluteString ?? ""
+        didSettleNavigation?(lastAttemptedURL ?? webView.url)
         didFailNavigation?(webView, failedURL)
     }
 
@@ -6125,6 +6378,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         let failedURL = nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String
             ?? lastAttemptedURL?.absoluteString
             ?? ""
+        // After the cancelled/download early-returns above, so a load that
+        // supersedes an in-flight one cannot release the consent just granted
+        // for it.
+        didSettleNavigation?(URL(string: failedURL) ?? lastAttemptedURL)
         didFailNavigation?(webView, failedURL)
         loadErrorPage(in: webView, failedURL: failedURL, error: nsError)
     }

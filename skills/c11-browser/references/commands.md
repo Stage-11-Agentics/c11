@@ -25,7 +25,12 @@ c11 browser open <url> --workspace <id|ref>   # opens in a specific workspace
 c11 browser <surface> goto <url>
 c11 browser <surface> back|forward|reload
 c11 browser <surface> get url|title
+
+c11 browser open <url> --allow-insecure-http   # consent to one plain-http navigation
+c11 browser <surface> goto <url> --allow-insecure-http
 ```
+
+> **Plain `http://`:** loopback hosts are allowed by default; any other plain-HTTP host either sheets a prompt for a human (`insecure_http: {"status": "prompted"}` in the payload) or, with no window to prompt on, fails with `insecure_http_blocked`. `--allow-insecure-http` consents for that one navigation to that one host.
 
 > **Workspace context:** `browser open` targets the workspace of the terminal where the command is run (via `CMUX_WORKSPACE_ID`; `C11_WORKSPACE_ID` is the primary name going forward, `CMUX_WORKSPACE_ID` still works), even if a different workspace is currently focused. Use `--workspace` to override.
 

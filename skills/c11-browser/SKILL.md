@@ -45,6 +45,27 @@ Notes:
 - Keep using one `surface:N` per task unless you intentionally switch.
 - **Default to a tab in the existing browser pane.** If the workspace already has a browser pane, open new pages as tabs inside it rather than spawning a new browser pane — browsers are tabbed by default, and a fresh pane each time is the awkward interaction to avoid. Find the browser pane in `c11 tree --json` and add the tab with `c11 new-surface --type browser --url <url> --pane <browser-pane-ref>`. Open a new browser pane (`c11 new-pane --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser surface when one is available.
 
+## Plain `http://` Navigation
+
+c11 guards plain-HTTP navigation, and socket-driven navigation is the path most likely to hit it.
+
+- **Loopback is allowed by default** — `localhost`, `127.0.0.1`, `::1`, `0.0.0.0`, `*.localtest.me`. The usual `python3 -m http.server` validation loop needs nothing extra.
+- **Any other plain-HTTP host needs consent.** That includes LAN addresses (`192.168.x.x`, `10.x.x.x`), tailnet hostnames, and public `http://` sites. Two outcomes, both now reported:
+  - a window is available (even if the app is not frontmost): a prompt is sheeted onto it and the call returns with `insecure_http: {"status": "prompted", ...}` — nothing loads until a human answers;
+  - no window can host it (app hidden, window miniaturized, all windows closed): the call fails with `insecure_http_blocked` and names the host and the remedy.
+- **Consent on your own authority with `--allow-insecure-http`**, on `open`/`open-split`/`new` and on `goto`/`navigate`:
+
+```bash
+c11 --json browser open http://192.168.1.5:8000 --allow-insecure-http
+c11 browser surface:7 goto http://192.168.1.5:8000 --allow-insecure-http
+```
+
+The consent covers **one navigation to one host, including that navigation's HTTP redirects to the same host** (a 302 from `/` to `/login` works). A page that redirects itself after loading — JS or `<meta http-equiv="refresh">` — starts a new navigation and needs consent again. It is not persisted and is released once the navigation settles. A redirect to plain HTTP on a *different* host prompts or blocks again — if an opted-in page comes up blank after a redirect, check `c11 browser <surface> get url --json`, which reports the outcome in `insecure_http`, and re-issue with the flag against the redirect target. To allow a host permanently, add it in Settings → Browser → insecure HTTP allowlist.
+
+`c11 new-surface --type browser --url <url>` and `c11 new-pane --type browser --url <url>` do **not** take the flag and do not report the outcome, so for a non-loopback plain-HTTP page create the surface without a URL and then `goto <url> --allow-insecure-http`.
+
+Both `open` and `goto` report the outcome rather than failing silently. `browser open` always keeps its promise that a surface exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the surface ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
+
 ## Wait Support
 
 c11 supports wait patterns similar to agent-browser:

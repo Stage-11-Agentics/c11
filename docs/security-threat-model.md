@@ -149,6 +149,19 @@ added to the allowlist. An unattended app therefore cannot be walked
 into an `http://` allowlist entry by a page that raises a prompt
 nobody can answer.
 
+A socket caller may instead consent explicitly (0.65.1, C11-207):
+`browser open|goto --allow-insecure-http` (socket field
+`allow_insecure_http: true`) grants exactly one navigation to exactly
+one host and is released when that navigation settles or is superseded.
+It never writes the persistent allowlist, and the outcome is reported
+structurally (`proceeded` / `prompted` / `insecure_http_blocked`) rather
+than by a silent no-op. This widens nothing beyond the socket's existing
+trust boundary: anyone who can issue `browser open` could already point
+the surface at any https site, and the loopback hosts agents actually
+validate against (`localhost`, `127.0.0.1`, `::1`, `*.localtest.me`)
+were allowed by default before this change. Page content cannot set the
+flag; only the socket caller can.
+
 Outbound hand-off: the browser toolbar's "Open in Default Browser"
 button (v0.51.0) passes the panel's current URL to
 `NSWorkspace.shared.open(_:)`. It is operator-gesture-gated (explicit

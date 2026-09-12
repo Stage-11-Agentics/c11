@@ -6,6 +6,16 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.65.1] - 2026-09-11
+
+Headline: **A patch that stops c11 leaking memory on every terminal read, and keeps browser-driving agents from freezing the app.**
+
+### Fixed
+
+- **Every terminal text read leaked its buffer.** The Ghostty engine's `ghostty_surface_free_text` export took one argument while its own header promised two, so the text returned by `c11 read-screen`, selection reads and copy was never freed. A full-scrollback read retained about 500 KB each time, and a long-running c11 serving agents that read screens all day grew without bound. The fork now matches upstream's signature: the same 50-read workload that retained 26 MB before retains 0 bytes after. ([#430](https://github.com/Stage-11-Agentics/c11/pull/430))
+- **A browser JS eval on a never-loaded web view no longer freezes the socket control plane.** Against a browser surface that had never been asked to load anything, every `browser eval` or `browser wait` burned its entire timeout holding the main thread, and every other `c11` command and the UI waited with it; one agent fleet lost the app for 25 minutes that way. Such calls now fail fast with a `no_document` error (0.14 s instead of 120 s in validation), `browser download.wait` resolves as soon as its download lands instead of only at timeout, and `timeout_ms` is capped at 120 s so a typo can no longer be an unbounded outage. A legitimate wait on a loaded page still holds main-thread socket commands for its (now bounded) duration; that residual is tracked as C11-217. ([#433](https://github.com/Stage-11-Agentics/c11/pull/433))
+- **Socket-driven `http://` navigation says what it did.** Since 0.64.0 a plain-http navigation that could not prompt was denied silently, so an agent could not tell "the page failed" from "c11 refused to navigate". `browser navigate`, `open-split` and `url get` now report the disposition (`proceeded`, `prompted`, or an `insecure_http_blocked` error naming host, reason and remedy), and a new `--allow-insecure-http` flag on `browser open|goto` consents to one navigation to one host without adding it to the allowlist. Loopback hosts remain allowed by default. Also fixes the one-time bypass being consumed before WebKit's own policy check, which cancelled a navigation that had just been granted. ([#431](https://github.com/Stage-11-Agentics/c11/pull/431))
+
 ## [0.65.0] - 2026-09-11
 
 Headline: **c11 stops growing by gigabytes a day when something stays connected to its socket.**

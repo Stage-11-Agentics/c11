@@ -45,7 +45,7 @@ echo "[test-unit-local] C11_TAG=$C11_TAG"
 echo "[test-unit-local] C11_SOCKET_PATH=$C11_SOCKET_PATH"
 echo "[test-unit-local] derivedDataPath=$DERIVED_DATA"
 
-exec xcodebuild \
+exec scripts/with-build-lock.sh xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \

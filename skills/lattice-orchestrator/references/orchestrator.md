@@ -36,6 +36,8 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
     `MODE standby` and name the mutation not started. The parent verifies the fields;
     surface creation and an idle TUI prove only liveness.
 
+15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang.
+
 ## Spawning: atomic cwd binding
 
 `c11 new-surface --pane <ref>` inherits the pane's *last* shell cwd — set by whichever sibling tab most recently ran `cd`. Non-deterministic; an un-anchored sub-agent lands in some other delegator's worktree. And Claude Code's Bash tool does not persist `cd` across tool calls. Therefore every launch line is atomic:

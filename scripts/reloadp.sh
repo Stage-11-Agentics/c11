@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
+"$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
 pkill -x c11 || true
 pkill -x cmux || true
 sleep 0.2

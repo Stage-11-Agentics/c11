@@ -1,0 +1,29 @@
+{
+  "created_at": "2026-09-12T00:20:07Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/432"
+  },
+  "id": "art_01M29FRQARECSABMWG6WYD5P8D",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "https://github.com/Stage-11-Agentics/c11/pull/432",
+  "token_usage": null,
+  "type": "reference"
+}

@@ -1,8 +1,13 @@
 {
   "active_sessions": {
     "Argus-1": "sess_01KQ2JDVM2796EXC2YZ9N0HZRE",
+    "C11-207-Delegator-1": "sess_01M297YGJWRJKP10QWRJBDZNKY",
+    "C11-209-Delegator-1": "sess_01M297YGX47QHP11M7X5V832KY",
+    "C11-212-Delegator-1": "sess_01M2971PMMMXB164SSSWJHR7DC",
+    "Orchestrator-1": "sess_01M296YPSQXBC77ZR8TW1WVB27",
     "Release-prep-1": "sess_01KS0PEVEVTW8EXE9J080Z0GCF",
     "c11-115-impl-1": "sess_01KS8JC55YCEDAEX2JXNY0C00M",
+    "c11-199-spike-1": "sess_01KZMYJF6R76ZTBNMHBZREBSFW",
     "c11-8-orchestrator-1": "sess_01KPSAYDRVB77G448AGWP0212M",
     "cc-opus-cmux9-kickoff-1": "sess_01KPJ7XS8T1PQND3RPWGXX8FC3",
     "cmux-30-orchestrator-1": "sess_01KPKQCNA3ZNB2GQRRRP8PAXPN",
@@ -12,9 +17,14 @@
   "serial_counters": {
     "Argus": 1,
     "BacklogScribe": 1,
+    "C11-207-Delegator": 1,
+    "C11-209-Delegator": 1,
+    "C11-212-Delegator": 1,
+    "Orchestrator": 1,
     "Release-prep": 1,
     "c11-115-impl": 1,
     "c11-12-impl": 1,
+    "c11-199-spike": 1,
     "c11-8-orchestrator": 1,
     "cc-opus-cmux9-kickoff": 1,
     "cmux-30-orchestrator": 1,

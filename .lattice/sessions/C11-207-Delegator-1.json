@@ -1,0 +1,13 @@
+{
+  "agent_type": "delegate",
+  "base_name": "C11-207-Delegator",
+  "framework": "claude-code",
+  "last_active": "2026-09-12T00:49:05Z",
+  "model": "claude-opus-5",
+  "name": "C11-207-Delegator-1",
+  "parent": "agent:Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M297YGJWRJKP10QWRJBDZNKY",
+  "started_at": "2026-09-11T22:03:28Z",
+  "status": "active"
+}

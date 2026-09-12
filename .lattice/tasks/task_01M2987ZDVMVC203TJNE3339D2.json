@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-09-11T22:08:38Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {},
+  "description": "bun run lint in web/ exits 1 on origin/main (2026-09-11, v0.65.0): 5 errors from @next/next/no-html-link-for-pages (raw <a> to /docs/notifications/, /docs/keyboard-shortcuts/ etc.) plus 7 react-hooks/exhaustive-deps warnings. CI's web-typecheck job runs tsc only, so this never shows red. Confirmed identical before and after dependabot #426, so it is not a dependency regression. Fix: use next/link <Link> for the internal doc links; decide whether to add lint to the web CI job.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M2987ZDVMVC203TJNE3339D2",
+  "last_event_id": "ev_01M2987ZEDC2PNNP5PYDBX57MK",
+  "last_status_changed_at": "2026-09-11T22:08:38Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-214",
+  "status": "backlog",
+  "tags": [
+    "web",
+    "lint"
+  ],
+  "title": "web: lint fails on main with 5 no-html-link-for-pages errors",
+  "type": "chore",
+  "updated_at": "2026-09-11T22:08:38Z",
+  "urgency": null
+}

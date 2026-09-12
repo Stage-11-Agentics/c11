@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-09-12T00:19:57Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {},
+  "id": "art_01M29FRDKBJZ99EF8SEZAPHN94",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M29FRDKBJZ99EF8SEZAPHN94.md",
+    "size_bytes": 447
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: validation",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,13 @@
+{
+  "agent_type": "delegate",
+  "base_name": "C11-212-Delegator",
+  "framework": "codex-cli",
+  "last_active": "2026-09-11T22:47:16Z",
+  "model": "gpt-5.6-sol",
+  "name": "C11-212-Delegator-1",
+  "parent": "agent:Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M2971PMMMXB164SSSWJHR7DC",
+  "started_at": "2026-09-11T21:47:44Z",
+  "status": "active"
+}

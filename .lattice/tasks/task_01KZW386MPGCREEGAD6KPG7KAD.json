@@ -1,0 +1,84 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": {
+    "agent_type": "delegate",
+    "base_name": "C11-209-Delegator",
+    "framework": "claude-code",
+    "model": "claude-opus-5",
+    "name": "C11-209-Delegator-1",
+    "serial": 1,
+    "session": "sess_01M297YGX47QHP11M7X5V832KY"
+  },
+  "branch_links": [
+    {
+      "branch": "c11-209-browser-await-wedge",
+      "linked_at": "2026-09-11T22:23:27Z",
+      "linked_by": {
+        "agent_type": "delegate",
+        "base_name": "C11-209-Delegator",
+        "framework": "claude-code",
+        "model": "claude-opus-5",
+        "name": "C11-209-Delegator-1",
+        "serial": 1,
+        "session": "sess_01M297YGX47QHP11M7X5V832KY"
+      },
+      "repo": null
+    }
+  ],
+  "c11_surface": "surface:26",
+  "c11_workspace": "E68EEF79-E8CB-4288-9B60-AC79D8911D0E",
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-08-12T22:59:52Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "v2AwaitCallback's main-thread branch cannot receive a callback delivered on the main dispatch queue. WKWebView.evaluateJavaScript delivers completion handlers exactly that way, so EVERY browser JS eval reaching that branch is guaranteed to fail: it burns its full timeout, then returns nil. While burning it, it holds the main queue \u2014 and socket commands reach their work via v2MainSync \u2014 so each failing browser command freezes the entire CLI/socket control plane and the UI for the full timeout.\n\nCode is BYTE-IDENTICAL at v0.61.0 (the build that wedged) and release/v0.64.0 (current). Not a stale-build problem \u2014 it ships today. Blocks next production release.\n\nPROVEN by repro harness at tools/await-wedge-repro/ (run.sh):\n  timer     (CFRunLoop timer source)        -> callback FIRES,      0.50s\n  mainqueue (DispatchQueue.main.async)      -> callback NEVER runs, 3.00s -> nil\n  never     (never invoked)                 -> 3.00s -> nil\nSame code, same nesting, only delivery path differs. A nested CFRunLoopRunInMode inside an in-progress _dispatch_main_queue_drain cannot drain main-queue blocks; libdispatch will not re-enter a drain already on the stack.\n\nThis falsifies the shipped comment at BrowserHandlers.swift:321-324 ('The loop still pumps events (WebKit completion callbacks, rendering, main-queue blocks), so main is not frozen'). Those are precisely what it does NOT pump.\n\nPRODUCTION INCIDENT 2026-08-12: ~53-agent Marquee V2 fleet running browser-proof gates. Main thread stalled 25+ min continuous and monotonic, longest fleet timeout 60s. UI dead, every c11 CLI call died at its 10s client timeout, event stream froze. Agents themselves unaffected (28/53 measurably advancing, PTYs draining). Immune to killing the WebContent process (termination error is itself main-queue delivered) and to lldb (hardened runtime + SIP).\n\nREAL-WORLD RATE, agent transcripts 2026-08-12: 205 'timeout: method=browser' + 29 'Condition not met before timeout' + 3 'Timed out waiting for JavaScript result' = 237 failures in one day. CLI abandons at 10s while server keeps burning its timeout, so these are largely invisible in ps and read as agent flakiness.\n\nNOT YET EXPLAINED: repro shows the deadline loop DOES unwind on time, so one stuck await cannot explain a 25-min stall. Leading hypothesis is a serialized backlog of failing commands (agents retry after 10s CLI timeout, refilling faster than drain). SIGSTOPing all 55 agents for 4 min did not drain it \u2014 likely too short for a 20-min backlog, but unconfirmed. NEXT STEP: freeze all agents 20-30 min and watch stalledMs. Plateau = backlog confirmed and wedge is self-healing given quiet; still climbing with zero agents = a second defect.\n\nFIXES:\n1. Do not await a main-queue-delivered callback from inside a main-queue drain. Keep the JS-eval await off the main-thread branch, or make the socket command complete asynchronously instead of blocking main. Root fix; rest is mitigation.\n2. Cap timeout_ms (BrowserHandlers.swift:1357 is lower-bounded only: max(1, ... ?? 5_000)). Uncapped value is a direct multiplier on control-plane downtime.\n3. Correct the comment at BrowserHandlers.swift:321-324 \u2014 it documents behavior the implementation lacks.\n4. Fail fast when the WKWebView has no committed document instead of burning the timeout.\n\nRELATED, BOTH UNMERGED (in neither main nor release/v0.64.0) \u2014 assess together before release:\n  origin/fix/C11-198-runloop-idle  'stops swallowing nested run loops' (2026-08-10)\n  origin/fix/C11-204-modal-wedge   'browser modals never go app-modal' (2026-08-11); per CLAUDE.md the insecure-HTTP prompt held main up to 6.8h. Fleet drives proofs against http://127.0.0.1, exactly that path.\n\nINSTRUMENTATION: MainThreadHangMonitor worked well (C11-192 fingerprinting attributed the stall correctly). Two gaps: hang.log grew ~23MB/min to 212MB (needs rotation/cap; ~1.3GB/hr sustained), and seven precursor episodes (2.4s-10.7s) never surfaced to the operator \u2014 a repeated-fingerprint signal would have flagged this before it went terminal.\n\nFull writeup: docs/c11-browser-await-main-wedge.md",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M298ZAKMBH7092Y4RNFDYVXN",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M29FZ1WT3QEB7PDQ5F2CAXE4",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M29GHZYG6KB3BGGPQPG9999Q",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M29HGPC2HG9PAT2D8M0KZZW6",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01KZW386MPGCREEGAD6KPG7KAD",
+  "last_event_id": "ev_01M29HHJ0HR3X1WKCZPP03C7G9",
+  "last_status_changed_at": "2026-09-12T00:51:09Z",
+  "linked_files": [],
+  "needs_human": {
+    "flagged_by": "agent:lattice-auto-review",
+    "reason": "Auto-fired plan-review failed (Agent 'claude' timed out after 600s) \u2014 task is unreviewed.",
+    "since": "2026-09-11T22:33:19Z"
+  },
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-209",
+  "status": "pr_open",
+  "tags": [
+    "browser",
+    "main-thread",
+    "hang",
+    "release-blocker"
+  ],
+  "title": "Browser JS await on a never-loaded WKWebView freezes the socket control plane",
+  "type": "bug",
+  "updated_at": "2026-09-12T00:51:09Z",
+  "urgency": "high"
+}

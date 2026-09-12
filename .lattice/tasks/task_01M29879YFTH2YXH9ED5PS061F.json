@@ -1,0 +1,40 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-09-11T22:08:16Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {},
+  "description": "Follow-up to C11-192. PR #402 shipped the fingerprinting; the second half, sending the wedged main thread as a structured Sentry 'threads' payload (current=true) so the stack panel shows the wedge, frames symbolicate server-side against the uploaded dSYMs, and server-side fingerprint rules become possible, sat in PR #409 (branch c11-192-hang-threads-payload, 1 commit 449628084, +202/-19 across Sources/MainThreadHangMonitor.swift, Sources/SentryHelper.swift, c11Tests/MainThreadHangDetectorTests.swift) and went CONFLICTING against main on 2026-08-07. Rebase probe 2026-09-11: one real conflict in Sources/MainThreadHangMonitor.swift. PR #409 was closed as a loose end; the branch is kept on origin. Work: rebase or re-apply the commit onto current main, resolve the hang-monitor conflict against what C11-198/C11-204/C11-211 changed there, keep the PR #409 body's design (S4 fork: fix the event shape). Why it matters: the C11-197 / C11-202 / C11-205 SwiftUI hang investigations depend on readable, symbolicated production stacks. Target: next minor after 0.65.1.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M29879YFTH2YXH9ED5PS061F",
+  "last_event_id": "ev_01M29879YZ1ZW7RQ4RR1ZSDFCH",
+  "last_status_changed_at": "2026-09-11T22:08:16Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-213",
+  "status": "backlog",
+  "tags": [
+    "sentry",
+    "hangs",
+    "observability"
+  ],
+  "title": "Land the Sentry threads payload for main-thread hang reports (revive PR #409)",
+  "type": "task",
+  "updated_at": "2026-09-11T22:08:16Z",
+  "urgency": null
+}

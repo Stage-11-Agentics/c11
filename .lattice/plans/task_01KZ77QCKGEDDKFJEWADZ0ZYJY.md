@@ -1,3 +1,10 @@
-# C11-196: Main thread blocks on synchronous XPC round trips (LaunchServices/AppleEvents), up to 604s
+# C11-196 plan (written retrospectively, work already delivered in PR #414)
 
-Found during the C11-192 stack-classification of Sentry issue C11-31: 96 of 875 captured hang events show main parked in a synchronous XPC reply wait (_dispatch_mach_send_and_wait_for_reply via LaunchServices/AppleEvents), with stall durations up to 604 seconds. This is a real wedge class distinct from SwiftUI graph work and generic-metadata instantiation: main is waiting on another process, and nothing bounds the wait. Counts are per-capture under the pre-#401 reporting regime and dominated by one user; recount per episode/per user before prioritizing (see C11-192 plan, Finding section). Work: identify the call sites that issue sync XPC from main (candidates: NSWorkspace/LaunchServices lookups, AppleEvents), move them off main or give them timeouts. Acceptance: the xpc-sync-wait Sentry issue (fingerprint main-thread-hang/xpc-sync-wait, exists once C11-192's classifier ships) shows a declining distinct-user count on the following release, and no capture exceeds 10s in that bucket.
+1. Evidence: pull the C11-30/C11-31 event corpus from Sentry, filter on the xpc-sync-wait
+   needles, and read the frames above the wait to name real call sites rather than guessing.
+2. Audit the same call shape across Sources/ for sites the 24-frame wire truncation hides.
+3. Remove synchronous LaunchServices XPC from main on every confirmed site: serve c11's own
+   recorded activation policy, cache LS lookups behind a TTL, detach the Settings probes.
+4. Add behavioral tests through an injectable clock seam (Sources/ExpiringValueCache.swift).
+5. Open a PR, let CI be the build gate, and record on the ticket that the written acceptance
+   criterion is not reachable by fixing c11 code.

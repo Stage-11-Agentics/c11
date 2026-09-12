@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 2,
   "complexity": "medium",
   "created_at": "2026-08-04T20:34:01Z",
   "created_by": "agent:trident-pane-C11-192",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KZ77QDGCDECRF7SMTCSD5656",
-  "last_event_id": "ev_01KZ77QDGE6T2S9ESC9JN81J39",
+  "last_event_id": "ev_01KZSY4S9YV2GYRF9NH92685BE",
   "last_status_changed_at": "2026-08-04T20:34:01Z",
   "linked_files": [],
   "priority": "medium",
@@ -22,6 +22,6 @@
   "tags": null,
   "title": "Is generic-metadata instantiation a real user-facing hang class? Judge from the post-classifier trend",
   "type": "spike",
-  "updated_at": "2026-08-04T20:34:01Z",
+  "updated_at": "2026-08-12T02:52:08Z",
   "urgency": null
 }

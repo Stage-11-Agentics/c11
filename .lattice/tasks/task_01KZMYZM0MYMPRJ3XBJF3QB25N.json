@@ -1,0 +1,51 @@
+{
+  "assigned_to": "agent:orchestrator-hangs",
+  "branch_links": [],
+  "comment_count": 3,
+  "complexity": "low",
+  "created_at": "2026-08-10T04:30:35Z",
+  "created_by": "agent:c11-198",
+  "custom_fields": {},
+  "description": "FOUND BY. C11-198's classification of the local hang log (21,253 captures, Jun 15 - Aug 9).\n\nEVIDENCE. BrowserPanel.presentInsecureHTTPAlert is the deepest c11 frame on 4,747 main-thread hang captures across 6 episodes on 1 pid. Median episode 8.5 minutes, MAX 6.8 HOURS (24,601,422 ms) with main blocked the whole time. It is the single largest capture-count culprit in the runloop-idle family.\n\nMECHANISM. Sources/Panels/BrowserPanel.swift:3936-3940. When an alert window is available the alert is presented with beginSheetModal (non-blocking, correct). The fallback path is 'handleResponse(alert.runModal())' - an APP-MODAL NSAlert that spins a nested run loop on main and blocks the entire application until a human dismisses it. Nothing times out. Nothing dismisses it programmatically. Every terminal, every pane, every agent in the window is frozen for as long as the alert sits there.\n\nWHY IT BITES. The alert fires on http:// navigation. c11's browser surfaces are routinely driven by agents over the socket ('c11 browser open <url>'), often while the window is backgrounded and nobody is watching. An agent navigates to an http:// URL, the modal goes up behind an unwatched window, and c11 is wedged until the operator finds it. That is the 6.8-hour episode.\n\nFIX DIRECTIONS.\n  - Never fall back to app-modal runModal. If there is no window to sheet onto, present the decision non-blockingly and default-deny on a timeout, or route the prompt to the requesting surface.\n  - When the navigation was initiated over the socket rather than by a human, do not prompt at all: resolve from policy (deny, or allow if the caller opted in) and report the decision back to the caller.\n  - Whatever path is chosen, the decisionHandler must always be invoked, and never from a nested run loop on main.\n\nACCEPTANCE. Driving a c11 browser surface to an http:// URL over the socket, with the window backgrounded, does not block the main thread: other panes stay interactive and the hang watchdog records no episode with presentInsecureHTTPAlert on the stack.\n\nRELATED. C11-198 (#413) reclassifies this stack out of runloop-idle so it stops being filed as benign idle and starts reaching Sentry with hang.culprit naming it. That makes the bug visible; it does not fix it.",
+  "done_at": "2026-08-12T03:24:35Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KZSZRN4ANHN3HEY0WS18EZP5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KZT005P4TGY5576S6TSAVWR5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZT04WAZZE662APZVAWTQDSM",
+      "role": "plan-review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KZMYZM0MYMPRJ3XBJF3QB25N",
+  "last_event_id": "ev_01KZT04WB2N3RAZ4KEHXDPPRG4",
+  "last_status_changed_at": "2026-08-12T03:24:35Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-08-10T04:30:54Z",
+      "created_by": "agent:c11-198",
+      "note": null,
+      "target_task_id": "task_01KZ77QD6RRBPZRY9HT07E16DK",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-204",
+  "status": "done",
+  "tags": null,
+  "title": "Insecure-HTTP alert uses app-modal runModal and can wedge c11 for hours",
+  "type": "bug",
+  "updated_at": "2026-08-12T03:27:08Z",
+  "urgency": null
+}

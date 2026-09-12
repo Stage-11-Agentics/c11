@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -10,18 +11,18 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KXETFYPJ0HH75CM1GKBMTB6Y",
-  "last_event_id": "ev_01KXETFYPXE2H6W40GEB6K980T",
-  "last_status_changed_at": "2026-07-13T22:45:17Z",
+  "last_event_id": "ev_01M2974XWNNE4H8PT0R2FZTWAG",
+  "last_status_changed_at": "2026-09-11T21:49:30Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-172",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": null,
   "title": "c11 send: messages silently never submit \u2014 bracketed-paste swallows the newline, send-key is a no-op, overlays eat input, empty --surface routes to the caller",
   "type": "bug",
-  "updated_at": "2026-07-13T22:45:17Z",
+  "updated_at": "2026-09-11T21:49:30Z",
   "urgency": null
 }

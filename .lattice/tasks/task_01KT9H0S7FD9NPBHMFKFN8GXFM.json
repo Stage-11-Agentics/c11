@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": "agent:claude",
   "branch_links": [],
   "comment_count": 0,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KT9H0S7FD9NPBHMFKFN8GXFM",
-  "last_event_id": "ev_01KT9H1NRZ1S9A5KQ1M8XV3V1F",
-  "last_status_changed_at": "2026-06-04T14:36:54Z",
+  "last_event_id": "ev_01M2974XSJKF4QNB8N9K792Z33",
+  "last_status_changed_at": "2026-09-11T21:49:30Z",
   "linked_files": [],
   "needs_human": {
     "flagged_by": "agent:claude",
@@ -23,10 +24,10 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-122",
-  "status": "in_progress",
+  "status": "cancelled",
   "tags": null,
   "title": "Test ticket: needs_human flag visual check",
   "type": "chore",
-  "updated_at": "2026-06-04T14:36:54Z",
+  "updated_at": "2026-09-11T21:49:30Z",
   "urgency": null
 }

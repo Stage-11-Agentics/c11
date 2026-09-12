@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-09-11T22:43:37Z",
+  "created_by": {
+    "agent_type": "delegate",
+    "base_name": "C11-212-Delegator",
+    "framework": "codex-cli",
+    "model": "gpt-5.6-sol",
+    "name": "C11-212-Delegator-1",
+    "serial": 1,
+    "session": "sess_01M2971PMMMXB164SSSWJHR7DC"
+  },
+  "custom_fields": {},
+  "id": "art_01M29A815X4FHH07ZSG9WHA1H4",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M29A815X4FHH07ZSG9WHA1H4.md",
+    "size_bytes": 3672
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: validation",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [
+    {
+      "branch": "fix/socket-handler-autorelease-drain",
+      "linked_at": "2026-09-11T18:37:52Z",
+      "linked_by": "agent:claude-opus-5",
+      "repo": null
+    }
+  ],
+  "comment_count": 2,
+  "complexity": "low",
+  "created_at": "2026-09-11T18:37:29Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "description": "handleClient serves each socket connection on a dedicated Thread whose root autorelease pool only drains at thread exit. A client that holds its connection open (Sekhem Prime, persistent since launch) pins every command's autoreleased Foundation objects (JSONSerialization parse/encode buffers, bridged strings) until disconnect. Field: prod c11 0.64.0 at 12.5 GB footprint after 6.4 days; heap census 146k NSConcreteData / _NSJSONWriter in lockstep, ~1/s, ~3 GB/day; leaks --traceTree shows the NSData held by @autoreleasepool pages rooted in a thread's TLS pool slot. Fix: drain a pool per read iteration in the connection loop, plus the accept loop and hang-monitor watchdog (the other forever-threads). Regression test drives the extracted loop over a socketpair.",
+  "done_at": "2026-09-11T19:20:19Z",
+  "evidence_refs": [],
+  "id": "task_01M28W5B311K5VZ9FTRKP3KVNH",
+  "last_event_id": "ev_01M28YKRR63FG1C28XFB1K4N8Q",
+  "last_status_changed_at": "2026-09-11T19:20:19Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-211",
+  "status": "done",
+  "tags": [
+    "memory",
+    "socket",
+    "perf"
+  ],
+  "title": "Socket client threads pin autoreleased objects for the life of the connection (~3 GB/day leak)",
+  "type": "bug",
+  "updated_at": "2026-09-11T19:20:19Z",
+  "urgency": "high"
+}

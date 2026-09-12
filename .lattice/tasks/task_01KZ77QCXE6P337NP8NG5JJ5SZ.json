@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": "high",
   "created_at": "2026-08-04T20:34:01Z",
   "created_by": "agent:trident-pane-C11-192",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KZ77QCXE6P337NP8NG5JJ5SZ",
-  "last_event_id": "ev_01KZ77QCXJYKAGN0P93SHV4FVK",
+  "last_event_id": "ev_01KZSY0XJ46Y9AFCQ1HR3YE7YW",
   "last_status_changed_at": "2026-08-04T20:34:01Z",
   "linked_files": [],
   "priority": "high",
@@ -22,6 +22,6 @@
   "tags": null,
   "title": "SwiftUI graph-work hangs: split hosting-begin-transaction vs hosting-layout and attack the dominant phase",
   "type": "bug",
-  "updated_at": "2026-08-04T20:34:01Z",
+  "updated_at": "2026-08-12T02:50:01Z",
   "urgency": null
 }

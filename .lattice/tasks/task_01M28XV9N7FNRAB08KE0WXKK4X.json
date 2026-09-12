@@ -1,0 +1,73 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "branch_links": [
+    {
+      "branch": "c11-212-free-text-abi",
+      "linked_at": "2026-09-11T21:48:23Z",
+      "linked_by": {
+        "agent_type": "delegate",
+        "base_name": "C11-212-Delegator",
+        "framework": "codex-cli",
+        "model": "gpt-5.6-sol",
+        "name": "C11-212-Delegator-1",
+        "serial": 1,
+        "session": "sess_01M2971PMMMXB164SSSWJHR7DC"
+      },
+      "repo": null
+    }
+  ],
+  "c11_surface": "surface:24",
+  "c11_workspace": "E68EEF79-E8CB-4288-9B60-AC79D8911D0E",
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-09-11T19:06:57Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "description": "ghostty/include/ghostty.h:1136 declares void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*) but ghostty/src/apprt/embedded.zig:1725 exports fn ghostty_surface_free_text(ptr: *Text). Callers follow the header and pass (surface, &text); on arm64 the callee reads x0 = surface. Two consequences: (1) the text buffer allocated by readTextLocked via dumpTextLocked(global.alloc) is never freed - measured ~4.9 blocks/request, avg 21KB, ~100KB per surface.read_text in a dev build under MallocStackLogging, stack confirms heap.CAllocator.alloc under TerminalController.readTerminalTextBase64; (2) Text.deinit runs on the Surface reinterpreted as Text and may call global.alloc.free on a pointer/len read from arbitrary struct offsets - benign only while that offset is null. Affects every c11 caller: TerminalController.swift readSelectionText, GhosttyTerminalView.swift:5000 and :5241. Upstream bug in the ghostty fork (submodule 7604624d), not c11 header drift - the header ships from ghostty itself. Fix belongs in the submodule (make the export take the surface param the header promises), which per CLAUDE.md means a push to Stage-11-Agentics/ghostty plus the build-ghosttykit checksum cycle, and is shared with cmux/upstream so the operator should decide where it lands. Found while validating C11-211.",
+  "done_at": "2026-09-11T22:54:54Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M2977E8YCPDG8J5J5YPTYEXX",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M298PBE27NQWP8T2MT5MW7P1",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M29A815X4FHH07ZSG9WHA1H4",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M28XV9N7FNRAB08KE0WXKK4X",
+  "last_event_id": "ev_01M29AWNKRJVV753CW1TCDN83K",
+  "last_status_changed_at": "2026-09-11T22:54:54Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-212",
+  "status": "done",
+  "tags": [
+    "memory",
+    "ghostty",
+    "upstream"
+  ],
+  "title": "ghostty_surface_free_text ABI mismatch: header takes (surface, text), Zig export takes (text) \u2014 every terminal text read leaks its buffer",
+  "type": "bug",
+  "updated_at": "2026-09-11T22:54:54Z",
+  "urgency": "normal"
+}

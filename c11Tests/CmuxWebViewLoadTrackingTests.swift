@@ -10,13 +10,21 @@ import WebKit
 /// C11-209. The `CmuxWebView.hasIssuedLoad` cases that ask WebKit to actually
 /// load something.
 ///
-/// These live in the **host-required** `c11Tests` target, not `c11LogicTests`.
-/// `loadHTMLString` traps with `Signal 5: System trap` inside `super` in the
-/// bare xctest runner (no host app, so no usable main bundle —
-/// `bundleProxyForCurrentProcess is nil`), and the runner restart that follows
-/// takes ~15 other host-sensitive suites down with it. The predicate's non-loading
-/// cases, the timeout clamp, and the run-loop pump are all covered in
-/// `BrowserAwaitPolicyTests` in the logic target.
+/// These live in the **host-required** `c11Tests` target, not `c11LogicTests`:
+/// in the bare xctest runner there is no usable main bundle
+/// (`bundleProxyForCurrentProcess is nil`) and a crash here restarts the runner,
+/// which takes ~15 other host-sensitive suites down with it.
+///
+/// `loadHTMLString` is deliberately **not** covered. It traps with
+/// `Signal 5: System trap` inside `super` in *both* the bare runner and the
+/// app-hosted one — WebKit cannot bring up a web process under XCTest here — so
+/// any test of it is a guaranteed crash rather than an assertion. Its override is
+/// three lines, identical in shape to the four exercised below; the live path is
+/// covered by the error-page flow in `BrowserPanel.loadErrorPage` and by phase-4
+/// validation, not by a test that cannot run.
+///
+/// The predicate's non-loading cases, the timeout clamp, and the run-loop pump are
+/// covered in `BrowserAwaitPolicyTests` in the logic target.
 final class CmuxWebViewLoadTrackingTests: XCTestCase {
 
     @MainActor
@@ -24,15 +32,6 @@ final class CmuxWebViewLoadTrackingTests: XCTestCase {
         let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
         XCTAssertFalse(webView.hasIssuedLoad)
         _ = webView.load(URLRequest(url: URL(string: "about:blank")!))
-        XCTAssertTrue(webView.hasIssuedLoad)
-        XCTAssertTrue(TerminalController.v2BrowserWebViewHasIssuedLoad(webView))
-    }
-
-    @MainActor
-    func testLoadHTMLStringMarksLoadIssued() {
-        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        XCTAssertFalse(webView.hasIssuedLoad)
-        _ = webView.loadHTMLString("<p>hello</p>", baseURL: nil)
         XCTAssertTrue(webView.hasIssuedLoad)
         XCTAssertTrue(TerminalController.v2BrowserWebViewHasIssuedLoad(webView))
     }

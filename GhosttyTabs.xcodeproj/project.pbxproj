@@ -433,6 +433,7 @@
 		E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */; };
 		E6C1381837332D3B253A0C42 /* BrowserFindJavaScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008380 /* BrowserFindJavaScriptTests.swift */; };
 		C11209A001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */; };
+		C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */; };
 		E7B858CDF649114D83838A26 /* ConfigHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C967AD5F66B6E2304632FD54 /* ConfigHandlers.swift */; };
 		E7E728D3008386FFA3E28065 /* WorkspacePullRequestSidebarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */; };
 		E81B5FA9C3AF8FAB6C10C623 /* WorkspaceApplyPlanCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8002BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlanCodableTests.swift */; };
@@ -673,6 +674,7 @@
 		A5008372 /* BrowserFindJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/BrowserFindJavaScript.swift; sourceTree = "<group>"; };
 		A5008380 /* BrowserFindJavaScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserFindJavaScriptTests.swift; sourceTree = "<group>"; };
 		C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAwaitPolicyTests.swift; sourceTree = "<group>"; };
+		C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CmuxWebViewLoadTrackingTests.swift; sourceTree = "<group>"; };
 		A5008382 /* CommandPaletteSearchEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteSearchEngineTests.swift; sourceTree = "<group>"; };
 		A5008F12 /* SurfaceTitleBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceTitleBarView.swift; sourceTree = "<group>"; };
 		A5008F22 /* TitleFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleFormatting.swift; sourceTree = "<group>"; };
@@ -1372,6 +1374,7 @@
 				FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */,
 				A5008380 /* BrowserFindJavaScriptTests.swift */,
 				C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */,
+				C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */,
 				A5008382 /* CommandPaletteSearchEngineTests.swift */,
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */,
 				58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */,
@@ -2129,6 +2132,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */,
 				F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 				F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,

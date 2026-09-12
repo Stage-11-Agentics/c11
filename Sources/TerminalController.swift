@@ -371,13 +371,34 @@ class TerminalController {
     var browserDownloadObserver: NSObjectProtocol?
 
     private init() {
+        // C11-209: `queue: .main` routed this through the main dispatch queue, so
+        // the append could not land while a socket command held main in
+        // `v2AwaitCallbackPumpingMainRunLoop`. That made this queue the *only*
+        // delivery route for `browser.download.wait` and, once the waiter gained a
+        // live observer, would have handed the same event out twice — once live,
+        // once from the queue on the next call. Append synchronously instead, so
+        // the queue is authoritative and the waiter can pop what it observed.
+        //
+        // Every post site is a WebKit download-delegate callback routed through
+        // `BrowserPanel.notifyOnMain`, i.e. already on main, so the synchronous
+        // path is the normal one. Anything posting off-main keeps the async hop
+        // rather than tripping `assumeIsolated`.
         browserDownloadObserver = NotificationCenter.default.addObserver(
             forName: .browserDownloadEventDidArrive,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] note in
             guard let surfaceId = note.userInfo?["surfaceId"] as? UUID,
                   let event = note.userInfo?["event"] as? [String: Any] else { return }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    var queue = self.v2BrowserDownloadEventsBySurface[surfaceId] ?? []
+                    queue.append(event)
+                    self.v2BrowserDownloadEventsBySurface[surfaceId] = queue
+                }
+                return
+            }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 var queue = self.v2BrowserDownloadEventsBySurface[surfaceId] ?? []

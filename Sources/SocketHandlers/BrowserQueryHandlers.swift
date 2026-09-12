@@ -936,11 +936,18 @@ extension TerminalController {
             // thread, and every post site reaches this from a WebKit delegate
             // callback on main's run loop, which the pump does service.
             //
+            // This observer only *signals*. The value is read back from
+            // `v2BrowserDownloadEventsBySurface`, which `TerminalController`'s own
+            // observer appends to during the same synchronous post, so the queue
+            // stays the single source of truth. Returning the notification's copy
+            // directly would hand the same event out twice: once live here, and
+            // again from the queue head on the caller's next `download wait`.
+            //
             // The observer is also removed on every outcome. Previously it was
             // removed only from inside its own callback, so a timed-out wait
             // leaked an observer that then fired for the life of the process.
             nonisolated(unsafe) var observer: NSObjectProtocol?
-            let downloadEvent = v2AwaitCallback(timeout: timeout) { finish in
+            let observed = v2AwaitCallback(timeout: timeout) { finish in
                 observer = NotificationCenter.default.addObserver(
                     forName: .browserDownloadEventDidArrive,
                     object: nil,
@@ -948,14 +955,21 @@ extension TerminalController {
                 ) { note in
                     guard let candidateSurfaceId = note.userInfo?["surfaceId"] as? UUID,
                           candidateSurfaceId == surfaceId,
-                          let event = note.userInfo?["event"] as? [String: Any] else {
+                          note.userInfo?["event"] is [String: Any] else {
                         return
                     }
-                    finish(event)
+                    finish(true)
                 }
             }
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
+            }
+            var downloadEvent: [String: Any]?
+            if observed == true, let head = v2BrowserDownloadEventsBySurface[surfaceId]?.first {
+                var remaining = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
+                remaining.removeFirst()
+                v2BrowserDownloadEventsBySurface[surfaceId] = remaining
+                downloadEvent = head
             }
             guard let downloadEvent else {
                 var timeoutData: [String: Any] = ["timeout_ms": timeoutMs]

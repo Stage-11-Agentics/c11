@@ -12,7 +12,10 @@ import WebKit
 ///
 ///   1. `v2ClampBrowserTimeoutMs` — a caller cannot request an unbounded hold.
 ///   2. `CmuxWebView.hasIssuedLoad` — the predicate that says whether a JS eval
-///      can expect a completion handler at all.
+///      can expect a completion handler at all. Only the cases that never ask
+///      WebKit to load anything live here; the `load*`/`reload` overrides need a
+///      real web process and therefore a test host, so they are in
+///      `c11Tests/CmuxWebViewLoadTrackingTests.swift`.
 ///   3. `v2AwaitCallbackPumpingMainRunLoop` — what the nested run-loop pump can
 ///      and cannot receive while it sits inside a main-queue drain.
 ///
@@ -55,31 +58,12 @@ final class BrowserAwaitPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testLoadRequestMarksLoadIssued() {
-        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        _ = webView.load(URLRequest(url: URL(string: "about:blank")!))
-        XCTAssertTrue(webView.hasIssuedLoad)
-        XCTAssertTrue(TerminalController.v2BrowserWebViewHasIssuedLoad(webView))
-    }
-
-    @MainActor
-    func testLoadHTMLStringMarksLoadIssued() {
-        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        _ = webView.loadHTMLString("<p>hello</p>", baseURL: nil)
-        XCTAssertTrue(webView.hasIssuedLoad)
-    }
-
-    @MainActor
-    func testReloadMarksLoadIssued() {
-        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        _ = webView.reload()
-        XCTAssertTrue(webView.hasIssuedLoad)
-    }
-
-    @MainActor
-    func testDelegateProvisionalNavigationMarksLoadIssued() {
-        // Covers navigations that never pass through the load* overrides:
-        // in-page navigation, session restore, simulated requests.
+    func testMarkLoadIssuedFlipsThePredicate() {
+        // `markLoadIssued()` is the entry point the navigation delegate uses for
+        // navigations that never pass through the `load*` overrides — in-page
+        // navigation, session restore, simulated requests. `BrowserNavigationDelegate`
+        // is private to BrowserPanel.swift, so the delegate call itself is not
+        // reachable from here; the live path is covered by the phase-4 validation.
         let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
         XCTAssertFalse(webView.hasIssuedLoad)
         webView.markLoadIssued()

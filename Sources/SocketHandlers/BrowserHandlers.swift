@@ -1125,6 +1125,12 @@ extension TerminalController {
         }
 
         return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+            // C11-209: refuse a JS command against a surface whose web view has
+            // never issued a load, so the caller gets `no_document` rather than a
+            // generic js_error from the choke-point guard in v2RunJavaScript.
+            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
+                return refusal
+            }
             guard let selector = v2BrowserResolveSelector(selectorRaw, surfaceId: surfaceId) else {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
@@ -1229,6 +1235,12 @@ extension TerminalController {
         let scopeSelector = v2String(params, "selector")
 
         return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+            // C11-209: refuse a JS command against a surface whose web view has
+            // never issued a load, so the caller gets `no_document` rather than a
+            // generic js_error from the choke-point guard in v2RunJavaScript.
+            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
+                return refusal
+            }
             let interactiveLiteral = interactiveOnly ? "true" : "false"
             let cursorLiteral = includeCursor ? "true" : "false"
             let compactLiteral = compact ? "true" : "false"

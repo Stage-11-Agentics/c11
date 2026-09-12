@@ -6223,9 +6223,22 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
         #endif
         NSLog("BrowserPanel download finished: %@", info.suggestedFilename)
 
+        // C11-209: the `ready_to_save` telemetry post has to happen here, not
+        // inside the `DispatchQueue.main.async` below. `browser.download.wait`
+        // awaits this event from inside a nested run-loop pump on main, and a
+        // main-queue block cannot run inside an in-progress main-queue drain —
+        // so a post made from that async block is undeliverable to a waiting
+        // socket command and the wait runs to its full timeout. This callback
+        // already arrives on main from WebKit's run loop, so posting directly
+        // lands in the pump. Only the NSSavePanel presentation stays deferred;
+        // that deferral is about not opening a modal from inside a WebKit
+        // delegate callback, and is unrelated to the notification.
+        notifyOnMain { [weak self] in
+            self?.onDownloadReadyToSave?()
+        }
+
         // Show NSSavePanel on the next runloop iteration (safe context).
         DispatchQueue.main.async {
-            self.onDownloadReadyToSave?()
             let savePanel = NSSavePanel()
             savePanel.nameFieldStringValue = info.suggestedFilename
             savePanel.canCreateDirectories = true
@@ -6342,6 +6355,12 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var lastAttemptedURL: URL?
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // C11-209: belt for navigations that never pass through CmuxWebView's
+        // `load*` overrides — in-page navigations, session restore, simulated
+        // requests. Once a provisional navigation has started a web process
+        // exists, so JS evaluation will deliver a completion and the socket
+        // handlers' fail-fast guard must stop firing.
+        (webView as? CmuxWebView)?.markLoadIssued()
         lastAttemptedURL = webView.url
     }
 

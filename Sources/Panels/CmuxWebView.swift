@@ -68,6 +68,86 @@ final class CmuxWebView: WKWebView {
     }
     var debugPointerFocusAllowanceDepth: Int { pointerFocusAllowanceDepth }
 
+    // MARK: - Load-issued tracking (C11-209)
+
+    /// True once this web view instance has been asked to load *anything*.
+    ///
+    /// A `WKWebView` that has never been asked to load has no assigned web
+    /// process, so `evaluateJavaScript`'s completion handler is never invoked
+    /// at all — not late, never. Socket browser handlers run inside a
+    /// `DispatchQueue.main.sync` drain (`v2BrowserWithPanel` → `v2MainSync`),
+    /// so such an await burns its entire timeout holding the main queue, which
+    /// freezes every other socket command and the UI with it. See
+    /// `docs/c11-browser-await-main-wedge.md`.
+    ///
+    /// `webView.url == nil` is NOT a substitute predicate: a load issued to a
+    /// dead port reports `url=nil, isLoading=false` and still evaluates
+    /// JavaScript in ~50 ms, because a web process exists and JS runs against
+    /// the current `about:blank` document. What matters is whether a load was
+    /// ever *issued*, not whether one succeeded.
+    ///
+    /// Read it through `TerminalController`'s guard rather than directly; that
+    /// guard treats a non-`CmuxWebView` as loaded, so the check can only ever
+    /// avoid a wedge and never invent a failure.
+    private(set) var hasIssuedLoad: Bool = false
+
+    /// Marks a load as issued. Also called from `BrowserNavigationDelegate`'s
+    /// `didStartProvisionalNavigation` so in-page and restored navigations that
+    /// never pass through the `load*` overrides below are still covered.
+    func markLoadIssued() {
+        hasIssuedLoad = true
+    }
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        markLoadIssued()
+        return super.load(request)
+    }
+
+    override func load(
+        _ data: Data,
+        mimeType MIMEType: String,
+        characterEncodingName: String,
+        baseURL: URL
+    ) -> WKNavigation? {
+        markLoadIssued()
+        return super.load(data, mimeType: MIMEType, characterEncodingName: characterEncodingName, baseURL: baseURL)
+    }
+
+    override func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
+        markLoadIssued()
+        return super.loadHTMLString(string, baseURL: baseURL)
+    }
+
+    override func loadFileURL(_ URL: URL, allowingReadAccessTo readAccessURL: URL) -> WKNavigation? {
+        markLoadIssued()
+        return super.loadFileURL(URL, allowingReadAccessTo: readAccessURL)
+    }
+
+    override func go(to item: WKBackForwardListItem) -> WKNavigation? {
+        markLoadIssued()
+        return super.go(to: item)
+    }
+
+    override func goBack() -> WKNavigation? {
+        markLoadIssued()
+        return super.goBack()
+    }
+
+    override func goForward() -> WKNavigation? {
+        markLoadIssued()
+        return super.goForward()
+    }
+
+    override func reload() -> WKNavigation? {
+        markLoadIssued()
+        return super.reload()
+    }
+
+    override func reloadFromOrigin() -> WKNavigation? {
+        markLoadIssued()
+        return super.reloadFromOrigin()
+    }
+
     override func becomeFirstResponder() -> Bool {
         guard allowsFirstResponderAcquisitionEffective else {
 #if DEBUG

@@ -781,7 +781,12 @@ extension TerminalController {
 
     func v2BrowserDownloadWait(params: [String: Any]) -> V2CallResult {
         return v2BrowserWithPanel(params: params) { _, ws, surfaceId, _ in
-            let timeoutMs = max(1, v2Int(params, "timeout_ms") ?? v2Int(params, "timeout") ?? 10_000)
+            // C11-209: clamp, don't just lower-bound — this await holds the main
+            // queue for its whole duration.
+            let requestedTimeoutMs = v2Int(params, "timeout_ms")
+                ?? v2Int(params, "timeout")
+                ?? 10_000
+            let timeoutMs = TerminalController.v2ClampBrowserTimeoutMs(requestedTimeoutMs)
             let timeout = Double(timeoutMs) / 1000.0
             let path = v2String(params, "path")
 
@@ -811,45 +816,95 @@ extension TerminalController {
                 guard fd >= 0 else {
                     return .err(code: "internal_error", message: "Failed to watch download path", data: ["path": path])
                 }
-                defer { close(fd) }
+
+                // C11-209: this await runs inside a main-queue drain, and a
+                // nested CFRunLoop pump cannot drain main-queue blocks. With the
+                // source and the timeout item on `.main` the wait could never be
+                // satisfied early — it always ran to its full timeout. Both move
+                // to a private serial queue, which the lock-guarded `finish` in
+                // `v2AwaitCallbackPumpingMainRunLoop` now accepts.
+                //
+                // Everything that mutates `finished` / `source` / `timeoutWorkItem`
+                // runs on `watchQueue`, including the initial readiness check, so
+                // there is exactly one writer. And `fd` is owned by the source:
+                // it is closed from the cancel handler, never from a `defer`,
+                // because `v2AwaitCallback` can unwind on its own deadline while
+                // the source is still live and libdispatch traps on a descriptor
+                // closed out from under it.
+                let watchQueue = DispatchQueue(label: "com.stage11.c11.download-wait")
+                nonisolated(unsafe) var source: DispatchSourceFileSystemObject?
+                nonisolated(unsafe) var timeoutWorkItem: DispatchWorkItem?
+                nonisolated(unsafe) var finished = false
+                nonisolated(unsafe) var fdClosed = false
 
                 let ready = v2AwaitCallback(timeout: timeout) { finish in
-                    var source: DispatchSourceFileSystemObject?
-                    var timeoutWorkItem: DispatchWorkItem?
-                    var finished = false
                     let finishOnce: (Bool) -> Void = { value in
+                        dispatchPrecondition(condition: .onQueue(watchQueue))
                         guard !finished else { return }
                         finished = true
                         timeoutWorkItem?.cancel()
-                        source?.cancel()
+                        timeoutWorkItem = nil
+                        if let live = source {
+                            live.cancel()
+                        } else if !fdClosed {
+                            fdClosed = true
+                            close(fd)
+                        }
                         finish(value)
                     }
-                    source = DispatchSource.makeFileSystemObjectSource(
+                    let newSource = DispatchSource.makeFileSystemObjectSource(
                         fileDescriptor: fd,
                         eventMask: [.write, .extend, .attrib, .link, .rename],
-                        queue: .main
+                        queue: watchQueue
                     )
-                    source?.setEventHandler {
+                    source = newSource
+                    newSource.setEventHandler {
                         if pathIsReady() {
                             finishOnce(true)
                         }
                     }
-                    source?.setCancelHandler {
+                    newSource.setCancelHandler {
                         source = nil
+                        if !fdClosed {
+                            fdClosed = true
+                            close(fd)
+                        }
                     }
-                    source?.resume()
-                    timeoutWorkItem = DispatchWorkItem {
+                    newSource.resume()
+                    let work = DispatchWorkItem {
                         finishOnce(pathIsReady())
                     }
-                    if let timeoutWorkItem {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
-                    }
-                    if pathIsReady() {
-                        finishOnce(true)
+                    timeoutWorkItem = work
+                    watchQueue.asyncAfter(deadline: .now() + timeout, execute: work)
+                    // Closes the race between `open()` above and `resume()`: if
+                    // the file landed in that window no event will ever fire.
+                    watchQueue.async {
+                        if pathIsReady() {
+                            finishOnce(true)
+                        }
                     }
                 } ?? false
+
+                // `v2AwaitCallback` can unwind on its own deadline before the
+                // work item fires. Tear down from the owning queue either way so
+                // the source is always cancelled and `fd` always closed exactly
+                // once.
+                watchQueue.sync {
+                    timeoutWorkItem?.cancel()
+                    timeoutWorkItem = nil
+                    if let live = source {
+                        live.cancel()
+                    } else if !fdClosed {
+                        fdClosed = true
+                        close(fd)
+                    }
+                }
                 guard ready else {
-                    return .err(code: "timeout", message: "Timed out waiting for download file", data: ["path": path, "timeout_ms": timeoutMs])
+                    var timeoutData: [String: Any] = ["path": path, "timeout_ms": timeoutMs]
+                    if timeoutMs != requestedTimeoutMs {
+                        timeoutData["requested_timeout_ms"] = requestedTimeoutMs
+                    }
+                    return .err(code: "timeout", message: "Timed out waiting for download file", data: timeoutData)
                 }
                 return .ok([
                     "workspace_id": ws.id.uuidString,
@@ -874,26 +929,54 @@ extension TerminalController {
                 ])
             }
 
-            let downloadEvent = v2AwaitCallback(timeout: timeout) { finish in
-                var observer: NSObjectProtocol?
+            // C11-209: `queue: .main` routed this through OperationQueue.main,
+            // i.e. the main dispatch queue — undeliverable inside the nested
+            // run-loop pump this await runs in, so the wait always burned its
+            // full timeout. `queue: nil` delivers synchronously on the posting
+            // thread, and every post site reaches this from a WebKit delegate
+            // callback on main's run loop, which the pump does service.
+            //
+            // This observer only *signals*. The value is read back from
+            // `v2BrowserDownloadEventsBySurface`, which `TerminalController`'s own
+            // observer appends to during the same synchronous post, so the queue
+            // stays the single source of truth. Returning the notification's copy
+            // directly would hand the same event out twice: once live here, and
+            // again from the queue head on the caller's next `download wait`.
+            //
+            // The observer is also removed on every outcome. Previously it was
+            // removed only from inside its own callback, so a timed-out wait
+            // leaked an observer that then fired for the life of the process.
+            nonisolated(unsafe) var observer: NSObjectProtocol?
+            let observed = v2AwaitCallback(timeout: timeout) { finish in
                 observer = NotificationCenter.default.addObserver(
                     forName: .browserDownloadEventDidArrive,
                     object: nil,
-                    queue: .main
+                    queue: nil
                 ) { note in
                     guard let candidateSurfaceId = note.userInfo?["surfaceId"] as? UUID,
                           candidateSurfaceId == surfaceId,
-                          let event = note.userInfo?["event"] as? [String: Any] else {
+                          note.userInfo?["event"] is [String: Any] else {
                         return
                     }
-                    if let observer {
-                        NotificationCenter.default.removeObserver(observer)
-                    }
-                    finish(event)
+                    finish(true)
                 }
             }
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            var downloadEvent: [String: Any]?
+            if observed == true, let head = v2BrowserDownloadEventsBySurface[surfaceId]?.first {
+                var remaining = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
+                remaining.removeFirst()
+                v2BrowserDownloadEventsBySurface[surfaceId] = remaining
+                downloadEvent = head
+            }
             guard let downloadEvent else {
-                return .err(code: "timeout", message: "No download event observed", data: ["timeout_ms": timeoutMs])
+                var timeoutData: [String: Any] = ["timeout_ms": timeoutMs]
+                if timeoutMs != requestedTimeoutMs {
+                    timeoutData["requested_timeout_ms"] = requestedTimeoutMs
+                }
+                return .err(code: "timeout", message: "No download event observed", data: timeoutData)
             }
             return .ok([
                 "workspace_id": ws.id.uuidString,

@@ -13,7 +13,7 @@ if [ "$#" -eq 0 ]; then
   set -- test
 fi
 
-exec xcodebuild \
+exec scripts/with-build-lock.sh xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \

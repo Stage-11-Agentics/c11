@@ -42,6 +42,9 @@ jobs:
       - name: Validate release asset guard
         run: node scripts/release_asset_guard.test.js
 
+      - name: Validate the build lock serializes builds
+        run: ./tests/test_with_build_lock.sh
+
       - name: Validate current GhosttyKit checksum pin
         run: ./tests/test_ci_ghosttykit_checksum_present.sh
 

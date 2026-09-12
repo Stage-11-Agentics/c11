@@ -229,7 +229,7 @@ fi
 XCODEBUILD_ARGS+=(build)
 
 echo "[reloads.sh] xcodebuild ${XCODEBUILD_ARGS[*]}"
-xcodebuild "${XCODEBUILD_ARGS[@]}"
+"$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}"
 sleep 0.2
 
 # Successful build: record the breadcrumb for the next reuse.

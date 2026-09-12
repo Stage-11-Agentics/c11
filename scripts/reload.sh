@@ -298,7 +298,7 @@ fi
 XCODEBUILD_ARGS+=(build)
 
 XCODE_LOG="/tmp/c11-xcodebuild-${TAG_SLUG}.log"
-xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)' || true
+"$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)' || true
 XCODE_EXIT="${PIPESTATUS[0]}"
 echo "Full build log: $XCODE_LOG"
 if [[ "$XCODE_EXIT" -ne 0 ]]; then

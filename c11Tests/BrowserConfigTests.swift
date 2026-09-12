@@ -1298,6 +1298,57 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
         XCTAssertEqual(alertSpy.beginSheetModalCallCount, 1)
     }
 
+    /// C11-207: every answer resolves the prompt, so an agent polling
+    /// `browser.url.get` is not told "a human must answer" after one did.
+    func testDeclinedPromptReportsADeclinedDisposition() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        let alertSpy = BrowserInsecureHTTPAlertSpy()
+        alertSpy.nextResponse = .alertThirdButtonReturn
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        panel.configureInsecureHTTPAlertHooksForTesting(
+            alertFactory: { alertSpy },
+            windowProvider: { window }
+        )
+
+        panel.navigateSmart("http://192.0.2.1:8000/")
+
+        XCTAssertEqual(
+            panel.lastNavigationDisposition,
+            .blocked(host: "192.0.2.1", reason: .declinedByOperator)
+        )
+        XCTAssertFalse(panel.shouldRenderWebView)
+    }
+
+    /// C11-207: a blocked cross-host redirect is cancelled by the delegate and
+    /// never reaches `didSettleNavigation`, so the prompt path has to be the
+    /// one that drops the now-stale consent for the original host.
+    func testPromptingForAnotherHostDropsAStaleConsent() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.resetInsecureHTTPAlertHooksForTesting() }
+
+        panel.configureInsecureHTTPAlertHooksForTesting(
+            alertFactory: { BrowserInsecureHTTPAlertSpy() },
+            windowProvider: { nil }
+        )
+
+        panel.consentToInsecureHTTP(for: URL(string: "http://192.0.2.1:8000/")!)
+        XCTAssertTrue(panel.hasPendingInsecureHTTPConsentForTesting(host: "192.0.2.1"))
+
+        panel.presentInsecureHTTPAlertForTesting(url: URL(string: "http://192.0.2.2:8000/")!)
+
+        XCTAssertFalse(
+            panel.hasPendingInsecureHTTPConsentForTesting(host: "192.0.2.1"),
+            "A prompt for another host must not leave the old grant armed"
+        )
+    }
+
     /// C11-207: the explicit opt-in navigates without prompting, and the
     /// one-time bypass must survive the caller-side pre-check so WebKit's
     /// `decidePolicyFor` (the single consuming gate) still sees it.

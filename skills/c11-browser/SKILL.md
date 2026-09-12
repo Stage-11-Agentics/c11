@@ -60,9 +60,11 @@ c11 --json browser open http://192.168.1.5:8000 --allow-insecure-http
 c11 browser surface:7 goto http://192.168.1.5:8000 --allow-insecure-http
 ```
 
-The consent covers **one navigation to one host, including that navigation's same-host redirects** (`/` → `/login` works). It is not persisted and is released once the navigation settles. A redirect to plain HTTP on a *different* host prompts or blocks again — if an opted-in page comes up blank after a redirect, check `c11 browser <surface> get url --json`, which reports the outcome in `insecure_http`, and re-issue with the flag against the redirect target. To allow a host permanently, add it in Settings → Browser → insecure HTTP allowlist.
+The consent covers **one navigation to one host, including that navigation's HTTP redirects to the same host** (a 302 from `/` to `/login` works). A page that redirects itself after loading — JS or `<meta http-equiv="refresh">` — starts a new navigation and needs consent again. It is not persisted and is released once the navigation settles. A redirect to plain HTTP on a *different* host prompts or blocks again — if an opted-in page comes up blank after a redirect, check `c11 browser <surface> get url --json`, which reports the outcome in `insecure_http`, and re-issue with the flag against the redirect target. To allow a host permanently, add it in Settings → Browser → insecure HTTP allowlist.
 
-Both verbs report the outcome rather than failing silently. `browser open` always keeps its promise that a surface exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the surface ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
+`c11 new-surface --type browser --url <url>` and `c11 new-pane --type browser --url <url>` do **not** take the flag and do not report the outcome, so for a non-loopback plain-HTTP page create the surface without a URL and then `goto <url> --allow-insecure-http`.
+
+Both `open` and `goto` report the outcome rather than failing silently. `browser open` always keeps its promise that a surface exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the surface ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
 
 ## Wait Support
 

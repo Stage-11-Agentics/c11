@@ -865,11 +865,20 @@ enum BrowserInsecureHTTPPromptPolicy {
     static let unpromptedResponse: NSApplication.ModalResponse = .alertThirdButtonReturn
 }
 
-/// Why an insecure-HTTP navigation was refused outright instead of prompting.
+/// Why an insecure-HTTP navigation did not load.
 enum BrowserInsecureHTTPBlockReason: String {
     /// The app had no visible, non-miniaturized window to sheet the prompt
     /// onto, so there was nobody who could have answered it.
     case noWindowToPrompt = "no_window_to_prompt"
+    /// A human saw the prompt and declined it.
+    case declinedByOperator = "declined_by_operator"
+    /// A human answered the prompt by handing the URL to the default browser,
+    /// so nothing loaded in this surface.
+    case openedExternally = "opened_externally"
+    /// The URL is plain HTTP with no host that can be checked against the
+    /// allowlist, so there is nothing to name in a prompt and nothing
+    /// `--allow-insecure-http` could consent to.
+    case unparsableHost = "unparsable_host"
 }
 
 /// What a navigation request actually did, so a socket caller learns the
@@ -900,18 +909,31 @@ func browserInsecureHTTPBlockedError(
     reason: BrowserInsecureHTTPBlockReason
 ) -> (code: String, message: String, data: [String: Any]) {
     let why: String
+    let remedy: String
     switch reason {
     case .noWindowToPrompt:
         why = "no window available to prompt"
+        remedy = browserInsecureHTTPOptInHint
+    case .declinedByOperator:
+        why = "declined by the operator"
+        remedy = browserInsecureHTTPOptInHint
+    case .openedExternally:
+        why = "the operator opened it in the default browser instead"
+        remedy = browserInsecureHTTPOptInHint
+    case .unparsableHost:
+        why = "the URL has no usable host"
+        // The opt-in cannot help here: it is keyed on a normalized host, and
+        // there is none.
+        remedy = "Use a URL with a parsable host."
     }
     return (
         code: "insecure_http_blocked",
-        message: "insecure HTTP navigation to \(host) blocked: \(why). \(browserInsecureHTTPOptInHint)",
+        message: "insecure HTTP navigation to \(host) blocked: \(why). \(remedy)",
         data: [
             "host": host,
             "url": urlString,
             "reason": reason.rawValue,
-            "hint": browserInsecureHTTPOptInHint
+            "hint": remedy
         ]
     )
 }
@@ -4203,11 +4225,22 @@ final class BrowserPanel: Panel, ObservableObject {
         guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else {
             // A plain-HTTP URL with no parsable host is blocked by
             // `browserShouldBlockInsecureHTTPURL` and there is nothing to name
-            // in a prompt, so report it with the raw URL as the host.
+            // in a prompt, so report it with the raw URL as the host. The
+            // opt-in cannot rescue this one: consent is keyed on a normalized
+            // host, so the reason has to say so rather than advertise a flag
+            // that would be a no-op.
             return record(
-                disposition: .blocked(host: url.absoluteString, reason: .noWindowToPrompt)
+                disposition: .blocked(host: url.absoluteString, reason: .unparsableHost)
             )
         }
+
+        // A navigation that reaches the prompt is by construction not covered
+        // by the current consent, so drop a stale grant here too. This is the
+        // one release path the delegate can reach: a cross-host redirect it
+        // cancels surfaces as WebKitErrorDomain 102, which
+        // `didFailProvisionalNavigation` early-returns on before
+        // `didSettleNavigation` fires.
+        supersedeInsecureHTTPConsentIfNeeded(for: url)
 
         let alert = insecureHTTPAlertFactory()
         alert.alertStyle = .warning
@@ -4232,16 +4265,22 @@ final class BrowserPanel: Panel, ObservableObject {
         }
 
         if let alertWindow = insecureHTTPAlertWindowProvider() {
+            // Record before presenting: the completion can fire synchronously
+            // (a test spy, or any future immediate-answer path), and recording
+            // afterwards would stamp `.prompting` over the answer.
+            record(disposition: .prompting(host: host))
             alert.beginSheetModal(for: alertWindow, completionHandler: handleResponse)
-            return record(disposition: .prompting(host: host))
+            return .prompting(host: host)
         }
 
         // No window can host the sheet, so there is nobody to answer the
         // prompt. Never fall back to app-modal `runModal()`: it spins a nested
         // run loop on main and wedges every surface in the app until a human
-        // dismisses an alert they cannot see. Socket-driven navigation lands
-        // here whenever the window is backgrounded, so take the safe default
-        // and leave the navigation blocked.
+        // dismisses an alert they cannot see. A merely backgrounded window
+        // still hosts the sheet (see `browserSelectModalHostWindowIndex`); this
+        // branch is the hidden app, the miniaturized window, the last window
+        // closed. Take the safe default and leave the navigation blocked — the
+        // caller is told why via the returned disposition.
         NSLog("BrowserPanel: blocked insecure HTTP navigation to %@ without prompting (no window available)", host)
         handleResponse(BrowserInsecureHTTPPromptPolicy.unpromptedResponse)
         return record(disposition: .blocked(host: host, reason: .noWindowToPrompt))
@@ -4262,13 +4301,15 @@ final class BrowserPanel: Panel, ObservableObject {
         ) {
             BrowserInsecureHTTPSettings.addAllowedHost(host)
         }
+        // Every answer resolves the prompt, so `lastNavigationDisposition`
+        // (what `browser.url.get` reports) must stop saying a human still has
+        // to act. Recording only the proceed case would leave an agent polling
+        // "nothing loads until a human answers" after the human answered.
         switch response {
         case .alertFirstButtonReturn:
+            record(disposition: .blocked(host: host, reason: .openedExternally))
             NSWorkspace.shared.open(url)
         case .alertSecondButtonReturn:
-            // The operator answered, so the surface is no longer waiting on a
-            // prompt — keep `lastNavigationDisposition` (which `browser.url.get`
-            // reports) honest about that.
             record(disposition: .proceeded)
             switch intent {
             case .currentTab:
@@ -4278,6 +4319,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 openLinkInNewTab(url: url, bypassInsecureHTTPHostOnce: host)
             }
         default:
+            record(disposition: .blocked(host: host, reason: .declinedByOperator))
             return
         }
     }

@@ -611,6 +611,35 @@ final class BrowserModalHostWindowSelectionTests: XCTestCase {
         XCTAssertEqual(failure.data["hint"] as? String, browserInsecureHTTPOptInHint)
     }
 
+    /// Each refusal names its own cause, and the one the opt-in cannot rescue
+    /// says so instead of advertising a flag that would be a no-op.
+    func testEveryBlockReasonNamesItselfAndOnlyAdvertisesAUsableRemedy() {
+        for reason in [
+            BrowserInsecureHTTPBlockReason.declinedByOperator,
+            .openedExternally
+        ] {
+            let failure = browserInsecureHTTPBlockedError(
+                host: "192.0.2.1",
+                urlString: "http://192.0.2.1:8000/",
+                reason: reason
+            )
+            XCTAssertEqual(failure.data["reason"] as? String, reason.rawValue)
+            XCTAssertEqual(failure.data["hint"] as? String, browserInsecureHTTPOptInHint)
+        }
+
+        let unparsable = browserInsecureHTTPBlockedError(
+            host: "http://:8000/",
+            urlString: "http://:8000/",
+            reason: .unparsableHost
+        )
+        XCTAssertEqual(unparsable.data["reason"] as? String, "unparsable_host")
+        XCTAssertFalse(
+            unparsable.message.contains("--allow-insecure-http"),
+            "The opt-in is keyed on a normalized host, so it cannot help here"
+        )
+        XCTAssertTrue(unparsable.message.contains("no usable host"))
+    }
+
     /// A pending prompt is reported rather than returned as a bare success, so
     /// an agent knows a human still has to answer before the page loads.
     func testPromptPendingPayloadNamesTheHostAndTheOptIn() {

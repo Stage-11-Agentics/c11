@@ -313,6 +313,52 @@ class TerminalController {
     static let v2BrowserEvalEnvelopeTypeUndefined = "undefined"
     static let v2BrowserEvalEnvelopeTypeValue = "value"
 
+    // MARK: - C11-209 browser await bounds
+
+    /// Upper bound on any browser command's caller-supplied `timeout_ms`.
+    ///
+    /// Browser JS awaits run inside a main-queue drain (`v2MainSync`), so the
+    /// requested timeout is a direct multiplier on how long the socket control
+    /// plane and the UI can be held. It was previously lower-bounded only, which
+    /// made a single typo'd parameter an unbounded outage. 120 s sits above the
+    /// longest timeout observed in the 2026-08-12 incident fleet (60 s), so it
+    /// truncates nothing real.
+    ///
+    /// Note `browser.wait` adds a 1 s Swift-side grace over the JS-side timer
+    /// (`v2WaitForBrowserCondition`), so its worst-case hold is 121 s, not 120 s.
+    nonisolated static let v2BrowserMaxTimeoutMs = 120_000
+
+    nonisolated static let v2BrowserDefaultWaitTimeoutMs = 5_000
+
+    nonisolated static func v2ClampBrowserTimeoutMs(_ raw: Int) -> Int {
+        min(max(1, raw), v2BrowserMaxTimeoutMs)
+    }
+
+    /// Message returned when a browser JS command targets a `WKWebView` that has
+    /// never been asked to load a document. Such a view has no web process, so
+    /// `evaluateJavaScript`'s completion handler is never invoked and the await
+    /// would burn its full timeout holding main. See C11-209.
+    nonisolated static let v2BrowserNoDocumentMessage =
+        "Browser surface has not loaded a document; navigate first (c11 browser goto <url>)."
+
+    /// Same condition, but the surface does have a target URL — a load was asked
+    /// for and withheld. Reachable when the insecure-HTTP prompt is pending, when
+    /// a remote-workspace proxy endpoint has not resolved yet, or on a hibernated
+    /// surface. "Navigate first" would be wrong advice there.
+    nonisolated static func v2BrowserNavigationWithheldMessage(url: String) -> String {
+        "Navigation to \(url) was requested but no load has been issued yet — "
+            + "check the insecure-HTTP prompt, a pending remote-workspace proxy, or a hibernated surface."
+    }
+
+    /// True when a JS eval against this view can expect a completion handler.
+    ///
+    /// A view that is not a `CmuxWebView` is reported as loaded: the guard may
+    /// then fail to avoid a wedge, but it can never invent a failure on a view
+    /// that would have worked.
+    nonisolated static func v2BrowserWebViewHasIssuedLoad(_ webView: WKWebView) -> Bool {
+        (webView as? CmuxWebView)?.hasIssuedLoad ?? true
+    }
+
     var v2BrowserNextElementOrdinal: Int = 1
     var v2BrowserElementRefs: [String: V2BrowserElementRefEntry] = [:]
     var v2BrowserFrameSelectorBySurface: [UUID: String] = [:]

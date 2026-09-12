@@ -259,6 +259,19 @@ extension TerminalController {
         preferAsync: Bool = false,
         contentWorld: WKContentWorld
     ) -> V2JavaScriptResult {
+        // C11-209: a WKWebView that has never been asked to load anything has no
+        // web process, so `evaluateJavaScript` never invokes its completion
+        // handler — not late, never. On the main-thread branch below that means
+        // burning the whole timeout inside a main-queue drain, freezing every
+        // other socket command and the UI with it. There is nothing to wait for,
+        // so do not wait. This single guard covers every browser JS call site;
+        // the handlers that own the production stack (`v2BrowserEval`,
+        // `v2BrowserWait`) additionally pre-check so the caller gets a
+        // `no_document` code rather than `js_error`/`timeout`.
+        guard Self.v2BrowserWebViewHasIssuedLoad(webView) else {
+            return .failure(Self.v2BrowserNoDocumentMessage)
+        }
+
         let timeoutSeconds = max(0.01, timeout)
         let evaluator: (@escaping (Any?, String?) -> Void) -> Void = { finish in
             if preferAsync, #available(macOS 11.0, *) {
@@ -312,39 +325,7 @@ extension TerminalController {
         start: (@escaping (T) -> Void) -> Void
     ) -> T? {
         if Thread.isMainThread {
-            // C11-165 COR-3: pump the main run loop in short slices instead of
-            // one CFRunLoopRun stopped via CFRunLoopStop. Concurrent browser
-            // commands nest this call, and CFRunLoopStop only stops the
-            // *innermost* run loop — so an outer invocation's stop was swallowed
-            // and its socket thread wedged permanently (audit P0.4). Slicing
-            // lets each nested invocation observe its OWN `resolved` flag and
-            // deadline and unwind independently. The loop still pumps events
-            // (WebKit completion callbacks, rendering, main-queue blocks), so
-            // main is not frozen and WebKit calls stay on their required main
-            // thread — the reason this path runs on main at all.
-            var resolved = false
-            var result: T?
-
-            let finish: (T) -> Void = { value in
-                guard !resolved else { return }
-                resolved = true
-                result = value
-            }
-
-            start(finish)
-            guard !resolved else { return result }
-
-            // Monotonic deadline (systemUptime, mach-based) so an NTP/clock
-            // change during the await can't distort the timeout. Each slice
-            // blocks the full 50ms draining sources (returnAfterSourceHandled:
-            // false) rather than returning after one source — otherwise steady
-            // main-thread source traffic (WebKit render callbacks, timers) would
-            // busy-spin the loop for the whole timeout window.
-            let deadline = ProcessInfo.processInfo.systemUptime + timeout
-            while !resolved && ProcessInfo.processInfo.systemUptime < deadline {
-                CFRunLoopRunInMode(.defaultMode, 0.05, false)
-            }
-            return resolved ? result : nil
+            return Self.v2AwaitCallbackPumpingMainRunLoop(timeout: timeout, start: start)
         }
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -362,6 +343,103 @@ extension TerminalController {
         lock.lock()
         defer { lock.unlock() }
         return result
+    }
+
+    /// The main-thread branch of `v2AwaitCallback`, extracted so it can be
+    /// exercised directly by tests without standing up a `TabManager`.
+    /// Must be called on the main thread.
+    nonisolated static func v2AwaitCallbackPumpingMainRunLoop<T>(
+        timeout: TimeInterval,
+        start: (@escaping (T) -> Void) -> Void
+    ) -> T? {
+        // C11-165 COR-3: pump the main run loop in short slices instead of
+        // one CFRunLoopRun stopped via CFRunLoopStop. Concurrent browser
+        // commands nest this call, and CFRunLoopStop only stops the
+        // *innermost* run loop — so an outer invocation's stop was swallowed
+        // and its socket thread wedged permanently (audit P0.4). Slicing
+        // lets each nested invocation observe its OWN `resolved` flag and
+        // deadline and unwind independently.
+        //
+        // C11-209 — WHAT THIS PUMP CAN AND CANNOT DELIVER. An earlier
+        // version of this comment claimed the loop "still pumps events
+        // (WebKit completion callbacks, rendering, main-queue blocks), so
+        // main is not frozen." The last of those three is false, and the
+        // conclusion with it. Measured in `tools/await-wedge-repro/`:
+        //
+        //   • Run-loop sources DO land here. That is how WebKit delivers
+        //     `evaluateJavaScript` completions, which is why this path
+        //     works for a live page (0.05s in the harness) and why the
+        //     await runs on main at all — WebKit requires it.
+        //   • Main-DISPATCH-QUEUE blocks NEVER land here. This pump runs
+        //     inside an in-progress `_dispatch_main_queue_drain` (socket
+        //     commands arrive via `v2MainSync` → `DispatchQueue.main.sync`)
+        //     and libdispatch will not re-enter a drain already on the
+        //     stack. So `DispatchQueue.main.async/asyncAfter`, a
+        //     `DispatchSource` with `queue: .main`, and
+        //     `NotificationCenter` with `queue: .main` (OperationQueue.main)
+        //     are all structurally undeliverable while this loop runs.
+        //   • Nothing is delivered at all for a WKWebView that has never
+        //     been asked to load: no web process exists, so the completion
+        //     handler is never invoked. Callers guard for this up front —
+        //     see `v2BrowserNoDocumentMessage`.
+        //
+        // While this loop runs, main IS frozen: every other `v2MainSync`
+        // socket command and the whole UI wait behind it. A non-delivering
+        // callback also busy-spins it (~500k slices/second, since each
+        // `CFRunLoopRunInMode` returns immediately when an undrainable
+        // main-queue block is pending), so the cost is a held main thread
+        // AND a saturated core for the full timeout. Production incident
+        // 2026-08-12: 25+ minutes. See `docs/c11-browser-await-main-wedge.md`.
+        //
+        // The consequence for anything added to this path later: deliver
+        // your callback through a run-loop source, or from off the main
+        // thread (supported below — `finish` is lock-guarded and wakes the
+        // run loop), but never through the main dispatch queue.
+        let lock = NSLock()
+        nonisolated(unsafe) var resolved = false
+        nonisolated(unsafe) var result: T?
+
+        let isResolved: () -> Bool = {
+            lock.lock()
+            defer { lock.unlock() }
+            return resolved
+        }
+
+        let finish: (T) -> Void = { value in
+            lock.lock()
+            if resolved {
+                lock.unlock()
+                return
+            }
+            resolved = true
+            result = value
+            lock.unlock()
+            // Off-main delivery would otherwise sit unnoticed until the
+            // current 50ms slice expires; wake main so the loop re-checks
+            // immediately. Harmless when already on main.
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+        }
+
+        start(finish)
+        guard !isResolved() else {
+            lock.lock()
+            defer { lock.unlock() }
+            return result
+        }
+
+        // Monotonic deadline (systemUptime, mach-based) so an NTP/clock
+        // change during the await can't distort the timeout. Each slice
+        // blocks the full 50ms draining sources (returnAfterSourceHandled:
+        // false) rather than returning after one source — otherwise steady
+        // main-thread source traffic (WebKit render callbacks, timers) would
+        // busy-spin the loop for the whole timeout window.
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while !isResolved() && ProcessInfo.processInfo.systemUptime < deadline {
+            CFRunLoopRunInMode(.defaultMode, 0.05, false)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        return resolved ? result : nil
     }
 
     func v2WaitForBrowserCondition(
@@ -447,6 +525,33 @@ extension TerminalController {
         case .failure:
             return false
         }
+    }
+
+    /// C11-209: structured refusal for a JS command against a surface whose web
+    /// view has never issued a load. Returns nil when the surface is fine.
+    ///
+    /// The message branches on whether a URL was ever asked for. A never-touched
+    /// new-tab surface wants "navigate first"; a surface whose navigation was
+    /// *withheld* (insecure-HTTP prompt pending, remote proxy unresolved,
+    /// hibernated) has a URL already and needs to be told that instead, or the
+    /// agent re-issues the same navigate in a loop.
+    func v2BrowserNoDocumentResultIfNeeded(
+        browserPanel: BrowserPanel,
+        surfaceId: UUID
+    ) -> V2CallResult? {
+        guard !Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView) else { return nil }
+        let currentURL = browserPanel.currentURL?.absoluteString
+        let message = currentURL.map { Self.v2BrowserNavigationWithheldMessage(url: $0) }
+            ?? Self.v2BrowserNoDocumentMessage
+        return .err(
+            code: "no_document",
+            message: message,
+            data: [
+                "surface_id": surfaceId.uuidString,
+                "current_url": v2OrNull(currentURL),
+                "lifecycle_state": browserPanel.lifecycleState.rawValue
+            ]
+        )
     }
 
     func v2BrowserSelector(_ params: [String: Any]) -> String? {
@@ -1098,6 +1203,9 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }
         return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
+                return refusal
+            }
             switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script, timeout: 10.0) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
@@ -1395,7 +1503,10 @@ extension TerminalController {
     }
 
     func v2BrowserWait(params: [String: Any]) -> V2CallResult {
-        let timeoutMs = max(1, v2Int(params, "timeout_ms") ?? 5_000)
+        // C11-209: clamp, don't just lower-bound. This value is a direct
+        // multiplier on how long the main-queue drain is held.
+        let requestedTimeoutMs = v2Int(params, "timeout_ms") ?? Self.v2BrowserDefaultWaitTimeoutMs
+        let timeoutMs = Self.v2ClampBrowserTimeoutMs(requestedTimeoutMs)
         let selectorRaw = v2BrowserSelector(params)
 
         let conditionScriptBase: String = {
@@ -1449,6 +1560,15 @@ extension TerminalController {
                 setupResult = .err(code: "invalid_params", message: "Surface is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
+            // C11-209: refuse here rather than letting the wait burn its whole
+            // timeout on a view that can never deliver a JS completion. Checked
+            // inside the main-sync block because `browserPanel` is MainActor
+            // state, and before the condition script is built so the caller gets
+            // `no_document` instead of the misleading "Condition not met".
+            if let refusal = self.v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
+                setupResult = refusal
+                return
+            }
             workspaceId = ws.id
             surfaceIdOut = surfaceId
             webView = browserPanel.webView
@@ -1486,7 +1606,11 @@ extension TerminalController {
                 "waited": true
             ])
         }
-        return .err(code: "timeout", message: "Condition not met before timeout", data: ["timeout_ms": timeoutMs])
+        var timeoutData: [String: Any] = ["timeout_ms": timeoutMs]
+        if timeoutMs != requestedTimeoutMs {
+            timeoutData["requested_timeout_ms"] = requestedTimeoutMs
+        }
+        return .err(code: "timeout", message: "Condition not met before timeout", data: timeoutData)
     }
 
     func v2BrowserClick(params: [String: Any]) -> V2CallResult {

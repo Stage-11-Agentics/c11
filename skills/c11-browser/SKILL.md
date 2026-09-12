@@ -114,6 +114,17 @@ c11 browser surface:7 snapshot --interactive
 
 If `get url` is empty or `about:blank`, navigate first instead of waiting on load state.
 
+A surface that has never been navigated cannot run JavaScript at all — there is no web
+process to run it in — so every JS command against one (`eval`, `wait`, `snapshot`, `get
+text`, `click`, …) returns `no_document` immediately rather than waiting out its timeout.
+Treat it as "navigate first", not as a transient failure to retry. If the message says
+navigation was *requested* but no load has been issued, the load is being withheld rather
+than missing: check for a pending insecure-HTTP confirmation, a remote-workspace proxy that
+has not resolved, or a hibernated surface.
+
+`timeout-ms` on `wait` and `download wait` is capped at 120000. A larger value is clamped,
+and the error payload reports both `timeout_ms` and your `requested_timeout_ms`.
+
 ## Deep-Dive References
 
 | Reference | When to Use |

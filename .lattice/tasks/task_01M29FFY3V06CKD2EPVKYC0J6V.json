@@ -2,7 +2,7 @@
   "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 2,
   "complexity": "high",
   "created_at": "2026-09-12T00:15:19Z",
   "created_by": {
@@ -19,7 +19,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
-  "last_event_id": "ev_01M29FFY42S3CS7J8E66MFHJ43",
+  "last_event_id": "ev_01M29R73MGRVAVMCZX7E4TV6CH",
   "last_status_changed_at": "2026-09-12T00:15:19Z",
   "linked_files": [],
   "priority": "high",
@@ -35,6 +35,6 @@
   ],
   "title": "Move c11 builds off the laptop onto Atlas",
   "type": "task",
-  "updated_at": "2026-09-12T00:15:19Z",
+  "updated_at": "2026-09-12T02:47:47Z",
   "urgency": null
 }

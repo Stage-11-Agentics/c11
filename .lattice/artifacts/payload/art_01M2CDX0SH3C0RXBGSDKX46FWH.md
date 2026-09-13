@@ -1,0 +1,48 @@
+# Plan Review: C11-220 — hang.log rotation and size cap
+
+## 1. Verdict
+
+**FAIL (plan-level)**
+
+The plan is a verbatim copy of the task description. It contains no implementation decisions, names no files, does not design the testable seam the task asks for, and does not resolve one genuine ambiguity in the spec (episode-boundary rotation vs. the hard cap) that will otherwise be settled by accident during implementation. The task description itself is strong, so the revision should be short: one pass that turns the spec into a plan.
+
+## 2. Summary
+
+I reviewed the C11-220 plan against the task description and against the current `Sources/MainThreadHangMonitor.swift` (the `appendToLog` path at line 669, the watchdog loop at line 427, `resolveLogURL` at line 693) and the existing logic-test wiring (`c11Tests/MainThreadHangDetectorTests.swift`, registered in the `c11LogicTests` Sources phase of `project.pbxproj`). The requirements are clear and feasible, and nothing in the codebase blocks the approach. The key concern is that, as written, the "rotate at an episode boundary where possible" requirement is a dead clause unless the plan introduces a second, lower threshold checked only at `hang.end`; the plan needs to say how it will make that clause do something.
+
+## 3. Issues
+
+**[MAJOR] Whole plan — The plan is the task description, not a plan**
+The plan section reproduces the task text word for word. It does not identify the files to create or modify, does not sketch the `HangLogRotator` API, does not say where the new test file goes or how it is registered, and does not state a single design decision. A plan review cannot evaluate feasibility, alignment, or risk of decisions that have not been made, and the implementer will make them ad hoc.
+**Recommendation:** Replace with an actual plan that at minimum lists: (1) `Sources/MainThreadHangMonitor.swift`: `appendToLog` delegates to a rotator instance; (2) a new `Sources/HangLogRotator.swift` (or a type inside the monitor file, but `internal`, not `private`, so `@testable import` reaches it); (3) `c11Tests/HangLogRotatorTests.swift`; (4) two `project.pbxproj` edits (see next issue); (5) the rotator's public surface and the threshold semantics (see the issue below).
+
+**[MAJOR] Fix section — "Rotate at an episode boundary where possible" is a dead clause under a single cap**
+With one threshold, rotation is triggered only when a write would push the file over the cap. During a sustained stall the file grows at ~23 MB/min, so a 32 MB cap is crossed mid-episode within roughly 90 seconds of an episode starting from an empty file, and at that moment the "must still rotate mid-episode" rule fires. The only way the boundary rule ever applies is if the crossing write happens to be the `hang.end` line itself. The requirement is meaningful only with two thresholds: a hard cap enforced on every append, and a lower soft threshold (for example half or three-quarters of the cap) checked only when the caller signals an episode boundary.
+**Recommendation:** Specify the rotator API as `appendAndRotateIfNeeded(_ text: String, atEpisodeBoundary: Bool)` (or equivalent), with: hard cap 32 MB checked on every call; soft threshold (suggest 16 MB) checked only when `atEpisodeBoundary` is true, rotating *after* writing the `hang.end` line so the episode stays whole in the archived file. `handleRecovery` passes `true`; `handleHang` passes `false`. Add a test for each threshold: a boundary call below soft does not rotate, a boundary call above soft does, a non-boundary call between soft and hard does not.
+
+**[MAJOR] Tests section — No step for registering the test file with the `c11LogicTests` target**
+Logic tests live in `c11Tests/` on disk but are members of the `c11LogicTests` target only through explicit `PBXBuildFile` and `PBXFileReference` entries plus membership in that target's Sources phase (see how `MainThreadHangDetectorTests.swift` and `ExpiringValueCacheTests.swift` are wired at pbxproj lines 441, 918, 1478, 1827 and 442, 919, 1479, 1828). A test file dropped in the directory without those entries compiles nowhere and CI silently runs zero new tests. The plan says nothing about this.
+**Recommendation:** Add an explicit step: hand-edit `project.pbxproj` adding the four entries for `HangLogRotatorTests.swift` (build file, file reference, group membership under the `c11Tests` group, Sources-phase membership under `c11LogicTests`, the phase with id `37DDE3B0A6A70E75A7B2BEDF`), following the existing hex-ID style. Do not use the `xcodeproj` Ruby gem for this; per CLAUDE.md it renormalizes the whole file into a multi-thousand-line diff. Verify by watching the CI `build` job's test count include the new class.
+
+**[MINOR] Fix section — File-handle strategy and size source are undecided, and the simpler option is not the one the spec names**
+Today `appendToLog` opens a fresh `FileHandle` per append, calls `seekToEnd()`, writes, and closes. `seekToEnd()` returns the current file size, so with that pattern the "bytes written since start plus one initial stat" counter is redundant; the size is already free on every append, and it stays correct if the operator deletes or truncates the file out from under the process, or if two c11 processes ever share a path. If the implementer instead switches to a persistent open handle (also reasonable, and cheaper), the counter design is needed, but then the handle must be closed and reopened after a rename because it still points at the renamed inode. Either is fine; the plan has to pick one, and the spec's wording nudges toward the counter without noting the trade-off.
+**Recommendation:** State the choice. My recommendation is to keep the reopen-per-append pattern and use the `seekToEnd()` offset as the size (satisfies "do not stat on every append" and is robust to external deletion); drop the counter. If the persistent-handle route is chosen, note the reopen-after-rename step and that the first stat must run lazily on the watchdog thread, never in `init` (which runs on whatever thread first touches `shared`, usually main).
+
+**[MINOR] Fix section — Rename semantics are unspecified; `FileManager.moveItem` throws when the destination exists**
+"Rotate `hang.log` to `hang.log.1`, keeping `.1` and `.2`" requires a shift where the destination already exists. `FileManager.moveItem(at:to:)` fails in that case, so the naive implementation would need a remove-then-move sequence with a window where an archive is missing. POSIX `rename(2)` atomically replaces the destination and does not throw, which matches the "never throw or trap" requirement directly.
+**Recommendation:** Specify the shift as `rename(".1" → ".2")` then `rename("hang.log" → ".1")` via POSIX `rename`, checking return codes; on any failure fall back to `ftruncate`/`truncate(atOffset: 0)` of `hang.log` as the spec says. Derive archive names by appending `.1`/`.2` to the full resolved filename so the tagged-build path (`/tmp/c11-hang-<slug>.log`, not `/tmp/c11-debug-<tag>-hang.log` as the task text says) and the `C11_DEBUG_LOG`-derived `<stem>-hang.log` path rotate the same way.
+
+**[MINOR] Fix section — Behavior on an already-oversize log from a prior install is not stated**
+Operators upgrading from a build without rotation may have a 200+ MB `hang.log` in place (this machine has one). Whatever size source is used, the first append will see it over the cap and rotate it into `hang.log.1`, where it persists until two more rotations age it out. That violates the "under roughly 3x cap" footprint bound for existing installs, possibly for weeks if the machine is healthy.
+**Recommendation:** Decide and document. The cheapest defensible rule: if on first open the existing file exceeds the cap, rotate it as usual (it becomes `.1`) and accept the temporary overshoot; or, if the plan wants the bound to hold immediately, delete rather than archive a pre-existing file larger than 2x cap. Either way, say which, and add a test for the first-open oversize case.
+
+**[MINOR] Tests section — "Crossing the cap rotates once" needs the rotated-header line to be testable**
+The `=== c11 hang.rotated <ts> ===` header is written at the top of the new file, which means the new file is never truly empty after rotation. The footprint and "rotates once" tests should assert on the header being the first line of the fresh file and count it in the footprint math.
+**Recommendation:** Include one assertion that after rotation the new `hang.log` begins with the `hang.rotated` header and the archived `.1` ends with the last pre-rotation write. Inject the timestamp (or accept a prefix match) so the test does not depend on wall clock.
+
+## 4. Positive Observations
+
+- The task description this plan inherits is unusually precise: concrete cap, concrete generation count, explicit thread constraints, explicit failure fallback, and a named seam for tests. An implementer following it will land close to the right shape even without the plan being revised.
+- The "no allocation inside the suspend/resume window" constraint is correctly identified as already satisfied by the current structure (`appendToLog` runs after `thread_resume`, and the watchdog loop already drains an `autoreleasepool` per iteration). The plan does not introduce anything that would regress it.
+- The test scope is right-sized: pure logic against a temp directory, no host app, no source-text or plist assertions, matching the project's test quality policy and the `c11-logic` scheme's purpose.
+- Scope discipline is good by omission: the plan does not pull in the persist-frame dedupe idea from the C11-191 review notes, which would be real scope creep here.

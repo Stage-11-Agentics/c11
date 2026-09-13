@@ -1,0 +1,40 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-09-12T01:26:48Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {},
+  "description": "Caught by the 0.65.1 staging smoke pass (2026-09-11). The repo-root GhosttyKit.xcframework is a symlink into ~/.cache/cmux/ghosttykit/<sha>/ managed by scripts/setup.sh, but nothing re-runs setup after a ghostty submodule bump: the main checkout still pointed at the kit for b4ef0ac2c (two bumps old) after C11-212 moved the pin to d4431f804, so scripts/reloads.sh --tag rel-v0.65.1 built a 'release' staging app with the leaking engine and the leak measurement reproduced the pre-fix ~600 KB/read signature. Every delegator worktree inherits the same stale symlink via the CLAUDE.md provisioning recipe. Fix: reload.sh, reloads.sh, reloadp.sh (and the build lock wrapper, or a shared scripts/assert-ghosttykit.sh) compare the ghostty submodule SHA to the kit actually linked (record the SHA in the cache dir; the symlink target path already carries it) and either refuse with a one-line remedy or, when a pinned checksum exists, fetch the right prebuilt kit via scripts/download-prebuilt-ghosttykit.sh into the cache and repoint. Update the CLAUDE.md worktree provisioning recipe to use that path instead of a bare ln -s to the main checkout's symlink. Test: a worktree whose symlink points at the wrong SHA must not produce a build.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M29KJT2XXS9YKMTZ13DNEW6P",
+  "last_event_id": "ev_01M29KJT33QEQT3BJVK3QZZK5P",
+  "last_status_changed_at": "2026-09-12T01:26:48Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-218",
+  "status": "backlog",
+  "tags": [
+    "build",
+    "ghostty",
+    "tooling"
+  ],
+  "title": "Local builds must fail loudly when GhosttyKit.xcframework does not match the pinned ghostty SHA",
+  "type": "bug",
+  "updated_at": "2026-09-12T01:26:48Z",
+  "urgency": null
+}

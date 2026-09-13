@@ -1,0 +1,1 @@
+PASS. PR #435 squash-merged; CI fully green on first run including the logic-test gate (10 HangLogRotatorTests). Reviewed by orchestrator: single stat at first append, size tracked from seekToEnd offset, soft cap at episode boundary and hard cap mid-episode, 32 MiB cap with 2 generations, best-effort filesystem calls, discard-over-cap keeps the footprint bound provable.

@@ -1,0 +1,40 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "high",
+  "created_at": "2026-09-12T01:12:04Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Orchestrator",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Orchestrator-1",
+    "serial": 1,
+    "session": "sess_01M296YPSQXBC77ZR8TW1WVB27"
+  },
+  "custom_fields": {},
+  "description": "Residual from C11-209 (PR #433, shipped in 0.65.1). C11-209 fixed the never-loaded WKWebView wedge (fail-fast in 0.14s), made download.wait resolve early, and capped timeout_ms at 120s. What it deliberately did NOT do: move browser.* out of v2MainSync into socketWorkerV2Methods, because those handlers are @MainActor-isolated (production stack: MainActor.assumeIsolated directly above v2BrowserWait). Measured consequence on the validated tagged build: on a LOADED page with an unmet 20s wait, 'c11 tree' stalled 10.0s while 'c11 ping' answered in 0.142s, i.e. every main-marshalled socket command (tree, read-screen, focus, send) still waits out any in-flight browser wait, now bounded at 120s instead of unbounded. Work: make the browser wait/eval family complete asynchronously (or run its await off-main with only the WebKit calls hopped to main), keep the C11-209 tests and harness (tools/await-wedge-repro) as the regression oracle, and re-run the positive-control probe: 'c11 tree' must answer in well under 1s during a 20s unmet browser wait on a loaded page. Read docs/c11-browser-await-main-wedge.md first.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M29JQV2C6BM6W5YM861PPAJV",
+  "last_event_id": "ev_01M29JQV2EN617EEV632V82Q48",
+  "last_status_changed_at": "2026-09-12T01:12:04Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-217",
+  "status": "backlog",
+  "tags": [
+    "browser",
+    "hangs",
+    "socket"
+  ],
+  "title": "Move browser.* socket handlers off the main thread so a legitimate wait never stalls main-marshalled commands",
+  "type": "bug",
+  "updated_at": "2026-09-12T01:12:04Z",
+  "urgency": null
+}

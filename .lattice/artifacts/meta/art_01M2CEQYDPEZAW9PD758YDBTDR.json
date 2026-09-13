@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-13T03:59:56Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "id": "art_01M2CEQYDPEZAW9PD758YDBTDR",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M2CEQYDPEZAW9PD758YDBTDR.md",
+    "size_bytes": 372
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS. PR #435 squash-merged; CI fully green on first run including the logic-test gate (10 HangLogRotatorTests). Reviewed by orchestrator: single stat at first append, size tracked from seekToEnd offs",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

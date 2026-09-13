@@ -467,3 +467,71 @@ final class SurfaceLifecycleTests: XCTestCase {
         XCTAssertNil(oldSnap.metadata[MetadataKey.lifecycleState])
     }
 }
+
+/// C11-228: workspace selection drives terminal lifecycle from the model, so a
+/// deselected workspace throttles even when its hidden SwiftUI subtree never
+/// re-evaluates. No view hierarchy is mounted here, which is exactly that case.
+@MainActor
+final class WorkspaceSelectionLifecycleTests: XCTestCase {
+
+    private func terminals(_ workspace: Workspace) -> [TerminalPanel] {
+        workspace.panels.values.compactMap { $0 as? TerminalPanel }
+    }
+
+    func testDeselectingWorkspaceThrottlesItsTerminalsAndSelectingActivates() throws {
+        let manager = TabManager()
+        let first = try XCTUnwrap(manager.tabs.first)
+        let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let firstTerminal = try XCTUnwrap(terminals(first).first)
+        let secondTerminal = try XCTUnwrap(terminals(second).first)
+
+        manager.selectWorkspace(second)
+        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(firstTerminal.lifecycle.state, .throttled)
+        XCTAssertEqual(secondTerminal.lifecycle.state, .active)
+        XCTAssertEqual(
+            SurfaceMetadataStore.shared
+                .getMetadata(workspaceId: first.id, surfaceId: firstTerminal.id)
+                .metadata[MetadataKey.lifecycleState] as? String,
+            SurfaceLifecycleState.throttled.rawValue
+        )
+
+        manager.selectWorkspace(first)
+        XCTAssertEqual(firstTerminal.lifecycle.state, .active)
+        XCTAssertEqual(secondTerminal.lifecycle.state, .throttled)
+    }
+
+    func testTabCreatedInsideHiddenWorkspaceStaysThrottled() throws {
+        let manager = TabManager()
+        let first = try XCTUnwrap(manager.tabs.first)
+        let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        manager.selectWorkspace(second)
+
+        let created = try XCTUnwrap(first.newTerminalSurfaceInFocusedPane(focus: true))
+        drainMainQueue()
+
+        XCTAssertEqual(created.lifecycle.state, .throttled)
+        for terminal in terminals(first) {
+            XCTAssertEqual(
+                terminal.lifecycle.state,
+                .throttled,
+                "every terminal in a hidden workspace must be throttled"
+            )
+        }
+        for terminal in terminals(second) {
+            XCTAssertEqual(terminal.lifecycle.state, .active)
+        }
+    }
+
+    func testHibernatedTerminalIsNotReactivatedBySelection() throws {
+        let manager = TabManager()
+        let first = try XCTUnwrap(manager.tabs.first)
+        let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let firstTerminal = try XCTUnwrap(terminals(first).first)
+
+        manager.selectWorkspace(second)
+        XCTAssertTrue(firstTerminal.lifecycle.transition(to: .hibernated))
+        manager.selectWorkspace(first)
+        XCTAssertEqual(firstTerminal.lifecycle.state, .hibernated)
+    }
+}

@@ -54,7 +54,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -dest
 
 ## Driving a Release/staging build over the socket
 
-A Release/staging build (`reloads.sh`, or a published `c11 STAGING …`) binds its **own** socket (e.g. `/tmp/c11-rel-<ver>.sock`) that a CLI running in a production-c11 shell cannot write to — the writes fail even with the path pointed at it. To run `c11` CLI or socket checks against such a build, run them from a terminal **inside that build**. For socket-level validation during development, prefer a tagged **Debug** build, whose socket is reachable from any shell via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+A Release/staging build launched by `reloads.sh` binds its **own** socket (for example, `/tmp/c11-rel-v0.65.2.sock`) in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<tag>.sock`. The script also clears the launching surface's C11/CMUX identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 ## QA / automation launch (suppress the startup dialogs)
 
@@ -75,6 +75,10 @@ It's read fresh each launch and never persisted, so it can't leak into a later n
 
 # Any other launch path — set the env var directly:
 C11_QA_LAUNCH=fresh open "/path/to/c11 DEV <tag>.app"
+
+# Release/staging build — QA mode is passed through to the app:
+C11_QA_LAUNCH=fresh ./scripts/reloads.sh --tag <tag>
+C11_QA_LAUNCH=resume ./scripts/reloads.sh --tag <tag>
 ```
 
 The launcher unsets any inherited `C11_QA_LAUNCH`/`CMUX_QA_LAUNCH` and only sets it when `--qa` is passed, so a stray value in your shell can't silently flip a normal run into QA mode.

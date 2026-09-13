@@ -6,6 +6,20 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.65.2] - 2026-09-12
+
+Headline: **c11 warns before a main-thread wedge lands, and its hang log can no longer eat your disk.**
+
+### Fixed
+
+- **The hang log is capped.** During a sustained main-thread stall the watchdog wrote a full backtrace every five seconds with no ceiling, about 23 MB a minute; one wedge left a 238 MB file behind. `~/Library/Logs/c11/hang.log` now rotates at 32 MiB, keeping two archived generations, so the whole set stays under roughly 96 MiB. Rotation waits for the end of a hang episode where it can, so a single timeline is not split across files. ([#435](https://github.com/Stage-11-Agentics/c11/pull/435)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **A run of short hangs with the same cause is reported before the long one.** The 25-minute stall fixed in 0.65.1 was preceded by seven shorter episodes sharing one stack signature, and none of them surfaced anywhere. Three same-signature episodes inside ten minutes now emit a `hang.precursor` record to the hang log, to the `c11 events` stream so a watching agent can react, and once to Sentry grouped with the wedge it predicts. Idle-main-thread episodes never count. ([#436](https://github.com/Stage-11-Agentics/c11/pull/436)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **`c11 browser download wait --path` no longer misses a file written in place.** The wait watched only the destination's parent directory, which produces no event when an existing file's contents change, so a download created empty and then filled ran to its full timeout. It now also watches the file itself as soon as it appears, and resolves as soon as it has bytes. ([#437](https://github.com/Stage-11-Agentics/c11/pull/437)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.65.1] - 2026-09-11
 
 Headline: **A patch that stops c11 leaking memory on every terminal read, and keeps browser-driving agents from freezing the app.**

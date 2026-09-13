@@ -135,6 +135,22 @@ The fork branch HEAD is now the section 7 c11 theme picker helper commit.
   - Matches the upstream two-parameter export exactly; this patch drops out on the next rebase onto
     a base that already has it.
 
+### 10) Renderer skips updateFrame while occluded (upstream backport)
+
+- Commit: `26c3e499e` (cherry-pick of upstream `14d9e600a`, "renderer: skip updateFrame when
+  surface is not visible", 2026-05-20; upstream authorship preserved via `-x`)
+- File:
+  - `src/renderer/Thread.zig`
+- Summary:
+  - `renderCallback` returns early while `flags.visible == false`, so an occluded surface no
+    longer rebuilds its cell state on every PTY write; only `drawFrame` was gated before.
+  - The `.visible → true` mailbox handler runs `updateFrame` before `drawFrame`, so the first
+    frame after a surface is shown again is current, not stale.
+  - Why c11 wants it: with dozens of agent terminals in background tabs, the hidden renderers
+    (utility QoS) were saturating the efficiency cores (C11-225).
+  - Identical to upstream; this patch drops out on the next rebase onto a base that already has
+    it (ghostty-org main since 2026-05-20, manaflow/cmux main since its July 2026 base).
+
 ## Upstreamed fork changes
 
 ### cursor-click-to-move respects OSC 133 click-to-move
@@ -178,5 +194,10 @@ These files change frequently upstream; be careful when rebasing the fork:
 - `src/apprt/embedded.zig`
   - The `ghostty_surface_free_text` export in section 9 is identical to upstream and should be
     dropped when rebasing onto a base that already has the two-parameter form.
+
+- `src/renderer/Thread.zig`
+  - The visibility gate in `renderCallback` and the `updateFrame` on visibility regain (section 10)
+    are identical to upstream `14d9e600a` and should be dropped when rebasing onto a base that
+    already has them.
 
 If you resolve a conflict, update this doc with what changed.

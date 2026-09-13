@@ -297,6 +297,7 @@ if [[ -z "$TAG" ]]; then
 fi
 XCODEBUILD_ARGS+=(build)
 
+"$(cd "$(dirname "$0")" && pwd)/assert-ghosttykit.sh"
 XCODE_LOG="/tmp/c11-xcodebuild-${TAG_SLUG}.log"
 "$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)' || true
 XCODE_EXIT="${PIPESTATUS[0]}"

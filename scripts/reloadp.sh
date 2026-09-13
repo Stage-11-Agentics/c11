@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+"$(cd "$(dirname "$0")" && pwd)/assert-ghosttykit.sh"
 "$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
 pkill -x c11 || true
 pkill -x cmux || true

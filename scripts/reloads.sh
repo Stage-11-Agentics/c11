@@ -228,6 +228,7 @@ if [[ "$WMO" -eq 0 ]]; then
 fi
 XCODEBUILD_ARGS+=(build)
 
+"$(cd "$(dirname "$0")" && pwd)/assert-ghosttykit.sh"
 echo "[reloads.sh] xcodebuild ${XCODEBUILD_ARGS[*]}"
 "$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}"
 sleep 0.2

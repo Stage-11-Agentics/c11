@@ -13,6 +13,7 @@ if [ "$#" -eq 0 ]; then
   set -- test
 fi
 
+scripts/assert-ghosttykit.sh
 exec scripts/with-build-lock.sh xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \

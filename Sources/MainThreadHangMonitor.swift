@@ -350,12 +350,23 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// serially, so the single shared buffer is safe.
     private var frameBuffer: [UInt]
 
-    private let logURL: URL
+    /// Size-capped writer for the local hang log. A sustained stall emits a
+    /// 96-frame symbolicated backtrace every 5 s (~23 MB/min measured), so the
+    /// log needs a ceiling or a multi-hour wedge eats the operator's disk
+    /// (C11-220: one wedge left a 238 MB file behind). Watchdog-thread-only.
+    private var hangLog: HangLogRotator
 
     private init() {
         frameBuffer = [UInt](repeating: 0, count: maxFrames)
-        logURL = Self.resolveLogURL()
+        hangLog = HangLogRotator(
+            logURL: Self.resolveLogURL(),
+            capBytes: Self.logCapBytes
+        )
     }
+
+    /// 32 MiB per file. With two archived generations the hang log's total
+    /// on-disk footprint stays under ~96 MiB.
+    static let logCapBytes = 32 * 1024 * 1024
 
     // MARK: Install
 
@@ -515,9 +526,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     private func handleRecovery(durationMs: Double) {
         reportedCurrentEpisode = false
         let dropped = SentryEventBudgetGate.shared.dropped
+        // `hang.end` closes an episode, so it is the cheapest place to rotate a
+        // log that has grown past the soft cap without splitting a timeline.
         appendToLog(
             "=== c11 hang.end \(Self.timestamp()) totalMs=\(Int(durationMs)) pid=\(getpid()) "
-                + "sentrySuppressed=\(dropped.hangs)/\(dropped.total) ===\n\n"
+                + "sentrySuppressed=\(dropped.hangs)/\(dropped.total) ===\n\n",
+            episodeBoundary: true
         )
     }
 
@@ -666,19 +680,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     // MARK: Local log
 
-    private func appendToLog(_ text: String) {
-        guard let data = text.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: logURL) {
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-        } else {
-            try? FileManager.default.createDirectory(
-                at: logURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try? data.write(to: logURL, options: .atomic)
-        }
+    /// Watchdog-thread-only, like every other capture-path mutation here: both
+    /// call sites (`handleHang`, `handleRecovery`) run inside `runLoop`, so the
+    /// rotator needs no lock. Runs after `thread_resume`, never inside the
+    /// suspend window.
+    private func appendToLog(_ text: String, episodeBoundary: Bool = false) {
+        hangLog.append(text, episodeBoundary: episodeBoundary)
     }
 
     private static func timestamp() -> String {
@@ -717,5 +724,193 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             .urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/c11", isDirectory: true)
         return logs.appendingPathComponent("hang.log")
+    }
+}
+
+/// Append-only writer for the hang log that keeps the file, and the whole
+/// on-disk set, under a fixed ceiling.
+///
+/// Sizing is tracked in memory: the file is measured **once**, lazily, on the
+/// first append of the process, and thereafter kept current from the offset
+/// `seekToEnd()` already returns. There is no `stat` per append — the writer
+/// runs on the watchdog thread, which is also the thread that just walked a
+/// wedged main thread, and a stall can drive it several times a second.
+///
+/// Rotation is deliberately two-tiered. `hang.begin` / `hang.persist` /
+/// `hang.end` form an *episode*, and splitting one across two files makes a
+/// forensic read harder, so a log that has merely crossed the soft cap waits
+/// for the closing `hang.end` to rotate. A single episode that would push the
+/// file past the hard cap on its own rotates immediately: bounding the disk
+/// wins over keeping a timeline whole, which is the entire point of the cap.
+///
+/// Nothing here throws or traps. Every filesystem call is best-effort; if the
+/// archive rename fails the current file is truncated in place instead, so a
+/// read-only or full parent directory degrades to "log stops growing" rather
+/// than "log grows forever".
+struct HangLogRotator {
+
+    /// Measures an existing file, in bytes. Zero when absent or unreadable.
+    typealias SizeProbe = (URL) -> Int
+
+    let logURL: URL
+    /// Hard ceiling for one file. A nonpositive cap disables rotation entirely.
+    let capBytes: Int
+    /// How many archived generations to keep (`hang.log.1` … `hang.log.<n>`).
+    let generations: Int
+
+    private let timestamp: () -> String
+    private let sizeProbe: SizeProbe
+
+    /// `nil` until the one-shot probe runs.
+    private var trackedSize: Int?
+
+    init(
+        logURL: URL,
+        capBytes: Int,
+        generations: Int = 2,
+        timestamp: @escaping () -> String = HangLogRotator.defaultTimestamp,
+        sizeProbe: @escaping SizeProbe = HangLogRotator.fileSize
+    ) {
+        self.logURL = logURL
+        self.capBytes = capBytes
+        self.generations = max(generations, 0)
+        self.timestamp = timestamp
+        self.sizeProbe = sizeProbe
+    }
+
+    /// Bytes currently accounted to the live log file. Exposed so a caller (and
+    /// the tests) can observe the accounting without paying for a `stat`.
+    var currentSize: Int { trackedSize ?? 0 }
+
+    /// The point past which a closing record triggers rotation. Three quarters
+    /// of the cap: low enough that most episodes end in the file they started
+    /// in, high enough that the file is mostly full when it rotates.
+    var softCapBytes: Int { capBytes - capBytes / 4 }
+
+    /// Append `text`, rotating first (or afterwards) as the caps require.
+    ///
+    /// - Parameter episodeBoundary: true only for the record that closes a hang
+    ///   episode (`hang.end`), the point where rotation costs no continuity.
+    mutating func append(_ text: String, episodeBoundary: Bool = false) {
+        guard let data = text.data(using: .utf8), !data.isEmpty else { return }
+
+        let size = ensureSize()
+
+        guard capBytes > 0 else {
+            write(data)
+            return
+        }
+
+        if size > 0, size + data.count > capBytes {
+            // Hard cap. Rotate before writing, even mid-episode.
+            rotate()
+            write(data)
+            return
+        }
+
+        write(data)
+
+        if episodeBoundary, currentSize >= softCapBytes {
+            // Soft cap. The episode is complete, so the next one starts clean.
+            rotate()
+        }
+    }
+
+    // MARK: Internals
+
+    private mutating func ensureSize() -> Int {
+        if let trackedSize { return trackedSize }
+        let measured = sizeProbe(logURL)
+        trackedSize = measured
+        return measured
+    }
+
+    private mutating func write(_ data: Data) {
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            defer { try? handle.close() }
+            guard let end = try? handle.seekToEnd() else { return }
+            guard (try? handle.write(contentsOf: data)) != nil else { return }
+            // `seekToEnd` is an lseek, not a stat, and it keeps the tracked size
+            // honest even if something else appended to the file.
+            trackedSize = Int(clamping: end) + data.count
+        } else {
+            try? FileManager.default.createDirectory(
+                at: logURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            guard (try? data.write(to: logURL, options: .atomic)) != nil else { return }
+            trackedSize = data.count
+        }
+    }
+
+    /// Shift the generations down, archive the live log, and open a fresh one
+    /// carrying a header that records the rotation.
+    private mutating func rotate() {
+        let fm = FileManager.default
+        let base = logURL.path
+        // A log that predates the cap (or that some other writer inflated) is
+        // discarded rather than archived, so an oversized file can never sit in
+        // the generation set and blow the footprint bound.
+        let archivable = generations >= 1 && !(capBytes > 0 && currentSize > capBytes)
+
+        if archivable {
+            try? fm.removeItem(atPath: "\(base).\(generations)")
+            var index = generations - 1
+            while index >= 1 {
+                let from = "\(base).\(index)"
+                let to = "\(base).\(index + 1)"
+                if fm.fileExists(atPath: from) {
+                    try? fm.removeItem(atPath: to)
+                    try? fm.moveItem(atPath: from, toPath: to)
+                }
+                index -= 1
+            }
+        }
+
+        var previous = "none"
+        if fm.fileExists(atPath: base) {
+            if archivable {
+                let archive = "\(base).1"
+                try? fm.removeItem(atPath: archive)
+                if (try? fm.moveItem(atPath: base, toPath: archive)) != nil {
+                    previous = URL(fileURLWithPath: archive).lastPathComponent
+                } else {
+                    previous = truncateInPlace() ? "truncated" : "rotation-failed"
+                }
+            } else {
+                try? fm.removeItem(atPath: base)
+                previous = fm.fileExists(atPath: base)
+                    ? (truncateInPlace() ? "truncated" : "rotation-failed")
+                    : "discarded"
+            }
+        }
+
+        trackedSize = 0
+        write(Data(
+            ("=== c11 hang.rotated \(timestamp()) previous=\(previous) "
+                + "capBytes=\(capBytes) ===\n\n").utf8
+        ))
+    }
+
+    /// Last resort when the live log cannot be renamed away: zero it in place so
+    /// it stops growing. Returns whether the truncate landed.
+    private func truncateInPlace() -> Bool {
+        guard let handle = try? FileHandle(forWritingTo: logURL) else { return false }
+        defer { try? handle.close() }
+        return (try? handle.truncate(atOffset: 0)) != nil
+    }
+
+    // MARK: Defaults
+
+    static func fileSize(_ url: URL) -> Int {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize else { return 0 }
+        return max(size, 0)
+    }
+
+    static func defaultTimestamp() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
     }
 }

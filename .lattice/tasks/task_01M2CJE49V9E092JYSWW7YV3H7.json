@@ -1,0 +1,50 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-luna",
+  "branch_links": [
+    {
+      "branch": "web-next-lockfile-cve",
+      "linked_at": "2026-09-13T05:57:49Z",
+      "linked_by": "agent:codex-luna",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "low",
+  "created_at": "2026-09-13T05:04:29Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "description": "Dependabot critical alerts #109 (GHSA-2xp9-vwfh-vxw4, RCE in the Image Optimization API with AVIF) and #110 (GHSA-p293-qw3h-jr36, RCE on Windows-hosted servers) flag next >=16.0.0 <16.3.3 in web/package-lock.json. web/package.json and web/bun.lock already pin next 16.3.4 (patched), and CI's web-typecheck job installs with bun install --frozen-lockfile. The npm web/package-lock.json is stale at next 16.2.6: recent Dependabot group bumps (#426) updated bun.lock but not it. Work: determine which lockfile and install command the deployed web build actually uses (Vercel project settings, vercel.json, and code/platform/vercel.md); if the deployed build uses package-lock.json the live site may be running the vulnerable version, which changes the urgency and must be reported immediately. If package-lock.json is unused, remove it and make sure Dependabot and Vercel both key on bun.lock; otherwise regenerate it at 16.3.4. Verify bun install --frozen-lockfile, bun tsc --noEmit and bun run build locally; bun run lint already fails on main (C11-214), so only confirm no new lint errors. Confirm both alerts close after merge.",
+  "done_at": "2026-09-13T05:58:15Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M2CNGJN3RCEFACXNRQ0VS84A",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M2CNGJMMZBADXD36RJ099983",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M2CJE49V9E092JYSWW7YV3H7",
+  "last_event_id": "ev_01M2CNGJN4NZAMQ8R8RE5K91S6",
+  "last_status_changed_at": "2026-09-13T05:58:15Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-223",
+  "status": "done",
+  "tags": [
+    "web",
+    "security",
+    "dependabot"
+  ],
+  "title": "web: critical Next.js RCE alerts flag a stale npm package-lock (next 16.2.6) while bun.lock is already patched",
+  "type": "bug",
+  "updated_at": "2026-09-13T05:58:15Z",
+  "urgency": null
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-13T06:19:27Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "id": "art_01M2CPQD2GBYPJNWN5YZ4KNBBG",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M2CPQD2GBYPJNWN5YZ4KNBBG.md",
+    "size_bytes": 735
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS. PR #440 squash-merged. New scripts/assert-ghosttykit.sh derives the pinned ghostty SHA from HEAD's gitlink, verifies the submodule checkout, and accepts only a symlink into the SHA-keyed cache; ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

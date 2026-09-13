@@ -1,8 +1,8 @@
 {
   "acceptance_criteria": [],
-  "assigned_to": null,
+  "assigned_to": "agent:codex-luna",
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 3,
   "complexity": "low",
   "created_at": "2026-09-12T01:32:51Z",
   "created_by": {
@@ -16,18 +16,29 @@
   },
   "custom_fields": {},
   "description": "Found during the 0.65.1 staging smoke (2026-09-11). (1) A Release staging app has fresh defaults, so socket control comes up in c11-only ancestry mode and every CLI call from outside that instance fails with 'Failed to write to socket'; the orchestrator had to relaunch by hand with C11_SOCKET_ENABLE=1 C11_SOCKET_MODE=automation. reload.sh already passes these for dev builds (line ~500); reloads.sh should too, and honour C11_QA_LAUNCH the same way launch-tagged-automation.sh does. (2) reloads.sh's OPEN_CLEAN_ENV unsets the CMUX_* and C11_TAB_ID/C11_PANEL_ID vars but not C11_SURFACE_ID, C11_WORKSPACE_ID, C11_SURFACE_NUM, so a staging app launched from inside c11 inherits the launcher's surface identity (verified with ps eww). Add them (and their CMUX_ twins) to the list in reloads.sh and reload.sh.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-09-13T06:30:27Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M2CQBH50E7V8M2QCFMY7K0B3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M2CQBH4XTYBYFDG549XJQ05R",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01M29KXX548P0QARFPP3AVSDMM",
-  "last_event_id": "ev_01M29KXX56XP1C4SFCB7VNE9FH",
-  "last_status_changed_at": "2026-09-12T01:32:51Z",
+  "last_event_id": "ev_01M2CQBH50E7V8M2QCFMY7K0B5",
+  "last_status_changed_at": "2026-09-13T06:30:27Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-219",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "build",
     "staging",
@@ -35,6 +46,6 @@
   ],
   "title": "reloads.sh: launch staging in socket automation mode with the QA flag, and scrub C11_SURFACE_ID/WORKSPACE_ID from the app env",
   "type": "bug",
-  "updated_at": "2026-09-12T01:32:51Z",
+  "updated_at": "2026-09-13T06:30:27Z",
   "urgency": null
 }

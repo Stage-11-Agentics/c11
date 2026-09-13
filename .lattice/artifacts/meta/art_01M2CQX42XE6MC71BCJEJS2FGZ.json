@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-13T06:40:03Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "id": "art_01M2CQX42XE6MC71BCJEJS2FGZ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M2CQX42XE6MC71BCJEJS2FGZ.md",
+    "size_bytes": 1040
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS. PR #442 squash-merged. browser.eval, browser.wait and browser.download.wait now run under the socket-worker policy: a short main-actor phase resolves refs, the no_document guard, selector and fr",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

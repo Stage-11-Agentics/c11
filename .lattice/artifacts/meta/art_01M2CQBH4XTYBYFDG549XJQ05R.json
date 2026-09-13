@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-13T06:30:27Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "id": "art_01M2CQBH4XTYBYFDG549XJQ05R",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M2CQBH4XTYBYFDG549XJQ05R.md",
+    "size_bytes": 697
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS. PR #441 squash-merged on a head rebased onto the C11-218 merge. reloads.sh now launches staging with C11_SOCKET_ENABLE=1 and C11_SOCKET_MODE=automation, passes C11_QA_LAUNCH through, and scrubs ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

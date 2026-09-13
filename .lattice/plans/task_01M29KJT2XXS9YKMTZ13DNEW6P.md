@@ -1,3 +1,29 @@
-# C11-218: Local builds must fail loudly when GhosttyKit.xcframework does not match the pinned ghostty SHA
+# C11-218 implementation plan
 
-Caught by the 0.65.1 staging smoke pass (2026-09-11). The repo-root GhosttyKit.xcframework is a symlink into ~/.cache/cmux/ghosttykit/<sha>/ managed by scripts/setup.sh, but nothing re-runs setup after a ghostty submodule bump: the main checkout still pointed at the kit for b4ef0ac2c (two bumps old) after C11-212 moved the pin to d4431f804, so scripts/reloads.sh --tag rel-v0.65.1 built a 'release' staging app with the leaking engine and the leak measurement reproduced the pre-fix ~600 KB/read signature. Every delegator worktree inherits the same stale symlink via the CLAUDE.md provisioning recipe. Fix: reload.sh, reloads.sh, reloadp.sh (and the build lock wrapper, or a shared scripts/assert-ghosttykit.sh) compare the ghostty submodule SHA to the kit actually linked (record the SHA in the cache dir; the symlink target path already carries it) and either refuse with a one-line remedy or, when a pinned checksum exists, fetch the right prebuilt kit via scripts/download-prebuilt-ghosttykit.sh into the cache and repoint. Update the CLAUDE.md worktree provisioning recipe to use that path instead of a bare ln -s to the main checkout's symlink. Test: a worktree whose symlink points at the wrong SHA must not produce a build.
+1. Add one executable `scripts/assert-ghosttykit.sh` shared by local build
+   entry points. Derive the pinned SHA from the checked-out `ghostty` gitlink,
+   treat a root symlink as valid only when it resolves to the matching
+   SHA-keyed cache entry, and treat an in-place directory as an unknown/stale
+   artifact unless it can be safely replaced. Matching kits must return before
+   any network or filesystem repair work.
+2. For a missing/stale kit with a checked-in checksum row, download through the
+   existing checksum-verifying helper into the SHA-keyed cache and atomically
+   replace the root artifact with a symlink. If the row is absent or repair
+   cannot complete, stop with a concise one-line remedy before `xcodebuild`.
+   Keep failed repairs from destroying an existing real directory.
+3. Call the guard once immediately before the build invocation in
+   `reload.sh` and `reloads.sh`, without touching their launch or environment
+   scrubbing blocks. Add the same early guard to `reloadp.sh`,
+   `test-unit-local.sh`, and `test-unit.sh`, the other documented local
+   xcodebuild entry points.
+4. Update the CLAUDE.md fresh-worktree recipe to link directly to the
+   SHA-keyed cache path (and initialize the requested submodules as before).
+   CI continues to provision its checked-out root directory via the existing
+   download step; the guard is local-entry-point-only and will not alter CI's
+   direct xcodebuild commands.
+5. Add a behavioral shell test under `tests/` and wire it into
+   `workflow-guard-tests`. Exercise refusal with a wrong cached SHA and a real
+   directory, successful repair with a pinned fixture and stubbed download,
+   and the matching no-network path. Validate shell syntax, run the guard
+   suite, measure the matching-path cost, and record exact refusal/repair
+   evidence in the final ticket comment.

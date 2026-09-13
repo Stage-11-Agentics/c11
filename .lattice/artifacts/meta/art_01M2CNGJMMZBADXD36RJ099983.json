@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-13T05:58:15Z",
+  "created_by": "agent:claude-opus-5",
+  "custom_fields": {},
+  "id": "art_01M2CNGJMMZBADXD36RJ099983",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M2CNGJMMZBADXD36RJ099983.md",
+    "size_bytes": 512
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS. PR #439 squash-merged as c8e5a0a7b. Deleted the stale npm web/package-lock.json (next 16.2.6); web/bun.lock remains the single lockfile at next 16.3.4, which CI installs with --frozen-lockfile a",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

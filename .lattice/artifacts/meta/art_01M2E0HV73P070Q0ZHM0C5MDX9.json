@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-09-13T18:30:25Z",
+  "created_by": "agent:claude-opus-5-c11-224",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/445"
+  },
+  "id": "art_01M2E0HV73P070Q0ZHM0C5MDX9",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "https://github.com/Stage-11-Agentics/c11/pull/445",
+  "token_usage": null,
+  "type": "reference"
+}

@@ -1,0 +1,48 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:claude-fable-5-1",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": "low",
+  "created_at": "2026-09-13T18:19:50Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "description": "Follow-up to the 2026-09-13 load diagnosis (see C11-224). With ~38 terminals and one visible pane, 18 of 32 Ghostty renderer threads were doing updateFrame (rebuildRow/addGlyph) work at utility QoS: Ghostty's renderCallback rebuilds frame state for occluded surfaces and only gates drawFrame on `visible`. Every streaming agent in a hidden tab therefore keeps the 4 E-cores busy, which is what inflates load avg to 100-150 while P-cores idle.\n\nghostty-org fixed exactly this on 2026-05-20: 14d9e600a \"renderer: skip updateFrame when surface is not visible\" (14 lines in src/renderer/Thread.zig: early `if (!t.flags.visible) return .disarm;` in renderCallback, plus an updateFrame before drawFrame when the .visible mailbox message flips true). It is in ghostty-org main and in manaflow/cmux main but not in our Feb-2026 fork base. `git apply --check` fails on our base, so port it by hand.\n\nScope: port the commit onto Stage-11-Agentics/ghostty main (fork section 10 in docs/ghostty-fork.md, marked upstream-identical / drops out on rebase), bump the submodule pointer in c11, let build-ghosttykit pin the checksum (expect the run-1 red / run-2 action_required pattern from CLAUDE.md), then validate on a tagged build: with a background workspace streaming output, `sample` the c11 process and confirm renderer threads for occluded surfaces no longer show updateFrame/rebuildRow samples, and confirm switching to that workspace shows current content (the visibility-regain updateFrame). Ships in the next patch release together with C11-224. Fork base bump onto cmux's July base is a separate ticket.",
+  "done_at": "2026-09-13T18:59:38Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M2E0EF8S4PWJXP4NE31FANDQ",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M2E26MDZ7JVJNX6MEWFJBG3S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M2E26P0V0YSHX5G9ZP0CJEM0",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M2DZYEX6HB2VP0VSKSGX8ETE",
+  "last_event_id": "ev_01M2E27B0TFG84ERBYPMZN1RP6",
+  "last_status_changed_at": "2026-09-13T18:59:38Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-225",
+  "status": "done",
+  "tags": [
+    "perf",
+    "load",
+    "ghostty-fork"
+  ],
+  "title": "Backport ghostty 14d9e600a: skip renderer updateFrame while surface is occluded",
+  "type": "task",
+  "updated_at": "2026-09-13T18:59:38Z",
+  "urgency": null
+}

@@ -1,0 +1,59 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:claude-opus-5-c11-224",
+  "branch_links": [
+    {
+      "branch": "fix/C11-224-tty-only-pid",
+      "linked_at": "2026-09-13T18:29:04Z",
+      "linked_by": "agent:claude-opus-5-c11-224",
+      "repo": null
+    }
+  ],
+  "comment_count": 2,
+  "complexity": "low",
+  "created_at": "2026-09-13T18:09:13Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "description": "Observed 2026-09-13 on Hyperion, c11 0.65.0 pid 2402 up 1d18h, 38 terminal surfaces, ~1160 processes (46 agents): load avg 100-150 with CPU 62% idle. psutil percpu showed all 4 E-cores at 100% and 10 of 12 P-cores at 0% -- load is E-core run-queue depth from utility/background-QoS threads, not CPU saturation.\n\n/usr/bin/sample of c11 showed the com.stage11.c11.surface-metrics queue (QoS .utility) spending 1902 of 1917 samples inside __proc_info: SurfaceMetricsSampler.tick -> refreshPidProviders -> TerminalController.reportTTY provider -> TerminalPIDResolver.foregroundPID(forDevice:) which calls proc_listpids(PROC_ALL_PIDS) then proc_pidinfo(PROC_PIDTBSDINFO) on EVERY pid, once per terminal, every terminalPidRefreshSeconds (default 2s). That is ~38 x 1160 = 44K proc_pidinfo syscalls per 2s at steady state, growing as terminals x processes -- i.e. quadratically with fleet size -- and each call takes the kernel proc-list lock that every fork/exec/wait on the box also contends, so it slows every agent tool call too.\n\nLive mitigation applied: `defaults write com.stage11.c11 c11.surfaceMetrics.terminalPidRefreshSeconds -float 60` (read per tick, no restart needed); re-sample showed the thread at 0 proc_info samples. Revert with `defaults delete com.stage11.c11 c11.surfaceMetrics.terminalPidRefreshSeconds`.\n\nFix: replace the all-pids scan with proc_listpids(PROC_TTY_ONLY, UInt32(dev), ...) which returns only the pids on that controlling tty in one syscall (then pick the max pid, or use tcgetpgrp on the pty master to get the exact foreground pgid). Keep the 2s cadence; cost becomes O(terminals). Not addressed by any commit in v0.65.0..v0.66.0 (Sources/SurfaceMetricsSampler.swift and Sources/TerminalPIDResolver.swift untouched since C11-25 #125).\n\nRelated leads seen in the same sample, not part of this ticket: 18 of 32 Ghostty renderer threads were doing updateFrame (rebuildRow/addGlyph) work with only 1 pane visible -- Ghostty rebuilds frame state for occluded surfaces (only drawFrame is gated) at utility QoS, so every hidden agent's output still lands on the E-cores; and 13 c11 threads sat at 37T (user_initiated = Ghostty visible-but-unfocused renderer), more than the visible surface count, worth checking whether non-selected tabs inside a visible pane get applyVisibility(false).",
+  "done_at": "2026-09-13T18:40:19Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M2E0AG6SZJDMP9H9QHQ9MR7G",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M2E0HV73P070Q0ZHM0C5MDX9",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M2E0K35Y521KDYDF6G5M1NK2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M2E13XWCW5SD46AZRR5BD2Y1",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M2DZB167H5PKY3WSKR1R7RK7",
+  "last_event_id": "ev_01M2E13Z0XCMT7JH0HSVSSRDHR",
+  "last_status_changed_at": "2026-09-13T18:40:19Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-224",
+  "status": "done",
+  "tags": [
+    "perf",
+    "load"
+  ],
+  "title": "SurfaceMetricsSampler scans every process per terminal every 2s: O(terminals x procs) proc_pidinfo pins an E-core",
+  "type": "bug",
+  "updated_at": "2026-09-13T18:40:19Z",
+  "urgency": null
+}

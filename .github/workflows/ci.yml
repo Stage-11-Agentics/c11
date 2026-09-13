@@ -39,6 +39,9 @@ jobs:
       - name: Validate GhosttyKit checksum verification
         run: ./tests/test_ci_ghosttykit_checksum_verification.sh
 
+      - name: Validate local GhosttyKit SHA guard
+        run: ./tests/test_ghosttykit_guard.sh
+
       - name: Validate release asset guard
         run: node scripts/release_asset_guard.test.js
 

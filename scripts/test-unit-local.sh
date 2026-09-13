@@ -45,6 +45,7 @@ echo "[test-unit-local] C11_TAG=$C11_TAG"
 echo "[test-unit-local] C11_SOCKET_PATH=$C11_SOCKET_PATH"
 echo "[test-unit-local] derivedDataPath=$DERIVED_DATA"
 
+scripts/assert-ghosttykit.sh
 exec scripts/with-build-lock.sh xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \

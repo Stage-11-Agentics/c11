@@ -54,7 +54,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -dest
 
 ## Driving a Release/staging build over the socket
 
-A Release/staging build launched by `reloads.sh` binds its **own** socket (for example, `/tmp/c11-rel-v0.65.2.sock`) in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<tag>.sock`. The script also clears the launching surface's C11/CMUX identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching surface's C11/CMUX identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 ## QA / automation launch (suppress the startup dialogs)
 

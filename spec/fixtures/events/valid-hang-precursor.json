@@ -1,0 +1,16 @@
+{
+  "seq": 918,
+  "ts": "2026-09-13T04:21:07.412Z",
+  "type": "hang.precursor",
+  "instance": "com.stage11.c11-40912",
+  "v": 1,
+  "payload": {
+    "cause": "xpc-sync-wait",
+    "culprit": "$s3c1119BrowserPanelC7reloadyyF",
+    "count": 3,
+    "window_ms": 600000,
+    "span_ms": 214730,
+    "durations_ms": [2410, 6180, 10740],
+    "fingerprint": ["main-thread-hang", "xpc-sync-wait"]
+  }
+}

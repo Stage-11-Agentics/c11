@@ -393,17 +393,13 @@ class TerminalController {
             if Thread.isMainThread {
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    var queue = self.v2BrowserDownloadEventsBySurface[surfaceId] ?? []
-                    queue.append(event)
-                    self.v2BrowserDownloadEventsBySurface[surfaceId] = queue
+                    self.v2AppendBrowserDownloadEventOnMain(surfaceId: surfaceId, event: event)
                 }
                 return
             }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                var queue = self.v2BrowserDownloadEventsBySurface[surfaceId] ?? []
-                queue.append(event)
-                self.v2BrowserDownloadEventsBySurface[surfaceId] = queue
+                self.v2AppendBrowserDownloadEventOnMain(surfaceId: surfaceId, event: event)
             }
         }
     }
@@ -2089,6 +2085,12 @@ class TerminalController {
         "flag.list",
         "flag.suppress",
         "flag.unsuppress",
+        // C11-217: WebKit waits are worker-owned. Their WebKit invocations hop
+        // back to main for the short call, but the socket worker owns the
+        // potentially long completion wait.
+        "browser.eval",
+        "browser.wait",
+        "browser.download.wait",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
@@ -2108,6 +2110,16 @@ class TerminalController {
         "clear_git_branch",
         "ports_kick",
         "agent_kick",
+    ]
+
+    // C11-217: these legacy input commands can wait for a native terminal
+    // surface to attach. Their worker variants perform a bounded main-actor
+    // resolve, wait off-main, and hop back for the final injection.
+    nonisolated static let socketWorkerBlockingV1Commands: Set<String> = [
+        "send",
+        "send_key",
+        "send_surface",
+        "send_key_surface",
     ]
 
     // C11-156: fire-and-forget sidebar/notification telemetry the Claude Code
@@ -3205,6 +3217,116 @@ class TerminalController {
             surfaceIdString: surfaceId.uuidString,
             responseEnvelope: envelope
         ))
+    }
+
+    // C11-217: the legacy send family has the same third main-queue hazard as
+    // the v2 surface handlers. Resolve the panel on main, wait for its native
+    // surface on the socket worker, then return to main for the final
+    // pointer-validity check and input injection.
+    struct LegacySurfaceSendTarget {
+        let terminalPanel: TerminalPanel
+    }
+
+    enum LegacySurfaceSendTargetOutcome {
+        case ok(LegacySurfaceSendTarget)
+        case error(String)
+    }
+
+    @MainActor
+    func resolveLegacySurfaceSendTarget(target: String?, missingTargetError: String?) -> LegacySurfaceSendTargetOutcome {
+        guard let tabManager else {
+            return .error("ERROR: TabManager not available")
+        }
+
+        if let target {
+            guard let terminalPanel = resolveTerminalPanel(from: target, tabManager: tabManager) else {
+                return .error(missingTargetError ?? "ERROR: Surface not found")
+            }
+            return .ok(LegacySurfaceSendTarget(terminalPanel: terminalPanel))
+        }
+
+        guard let selectedId = tabManager.selectedTabId,
+              let tab = tabManager.tabs.first(where: { $0.id == selectedId }),
+              let terminalPanel = tab.focusedTerminalPanel else {
+            return .error("ERROR: No focused terminal")
+        }
+        return .ok(LegacySurfaceSendTarget(terminalPanel: terminalPanel))
+    }
+
+    nonisolated func resolveLegacySurfaceSendTargetOffMain(
+        target: String?,
+        missingTargetError: String?
+    ) -> LegacySurfaceSendTargetOutcome {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                resolveLegacySurfaceSendTarget(target: target, missingTargetError: missingTargetError)
+            }
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var outcome: LegacySurfaceSendTargetOutcome = .error("ERROR: TabManager not available")
+        Task { @MainActor in
+            defer { semaphore.signal() }
+            outcome = resolveLegacySurfaceSendTarget(target: target, missingTargetError: missingTargetError)
+        }
+        semaphore.wait()
+        return outcome
+    }
+
+    enum LegacySurfaceSendOperation {
+        case text(String)
+        case key(String)
+    }
+
+    nonisolated func performLegacySurfaceSendOffMain(
+        target: String?,
+        missingTargetError: String?,
+        operation: LegacySurfaceSendOperation
+    ) -> String {
+        switch resolveLegacySurfaceSendTargetOffMain(
+            target: target,
+            missingTargetError: missingTargetError
+        ) {
+        case .error(let message):
+            return message
+        case .ok(let resolved):
+            guard let surface = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0) else {
+                return "ERROR: Surface not ready"
+            }
+
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var result = "ERROR: Failed to send input"
+            Task { @MainActor in
+                defer { semaphore.signal() }
+                guard resolved.terminalPanel.surface.surface == surface else {
+                    result = "ERROR: Surface not ready"
+                    return
+                }
+
+                switch operation {
+                case .text(let text):
+                    let unescaped = text
+                        .replacingOccurrences(of: "\\n", with: "\r")
+                        .replacingOccurrences(of: "\\r", with: "\r")
+                        .replacingOccurrences(of: "\\t", with: "\t")
+                    for char in unescaped {
+                        if char.unicodeScalars.count == 1,
+                           let scalar = char.unicodeScalars.first,
+                           handleControlScalar(scalar, surface: surface) {
+                            continue
+                        }
+                        sendTextEvent(surface: surface, text: String(char))
+                    }
+                    result = "OK"
+                case .key(let keyName):
+                    result = sendNamedKey(surface, keyName: keyName)
+                        ? "OK"
+                        : "ERROR: Unknown key '\(keyName)'"
+                }
+            }
+            semaphore.wait()
+            return result
+        }
     }
 
     // Off-main variant of waitForTerminalSurface: the worker thread blocks on a

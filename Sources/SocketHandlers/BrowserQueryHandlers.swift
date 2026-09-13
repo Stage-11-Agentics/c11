@@ -779,43 +779,36 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserDownloadWait(params: [String: Any]) -> V2CallResult {
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, _ in
-            // C11-209: clamp, don't just lower-bound — this await holds the main
-            // queue for its whole duration.
-            let requestedTimeoutMs = v2Int(params, "timeout_ms")
-                ?? v2Int(params, "timeout")
-                ?? 10_000
-            let timeoutMs = TerminalController.v2ClampBrowserTimeoutMs(requestedTimeoutMs)
-            let timeout = Double(timeoutMs) / 1000.0
-            let path = v2String(params, "path")
+    nonisolated func v2BrowserDownloadWait(params: [String: Any]) -> V2CallResult {
+        let requestedTimeoutMs = v2Int(params, "timeout_ms")
+            ?? v2Int(params, "timeout")
+            ?? 10_000
+        let timeoutMs = TerminalController.v2ClampBrowserTimeoutMs(requestedTimeoutMs)
+        let timeout = Double(timeoutMs) / 1000.0
+        let path = v2String(params, "path")
+
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            let envelope = target.responseEnvelope
 
             if let path {
                 if DownloadPathWatcher.isPathReady(path) {
-                    return .ok([
-                        "workspace_id": ws.id.uuidString,
-                        "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                        "surface_id": surfaceId.uuidString,
-                        "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                        "path": path,
-                        "downloaded": true
-                    ])
+                    var response = envelope
+                    response["path"] = path
+                    response["downloaded"] = true
+                    return .ok(response)
                 }
 
-                // C11-209: this await runs inside a main-queue drain, and a
-                // nested CFRunLoop pump cannot drain main-queue blocks. With the
-                // source and the timeout item on `.main` the wait could never be
-                // satisfied early — it always ran to its full timeout. Both live
-                // on a private serial queue instead, which the lock-guarded
-                // `finish` in `v2AwaitCallbackPumpingMainRunLoop` accepts.
+                // C11-217: the worker owns this wait. The file watcher remains
+                // entirely private-queue based, and its completion does not need
+                // a nested main-run-loop pump or a main-queue drain.
                 //
-                // C11-222: the watch itself lives in `DownloadPathWatcher`,
-                // which also follows the file's own descriptor once it exists —
-                // a file created empty and then written in place produces no
-                // second directory event. The watcher owns every descriptor,
-                // closes each from its source's cancel handler only, keeps a
-                // single terminal path, and confines all of its state to
-                // `watchQueue`.
+                // C11-222: the watch follows both the parent directory and the
+                // file descriptor once it exists. It owns every descriptor,
+                // closes each from its source's cancel handler only, keeps one
+                // terminal path, and confines all state to `watchQueue`.
                 let watchQueue = DispatchQueue(label: "com.stage11.c11.download-wait")
                 let watcher = DownloadPathWatcher(path: path, queue: watchQueue)
                 var watchFailed = false
@@ -828,9 +821,9 @@ extension TerminalController {
                 }
                 let ready = outcome ?? false
 
-                // `v2AwaitCallback` can unwind on its own deadline before the
-                // watcher's own deadline item fires. Tear down either way, so
-                // every source is cancelled and every descriptor closed exactly
+                // The caller can unwind on its own deadline before the
+                // watcher's deadline item fires. Tear down either way so every
+                // source is cancelled and every descriptor is closed exactly
                 // once.
                 watcher.teardown()
 
@@ -844,46 +837,23 @@ extension TerminalController {
                     }
                     return .err(code: "timeout", message: "Timed out waiting for download file", data: timeoutData)
                 }
-                return .ok([
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                    "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "path": path,
-                    "downloaded": true
-                ])
+                var response = envelope
+                response["path"] = path
+                response["downloaded"] = true
+                return .ok(response)
             }
 
-            if let first = v2BrowserDownloadEventsBySurface[surfaceId]?.first {
-                var remaining = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
-                remaining.removeFirst()
-                v2BrowserDownloadEventsBySurface[surfaceId] = remaining
-                return .ok([
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                    "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "download": first
-                ])
+            if let first = v2PopBrowserDownloadEventOffMain(surfaceId: target.surfaceId) {
+                var response = envelope
+                response["download"] = first
+                return .ok(response)
             }
 
-            // C11-209: `queue: .main` routed this through OperationQueue.main,
-            // i.e. the main dispatch queue — undeliverable inside the nested
-            // run-loop pump this await runs in, so the wait always burned its
-            // full timeout. `queue: nil` delivers synchronously on the posting
-            // thread, and every post site reaches this from a WebKit delegate
-            // callback on main's run loop, which the pump does service.
-            //
-            // This observer only *signals*. The value is read back from
-            // `v2BrowserDownloadEventsBySurface`, which `TerminalController`'s own
-            // observer appends to during the same synchronous post, so the queue
-            // stays the single source of truth. Returning the notification's copy
-            // directly would hand the same event out twice: once live here, and
-            // again from the queue head on the caller's next `download wait`.
-            //
-            // The observer is also removed on every outcome. Previously it was
-            // removed only from inside its own callback, so a timed-out wait
-            // leaked an observer that then fired for the life of the process.
+            // The observer only signals; the controller's existing observer is
+            // the single queue owner. Its append is scheduled first, then this
+            // callback signals from a main-actor turn, so the worker's pop below
+            // cannot race ahead of the queue update. The wait itself remains off
+            // main, and the observer is removed on every outcome.
             nonisolated(unsafe) var observer: NSObjectProtocol?
             let observed = v2AwaitCallback(timeout: timeout) { finish in
                 observer = NotificationCenter.default.addObserver(
@@ -892,37 +862,29 @@ extension TerminalController {
                     queue: nil
                 ) { note in
                     guard let candidateSurfaceId = note.userInfo?["surfaceId"] as? UUID,
-                          candidateSurfaceId == surfaceId,
+                          candidateSurfaceId == target.surfaceId,
                           note.userInfo?["event"] is [String: Any] else {
                         return
                     }
-                    finish(true)
+                    Task { @MainActor in
+                        finish(true)
+                    }
                 }
             }
             if let observer {
                 NotificationCenter.default.removeObserver(observer)
             }
-            var downloadEvent: [String: Any]?
-            if observed == true, let head = v2BrowserDownloadEventsBySurface[surfaceId]?.first {
-                var remaining = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
-                remaining.removeFirst()
-                v2BrowserDownloadEventsBySurface[surfaceId] = remaining
-                downloadEvent = head
-            }
-            guard let downloadEvent else {
+            guard observed == true,
+                  let downloadEvent = v2PopBrowserDownloadEventOffMain(surfaceId: target.surfaceId) else {
                 var timeoutData: [String: Any] = ["timeout_ms": timeoutMs]
                 if timeoutMs != requestedTimeoutMs {
                     timeoutData["requested_timeout_ms"] = requestedTimeoutMs
                 }
                 return .err(code: "timeout", message: "No download event observed", data: timeoutData)
             }
-            return .ok([
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "download": downloadEvent
-            ])
+            var response = envelope
+            response["download"] = downloadEvent
+            return .ok(response)
         }
     }
 

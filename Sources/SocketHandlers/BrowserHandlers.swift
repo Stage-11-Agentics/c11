@@ -5,12 +5,62 @@ import Foundation
 import Bonsplit
 import WebKit
 
+/// Gate the worker-side browser await against a timeout racing a queued main
+/// invocation or a late WebKit completion. WebKit has no cancellation API for
+/// an in-flight JavaScript evaluation, so the only safe cancellation boundary
+/// is to prevent work that has not started and ignore callbacks after the
+/// socket operation has already timed out.
+private final class V2BrowserAwaitGate {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var completed = false
+
+    func begin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled, !completed else { return false }
+        return true
+    }
+
+    func complete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled, !completed else { return false }
+        completed = true
+        return true
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
+
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 // Browser is split across two files to stay under the per-file size ceiling;
 // its handler methods are internal (not private) because the v2DispatchBrowser
 // slice and the methods now span both files.
 extension TerminalController {
+
+    /// The main-actor snapshot passed to a browser worker-policy handler. The
+    /// web view itself is only touched by the worker through helpers that hop
+    /// each WebKit call back to main; all routing/model values are immutable
+    /// snapshots captured before the worker starts waiting.
+    struct V2BrowserOffMainTarget {
+        let workspaceId: UUID
+        let surfaceId: UUID
+        let webView: WKWebView
+        let frameSelector: String?
+        let resolvedSelector: String?
+        let responseEnvelope: [String: Any]
+    }
+
+    enum V2BrowserOffMainTargetOutcome {
+        case ready(V2BrowserOffMainTarget)
+        case result(V2CallResult)
+    }
 
     func v2DispatchBrowser(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
@@ -215,7 +265,145 @@ extension TerminalController {
         return result
     }
 
-    func v2JSONLiteral(_ value: Any) -> String {
+    /// Resolve the main-actor portion of a worker-policy browser request. The
+    /// worker must not carry the `v2BrowserWithPanel` body through `v2MainSync`,
+    /// because that body may wait for WebKit or a notification. Keep this
+    /// phase deliberately limited to routing, guards, and immutable snapshots.
+    @MainActor
+    func v2ResolveBrowserOffMainTargetOnMain(
+        params: [String: Any],
+        requireDocument: Bool,
+        selectorRaw: String? = nil
+    ) -> V2BrowserOffMainTargetOutcome {
+        // Worker-policy methods bypass processV2Command's normal ref refresh.
+        // Refresh before resolving a handle so a first worker call cannot fall
+        // through to the focused surface.
+        v2RefreshKnownRefs()
+
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .result(.err(code: "unavailable", message: "TabManager not available", data: nil))
+        }
+        guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            return .result(.err(code: "not_found", message: "Workspace not found", data: nil))
+        }
+        let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
+        guard let surfaceId else {
+            return .result(.err(code: "not_found", message: "No focused browser surface", data: nil))
+        }
+        guard let browserPanel = ws.browserPanel(for: surfaceId) else {
+            return .result(.err(
+                code: "invalid_params",
+                message: "Surface is not a browser",
+                data: ["surface_id": surfaceId.uuidString]
+            ))
+        }
+
+        if requireDocument,
+           let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
+            return .result(refusal)
+        }
+
+        let resolvedSelector: String?
+        if let selectorRaw {
+            guard let selector = v2BrowserResolveSelector(selectorRaw, surfaceId: surfaceId) else {
+                return .result(.err(
+                    code: "not_found",
+                    message: "Element reference not found",
+                    data: ["selector": selectorRaw]
+                ))
+            }
+            resolvedSelector = selector
+        } else {
+            resolvedSelector = nil
+        }
+
+        return .ready(V2BrowserOffMainTarget(
+            workspaceId: ws.id,
+            surfaceId: surfaceId,
+            webView: browserPanel.webView,
+            frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
+            resolvedSelector: resolvedSelector,
+            responseEnvelope: [
+                "workspace_id": ws.id.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "surface_id": surfaceId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+            ]
+        ))
+    }
+
+    /// Synchronous worker-side bridge for the bounded main-actor setup phase.
+    /// It is intentionally separate from `v2MainSync`: the worker waits for a
+    /// short actor turn, then performs the potentially long browser await
+    /// without holding main.
+    nonisolated func v2ResolveBrowserOffMainTarget(
+        params: [String: Any],
+        requireDocument: Bool,
+        selectorRaw: String? = nil
+    ) -> V2BrowserOffMainTargetOutcome {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2ResolveBrowserOffMainTargetOnMain(
+                    params: params,
+                    requireDocument: requireDocument,
+                    selectorRaw: selectorRaw
+                )
+            }
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var outcome: V2BrowserOffMainTargetOutcome = .result(
+            .err(code: "internal_error", message: "Failed to resolve browser surface", data: nil)
+        )
+        Task { @MainActor in
+            defer { semaphore.signal() }
+            outcome = v2ResolveBrowserOffMainTargetOnMain(
+                params: params,
+                requireDocument: requireDocument,
+                selectorRaw: selectorRaw
+            )
+        }
+        semaphore.wait()
+        return outcome
+    }
+
+    @MainActor
+    func v2AppendBrowserDownloadEventOnMain(surfaceId: UUID, event: [String: Any]) {
+        var queue = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
+        queue.append(event)
+        v2BrowserDownloadEventsBySurface[surfaceId] = queue
+    }
+
+    @MainActor
+    func v2PopBrowserDownloadEventOnMain(surfaceId: UUID) -> [String: Any]? {
+        var queue = v2BrowserDownloadEventsBySurface[surfaceId] ?? []
+        guard !queue.isEmpty else { return nil }
+        let event = queue.removeFirst()
+        v2BrowserDownloadEventsBySurface[surfaceId] = queue
+        return event
+    }
+
+    /// Consume the event queue from a worker-policy handler without carrying a
+    /// browser wait through `v2MainSync`. The queue remains main-actor-owned;
+    /// this bridge is only the short read/pop phase after the wait completes.
+    nonisolated func v2PopBrowserDownloadEventOffMain(surfaceId: UUID) -> [String: Any]? {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2PopBrowserDownloadEventOnMain(surfaceId: surfaceId)
+            }
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var event: [String: Any]?
+        Task { @MainActor in
+            defer { semaphore.signal() }
+            event = v2PopBrowserDownloadEventOnMain(surfaceId: surfaceId)
+        }
+        semaphore.wait()
+        return event
+    }
+
+    nonisolated func v2JSONLiteral(_ value: Any) -> String {
         if let data = try? JSONSerialization.data(withJSONObject: [value], options: []),
            let text = String(data: data, encoding: .utf8),
            text.count >= 2 {
@@ -227,7 +415,7 @@ extension TerminalController {
         return "null"
     }
 
-    func v2NormalizeJSValue(_ value: Any?) -> Any {
+    nonisolated func v2NormalizeJSValue(_ value: Any?) -> Any {
         guard let value else { return NSNull() }
         if value is V2BrowserUndefinedSentinel {
             return [
@@ -320,7 +508,76 @@ extension TerminalController {
         return .success(outcome.0)
     }
 
-    func v2AwaitCallback<T>(
+    /// Run one WebKit evaluation from a socket worker. The invocation itself
+    /// is submitted to main because WebKit is main-thread-bound, but the
+    /// worker owns the wait and can therefore leave the main queue available
+    /// for unrelated socket commands and UI work.
+    nonisolated func v2RunJavaScriptOffMain(
+        _ webView: WKWebView,
+        script: String,
+        timeout: TimeInterval = 5.0,
+        preferAsync: Bool = false,
+        contentWorld: WKContentWorld
+    ) -> V2JavaScriptResult {
+        guard Self.v2BrowserWebViewHasIssuedLoad(webView) else {
+            return .failure(Self.v2BrowserNoDocumentMessage)
+        }
+
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2RunJavaScript(
+                    webView,
+                    script: script,
+                    timeout: timeout,
+                    preferAsync: preferAsync,
+                    contentWorld: contentWorld
+                )
+            }
+        }
+
+        let timeoutSeconds = max(0.01, timeout)
+        let gate = V2BrowserAwaitGate()
+        let outcome: (Any?, String?)? = v2AwaitCallback(timeout: timeoutSeconds) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+
+                let complete: (Any?, String?) -> Void = { value, error in
+                    guard gate.complete() else { return }
+                    finish((value, error))
+                }
+
+                if preferAsync, #available(macOS 11.0, *) {
+                    webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: contentWorld) { result in
+                        switch result {
+                        case .success(let value):
+                            complete(value, nil)
+                        case .failure(let error):
+                            complete(nil, error.localizedDescription)
+                        }
+                    }
+                } else {
+                    webView.evaluateJavaScript(script) { value, error in
+                        if let error {
+                            complete(nil, error.localizedDescription)
+                        } else {
+                            complete(value, nil)
+                        }
+                    }
+                }
+            }
+        }
+        gate.cancel()
+
+        guard let outcome else {
+            return .failure("Timed out waiting for JavaScript result")
+        }
+        if let resultError = outcome.1 {
+            return .failure(resultError)
+        }
+        return .success(outcome.0)
+    }
+
+    nonisolated func v2AwaitCallback<T>(
         timeout: TimeInterval,
         start: (@escaping (T) -> Void) -> Void
     ) -> T? {
@@ -343,6 +600,137 @@ extension TerminalController {
         lock.lock()
         defer { lock.unlock() }
         return result
+    }
+
+    /// Build the JavaScript envelope used by both main-bound and worker-bound
+    /// browser calls. The frame selector is passed in rather than read here so
+    /// the worker never touches the main-actor frame map.
+    nonisolated func v2BrowserJavaScriptEnvelopeScript(
+        script: String,
+        frameSelector: String?,
+        useEval: Bool
+    ) -> String {
+        let scriptLiteral = v2JSONLiteral(script)
+        let framePrelude: String
+        if let frameSelector {
+            let selectorLiteral = v2JSONLiteral(frameSelector)
+            framePrelude = """
+            let __cmuxDoc = document;
+            try {
+              const __cmuxFrame = document.querySelector(\(selectorLiteral));
+              if (__cmuxFrame && __cmuxFrame.contentDocument) {
+                __cmuxDoc = __cmuxFrame.contentDocument;
+              }
+            } catch (_) {}
+            """
+        } else {
+            framePrelude = "const __cmuxDoc = document;"
+        }
+
+        let executionBlock = useEval
+            ? "const __r = eval(\(scriptLiteral));"
+            : "const __r = \(script);"
+
+        return """
+        \(framePrelude)
+
+        const __cmuxMaybeAwait = async (__r) => {
+          if (__r !== null && (typeof __r === 'object' || typeof __r === 'function') && typeof __r.then === 'function') {
+            return await __r;
+          }
+          return __r;
+        };
+
+        const __cmuxEvalInFrame = async function() {
+          const document = __cmuxDoc;
+          \(executionBlock)
+          const __value = await __cmuxMaybeAwait(__r);
+          return {
+            __cmux_t: (typeof __value === 'undefined') ? 'undefined' : 'value',
+            __cmux_v: __value
+          };
+        };
+
+        return await __cmuxEvalInFrame();
+        """
+    }
+
+    nonisolated func v2DecodeBrowserJavaScriptResult(_ rawResult: V2JavaScriptResult) -> V2JavaScriptResult {
+        switch rawResult {
+        case .failure:
+            return rawResult
+        case .success(let value):
+            guard let dict = value as? [String: Any],
+                  let type = dict[Self.v2BrowserEvalEnvelopeTypeKey] as? String else {
+                return .success(value)
+            }
+
+            switch type {
+            case Self.v2BrowserEvalEnvelopeTypeUndefined:
+                return .success(V2BrowserUndefinedSentinel())
+            case Self.v2BrowserEvalEnvelopeTypeValue:
+                return .success(dict[Self.v2BrowserEvalEnvelopeValueKey])
+            default:
+                return .success(value)
+            }
+        }
+    }
+
+    nonisolated func v2RunBrowserJavaScriptOffMain(
+        _ webView: WKWebView,
+        frameSelector: String?,
+        script: String,
+        timeout: TimeInterval = 5.0,
+        useEval: Bool = true
+    ) -> V2JavaScriptResult {
+        let asyncFunctionBody = v2BrowserJavaScriptEnvelopeScript(
+            script: script,
+            frameSelector: frameSelector,
+            useEval: useEval
+        )
+
+        var rawResult: V2JavaScriptResult
+        if #available(macOS 11.0, *) {
+            rawResult = v2RunJavaScriptOffMain(
+                webView,
+                script: asyncFunctionBody,
+                timeout: timeout,
+                preferAsync: true,
+                contentWorld: .page
+            )
+        } else {
+            let evaluateFallback = """
+            (async () => {
+              \(asyncFunctionBody)
+            })()
+            """
+            rawResult = v2RunJavaScriptOffMain(
+                webView,
+                script: evaluateFallback,
+                timeout: timeout,
+                contentWorld: .page
+            )
+        }
+
+        if !useEval, case .failure(let pageMessage) = rawResult, #available(macOS 11.0, *) {
+            let isolatedResult = v2RunJavaScriptOffMain(
+                webView,
+                script: asyncFunctionBody,
+                timeout: timeout,
+                preferAsync: true,
+                contentWorld: .defaultClient
+            )
+            switch isolatedResult {
+            case .success:
+                rawResult = isolatedResult
+            case .failure(let isolatedMessage):
+                if isolatedMessage != pageMessage {
+                    rawResult = .failure("\(pageMessage) (isolated-world retry: \(isolatedMessage))")
+                }
+            }
+        }
+
+        return v2DecodeBrowserJavaScriptResult(rawResult)
     }
 
     /// The main-thread branch of `v2AwaitCallback`, extracted so it can be
@@ -442,14 +830,8 @@ extension TerminalController {
         return resolved ? result : nil
     }
 
-    func v2WaitForBrowserCondition(
-        _ webView: WKWebView,
-        surfaceId: UUID,
-        conditionScript: String,
-        timeoutMs: Int
-    ) -> Bool {
-        let timeout = Double(timeoutMs) / 1000.0
-        let waitScript = """
+    nonisolated func v2BrowserWaitScript(conditionScript: String, timeoutMs: Int) -> String {
+        """
         (() => {
           const __cmuxEvaluate = () => {
             try {
@@ -512,11 +894,41 @@ extension TerminalController {
           });
         })()
         """
+    }
+
+    nonisolated func v2WaitForBrowserConditionOffMain(
+        _ webView: WKWebView,
+        frameSelector: String?,
+        conditionScript: String,
+        timeoutMs: Int
+    ) -> Bool {
+        let timeout = Double(timeoutMs) / 1000.0
+        switch v2RunBrowserJavaScriptOffMain(
+            webView,
+            frameSelector: frameSelector,
+            script: v2BrowserWaitScript(conditionScript: conditionScript, timeoutMs: timeoutMs),
+            timeout: timeout + 1.0,
+            useEval: false
+        ) {
+        case .success(let value):
+            return (value as? Bool) == true
+        case .failure:
+            return false
+        }
+    }
+
+    func v2WaitForBrowserCondition(
+        _ webView: WKWebView,
+        surfaceId: UUID,
+        conditionScript: String,
+        timeoutMs: Int
+    ) -> Bool {
+        let timeout = Double(timeoutMs) / 1000.0
 
         switch v2RunBrowserJavaScript(
             webView,
             surfaceId: surfaceId,
-            script: waitScript,
+            script: v2BrowserWaitScript(conditionScript: conditionScript, timeoutMs: timeoutMs),
             timeout: timeout + 1.0,
             useEval: false
         ) {
@@ -554,7 +966,7 @@ extension TerminalController {
         )
     }
 
-    func v2BrowserSelector(_ params: [String: Any]) -> String? {
+    nonisolated func v2BrowserSelector(_ params: [String: Any]) -> String? {
         v2String(params, "selector")
             ?? v2String(params, "sel")
             ?? v2String(params, "element_ref")
@@ -600,52 +1012,11 @@ extension TerminalController {
         timeout: TimeInterval = 5.0,
         useEval: Bool = true
     ) -> V2JavaScriptResult {
-        let scriptLiteral = v2JSONLiteral(script)
-        let framePrelude: String
-        if let frameSelector = v2BrowserCurrentFrameSelector(surfaceId: surfaceId) {
-            let selectorLiteral = v2JSONLiteral(frameSelector)
-            framePrelude = """
-            let __cmuxDoc = document;
-            try {
-              const __cmuxFrame = document.querySelector(\(selectorLiteral));
-              if (__cmuxFrame && __cmuxFrame.contentDocument) {
-                __cmuxDoc = __cmuxFrame.contentDocument;
-              }
-            } catch (_) {}
-            """
-        } else {
-            framePrelude = "const __cmuxDoc = document;"
-        }
-
-        let executionBlock: String
-        if useEval {
-            executionBlock = "const __r = eval(\(scriptLiteral));"
-        } else {
-            executionBlock = "const __r = \(script);"
-        }
-
-        let asyncFunctionBody = """
-        \(framePrelude)
-
-        const __cmuxMaybeAwait = async (__r) => {
-          if (__r !== null && (typeof __r === 'object' || typeof __r === 'function') && typeof __r.then === 'function') {
-            return await __r;
-          }
-          return __r;
-        };
-
-        const __cmuxEvalInFrame = async function() {
-          const document = __cmuxDoc;
-          \(executionBlock)
-          const __value = await __cmuxMaybeAwait(__r);
-          return {
-            __cmux_t: (typeof __value === 'undefined') ? 'undefined' : 'value',
-            __cmux_v: __value
-          };
-        };
-
-        return await __cmuxEvalInFrame();
-        """
+        let asyncFunctionBody = v2BrowserJavaScriptEnvelopeScript(
+            script: script,
+            frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
+            useEval: useEval
+        )
 
         var rawResult: V2JavaScriptResult
         if #available(macOS 11.0, *) {
@@ -683,24 +1054,7 @@ extension TerminalController {
             }
         }
 
-        switch rawResult {
-        case .failure(let message):
-            return .failure(message)
-        case .success(let value):
-            guard let dict = value as? [String: Any],
-                  let type = dict[Self.v2BrowserEvalEnvelopeTypeKey] as? String else {
-                return .success(value)
-            }
-
-            switch type {
-            case Self.v2BrowserEvalEnvelopeTypeUndefined:
-                return .success(v2BrowserUndefinedSentinel)
-            case Self.v2BrowserEvalEnvelopeTypeValue:
-                return .success(dict[Self.v2BrowserEvalEnvelopeValueKey])
-            default:
-                return .success(value)
-            }
-        }
+        return v2DecodeBrowserJavaScriptResult(rawResult)
     }
 
     func v2BrowserRecordUnsupportedRequest(surfaceId: UUID, request: [String: Any]) {
@@ -1204,25 +1558,27 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserEval(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserEval(params: [String: Any]) -> V2CallResult {
         guard let script = v2String(params, "script") else {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
-                return refusal
-            }
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script, timeout: 10.0) {
+
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: true) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            switch v2RunBrowserJavaScriptOffMain(
+                target.webView,
+                frameSelector: target.frameSelector,
+                script: script,
+                timeout: 10.0
+            ) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
-                return .ok([
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                    "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                    "value": v2NormalizeJSValue(value)
-                ])
+                var response = target.responseEnvelope
+                response["value"] = v2NormalizeJSValue(value)
+                return .ok(response)
             }
         }
     }
@@ -1514,9 +1870,9 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserWait(params: [String: Any]) -> V2CallResult {
-        // C11-209: clamp, don't just lower-bound. This value is a direct
-        // multiplier on how long the main-queue drain is held.
+    nonisolated func v2BrowserWait(params: [String: Any]) -> V2CallResult {
+        // C11-209: clamp, don't just lower-bound. The worker owns the wait now,
+        // but this remains the caller-visible timeout and resource bound.
         let requestedTimeoutMs = v2Int(params, "timeout_ms") ?? Self.v2BrowserDefaultWaitTimeoutMs
         let timeoutMs = Self.v2ClampBrowserTimeoutMs(requestedTimeoutMs)
         let selectorRaw = v2BrowserSelector(params)
@@ -1549,75 +1905,34 @@ extension TerminalController {
             return "document.readyState === 'complete'"
         }()
 
-        var setupResult: V2CallResult?
-        var workspaceId: UUID?
-        var surfaceIdOut: UUID?
-        var webView: WKWebView?
-
-        v2MainSync {
-            guard let tabManager = self.v2ResolveTabManager(params: params) else {
-                setupResult = .err(code: "unavailable", message: "TabManager not available", data: nil)
-                return
-            }
-            guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
-                setupResult = .err(code: "not_found", message: "Workspace not found", data: nil)
-                return
-            }
-            let surfaceId = self.v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let surfaceId else {
-                setupResult = .err(code: "not_found", message: "No focused browser surface", data: nil)
-                return
-            }
-            guard let browserPanel = ws.browserPanel(for: surfaceId) else {
-                setupResult = .err(code: "invalid_params", message: "Surface is not a browser", data: ["surface_id": surfaceId.uuidString])
-                return
-            }
-            // C11-209: refuse here rather than letting the wait burn its whole
-            // timeout on a view that can never deliver a JS completion. Checked
-            // inside the main-sync block because `browserPanel` is MainActor
-            // state, and before the condition script is built so the caller gets
-            // `no_document` instead of the misleading "Condition not met".
-            if let refusal = self.v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
-                setupResult = refusal
-                return
-            }
-            workspaceId = ws.id
-            surfaceIdOut = surfaceId
-            webView = browserPanel.webView
-        }
-
-        if let setupResult {
-            return setupResult
-        }
-        guard let workspaceId, let surfaceIdOut, let webView else {
-            return .err(code: "internal_error", message: "Failed to resolve browser surface", data: nil)
-        }
-
         let conditionScript: String
-        if let selectorRaw {
-            guard let selector = v2BrowserResolveSelector(selectorRaw, surfaceId: surfaceIdOut) else {
-                return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
+        switch v2ResolveBrowserOffMainTarget(
+            params: params,
+            requireDocument: true,
+            selectorRaw: selectorRaw
+        ) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            if let selector = target.resolvedSelector {
+                let literal = v2JSONLiteral(selector)
+                conditionScript = "document.querySelector(\(literal)) !== null"
+            } else {
+                conditionScript = conditionScriptBase
             }
-            let literal = v2JSONLiteral(selector)
-            conditionScript = "document.querySelector(\(literal)) !== null"
-        } else {
-            conditionScript = conditionScriptBase
+
+            if v2WaitForBrowserConditionOffMain(
+                target.webView,
+                frameSelector: target.frameSelector,
+                conditionScript: conditionScript,
+                timeoutMs: timeoutMs
+            ) {
+                var response = target.responseEnvelope
+                response["waited"] = true
+                return .ok(response)
+            }
         }
 
-        if v2WaitForBrowserCondition(
-            webView,
-            surfaceId: surfaceIdOut,
-            conditionScript: conditionScript,
-            timeoutMs: timeoutMs
-        ) {
-            return .ok([
-                "workspace_id": workspaceId.uuidString,
-                "workspace_ref": self.v2Ref(kind: .workspace, uuid: workspaceId),
-                "surface_id": surfaceIdOut.uuidString,
-                "surface_ref": self.v2Ref(kind: .surface, uuid: surfaceIdOut),
-                "waited": true
-            ])
-        }
         var timeoutData: [String: Any] = ["timeout_ms": timeoutMs]
         if timeoutMs != requestedTimeoutMs {
             timeoutData["requested_timeout_ms"] = requestedTimeoutMs

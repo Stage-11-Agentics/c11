@@ -47,6 +47,28 @@ final class BrowserAwaitPolicyTests: XCTestCase {
         XCTAssertEqual(TerminalController.v2ClampBrowserTimeoutMs(.max), maximum)
     }
 
+    // C11-217: the three browser operations that can wait for WebKit or a
+    // download event must never enter the main-actor socket path. This is the
+    // executable policy seam used by the dispatcher, not a source-text check.
+    func testBrowserWaitFamilyUsesSocketWorkerPolicy() {
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.eval"),
+            .socketWorker
+        )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.wait"),
+            .socketWorker
+        )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.download.wait"),
+            .socketWorker
+        )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.snapshot"),
+            .mainActor
+        )
+    }
+
     // MARK: - hasIssuedLoad
 
     @MainActor

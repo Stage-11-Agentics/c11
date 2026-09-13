@@ -88,6 +88,15 @@ extension TerminalController {
                 id: request.id,
                 self.v2FlagWorker(method: request.method, params: request.params)
             )
+        // C11-217: browser eval/wait and download wait resolve their routing
+        // snapshot on main, then wait on this socket worker while each WebKit
+        // invocation briefly hops back to main.
+        case "browser.eval":
+            return v2Result(id: request.id, v2BrowserEval(params: request.params))
+        case "browser.wait":
+            return v2Result(id: request.id, v2BrowserWait(params: request.params))
+        case "browser.download.wait":
+            return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }
@@ -154,21 +163,18 @@ extension TerminalController {
         return "OK"
     }
 
-    /// v1 telemetry worker entry. Parses head and args off-main, checks the
-    /// allowlist, and routes to a per-command worker variant when the args
-    /// carry an explicit `--tab=`/`--panel=` selector. Returns nil to make
-    /// the dispatcher fall through to the existing main-sync path when:
-    ///   - The command is not a v1 telemetry command we know how to migrate.
-    ///   - The args do not contain an explicit selector (handler would need
-    ///     a focused-tab read, which requires a main hop anyway — the
-    ///     current main-sync path already handles that correctly).
+    /// v1 worker entry. Parses the command head and args off-main, then routes
+    /// telemetry commands with explicit selectors and the C11-217 blocking send
+    /// family to their worker variants. Unknown v1 commands fall through to
+    /// the existing main-actor path.
     private nonisolated func socketWorkerV1ResponseIfNeeded(for command: String) -> String? {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
         let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
         guard !parts.isEmpty else { return nil }
         let head = parts[0].lowercased()
-        guard Self.socketWorkerV1Commands.contains(head) else { return nil }
+        guard Self.socketWorkerV1Commands.contains(head)
+                || Self.socketWorkerBlockingV1Commands.contains(head) else { return nil }
         let args = parts.count > 1 ? parts[1] : ""
 
         return withSocketCommandPolicy(commandKey: head, isV2: false) {
@@ -176,9 +182,7 @@ extension TerminalController {
         }
     }
 
-    /// Dispatch a v1 telemetry command to its nonisolated worker variant.
-    /// Each variant returns nil if the command must fall through to the
-    /// main-actor path (slow-path callers without an explicit selector).
+    /// Dispatch a v1 command to its nonisolated worker variant.
     private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
         switch head {
         case "report_pwd":
@@ -195,6 +199,26 @@ extension TerminalController {
             return portsKickWorker(args)
         case "agent_kick":
             return agentKickWorker(args)
+        case "send":
+            return performLegacySurfaceSendOffMain(target: nil, missingTargetError: nil, operation: .text(args))
+        case "send_key":
+            return performLegacySurfaceSendOffMain(target: nil, missingTargetError: nil, operation: .key(args))
+        case "send_surface":
+            let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return "ERROR: Usage: send_surface <id|idx> <text>" }
+            return performLegacySurfaceSendOffMain(
+                target: parts[0],
+                missingTargetError: "ERROR: Failed to send input",
+                operation: .text(parts[1])
+            )
+        case "send_key_surface":
+            let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return "ERROR: Usage: send_key_surface <id|idx> <key>" }
+            return performLegacySurfaceSendOffMain(
+                target: parts[0],
+                missingTargetError: "ERROR: Surface not found",
+                operation: .key(parts[1])
+            )
         default:
             return nil
         }

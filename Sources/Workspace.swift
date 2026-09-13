@@ -6477,6 +6477,34 @@ final class Workspace: Identifiable, ObservableObject {
         return nil
     }
 
+    /// C11-228: drive each panel's lifecycle (active ↔ throttled) from the
+    /// model on selection edges. `TerminalPanelView` also drives it, but a
+    /// deselected workspace's subtree sits in a hidden hosting controller whose
+    /// body often never re-evaluates, so its `false` edge was lost. Uses the
+    /// view's visibility rule; `applyVisibility` is idempotent and keeps
+    /// operator-pinned `hibernated`, so firing from both paths is safe.
+    func applyPanelVisibility(workspaceVisible: Bool) {
+        let focusedId = focusedPanelId
+        for paneId in bonsplitController.allPaneIds {
+            let selectedTabId = bonsplitController.selectedTab(inPane: paneId)?.id
+            for tab in bonsplitController.tabs(inPane: paneId) {
+                guard let panelId = panelIdFromSurfaceId(tab.id) else { continue }
+                let isVisible = WorkspaceContentView.panelVisibleInUI(
+                    isWorkspaceVisible: workspaceVisible,
+                    isSelectedInPane: tab.id == selectedTabId,
+                    isFocused: panelId == focusedId
+                )
+                switch panels[panelId] {
+                case let terminal as TerminalPanel:
+                    terminal.applyVisibility(isVisible)
+                case let browser as BrowserPanel:
+                    browser.applyVisibility(isVisible)
+                default:
+                    break
+                }
+            }
+        }
+    }
 
     private func installBrowserPanelSubscription(_ browserPanel: BrowserPanel) {
         let subscription = Publishers.CombineLatest3(
@@ -11488,6 +11516,12 @@ extension Workspace: BonsplitDelegate {
                 focusIntent: request.focusIntent,
                 previousTerminalHostedView: request.previousTerminalHostedView
             )
+        }
+
+        // C11-228: a tab selected inside a hidden workspace must stay throttled;
+        // its view may never update (a new panel starts `.active`).
+        if let owningTabManager {
+            applyPanelVisibility(workspaceVisible: owningTabManager.selectedTabId == id)
         }
     }
 

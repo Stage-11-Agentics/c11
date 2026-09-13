@@ -974,6 +974,15 @@ class TabManager: ObservableObject {
             if !isNavigatingHistory, let selectedTabId {
                 recordTabInHistory(selectedTabId)
             }
+            // C11-228: throttle/activate from the model, synchronously, so the
+            // edge can't be lost in the hidden SwiftUI subtree or superseded by
+            // a newer switch's async block.
+            if let previousTabId, let previous = tabs.first(where: { $0.id == previousTabId }) {
+                previous.applyPanelVisibility(workspaceVisible: false)
+            }
+            if let selectedTabId, let selected = tabs.first(where: { $0.id == selectedTabId }) {
+                selected.applyPanelVisibility(workspaceVisible: true)
+            }
 #if DEBUG
             let switchId = debugWorkspaceSwitchId
             let switchDtMs = debugWorkspaceSwitchStartTime > 0

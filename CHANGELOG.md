@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-09-13
+
+Headline: **A browser wait no longer freezes every other c11 command.**
+
+### Fixed
+
+- **Browser waits run off the main thread.** Since 0.65.1 a `browser wait` or `browser eval` on a loaded page was bounded, but for its whole duration every other socket command still queued behind it: `c11 tree`, `read-screen`, `send` and focus all stalled until the wait resolved, and one agent's 20-second wait measured as a 10-second stall for everyone else. The wait, eval and download-wait family now runs on the caller's own socket thread, with each WebKit call hopping to the main thread only for the instant it takes. During the same 20-second unmet wait, `c11 tree` now answers in 0.14 s, two waits on different surfaces resolve independently, and a timeout can no longer be reached by a late result. The legacy `send` and `send_key` commands, which could wait on a terminal surface the same way, got the same treatment. ([#442](https://github.com/Stage-11-Agentics/c11/pull/442)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.65.2] - 2026-09-12
 
 Headline: **c11 warns before a main-thread wedge lands, and its hang log can no longer eat your disk.**

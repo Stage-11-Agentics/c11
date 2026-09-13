@@ -343,6 +343,39 @@ final class SurfaceLifecycleTests: XCTestCase {
         )
     }
 
+    /// C11-224: the resolver asks the kernel for pids on one tty
+    /// (`PROC_TTY_ONLY`) instead of scanning every process. Prove the
+    /// filter is real by resolving this process's own controlling tty:
+    /// the answer must be a live process whose controlling tty is that
+    /// device, and since this process is itself on the tty and the
+    /// resolver picks the highest pid, it cannot be lower than ours.
+    /// Skips when the runner has no controlling tty (CI without a pty).
+    func testTerminalPIDResolverResolvesOwnControllingTTY() throws {
+        guard let cName = ttyname(STDIN_FILENO) else {
+            throw XCTSkip("test runner has no controlling tty on stdin")
+        }
+        let ttyName = String(cString: cName)
+        let dev = try XCTUnwrap(TerminalPIDResolver.ttyDevice(for: ttyName))
+
+        let pid = try XCTUnwrap(
+            TerminalPIDResolver.foregroundPID(forTTYName: ttyName),
+            "a process (this one) is on \(ttyName), so the resolver must find it"
+        )
+        XCTAssertGreaterThanOrEqual(
+            pid, getpid(),
+            "highest-pid-wins over the tty's processes can't pick a pid below our own"
+        )
+
+        var info = proc_bsdinfo()
+        let infoSize = Int32(MemoryLayout<proc_bsdinfo>.stride)
+        let rc = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, infoSize)
+        XCTAssertEqual(rc, infoSize, "resolved pid \(pid) must be a live process")
+        XCTAssertEqual(
+            info.e_tdev, UInt32(truncatingIfNeeded: dev),
+            "resolved pid \(pid) must have \(ttyName) as its controlling tty"
+        )
+    }
+
     /// C11-25 fix DoD #5: a registered pid-provider is invoked by the
     /// sampler's tick refresh path and its result is mirrored into
     /// `cachedPids`, so a subsequent `proc_pid_rusage` sample for that

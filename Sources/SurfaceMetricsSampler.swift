@@ -33,7 +33,7 @@ import Darwin
 ///   (default 2s) and updates the cached scalar. The closure is
 ///   typically `TerminalPIDResolver.foregroundPID(forTTYName:)` against
 ///   the surface's reported tty — pure C-API (`stat` + `proc_listpids`
-///   + `proc_pidinfo`), so no main-actor dependency. Closes the DoD #5
+///   filtered to that tty), so no main-actor dependency. Closes the DoD #5
 ///   gap that was open after C11-25 commit 6 (browser-only).
 final class SurfaceMetricsSampler: ObservableObject, @unchecked Sendable {
     static let shared = SurfaceMetricsSampler()
@@ -69,9 +69,9 @@ final class SurfaceMetricsSampler: ObservableObject, @unchecked Sendable {
     /// main actor on KVO drives them.
     private typealias PidProvider = @Sendable () -> pid_t?
     private var pidProviders: [UUID: PidProvider] = [:]
-    /// Throttle for re-invoking `pidProviders`: the providers themselves
-    /// run `proc_listpids` which scans every running process, so we
-    /// amortize across ticks rather than calling once per tick.
+    /// Throttle for re-invoking `pidProviders`: each provider is a
+    /// syscall pair per terminal, so we amortize across ticks rather
+    /// than calling once per tick.
     private var lastProviderResolveAt: [UUID: Date] = [:]
     /// Default refresh window for terminal pid providers. Tunable via
     /// `UserDefaults` key `c11.surfaceMetrics.terminalPidRefreshSeconds`.
@@ -232,8 +232,8 @@ final class SurfaceMetricsSampler: ObservableObject, @unchecked Sendable {
         let now = Date()
         // C11-25 fix DoD #5: refresh terminal pid providers first so
         // `cachedPids` already reflects the latest foreground process by
-        // the time the rusage loop runs below. Providers can be expensive
-        // (proc_listpids walks every process) so they're throttled by
+        // the time the rusage loop runs below. Providers are syscalls
+        // (proc_listpids per terminal) so they're throttled by
         // `pidProviderRefreshSeconds`.
         refreshPidProviders(now: now)
 
@@ -284,8 +284,8 @@ final class SurfaceMetricsSampler: ObservableObject, @unchecked Sendable {
     /// C11-25 fix DoD #5: invoke each registered terminal PID provider
     /// at most once per `pidProviderRefreshSeconds()`. Captures the
     /// providers + last-resolve timestamps under the lock, runs the
-    /// closures outside it (they may take milliseconds — proc_listpids
-    /// scans every running process), then writes results back under
+    /// closures outside it (they are syscalls and must not hold the
+    /// lock), then writes results back under
     /// the lock. Drops `cachedPids` entries whose provider returns nil
     /// so a dead shell stops being sampled.
     private func refreshPidProviders(now: Date) {

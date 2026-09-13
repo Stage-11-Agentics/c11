@@ -791,16 +791,7 @@ extension TerminalController {
             let path = v2String(params, "path")
 
             if let path {
-                let fm = FileManager.default
-                let pathIsReady = {
-                    guard fm.fileExists(atPath: path),
-                          let attrs = try? fm.attributesOfItem(atPath: path),
-                          let size = attrs[.size] as? NSNumber else {
-                        return false
-                    }
-                    return size.intValue > 0
-                }
-                if pathIsReady() {
+                if DownloadPathWatcher.isPathReady(path) {
                     return .ok([
                         "workspace_id": ws.id.uuidString,
                         "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -811,93 +802,40 @@ extension TerminalController {
                     ])
                 }
 
-                let watchedPath = URL(fileURLWithPath: path).deletingLastPathComponent().path
-                let fd = open(watchedPath, O_EVTONLY)
-                guard fd >= 0 else {
-                    return .err(code: "internal_error", message: "Failed to watch download path", data: ["path": path])
-                }
-
                 // C11-209: this await runs inside a main-queue drain, and a
                 // nested CFRunLoop pump cannot drain main-queue blocks. With the
                 // source and the timeout item on `.main` the wait could never be
-                // satisfied early — it always ran to its full timeout. Both move
-                // to a private serial queue, which the lock-guarded `finish` in
-                // `v2AwaitCallbackPumpingMainRunLoop` now accepts.
+                // satisfied early — it always ran to its full timeout. Both live
+                // on a private serial queue instead, which the lock-guarded
+                // `finish` in `v2AwaitCallbackPumpingMainRunLoop` accepts.
                 //
-                // Everything that mutates `finished` / `source` / `timeoutWorkItem`
-                // runs on `watchQueue`, including the initial readiness check, so
-                // there is exactly one writer. And `fd` is owned by the source:
-                // it is closed from the cancel handler, never from a `defer`,
-                // because `v2AwaitCallback` can unwind on its own deadline while
-                // the source is still live and libdispatch traps on a descriptor
-                // closed out from under it.
+                // C11-222: the watch itself lives in `DownloadPathWatcher`,
+                // which also follows the file's own descriptor once it exists —
+                // a file created empty and then written in place produces no
+                // second directory event. The watcher owns every descriptor,
+                // closes each from its source's cancel handler only, keeps a
+                // single terminal path, and confines all of its state to
+                // `watchQueue`.
                 let watchQueue = DispatchQueue(label: "com.stage11.c11.download-wait")
-                nonisolated(unsafe) var source: DispatchSourceFileSystemObject?
-                nonisolated(unsafe) var timeoutWorkItem: DispatchWorkItem?
-                nonisolated(unsafe) var finished = false
-                nonisolated(unsafe) var fdClosed = false
+                let watcher = DownloadPathWatcher(path: path, queue: watchQueue)
+                var watchFailed = false
 
-                let ready = v2AwaitCallback(timeout: timeout) { finish in
-                    let finishOnce: (Bool) -> Void = { value in
-                        dispatchPrecondition(condition: .onQueue(watchQueue))
-                        guard !finished else { return }
-                        finished = true
-                        timeoutWorkItem?.cancel()
-                        timeoutWorkItem = nil
-                        if let live = source {
-                            live.cancel()
-                        } else if !fdClosed {
-                            fdClosed = true
-                            close(fd)
-                        }
-                        finish(value)
+                let outcome: Bool? = v2AwaitCallback(timeout: timeout) { finish in
+                    if !watcher.start(timeout: timeout, completion: finish) {
+                        watchFailed = true
+                        finish(false)
                     }
-                    let newSource = DispatchSource.makeFileSystemObjectSource(
-                        fileDescriptor: fd,
-                        eventMask: [.write, .extend, .attrib, .link, .rename],
-                        queue: watchQueue
-                    )
-                    source = newSource
-                    newSource.setEventHandler {
-                        if pathIsReady() {
-                            finishOnce(true)
-                        }
-                    }
-                    newSource.setCancelHandler {
-                        source = nil
-                        if !fdClosed {
-                            fdClosed = true
-                            close(fd)
-                        }
-                    }
-                    newSource.resume()
-                    let work = DispatchWorkItem {
-                        finishOnce(pathIsReady())
-                    }
-                    timeoutWorkItem = work
-                    watchQueue.asyncAfter(deadline: .now() + timeout, execute: work)
-                    // Closes the race between `open()` above and `resume()`: if
-                    // the file landed in that window no event will ever fire.
-                    watchQueue.async {
-                        if pathIsReady() {
-                            finishOnce(true)
-                        }
-                    }
-                } ?? false
+                }
+                let ready = outcome ?? false
 
                 // `v2AwaitCallback` can unwind on its own deadline before the
-                // work item fires. Tear down from the owning queue either way so
-                // the source is always cancelled and `fd` always closed exactly
+                // watcher's own deadline item fires. Tear down either way, so
+                // every source is cancelled and every descriptor closed exactly
                 // once.
-                watchQueue.sync {
-                    timeoutWorkItem?.cancel()
-                    timeoutWorkItem = nil
-                    if let live = source {
-                        live.cancel()
-                    } else if !fdClosed {
-                        fdClosed = true
-                        close(fd)
-                    }
+                watcher.teardown()
+
+                if watchFailed {
+                    return .err(code: "internal_error", message: "Failed to watch download path", data: ["path": path])
                 }
                 guard ready else {
                     var timeoutData: [String: Any] = ["path": path, "timeout_ms": timeoutMs]

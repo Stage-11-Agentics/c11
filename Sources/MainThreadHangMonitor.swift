@@ -333,6 +333,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     private var detector = MainThreadHangDetector()
     /// Watchdog-thread-only: has this episode already produced a Sentry event?
     private var reportedCurrentEpisode = false
+    /// Watchdog-thread-only: cross-episode memory, so a run of short stalls
+    /// sharing one cause is reported before the wedge it predicts arrives.
+    private var precursorTracker = HangPrecursorTracker()
+    /// Watchdog-thread-only: how the current episode was classified at
+    /// detection. Recovery needs the fingerprint, and only `handleHang` sees it.
+    private var currentEpisodeSignature: MainThreadHangDescriptor?
 
     private let lock = NSLock()
     private var lastAckUptime: TimeInterval = 0
@@ -482,7 +488,10 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     // MARK: Hang handling
 
     private func handleHang(gapMs: Double, recapture: Bool) {
-        if !recapture { reportedCurrentEpisode = false }
+        if !recapture {
+            reportedCurrentEpisode = false
+            currentEpisodeSignature = nil
+        }
         let stack = captureMainBacktrace()
         let kind = recapture ? "hang.persist" : "hang.begin"
         // `processName` is the "own binary" match for culprit extraction: it
@@ -494,6 +503,11 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             stack: stack,
             ownModule: ProcessInfo.processInfo.processName
         )
+        // The classification at detection is the episode's identity for
+        // cross-episode matching: a recapture may land in a different frame of
+        // the same wedge, and a run keyed on the moving classification would
+        // never accumulate.
+        if !recapture { currentEpisodeSignature = signature }
         lock.lock(); let visibility = self.visibility; lock.unlock()
 
         var lines: [String] = []
@@ -532,6 +546,76 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             "=== c11 hang.end \(Self.timestamp()) totalMs=\(Int(durationMs)) pid=\(getpid()) "
                 + "sentrySuppressed=\(dropped.hangs)/\(dropped.total) ===\n\n",
             episodeBoundary: true
+        )
+
+        let signature = currentEpisodeSignature
+        currentEpisodeSignature = nil
+        guard let signature else { return }
+        let precursor = precursorTracker.record(
+            fingerprint: signature.fingerprint,
+            cause: signature.cause,
+            culprit: signature.culprit,
+            durationMs: durationMs,
+            nowUptime: ProcessInfo.processInfo.systemUptime
+        )
+        if let precursor { reportPrecursor(precursor) }
+    }
+
+    // MARK: Precursor
+
+    /// Fan one precursor out to the three places a wedge warning has to reach:
+    /// the local log (always, never leaves the machine), the events stream (so a
+    /// watching agent or dashboard can react while the machine is still usable),
+    /// and Sentry (so the population is visible across installs).
+    ///
+    /// Watchdog thread. Every sink here is non-blocking and off-main by
+    /// construction: `appendToLog` writes a file, `EventEmitter` is
+    /// any-thread fire-and-forget, and the Sentry capture is the same call the
+    /// per-episode path already makes from this thread.
+    private func reportPrecursor(_ precursor: HangPrecursorTracker.Precursor) {
+        let durations = precursor.durationsMs.map(String.init).joined(separator: ",")
+        appendToLog(
+            "=== c11 hang.precursor \(Self.timestamp()) pid=\(getpid()) "
+                + "cause=\(precursor.cause) count=\(precursor.count) "
+                + "windowMs=\(precursor.windowMs) spanMs=\(precursor.spanMs) "
+                + "durationsMs=[\(durations)] "
+                + "fingerprint=\(precursor.fingerprint.joined(separator: "/")) "
+                + "culprit=\(precursor.culprit ?? "-") ===\n\n"
+        )
+
+        EventEmitter.shared.emitHangPrecursor(
+            cause: precursor.cause,
+            culprit: precursor.culprit,
+            count: precursor.count,
+            windowMs: precursor.windowMs,
+            spanMs: precursor.spanMs,
+            durationsMs: precursor.durationsMs,
+            fingerprint: precursor.fingerprint
+        )
+
+        // Same fingerprint as the per-episode reports, deliberately: the
+        // precursor belongs in the issue for the cause it predicts, not in one
+        // of its own. `hang.precursor` separates the two inside that issue.
+        // Category `hang` routes it through the one budget gate in `beforeSend`;
+        // charging it here as well would spend two slots on one event.
+        var tags = [
+            "hang.cause": precursor.cause,
+            "hang.precursor": "true",
+            "hang.precursor_count": String(precursor.count),
+        ]
+        tags["hang.culprit"] = precursor.culprit
+        sentryCaptureWarning(
+            "main thread hang precursor (\(precursor.cause) x\(precursor.count))",
+            category: sentryHangCategory,
+            data: [
+                "count": precursor.count,
+                "window_ms": precursor.windowMs,
+                "span_ms": precursor.spanMs,
+                "durations_ms": precursor.durationsMs,
+            ],
+            contextKey: "hang_precursor",
+            fingerprint: precursor.fingerprint,
+            tags: tags
         )
     }
 

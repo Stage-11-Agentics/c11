@@ -58,6 +58,7 @@ struct EventEnvelope {
         case mailboxDelivered = "mailbox.delivered"
         case conversationResumeMode = "conversation.resume.mode"
         case conversationResumeDecision = "conversation.resume.decision"
+        case hangPrecursor = "hang.precursor"
         // Stream-control markers:
         case logOpened = "log.opened"
         case logRotated = "log.rotated"

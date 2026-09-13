@@ -252,6 +252,33 @@ final class EventEmitter {
         )
     }
 
+    /// A run of same-fingerprint main-thread stalls the watchdog judged to be
+    /// the leading edge of a wedge (C11-221). Process-level, so it carries no
+    /// subject refs. Emitted from the watchdog thread; `emit` is any-thread.
+    @discardableResult
+    func emitHangPrecursor(
+        cause: String,
+        culprit: String?,
+        count: Int,
+        windowMs: Int,
+        spanMs: Int,
+        durationsMs: [Int],
+        fingerprint: [String]
+    ) -> Bool {
+        emit(
+            .hangPrecursor,
+            payload: [
+                "cause": cause,
+                "culprit": culprit ?? NSNull(),
+                "count": count,
+                "window_ms": windowMs,
+                "span_ms": spanMs,
+                "durations_ms": durationsMs,
+                "fingerprint": fingerprint,
+            ]
+        )
+    }
+
     // MARK: - Core
 
     @discardableResult

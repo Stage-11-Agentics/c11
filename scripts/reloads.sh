@@ -342,12 +342,18 @@ fi
 OPEN_CLEAN_ENV=(
   env
   -u C11_SOCKET_PATH
+  -u C11_SURFACE_ID
+  -u C11_WORKSPACE_ID
+  -u C11_SURFACE_NUM
   -u C11_TAB_ID
   -u C11_PANEL_ID
   -u C11_TAG
   -u C11_BUNDLE_ID
   -u C11_SHELL_INTEGRATION
   -u CMUX_SOCKET_PATH
+  -u CMUX_SURFACE_ID
+  -u CMUX_WORKSPACE_ID
+  -u CMUX_SURFACE_NUM
   -u CMUX_TAB_ID
   -u CMUX_PANEL_ID
   -u CMUXD_UNIX_PATH
@@ -365,9 +371,11 @@ OPEN_CLEAN_ENV=(
   -u XDG_DATA_DIRS
 )
 
-# Always inject staging socket paths via env to ensure they take effect
-# (LSEnvironment requires app restart to pick up plist changes).
-"${OPEN_CLEAN_ENV[@]}" C11_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" open -g "$APP_PATH"
+# Always inject staging socket paths and automation mode via env to ensure
+# they take effect (LSEnvironment requires app restart to pick up plist
+# changes). Leave C11_QA_LAUNCH/CMUX_QA_LAUNCH in the clean environment so a
+# caller can select fresh or resume exactly as the automation launcher does.
+"${OPEN_CLEAN_ENV[@]}" C11_SOCKET_ENABLE=1 C11_SOCKET_MODE=automation C11_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" open -g "$APP_PATH"
 
 # Safety: ensure only one instance is running.
 sleep 0.2

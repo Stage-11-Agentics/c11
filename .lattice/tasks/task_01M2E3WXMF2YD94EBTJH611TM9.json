@@ -1,0 +1,70 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:c11-228-delegator",
+  "branch_links": [
+    {
+      "branch": "fix/C11-228-throttle-on-deselect",
+      "linked_at": "2026-09-13T19:40:36Z",
+      "linked_by": "agent:c11-228-delegator",
+      "repo": null
+    }
+  ],
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-09-13T19:28:54Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "description": "Found 2026-09-13 while smoke-testing the v0.66.1 staging build (Release) for C11-225. After `select-workspace` moved to another workspace, the previously selected workspace's selected-in-pane terminal (surface:2) never transitioned: `get-metadata` shows no `lifecycle_state` at all (SurfaceLifecycleController only writes the key on a transition), and a 5 s `sample` shows its Ghostty renderer thread as busy occluded (23 render-work samples) as visible (18). The same procedure on a tagged Debug build did throttle (lifecycle_state=throttled, renderer 20 -> 0), so the C11-225 engine change works when c11 actually tells Ghostty the surface is hidden.\n\nProduction (0.65.0 Release, 9 workspaces) confirms it is a reliability bug, not a Debug/Release difference in the engine: of the hidden workspaces' selected terminals, 7 read `lifecycle_state = active` and 2 `throttled`; every non-selected tab in those workspaces reads `throttled` (24 total). So tab-switch throttling works; workspace-deselect throttling fires only sometimes. Those 7 always-active surfaces are exactly where agents stream (orchestrators, delegators), and they were most of the 18 busy renderer threads in the original load sample.\n\nMechanism (probable): the transition is driven from the view. `TerminalPanelView` calls `panel.applyVisibility(isVisibleInUI)` from `.onAppear` / `.onChange(of: isVisibleInUI)`; `isVisibleInUI` comes from `MountedWorkspacePresentationPolicy.isPanelVisible` in ContentView.swift, and the deselected workspace's subtree is wrapped in `AppKitHiddenWrapper` (NSHostingController with `view.isHidden = true`). A hidden hosting controller's SwiftUI subtree may not get its body update (and therefore its onChange) until it is shown again, at which point the value is already true again, so the false edge is lost. Whether the edge lands depends on ordering between the isHidden flip and the SwiftUI update, which explains the 7/2 split.\n\nFix: drive lifecycle from the model, not the view. In `TabManager.selectedTabId.didSet` (Sources/TabManager.swift ~945), after the switch, call a new `Workspace.applyPanelVisibility(workspaceVisible:)` on the previous and new workspaces; it iterates `panels`, computes `isSelectedInPane` via `bonsplitController.selectedTab(inPane:)`, and calls `panel.applyVisibility(workspaceVisible && isSelectedInPane)` for terminal and browser panels (operator-pinned `hibernated` is preserved by applyVisibility already). Keep the view-driven path as is; transitions are idempotent. Also apply on pane-tab selection change if that path has the same gap (verify with get-metadata after `focus-surface` inside a hidden workspace).\n\nValidation (both Debug tagged and Release staging, nap-free: NSAppSleepDisabled on the test bundle id, window parked on screen): after `select-workspace` away, every terminal in the old workspace reads `throttled` within 1 s and the previously selected one's renderer thread shows 0 render-work samples in a 5 s `sample` while a loop streams into it; `select-workspace` back reads `active` and on-screen content is current. Add a runtime test through the socket for the metadata assertion. Ship in v0.66.1 with C11-224/C11-225 (release held on this) or as 0.66.2 immediately after.",
+  "done_at": "2026-09-13T19:52:17Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M2E49AGKEMBXF2CYMX69YXKP",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M2E4N5FZBY83FF20KNDRXK1C",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M2E4PTNVRX2Y8TT8PY4Q8REB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M2E4Q6P5TEGRS0KQ317VJF4C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M2E57R79KTVAPVY5B3TC11XY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M2E5DG6H2VDYX9MP9WKCVJW9",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M2E3WXMF2YD94EBTJH611TM9",
+  "last_event_id": "ev_01M2E5DG6H2VDYX9MP9WKCVJW9",
+  "last_status_changed_at": "2026-09-13T19:52:17Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-228",
+  "status": "done",
+  "tags": [
+    "perf",
+    "load",
+    "lifecycle"
+  ],
+  "title": "Workspace deselection does not reliably throttle its selected surface: hidden-workspace agents keep rendering",
+  "type": "bug",
+  "updated_at": "2026-09-13T19:55:26Z",
+  "urgency": null
+}

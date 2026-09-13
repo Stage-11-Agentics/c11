@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-09-13T19:42:08Z",
+  "created_by": "agent:c11-228-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/447"
+  },
+  "id": "art_01M2E4N5FZBY83FF20KNDRXK1C",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #447",
+  "token_usage": null,
+  "type": "reference"
+}

@@ -6,6 +6,19 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.66.1] - 2026-09-13
+
+Headline: **Background agent terminals stop burning the efficiency cores.**
+
+### Fixed
+
+- **Hidden terminals no longer rebuild every frame.** A terminal in a workspace you were not looking at still re-shaped and re-laid-out its cells on every burst of output; only the final draw was skipped. With dozens of agents streaming in background tabs those hidden renderers, all at utility priority, pinned all four efficiency cores on an M-series Mac while the performance cores sat idle, and the load average climbed past 100 with the CPU 60% idle. The Ghostty engine now skips the frame rebuild entirely for an occluded surface and rebuilds once on the way back, so switching to that workspace still shows current output. Measured on a streaming terminal: 20 render samples per 5 s while visible, 0 while hidden. Backport of upstream Ghostty [14d9e600a](https://github.com/ghostty-org/ghostty/commit/14d9e600a). ([#444](https://github.com/Stage-11-Agentics/c11/pull/444)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **The sidebar's per-terminal CPU/MEM reader no longer scans every process on the machine.** To learn which process is in the foreground of each terminal, c11 listed every pid on the system and inspected each one, once per terminal, every two seconds. With 38 terminals and 1,100 processes that was about 44,000 kernel calls per cycle, a whole core spent in `proc_pidinfo`, and contention on the kernel's process list for every command any agent launched. It now asks the kernel for just the pids on that terminal's tty in a single call. ([#445](https://github.com/Stage-11-Agentics/c11/pull/445)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.66.0] - 2026-09-13
 
 Headline: **A browser wait no longer freezes every other c11 command.**

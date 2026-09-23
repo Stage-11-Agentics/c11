@@ -1,0 +1,3 @@
+# C11-234: Mailbox messages retrievable by id over the socket and CLI
+
+Why: probe 1 found that messages between agents exist in no durable store: the Lattice ingester (LAT-273) can see that mailbox traffic happened only if c11 exposes the message by a stable id. Deliverable: every mailbox message gets an id carried on its event; a socket command and CLI subcommand fetch one message by id (sender, recipient address, ts, body) and list ids for a surface or address; docs in docs/c11-mailbox-guide.md and the skill updated and synced; a test through the real socket path. Out of scope: message retention policy beyond the events log.

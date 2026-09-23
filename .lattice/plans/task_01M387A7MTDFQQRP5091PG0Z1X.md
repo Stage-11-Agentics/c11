@@ -1,0 +1,3 @@
+# C11-233: Heartbeat or activity events on surfaces bound to a task
+
+Why: probe 1 run B found a 6 h 39 m gap with no events on the C11-188 fleet and could not distinguish a dead fleet from a working one, because liveness tracking is blind on those surfaces. Deliverable: for any surface carrying a task metadata key, c11 emits a coarse activity event (activity.tick with state working|idle and bytes-since-last) on a slow cadence (default 60 s, only when state changed or every 10 min otherwise), never on the typing hot path; docs updated and synced; a test through the real event path. Out of scope: per-keystroke telemetry.

@@ -1,0 +1,3 @@
+# C11-230: Agent identity and task id on every c11 event envelope
+
+Why: probe 1 (ideation/agentic-graph-cybernetics/probe-1-runA.md, runB.md) could not tell which agent did anything: the event envelope (Sources/Events/EventEnvelope.swift) carries instance, seq, ts, type, v, workspace, surface, payload and nothing about who. Attribution today runs through free-text tab titles. Deliverable: every surface-scoped event carries agent_type, agent_model and task (the surface metadata keys c11 already holds: terminal_type, model, task, role) as top-level envelope fields, null when unset; docs in skills/c11/references/events.md updated and synced; a test through the real event log path, not source text. Out of scope: any Lattice join logic (LAT-273).

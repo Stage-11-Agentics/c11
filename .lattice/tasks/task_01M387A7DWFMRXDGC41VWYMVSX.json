@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-09-23T22:48:51Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "description": "Why: probe 1 (ideation/agentic-graph-cybernetics/probe-1-runA.md, runB.md) could not tell which agent did anything: the event envelope (Sources/Events/EventEnvelope.swift) carries instance, seq, ts, type, v, workspace, surface, payload and nothing about who. Attribution today runs through free-text tab titles. Deliverable: every surface-scoped event carries agent_type, agent_model and task (the surface metadata keys c11 already holds: terminal_type, model, task, role) as top-level envelope fields, null when unset; docs in skills/c11/references/events.md updated and synced; a test through the real event log path, not source text. Out of scope: any Lattice join logic (LAT-273).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M387A7DWFMRXDGC41VWYMVSX",
+  "last_event_id": "ev_01M387A7DYPPD4JNGZ2VYPWWHA",
+  "last_status_changed_at": "2026-09-23T22:48:51Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-230",
+  "status": "backlog",
+  "tags": [
+    "events",
+    "overwatch"
+  ],
+  "title": "Agent identity and task id on every c11 event envelope",
+  "type": "task",
+  "updated_at": "2026-09-23T22:48:51Z",
+  "urgency": null
+}

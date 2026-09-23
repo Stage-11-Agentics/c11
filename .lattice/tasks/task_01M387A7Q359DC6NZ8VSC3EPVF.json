@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-09-23T22:48:51Z",
+  "created_by": "agent:claude-fable-5-1",
+  "custom_fields": {},
+  "description": "Why: probe 1 found that messages between agents exist in no durable store: the Lattice ingester (LAT-273) can see that mailbox traffic happened only if c11 exposes the message by a stable id. Deliverable: every mailbox message gets an id carried on its event; a socket command and CLI subcommand fetch one message by id (sender, recipient address, ts, body) and list ids for a surface or address; docs in docs/c11-mailbox-guide.md and the skill updated and synced; a test through the real socket path. Out of scope: message retention policy beyond the events log.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M387A7Q359DC6NZ8VSC3EPVF",
+  "last_event_id": "ev_01M387A7Q422ZQTZDS9QXEQ3VN",
+  "last_status_changed_at": "2026-09-23T22:48:51Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-234",
+  "status": "backlog",
+  "tags": [
+    "mailbox",
+    "overwatch"
+  ],
+  "title": "Mailbox messages retrievable by id over the socket and CLI",
+  "type": "task",
+  "updated_at": "2026-09-23T22:48:51Z",
+  "urgency": null
+}

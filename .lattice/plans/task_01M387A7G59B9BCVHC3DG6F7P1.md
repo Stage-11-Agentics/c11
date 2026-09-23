@@ -1,0 +1,3 @@
+# C11-231: waiting.entered and waiting.exited carry surface and reason
+
+Why: verified 2026-09-23 on the live events file: waiting.entered carries only instance, seq, ts, type, v, workspace. No surface, no reason. Probe 1 counted 154 waiting events in one run workspace and 492 in another on 2026-07-31 and could not say which surface waited or why, so starvation and attention-flooding are unmeasurable. Deliverable: waiting.entered and waiting.exited carry surface (UUID) and a reason enum (agent_prompt, permission, flag, unknown) in payload; docs updated and synced; a test through the real event path. Out of scope: changing the sidebar attention model.

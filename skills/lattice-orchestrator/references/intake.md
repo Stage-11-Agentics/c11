@@ -106,6 +106,9 @@ runtime/browser approval scope · delivery-receipt path
 
 ## Workspace panes (c11 refs)
 main_view_area / control_surface / delegate_view_area_1..3 / workspace / lattice_dashboard_port
+Write every ref as `surface:N <uuid>` (same for pane and workspace). `surface:N` renumbers
+after a c11 restart; the UUID does not, and it is the key the events log and the ingester join on.
+Get both from `c11 tree --json` (`ref` and `id`).
 
 ## Tickets in scope
 | Ticket | Title | Status | Workflow mode | Branch base |
@@ -121,7 +124,7 @@ Branch base may be a parent feature branch for press-ahead children. Per-ticket 
 
 ## agents.md (`.lattice/orchestration/agents.md`)
 
-Active table, overwritten each tick (Lattice + `c11 tree` are ground truth): `| Role | Ticket | Surface ref | Pane ref | Branch | Worktree | Phase | Last seen | Spawned at |`. Below it, `### Archived (run history)` — append-only `| Actor | Ticket | Outcome | Notes |`, where notes carry merge SHA, LOC, test delta, and any anomaly + recovery. A populated archive turns the closeout audit from "read every transcript" into "scan the anomaly notes," and recurring anomalies feed the footgun catalog.
+Active table, overwritten each tick (Lattice + `c11 tree` are ground truth): `| Role | Ticket | Surface ref | Pane ref | Branch | Worktree | Phase | Last seen | Spawned at |`. Surface and pane refs carry the UUID beside the short ref, as in run-state. Below it, `### Archived (run history)` — append-only `| Actor | Ticket | Outcome | Notes |`, where notes carry merge SHA, LOC, test delta, and any anomaly + recovery. A populated archive turns the closeout audit from "read every transcript" into "scan the anomaly notes," and recurring anomalies feed the footgun catalog.
 
 ## Workspace geometry & dashboard (inside c11)
 

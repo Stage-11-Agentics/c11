@@ -1,0 +1,9 @@
+# C11-229: Expose per-surface cwd, branch and worktree over the socket (tree --json, get-metadata)
+
+Why: the Lattice v2 Overwatch ingester attributes c11 surfaces to Lattice tasks by a four-rung ladder. Rung 2 (branch name carrying a Lattice short id, e.g. C11-228-foo) is deterministic and catches most hand-spawned helpers because they work in ticket worktrees, but it is blocked: c11 computes worktree and branch per surface (C11-104 derived tier) yet does not expose them outside the process.
+
+Verified 2026-09-23 on main: get-metadata on a terminal surface whose cwd is the c11 checkout on main returns no branch and no worktree key at all (only activity, description, lifecycle_state, model, terminal_type, title, plus agent-set keys). tree --json carries root_directory per workspace and tty per surface, and no per-surface cwd. SurfaceMetadataStore.getMetadata itself returns every tier including derived, so the gap is either that the derived writer (TabManager.applyDerivedWorktreeBranchMetadata) is not populating per-surface keys in this path, or the CLI omits them; find out which.
+
+Deliverable: (1) tree --json emits per-surface cwd, branch, worktree (null when unknown); (2) get-metadata returns the derived branch and worktree keys with source=derived when c11 has computed them; (3) cwd is refreshed on the same cadence the sidebar chips already use, no new polling, nothing on the typing hot path; (4) skill docs in skills/c11/references/api.md and metadata.md updated, then scripts/sync-installed-skills.sh c11; (5) a c11-logic or socket test that reads the fields through the real socket path, not a source-text assertion.
+
+Out of scope: any Lattice-side join logic (that is a code rule in Lattice's c11 integration, tracked there). Context: ideation/agentic-graph-cybernetics/sequence-charts-cybernetics-jev.md section 0.5.

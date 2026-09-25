@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-09-25T22:25:00Z",
+  "created_by": "agent:cairn-surface-60",
+  "custom_fields": {},
+  "description": "A surface with host metadata naming a remote box (e.g. prime:<id>) still gets branch and worktree inferred from the launcher's local cwd (showed branch=main while the seat was on handson-1). Expected: when the host key is non-local, branch and worktree are left unset or taken from metadata. Relates to C11-229. Found by the Overwatch seat launcher (2026-09-25).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3DAR01SXDPN527CBA7N40AM",
+  "last_event_id": "ev_01M3DAR01VPFA00AY6ASH41434",
+  "last_status_changed_at": "2026-09-25T22:25:00Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-237",
+  "status": "backlog",
+  "tags": [
+    "overwatch",
+    "seats"
+  ],
+  "title": "c11: do not guess branch and worktree from the local cwd for a surface whose host metadata is remote",
+  "type": "bug",
+  "updated_at": "2026-09-25T22:25:00Z",
+  "urgency": null
+}

@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-09-25T22:25:00Z",
+  "created_by": "agent:cairn-surface-60",
+  "custom_fields": {},
+  "description": "launch-agent with a custom agent kind whose command begins with exec (a shell builtin) prints a false-positive warning that the binary 'exec' was not found; the command runs fine. Expected: builtins are not looked up on PATH. Found by the Overwatch seat launcher (2026-09-25).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3DAQZZWF4WVZX01GS8ZMBXY",
+  "last_event_id": "ev_01M3DAQZZXG4F4BGKAP7M9RCTG",
+  "last_status_changed_at": "2026-09-25T22:25:00Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-236",
+  "status": "backlog",
+  "tags": [
+    "overwatch",
+    "seats"
+  ],
+  "title": "c11: launch-agent warns 'binary exec not found' for a command that starts with a shell builtin",
+  "type": "bug",
+  "updated_at": "2026-09-25T22:25:00Z",
+  "urgency": null
+}

@@ -1391,8 +1391,12 @@ class TabManager: ObservableObject {
         let defaultTitle = Self.defaultWorkspaceTitle(number: nextTabCount)
         sentryBreadcrumb("workspace.create", data: surfaceShapeSummary(tabCount: nextTabCount))
         let explicitWorkingDirectory = normalizedWorkingDirectory(overrideWorkingDirectory)
-        let workingDirectory = explicitWorkingDirectory ?? preferredWorkingDirectoryForNewTab(snapshot: snapshot)
         let explicitRootDirectory = normalizedWorkingDirectory(overrideRootDirectory)
+        // An explicit root places the first surface too (C11-238): the root
+        // governs every new surface in the workspace, including its first.
+        let workingDirectory = explicitWorkingDirectory
+            ?? explicitRootDirectory
+            ?? preferredWorkingDirectoryForNewTab(snapshot: snapshot)
         let rootDirectory = explicitRootDirectory
             ?? (establishRootFromWorkingDirectory ? explicitWorkingDirectory : nil)
         let inheritedConfig = inheritedTerminalConfigForNewWorkspace(snapshot: snapshot)
@@ -2345,6 +2349,12 @@ class TabManager: ObservableObject {
         guard let tab = snapshot.selectedWorkspace else {
             return nil
         }
+        // C11-238: drift never becomes a root. A new workspace starts in the
+        // selected workspace's root, and auto-adoption sees that directory; the
+        // focused shell's cwd is the fallback only when there is no usable root.
+        if let root = Workspace.usableRootDirectory(tab.rootDirectory) {
+            return root
+        }
         let focusedDirectory = tab.focusedPanelId
             .flatMap { tab.panelDirectories[$0] }
         let candidate = focusedDirectory ?? tab.currentDirectory
@@ -2465,6 +2475,7 @@ class TabManager: ObservableObject {
         let previousDirectory = gitProbeDirectory(for: tab, panelId: surfaceId)
         let normalized = normalizeDirectory(directory)
         tab.updatePanelDirectory(panelId: surfaceId, directory: normalized)
+        tab.adoptReportedDirectoryAsRootIfNeeded(panelId: surfaceId, directory: normalized)
         let nextDirectory = normalizedWorkingDirectory(normalized)
         if previousDirectory != nextDirectory {
             scheduleWorkspaceGitMetadataRefreshIfPossible(
@@ -5578,6 +5589,7 @@ extension TabManager {
             hasher.combine(workspace.focusedPanelId)
             hasher.combine(workspace.currentDirectory)
             hasher.combine(workspace.rootDirectory ?? "")
+            hasher.combine(workspace.rootAdoptionArmed)
             hasher.combine(workspace.customTitle ?? "")
             hasher.combine(workspace.customColor ?? "")
             hasher.combine(workspace.isPinned)

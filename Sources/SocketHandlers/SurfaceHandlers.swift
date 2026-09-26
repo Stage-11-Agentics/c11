@@ -387,6 +387,14 @@ extension TerminalController {
             }
         }
 
+        // Optional --cwd: validated off-main so a bad path errors instead of
+        // landing elsewhere. Omitted (or `inherit`) takes the workspace's
+        // new-surface rule: root, then the pane's terminal cwd, then home.
+        var cwdOverride: String?
+        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+            return err
+        }
+
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create surface", data: nil)
         guard v2MainSyncWithDeadline({
             guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
@@ -424,7 +432,7 @@ extension TerminalController {
             case .markdown:
                 newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
-                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus)?.id
+                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride)?.id
             }
 
             guard let newPanelId else {

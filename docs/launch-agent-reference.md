@@ -123,12 +123,19 @@ The launch cwd resolves in this order:
 1. explicit `--cwd <path>` (resolved CLI-side relative to the caller and
    validated server-side),
 2. the target workspace's stable root directory, when set,
-3. the launching surface's cwd (the compatibility fallback for rootless
-   workspaces).
+3. the launching surface's cwd (the fallback for rootless workspaces, and for
+   a root that no longer exists),
+4. home.
 
-Set a root during creation with `c11 new-workspace --root <path>` (or `--cwd`,
-which establishes the same root by default), then edit or clear it with
-`c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`.
+This is the same rule every new terminal in a workspace follows: tabs, splits,
+the tab-bar agent button, `default-agent launch`, `new-surface`, `new-split`,
+and `new-pane`. Set a root during creation with `c11 new-workspace --root
+<path>` (or `--cwd`, which establishes the same root by default); a workspace
+created without one starts in the selected workspace's root and adopts the
+first directory its focused shell reports, other than `~` or `/`. Read it with `c11 get-workspace-root`, edit or clear it
+with `c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`, or from
+the title-bar info button and the sidebar row's Workspace Root menu. A cleared
+root stays cleared.
 
 Any resolved cwd inside a linked git worktree proceeds with one coded warning.
 The warning names the absolute worktree path and carries code

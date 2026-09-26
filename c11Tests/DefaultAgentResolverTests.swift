@@ -37,6 +37,62 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    /// C11-238: every new-surface rail shares this seam, so blank tiers must
+    /// fall through instead of landing a shell in an empty path.
+    func testLaunchCwdTreatsBlankTiersAsAbsent() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "   ",
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/root", source: .workspaceRoot)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: " \n",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/surface", source: .launchingSurface)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "",
+                workspaceRoot: nil,
+                launchingSurfaceCwd: ""
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: nil, source: nil)
+        )
+    }
+
+    /// C11-238: the one missing-root rule shared by the new-surface seam,
+    /// `agent.launch`, and new-workspace placement.
+    func testUsableRootDirectoryRequiresAnExistingDirectory() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-238-usable-root-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("not-a-dir")
+        try Data().write(to: file)
+
+        XCTAssertEqual(Workspace.usableRootDirectory(dir.path), dir.path)
+        XCTAssertNil(Workspace.usableRootDirectory(file.path), "a file is not a root")
+        XCTAssertNil(Workspace.usableRootDirectory(nil))
+
+        try FileManager.default.removeItem(at: dir)
+        XCTAssertNil(Workspace.usableRootDirectory(dir.path), "a pruned root no longer counts")
+    }
+
+    /// The sidebar menu's drift check must not stat (it runs in a typing-path
+    /// view) yet must not report drift for equivalent spellings of the root.
+    func testComparablePathFoldsEquivalentSpellingsWithoutTheFilesystem() {
+        XCTAssertEqual(WorkspaceRootActions.comparablePath("/private/tmp/c11-238-none/"), "/tmp/c11-238-none")
+        XCTAssertEqual(WorkspaceRootActions.comparablePath("/tmp/c11-238-none/a/./b/.."), "/tmp/c11-238-none/a")
+        XCTAssertEqual(WorkspaceRootActions.comparablePath("/private/var/folders/x"), "/var/folders/x")
+        XCTAssertEqual(WorkspaceRootActions.comparablePath("/Users/someone/project"), "/Users/someone/project")
+        XCTAssertEqual(WorkspaceRootActions.comparablePath("/privateer/tmp"), "/privateer/tmp")
+    }
+
     func testExistingSurfaceLaunchCwdUsesExplicitThenTargetSurface() {
         XCTAssertEqual(
             AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(

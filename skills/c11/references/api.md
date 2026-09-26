@@ -68,7 +68,10 @@ c11 tree                             # Current workspace with ASCII floor plan (
 c11 tree --window                    # All workspaces in current window
 c11 tree --all                       # Every window
 c11 tree --json                      # Structured JSON with pixel/percent coordinates
+                                     # (workspace lines show root=<path> when a root is set)
 c11 list-workspaces                  # Workspace list (* = selected); --json includes root_directory
+c11 get-workspace-root [--json]      # The root new terminals start in; --json adds root_exists,
+                                     # root_adoption_armed, current_directory (focused surface cwd)
 c11 list-panes                       # Panes in current workspace (* = focused)
 c11 list-pane-surfaces               # Surfaces in current pane
 c11 current-workspace                # Current workspace ref
@@ -113,9 +116,10 @@ actually produced a tree.
 c11 <path>                           # Open directory in new workspace (launches c11 if needed)
 c11 new-workspace [--cwd <path>] [--root <path>] [--command <text>] [--title <text>] [--layout <path|name>]
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
+c11 get-workspace-root [--workspace <id|ref>] [--json]
 c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any pane; the new pane is always a terminal
 c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
-c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
+c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
@@ -132,7 +136,8 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
     # priority missions only); --suppressed marks the worker parent-owned. Semantics:
     # the attention model in SKILL.md.
-    # cwd precedence: explicit --cwd > workspace root > launching surface cwd.
+    # cwd precedence: explicit --cwd > workspace root > launching surface cwd (the same
+    # rule as every new terminal; see "Where a new terminal starts" below).
     # Linked-worktree cwd values proceed with a coded warning naming the worktree path.
     # Explicit --cwd and workspace-root provenance count as explicit intent; a
     # launching-surface cwd is inherited. warning_details carries code/path/source
@@ -202,18 +207,28 @@ c11 new-split down
 c11 new-split down --surface surface:10
 ```
 
-### `--cwd` — set the new shell's working directory
+### Where a new terminal starts: the workspace root, then `--cwd`
 
-`new-split` and `new-pane` spawn a terminal whose default working directory is inherited from the parent surface. Pass `--cwd <path>` to start the shell in a specific directory instead — set at creation, before the PTY is wired up, so the agent lands there with no `cd`:
+Every workspace has a **root directory**, and every new terminal in it starts there: a new tab, a split (keyboard, tab-bar button, or `new-split` / `new-pane`), `new-surface`, the tab-bar agent button, `default-agent launch`, and `launch-agent`. Shells that `cd` elsewhere do not move the root, so a pane that drifted into another repo never drags the next agent with it. One precedence applies on every rail:
+
+1. explicit `--cwd <path>`,
+2. the workspace root (skipped when that directory no longer exists),
+3. the source surface's cwd (the pane being split, or the focused surface),
+4. home.
+
+A workspace gets its root when it is created with a directory (`new-workspace --cwd/--root`, opening a folder). One created without a directory starts in the selected workspace's root (its focused shell's cwd only when that workspace has no root), then adopts the first directory its focused shell reports, other than `~` or `/`, so a drifted shell never becomes the next workspace's root. Read it with `c11 get-workspace-root`, change or clear it with `c11 set-workspace-root`; the operator sees and edits it from the info button in the title bar or the sidebar row's **Workspace Root** menu. A set root (even `~`) is never replaced by adoption, and a cleared root stays cleared, after which new terminals follow the source surface.
+
+Pass `--cwd` to start somewhere else. It is set at creation, before the PTY is wired up, so the agent lands there with no `cd`:
 
 ```bash
 c11 new-split right --cwd /Users/me/project   # new shell starts in /Users/me/project
-c11 new-split down --cwd .                     # relative path, resolved against your cwd
+c11 new-split down --cwd .                     # relative path: resolved against YOUR cwd, not the root
 c11 new-pane --cwd ~/code/api                  # tilde-expanded
+c11 new-surface --cwd .                        # a new tab in your current directory
 ```
 
 - The path is resolved relative to where the CLI runs (so `--cwd .` is your current dir) and validated server-side: a nonexistent path or a file (not a directory) returns a clear error rather than silently falling back to `$HOME`.
-- Omitting `--cwd` — or passing `--cwd inherit` — keeps the default: inherit the parent surface's cwd.
+- Omitting `--cwd`, or passing `--cwd inherit`, takes the precedence above: the workspace root first.
 - Browser/markdown panes have no shell, so `--cwd` has no effect there (it's still validated if supplied).
 
 This removes the orchestrator habit of prefixing every spawned command with `cd /path && …` just to keep a sub-agent out of `~`.

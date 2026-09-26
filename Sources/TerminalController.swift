@@ -22,8 +22,9 @@ extension Notification.Name {
 enum CwdParamResolution {
     /// The result of validating a raw `cwd` param value.
     enum Outcome: Equatable {
-        /// No cwd supplied (or the `inherit` keyword): use the default
-        /// inheritance chain (parent panel cwd → workspace cwd → $HOME).
+        /// No cwd supplied (or the `inherit` keyword): use the workspace's
+        /// new-surface rule (workspace root → source surface cwd → $HOME,
+        /// `Workspace.newSurfaceWorkingDirectory`).
         case inherit
         /// A validated, absolute, existing directory path to spawn the shell in.
         case path(String)
@@ -2372,6 +2373,7 @@ class TerminalController {
             "title": workspace.title,
             "selected": selected,
             "pinned": workspace.isPinned,
+            "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
             "panes": panes
         ]
@@ -9207,8 +9209,9 @@ class TerminalController {
 
     /// `default_agent get`                              → prints current default agent type
     /// `default_agent set <type>`                       → sets default
-    /// `default_agent launch [--agent <type>] [--pane <id>]` → A-button mimic: create
-    ///     a new agent surface in the focused (or named) pane
+    /// `default_agent launch [--agent <type>] [--pane <id>] [--cwd <path>]` → A-button
+    ///     mimic: create a new agent surface in the focused (or named) pane, starting
+    ///     in `--cwd`, else the workspace root, else the pane's terminal cwd
     /// `default_agent launch --in-surface <uuid> [--agent <type>] [--cwd <path>]
     ///     [--prompt "text" | --prompt-file <path>]` → launch into an existing
     ///     surface's PTY; c11 composes the launch line and (for non-claude agents)
@@ -9334,6 +9337,18 @@ class TerminalController {
             // ignored on this path (the operator's configured initial prompt
             // still flows via launchAgentSurface's existing pre-baking).
             guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
+            // An explicit --cwd wins over the workspace root, validated like
+            // every other socket cwd so a bad path errors instead of landing
+            // somewhere else.
+            let explicitCwd: String?
+            switch CwdParamResolution.resolve(cwdArg) {
+            case .inherit:
+                explicitCwd = nil
+            case .path(let path):
+                explicitCwd = path
+            case .invalid(_, let message, _):
+                return "ERROR: \(message)"
+            }
             var result = "ERROR: Failed to launch agent"
             v2MainSync {
                 guard let tabId = tabManager.selectedTabId,
@@ -9362,6 +9377,7 @@ class TerminalController {
                 let launched = tab.launchAgentSurface(
                     inPane: pane,
                     explicitAgent: explicitAgent,
+                    workingDirectory: explicitCwd,
                     source: .launchAgent
                 )
                 result = launched

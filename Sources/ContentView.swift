@@ -2318,6 +2318,11 @@ struct ContentView: View {
 
                 Spacer()
 
+                // C11-238: fixed trailing slot so it never moves with the title.
+                WorkspaceRootInfoButton(
+                    workspace: selectedTitlebarWorkspace,
+                    foregroundColor: fakeTitlebarTextColor
+                )
             }
             // HStack fills the titlebar height and the text centers within it.
             // Dropping the explicit frame(height: 28) + .padding(.top, 2) (which
@@ -2402,6 +2407,11 @@ struct ContentView: View {
             backgroundSource: backgroundSource,
             notificationPayloadHex: notificationPayloadHex
         )
+    }
+
+    private var selectedTitlebarWorkspace: Workspace? {
+        guard let selectedId = tabManager.selectedTabId else { return nil }
+        return tabManager.tabs.first(where: { $0.id == selectedId })
     }
 
     private var focusedDirectory: String? {
@@ -13047,6 +13057,28 @@ private struct TabItemView: View, Equatable {
             localized: "contextMenu.workspaceColor.tooltip",
             defaultValue: "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
         ))
+
+        // C11-238: root view/edit for minimal mode, where the title-bar info
+        // button is hidden. Reads only the already-observed `tab`.
+        if !isMulti {
+            Menu(String(localized: "contextMenu.workspaceRoot", defaultValue: "Workspace Root")) {
+                Button(tab.rootDirectory.map { WorkspaceRootActions.menuDisplayPath($0) }
+                    ?? String(localized: "contextMenu.workspaceRoot.none", defaultValue: "No Root Set")) {}
+                    .disabled(true)
+                Divider()
+                Button(String(localized: "contextMenu.workspaceRoot.change", defaultValue: "Change Root…")) {
+                    WorkspaceRootActions.chooseRoot(for: tab)
+                }
+                Button(String(localized: "workspaceRoot.useFocused", defaultValue: "Use Focused Directory")) {
+                    WorkspaceRootActions.useFocusedDirectory(for: tab)
+                }
+                .disabled(!WorkspaceRootActions.mayUseFocusedDirectory(for: tab))
+                Button(String(localized: "contextMenu.workspaceRoot.clear", defaultValue: "Clear Root")) {
+                    WorkspaceRootActions.clearRoot(for: tab)
+                }
+                .disabled(tab.rootDirectory == nil)
+            }
+        }
 
         if let copyableSidebarSSHError {
             Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {

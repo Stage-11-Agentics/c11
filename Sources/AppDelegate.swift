@@ -6886,6 +6886,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// New Workspace dialog. Returns `nil` if no main window is available
     /// or the focused workspace has no recorded cwd.
     @MainActor
+    /// The directory the New Workspace sheet starts from: the selected
+    /// workspace's root, so a drifted shell never seeds the next workspace's
+    /// root (C11-238), else its focused cwd.
     func focusedWorkspaceWorkingDirectory() -> String? {
         guard let context = preferredMainWindowContextForWorkspaceCreation(debugSource: "createWorkspaceSheet.cwd") else {
             return nil
@@ -6893,6 +6896,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let selectedId = context.tabManager.selectedTabId,
               let workspace = context.tabManager.tabs.first(where: { $0.id == selectedId }) else {
             return nil
+        }
+        if let root = Workspace.usableRootDirectory(workspace.rootDirectory) {
+            return root
         }
         let dir = workspace.currentDirectory
         return dir.isEmpty ? nil : dir

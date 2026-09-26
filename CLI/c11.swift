@@ -2121,9 +2121,10 @@ struct CMUXCLI {
             if let sfId { params["surface_id"] = sfId }
             if let titleArg, !titleArg.isEmpty { params["title"] = titleArg }
             // --cwd <path> sets the new shell's working directory. `inherit`
-            // (or omitting the flag) keeps the default: inherit the parent
-            // surface's cwd. An explicit path is resolved relative to where the
-            // CLI ran so `--cwd .` works; the app validates it server-side.
+            // (or omitting the flag) keeps the default: the workspace root,
+            // else the parent surface's cwd. An explicit path is resolved
+            // relative to where the CLI ran so `--cwd .` works; the app
+            // validates it server-side.
             if let cwdArg = cwdArg?.trimmingCharacters(in: .whitespaces), !cwdArg.isEmpty {
                 params["cwd"] = cwdArg.lowercased() == "inherit" ? "inherit" : resolvePath(cwdArg)
             }
@@ -2219,9 +2220,9 @@ struct CMUXCLI {
             if let file { params["file"] = file }
             if let title, !title.isEmpty { params["title"] = title }
             // --cwd <path> sets the new terminal's working directory. `inherit`
-            // (or omitting the flag) keeps the default: inherit the parent
-            // surface's cwd. Resolved relative to the CLI's cwd; validated
-            // server-side.
+            // (or omitting the flag) keeps the default: the workspace root,
+            // else the parent surface's cwd. Resolved relative to the CLI's
+            // cwd; validated server-side.
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
                 params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
             }
@@ -2460,6 +2461,7 @@ struct CMUXCLI {
             let paneRaw = optionValue(commandArgs, name: "--pane")
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
+            let cwd = optionValue(commandArgs, name: "--cwd")
             let noFocus = commandArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -2469,6 +2471,11 @@ struct CMUXCLI {
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
+            // --cwd <path> wins over the workspace root for a terminal surface.
+            // Resolved relative to the CLI's cwd; validated server-side.
+            if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
+                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
+            }
             if noFocus { params["focus"] = false }
             let payload = try client.sendV2(method: "surface.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
@@ -2722,6 +2729,30 @@ struct CMUXCLI {
                 idFormat: idFormat,
                 fallbackText: clear ? "OK cleared workspace root" : "OK \(pathArgs[0])"
             )
+
+        case "get-workspace-root":
+            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
+            let rootJSONOut = jsonOutput || rem0.contains("--json")
+            let trailing = rem0.filter { $0 != "--" && $0 != "--json" }
+            if !trailing.isEmpty {
+                throw CLIError(message: "get-workspace-root: unexpected arguments: \(trailing.joined(separator: " "))")
+            }
+            let workspaceArg = wsArg
+                ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            let wsId = try resolveWorkspaceId(workspaceArg, client: client)
+            let payload = try client.sendV2(method: "workspace.get_root", params: ["workspace_id": wsId])
+            let root = (payload["root_directory"] as? String) ?? ""
+            let fallbackText: String
+            if root.isEmpty {
+                fallbackText = (payload["root_adoption_armed"] as? Bool) == true
+                    ? "(none: adopts the first directory its shell visits other than ~ or /)"
+                    : "(none)"
+            } else if (payload["root_exists"] as? Bool) == false {
+                fallbackText = "\(root) (missing: new surfaces fall back to the focused surface)"
+            } else {
+                fallbackText = root
+            }
+            printV2Payload(payload, jsonOutput: rootJSONOut, idFormat: idFormat, fallbackText: fallbackText)
 
         case "current-workspace":
             let response = try sendV1Command("current_workspace", client: client)
@@ -8698,8 +8729,8 @@ struct CMUXCLI {
                                      (absolute or relative to where the CLI ran,
                                      so `--cwd .` works) is validated and must be
                                      an existing directory. `inherit` (the
-                                     default when omitted) uses the parent
-                                     surface's cwd.
+                                     default when omitted) uses the workspace
+                                     root, else the parent surface's cwd.
               --allow-undersized     Bypass the size-aware split policy for this
                                      call (alias: --force). Without it, c11 may
                                      flip the split axis, fall back to a tab, or
@@ -8827,7 +8858,8 @@ struct CMUXCLI {
               --cwd <path|inherit>                Working directory for the new terminal. A path
                                                   (absolute or relative to the CLI's cwd) is
                                                   validated and must be an existing directory.
-                                                  `inherit` (the default) uses the parent surface's cwd.
+                                                  `inherit` (the default) uses the workspace root,
+                                                  else the parent surface's cwd.
               --allow-undersized                  Bypass the size-aware split policy for this call
                                                   (alias: --force).
 
@@ -8923,12 +8955,18 @@ struct CMUXCLI {
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser surfaces
               --file <path>                       File path for markdown surfaces
+              --cwd <path|inherit>                Working directory for a terminal surface. A path
+                                                  (absolute or relative to the CLI's cwd) is
+                                                  validated and must be an existing directory.
+                                                  `inherit` (the default) uses the workspace root,
+                                                  else the pane's terminal cwd.
               --no-focus                          Create surface without stealing focus
 
             Example:
               c11 new-surface
               c11 new-surface --type browser --pane pane:1 --url https://example.com
               c11 new-surface --type markdown --file ~/docs/notes.md
+              c11 new-surface --cwd .
               c11 new-surface --no-focus
             """
         case "close-surface":
@@ -9099,12 +9137,29 @@ struct CMUXCLI {
             return """
             Usage: c11 set-workspace-root [--workspace <id|ref|index>] (<path> | --clear)
 
-            Set or clear the workspace's stable root directory. Agent launches
-            without an explicit --cwd use this root before the calling surface cwd.
+            Set or clear the workspace's stable root directory. Every new
+            terminal in the workspace (tab, split, agent button, new-surface,
+            new-split, new-pane, launch-agent) starts in the root unless it is
+            given an explicit --cwd. With no root, new terminals start in the
+            source surface's cwd. Clearing also stops the workspace from
+            adopting its next shell cwd as a root.
 
             Examples:
               c11 set-workspace-root ~/projects/myapp
               c11 set-workspace-root --workspace workspace:2 --clear
+            """
+        case "get-workspace-root":
+            return """
+            Usage: c11 get-workspace-root [--workspace <id|ref|index>] [--json]
+
+            Print the workspace's root directory, or "(none)". A root that no
+            longer exists is marked "(missing)". --json adds root_exists,
+            root_adoption_armed (a rootless workspace adopts the first shell cwd
+            other than ~ or /), and current_directory (the focused surface's cwd).
+
+            Examples:
+              c11 get-workspace-root
+              c11 get-workspace-root --workspace workspace:2 --json
             """
         case "current-workspace":
             return """
@@ -9608,9 +9663,10 @@ struct CMUXCLI {
                                                --in-surface.
               --agent <type>                   Override the configured default for this
                                                call only.
-              --cwd <path>                     Prepend `cd <path> && ` to the launch line.
-                                               Used with --in-surface when the existing
-                                               surface's cwd needs adjusting.
+              --cwd <path>                     Resolved relative to where the CLI ran. With
+                                               --in-surface: prepend `cd <path> && ` to the
+                                               launch line. Without it: start the new agent
+                                               surface there instead of the workspace root.
               --prompt <text>                  Initial prompt to deliver to the agent. For
                                                claude-code: appended as a positional arg.
                                                For other agents: typed in after a fixed
@@ -11699,7 +11755,13 @@ struct CMUXCLI {
         if let agentArg { parts.append("--agent"); parts.append(agentArg) }
         if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
         if let paneArg { parts.append("--pane"); parts.append(paneArg) }
-        if let cwdArg { parts.append("--cwd"); parts.append(v1QuoteForTokenizer(cwdArg)) }
+        // --cwd resolves relative to where the CLI ran (so `--cwd .` works), the
+        // same as new-split/new-pane/new-surface; `inherit` means "no explicit
+        // cwd" and is not forwarded.
+        if let cwdArg = cwdArg?.trimmingCharacters(in: .whitespaces),
+           !cwdArg.isEmpty, cwdArg.lowercased() != "inherit" {
+            parts.append("--cwd"); parts.append(v1QuoteForTokenizer(resolvePath(cwdArg)))
+        }
         if let promptArg { parts.append("--prompt"); parts.append(v1QuoteForTokenizer(promptArg)) }
         if let promptFileArg { parts.append("--prompt-file"); parts.append(v1QuoteForTokenizer(promptFileArg)) }
 
@@ -14367,6 +14429,10 @@ struct CMUXCLI {
         let title = (workspace["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
             parts.append("\"\(title)\"")
+        }
+        if let root = (workspace["root_directory"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !root.isEmpty {
+            parts.append("root=\((root as NSString).abbreviatingWithTildeInPath)")
         }
         if (workspace["selected"] as? Bool) == true {
             parts.append("[selected]")
@@ -17367,7 +17433,7 @@ struct CMUXCLI {
           tree [--all] [--workspace <id|ref|index>]
           focus-pane --pane <id|ref> [--workspace <id|ref>]
           new-pane [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
-          new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>]
+          new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
           close-surface [--surface <id|ref>] [--workspace <id|ref>]
           move-surface --surface <id|ref|index> [--pane <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
           reorder-surface --surface <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
@@ -17389,6 +17455,7 @@ struct CMUXCLI {
           select-workspace --workspace <id|ref>
           rename-workspace [--workspace <id|ref>] <title>
           set-workspace-root [--workspace <id|ref>] (<path> | --clear)
+          get-workspace-root [--workspace <id|ref>] [--json]
           rename-window [--workspace <id|ref>] <title>
           current-workspace
           read-screen [--workspace <id|ref>] [--surface <id|ref>] [--scrollback] [--lines <n>]

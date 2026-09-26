@@ -72,6 +72,7 @@ extension TerminalController {
             "workspace.reorder",
             "workspace.rename",
             "workspace.set_root",
+            "workspace.get_root",
             "workspace.action",
             "workspace.next",
             "workspace.previous",

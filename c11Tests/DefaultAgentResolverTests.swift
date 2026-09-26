@@ -37,6 +37,35 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    /// C11-238: every new-surface rail shares this seam, so blank tiers must
+    /// fall through instead of landing a shell in an empty path.
+    func testLaunchCwdTreatsBlankTiersAsAbsent() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "   ",
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/root", source: .workspaceRoot)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: " \n",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/surface", source: .launchingSurface)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "",
+                workspaceRoot: nil,
+                launchingSurfaceCwd: ""
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: nil, source: nil)
+        )
+    }
+
     func testExistingSurfaceLaunchCwdUsesExplicitThenTargetSurface() {
         XCTAssertEqual(
             AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(

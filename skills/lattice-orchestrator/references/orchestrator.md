@@ -40,10 +40,10 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
 
 ## Spawning: atomic cwd binding
 
-`c11 new-surface --pane <ref>` inherits the pane's *last* shell cwd — set by whichever sibling tab most recently ran `cd`. Non-deterministic; an un-anchored sub-agent lands in some other delegator's worktree. And Claude Code's Bash tool does not persist `cd` across tool calls. Therefore every launch line is atomic:
+`c11 new-surface --pane <ref>` starts in the workspace root (or, in a rootless workspace, the pane's last shell cwd), never in a particular delegator's worktree, so an un-anchored sub-agent lands in the wrong tree. And Claude Code's Bash tool does not persist `cd` across tool calls. Therefore bind the cwd at birth with `--cwd` and keep the launch line atomic:
 
 ```bash
-c11 new-surface --pane "$DELEGATE_PANE" --no-focus            # capture the new surface ref
+c11 new-surface --pane "$DELEGATE_PANE" --cwd <abs-worktree> --no-focus   # capture the new surface ref
 c11 send --workspace $WS --surface $NEW_SURF "cd <abs-worktree> && claude --dangerously-skip-permissions --model <model> \"Read <prompt-path> and follow the instructions.\""
 c11 send-key --workspace $WS --surface $NEW_SURF enter
 ```

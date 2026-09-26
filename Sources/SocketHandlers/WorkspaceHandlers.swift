@@ -30,6 +30,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2WorkspaceRename(params: params))
         case "workspace.set_root":
             return v2Result(id: id, self.v2WorkspaceSetRoot(params: params))
+        case "workspace.get_root":
+            return v2Result(id: id, self.v2WorkspaceGetRoot(params: params))
         case "workspace.action":
             return v2Result(id: id, self.v2WorkspaceAction(params: params))
         case "workspace.next":
@@ -565,6 +567,36 @@ extension TerminalController {
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "root_directory": v2OrNull(rootDirectory)
         ])
+    }
+
+    /// Read pair for `workspace.set_root` (C11-238). `current_directory` is the
+    /// focused surface's cwd, so a caller can see drift from the root;
+    /// `root_exists` is false when the root was deleted (new surfaces then fall
+    /// back to the focused surface's cwd); `root_adoption_armed` is true while a
+    /// rootless workspace is still waiting to adopt its first shell cwd.
+    private func v2WorkspaceGetRoot(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        var payload: [String: Any]?
+        v2MainSync {
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            payload = [
+                "workspace_id": workspace.id.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
+                "window_id": v2OrNull(windowId?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "root_directory": v2OrNull(workspace.rootDirectory),
+                "root_exists": workspace.rootDirectoryExists,
+                "root_adoption_armed": workspace.rootAdoptionArmed,
+                "current_directory": v2OrNull(workspace.currentDirectory)
+            ]
+        }
+        guard let payload else {
+            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        }
+        return .ok(payload)
     }
 
     private func v2ResolveWorkspaceDirectoryParam(

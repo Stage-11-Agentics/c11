@@ -895,6 +895,221 @@ final class WorkspaceSplitWorkingDirectoryTests: XCTestCase {
     }
 }
 
+/// C11-238: the workspace root governs every new terminal surface. These drive
+/// the real creation primitives and read the cwd each new panel was spawned
+/// with (`requestedWorkingDirectory`, the value handed to Ghostty).
+@MainActor
+final class WorkspaceRootDirectoryTests: XCTestCase {
+    private var createdDirectories: [URL] = []
+
+    override func tearDown() {
+        for url in createdDirectories {
+            try? FileManager.default.removeItem(at: url)
+        }
+        createdDirectories.removeAll()
+        super.tearDown()
+    }
+
+    private func makeDirectory(_ label: String) -> String {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-238-\(label)-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        createdDirectories.append(url)
+        return NSString(string: url.path).standardizingPath
+    }
+
+    private var home: String {
+        NSString(string: FileManager.default.homeDirectoryForCurrentUser.path).standardizingPath
+    }
+
+    /// A rooted workspace with its focused shell `cd`'d to B.
+    private func makeDriftedWorkspace(root: String, drift: String) -> (Workspace, PaneID, UUID)? {
+        let workspace = Workspace(workingDirectory: root, rootDirectory: root)
+        guard let paneId = workspace.bonsplitController.focusedPaneId,
+              let sourcePanelId = workspace.focusedPanelId else {
+            XCTFail("Expected a focused pane and panel in a new workspace")
+            return nil
+        }
+        workspace.updatePanelDirectory(panelId: sourcePanelId, directory: drift)
+        XCTAssertEqual(workspace.panelDirectories[sourcePanelId], drift)
+        return (workspace, paneId, sourcePanelId)
+    }
+
+    func testSplitAndNewTabStartInRootWhenFocusedShellDrifted() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, paneId, sourcePanelId) = setup
+
+        let split = workspace.newTerminalSplit(from: sourcePanelId, orientation: .horizontal, focus: false)
+        XCTAssertEqual(split?.requestedWorkingDirectory, root)
+
+        let tab = workspace.newTerminalSurface(inPane: paneId, focus: false)
+        XCTAssertEqual(tab?.requestedWorkingDirectory, root)
+    }
+
+    func testTabBarSplitButtonPathStartsInRoot() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, paneId, _) = setup
+        let before = Set(workspace.panels.keys)
+
+        // The tab-bar split buttons call bonsplit directly (a non-programmatic
+        // split); the workspace delegate auto-creates the new terminal.
+        XCTAssertNotNil(workspace.bonsplitController.splitPane(paneId, orientation: .horizontal))
+
+        let created = workspace.panels.keys.filter { !before.contains($0) }
+        XCTAssertEqual(created.count, 1)
+        XCTAssertEqual(created.first.flatMap { workspace.terminalPanel(for: $0) }?.requestedWorkingDirectory, root)
+    }
+
+    func testExplicitCwdWinsOverRoot() {
+        let root = makeDirectory("root")
+        let explicit = makeDirectory("explicit")
+        let workspace = Workspace(workingDirectory: root, rootDirectory: root)
+        guard let paneId = workspace.bonsplitController.focusedPaneId,
+              let sourcePanelId = workspace.focusedPanelId else {
+            return XCTFail("Expected a focused pane and panel")
+        }
+
+        let split = workspace.newTerminalSplit(
+            from: sourcePanelId, orientation: .vertical, focus: false, workingDirectory: explicit
+        )
+        XCTAssertEqual(split?.requestedWorkingDirectory, explicit)
+        let tab = workspace.newTerminalSurface(inPane: paneId, focus: false, workingDirectory: explicit)
+        XCTAssertEqual(tab?.requestedWorkingDirectory, explicit)
+    }
+
+    func testChangedRootGovernsTheNextSurfaceAndClearFallsBackToSource() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        let changed = makeDirectory("changed")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, paneId, sourcePanelId) = setup
+
+        workspace.setRootDirectory(changed)
+        XCTAssertEqual(
+            workspace.newTerminalSplit(from: sourcePanelId, orientation: .horizontal, focus: false)?.requestedWorkingDirectory,
+            changed
+        )
+
+        workspace.setRootDirectory(nil)
+        XCTAssertEqual(
+            workspace.newTerminalSplit(from: sourcePanelId, orientation: .horizontal, focus: false)?.requestedWorkingDirectory,
+            drift
+        )
+        XCTAssertEqual(workspace.newTerminalSurface(inPane: paneId, focus: false)?.requestedWorkingDirectory, drift)
+    }
+
+    func testMissingRootFallsBackToSourceSurface() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, _, sourcePanelId) = setup
+        try? FileManager.default.removeItem(atPath: root)
+
+        XCTAssertFalse(workspace.rootDirectoryExists)
+        let resolution = workspace.newSurfaceWorkingDirectory(explicit: nil, sourcePanelId: sourcePanelId)
+        XCTAssertEqual(resolution.path, drift)
+        XCTAssertEqual(resolution.source, .launchingSurface)
+    }
+
+    func testAddWorkspaceEstablishesRootFromCreationDirectory() {
+        let manager = TabManager()
+        let dirA = makeDirectory("a")
+        let rootR = makeDirectory("r")
+
+        let fromCwd = manager.addWorkspace(workingDirectory: dirA, select: false, autoWelcomeIfNeeded: false)
+        XCTAssertEqual(fromCwd.rootDirectory, dirA)
+        XCTAssertFalse(fromCwd.rootAdoptionArmed)
+
+        let explicitRoot = manager.addWorkspace(
+            workingDirectory: dirA, rootDirectory: rootR, select: false, autoWelcomeIfNeeded: false
+        )
+        XCTAssertEqual(explicitRoot.rootDirectory, rootR)
+
+        let rootOnly = manager.addWorkspace(rootDirectory: rootR, select: false, autoWelcomeIfNeeded: false)
+        XCTAssertEqual(rootOnly.rootDirectory, rootR)
+        XCTAssertEqual(rootOnly.focusedTerminalPanel?.requestedWorkingDirectory, rootR)
+
+        let unrooted = manager.addWorkspace(
+            workingDirectory: dirA, establishRootFromWorkingDirectory: false, select: false, autoWelcomeIfNeeded: false
+        )
+        XCTAssertNil(unrooted.rootDirectory)
+        XCTAssertTrue(unrooted.rootAdoptionArmed)
+    }
+
+    func testRootlessWorkspaceAdoptsFirstFocusedProjectDirectoryOnce() {
+        let manager = TabManager()
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let project = makeDirectory("project")
+        let later = makeDirectory("later")
+        guard let focused = workspace.focusedPanelId else { return XCTFail("Expected a focused panel") }
+        XCTAssertNil(workspace.rootDirectory)
+        XCTAssertTrue(workspace.rootAdoptionArmed)
+
+        // A fresh shell lands in ~ or /: not a project, keep waiting.
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: home)
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: "/")
+        XCTAssertNil(workspace.rootDirectory)
+        XCTAssertTrue(workspace.rootAdoptionArmed)
+
+        // A non-focused surface does not count.
+        guard let other = workspace.newTerminalSplit(from: focused, orientation: .horizontal, focus: false) else {
+            return XCTFail("Expected split")
+        }
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: other.id, directory: later)
+        XCTAssertNil(workspace.rootDirectory)
+
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        XCTAssertEqual(workspace.rootDirectory, project)
+        XCTAssertFalse(workspace.rootAdoptionArmed)
+
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: later)
+        XCTAssertEqual(workspace.rootDirectory, project, "Adoption is one-shot; later navigation never moves the root")
+    }
+
+    func testClearAndExplicitHomeRootAreNeverOverriddenByAdoption() {
+        let manager = TabManager()
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let project = makeDirectory("project")
+        guard let focused = workspace.focusedPanelId else { return XCTFail("Expected a focused panel") }
+
+        workspace.setRootDirectory(home)
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        XCTAssertEqual(workspace.rootDirectory, home)
+
+        workspace.setRootDirectory(nil)
+        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        XCTAssertNil(workspace.rootDirectory, "A cleared root stays cleared")
+        XCTAssertFalse(workspace.rootAdoptionArmed)
+    }
+
+    func testSessionRestoreKeepsRootAndClearedState() {
+        let manager = TabManager()
+        let root = makeDirectory("root")
+        let rooted = manager.addWorkspace(workingDirectory: root, select: false, autoWelcomeIfNeeded: false)
+        let cleared = manager.addWorkspace(workingDirectory: root, select: false, autoWelcomeIfNeeded: false)
+        cleared.setRootDirectory(nil)
+        let pending = manager.addWorkspace(
+            workingDirectory: root, establishRootFromWorkingDirectory: false, select: false, autoWelcomeIfNeeded: false
+        )
+
+        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        let restored = TabManager()
+        restored.restoreSessionSnapshot(snapshot)
+        let byId = Dictionary(uniqueKeysWithValues: restored.tabs.map { ($0.id, $0) })
+
+        XCTAssertEqual(byId[rooted.id]?.rootDirectory, root)
+        XCTAssertEqual(byId[rooted.id]?.rootAdoptionArmed, false)
+        XCTAssertNil(byId[cleared.id]?.rootDirectory)
+        XCTAssertEqual(byId[cleared.id]?.rootAdoptionArmed, false)
+        XCTAssertNil(byId[pending.id]?.rootDirectory)
+        XCTAssertEqual(byId[pending.id]?.rootAdoptionArmed, true)
+    }
+}
+
 
 @MainActor
 final class WorkspaceTerminalFocusRecoveryTests: XCTestCase {

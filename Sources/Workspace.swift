@@ -251,6 +251,7 @@ extension Workspace {
             isPinned: isPinned,
             currentDirectory: currentDirectory,
             rootDirectory: rootDirectory,
+            rootAdoptionArmed: rootAdoptionArmed,
             focusedPanelId: focusedPanelId,
             layout: layout,
             panels: panelSnapshots,
@@ -269,7 +270,7 @@ extension Workspace {
         if !normalizedCurrentDirectory.isEmpty {
             currentDirectory = normalizedCurrentDirectory
         }
-        setRootDirectory(snapshot.rootDirectory)
+        restoreRootDirectory(snapshot.rootDirectory, adoptionArmed: snapshot.rootAdoptionArmed)
 
         let panelSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.panels.map { ($0.id, $0) })
         let leafEntries = restoreSessionLayout(snapshot.layout)
@@ -5297,9 +5298,15 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var isPinned: Bool = false
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
-    /// Stable project-level cwd used when launching child agents. Unlike
+    /// Stable project-level cwd. Every new terminal surface in the workspace
+    /// starts here (see `newSurfaceWorkingDirectory`). Unlike
     /// `currentDirectory`, this does not follow shell navigation.
     @Published private(set) var rootDirectory: String?
+    /// C11-238: armed while the workspace has no root, so the first cwd its
+    /// focused shell reports (other than home or `/`) becomes the root. Any
+    /// root assignment or clear disarms it, so auto-adoption never overrides
+    /// the operator.
+    private(set) var rootAdoptionArmed: Bool = false
 
     /// Publishes the new `customColor` value whenever it changes via `setCustomColor`.
     /// Used by `WorkspaceContentView` to re-apply bonsplit chrome (divider color, frame
@@ -5978,7 +5985,9 @@ final class Workspace: Identifiable, ObservableObject {
         self.currentDirectory = hasWorkingDirectory
             ? trimmedWorkingDirectory
             : FileManager.default.homeDirectoryForCurrentUser.path
-        self.rootDirectory = Self.normalizedRootDirectory(rootDirectory)
+        let normalizedRoot = Self.normalizedRootDirectory(rootDirectory)
+        self.rootDirectory = normalizedRoot
+        self.rootAdoptionArmed = normalizedRoot == nil
 
         // Configure bonsplit with keepAllAlive to preserve terminal state
         // and keep split entry instantaneous.
@@ -7176,8 +7185,55 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// Set or clear the stable root (socket `workspace.set_root`, the GUI
+    /// affordance, creation). Either way auto-adoption is disarmed: a clear
+    /// sticks, and a set root is never replaced by a shell report.
     func setRootDirectory(_ directory: String?) {
         rootDirectory = Self.normalizedRootDirectory(directory)
+        rootAdoptionArmed = false
+    }
+
+    /// Session restore: keep the persisted root. A rootless snapshot stays
+    /// armed unless the operator had cleared the root (legacy snapshots carry
+    /// no flag and count as armed).
+    private func restoreRootDirectory(_ directory: String?, adoptionArmed: Bool?) {
+        rootDirectory = Self.normalizedRootDirectory(directory)
+        rootAdoptionArmed = rootDirectory == nil && (adoptionArmed ?? true)
+    }
+
+    /// C11-238: adopt a shell-reported cwd as the root of a rootless workspace.
+    /// Called only for real shell reports (`TabManager.updateSurfaceDirectory`),
+    /// never for restore writes or git probes. Only the focused surface counts;
+    /// home and `/` are where a fresh shell lands, not a project, so adoption
+    /// waits for the first other directory. Remote workspaces report remote
+    /// paths and never adopt.
+    @discardableResult
+    func adoptReportedDirectoryAsRootIfNeeded(panelId: UUID, directory: String) -> Bool {
+        guard rootAdoptionArmed, rootDirectory == nil, remoteConfiguration == nil else { return false }
+        if let focusedPanelId, focusedPanelId != panelId { return false }
+        guard let candidate = Self.normalizedRootDirectory(directory),
+              !Self.isShellLandingDirectory(candidate) else { return false }
+        rootDirectory = candidate
+        rootAdoptionArmed = false
+#if DEBUG
+        dlog("workspace.root.adopt workspace=\(id.uuidString.prefix(5)) panel=\(panelId.uuidString.prefix(5)) root=\(candidate)")
+#endif
+        return true
+    }
+
+    /// True when the root is set and still an existing directory.
+    var rootDirectoryExists: Bool {
+        rootDirectory.map(Self.isExistingDirectory) ?? false
+    }
+
+    nonisolated static func isExistingDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    nonisolated private static func isShellLandingDirectory(_ path: String) -> Bool {
+        let home = NSString(string: FileManager.default.homeDirectoryForCurrentUser.path).standardizingPath
+        return path == "/" || path == home
     }
 
     nonisolated private static func normalizedRootDirectory(_ directory: String?) -> String? {
@@ -8634,10 +8690,10 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Create a new split with a terminal panel.
     ///
-    /// If `workingDirectory` is provided and non-empty, it overrides the
-    /// source-panel / workspace inheritance chain below — used by
-    /// `WorkspaceLayoutExecutor` to honor explicit `SurfaceSpec.workingDirectory`
-    /// values declared in a `WorkspaceApplyPlan`.
+    /// If `workingDirectory` is provided and non-empty, it wins over the
+    /// workspace root and the source panel's cwd (see
+    /// `newSurfaceWorkingDirectory`). `WorkspaceLayoutExecutor` uses it to honor
+    /// explicit `SurfaceSpec.workingDirectory` values in a `WorkspaceApplyPlan`.
     @discardableResult
     func newTerminalSplit(
         from panelId: UUID,
@@ -8650,31 +8706,13 @@ final class Workspace: Identifiable, ObservableObject {
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
         let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
 
-        // Inherit working directory: caller-supplied override wins, then the
-        // source panel's reported cwd, then its requested startup cwd if
-        // shell integration has not reported back yet, and finally fall back
-        // to the workspace's current directory.
-        let splitWorkingDirectory: String? = {
-            if let override = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !override.isEmpty {
-                return override
-            }
-            if let panelDirectory = panelDirectories[panelId]?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !panelDirectory.isEmpty {
-                return panelDirectory
-            }
-            if let requestedWorkingDirectory = terminalPanel(for: panelId)?
-                .requestedWorkingDirectory?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-               !requestedWorkingDirectory.isEmpty {
-                return requestedWorkingDirectory
-            }
-            let workspaceDirectory = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-            return workspaceDirectory.isEmpty ? nil : workspaceDirectory
-        }()
+        // One cwd rule for every new surface (C11-238): caller override, then
+        // the workspace root, then the source panel's cwd, then home.
+        let cwdResolution = newSurfaceWorkingDirectory(explicit: workingDirectory, sourcePanelId: panelId)
+        let splitWorkingDirectory = cwdResolution.path
 #if DEBUG
         dlog(
-            "split.cwd panelId=\(panelId.uuidString.prefix(5)) panelDir=\(panelDirectories[panelId] ?? "nil") requestedDir=\(terminalPanel(for: panelId)?.requestedWorkingDirectory ?? "nil") currentDir=\(currentDirectory) resolved=\(splitWorkingDirectory ?? "nil")"
+            "split.cwd panelId=\(panelId.uuidString.prefix(5)) source=\(cwdResolution.source?.rawValue ?? "home") root=\(rootDirectory ?? "nil") resolved=\(splitWorkingDirectory ?? "nil")"
         )
 #endif
 
@@ -8766,6 +8804,14 @@ final class Workspace: Identifiable, ObservableObject {
         let previousFocusedPanelId = focusedPanelId
         let previousHostedView = focusedTerminalPanel?.hostedView
 
+        // The pane's own terminal is the tier-3 source, matching the config
+        // inheritance source. Resolve before `inheritedTerminalConfig`, which
+        // records the inheritance source as a side effect.
+        let cwdSourcePanelId = terminalPanelForConfigInheritance(inPane: paneId)?.id
+        let resolvedWorkingDirectory = newSurfaceWorkingDirectory(
+            explicit: workingDirectory,
+            sourcePanelId: cwdSourcePanelId
+        ).path
         let inheritedConfig = inheritedTerminalConfig(inPane: paneId)
         let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
 
@@ -8776,7 +8822,7 @@ final class Workspace: Identifiable, ObservableObject {
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
-            workingDirectory: workingDirectory,
+            workingDirectory: resolvedWorkingDirectory,
             portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
             additionalEnvironment: startupEnvironment
@@ -8836,16 +8882,35 @@ final class Workspace: Identifiable, ObservableObject {
         return command
     }
 
-    /// C11-14: cwd to feed the agent resolver for project `.c11/agents.json`
-    /// discovery. Falls back through focused panel → workspace currentDirectory
-    /// → process cwd so something is always available to walk upward from.
-    func resolverCwdForAgentLaunch() -> String {
-        if let panel = focusedTerminalPanel, !panel.directory.isEmpty {
-            return panel.directory
+    /// C11-238: the one cwd rule for every new terminal surface in this
+    /// workspace (tab, split, agent button, socket/CLI, repair paths).
+    /// Precedence: explicit cwd, then the workspace root (skipped when it is no
+    /// longer a directory), then the source surface's cwd (the focused surface
+    /// when no source is named), then home. Always yields a path, so Ghostty's
+    /// inherited config never picks the cwd of a new surface.
+    func newSurfaceWorkingDirectory(
+        explicit: String?,
+        sourcePanelId: UUID?
+    ) -> AgentLaunchWorkingDirectoryResolution {
+        let usableRoot = rootDirectory.flatMap { root -> String? in
+            guard Self.isExistingDirectory(root) else {
+#if DEBUG
+                dlog("workspace.root.missing workspace=\(id.uuidString.prefix(5)) root=\(root)")
+#endif
+                return nil
+            }
+            return root
         }
-        let dir = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !dir.isEmpty { return dir }
-        return FileManager.default.currentDirectoryPath
+        let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
+            explicitCwd: explicit,
+            workspaceRoot: usableRoot,
+            launchingSurfaceCwd: inheritedCwdForAgentLaunch(callerSurfaceId: sourcePanelId)
+        )
+        guard resolution.path == nil else { return resolution }
+        return AgentLaunchWorkingDirectoryResolution(
+            path: FileManager.default.homeDirectoryForCurrentUser.path,
+            source: nil
+        )
     }
 
     /// The cwd inherited by a socket-launched agent. Prefer the exact calling
@@ -10347,6 +10412,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// Create a new terminal panel (used when replacing the last panel)
     @discardableResult
     func createReplacementTerminalPanel() -> TerminalPanel {
+        let workingDirectory = newSurfaceWorkingDirectory(explicit: nil, sourcePanelId: focusedPanelId).path
         let inheritedConfig = inheritedTerminalConfig(
             preferredPanelId: focusedPanelId,
             inPane: bonsplitController.focusedPaneId
@@ -10355,6 +10421,7 @@ final class Workspace: Identifiable, ObservableObject {
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
             configTemplate: inheritedConfig,
+            workingDirectory: workingDirectory,
             portOrdinal: portOrdinal
         )
         panels[newPanel.id] = newPanel
@@ -12353,12 +12420,17 @@ extension Workspace: BonsplitDelegate {
                     // Keep the existing placeholder tab identity and replace only the panel mapping.
                     // This avoids an extra create+close tab churn that can transiently render an
                     // empty pane during drag-to-split of a single-tab pane.
+                    let workingDirectory = newSurfaceWorkingDirectory(
+                        explicit: nil,
+                        sourcePanelId: terminalPanelForConfigInheritance(inPane: originalPane)?.id
+                    ).path
                     let inheritedConfig = inheritedTerminalConfig(inPane: originalPane)
 
                     let replacementPanel = TerminalPanel(
                         workspaceId: id,
                         context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
                         configTemplate: inheritedConfig,
+                        workingDirectory: workingDirectory,
                         portOrdinal: portOrdinal
                     )
                     panels[replacementPanel.id] = replacementPanel
@@ -12416,6 +12488,7 @@ extension Workspace: BonsplitDelegate {
         )
 #endif
 
+        let workingDirectory = newSurfaceWorkingDirectory(explicit: nil, sourcePanelId: sourcePanelId).path
         let inheritedConfig = inheritedTerminalConfig(
             preferredPanelId: sourcePanelId,
             inPane: originalPane
@@ -12425,6 +12498,7 @@ extension Workspace: BonsplitDelegate {
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
+            workingDirectory: workingDirectory,
             portOrdinal: portOrdinal
         )
         panels[newPanel.id] = newPanel
@@ -12560,11 +12634,12 @@ extension Workspace: BonsplitDelegate {
     /// wrapper exists for the paths (socket `agent.launch`, the CLI's
     /// new-surface path) that already report their own errors.
     @discardableResult
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) -> Bool {
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, workingDirectory: String? = nil, source: AgentLaunchSource = .aButton) -> Bool {
         attemptAgentSurfaceLaunch(
             inPane: pane,
             explicitAgent: explicitAgent,
             explicitConfig: explicitConfig,
+            workingDirectory: workingDirectory,
             source: source
         ).didLaunch
     }
@@ -12582,6 +12657,10 @@ extension Workspace: BonsplitDelegate {
     /// A-button picker's "row click = launch". When set it takes precedence over
     /// `effectiveDefault()`; when both it and `explicitAgent` are nil the plain
     /// left-click path (launch `effectiveDefault()`) is unchanged.
+    /// - Parameter workingDirectory: explicit cwd (`default-agent launch --cwd`).
+    ///   Nil takes the workspace's new-surface rule: root, then the pane's
+    ///   terminal, then home. The same path drives the project-config lookup
+    ///   and the new shell, so they cannot disagree.
     /// - Parameter source: launch-stats provenance (C11-178). Defaults to
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
@@ -12590,10 +12669,15 @@ extension Workspace: BonsplitDelegate {
         inPane pane: PaneID,
         explicitAgent: AgentType? = nil,
         explicitConfig: SavedAgentConfig? = nil,
+        workingDirectory: String? = nil,
         source: AgentLaunchSource = .aButton
     ) -> AgentSurfaceLaunchOutcome {
+        let launchCwd = newSurfaceWorkingDirectory(
+            explicit: workingDirectory,
+            sourcePanelId: terminalPanelForConfigInheritance(inPane: pane)?.id
+        ).path ?? FileManager.default.homeDirectoryForCurrentUser.path
         let userDefault = DefaultAgentConfigStore.shared.current
-        let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
+        let projectConfig = DefaultAgentProjectConfig.find(from: launchCwd)
 
         // A plain left-click (no explicit agent) launches the saved-config
         // library's `effectiveDefault()` through the overlay resolver (C11-179).
@@ -12656,6 +12740,7 @@ extension Workspace: BonsplitDelegate {
         }
         guard let panel = newTerminalSurface(
             inPane: pane,
+            workingDirectory: launchCwd,
             startupEnvironment: launch.envOverrides
         ) else {
             return .declined(.surfaceCreationFailed)

@@ -487,6 +487,10 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var currentDirectory: String
     /// Stable workspace project root. Optional so pre-C11-194 snapshots decode.
     var rootDirectory: String? = nil
+    /// C11-238: whether a rootless workspace still adopts its first reported
+    /// cwd. False after an operator clear. Nil in older snapshots, which
+    /// restore as armed when the root is nil.
+    var rootAdoptionArmed: Bool? = nil
     var focusedPanelId: UUID?
     var layout: SessionWorkspaceLayoutSnapshot
     var panels: [SessionPanelSnapshot]

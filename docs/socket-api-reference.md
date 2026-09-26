@@ -92,7 +92,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `window.focus`
 - `window.list`
 
-### Workspaces (`workspace.*`) — 26
+### Workspaces (`workspace.*`) — 27
 
 - `workspace.action`
 - `workspace.apply`
@@ -102,6 +102,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `workspace.current`
 - `workspace.export_blueprint`
 - `workspace.get_metadata`
+- `workspace.get_root`
 - `workspace.last`
 - `workspace.list`
 - `workspace.list_blueprints`

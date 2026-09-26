@@ -1,0 +1,13 @@
+{
+  "agent_type": "orchestrate",
+  "base_name": "Cairn",
+  "framework": "claude-code",
+  "last_active": "2026-09-26T20:50:07Z",
+  "model": "claude-fable-5-1",
+  "name": "Cairn-1",
+  "parent": "human:atin",
+  "serial": 1,
+  "session": "sess_01M3FQPZ1JQZJFBCFW5J3B3K26",
+  "started_at": "2026-09-26T20:50:07Z",
+  "status": "active"
+}

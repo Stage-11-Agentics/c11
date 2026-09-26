@@ -216,7 +216,7 @@ Every workspace has a **root directory**, and every new terminal in it starts th
 3. the source surface's cwd (the pane being split, or the focused surface),
 4. home.
 
-A workspace gets its root when it is created with a directory (`new-workspace --cwd/--root`, opening a folder). One created without a directory adopts the first directory its focused shell reports, other than `~` or `/`. Read it with `c11 get-workspace-root`, change or clear it with `c11 set-workspace-root`; the operator sees and edits it from the info button in the title bar or the sidebar row's **Workspace Root** menu. A set root (even `~`) is never replaced by adoption, and a cleared root stays cleared, after which new terminals follow the source surface.
+A workspace gets its root when it is created with a directory (`new-workspace --cwd/--root`, opening a folder). One created without a directory starts in the selected workspace's root (its focused shell's cwd only when that workspace has no root), then adopts the first directory its focused shell reports, other than `~` or `/`, so a drifted shell never becomes the next workspace's root. Read it with `c11 get-workspace-root`, change or clear it with `c11 set-workspace-root`; the operator sees and edits it from the info button in the title bar or the sidebar row's **Workspace Root** menu. A set root (even `~`) is never replaced by adoption, and a cleared root stays cleared, after which new terminals follow the source surface.
 
 Pass `--cwd` to start somewhere else. It is set at creation, before the PTY is wired up, so the agent lands there with no `cd`:
 

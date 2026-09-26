@@ -131,8 +131,8 @@ This is the same rule every new terminal in a workspace follows: tabs, splits,
 the tab-bar agent button, `default-agent launch`, `new-surface`, `new-split`,
 and `new-pane`. Set a root during creation with `c11 new-workspace --root
 <path>` (or `--cwd`, which establishes the same root by default); a workspace
-created without one adopts the first directory its focused shell reports,
-other than `~` or `/`. Read it with `c11 get-workspace-root`, edit or clear it
+created without one starts in the selected workspace's root and adopts the
+first directory its focused shell reports, other than `~` or `/`. Read it with `c11 get-workspace-root`, edit or clear it
 with `c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`, or from
 the title-bar info button and the sidebar row's Workspace Root menu. A cleared
 root stays cleared.

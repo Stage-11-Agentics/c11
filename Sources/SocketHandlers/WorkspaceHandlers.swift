@@ -578,24 +578,28 @@ extension TerminalController {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
+        // Main only for the model snapshot (Workspace is main-actor state); the
+        // existence stat runs off-main after it.
         var payload: [String: Any]?
+        var rootDirectory: String?
         v2MainSync {
             guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
             let windowId = v2ResolveWindowId(tabManager: tabManager)
+            rootDirectory = workspace.rootDirectory
             payload = [
                 "workspace_id": workspace.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "root_directory": v2OrNull(workspace.rootDirectory),
-                "root_exists": workspace.rootDirectoryExists,
                 "root_adoption_armed": workspace.rootAdoptionArmed,
                 "current_directory": v2OrNull(workspace.currentDirectory)
             ]
         }
-        guard let payload else {
+        guard var payload else {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
+        payload["root_exists"] = Workspace.usableRootDirectory(rootDirectory) != nil
         return .ok(payload)
     }
 

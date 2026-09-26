@@ -7223,7 +7223,15 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// True when the root is set and still an existing directory.
     var rootDirectoryExists: Bool {
-        rootDirectory.map(Self.isExistingDirectory) ?? false
+        Self.usableRootDirectory(rootDirectory) != nil
+    }
+
+    /// The one missing-root rule: a root counts only while it is still an
+    /// existing directory (worktree roots get pruned). Shared by the new-surface
+    /// seam, the socket `agent.launch` resolver, and new-workspace placement.
+    nonisolated static func usableRootDirectory(_ root: String?) -> String? {
+        guard let root, isExistingDirectory(root) else { return nil }
+        return root
     }
 
     nonisolated static func isExistingDirectory(_ path: String) -> Bool {
@@ -8712,7 +8720,7 @@ final class Workspace: Identifiable, ObservableObject {
         let splitWorkingDirectory = cwdResolution.path
 #if DEBUG
         dlog(
-            "split.cwd panelId=\(panelId.uuidString.prefix(5)) source=\(cwdResolution.source?.rawValue ?? "home") root=\(rootDirectory ?? "nil") resolved=\(splitWorkingDirectory ?? "nil")"
+            "split.cwd panelId=\(panelId.uuidString.prefix(5)) source=\(cwdResolution.source?.rawValue ?? "home") root=\(rootDirectory ?? "nil") resolved=\(splitWorkingDirectory)"
         )
 #endif
 
@@ -8891,26 +8899,35 @@ final class Workspace: Identifiable, ObservableObject {
     func newSurfaceWorkingDirectory(
         explicit: String?,
         sourcePanelId: UUID?
-    ) -> AgentLaunchWorkingDirectoryResolution {
-        let usableRoot = rootDirectory.flatMap { root -> String? in
-            guard Self.isExistingDirectory(root) else {
+    ) -> (path: String, source: AgentLaunchWorkingDirectorySource?) {
+        // Only stat the root when it can win: an explicit cwd outranks it, and
+        // restore and layout specs pass one for every surface they create.
+        let hasExplicit = !(explicit?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let usableRoot = hasExplicit ? nil : Self.usableRootDirectory(rootDirectory)
 #if DEBUG
-                dlog("workspace.root.missing workspace=\(id.uuidString.prefix(5)) root=\(root)")
-#endif
-                return nil
-            }
-            return root
+        if !hasExplicit, usableRoot == nil, let rootDirectory {
+            dlog("workspace.root.missing workspace=\(id.uuidString.prefix(5)) root=\(rootDirectory)")
         }
+#endif
         let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
             explicitCwd: explicit,
             workspaceRoot: usableRoot,
-            launchingSurfaceCwd: inheritedCwdForAgentLaunch(callerSurfaceId: sourcePanelId)
+            launchingSurfaceCwd: hasExplicit ? nil : inheritedCwdForAgentLaunch(callerSurfaceId: sourcePanelId)
         )
-        guard resolution.path == nil else { return resolution }
-        return AgentLaunchWorkingDirectoryResolution(
-            path: FileManager.default.homeDirectoryForCurrentUser.path,
-            source: nil
+        return (
+            resolution.path ?? FileManager.default.homeDirectoryForCurrentUser.path,
+            resolution.source
         )
+    }
+
+    /// The cwd the tab-bar agent button and `default-agent launch` start a new
+    /// agent in (the pane's terminal is the tier-3 source). Side-effect free,
+    /// unlike the launch itself, so the A-button rail is testable.
+    func agentLaunchWorkingDirectory(inPane pane: PaneID, explicit: String?) -> String {
+        newSurfaceWorkingDirectory(
+            explicit: explicit,
+            sourcePanelId: terminalPanelForConfigInheritance(inPane: pane)?.id
+        ).path
     }
 
     /// The cwd inherited by a socket-launched agent. Prefer the exact calling
@@ -12672,10 +12689,7 @@ extension Workspace: BonsplitDelegate {
         workingDirectory: String? = nil,
         source: AgentLaunchSource = .aButton
     ) -> AgentSurfaceLaunchOutcome {
-        let launchCwd = newSurfaceWorkingDirectory(
-            explicit: workingDirectory,
-            sourcePanelId: terminalPanelForConfigInheritance(inPane: pane)?.id
-        ).path ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let launchCwd = agentLaunchWorkingDirectory(inPane: pane, explicit: workingDirectory)
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: launchCwd)
 

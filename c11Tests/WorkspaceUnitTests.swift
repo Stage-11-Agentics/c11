@@ -1015,6 +1015,48 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         XCTAssertEqual(resolution.source, .launchingSurface)
     }
 
+    /// The rail from the ticket: the tab-bar agent button resolved the focused
+    /// shell's cwd. It now takes the root, and an explicit cwd still wins.
+    func testAgentButtonLaunchCwdFollowsRootThenExplicit() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        let explicit = makeDirectory("explicit")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, paneId, _) = setup
+
+        XCTAssertEqual(workspace.agentLaunchWorkingDirectory(inPane: paneId, explicit: nil), root)
+        XCTAssertEqual(workspace.agentLaunchWorkingDirectory(inPane: paneId, explicit: explicit), explicit)
+        workspace.setRootDirectory(nil)
+        XCTAssertEqual(workspace.agentLaunchWorkingDirectory(inPane: paneId, explicit: nil), drift)
+    }
+
+    func testReplacementTerminalStartsInRoot() {
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
+        let (workspace, _, _) = setup
+
+        XCTAssertEqual(workspace.createReplacementTerminalPanel().requestedWorkingDirectory, root)
+    }
+
+    /// Drift never becomes a root: a new workspace starts in the selected
+    /// workspace's root, and only falls back to its focused cwd without one.
+    func testNewWorkspaceStartsInSelectedWorkspaceRootNotItsDrift() {
+        let manager = TabManager()
+        let root = makeDirectory("root")
+        let drift = makeDirectory("drift")
+        let selected = manager.addWorkspace(workingDirectory: root, select: true, autoWelcomeIfNeeded: false)
+        guard let focused = selected.focusedPanelId else { return XCTFail("Expected a focused panel") }
+        manager.updateSurfaceDirectory(tabId: selected.id, surfaceId: focused, directory: drift)
+
+        let fromRoot = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        XCTAssertEqual(fromRoot.focusedTerminalPanel?.requestedWorkingDirectory, root)
+
+        selected.setRootDirectory(nil)
+        let fromDrift = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        XCTAssertEqual(fromDrift.focusedTerminalPanel?.requestedWorkingDirectory, drift)
+    }
+
     func testAddWorkspaceEstablishesRootFromCreationDirectory() {
         let manager = TabManager()
         let dirA = makeDirectory("a")

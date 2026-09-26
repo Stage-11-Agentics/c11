@@ -1187,9 +1187,13 @@ extension TerminalController {
             return error
         }
 
+        // Same missing-root rule as every other new-surface rail: a deleted
+        // root (a pruned worktree) falls through to the launching surface.
+        // Stat off-main, and only when no explicit cwd outranks the root.
+        let usableRoot = cwdOverride == nil ? Workspace.usableRootDirectory(workspaceRoot) : nil
         let cwdResolution = AgentLaunchWorkingDirectoryResolver.resolve(
             explicitCwd: cwdOverride,
-            workspaceRoot: workspaceRoot,
+            workspaceRoot: usableRoot,
             launchingSurfaceCwd: launchingSurfaceCwd
         )
         let gitContext = cwdResolution.path.flatMap {

@@ -2349,6 +2349,12 @@ class TabManager: ObservableObject {
         guard let tab = snapshot.selectedWorkspace else {
             return nil
         }
+        // C11-238: drift never becomes a root. A new workspace starts in the
+        // selected workspace's root, and auto-adoption sees that directory; the
+        // focused shell's cwd is the fallback only when there is no usable root.
+        if let root = Workspace.usableRootDirectory(tab.rootDirectory) {
+            return root
+        }
         let focusedDirectory = tab.focusedPanelId
             .flatMap { tab.panelDirectories[$0] }
         let candidate = focusedDirectory ?? tab.currentDirectory

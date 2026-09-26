@@ -34,7 +34,20 @@ enum WorkspaceRootActions {
     static func mayUseFocusedDirectory(for workspace: Workspace) -> Bool {
         guard workspace.remoteConfiguration == nil,
               let focused = focusedDirectory(of: workspace) else { return false }
-        return focused != workspace.rootDirectory
+        return comparablePath(focused) != workspace.rootDirectory.map(comparablePath)
+    }
+
+    /// Normalizes a path for equality without touching the filesystem: dot
+    /// segments and trailing slashes collapse, and the `/private` alias of
+    /// `/tmp`, `/var` and `/etc` folds away the way stored roots already do.
+    nonisolated static func comparablePath(_ path: String) -> String {
+        var normalized = URL(fileURLWithPath: path, isDirectory: true).standardized.path
+        for alias in ["/private/tmp", "/private/var", "/private/etc"]
+        where normalized == alias || normalized.hasPrefix(alias + "/") {
+            normalized.removeFirst("/private".count)
+            break
+        }
+        return normalized
     }
 
     /// Remote workspaces report remote paths, which are not local directories.

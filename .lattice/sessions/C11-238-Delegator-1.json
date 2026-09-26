@@ -1,0 +1,13 @@
+{
+  "agent_type": "delegate",
+  "base_name": "C11-238-Delegator",
+  "framework": "claude-code",
+  "last_active": "2026-09-26T22:49:35Z",
+  "model": "claude-opus-5-5",
+  "name": "C11-238-Delegator-1",
+  "parent": "agent:Cairn-1",
+  "serial": 1,
+  "session": "sess_01M3FQWB31KGVZX6EVE50G7B9E",
+  "started_at": "2026-09-26T20:53:03Z",
+  "status": "active"
+}

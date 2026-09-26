@@ -1,0 +1,40 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-09-26T23:01:40Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Cairn",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Cairn-1",
+    "serial": 1,
+    "session": "sess_01M3FQPZ1JQZJFBCFW5J3B3K26"
+  },
+  "custom_fields": {},
+  "description": "Follow-ups from the fresh-context review of PR #453 (C11-238, merged eca449694). All Minor; none blocked the merge. Fix the first two and the doc line first, then judge the rest.\n\n1. Snapshot/blueprint capture pins a cleared or deleted root. WorkspacePlanCapture writes rootDirectory ?? currentDirectory into WorkspaceSpec.workingDirectory and apply calls addWorkspace with root establishment on, so a cleared root comes back as the focused cwd pinned as root, and a deleted root is handed to the first terminal as a missing directory. Capture usableRootDirectory and carry the cleared flag (or skip root establishment when there is no root).\n2. Socket workspace.create with root_directory null (or \"\" / \"inherit\") plus cwd yields a rootless workspace still armed for adoption; its first shell report adopts cwd. The layout branch disarms via setRootDirectory when rootWasSpecified; the non-layout branch needs the same.\n3. Docs overclaim: skills/c11/references/api.md and docs/launch-agent-reference.md say a drifted shell never becomes the next workspace's root. When the selected workspace has no root, TabManager starts the new workspace in the drifted cwd and adoption makes it the root. Reword.\n4. Remote (ssh) workspaces: panelDirectories hold remote paths, and the seam now passes them as the local cwd, which Ghostty drops so the local ssh process starts in the app cwd. Skip the source-cwd step for remote workspaces and hide or disable the root editor when remoteConfiguration != nil.\n5. launch-agent third fallback: with no root and no calling surface it uses the target workspace's focused panel while every other rail uses the target pane's terminal; launch-agent --pane and default-agent launch --pane can differ in a rootless workspace.\n6. surface.create validates cwd for every surface type but only terminals use it: reject cwd for browser/markdown or skip validation.\n7. usableRootDirectory stats the root on the main thread for every new surface, in preferredWorkingDirectoryForNewTab, focusedWorkspaceWorkingDirectory, and popover redraws; a hung network mount stalls the UI. Stat off-main in socket handlers as agent.launch does; consider caching for the GUI paths.\n8. Sidebar Workspace Root menu shows a deleted root with no missing marker, and Use Focused Directory is enabled by string comparison while the action requires the directory to exist.\n9. CreateWorkspaceSheet prefills ~ when the selected workspace has no root and its shell is in ~; creating from the sheet then pins ~ as root and disarms adoption. Confirm with Atin whether the sheet's prefill should count as \"created with a directory\".\n10. default-agent launch --in-surface --cwd <relative> now resolves against the CLI's cwd instead of the target surface's shell; document or restore.\n11. Untested claims: socket agent.launch deleted-root fallback, workspace.get_root, surface.create cwd, default_agent launch --cwd, the remote adoption guard, decoding a legacy snapshot without rootAdoptionArmed.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3FZ7VHEXWHA0VQ99QTXY5HG",
+  "last_event_id": "ev_01M3FZ7VHQXH53F92YDZVJE66Z",
+  "last_status_changed_at": "2026-09-26T23:01:40Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-239",
+  "status": "backlog",
+  "tags": [
+    "cwd",
+    "workspace",
+    "follow-up"
+  ],
+  "title": "c11: workspace-root follow-ups from the C11-238 review (snapshot pins cleared root, socket create stays armed, remote workspaces, docs)",
+  "type": "task",
+  "updated_at": "2026-09-26T23:01:40Z",
+  "urgency": null
+}

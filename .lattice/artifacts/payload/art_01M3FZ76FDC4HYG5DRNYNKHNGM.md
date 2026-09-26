@@ -1,0 +1,7 @@
+Orchestrator merge review (Cairn-1). PR #453 squash-merged to main as eca449694.
+
+Fresh-context reviewer (Opus, read-only, full diff against origin/main): nothing above Minor. The shared cwd seam (Workspace.newSurfaceWorkingDirectory) is used by every GUI rail traced: tab, + tab, split, tab-bar split button, drag-split replacement, last-panel replacement, A button, default-agent launch, and socket new-surface, new-split, new-pane. Socket agent.launch skips a deleted root and stats it off-main. Session restore keeps the persisted root and the armed/cleared state. Localization keys present in all locales. Popover reserves space, nothing jumps.
+
+Gates: CI green (build, compat-tests, mailbox-unit, drawbridge, python-syntax, web-typecheck, remote-daemon, workflow-guard). Runtime proof attached (art_01M3FYEZYK8TMA4M9PE5ESPFA2). PR head c0fb81bc6 == branch head. Operator direction: minimize new tests and ship.
+
+Minors carried to a follow-up ticket rather than blocking the merge: snapshot/blueprint capture pins a cleared or deleted root; socket workspace.create with root_directory null plus cwd stays armed and adopts cwd; remote workspaces get a remote path as local cwd and the editor is offered on them; launch-agent's third fallback differs from other rails; surface.create validates cwd for non-terminal types; main-thread stat of the root on hung network mounts; sidebar menu lacks a missing-root marker; docs overclaim that a drifted shell never seeds a new workspace when the selected workspace has no root; a few claimed behaviors untested.

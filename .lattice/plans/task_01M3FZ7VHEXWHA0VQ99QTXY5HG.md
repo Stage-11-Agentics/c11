@@ -1,0 +1,15 @@
+# C11-239: c11: workspace-root follow-ups from the C11-238 review (snapshot pins cleared root, socket create stays armed, remote workspaces, docs)
+
+Follow-ups from the fresh-context review of PR #453 (C11-238, merged eca449694). All Minor; none blocked the merge. Fix the first two and the doc line first, then judge the rest.
+
+1. Snapshot/blueprint capture pins a cleared or deleted root. WorkspacePlanCapture writes rootDirectory ?? currentDirectory into WorkspaceSpec.workingDirectory and apply calls addWorkspace with root establishment on, so a cleared root comes back as the focused cwd pinned as root, and a deleted root is handed to the first terminal as a missing directory. Capture usableRootDirectory and carry the cleared flag (or skip root establishment when there is no root).
+2. Socket workspace.create with root_directory null (or "" / "inherit") plus cwd yields a rootless workspace still armed for adoption; its first shell report adopts cwd. The layout branch disarms via setRootDirectory when rootWasSpecified; the non-layout branch needs the same.
+3. Docs overclaim: skills/c11/references/api.md and docs/launch-agent-reference.md say a drifted shell never becomes the next workspace's root. When the selected workspace has no root, TabManager starts the new workspace in the drifted cwd and adoption makes it the root. Reword.
+4. Remote (ssh) workspaces: panelDirectories hold remote paths, and the seam now passes them as the local cwd, which Ghostty drops so the local ssh process starts in the app cwd. Skip the source-cwd step for remote workspaces and hide or disable the root editor when remoteConfiguration != nil.
+5. launch-agent third fallback: with no root and no calling surface it uses the target workspace's focused panel while every other rail uses the target pane's terminal; launch-agent --pane and default-agent launch --pane can differ in a rootless workspace.
+6. surface.create validates cwd for every surface type but only terminals use it: reject cwd for browser/markdown or skip validation.
+7. usableRootDirectory stats the root on the main thread for every new surface, in preferredWorkingDirectoryForNewTab, focusedWorkspaceWorkingDirectory, and popover redraws; a hung network mount stalls the UI. Stat off-main in socket handlers as agent.launch does; consider caching for the GUI paths.
+8. Sidebar Workspace Root menu shows a deleted root with no missing marker, and Use Focused Directory is enabled by string comparison while the action requires the directory to exist.
+9. CreateWorkspaceSheet prefills ~ when the selected workspace has no root and its shell is in ~; creating from the sheet then pins ~ as root and disarms adoption. Confirm with Atin whether the sheet's prefill should count as "created with a directory".
+10. default-agent launch --in-surface --cwd <relative> now resolves against the CLI's cwd instead of the target surface's shell; document or restore.
+11. Untested claims: socket agent.launch deleted-root fallback, workspace.get_root, surface.create cwd, default_agent launch --cwd, the remote adoption guard, decoding a legacy snapshot without rootAdoptionArmed.

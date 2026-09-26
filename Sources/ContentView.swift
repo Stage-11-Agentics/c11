@@ -13062,7 +13062,7 @@ private struct TabItemView: View, Equatable {
         // button is hidden. Reads only the already-observed `tab`.
         if !isMulti {
             Menu(String(localized: "contextMenu.workspaceRoot", defaultValue: "Workspace Root")) {
-                Button(tab.rootDirectory.map(WorkspaceRootActions.displayPath)
+                Button(tab.rootDirectory.map { WorkspaceRootActions.menuDisplayPath($0) }
                     ?? String(localized: "contextMenu.workspaceRoot.none", defaultValue: "No Root Set")) {}
                     .disabled(true)
                 Divider()

@@ -2732,7 +2732,8 @@ struct CMUXCLI {
 
         case "get-workspace-root":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let trailing = rem0.filter { $0 != "--" }
+            let rootJSONOut = jsonOutput || rem0.contains("--json")
+            let trailing = rem0.filter { $0 != "--" && $0 != "--json" }
             if !trailing.isEmpty {
                 throw CLIError(message: "get-workspace-root: unexpected arguments: \(trailing.joined(separator: " "))")
             }
@@ -2744,14 +2745,14 @@ struct CMUXCLI {
             let fallbackText: String
             if root.isEmpty {
                 fallbackText = (payload["root_adoption_armed"] as? Bool) == true
-                    ? "(none: adopts the first directory its shell reports)"
+                    ? "(none: adopts the first directory its shell visits other than ~ or /)"
                     : "(none)"
             } else if (payload["root_exists"] as? Bool) == false {
                 fallbackText = "\(root) (missing: new surfaces fall back to the focused surface)"
             } else {
                 fallbackText = root
             }
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: fallbackText)
+            printV2Payload(payload, jsonOutput: rootJSONOut, idFormat: idFormat, fallbackText: fallbackText)
 
         case "current-workspace":
             let response = try sendV1Command("current_workspace", client: client)

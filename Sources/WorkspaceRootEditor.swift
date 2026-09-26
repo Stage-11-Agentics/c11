@@ -84,6 +84,16 @@ enum WorkspaceRootActions {
     static func displayPath(_ path: String) -> String {
         (path as NSString).abbreviatingWithTildeInPath
     }
+
+    /// Menu item titles never truncate on their own; keep the head and the
+    /// project-identifying tail so the submenu stays a sane width.
+    static func menuDisplayPath(_ path: String, maxLength: Int = 60) -> String {
+        let display = displayPath(path)
+        guard display.count > maxLength else { return display }
+        let tail = (maxLength * 2) / 3
+        let head = maxLength - tail - 1
+        return String(display.prefix(head)) + "…" + String(display.suffix(tail))
+    }
 }
 
 /// Fixed-size info button in the custom title bar. It does not observe the
@@ -185,12 +195,13 @@ struct WorkspaceRootPopover: View {
                 .accessibilityHidden(drifted == nil)
                 .accessibilityIdentifier("WorkspaceRootDrift")
 
+            // Fixed two-line slot: the button row must not move when the
+            // caption switches between its one- and two-line variants.
             Text(captionText)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
-                .lineLimit(2, reservesSpace: true)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .topLeading)
 
             HStack(spacing: 8) {
                 Button(String(localized: "workspaceRoot.change", defaultValue: "Change…")) {

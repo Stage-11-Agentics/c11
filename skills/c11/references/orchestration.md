@@ -335,6 +335,8 @@ The orchestrator does not need to poll on their behalf. When writing agent promp
 # Read what a sub-agent is doing
 c11 read-screen --workspace workspace:N --surface surface:M --lines 50
 
+# A line sitting after ❯ on an idle screen is Claude Code's ghosted auto-suggest,
+# not an operator draft (api.md, "Reading & sending"). Ignore it.
 # Pull a sub-agent's structured state
 c11 get-metadata --workspace $WS --surface $SURF
 

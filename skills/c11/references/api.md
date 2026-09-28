@@ -269,6 +269,8 @@ c11 send --workspace workspace:2 --surface surface:3 "ls"
 c11 send --surface surface:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
 ```
 
+**Text after `❯` on an idle Claude Code screen is usually not the operator's.** When an agent ends its turn on a question, Claude Code ghosts a suggested reply into the input line ("one yes, two no", "yes, proceed"). `read-screen` returns that ghost text exactly like typed text. Treat an unsent line on an idle prompt as auto-suggest, never as an answer the operator drafted: do not press Enter on it, do not relay it, and do not report it as "typed but unsent". Only a submitted turn (the text echoed above the prompt, followed by the agent's response) is operator input.
+
 **`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused pane.
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.

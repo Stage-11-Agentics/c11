@@ -281,6 +281,7 @@
 		A5FA5712 /* FlashColorParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5FA5713 /* FlashColorParsingTests.swift */; };
 		A721E30DB74CE0665ECC036B /* TabManagerSessionSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10D684CFFB8CDEF89CE2D9E1 /* TabManagerSessionSnapshotTests.swift */; };
 		A7307EC952C874A81272A673 /* WorkspaceHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5672FCE291BE8E1255CEE9DF /* WorkspaceHandlers.swift */; };
+		404B7049F7BE969A2A2A1D38 /* RecentsHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C94B181FA3698D2FFED0D1 /* RecentsHandlers.swift */; };
 		A7EA137511C5D411B2960587 /* Kimi.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2BDE4F4D562EC49C639CF86 /* Kimi.swift */; };
 		A87C6868ACAA0B563E1593CE /* EventLogLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFBB43D8FE36F0283DA24983 /* EventLogLayout.swift */; };
 		AB10CF281929477FAAAC51F4 /* Ref.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C9388437A24EE58C8AAA71 /* Ref.swift */; };
@@ -577,6 +578,7 @@
 		51D3CB3B7B4231D786E8883E /* ShutdownSentinel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShutdownSentinel.swift; path = Conversation/ShutdownSentinel.swift; sourceTree = "<group>"; };
 		54017DD4C9F6BE7CFA98C2F7 /* Opencode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Opencode.swift; path = Conversation/Strategies/Opencode.swift; sourceTree = "<group>"; };
 		5672FCE291BE8E1255CEE9DF /* WorkspaceHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkspaceHandlers.swift; sourceTree = "<group>"; };
+		95C94B181FA3698D2FFED0D1 /* RecentsHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentsHandlers.swift; sourceTree = "<group>"; };
 		5688157C3C8FA45CD382A3FD /* NotificationHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationHandlers.swift; sourceTree = "<group>"; };
 		5722C355F6B94E193AEC96B1 /* MetadataSourceTimestampTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MetadataSourceTimestampTests.swift; sourceTree = "<group>"; };
 		580B7B4F985A7A7C2B81A648 /* SurfaceHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SurfaceHandlers.swift; sourceTree = "<group>"; };
@@ -1340,6 +1342,7 @@
 				EFAF4E88F20968661D2D0886 /* MarkdownFeedbackHandlers.swift */,
 				F2D75E741661CC233082558D /* MiscHandlers.swift */,
 				5672FCE291BE8E1255CEE9DF /* WorkspaceHandlers.swift */,
+				95C94B181FA3698D2FFED0D1 /* RecentsHandlers.swift */,
 				F5B86DD36D8CB96AA0FD94E1 /* PaneHandlers.swift */,
 				580B7B4F985A7A7C2B81A648 /* SurfaceHandlers.swift */,
 				1BBF9629DC09C0F27A0A7F64 /* DebugHandlers.swift */,
@@ -2089,6 +2092,7 @@
 				A056D19646BEEAE184A3016B /* MarkdownFeedbackHandlers.swift in Sources */,
 				F20ECEC509D7B45E2B460C54 /* MiscHandlers.swift in Sources */,
 				A7307EC952C874A81272A673 /* WorkspaceHandlers.swift in Sources */,
+				404B7049F7BE969A2A2A1D38 /* RecentsHandlers.swift in Sources */,
 				B2829D4794BE50E1B18243D2 /* PaneHandlers.swift in Sources */,
 				4AAA3FC2BA5D7AD1F1CA54B2 /* SurfaceHandlers.swift in Sources */,
 				66EC03DE4291B1518FAA0DB9 /* DebugHandlers.swift in Sources */,

@@ -246,4 +246,138 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
         XCTAssertEqual(label(15 * 86400), "2w ago")
         XCTAssertEqual(label(90 * 86400), "3mo ago")
     }
+
+    // MARK: Path mode (phase 2)
+
+    func testPathQueryDetection() {
+        XCTAssertTrue(RecentsPathMode.isPathQuery("~"))
+        XCTAssertTrue(RecentsPathMode.isPathQuery("~/Projects"))
+        XCTAssertTrue(RecentsPathMode.isPathQuery("/tmp"))
+        XCTAssertTrue(RecentsPathMode.isPathQuery("  /tmp"))
+        XCTAssertFalse(RecentsPathMode.isPathQuery("ace"))
+        XCTAssertFalse(RecentsPathMode.isPathQuery(""))
+    }
+
+    func testPathResolutionListsTheParentForAPartialNameAndTheDirectoryForATrailingSlash() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertEqual(
+            RecentsPathMode.resolve(query: "/tmp/c11-x/Pro"),
+            .init(typedPath: "/tmp/c11-x/Pro", listDirectory: "/tmp/c11-x", namePrefix: "Pro")
+        )
+        XCTAssertEqual(
+            RecentsPathMode.resolve(query: "/tmp/c11-x/"),
+            .init(typedPath: "/tmp/c11-x", listDirectory: "/tmp/c11-x", namePrefix: "")
+        )
+        XCTAssertEqual(
+            RecentsPathMode.resolve(query: "~/Pro"),
+            .init(typedPath: home + "/Pro", listDirectory: home, namePrefix: "Pro")
+        )
+        XCTAssertEqual(
+            RecentsPathMode.resolve(query: "~"),
+            .init(typedPath: home, listDirectory: home, namePrefix: "")
+        )
+        XCTAssertEqual(
+            RecentsPathMode.resolve(query: "/Us"),
+            .init(typedPath: "/Us", listDirectory: "/", namePrefix: "Us")
+        )
+    }
+
+    func testPathModeRowsPutTheTypedPathFirstThenMergeChildrenAndRecents() {
+        let res = RecentsPathMode.resolve(query: "/w/proj/")
+        let recents = [entry("/w/proj/beta"), entry("/w/proj/zeta/deep"), entry("/w/other/x")]
+        let rows = RecentsPathMode.rows(
+            resolution: res,
+            children: ["/w/proj/alpha", "/w/proj/beta"],
+            recents: recents
+        )
+        XCTAssertEqual(rows.map(\.path), ["/w/proj", "/w/proj/alpha", "/w/proj/beta", "/w/proj/zeta/deep"])
+        XCTAssertEqual(rows.first?.kind, .typed)
+        XCTAssertEqual(rows.map(\.isRecent), [false, false, true, true])
+    }
+
+    func testPathModeRowsFilterRecentsByThePartialName() {
+        let res = RecentsPathMode.resolve(query: "/w/proj/al")
+        let rows = RecentsPathMode.rows(
+            resolution: res,
+            children: ["/w/proj/alpha"],
+            recents: [entry("/w/proj/beta"), entry("/w/proj/alto")]
+        )
+        XCTAssertEqual(rows.map(\.path), ["/w/proj/al", "/w/proj/alpha", "/w/proj/alto"])
+    }
+
+    func testTabCompletionKeepsTildeAndAddsATrailingSlash() {
+        let home = "/Users/tester"
+        XCTAssertEqual(
+            RecentsPathMode.completion(of: "/Users/tester/Projects/site", forQuery: "~/Proj", home: home),
+            "~/Projects/site/"
+        )
+        XCTAssertEqual(
+            RecentsPathMode.completion(of: "/opt/homebrew", forQuery: "/op", home: home),
+            "/opt/homebrew/"
+        )
+    }
+
+    func testListChildrenReturnsOnlyMatchingNonHiddenDirectories() throws {
+        let root = NSTemporaryDirectory() + "c11-pathmode-\(UUID().uuidString)"
+        let fm = FileManager.default
+        for d in ["alpha", "Alps", "beta", ".hidden", "file-not-dir"] where d != "file-not-dir" {
+            try fm.createDirectory(atPath: root + "/" + d, withIntermediateDirectories: true)
+        }
+        fm.createFile(atPath: root + "/file-not-dir", contents: Data())
+        defer { try? fm.removeItem(atPath: root) }
+
+        XCTAssertEqual(
+            RecentsPathMode.listChildren(of: root, prefix: "").map { ($0 as NSString).lastPathComponent },
+            ["alpha", "Alps", "beta"]
+        )
+        XCTAssertEqual(
+            RecentsPathMode.listChildren(of: root, prefix: "al").map { ($0 as NSString).lastPathComponent },
+            ["alpha", "Alps"]
+        )
+        XCTAssertEqual(
+            RecentsPathMode.listChildren(of: root, prefix: ".").map { ($0 as NSString).lastPathComponent },
+            [".hidden"]
+        )
+        XCTAssertTrue(RecentsPathMode.listChildren(of: root + "/nope", prefix: "").isEmpty)
+    }
+
+    // MARK: Query resolution for the CLI (phase 2)
+
+    func testResolverTreatsPathLikeQueriesAsPaths() {
+        let r = { (q: String) in
+            RecentsQueryResolver.resolve(query: q, entries: [], home: "/Users/tester", cwd: "/work/here")
+        }
+        XCTAssertEqual(r("/tmp/x/"), .path("/tmp/x"))
+        XCTAssertEqual(r("./sub"), .path("/work/here/sub"))
+        XCTAssertEqual(r("../up"), .path("/work/up"))
+        XCTAssertEqual(r("~/x"), .path(FileManager.default.homeDirectoryForCurrentUser.path + "/x"))
+        XCTAssertEqual(r(""), .none)
+    }
+
+    func testResolverPicksTheTopRankedRecentUsingThePickersRanking() {
+        let entries = [entry("/Users/tester/code/abc11x"), entry("/Users/tester/code/c11")]
+        let outcome = RecentsQueryResolver.resolve(query: "c11", entries: entries, home: "/Users/tester", cwd: "/")
+        XCTAssertEqual(outcome, .match("/Users/tester/code/c11"))
+    }
+
+    func testAnExactNameBeatsALongerNameThatStartsWithIt() {
+        let entries = [entry("/Users/tester/code/c11-worktrees"), entry("/Users/tester/code/c11")]
+        XCTAssertEqual(
+            RecentsQueryResolver.resolve(query: "c11", entries: entries, home: "/Users/tester", cwd: "/"),
+            .match("/Users/tester/code/c11")
+        )
+    }
+
+    func testResolverFailsLoudlyWhenTheTopTwoTie() {
+        let entries = [entry("/Users/tester/a/app", age: 1), entry("/Users/tester/b/app", age: 2), entry("/Users/tester/c/zzz")]
+        let outcome = RecentsQueryResolver.resolve(query: "app", entries: entries, home: "/Users/tester", cwd: "/")
+        XCTAssertEqual(outcome, .ambiguous(["/Users/tester/a/app", "/Users/tester/b/app"]))
+    }
+
+    func testResolverReportsNoMatch() {
+        XCTAssertEqual(
+            RecentsQueryResolver.resolve(query: "qqq", entries: [entry("/Users/tester/code/c11")], home: "/Users/tester", cwd: "/"),
+            .none
+        )
+    }
 }

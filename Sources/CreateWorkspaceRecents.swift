@@ -77,6 +77,10 @@ enum CreateWorkspaceRecents {
     static let legacyKey  = "createWorkspace.recentDirectories"
     static let maxCount   = 250
 
+    /// Posted on the main queue after every write, so an open picker can
+    /// reload when an agent changes pins or recents through the socket.
+    static let didChangeNotification = Notification.Name("c11.createWorkspace.recentsDidChange")
+
     /// Recents plus the ordered pins. `entries[i].pinned` always equals
     /// `pins.contains(entries[i].path)`.
     struct State: Equatable {
@@ -257,6 +261,9 @@ enum CreateWorkspaceRecents {
         }
         if let data = try? JSONEncoder().encode(s.pins) {
             defaults.set(data, forKey: pinsKey)
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }
 

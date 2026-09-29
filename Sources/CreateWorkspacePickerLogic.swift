@@ -93,7 +93,10 @@ enum RecentsFuzzy {
         }
         if j == q.count {
             score += 20
-            if lower[nameStart...].joined().hasPrefix(q.joined()) { score += 20 }
+            let lowerName = lower[nameStart...].joined()
+            if lowerName.hasPrefix(q.joined()) { score += 20 }
+            // An exact name beats a longer name that merely starts with it.
+            if lowerName == q.joined() { score += 10 }
             return RecentMatch(score: score, indices: idx)
         }
 
@@ -319,5 +322,140 @@ enum CreateWorkspaceSheetMetrics {
 
     static func maxContentHeight(visibleHeight: CGFloat) -> CGFloat {
         available(visibleHeight: visibleHeight)
+    }
+}
+
+// MARK: - Path mode (query starts with ~ or /)
+
+/// When the query starts with `~` or `/` the search field stops filtering
+/// recents and becomes a path: the first row creates in the typed path,
+/// followed by the directories under it.
+enum RecentsPathMode {
+    static func isPathQuery(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return q.hasPrefix("~") || q.hasPrefix("/")
+    }
+
+    struct Resolution: Equatable {
+        /// The typed path, normalized (`~` expanded, trailing slash gone).
+        var typedPath: String
+        /// The directory whose children are offered.
+        var listDirectory: String
+        /// Case-insensitive prefix a child name must have ("" lists all).
+        var namePrefix: String
+    }
+
+    /// `~/Pro` lists the children of `~` starting with "Pro"; `~/Projects/`
+    /// lists the children of `~/Projects`.
+    static func resolve(query: String) -> Resolution {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        let typed = RecentsPath.normalize(q)
+        if q.hasSuffix("/") || q == "~" {
+            return Resolution(typedPath: typed, listDirectory: typed, namePrefix: "")
+        }
+        let parent = RecentsPath.parent(typed)
+        let list = parent.isEmpty ? "/" : parent
+        return Resolution(typedPath: typed, listDirectory: list, namePrefix: RecentsPath.lastComponent(typed))
+    }
+
+    /// Immediate subdirectories of `directory` whose names start with
+    /// `prefix`, sorted by name. Hidden folders appear only when the prefix
+    /// starts with a dot. Blocking file I/O: call off the main thread.
+    static func listChildren(of directory: String, prefix: String, limit: Int = 200) -> [String] {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: directory) else { return [] }
+        let showHidden = prefix.hasPrefix(".")
+        let lowered = prefix.lowercased()
+        var out: [String] = []
+        for name in names.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+            if !showHidden, name.hasPrefix(".") { continue }
+            if !lowered.isEmpty, !name.lowercased().hasPrefix(lowered) { continue }
+            var isDir: ObjCBool = false
+            let full = (directory as NSString).appendingPathComponent(name)
+            guard fm.fileExists(atPath: full, isDirectory: &isDir), isDir.boolValue else { continue }
+            out.append(full)
+            if out.count >= limit { break }
+        }
+        return out
+    }
+
+    struct Row: Equatable {
+        enum Kind: Equatable { case typed, child }
+        var kind: Kind
+        var path: String
+        /// True when the path is also a recent (its history is shown).
+        var isRecent: Bool
+    }
+
+    /// The typed path first, then filesystem children merged with known
+    /// recents under the same directory, alphabetically, without duplicates.
+    static func rows(
+        resolution: Resolution,
+        children: [String],
+        recents: [RecentDirectory]
+    ) -> [Row] {
+        let recentSet = Set(recents.map(\.path))
+        var rows = [Row(kind: .typed, path: resolution.typedPath, isRecent: recentSet.contains(resolution.typedPath))]
+        var seen: Set<String> = [resolution.typedPath]
+        let base = resolution.listDirectory == "/" ? "" : resolution.listDirectory
+        let lowered = resolution.namePrefix.lowercased()
+        var merged = children
+        for r in recents {
+            let p = r.path
+            guard p.hasPrefix(base + "/"), p != resolution.listDirectory else { continue }
+            let rest = p.dropFirst(base.count + 1)
+            // Only direct children, or deeper recents whose first segment matches.
+            let first = String(rest.split(separator: "/").first ?? "")
+            guard !first.isEmpty, lowered.isEmpty || first.lowercased().hasPrefix(lowered) else { continue }
+            merged.append(p)
+        }
+        for p in merged.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) where seen.insert(p).inserted {
+            rows.append(Row(kind: .child, path: p, isRecent: recentSet.contains(p)))
+        }
+        return rows
+    }
+
+    /// Text the field takes when Tab completes `path`: a `~/` query keeps its
+    /// `~`, and the trailing slash lets the next Tab go one level deeper.
+    static func completion(of path: String, forQuery query: String, home: String) -> String {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        let shown = q.hasPrefix("~") ? RecentsPath.displayPath(path, home: home) : path
+        return shown.hasSuffix("/") ? shown : shown + "/"
+    }
+}
+
+// MARK: - Query resolution for `c11 workspace new --dir`
+
+/// Resolves a path-or-fuzzy-query with the same ranking as the picker.
+enum RecentsQueryResolver {
+    enum Outcome: Equatable {
+        /// An explicit path (`~`, `/`, `.`, `..` prefix).
+        case path(String)
+        /// The single best recent.
+        case match(String)
+        /// The top two hits tie; the caller must fail and list these.
+        case ambiguous([String])
+        case none
+    }
+
+    static func resolve(
+        query: String,
+        entries: [RecentDirectory],
+        home: String,
+        cwd: String
+    ) -> Outcome {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return .none }
+        if q.hasPrefix("~") || q.hasPrefix("/") { return .path(RecentsPath.normalize(q)) }
+        if q.hasPrefix("./") || q.hasPrefix("../") || q == "." || q == ".." {
+            return .path(RecentsPath.normalize((cwd as NSString).appendingPathComponent(q)))
+        }
+        let hits = RecentsFuzzy.rank(query: q, entries: entries, home: home)
+        guard let top = hits.first else { return .none }
+        if hits.count > 1, hits[1].match.score == top.match.score {
+            let tied = hits.prefix { $0.match.score == top.match.score }.map(\.entry.path)
+            return .ambiguous(Array(tied.prefix(8)))
+        }
+        return .match(top.entry.path)
     }
 }

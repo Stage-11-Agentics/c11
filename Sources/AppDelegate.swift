@@ -6786,7 +6786,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         workingDirectory: String,
         workspaceName: String? = nil,
         launchAgent: Bool,
-        debugSource: String = "createWorkspaceSheet"
+        debugSource: String = "createWorkspaceSheet",
+        activate: Bool = true
     ) -> UUID? {
         guard let context = preferredMainWindowContextForWorkspaceCreation(debugSource: debugSource) else {
             return nil
@@ -6795,8 +6796,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             discardOrphanedMainWindowContext(context)
             return nil
         }
-        setActiveMainWindow(window)
-        bringToFront(window)
+        // Socket callers pass `activate: false` unless the command is allowed
+        // to move focus.
+        if activate {
+            setActiveMainWindow(window)
+            bringToFront(window)
+        }
 
         var injected = plan
         injected.workspace.workingDirectory = workingDirectory
@@ -6861,7 +6866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         let result = WorkspaceLayoutExecutor.apply(
             injected,
-            options: ApplyOptions(select: true),
+            options: ApplyOptions(select: activate),
             dependencies: dependencies
         )
         #if DEBUG

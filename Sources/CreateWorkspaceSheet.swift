@@ -50,6 +50,8 @@ private final class ScrollProxyBox {
 private struct ListRow: Identifiable {
     let entry: RecentDirectory
     let match: RecentMatch?
+    var kind: RecentRowView.Kind = .recent
+    var hasHistory: Bool = true
     var id: String { entry.path }
 }
 
@@ -102,6 +104,10 @@ struct CreateWorkspaceSheet: View {
     @State private var selectedPath: String?
     @State private var openRootSet: Set<String> = []
     @State private var missingPaths: Set<String> = []
+    @State private var verifiedPaths: Set<String> = []
+    @State private var pathChildren: [String] = []
+    @State private var pathChildrenKey: String = ""
+    @State private var pathToken: Int = 0
     @State private var flashPath: String?
     @State private var notice: String?
     @State private var searchFocus = SearchFocusRequest()
@@ -193,6 +199,10 @@ struct CreateWorkspaceSheet: View {
             refreshMissing()
         }
         .onChange(of: query) { _, _ in queryDidChange() }
+        .onReceive(NotificationCenter.default.publisher(for: CreateWorkspaceRecents.didChangeNotification)) { _ in
+            // An agent (or this sheet) changed recents or pins: stay in step.
+            reloadRecents()
+        }
         .onChange(of: directory) { _, newValue in
             let normalized = RecentsPath.normalize(newValue)
             if selectedPath != normalized {
@@ -207,13 +217,36 @@ struct CreateWorkspaceSheet: View {
 
     private var pins: [String] { recentsState.pins }
 
+    private var isPathMode: Bool { RecentsPathMode.isPathQuery(query) }
+
     private var rows: [ListRow] {
+        if isPathMode { return pathModeRows }
         if trimmedQuery.isEmpty {
             return RecentsOrdering.sorted(recentsState.entries, by: recentsSort.key)
                 .map { ListRow(entry: $0, match: nil) }
         }
         return RecentsFuzzy.rank(query: trimmedQuery, entries: recentsState.entries, home: Self.home)
             .map { ListRow(entry: $0.entry, match: $0.match) }
+    }
+
+    /// Path mode: the typed path first, then the directories under it.
+    private var pathModeRows: [ListRow] {
+        let resolution = RecentsPathMode.resolve(query: trimmedQuery)
+        let key = resolution.listDirectory + "\n" + resolution.namePrefix
+        let byPath = Dictionary(recentsState.entries.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        return RecentsPathMode.rows(
+            resolution: resolution,
+            children: pathChildrenKey == key ? pathChildren : [],
+            recents: recentsState.entries
+        ).map { row in
+            ListRow(
+                entry: byPath[row.path]
+                    ?? RecentDirectory(path: row.path, lastOpenedAt: .distantPast, openCount: 0, pinned: false),
+                match: nil,
+                kind: row.kind == .typed ? .typed : .child,
+                hasHistory: row.isRecent
+            )
+        }
     }
 
     private func displayPath(_ path: String) -> String {
@@ -471,13 +504,18 @@ struct CreateWorkspaceSheet: View {
                 focusRequest: searchFocus,
                 onMove: { moveSelection($0) },
                 onSubmit: { alt in activateCurrent(alt: alt) },
-                onEscape: { onCancel() }
+                onEscape: { onCancel() },
+                onTab: { completeSelection() }
             )
             .frame(height: 26)
 
             Group {
                 if trimmedQuery.isEmpty {
                     kbdGlyph("⌘F")
+                } else if isPathMode {
+                    Text(String(localized: "createWorkspace.search.pathMode", defaultValue: "path"))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(BrandColors.goldSwiftUI)
                 } else {
                     Text(String(
                         format: String(localized: "createWorkspace.search.count", defaultValue: "%d of %d"),
@@ -560,6 +598,8 @@ struct CreateWorkspaceSheet: View {
                         LazyVStack(spacing: 0) {
                             ForEach(currentRows) { row in
                                 RecentRowView(
+                                    kind: row.kind,
+                                    hasHistory: row.hasHistory,
                                     recent: row.entry,
                                     displayPath: displayPath(row.entry.path),
                                     match: row.match,
@@ -593,6 +633,15 @@ struct CreateWorkspaceSheet: View {
                     .font(.system(size: 11))
                     .foregroundStyle(BrandColors.goldSwiftUI)
                     .lineLimit(1)
+            } else if isPathMode {
+                kbdGlyph("⇥")
+                Text(String(localized: "createWorkspace.hint.pathComplete", defaultValue: "completes the highlighted folder"))
+                dotSeparator
+                kbdGlyph("⏎")
+                Text(String(localized: "createWorkspace.hint.pathCreate", defaultValue: "creates in the highlighted path"))
+                dotSeparator
+                kbdGlyph("↑↓")
+                Text(String(localized: "createWorkspace.hint.move", defaultValue: "move"))
             } else {
                 Text(String(localized: "createWorkspace.hint.click", defaultValue: "Click selects"))
                 dotSeparator
@@ -707,6 +756,12 @@ struct CreateWorkspaceSheet: View {
 
     private func queryDidChange() {
         guard !trimmedQuery.isEmpty else { return }
+        if isPathMode {
+            refreshPathChildren()
+            select(RecentsPathMode.resolve(query: trimmedQuery).typedPath)
+            scrollBox.proxy?.scrollTo(RecentsPathMode.resolve(query: trimmedQuery).typedPath, anchor: .top)
+            return
+        }
         let currentRows = rows
         if let top = currentRows.first {
             select(top.id)
@@ -714,6 +769,43 @@ struct CreateWorkspaceSheet: View {
         } else {
             selectedPath = nil
         }
+    }
+
+    /// Real filesystem children of the typed path, listed off the main thread;
+    /// the typed path is stat'ed there too, so a missing path shows as missing.
+    private func refreshPathChildren() {
+        let resolution = RecentsPathMode.resolve(query: trimmedQuery)
+        let key = resolution.listDirectory + "\n" + resolution.namePrefix
+        pathToken += 1
+        let token = pathToken
+        DispatchQueue.global(qos: .userInitiated).async {
+            let kids = RecentsPathMode.listChildren(of: resolution.listDirectory, prefix: resolution.namePrefix)
+            let exists = Workspace.isExistingDirectory(resolution.typedPath)
+            DispatchQueue.main.async {
+                guard token == pathToken else { return }
+                pathChildren = kids
+                pathChildrenKey = key
+                if exists {
+                    missingPaths.remove(resolution.typedPath)
+                    verifiedPaths.insert(resolution.typedPath)
+                } else {
+                    verifiedPaths.remove(resolution.typedPath)
+                    missingPaths.insert(resolution.typedPath)
+                }
+            }
+        }
+    }
+
+    /// Tab in path mode completes the highlighted folder (the first one when
+    /// the typed row is highlighted), leaving the caret after a trailing slash.
+    private func completeSelection() -> Bool {
+        guard isPathMode else { return false }
+        let currentRows = rows
+        let highlighted = selectedPath.flatMap { p in currentRows.first(where: { $0.id == p && $0.kind == .child }) }
+        guard let target = highlighted ?? currentRows.first(where: { $0.kind == .child }) else { return true }
+        query = RecentsPathMode.completion(of: target.id, forQuery: query, home: Self.home)
+        requestSearchFocus(selectAll: false)
+        return true
     }
 
     /// The top hit is auto-selected while searching, so ⏎ opens it.
@@ -761,6 +853,18 @@ struct CreateWorkspaceSheet: View {
                 ),
                 RecentsPath.lastComponent(path)
             ))
+            return
+        }
+        if !verifiedPaths.contains(path) {
+            // Not stat'ed yet (a path typed a moment ago): check off the main
+            // thread, then decide.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let exists = Workspace.isExistingDirectory(path)
+                DispatchQueue.main.async {
+                    if exists { verifiedPaths.insert(path) } else { missingPaths.insert(path) }
+                    activate(rawPath, alt: alt)
+                }
+            }
             return
         }
         directory = rawPath.hasPrefix("~") ? rawPath : path
@@ -845,8 +949,9 @@ struct CreateWorkspaceSheet: View {
         for path in paths {
             DispatchQueue.global(qos: .utility).async {
                 let exists = Workspace.isExistingDirectory((path as NSString).expandingTildeInPath)
-                guard !exists else { return }
-                DispatchQueue.main.async { missingPaths.insert(path) }
+                DispatchQueue.main.async {
+                    if exists { verifiedPaths.insert(path) } else { missingPaths.insert(path) }
+                }
             }
         }
     }

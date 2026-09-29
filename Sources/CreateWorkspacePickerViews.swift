@@ -63,7 +63,12 @@ struct PickerSearchField: NSViewRepresentable {
 
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
-        if field.stringValue != text { field.stringValue = text }
+        if field.stringValue != text {
+            field.stringValue = text
+            if let editor = field.currentEditor() as? NSTextView {
+                editor.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+            }
+        }
         field.placeholderString = placeholder
         if context.coordinator.lastFocusId != focusRequest.id {
             context.coordinator.lastFocusId = focusRequest.id
@@ -330,6 +335,13 @@ struct OpenDot: View {
 
 /// One 28 pt row: open dot slot, name, parent path, time, count, pin star.
 struct RecentRowView: View {
+    /// A path-mode row is either the typed path ("Create in ...") or a
+    /// directory under it; a normal row is a recent.
+    enum Kind { case recent, typed, child }
+
+    var kind: Kind = .recent
+    /// False for a path-mode child that is not a recent (no time, count or pin).
+    var hasHistory: Bool = true
     let recent: RecentDirectory
     /// Tilde-abbreviated absolute path.
     let displayPath: String
@@ -370,18 +382,13 @@ struct RecentRowView: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(isMissing
-                     ? String(localized: "createWorkspace.recents.missing", defaultValue: "missing")
-                     : RecentsRelativeTime.label(
-                        since: recent.lastOpenedAt,
-                        justNow: String(localized: "createWorkspace.recents.justNow", defaultValue: "just now")
-                     ))
+                Text(timeColumnText)
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(isMissing ? 0.7 : 0.55))
                     .lineLimit(1)
                     .frame(width: 62, alignment: .trailing)
 
-                Text("×\(recent.openCount)")
+                Text(showsHistory ? "×\(recent.openCount)" : "")
                     .font(.system(size: 10.5).monospacedDigit())
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
                     .lineLimit(1)
@@ -402,6 +409,7 @@ struct RecentRowView: View {
                 onDoubleClick(false)
             }
 
+            if showsHistory {
             Button {
                 onTogglePin()
             } label: {
@@ -423,6 +431,9 @@ struct RecentRowView: View {
             .help(recent.pinned
                   ? String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin")
                   : String(localized: "createWorkspace.recents.pin", defaultValue: "Pin"))
+            } else {
+                Color.clear.frame(width: 22, height: 22)
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
@@ -466,8 +477,33 @@ struct RecentRowView: View {
         return .clear
     }
 
+    private var showsHistory: Bool { kind == .recent || (kind == .child && hasHistory) }
+
+    private var timeColumnText: String {
+        if isMissing { return String(localized: "createWorkspace.recents.missing", defaultValue: "missing") }
+        switch kind {
+        case .typed:
+            return String(localized: "createWorkspace.path.new", defaultValue: "new")
+        case .child where !hasHistory:
+            return ""
+        default:
+            return RecentsRelativeTime.label(
+                since: recent.lastOpenedAt,
+                justNow: String(localized: "createWorkspace.recents.justNow", defaultValue: "just now")
+            )
+        }
+    }
+
     private var nameText: Text {
-        PickerText.highlighted(
+        if kind == .typed {
+            return Text(String(
+                format: String(localized: "createWorkspace.path.createIn", defaultValue: "⏎ Create in %@"),
+                name
+            ))
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(BrandColors.goldSwiftUI)
+        }
+        return PickerText.highlighted(
             name,
             indices: match?.indices ?? [],
             offset: max(0, displayPath.count - name.count),

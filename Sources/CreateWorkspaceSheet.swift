@@ -3,87 +3,9 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-// MARK: - Recents data model
-
-/// One entry in the recents ring. Persisted as JSON in UserDefaults so we can
-/// carry richer metadata (open count, last-opened timestamp, pin state) than
-/// the legacy `[String]` representation. The legacy key is migrated on first
-/// load.
-struct RecentDirectory: Codable, Equatable, Identifiable {
-    var path: String
-    var lastOpenedAt: Date
-    var openCount: Int
-    var pinned: Bool
-
-    var id: String { path }
-
-    var displayName: String {
-        let expanded = (path as NSString).expandingTildeInPath
-        let last = URL(fileURLWithPath: expanded).lastPathComponent
-        return last.isEmpty ? path : last
-    }
-}
-
-/// Persistent ring of working directories the operator has previously used to
-/// spawn a workspace, plus migration from the pre-C11-115 string-array key.
-enum CreateWorkspaceRecents {
-    static let storageKey = "createWorkspace.recents.v2"
-    static let legacyKey  = "createWorkspace.recentDirectories"
-    static let maxCount   = 50
-
-    static func load(defaults: UserDefaults = .standard) -> [RecentDirectory] {
-        if let data = defaults.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode([RecentDirectory].self, from: data) {
-            return Array(decoded.prefix(maxCount))
-        }
-        // Migrate from legacy string array.
-        if let legacy = defaults.array(forKey: legacyKey) as? [String], !legacy.isEmpty {
-            let now = Date()
-            let migrated = legacy.enumerated().map { idx, p in
-                RecentDirectory(
-                    path: p,
-                    lastOpenedAt: now.addingTimeInterval(TimeInterval(-idx)),
-                    openCount: 1,
-                    pinned: false
-                )
-            }
-            save(migrated, defaults: defaults)
-            defaults.removeObject(forKey: legacyKey)
-            return migrated
-        }
-        return []
-    }
-
-    static func save(_ list: [RecentDirectory], defaults: UserDefaults = .standard) {
-        let capped = Array(list.prefix(maxCount))
-        if let data = try? JSONEncoder().encode(capped) {
-            defaults.set(data, forKey: storageKey)
-        }
-    }
-
-    static func record(_ path: String, defaults: UserDefaults = .standard) {
-        let trimmed = path.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        var list = load(defaults: defaults)
-        if let idx = list.firstIndex(where: { $0.path == trimmed }) {
-            list[idx].lastOpenedAt = Date()
-            list[idx].openCount += 1
-        } else {
-            list.insert(
-                RecentDirectory(path: trimmed, lastOpenedAt: Date(), openCount: 1, pinned: false),
-                at: 0
-            )
-        }
-        save(list, defaults: defaults)
-    }
-
-    static func togglePin(_ path: String, defaults: UserDefaults = .standard) {
-        var list = load(defaults: defaults)
-        guard let idx = list.firstIndex(where: { $0.path == path }) else { return }
-        list[idx].pinned.toggle()
-        save(list, defaults: defaults)
-    }
-}
+// Recents data model, ordering and search live in CreateWorkspaceRecents.swift
+// and CreateWorkspacePickerLogic.swift; row, tile and search-field views in
+// CreateWorkspacePickerViews.swift (C11-240).
 
 /// Globally-remembered last-picked blueprint id. Pre-selects on next sheet
 /// open so power users don't keep re-picking their preferred layout.
@@ -114,10 +36,39 @@ enum RecentsSort: String, CaseIterable {
         }
     }
 
+    var key: RecentsOrdering.Key { self == .recent ? .recent : .opened }
+
     func toggle() -> RecentsSort { self == .recent ? .opened : .recent }
 }
 
-/// Modal shown when the operator triggers File → New Workspace (⌘N).
+/// Holds the list's scroll proxy so keyboard handlers can scroll without an
+/// onChange observer (a click must never scroll).
+private final class ScrollProxyBox {
+    var proxy: ScrollViewProxy?
+}
+
+private struct ListRow: Identifiable {
+    let entry: RecentDirectory
+    let match: RecentMatch?
+    var id: String { entry.path }
+}
+
+/// The "Cancel" shortcut is Esc only while the query is empty; with a query,
+/// Esc clears it first.
+private struct CancelShortcut: ViewModifier {
+    let active: Bool
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if active {
+            content.keyboardShortcut(.cancelAction)
+        } else {
+            content
+        }
+    }
+}
+
+/// Shown when File → New Workspace (⌘N) is triggered. Hosted in its own
+/// non-modal window (AppDelegate.presentCreateWorkspaceSheet).
 @MainActor
 struct CreateWorkspaceSheet: View {
     struct Outcome {
@@ -128,6 +79,15 @@ struct CreateWorkspaceSheet: View {
     }
 
     let initialDirectory: String
+    /// Rows the list shows (8...16), computed from the target screen.
+    let listRows: Int
+    /// Non-nil when even the minimum list does not fit the screen: the whole
+    /// sheet scrolls inside this height.
+    let maxContentHeight: CGFloat?
+    /// Standardized root directories of the workspaces open in this c11.
+    let openRoots: () -> Set<String>
+    /// Select the open workspace rooted at this path and close the window.
+    let onSwitchToOpen: (String) -> Bool
     let onCancel: () -> Void
     let onCreate: (Outcome) -> Void
 
@@ -136,24 +96,44 @@ struct CreateWorkspaceSheet: View {
     @State private var selectionId: String
     @State private var launchAgent: Bool = true
     @State private var entries: [BlueprintEntry] = []
-    @State private var recents: [RecentDirectory] = []
+    @State private var recentsState = CreateWorkspaceRecents.State()
     @State private var recentsSort: RecentsSort = .recent
-    @State private var keyboardSelectedRecentIdx: Int = -1
+    @State private var query: String = ""
+    @State private var selectedPath: String?
+    @State private var openRootSet: Set<String> = []
+    @State private var missingPaths: Set<String> = []
+    @State private var flashPath: String?
+    @State private var notice: String?
+    @State private var searchFocus = SearchFocusRequest()
+    @State private var lastPinChange: Date = .distantPast
+    @State private var draggingPin: String?
+    @State private var scrollBox = ScrollProxyBox()
     @State private var loadFailureMessage: String?
     @State private var submitting: Bool = false
     @State private var helpPopoverOpen: Bool = false
     @State private var isDropTargeted: Bool = false
 
+    private static let home = FileManager.default.homeDirectoryForCurrentUser.path
+
     init(
         initialDirectory: String,
+        listRows: Int = 12,
+        maxContentHeight: CGFloat? = nil,
+        openRoots: @escaping () -> Set<String> = { [] },
+        onSwitchToOpen: @escaping (String) -> Bool = { _ in false },
         onCancel: @escaping () -> Void,
         onCreate: @escaping (Outcome) -> Void
     ) {
         self.initialDirectory = initialDirectory
+        self.listRows = listRows
+        self.maxContentHeight = maxContentHeight
+        self.openRoots = openRoots
+        self.onSwitchToOpen = onSwitchToOpen
         _directory = State(initialValue: initialDirectory)
         let seededEntries = Self.computeEntries(forDirectory: initialDirectory)
         _entries = State(initialValue: seededEntries)
-        _recents = State(initialValue: CreateWorkspaceRecents.load())
+        _recentsState = State(initialValue: CreateWorkspaceRecents.loadState())
+        _openRootSet = State(initialValue: openRoots())
         let savedLast = CreateWorkspaceLastLayout.load()
         let initial: String
         if let savedLast, seededEntries.contains(where: { $0.id == savedLast }) {
@@ -167,7 +147,7 @@ struct CreateWorkspaceSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let content = VStack(alignment: .leading, spacing: 18) {
             header
             baseDirectorySection
             workspaceNameSection
@@ -176,14 +156,74 @@ struct CreateWorkspaceSheet: View {
         }
         .padding(24)
         .frame(width: 720)
-        .fixedSize(horizontal: false, vertical: true)
+
+        Group {
+            if let maxContentHeight {
+                ScrollView(.vertical) { content }
+                    .frame(width: 720, height: maxContentHeight)
+            } else {
+                content.fixedSize(horizontal: false, vertical: true)
+            }
+        }
         .background(BrandColors.surfaceSwiftUI)
         .environment(\.colorScheme, .dark)
+        .background(
+            PickerKeyMonitor(
+                onPinShortcut: { n in
+                    openPin(number: n)
+                    return true
+                },
+                onFocusSearch: { requestSearchFocus(selectAll: true) },
+                onTypeToSearch: { typed in
+                    query += typed
+                    requestSearchFocus(selectAll: false)
+                },
+                onArrow: { moveSelection($0) },
+                onEscapeOutsideSearch: {
+                    guard !trimmedQuery.isEmpty else { return false }
+                    query = ""
+                    requestSearchFocus(selectAll: false)
+                    return true
+                }
+            )
+        )
         .onAppear {
             reloadEntries()
-            recents = CreateWorkspaceRecents.load()
+            reloadRecents()
+            openRootSet = openRoots()
+            refreshMissing()
+        }
+        .onChange(of: query) { _, _ in queryDidChange() }
+        .onChange(of: directory) { _, newValue in
+            let normalized = RecentsPath.normalize(newValue)
+            if selectedPath != normalized {
+                selectedPath = recentsState.entries.contains(where: { $0.path == normalized }) ? normalized : nil
+            }
         }
     }
+
+    // MARK: - Derived
+
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var pins: [String] { recentsState.pins }
+
+    private var rows: [ListRow] {
+        if trimmedQuery.isEmpty {
+            return RecentsOrdering.sorted(recentsState.entries, by: recentsSort.key)
+                .map { ListRow(entry: $0, match: nil) }
+        }
+        return RecentsFuzzy.rank(query: trimmedQuery, entries: recentsState.entries, home: Self.home)
+            .map { ListRow(entry: $0.entry, match: $0.match) }
+    }
+
+    private func displayPath(_ path: String) -> String {
+        RecentsPath.displayPath(path, home: Self.home)
+    }
+
+    private func isOpen(_ path: String) -> Bool { openRootSet.contains(RecentsPath.normalize(path)) }
+
+    private func isMissing(_ path: String) -> Bool { missingPaths.contains(path) }
 
     // MARK: - Header
 
@@ -201,11 +241,11 @@ struct CreateWorkspaceSheet: View {
         }
     }
 
-    // MARK: - Base directory (path + recents, tied together)
+    // MARK: - Base directory (path, pins, search, list)
 
     private var baseDirectorySection: some View {
-        VStack(spacing: 0) {
-            // Header: title + path input + Browse
+        let currentRows = rows
+        return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(String(
                     localized: "createWorkspace.baseDirectory.label",
@@ -218,7 +258,7 @@ struct CreateWorkspaceSheet: View {
                     TextField("", text: $directory)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
-                        .onSubmit { submit() }
+                        .onSubmit { activate(directory, alt: NSEvent.modifierFlags.contains(.option)) }
                     Button {
                         chooseDirectory()
                     } label: {
@@ -234,7 +274,7 @@ struct CreateWorkspaceSheet: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 LinearGradient(
@@ -243,17 +283,13 @@ struct CreateWorkspaceSheet: View {
                     endPoint: .bottom
                 )
             )
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(BrandColors.ruleSwiftUI)
-                    .frame(height: 1)
-            }
 
-            if recents.isEmpty {
+            if recentsState.entries.isEmpty {
                 recentsEmptyState
             } else {
-                recentsCaption
-                recentsList
+                pinsSection
+                searchBar(matchCount: currentRows.count)
+                recentsList(currentRows)
                 recentsFooter
             }
         }
@@ -261,6 +297,7 @@ struct CreateWorkspaceSheet: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(BrandColors.surface2SwiftUI)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
@@ -286,89 +323,157 @@ struct CreateWorkspaceSheet: View {
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
-        .focusable()
-        .onKeyPress(.upArrow) { handleArrow(delta: -1) }
-        .onKeyPress(.downArrow) { handleArrow(delta: +1) }
-        .onKeyPress(.return) { handleReturn() }
     }
 
-    private var recentsCaption: some View {
-        HStack(spacing: 8) {
-            Rectangle()
-                .fill(BrandColors.ruleSwiftUI)
-                .frame(height: 1)
-            Text(String(
-                localized: "createWorkspace.recents.caption",
-                defaultValue: "or select from your recent directories:"
-            ))
-            .font(.system(size: 11))
-            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-            Rectangle()
-                .fill(BrandColors.ruleSwiftUI)
-                .frame(height: 1)
+    // MARK: Pins
+
+    private var pinsSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(String(localized: "createWorkspace.pins.caption", defaultValue: "PINNED"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
+                Spacer()
+                if !pins.isEmpty {
+                    Text(String(
+                        localized: "createWorkspace.pins.aside",
+                        defaultValue: "Drag to reorder · ⌘1–⌘9 opens"
+                    ))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.32))
+                }
+            }
+            .padding(.trailing, 14)
+
+            if pins.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "star")
+                        .font(.system(size: 11))
+                    Text(String(
+                        localized: "createWorkspace.pins.empty",
+                        defaultValue: "Star a recent directory to pin it here"
+                    ))
+                    .font(.system(size: 11))
+                }
+                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.4))
+                .frame(maxWidth: .infinity)
+                .frame(height: PinTileView.height - 26)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(Color(white: 0.23), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                )
+                .padding(.trailing, 14)
+            } else {
+                pinGrid
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(BrandColors.surfaceSwiftUI.opacity(0.18))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(BrandColors.ruleSwiftUI)
-                .frame(height: 1)
+        .padding(.top, 9)
+        .padding(.bottom, 10)
+        .padding(.leading, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColors.surfaceSwiftUI.opacity(0.25))
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1)
         }
     }
 
-    private var recentsList: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(sortedRecents().enumerated()), id: \.element.id) { idx, r in
-                        RecentRow(
-                            recent: r,
-                            isKeyboardFocused: idx == keyboardSelectedRecentIdx,
-                            onClick: { selectRecent(r) },
-                            onDoubleClick: { openRecent(r) },
-                            onTogglePin: { togglePin(r) }
-                        )
-                        .id(r.id)
+    private var pinGrid: some View {
+        let pinRows = PinGridShape.rowsOfPins(pins)
+        let columns = PinGridShape.columns(forPinCount: pins.count)
+        let gridHeight = CGFloat(pinRows.count) * PinTileView.height + CGFloat(max(0, pinRows.count - 1)) * 8 + 10
+        return ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(pinRows.enumerated()), id: \.offset) { rowIdx, rowPins in
+                    HStack(spacing: 8) {
+                        ForEach(Array(rowPins.enumerated()), id: \.element) { colIdx, path in
+                            pinTile(path: path, index: rowIdx * columns + colIdx)
+                        }
                     }
                 }
             }
-            .frame(maxHeight: 270)
-            .onChange(of: keyboardSelectedRecentIdx) { _, newValue in
-                let arr = sortedRecents()
-                guard newValue >= 0, newValue < arr.count else { return }
-                proxy.scrollTo(arr[newValue].id, anchor: .center)
-            }
+            .padding(.trailing, 14)
+            .padding(.bottom, 8)
         }
+        .frame(height: gridHeight)
     }
 
-    private var recentsFooter: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 4) {
-                Text(String(localized: "createWorkspace.recents.hint.click", defaultValue: "Click or"))
-                kbdGlyph("↑↓")
-                Text(String(localized: "createWorkspace.recents.hint.toSelect", defaultValue: "to select"))
-                Text("·").foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.3))
-                kbdGlyph("⏎")
-                Text(String(
-                    localized: "createWorkspace.recents.hint.openHint",
-                    defaultValue: "or double-click opens with your last layout"
-                ))
+    private func pinTile(path: String, index: Int) -> some View {
+        PinTileView(
+            path: path,
+            index: index,
+            displayPath: displayPath(path),
+            isSelected: selectedPath == path,
+            isOpen: isOpen(path),
+            isMissing: isMissing(path),
+            isFlashing: flashPath == path,
+            actions: actions(for: path),
+            onClick: { select(path) },
+            onDoubleClick: { alt in doubleClicked(path, alt: alt) },
+            onUnpin: { setPinned(path, false) }
+        )
+        .onDrag {
+            draggingPin = path
+            return NSItemProvider(object: path as NSString)
+        }
+        .onDrop(
+            of: [.plainText],
+            delegate: PinReorderDropDelegate(
+                target: path,
+                dragging: $draggingPin,
+                pins: { pins },
+                move: { moved, to in movePin(moved, to: to) }
+            )
+        )
+    }
+
+    // MARK: Search + sort
+
+    private func searchBar(matchCount: Int) -> some View {
+        HStack(spacing: 8) {
+            PickerSearchField(
+                text: $query,
+                placeholder: String(
+                    format: String(
+                        localized: "createWorkspace.search.placeholder",
+                        defaultValue: "Search %d recent directories"
+                    ),
+                    recentsState.entries.count
+                ),
+                focusRequest: searchFocus,
+                onMove: { moveSelection($0) },
+                onSubmit: { alt in activateCurrent(alt: alt) },
+                onEscape: { onCancel() }
+            )
+            .frame(height: 26)
+
+            Group {
+                if trimmedQuery.isEmpty {
+                    kbdGlyph("⌘F")
+                } else {
+                    Text(String(
+                        format: String(localized: "createWorkspace.search.count", defaultValue: "%d of %d"),
+                        matchCount,
+                        recentsState.entries.count
+                    ))
+                    .font(.system(size: 10.5).monospacedDigit())
+                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
+                }
             }
-            .font(.system(size: 11))
-            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
-            Spacer()
+            .frame(width: 64, alignment: .trailing)
+
             Button {
                 recentsSort = recentsSort.toggle()
             } label: {
                 HStack(spacing: 6) {
                     Text(recentsSort.label)
                         .font(.system(size: 11))
+                    Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .frame(width: 112, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(BrandColors.surface3SwiftUI)
@@ -377,12 +482,118 @@ struct CreateWorkspaceSheet: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(BrandColors.ruleSwiftUI, lineWidth: 0.5)
                 )
+                .opacity(trimmedQuery.isEmpty ? 1 : 0.4)
             }
             .buttonStyle(.plain)
+            .disabled(!trimmedQuery.isEmpty)
+            .help(trimmedQuery.isEmpty
+                  ? ""
+                  : String(
+                    localized: "createWorkspace.search.sortDisabled",
+                    defaultValue: "Search results are ranked by match"
+                  ))
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(BrandColors.surfaceSwiftUI.opacity(0.18))
+        .padding(.vertical, 7)
+        .background(BrandColors.surfaceSwiftUI.opacity(0.25))
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1)
+        }
+    }
+
+    // MARK: List
+
+    private func recentsList(_ currentRows: [ListRow]) -> some View {
+        let height = CGFloat(listRows) * RecentRowView.height
+        return Group {
+            if currentRows.isEmpty {
+                VStack(spacing: 4) {
+                    Text(String(
+                        format: String(
+                            localized: "createWorkspace.search.noMatch",
+                            defaultValue: "No recent directory matches “%@”."
+                        ),
+                        trimmedQuery
+                    ))
+                    Text(String(
+                        localized: "createWorkspace.search.noMatchHint",
+                        defaultValue: "Type a path in the field above, or Browse…"
+                    ))
+                    .opacity(0.7)
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(currentRows) { row in
+                                RecentRowView(
+                                    recent: row.entry,
+                                    displayPath: displayPath(row.entry.path),
+                                    match: row.match,
+                                    isSelected: selectedPath == row.entry.path,
+                                    isOpen: isOpen(row.entry.path),
+                                    isMissing: isMissing(row.entry.path),
+                                    isFlashing: flashPath == row.entry.path,
+                                    actions: actions(for: row.entry.path),
+                                    onClick: { select(row.entry.path) },
+                                    onDoubleClick: { alt in doubleClicked(row.entry.path, alt: alt) },
+                                    onTogglePin: { setPinned(row.entry.path, !row.entry.pinned) }
+                                )
+                                .id(row.entry.path)
+                            }
+                        }
+                    }
+                    .onAppear { scrollBox.proxy = proxy }
+                }
+            }
+        }
+        .frame(height: height)
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1)
+        }
+    }
+
+    private var recentsFooter: some View {
+        HStack(spacing: 6) {
+            if let notice {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(BrandColors.goldSwiftUI)
+                    .lineLimit(1)
+            } else {
+                Text(String(localized: "createWorkspace.hint.click", defaultValue: "Click selects"))
+                dotSeparator
+                Text(String(localized: "createWorkspace.hint.doubleClickOr", defaultValue: "double-click or"))
+                kbdGlyph("⏎")
+                Text(String(localized: "createWorkspace.hint.creates", defaultValue: "creates"))
+                dotSeparator
+                kbdGlyph("↑↓")
+                Text(String(localized: "createWorkspace.hint.move", defaultValue: "move"))
+                dotSeparator
+                kbdGlyph("⌘1")
+                Text("–")
+                kbdGlyph("⌘9")
+                Text(String(localized: "createWorkspace.hint.openPin", defaultValue: "open a pin"))
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
+        .padding(.horizontal, 14)
+        .frame(height: 30)
+        .background(BrandColors.surfaceSwiftUI.opacity(0.25))
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1)
+        }
+    }
+
+    private var dotSeparator: some View {
+        Text("·").foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.3))
     }
 
     private var recentsEmptyState: some View {
@@ -413,6 +624,9 @@ struct CreateWorkspaceSheet: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
+        .overlay(alignment: .top) {
+            Rectangle().fill(BrandColors.ruleSwiftUI).frame(height: 1)
+        }
     }
 
     @ViewBuilder
@@ -432,53 +646,181 @@ struct CreateWorkspaceSheet: View {
             )
     }
 
-    private func sortedRecents() -> [RecentDirectory] {
-        let pinned = recents.filter { $0.pinned }
-        let unpinned = recents.filter { !$0.pinned }
-        let sortFn: (RecentDirectory, RecentDirectory) -> Bool = {
-            switch recentsSort {
-            case .recent: return { $0.lastOpenedAt > $1.lastOpenedAt }
-            case .opened: return { $0.openCount > $1.openCount }
-            }
-        }()
-        return pinned.sorted(by: sortFn) + unpinned.sorted(by: sortFn)
+    // MARK: - Selection and activation
+
+    private func requestSearchFocus(selectAll: Bool) {
+        searchFocus = SearchFocusRequest(id: searchFocus.id + 1, selectAll: selectAll)
     }
 
-    private func selectRecent(_ r: RecentDirectory) {
-        directory = r.path
-        if let idx = sortedRecents().firstIndex(where: { $0.id == r.id }) {
-            keyboardSelectedRecentIdx = idx
+    /// A click selects and fills the path field. It never scrolls.
+    private func select(_ path: String, scrollIntoView: Bool = false) {
+        selectedPath = path
+        directory = path
+        if scrollIntoView {
+            scrollBox.proxy?.scrollTo(path, anchor: nil)
         }
     }
 
-    private func openRecent(_ r: RecentDirectory) {
-        directory = r.path
+    /// ↑↓ move the selection through the visible list and scroll only as far
+    /// as needed to keep it in view.
+    private func moveSelection(_ delta: Int) {
+        let currentRows = rows
+        guard !currentRows.isEmpty else { return }
+        let current = selectedPath.flatMap { p in currentRows.firstIndex(where: { $0.id == p }) }
+        var next: Int
+        if let current {
+            next = current + delta
+        } else {
+            next = delta > 0 ? 0 : currentRows.count - 1
+        }
+        next = max(0, min(currentRows.count - 1, next))
+        select(currentRows[next].id, scrollIntoView: true)
+    }
+
+    private func queryDidChange() {
+        guard !trimmedQuery.isEmpty else { return }
+        let currentRows = rows
+        if let top = currentRows.first {
+            select(top.id)
+            scrollBox.proxy?.scrollTo(top.id, anchor: .top)
+        } else {
+            selectedPath = nil
+        }
+    }
+
+    /// The top hit is auto-selected while searching, so ⏎ opens it.
+    private func activateCurrent(alt: Bool) {
+        let target: String
+        if !trimmedQuery.isEmpty {
+            guard let path = selectedPath ?? rows.first?.id else {
+                NSSound.beep()
+                return
+            }
+            target = path
+        } else {
+            target = selectedPath ?? directory
+        }
+        activate(target, alt: alt)
+    }
+
+    private func doubleClicked(_ path: String, alt: Bool) {
+        // A click on a star or × changes the layout under the cursor; a second
+        // click landing within 400 ms belongs to the old layout.
+        guard Date().timeIntervalSince(lastPinChange) > 0.4 else { return }
+        select(path)
+        activate(path, alt: alt)
+    }
+
+    private func openPin(number: Int) {
+        guard number >= 1, number <= pins.count else { return }
+        let path = pins[number - 1]
+        select(path)
+        activate(path, alt: false)
+    }
+
+    private func activate(_ rawPath: String, alt: Bool) {
+        let path = RecentsPath.normalize(rawPath)
+        guard !path.isEmpty else { return }
+        if alt, openRootSet.contains(path), onSwitchToOpen(path) {
+            return
+        }
+        if missingPaths.contains(path) {
+            flash(path)
+            showNotice(String(
+                format: String(
+                    localized: "createWorkspace.notice.missing",
+                    defaultValue: "“%@” no longer exists, so no workspace was created."
+                ),
+                RecentsPath.lastComponent(path)
+            ))
+            return
+        }
+        directory = rawPath.hasPrefix("~") ? rawPath : path
         submit()
     }
 
-    private func togglePin(_ r: RecentDirectory) {
-        CreateWorkspaceRecents.togglePin(r.path)
-        recents = CreateWorkspaceRecents.load()
-    }
-
-    private func handleArrow(delta: Int) -> KeyPress.Result {
-        let arr = sortedRecents()
-        guard !arr.isEmpty else { return .ignored }
-        var next = keyboardSelectedRecentIdx + delta
-        if keyboardSelectedRecentIdx < 0 { next = delta > 0 ? 0 : arr.count - 1 }
-        next = max(0, min(arr.count - 1, next))
-        keyboardSelectedRecentIdx = next
-        directory = arr[next].path
-        return .handled
-    }
-
-    private func handleReturn() -> KeyPress.Result {
-        let arr = sortedRecents()
-        if keyboardSelectedRecentIdx >= 0, keyboardSelectedRecentIdx < arr.count {
-            openRecent(arr[keyboardSelectedRecentIdx])
-            return .handled
+    private func flash(_ path: String) {
+        flashPath = path
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if flashPath == path { flashPath = nil }
         }
-        return .ignored
+    }
+
+    private func showNotice(_ message: String) {
+        notice = message
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            if notice == message { notice = nil }
+        }
+    }
+
+    // MARK: - Recents mutations
+
+    private func reloadRecents() {
+        recentsState = CreateWorkspaceRecents.loadState()
+    }
+
+    private func setPinned(_ path: String, _ pinned: Bool) {
+        lastPinChange = Date()
+        let ok = CreateWorkspaceRecents.mutate { state in
+            if pinned { state.pin(path) } else { state.unpin(path) }
+        }
+        if !ok { showNotice(unreadableNotice) }
+        reloadRecents()
+    }
+
+    private func movePin(_ path: String, to index: Int) {
+        lastPinChange = Date()
+        CreateWorkspaceRecents.movePin(path, to: index)
+        reloadRecents()
+    }
+
+    private func removeRecent(_ path: String) {
+        lastPinChange = Date()
+        let ok = CreateWorkspaceRecents.mutate { $0.remove(path) }
+        if !ok { showNotice(unreadableNotice) }
+        if selectedPath == path { selectedPath = nil }
+        reloadRecents()
+    }
+
+    private var unreadableNotice: String {
+        String(
+            localized: "createWorkspace.notice.unreadable",
+            defaultValue: "Saved recents could not be read, so nothing was changed."
+        )
+    }
+
+    private func actions(for path: String) -> RecentActions {
+        RecentActions(
+            isPinned: pins.contains(path),
+            isOpen: isOpen(path),
+            isMissing: isMissing(path),
+            create: { select(path); activate(path, alt: false) },
+            switchToOpen: {
+                if !onSwitchToOpen(RecentsPath.normalize(path)) { NSSound.beep() }
+            },
+            togglePin: { setPinned(path, !pins.contains(path)) },
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) },
+            copyPath: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(path, forType: .string)
+            },
+            remove: { removeRecent(path) }
+        )
+    }
+
+    /// Stat every recent off the main thread (a hung network mount must not
+    /// stall the UI). Results are cached for this open of the sheet.
+    private func refreshMissing() {
+        let paths = recentsState.entries.map(\.path)
+        for path in paths {
+            DispatchQueue.global(qos: .utility).async {
+                let exists = Workspace.isExistingDirectory((path as NSString).expandingTildeInPath)
+                guard !exists else { return }
+                DispatchQueue.main.async { missingPaths.insert(path) }
+            }
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
@@ -499,7 +841,7 @@ struct CreateWorkspaceSheet: View {
     // MARK: - Workspace name
 
     private var workspaceNameSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 12) {
             Text(String(localized: "createWorkspace.name", defaultValue: "Workspace name"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
@@ -512,13 +854,11 @@ struct CreateWorkspaceSheet: View {
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 12))
             .onSubmit { submit() }
-            Text(String(
-                localized: "createWorkspace.name.hint",
-                defaultValue: "Defaults to the directory name. Override to give this workspace a custom label."
-            ))
-            .font(.system(size: 10))
-            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.42))
         }
+        .help(String(
+            localized: "createWorkspace.name.hint",
+            defaultValue: "Defaults to the directory name. Override to give this workspace a custom label."
+        ))
     }
 
     private var defaultWorkspaceName: String {
@@ -582,14 +922,14 @@ struct CreateWorkspaceSheet: View {
             }
 
             DragScrollView {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(starterEntries) { entry in
                         blueprintCard(entry, showLetters: true)
                     }
                     if !savedEntries.isEmpty {
                         Rectangle()
                             .fill(BrandColors.ruleSwiftUI)
-                            .frame(width: 1, height: 130)
+                            .frame(width: 1, height: 80)
                             .padding(.horizontal, 4)
                     }
                     ForEach(savedEntries) { entry in
@@ -599,7 +939,7 @@ struct CreateWorkspaceSheet: View {
                 .padding(.vertical, 4)
                 .padding(.horizontal, 2)
             }
-            .frame(height: 200)
+            .frame(height: 118)
 
             HStack(spacing: 12) {
                 HStack(spacing: 5) {
@@ -693,32 +1033,24 @@ struct CreateWorkspaceSheet: View {
     @ViewBuilder
     private func blueprintCard(_ entry: BlueprintEntry, showLetters: Bool) -> some View {
         let isSelected = entry.id == selectionId
-        VStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .center, spacing: 8) {
             if showLetters, let topology = entry.shape.letterTopology {
                 LetterCellIcon(topology: topology)
-                    .frame(width: 132, height: 78)
+                    .frame(width: 60, height: 38)
             } else {
                 OutlineShapeIcon(shape: entry.shape)
-                    .frame(width: 132, height: 78)
+                    .frame(width: 60, height: 38)
             }
             Text(entry.label)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if let description = entry.description {
-                Text(description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
         }
-        .frame(width: 176, height: 168, alignment: .top)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .frame(width: 80, height: 80, alignment: .center)
+        .padding(8)
+        .frame(width: 96, height: 96)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(isSelected ? BrandColors.goldFaintSwiftUI : BrandColors.surface2SwiftUI)
@@ -731,9 +1063,10 @@ struct CreateWorkspaceSheet: View {
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 10))
-        // Mirror the RecentRow gesture composition: single-click selects,
-        // double-click selects and submits. A SwiftUI Button swallows the
-        // second click, so the card is a plain View with composed taps.
+        .help(entry.description ?? entry.label)
+        // Single-click selects, double-click selects and submits. A SwiftUI
+        // Button swallows the second click, so the card is a plain View with
+        // composed taps.
         .gesture(
             TapGesture(count: 2).onEnded {
                 selectionId = entry.id
@@ -774,10 +1107,10 @@ struct CreateWorkspaceSheet: View {
             Button(String(localized: "common.cancel", defaultValue: "Cancel")) {
                 onCancel()
             }
-            .keyboardShortcut(.cancelAction)
+            .modifier(CancelShortcut(active: trimmedQuery.isEmpty))
 
             Button {
-                submit()
+                activateCurrent(alt: NSEvent.modifierFlags.contains(.option))
             } label: {
                 HStack(spacing: 8) {
                     Text(String(
@@ -795,10 +1128,13 @@ struct CreateWorkspaceSheet: View {
         }
     }
 
+    /// With a query and no match there is nothing to create: disable Create so
+    /// ⏎ never creates in a stale directory.
     private var canSubmit: Bool {
         !submitting
             && !directory.trimmingCharacters(in: .whitespaces).isEmpty
             && entries.contains(where: { $0.id == selectionId })
+            && (trimmedQuery.isEmpty || selectedPath != nil || !rows.isEmpty)
     }
 
     private func submit() {
@@ -923,134 +1259,6 @@ struct GoldCTAButtonStyle: ButtonStyle {
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-// MARK: - Recent row
-
-private struct RecentRow: View {
-    let recent: RecentDirectory
-    let isKeyboardFocused: Bool
-    let onClick: () -> Void
-    let onDoubleClick: () -> Void
-    let onTogglePin: () -> Void
-
-    @State private var hovering: Bool = false
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(recent.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(BrandColors.whiteSwiftUI)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(displayPath(recent.path))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(relativeTime(recent.lastOpenedAt))
-                    .font(.system(size: 11))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-                Text(openCountLabel(recent.openCount))
-                    .font(.system(size: 10))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
-            }
-            Button {
-                onTogglePin()
-            } label: {
-                Image(systemName: recent.pinned ? "star.fill" : "star")
-                    .font(.system(size: 12))
-                    .foregroundStyle(recent.pinned
-                                     ? BrandColors.goldSwiftUI
-                                     : BrandColors.whiteSwiftUI.opacity(hovering ? 0.85 : 0.55))
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.plain)
-            .help(recent.pinned
-                  ? String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin")
-                  : String(localized: "createWorkspace.recents.pin", defaultValue: "Pin to top"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(
-            Rectangle()
-                .fill(rowBackground)
-        )
-        .overlay(alignment: .leading) {
-            if isKeyboardFocused {
-                Rectangle()
-                    .fill(BrandColors.goldSwiftUI)
-                    .frame(width: 2)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(BrandColors.ruleSwiftUI)
-                .frame(height: 0.5)
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .gesture(
-            TapGesture(count: 2).onEnded { onDoubleClick() }
-        )
-        .simultaneousGesture(
-            TapGesture(count: 1).onEnded { onClick() }
-        )
-    }
-
-    private var rowBackground: Color {
-        if isKeyboardFocused {
-            return BrandColors.goldFaintSwiftUI
-        }
-        if hovering {
-            return BrandColors.whiteSwiftUI.opacity(0.03)
-        }
-        return .clear
-    }
-
-    private func displayPath(_ path: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
-    }
-
-    private func relativeTime(_ date: Date) -> String {
-        let delta = -date.timeIntervalSinceNow
-        if delta < 60 {
-            return String(localized: "createWorkspace.recents.justNow", defaultValue: "just now")
-        }
-        let m = Int(delta / 60)
-        if m < 60 { return String(format: "%dm ago", m) }
-        let h = m / 60
-        if h < 24 { return String(format: "%dh ago", h) }
-        let d = h / 24
-        if d < 7 { return String(format: "%dd ago", d) }
-        let w = d / 7
-        if w < 5 { return String(format: "%dw ago", w) }
-        let mo = d / 30
-        return String(format: "%dmo ago", mo)
-    }
-
-    private func openCountLabel(_ n: Int) -> String {
-        if n == 1 {
-            return String(localized: "createWorkspace.recents.openedOnce",
-                          defaultValue: "opened 1 time")
-        }
-        return String(
-            format: String(
-                localized: "createWorkspace.recents.openedMany",
-                defaultValue: "opened %d times"
-            ),
-            n
-        )
     }
 }
 

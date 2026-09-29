@@ -203,13 +203,33 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
 
     // MARK: Height budget
 
-    func testListRowsAreClampedBetweenEightAndSixteen() {
-        XCTAssertEqual(CreateWorkspaceSheetMetrics.listRows(visibleHeight: 500), 8)
+    func testListRowsAreClampedBetweenFiveAndSixteen() {
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.listRows(visibleHeight: 500), 5)
         XCTAssertEqual(CreateWorkspaceSheetMetrics.listRows(visibleHeight: 5000), 16)
-        let mid = CreateWorkspaceSheetMetrics.listRows(visibleHeight: 1100)
-        XCTAssertTrue((8...16).contains(mid))
         XCTAssertTrue(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: 500))
         XCTAssertFalse(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: 5000))
+    }
+
+    /// The 14-inch MacBook Pro at its default 1512 x 982: the menu bar leaves
+    /// 945 pt, a visible Dock leaves about 875 to 883. With two rows of pins
+    /// the whole sheet must fit, the list giving up rows first.
+    func testSheetFitsA982PointScreenWithAndWithoutTheDock() {
+        for (visible, expectedRows) in [(CGFloat(945), 7), (883, 5), (875, 5)] {
+            let rows = CreateWorkspaceSheetMetrics.listRows(visibleHeight: visible, pinRows: 2)
+            XCTAssertEqual(rows, expectedRows, "visibleFrame \(visible)")
+            XCTAssertFalse(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visible, pinRows: 2))
+            let window = CreateWorkspaceSheetMetrics.windowChrome
+                + CreateWorkspaceSheetMetrics.fixedHeight(pinRows: 2)
+                + CGFloat(rows) * CreateWorkspaceSheetMetrics.rowHeight
+            XCTAssertLessThanOrEqual(window, visible, "window must fit visibleFrame \(visible)")
+        }
+    }
+
+    func testAShorterPinAreaGivesTheListMoreRows() {
+        XCTAssertGreaterThan(
+            CreateWorkspaceSheetMetrics.listRows(visibleHeight: 945, pinRows: 1),
+            CreateWorkspaceSheetMetrics.listRows(visibleHeight: 945, pinRows: 2)
+        )
     }
 
     // MARK: Relative time

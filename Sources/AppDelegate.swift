@@ -7320,8 +7320,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? NSApp.mainWindow?.screen
             ?? NSScreen.main
 
-        let visibleHeight = targetScreen?.visibleFrame.height ?? 900
+        // visibleFrame excludes the menu bar and a visible Dock, so the sheet is
+        // sized to what the operator can actually see.
+        var visibleHeight = targetScreen?.visibleFrame.height ?? 900
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["C11_CREATE_WORKSPACE_VISIBLE_HEIGHT"],
+           let simulated = Double(raw), simulated > 300 {
+            visibleHeight = CGFloat(simulated)
+        }
+        #endif
         let pinRows = PinGridShape.rows(forPinCount: CreateWorkspaceRecents.pins().count)
+        #if DEBUG
+        dlog(
+            "createWorkspace.size visibleHeight=\(Int(visibleHeight)) pinRows=\(pinRows) " +
+            "fixed=\(Int(CreateWorkspaceSheetMetrics.fixedHeight(pinRows: pinRows))) " +
+            "listRows=\(CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight, pinRows: pinRows)) " +
+            "scroll=\(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visibleHeight, pinRows: pinRows))"
+        )
+        #endif
         let rootView = CreateWorkspaceSheet(
             initialDirectory: initialDirectory,
             listRows: CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight, pinRows: pinRows),
@@ -7376,7 +7392,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let visible = screen.visibleFrame
             let frame = window.frame
             let x = visible.origin.x + (visible.width - frame.width) / 2
-            let y = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0
+            let preferredY = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0
+            // Never any part off-screen: the window is at most visibleFrame tall,
+            // so clamping the origin into the frame is always possible.
+            let y = min(max(preferredY, visible.minY), visible.maxY - frame.height)
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
         createWorkspaceSheetWindow = window
@@ -7409,7 +7428,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let frame = window.frame
             guard abs(frame.maxY - anchoredTop) > 0.5 else { return }
             adjusting = true
-            window.setFrameOrigin(NSPoint(x: frame.origin.x, y: anchoredTop - frame.height))
+            var y = anchoredTop - frame.height
+            if let visible = window.screen?.visibleFrame, y < visible.minY {
+                // A taller sheet must not slide under the Dock: give up the pinned
+                // top edge before letting any part go off-screen.
+                y = visible.minY
+                anchoredTop = y + frame.height
+            }
+            window.setFrameOrigin(NSPoint(x: frame.origin.x, y: y))
             adjusting = false
         }
         // The first placement (centering) runs asynchronously after the window

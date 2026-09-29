@@ -147,14 +147,13 @@ struct CreateWorkspaceSheet: View {
     }
 
     var body: some View {
-        let content = VStack(alignment: .leading, spacing: 18) {
+        let content = VStack(alignment: .leading, spacing: 14) {
             header
             baseDirectorySection
-            workspaceNameSection
             layoutsSection
             footer
         }
-        .padding(24)
+        .padding(20)
         .frame(width: 720)
 
         Group {
@@ -228,16 +227,19 @@ struct CreateWorkspaceSheet: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(String(localized: "createWorkspace.title", defaultValue: "New Workspace"))
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
+                .lineLimit(1)
+            Spacer(minLength: 8)
             Text(String(
                 localized: "createWorkspace.subtitle",
                 defaultValue: "Pick a working directory and a blueprint to start from."
             ))
             .font(.system(size: 12))
             .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.66))
+            .lineLimit(1)
         }
     }
 
@@ -246,31 +248,57 @@ struct CreateWorkspaceSheet: View {
     private var baseDirectorySection: some View {
         let currentRows = rows
         return VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(String(
-                    localized: "createWorkspace.baseDirectory.label",
-                    defaultValue: "Base directory for your new workspace"
-                ))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(String(
+                        localized: "createWorkspace.baseDirectory.label",
+                        defaultValue: "Base directory for your new workspace"
+                    ))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BrandColors.whiteSwiftUI)
+                    .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    TextField("", text: $directory)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-                        .onSubmit { activate(directory, alt: NSEvent.modifierFlags.contains(.option)) }
-                    Button {
-                        chooseDirectory()
-                    } label: {
-                        Label(
-                            String(localized: "createWorkspace.browse", defaultValue: "Browse…"),
-                            systemImage: "folder"
-                        )
-                        .labelStyle(.titleAndIcon)
+                    HStack(spacing: 8) {
+                        TextField("", text: $directory)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .onSubmit { activate(directory, alt: NSEvent.modifierFlags.contains(.option)) }
+                        Button {
+                            chooseDirectory()
+                        } label: {
+                            Label(
+                                String(localized: "createWorkspace.browse", defaultValue: "Browse…"),
+                                systemImage: "folder"
+                            )
+                            .labelStyle(.titleAndIcon)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(String(localized: "createWorkspace.name", defaultValue: "Workspace name"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BrandColors.whiteSwiftUI)
+                        .lineLimit(1)
+                    TextField(
+                        "",
+                        text: $workspaceName,
+                        prompt: Text(defaultWorkspaceName)
+                            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.4))
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .controlSize(.large)
+                    .onSubmit { submit() }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(String(
+                    localized: "createWorkspace.name.hint",
+                    defaultValue: "Defaults to the directory name. Override to give this workspace a custom label."
+                ))
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
@@ -838,28 +866,7 @@ struct CreateWorkspaceSheet: View {
         return true
     }
 
-    // MARK: - Workspace name
-
-    private var workspaceNameSection: some View {
-        HStack(spacing: 12) {
-            Text(String(localized: "createWorkspace.name", defaultValue: "Workspace name"))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
-            TextField(
-                "",
-                text: $workspaceName,
-                prompt: Text(defaultWorkspaceName)
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.4))
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 12))
-            .onSubmit { submit() }
-        }
-        .help(String(
-            localized: "createWorkspace.name.hint",
-            defaultValue: "Defaults to the directory name. Override to give this workspace a custom label."
-        ))
-    }
+    // MARK: - Workspace name (the right half of the panel head)
 
     private var defaultWorkspaceName: String {
         let trimmed = directory.trimmingCharacters(in: .whitespaces)

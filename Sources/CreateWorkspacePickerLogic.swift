@@ -288,25 +288,25 @@ enum PinGridShape {
 
 enum CreateWorkspaceSheetMetrics {
     static let rowHeight: CGFloat = 28
-    static let minRows = 8
+    static let minRows = 5
     static let maxRows = 16
     /// Title bar of the sheet's window.
     static let windowChrome: CGFloat = 28
     /// Breathing room kept between the window and the screen edges.
-    static let screenMargin: CGFloat = 24
+    static let screenMargin: CGFloat = 6
 
     /// Height of every section except the list, measured on the real window
-    /// for none/one row of pins (677) and two rows (771). Zero pins is sized
+    /// for none/one row of pins (595) and two rows (689). Zero pins is sized
     /// like one row so adding a first pin does not resize the window.
     static func fixedHeight(pinRows: Int) -> CGFloat {
-        pinRows >= 2 ? 771 : 677
+        pinRows >= 2 ? 689 : 595
     }
 
     private static func available(visibleHeight: CGFloat) -> CGFloat {
         visibleHeight - windowChrome - screenMargin
     }
 
-    /// Rows for the list: as many as the screen leaves, 8 at least, 16 at most.
+    /// Rows for the list: as many as the screen leaves, 5 at least, 16 at most.
     static func listRows(visibleHeight: CGFloat, pinRows: Int = 2) -> Int {
         let spare = available(visibleHeight: visibleHeight) - fixedHeight(pinRows: pinRows)
         return max(minRows, min(maxRows, Int((spare / rowHeight).rounded(.down))))

@@ -3597,7 +3597,7 @@ struct CMUXCLI {
                 throw CLIError(message: "workspace recents list: unexpected '\(unknown)'. Known flags: --pinned, --json")
             }
             let payload = try client.sendV2(method: "workspace.recents.list", params: ["pinned": pinned])
-            if jsonOutput {
+            if jsonOutput || rest.contains("--json") {
                 print(jsonString(payload))
                 return
             }
@@ -3636,7 +3636,7 @@ struct CMUXCLI {
                 params["at"] = n
             }
             let payload = try client.sendV2(method: "workspace.recents.\(sub)", params: params)
-            if jsonOutput {
+            if jsonOutput || rest.contains("--json") {
                 print(jsonString(payload))
             } else {
                 let path = (payload["path"] as? String) ?? target

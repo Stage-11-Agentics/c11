@@ -275,15 +275,13 @@ private struct RecentContextMenu: ViewModifier {
             Button {
                 actions.create()
             } label: {
-                Text(String(localized: "createWorkspace.menu.create", defaultValue: "New workspace here"))
-                Text("⏎")
+                Text(String(localized: "createWorkspace.menu.create", defaultValue: "New workspace here") + "   ⏎")
             }
             .disabled(actions.isMissing)
             Button {
                 actions.switchToOpen()
             } label: {
-                Text(String(localized: "createWorkspace.menu.switch", defaultValue: "Switch to open workspace"))
-                Text("⌥⏎")
+                Text(String(localized: "createWorkspace.menu.switch", defaultValue: "Switch to open workspace") + "   ⌥⏎")
             }
             .disabled(!actions.isOpen)
             Divider()
@@ -356,6 +354,8 @@ struct RecentRowView: View {
     let onTogglePin: () -> Void
 
     @State private var hovering = false
+    /// The pointer is over the pin star: a double-tap there is not "open".
+    @State private var overControl = false
 
     static let height: CGFloat = 28
 
@@ -410,27 +410,30 @@ struct RecentRowView: View {
             }
 
             if showsHistory {
-            Button {
-                onTogglePin()
-            } label: {
-                Image(systemName: recent.pinned ? "star.fill" : "star")
-                    .font(.system(size: 12))
-                    .foregroundStyle(recent.pinned
-                                     ? BrandColors.goldSwiftUI
-                                     : BrandColors.whiteSwiftUI.opacity((hovering || isSelected) ? 0.55 : 0))
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(String(
-                format: recent.pinned
-                    ? String(localized: "createWorkspace.a11y.unpin", defaultValue: "Unpin %@")
-                    : String(localized: "createWorkspace.a11y.pin", defaultValue: "Pin %@"),
-                name
-            )))
-            .help(recent.pinned
-                  ? String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin")
-                  : String(localized: "createWorkspace.recents.pin", defaultValue: "Pin"))
+            // A plain view with a high-priority tap, not a Button: inside a row
+            // that also recognizes a double-tap, a Button's action can be held
+            // back until the double-click window has passed.
+            Image(systemName: recent.pinned ? "star.fill" : "star")
+                .font(.system(size: 12))
+                .foregroundStyle(recent.pinned
+                                 ? BrandColors.goldSwiftUI
+                                 : BrandColors.whiteSwiftUI.opacity((hovering || isSelected) ? 0.55 : 0))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .onHover { overControl = $0 }
+                .highPriorityGesture(TapGesture().onEnded { onTogglePin() })
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(String(
+                    format: recent.pinned
+                        ? String(localized: "createWorkspace.a11y.unpin", defaultValue: "Unpin %@")
+                        : String(localized: "createWorkspace.a11y.pin", defaultValue: "Pin %@"),
+                    name
+                )))
+                .accessibilityAction { onTogglePin() }
+                .help(recent.pinned
+                      ? String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin")
+                      : String(localized: "createWorkspace.recents.pin", defaultValue: "Pin"))
             } else {
                 Color.clear.frame(width: 22, height: 22)
             }
@@ -454,11 +457,12 @@ struct RecentRowView: View {
               : recent.path)
         .gesture(
             TapGesture(count: 2).onEnded {
+                guard !overControl else { return }
                 onDoubleClick(NSEvent.modifierFlags.contains(.option))
             }
         )
         .simultaneousGesture(
-            TapGesture(count: 1).onEnded { onClick() }
+            TapGesture(count: 1).onEnded { if !overControl { onClick() } }
         )
         .recentContextMenu(actions)
     }
@@ -544,6 +548,8 @@ struct PinTileView: View {
     let onUnpin: () -> Void
 
     @State private var hovering = false
+    /// The pointer is over the ×: a double-tap there is not "open".
+    @State private var overControl = false
 
     static let width: CGFloat = 120
     static let height: CGFloat = 86
@@ -609,19 +615,21 @@ struct PinTileView: View {
             // The badge and the × share one slot, so nothing shifts on hover.
             ZStack {
                 if hovering {
-                    Button(action: onUnpin) {
-                        Text("×")
-                            .font(.system(size: 13))
-                            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.7))
-                            .frame(width: 24, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(String(
-                        format: String(localized: "createWorkspace.a11y.unpin", defaultValue: "Unpin %@"),
-                        name
-                    )))
-                    .help(String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin"))
+                    Text("×")
+                        .font(.system(size: 13))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.7))
+                        .frame(width: 24, height: 16)
+                        .contentShape(Rectangle())
+                        .onHover { overControl = $0 }
+                        .highPriorityGesture(TapGesture().onEnded { onUnpin() })
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityLabel(Text(String(
+                            format: String(localized: "createWorkspace.a11y.unpin", defaultValue: "Unpin %@"),
+                            name
+                        )))
+                        .accessibilityAction { onUnpin() }
+                        .help(String(localized: "createWorkspace.recents.unpin", defaultValue: "Unpin"))
                 } else if index < 9 {
                     Text("⌘\(index + 1)")
                         .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
@@ -646,11 +654,12 @@ struct PinTileView: View {
         }
         .gesture(
             TapGesture(count: 2).onEnded {
+                guard !overControl else { return }
                 onDoubleClick(NSEvent.modifierFlags.contains(.option))
             }
         )
         .simultaneousGesture(
-            TapGesture(count: 1).onEnded { onClick() }
+            TapGesture(count: 1).onEnded { if !overControl { onClick() } }
         )
         .recentContextMenu(actions)
     }

@@ -3043,6 +3043,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let needsConfirmation = QuitConfirmationPolicy.shouldConfirm(
+            alreadyTerminating: isTerminatingApp,
+            bypassArmed: QuitConfirmationPolicy.consumeBypass(),
+            warnEnabled: QuitWarningSettings.isEnabled(),
+            quitReason: Self.currentQuitReason()
+        )
+        if let pending = pendingQuitConfirmation {
+            if pending.host.attachedSheet === pending.alert.window {
+                // A quit that needs no confirmation (clean restart, update
+                // relaunch) answers the open sheet as Quit; anything else
+                // leaves it waiting.
+                if !needsConfirmation {
+                    pending.host.endSheet(pending.alert.window, returnCode: Self.quitConfirmationQuitResponse)
+                }
+                return .terminateLater
+            }
+            // The sheet went away with its window and never answered. Settle
+            // the old request so AppKit leaves its termination wait, then
+            // treat this one as new.
+            pendingQuitConfirmation = nil
+            NSApp.reply(toApplicationShouldTerminate: false)
+        }
+        if needsConfirmation, let host = quitConfirmationHostWindow() {
+            return presentQuitConfirmation(on: host)
+        }
         isTerminatingApp = true
         // C11-24 review (M1): the snapshot write happens in
         // applicationWillTerminate AFTER suspendAllAlive runs, so the
@@ -10736,30 +10761,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return StoredShortcut(key: key, command: command, shift: shift, option: option, control: control)
     }
 
-    private func handleQuitShortcutWarning() -> Bool {
-        if !QuitWarningSettings.isEnabled() {
-            NSApp.terminate(nil)
-            return true
-        }
+    private func handleQuitShortcut() -> Bool {
+        NSApp.terminate(nil)
+        return true
+    }
 
+    // MARK: - Quit confirmation
+
+    private struct PendingQuitConfirmation {
+        let alert: NSAlert
+        let host: NSWindow
+    }
+
+    private var pendingQuitConfirmation: PendingQuitConfirmation?
+
+    /// Cancel is the first button, so Return and Escape both keep c11 open.
+    /// Quitting takes a click on Quit or a second Cmd+Q (the Quit button's
+    /// key equivalent).
+    private static let quitConfirmationQuitResponse = NSApplication.ModalResponse.alertSecondButtonReturn
+
+    private static func currentQuitReason() -> OSType? {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == OSType(kAEQuitApplication),
+              let reason = event.attributeDescriptor(forKeyword: OSType(kAEQuitReason)) else {
+            return nil
+        }
+        // The reason arrives as typeType; typeCodeValue reads it, and
+        // enumCodeValue covers a sender that coerces it to an enum.
+        let code = reason.typeCodeValue
+        return code != 0 ? code : reason.enumCodeValue
+    }
+
+    /// The window the quit sheet attaches to: the key main window if there is
+    /// one, else any main window. Nil when no main window exists, in which
+    /// case there is nothing on screen to lose.
+    private func quitConfirmationHostWindow() -> NSWindow? {
+        let candidates = ([NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 }
+            + mainWindowContexts.values.compactMap(\.window))
+            .filter { isMainTerminalWindow($0) }
+        return candidates.first(where: { $0.attachedSheet == nil }) ?? candidates.first
+    }
+
+    private func presentQuitConfirmation(on host: NSWindow) -> NSApplication.TerminateReply {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit c11?")
         alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
-        alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
-        alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = String(localized: "dialog.dontWarnCmdQ", defaultValue: "Don't warn again for Cmd+Q")
+        let quitButton = alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
+        quitButton.keyEquivalent = "q"
+        quitButton.keyEquivalentModifierMask = [.command]
+        quitButton.hasDestructiveAction = true
 
-        let response = alert.runModal()
-        if alert.suppressionButton?.state == .on {
-            QuitWarningSettings.setEnabled(false)
+        bringToFront(host)
+        // Every main window already shows a sheet. A second sheet would queue
+        // unseen behind it, and an app-modal alert would block main for a
+        // quit an agent can send, so refuse; the operator answers the open
+        // sheet and quits again.
+        if host.attachedSheet != nil {
+            NSSound.beep()
+            return .terminateCancel
         }
-
-        if response == .alertFirstButtonReturn {
-            NSApp.terminate(nil)
+        pendingQuitConfirmation = PendingQuitConfirmation(alert: alert, host: host)
+        alert.beginSheetModal(for: host) { [weak self] response in
+            guard let self else { return }
+            self.pendingQuitConfirmation = nil
+            let shouldQuit = response == Self.quitConfirmationQuitResponse
+            if shouldQuit {
+                self.isTerminatingApp = true
+            }
+            NSApp.reply(toApplicationShouldTerminate: shouldQuit)
         }
-        return true
+        return .terminateLater
     }
 
     func promptRenameSelectedWorkspace() -> Bool {
@@ -11119,7 +11192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             event: event,
             shortcut: StoredShortcut(key: "q", command: true, shift: false, option: false, control: false)
         ) {
-            return handleQuitShortcutWarning()
+            return handleQuitShortcut()
         }
         if matchShortcut(
             event: event,

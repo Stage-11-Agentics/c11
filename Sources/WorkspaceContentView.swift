@@ -278,7 +278,14 @@ struct WorkspaceContentView: View {
                         activityState: expectedActivity
                     )
                 }
-                if let panelId { workspace.recordTabSheetStatusTransition(panelId: panelId, activity: expectedActivity) }
+                // Same notification rule as the sync path (signal-eligible unread), not
+                // the raw-unread set the badge uses, so a suppressed agent's clock holds.
+                if let panelId {
+                    workspace.recordTabSheetStatusTransition(
+                        panelId: panelId,
+                        activity: workspace.resolvedSurfaceTabActivityState(panelId: panelId)
+                    )
+                }
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 

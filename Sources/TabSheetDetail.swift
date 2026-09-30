@@ -111,9 +111,37 @@ enum TabSheetDetailBuilder {
         }
     }
 
-    /// The kind alone, for recording transitions.
-    static func statusKind(activity: BonsplitTabActivityState?, isFlagged: Bool) -> BonsplitTabDetail.StatusKind? {
-        status(activity: activity, isFlagged: isFlagged, enteredAt: nil, stateStartedAt: nil, flagRaisedAt: nil)?.kind
+    /// The base state a surface is in, ignoring any flag. The recorded entry
+    /// tracks this only: a flag has its own time (the raise), and toggling it
+    /// must not reset how long the surface has been working or idle.
+    static func baseKind(activity: BonsplitTabActivityState?) -> BonsplitTabDetail.StatusKind? {
+        switch activity {
+        case .running: return .working
+        case .idle: return .idle
+        case .waiting: return .waiting
+        case .cold: return .cold
+        case nil: return nil
+        }
+    }
+
+    /// Where the clock starts for a state first seen with no history (after a
+    /// relaunch, or when a surface gains a status): the last recorded activity
+    /// for working/idle, the notification or dormancy start for waiting/cold,
+    /// never later than now.
+    static func seededEnteredAt(
+        kind: BonsplitTabDetail.StatusKind,
+        now: Date,
+        lastActivityAt: Date?,
+        exactStart: Date?
+    ) -> Date {
+        switch kind {
+        case .working, .idle:
+            return min(now, lastActivityAt ?? now)
+        case .waiting, .cold:
+            return min(now, exactStart ?? lastActivityAt ?? now)
+        case .flagged:
+            return now
+        }
     }
 
     /// Reads the operator/agent setting: comma-separated, unknown names are
@@ -183,6 +211,11 @@ extension Workspace {
             keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel]
         )
         let activity = resolvedSurfaceTabActivityState(panelId: panelId)
+        // Idempotent: makes sure the entry describes the state we are about to
+        // show, whichever recorder saw (or missed) the last transition.
+        recordTabSheetStatusTransition(panelId: panelId, activity: activity)
+        let baseKind = TabSheetDetailBuilder.baseKind(activity: activity)
+        let entered = tabSheetStatusEntered[panelId].flatMap { $0.kind == baseKind ? $0.at : nil }
         let help = resolvedAgentActivityHelp(panelId: panelId, activityState: activity)
         let attention = attentionSnapshot(panelId: panelId)
         let terminalKind = panel.panelType == .terminal ? surfaceActivityTerminalKind(panelId: panelId) : nil
@@ -202,7 +235,7 @@ extension Workspace {
             markdownPath: (panel as? MarkdownPanel)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
-            stateEnteredAt: tabSheetStatusEntered[panelId]?.at,
+            stateEnteredAt: entered,
             stateStartedAt: activity == .waiting || activity == .cold ? help?.stateStartedAt : nil,
             flagRaisedAt: attention.flagRaisedAt,
             lastActivityAt: help?.lastActivityAt
@@ -228,20 +261,34 @@ extension Workspace {
         bonsplitController.updateTab(tabId, detail: .some(detail))
     }
 
-    /// Notes a change of the surface's presented state (activity plus flag) so
-    /// the sheet can say how long it has held. Cheap: one dictionary compare.
+    /// Notes a change of the surface's base state (working, idle, waiting,
+    /// cold) so the sheet can say how long it has held. Cheap: one dictionary
+    /// compare. A first sighting (a relaunch, a surface that just gained a
+    /// status) is seeded from what c11 already knows rather than stamped "now",
+    /// so an agent idle for three hours still reads three hours after a restore:
+    /// the last recorded activity for working/idle, the notification or
+    /// dormancy start for waiting/cold. Only a change seen from a known state
+    /// is stamped with the current time.
     func recordTabSheetStatusTransition(panelId: UUID, activity: BonsplitTabActivityState?) {
-        let kind = TabSheetDetailBuilder.statusKind(
-            activity: activity,
-            isFlagged: attentionSnapshot(panelId: panelId).isFlagged
-        )
-        guard let kind else {
+        guard let kind = TabSheetDetailBuilder.baseKind(activity: activity) else {
             tabSheetStatusEntered.removeValue(forKey: panelId)
             return
         }
-        if tabSheetStatusEntered[panelId]?.kind != kind {
-            tabSheetStatusEntered[panelId] = TabSheetStatusEntry(kind: kind, at: Date())
+        let existing = tabSheetStatusEntered[panelId]
+        guard existing?.kind != kind else { return }
+        let now = Date()
+        var at = now
+        if existing == nil {
+            at = TabSheetDetailBuilder.seededEnteredAt(
+                kind: kind,
+                now: now,
+                lastActivityAt: SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
+                exactStart: kind == .waiting || kind == .cold
+                    ? resolvedAgentActivityHelp(panelId: panelId, activityState: activity)?.stateStartedAt
+                    : nil
+            )
         }
+        tabSheetStatusEntered[panelId] = TabSheetStatusEntry(kind: kind, at: at)
     }
 
     /// The tab's current detail with its title replaced, for the same

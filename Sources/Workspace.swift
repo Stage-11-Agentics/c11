@@ -6446,6 +6446,8 @@ final class Workspace: Identifiable, ObservableObject {
         let detectedTerminalType: String?
         let activityState: BonsplitTabActivityState?
         let attention: SurfaceAttentionSnapshot
+        /// When the surface entered its sheet-visible state, so a moved tab keeps its clock.
+        let tabSheetStatusEntered: TabSheetStatusEntry?
     }
 
     private var detachingTabIds: Set<TabID> = []
@@ -6549,7 +6551,10 @@ final class Workspace: Identifiable, ObservableObject {
                 title: titleUpdate,
                 iconImageData: faviconUpdate,
                 hasCustomTitle: self.panelCustomTitles[browserPanel.id] != nil,
-                isLoading: loadingUpdate
+                isLoading: loadingUpdate,
+                detail: titleUpdate == nil
+                    ? nil
+                    : self.tabDetailReplacingTitle(tabId: tabId, with: resolvedTitle)
             )
         }
         panelSubscriptions[browserPanel.id] = subscription
@@ -6640,7 +6645,8 @@ final class Workspace: Identifiable, ObservableObject {
                 self.bonsplitController.updateTab(
                     tabId,
                     title: sidebarLabel,
-                    hasCustomTitle: self.panelCustomTitles[markdownPanel.id] != nil
+                    hasCustomTitle: self.panelCustomTitles[markdownPanel.id] != nil,
+                    detail: self.tabDetailReplacingTitle(tabId: tabId, with: resolvedTitle)
                 )
             }
         panelSubscriptions[markdownPanel.id] = subscription
@@ -7984,6 +7990,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         titleBarCollapsed = titleBarCollapsed.filter { validSurfaceIds.contains($0.key) }
         titleBarUserCollapsed = titleBarUserCollapsed.filter { validSurfaceIds.contains($0) }
+        tabSheetStatusEntered = tabSheetStatusEntered.filter { validSurfaceIds.contains($0.key) }
         recomputeListeningPorts()
     }
 
@@ -9773,6 +9780,9 @@ final class Workspace: Identifiable, ObservableObject {
                 value: terminalType,
                 source: detached.terminalTypeSource ?? .heuristic
             )
+        }
+        if let entered = detached.tabSheetStatusEntered {
+            tabSheetStatusEntered[detached.panelId] = entered
         }
         if let derivedActivity = detached.derivedActivity {
             derivedActivityBySurface[detached.panelId] = derivedActivity
@@ -12103,7 +12113,8 @@ extension Workspace: BonsplitDelegate {
                     panelId: panelId,
                     hasExactSurfaceNotification: false
                 ),
-                attention: attentionSnapshot(panelId: panelId)
+                attention: attentionSnapshot(panelId: panelId),
+                tabSheetStatusEntered: tabSheetStatusEntered[panelId]
             )
         } else {
             if let closedBrowserRestoreSnapshot {

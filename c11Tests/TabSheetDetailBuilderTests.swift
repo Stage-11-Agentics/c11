@@ -113,11 +113,27 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         XCTAssertEqual(status(.running, flagged: true, entered: entered)?.since, entered)
     }
 
+    func testFirstSightingIsSeededFromWhatIsKnown() {
+        let now = t0.addingTimeInterval(3 * 3600)
+        let lastActivity = t0, exact = t0.addingTimeInterval(600)
+        // An agent idle for three hours reads three hours after a relaunch.
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .working, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .waiting, now: now, lastActivityAt: lastActivity, exactStart: exact), exact)
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .cold, now: now, lastActivityAt: lastActivity, exactStart: nil), lastActivity)
+        // Nothing known: now. A future timestamp never runs the clock backwards.
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: nil, exactStart: nil), now)
+        XCTAssertEqual(TabSheetDetailBuilder.seededEnteredAt(kind: .idle, now: now, lastActivityAt: now.addingTimeInterval(90), exactStart: nil), now)
+    }
+
     func testNoActivityMeansNoStatus() {
         XCTAssertNil(status(nil, flagged: true, entered: t0, raised: t0))
-        XCTAssertNil(TabSheetDetailBuilder.statusKind(activity: nil, isFlagged: true))
-        XCTAssertEqual(TabSheetDetailBuilder.statusKind(activity: .waiting, isFlagged: true), .flagged)
-        XCTAssertEqual(TabSheetDetailBuilder.statusKind(activity: .running, isFlagged: false), .working)
+        XCTAssertNil(TabSheetDetailBuilder.baseKind(activity: nil))
+        // The recorded kind ignores the flag: a flag toggle must not reset the clock.
+        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .waiting), .waiting)
+        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .running), .working)
+        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .idle), .idle)
+        XCTAssertEqual(TabSheetDetailBuilder.baseKind(activity: .cold), .cold)
     }
 
     // MARK: Subtitle

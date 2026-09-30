@@ -2312,6 +2312,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
     private var isApplyingStartupSessionRestore = false
+    private var isAwaitingStartupResumeDecision = false
+    private weak var startupResumePickerParentWindow: NSWindow?
     private var sessionAutosaveTimer: DispatchSourceTimer?
     private var sessionAutosaveTickInFlight = false
     private var sessionAutosaveDeferredRetryPending = false
@@ -3591,8 +3593,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if policy == .ask,
            let snapshot = startupSessionSnapshot,
            snapshot.windows.contains(where: { !$0.tabManager.workspaces.isEmpty }) {
-            LaunchResumePicker.presentSheet(on: primaryWindow, snapshot: snapshot) { [weak self] decision in
+            isAwaitingStartupResumeDecision = true
+            startupResumePickerParentWindow = primaryWindow
+            LaunchResumePicker.presentSheet(
+                on: primaryWindow,
+                snapshot: snapshot,
+                onSheetEnded: { [weak self] in self?.endStartupResumeDecisionWait() }
+            ) { [weak self] decision in
                 guard let self else { return }
+                self.endStartupResumeDecisionWait()
                 switch decision {
                 case .resumeAll:
                     break  // startupSessionSnapshot stays as-is
@@ -3689,6 +3698,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 completeStartupSessionRestore()
             }
         }
+    }
+
+    /// Saves resume once the picker is gone, however it went: a decision,
+    /// the sheet ending, or its parent window closing underneath it.
+    private func endStartupResumeDecisionWait() {
+        isAwaitingStartupResumeDecision = false
+        startupResumePickerParentWindow = nil
     }
 
     private func completeStartupSessionRestore() {
@@ -4342,6 +4358,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @discardableResult
     private func persistCleanShutdownSnapshot(bundleId: String) -> Bool {
         if didPersistCleanShutdownSnapshot { return true }
+        if isAwaitingStartupResumeDecision {
+            // Quitting with the resume picker open: this run saved nothing,
+            // so the file on disk is the previous session, untouched. It is
+            // exactly as clean as that session's own exit was.
+            guard case .clean = priorShutdownAtLaunch,
+                  ShutdownSentinel.promoteToClean(bundleId: bundleId) else {
+                return false
+            }
+            didPersistCleanShutdownSnapshot = true
+            return true
+        }
         guard let conversations = prepareConversationsForPersistence(
             includeScrollback: true,
             suspendAlive: true
@@ -4375,6 +4402,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         conversationsByPanelId: [String: SurfaceConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
+        // While the resume picker is open, the file on disk is the only copy
+        // of the session it offers; the empty launch window must not replace
+        // it, whether the operator answers, quits, or c11 crashes first.
+        if isAwaitingStartupResumeDecision {
+#if DEBUG
+            dlog("session.save.skipped reason=awaiting_resume_decision")
+#endif
+            return false
+        }
         if Self.shouldSkipSessionSaveDuringStartupRestore(
             isApplyingStartupSessionRestore: isApplyingStartupSessionRestore,
             includeScrollback: includeScrollback
@@ -12990,6 +13026,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func unregisterMainWindow(_ window: NSWindow) {
+        if window === startupResumePickerParentWindow {
+            endStartupResumeDecisionWait()
+        }
         // Keep geometry available as a fallback even if the full session snapshot
         // is removed when the last window closes.
         persistWindowGeometry(from: window)

@@ -753,6 +753,83 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
+    func testFirstOverwriteArchivesThePreviousSessionOnce() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let previous = Data("previous session".utf8)
+        try previous.write(to: snapshotURL)
+
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+        snapshot.createdAt += 1
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), previous)
+        XCTAssertNotNil(SessionPersistenceStore.load(fileURL: snapshotURL))
+    }
+
+    func testRemoveSnapshotArchivesThePreviousSessionFirst() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let previous = Data("previous session".utf8)
+        try previous.write(to: snapshotURL)
+
+        SessionPersistenceStore.removeSnapshot(fileURL: snapshotURL)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: snapshotURL.path))
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), previous)
+    }
+
+    func testSessionHistoryKeepsTheNewestCopies() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let historyDir = SessionPersistenceStore.historyDirectoryURL(for: snapshotURL)
+        try FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let retention = SessionPersistenceStore.historyRetentionCount
+        for day in 1...(retention + 2) {
+            let name = String(format: "session-200001%02dT000000.000Z.json", day)
+            try Data("old".utf8).write(to: historyDir.appendingPathComponent(name))
+        }
+        try Data("previous session".utf8).write(to: snapshotURL)
+
+        SessionPersistenceStore.archiveBeforeFirstOverwrite(fileURL: snapshotURL)
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, retention)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), Data("previous session".utf8))
+        XCTAssertFalse(archives.contains { $0.lastPathComponent == "session-20000101T000000.000Z.json" })
+    }
+
+    func testSessionHistoryKeepsPrefixSharingStemsApart() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        let fooURL = tempDir.appendingPathComponent("session-dev.foo.json", isDirectory: false)
+        let historyDir = SessionPersistenceStore.historyDirectoryURL(for: fooURL)
+        try FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try Data("foo".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-20260101T000000.000Z.json"))
+        try Data("bar".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-bar-20260102T000000.000Z.json"))
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: fooURL)
+        XCTAssertEqual(archives.map(\.lastPathComponent), ["session-dev.foo-20260101T000000.000Z.json"])
+    }
+
     func testShouldSkipSessionSaveDuringStartupRestorePolicy() {
         XCTAssertTrue(
             AppDelegate.shouldSkipSessionSaveDuringStartupRestore(

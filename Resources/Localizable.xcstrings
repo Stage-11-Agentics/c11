@@ -20152,53 +20152,6 @@
         }
       }
     },
-    "contextMenu.closeOtherWorkspaces": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close Other Workspaces"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他のワークスペースを閉じる"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭其他工作区"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "關閉其他工作區"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다른 작업 공간 닫기"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Закрыть другие рабочие пространства"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Закрити інші робочі простори"
-          }
-        }
-      }
-    },
     "contextMenu.closeWorkspace": {
       "extractionState": "manual",
       "localizations": {

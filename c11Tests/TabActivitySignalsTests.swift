@@ -13,61 +13,98 @@ final class TabActivitySignalsTests: XCTestCase {
 
     // MARK: - Scrollback growth (plain terminals)
 
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+    private func later(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }
+
     func testFirstEventOnlySetsTheBaseline() {
         var tracker = ScrollbackGrowthTracker()
-        XCTAssertFalse(tracker.observe(total: 50, len: 24))
-        XCTAssertTrue(tracker.observe(total: 55, len: 24), "history grew from 26 to 31")
+        XCTAssertFalse(tracker.observe(total: 50, len: 24, at: t0))
+        XCTAssertTrue(tracker.observe(total: 55, len: 24, at: later(1)), "history grew from 26 to 31")
     }
 
     func testRepaintsThatDoNotChangeHistoryAreNotOutput() {
         var tracker = ScrollbackGrowthTracker()
-        _ = tracker.observe(total: 50, len: 24)
-        XCTAssertFalse(tracker.observe(total: 50, len: 24))
-        // The viewport size changing without history moving is not growth either.
-        XCTAssertFalse(tracker.observe(total: 50, len: 24))
+        _ = tracker.observe(total: 50, len: 24, at: t0)
+        XCTAssertFalse(tracker.observe(total: 50, len: 24, at: later(1)))
+        XCTAssertFalse(tracker.observe(total: 50, len: 24, at: later(2)))
     }
 
     func testDecreasesLowerTheBaselineWithoutStamping() {
         var tracker = ScrollbackGrowthTracker()
-        _ = tracker.observe(total: 500, len: 24)
-        XCTAssertFalse(tracker.observe(total: 24, len: 24), "clear or scrollback pruning")
-        XCTAssertTrue(tracker.observe(total: 30, len: 24), "new output after a clear counts")
+        _ = tracker.observe(total: 500, len: 24, at: t0)
+        XCTAssertFalse(tracker.observe(total: 24, len: 24, at: later(1)), "clear or scrollback pruning")
+        XCTAssertTrue(tracker.observe(total: 30, len: 24, at: later(2)), "new output after a clear counts")
     }
 
-    func testResizeAndVisibilityRebaselineTheNextEvent() {
+    func testEventsInsideTheSettleWindowAfterResizeOrRevealAreNotOutput() {
         var tracker = ScrollbackGrowthTracker()
-        _ = tracker.observe(total: 50, len: 24)
-        tracker.noteResized()
-        XCTAssertFalse(tracker.observe(total: 80, len: 30), "reflow moved the count")
-        XCTAssertTrue(tracker.observe(total: 85, len: 30))
+        _ = tracker.observe(total: 50, len: 24, at: t0)
+        tracker.noteResized(at: later(10))
+        XCTAssertFalse(tracker.observe(total: 80, len: 30, at: later(10.1)), "reflow moved the count")
+        XCTAssertTrue(tracker.observe(total: 85, len: 30, at: later(11)))
 
-        tracker.noteVisibilityChanged()
-        XCTAssertFalse(tracker.observe(total: 400, len: 30), "catch-up delta after a hidden stretch")
-        XCTAssertTrue(tracker.observe(total: 401, len: 30))
+        tracker.noteVisibilityChanged(at: later(20))
+        XCTAssertFalse(tracker.observe(total: 400, len: 30, at: later(20.1)), "catch-up delta after a hidden stretch")
     }
 
-    func testAltScreenNeverGrows() {
+    func testFirstRealOutputAfterARevealStillCounts() {
         var tracker = ScrollbackGrowthTracker()
-        _ = tracker.observe(total: 24, len: 24)
-        // A full-screen TUI repaints: total stays == len.
-        for _ in 0..<5 { XCTAssertFalse(tracker.observe(total: 24, len: 24)) }
+        _ = tracker.observe(total: 50, len: 24, at: t0)
+        tracker.noteVisibilityChanged(at: later(10))
+        // Nothing changed while hidden, so no catch-up event arrives; the next
+        // event, after the settle window, is real output.
+        XCTAssertTrue(tracker.observe(total: 51, len: 24, at: later(10) + ScrollbackGrowthTracker.settleWindow + 0.1))
+    }
+
+    func testLeavingAnAltScreenAppDoesNotStampTheRestoredHistory() {
+        var tracker = ScrollbackGrowthTracker()
+        _ = tracker.observe(total: 24, len: 24, at: t0)
+        for i in 1...4 { XCTAssertFalse(tracker.observe(total: 24, len: 24, at: later(Double(i)))) }
+        // Exit: the primary screen's 300 rows of history come back at once.
+        XCTAssertFalse(tracker.observe(total: 324, len: 24, at: later(10)))
+        XCTAssertTrue(tracker.observe(total: 326, len: 24, at: later(11)))
+    }
+
+    func testAFewLinesOfFirstOutputOnAFreshTerminalStillCount() {
+        var tracker = ScrollbackGrowthTracker()
+        _ = tracker.observe(total: 24, len: 24, at: t0)
+        XCTAssertTrue(tracker.observe(total: 27, len: 24, at: later(1)))
     }
 
     // MARK: - Text
 
+    private let en = Locale(identifier: "en_US")
+
     func testDurationText() {
-        XCTAssertEqual(TabSheetClockText.duration(0), "0s")
-        XCTAssertEqual(TabSheetClockText.duration(42), "42s")
-        XCTAssertEqual(TabSheetClockText.duration(252), "4m 12s")
-        XCTAssertEqual(TabSheetClockText.duration(3900), "1h 5m")
-        XCTAssertEqual(TabSheetClockText.duration(-5), "0s")
+        XCTAssertEqual(TabSheetClockText.duration(0, locale: en), "0s")
+        XCTAssertEqual(TabSheetClockText.duration(42, locale: en), "42s")
+        XCTAssertEqual(TabSheetClockText.duration(252, locale: en), "4m 12s")
+        XCTAssertEqual(TabSheetClockText.duration(3900, locale: en), "1h 5m")
+        XCTAssertEqual(TabSheetClockText.duration(-5, locale: en), "0s")
     }
 
     func testCountText() {
-        XCTAssertEqual(TabSheetClockText.count(0), "0")
-        XCTAssertEqual(TabSheetClockText.count(999), "999")
-        XCTAssertTrue(TabSheetClockText.count(48_200).hasPrefix("48"))
-        XCTAssertTrue(TabSheetClockText.count(1_250_000).hasPrefix("1.2"))
+        XCTAssertEqual(TabSheetClockText.count(0, locale: en), "0")
+        XCTAssertEqual(TabSheetClockText.count(999, locale: en), "999")
+        XCTAssertTrue(TabSheetClockText.count(48_200, locale: en).hasPrefix("48"))
+        XCTAssertEqual(TabSheetClockText.count(1_250_000, locale: en), "1.2M")
+    }
+
+    func testTextFollowsTheGivenLocaleNotTheRegion() {
+        XCTAssertNotEqual(TabSheetClockText.duration(252, locale: Locale(identifier: "ru")), "4m 12s")
+        XCTAssertNotEqual(TabSheetClockText.count(1_250_000, locale: Locale(identifier: "de")), "1.2M")
+    }
+
+    // MARK: - Terminal Active
+
+    func testTerminalActiveNeverIncludesOperatorInput() {
+        let output = later(10), edge = later(20), agent = later(5)
+        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: edge), edge)
+        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: agent, outputGrowthAt: output, commandEdgeAt: edge), agent)
+        // An agent whose files say nothing (Kimi, Copilot, no transcript yet) falls
+        // through to the plain-terminal computation; with no signal at all: nil.
+        XCTAssertEqual(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: output, commandEdgeAt: nil), output)
+        XCTAssertNil(TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: nil, commandEdgeAt: nil))
     }
 
     // MARK: - Clock assembly
@@ -82,6 +119,7 @@ final class TabActivitySignalsTests: XCTestCase {
             activity: activity, isFlagged: false, stateEnteredAt: nil, stateStartedAt: nil,
             flagRaisedAt: nil, lastActivityAt: nil, createdAt: nil
         )
+        input.locale = Locale(identifier: "en_US")
         configure(&input)
         return input
     }
@@ -131,7 +169,7 @@ final class TabActivitySignalsTests: XCTestCase {
     }
 
     func testDefaultOrderExcludesTheOptInClocksButTheSettingCanAddThem() {
-        XCTAssertEqual(TabSheetDetailBuilder.defaultClockOrder, ["active", "seen", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.defaultClockOrder, ["active", "launched"])
         XCTAssertEqual(TabSheetDetailBuilder.parseClockOrder("active,touched,turn,tools,tokens"),
                        ["active", "touched", "turn", "tools", "tokens"])
         for name in TabSheetDetailBuilder.optInClocks {

@@ -9,10 +9,11 @@ enum TabSheetDetailBuilder {
     /// clock names. Change it in one command:
     /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
     static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
-    /// Every clock the sheet can show. The default order is the first three;
-    /// `touched` (last operator input), `turn`, `tools` and `tokens` are opt-in
-    /// through the setting. `seen` renders `—` until last-seen tracking (C11-243) lands.
-    static let defaultClockOrder = ["active", "seen", "launched"]
+    /// Every clock the sheet can show. The default order matches bonsplit's
+    /// (`active,launched`); `touched` (last operator input), `turn`, `tools` and
+    /// `tokens` are opt-in through the setting, and `seen` is accepted and renders
+    /// `—` until last-seen tracking (C11-243) supplies it.
+    static let defaultClockOrder = ["active", "launched"]
     static let optInClocks = ["touched", "turn", "tools", "tokens"]
 
     struct Inputs {
@@ -50,6 +51,7 @@ enum TabSheetDetailBuilder {
         /// The turn's end: the last agent event, used once the agent is no longer working.
         var lastAgentEventAt: Date?
         var now: Date = Date()
+        var locale: Locale = TabSheetClockText.appLocale
     }
 
     static func build(_ input: Inputs) -> BonsplitTabDetail {
@@ -61,10 +63,10 @@ enum TabSheetDetailBuilder {
         var texts: [String: String] = [:]
         if let start = input.turnStartedAt {
             let end = input.activity == .running ? input.now : (input.lastAgentEventAt ?? input.now)
-            texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start))
+            texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
             if let tools = input.turnToolCalls { texts["tools"] = String(tools) }
         }
-        if let tokens = input.tokens { texts["tokens"] = TabSheetClockText.count(tokens) }
+        if let tokens = input.tokens { texts["tokens"] = TabSheetClockText.count(tokens, locale: input.locale) }
         return BonsplitTabDetail(
             title: collapsedWhitespace(input.title),
             agentLabel: agentLabel(
@@ -169,6 +171,14 @@ enum TabSheetDetailBuilder {
         case .flagged:
             return now
         }
+    }
+
+    /// `active` for a terminal tab: an agent's last transcript event when it has
+    /// one; otherwise (plain shell, or an agent whose files say nothing) the later
+    /// of scrollback growth while visible and the last command start/finish.
+    /// Operator input never counts; nil renders `—`.
+    static func terminalActiveAt(agentLastEventAt: Date?, outputGrowthAt: Date?, commandEdgeAt: Date?) -> Date? {
+        agentLastEventAt ?? [outputGrowthAt, commandEdgeAt].compactMap { $0 }.max()
     }
 
     /// Header title for the opt-in clocks (short: the column is narrow).
@@ -294,7 +304,7 @@ extension Workspace {
             flagRaisedAt: attention.flagRaisedAt,
             lastActivityAt: legacyActivityAt,
             createdAt: panel.createdAt,
-            activeAt: signals.activeAt ?? (panel.panelType == .terminal ? legacyActivityAt : nil),
+            activeAt: signals.activeAt,
             touchedAt: signals.touchedAt,
             seenAt: nil,
             turnStartedAt: signals.turnStartedAt,
@@ -316,22 +326,26 @@ extension Workspace {
         case .terminal:
             let surface = (panel as? TerminalPanel)?.surface
             let touched = surface?.lastOperatorInputAt
+            // Plain terminal, or an agent whose files say nothing (Kimi, Copilot,
+            // no transcript yet): output that scrolled while visible, or a command
+            // starting/finishing. Hidden terminals only see command edges. Operator
+            // input is never part of Active; with no signal the clock reads `—`.
+            let growth = surface?.lastOutputGrowthAt
+            let edge = panelShellEdgeAt[panelId]
+            let plainActive = TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
             if AgentIdentityPolicy.isAgentKind(terminalKind),
                let signals = AgentModelDetector.shared.signals(forSurface: panelId) {
                 let hasTurn = signals.turnStartedAt != nil
                 return (
-                    signals.lastEventAt, touched,
+                    TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: signals.lastEventAt, outputGrowthAt: growth, commandEdgeAt: edge),
+                    touched,
                     signals.turnStartedAt,
                     hasTurn ? signals.turnToolCalls : nil,
                     hasTurn ? signals.turnTokens : signals.sessionTokens,
                     signals.lastEventAt
                 )
             }
-            // Plain terminal (or an agent whose files say nothing): output that
-            // scrolled while visible, or a command starting/finishing. Hidden
-            // terminals only see command edges.
-            let active = [surface?.lastOutputGrowthAt, panelShellEdgeAt[panelId]].compactMap { $0 }.max()
-            return (active, touched, nil, nil, nil, nil)
+            return (plainActive, touched, nil, nil, nil, nil)
         case .markdown:
             return ((panel as? MarkdownPanel)?.lastContentChangeAt, nil, nil, nil, nil, nil)
         case .browser:

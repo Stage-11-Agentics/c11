@@ -191,13 +191,13 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     func testClockOrderSettingRoundTrips() {
         let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "launched"])
         suite.set("launched,active", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
         XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
         suite.set("active, seen launched", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
         XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
         suite.set("", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "launched"])
     }
 
     func testIgnoringClocksComparesEverythingElse() {

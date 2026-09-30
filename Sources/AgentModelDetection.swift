@@ -6,9 +6,9 @@ import SQLite3
 // For each harness c11 already resumes through `Sources/Conversation/Strategies/`,
 // read the model the session is *actually using* from the session or transcript
 // file that harness writes, and publish it as the `model_detected` metadata key
-// at the `.derived` precedence tier. An explicit or launch-stamped `model` /
-// `model_label` (`declare`/`explicit`) still wins in the UI; detection wins over
-// nothing.
+// at the `.derived` precedence tier. Display precedence (`AgentModelPrecedence`):
+// an agent's own `set-agent --model` (tier `declare` or above) > the detected
+// model > a launch stamp (tier `heuristic`).
 //
 // Contract:
 // - Read-only. Nothing is written to any harness's files or config.
@@ -17,8 +17,11 @@ import SQLite3
 //   transcripts are never re-read.
 // - Off-main. Polls run on the AgentDetector's 10 s sweep via the detector's own
 //   utility queue; only a changed value hops to main, for a UI refresh.
-// - Only the model id is retained. Transcript content is scanned in memory and
-//   dropped; nothing else is stored, logged or published.
+// - What is retained, exactly: the model id; event timestamps (last agent event,
+//   turn start); a tool-call count and a token count for the current turn; and
+//   message ids, held only as dedupe keys for that turn's token count. NO message
+//   text, prompt, tool input or tool output is kept, logged or published: lines
+//   are scanned in memory and dropped.
 // - Honest about gaps. A harness whose session files carry no model (Kimi,
 //   GitHub Copilot) reports `model_detection = unsupported:<reason>` instead of
 //   guessing from config.
@@ -115,6 +118,8 @@ struct AgentModelProbe: Sendable {
     /// Largest slice one poll will read; a bigger backlog is skipped to its end.
     static let maxPollBytes = 4 * 1024 * 1024
     static let locateRetry: TimeInterval = 30
+    /// How far back the substring-only `turn_context` search may look.
+    static let maxBackwardSearch: UInt64 = 64 * 1024 * 1024
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.home = home
@@ -143,7 +148,11 @@ struct AgentModelProbe: Sendable {
         if let reason = Self.unsupportedReason(kind: kind) {
             return .unsupported(reason)
         }
-        guard let ref, !ref.placeholder else { return .none }
+        guard let ref, !ref.placeholder else {
+            // No real session (yet): drop what the previous session left behind.
+            state = ModelTailState()
+            return .none
+        }
         if state.conversationId != ref.id {
             state = ModelTailState(conversationId: ref.id)
         }
@@ -222,9 +231,40 @@ struct AgentModelProbe: Sendable {
             for line in lines { Self.fold(kind: kind, line: line, into: &state) }
             state.offset = start + UInt64(consumed)
             let complete = state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
-            if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) { return }
+            if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) {
+                // One very long turn can push the last `turn_context` out of the
+                // window; look further back for just that line.
+                if state.model == nil, start > 0, kind == "codex" {
+                    state.model = findEarlierTurnContextModel(handle: handle, before: start)
+                }
+                return
+            }
             window *= 4
         }
+    }
+
+    /// Substring-only backward search (up to `maxBackwardSearch`) for the last
+    /// `"type":"turn_context"` line before `offset`; only that line is parsed.
+    private func findEarlierTurnContextModel(handle: FileHandle, before offset: UInt64) -> String? {
+        let needle = Data("\"type\":\"turn_context\"".utf8)
+        let chunk = UInt64(Self.maxInitialWindow)
+        let overlap: UInt64 = 64 * 1024
+        var end = offset
+        var searched: UInt64 = 0
+        while end > 0, searched < Self.maxBackwardSearch {
+            let start = end > chunk ? end - chunk : 0
+            guard let data = readRange(handle, from: start, to: end + overlap) else { return nil }
+            if let hit = data.range(of: needle, options: .backwards) {
+                let lineStart = data[..<hit.lowerBound].lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+                if let lineEnd = data[hit.upperBound...].firstIndex(of: 0x0A) {
+                    let line = data.subdata(in: lineStart..<lineEnd)
+                    if let model = Self.parseLine(kind: "codex", line: line).model { return model }
+                }
+            }
+            searched += end - start
+            end = start
+        }
+        return nil
     }
 
     private func incrementalScan(kind: String, handle: FileHandle, size: UInt64, state: inout ModelTailState) {
@@ -299,34 +339,52 @@ struct AgentModelProbe: Sendable {
     private static let maxParseBytes = 1_048_576
 
     private static func parseClaude(_ line: Data) -> ParsedTranscriptLine {
-        let isAssistant = hasType(line, "assistant")
-        let isUser = !isAssistant && hasType(line, "user")
-        guard isAssistant || isUser else { return ParsedTranscriptLine() }
+        guard hasType(line, "assistant") || hasType(line, "user") else { return ParsedTranscriptLine() }
+        guard line.count <= maxParseBytes, let object = parseObject(line) else { return parseClaudeOversize(line) }
+        if (object["isSidechain"] as? Bool) == true { return ParsedTranscriptLine() }
+        let at = (object["timestamp"] as? String).flatMap(parseISO)
+        let message = object["message"] as? [String: Any]
+        switch object["type"] as? String {
+        case "user":
+            if (object["isMeta"] as? Bool) == true { return ParsedTranscriptLine() }
+            let blocks = message?["content"] as? [[String: Any]]
+            if blocks?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true {
+                return ParsedTranscriptLine(event: .toolResult(at: at))
+            }
+            return ParsedTranscriptLine(event: .prompt(at: at))
+        case "assistant":
+            guard let message else { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
+            // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
+            if (message["model"] as? String) == "<synthetic>" { return ParsedTranscriptLine() }
+            var tools = 0
+            if let content = message["content"] as? [[String: Any]] {
+                tools = content.filter { ($0["type"] as? String) == "tool_use" }.count
+            }
+            var tokens = 0
+            if let usage = message["usage"] as? [String: Any] {
+                tokens = int(usage["input_tokens"]) + int(usage["cache_creation_input_tokens"]) + int(usage["output_tokens"])
+            }
+            return ParsedTranscriptLine(
+                model: normalized(message["model"] as? String),
+                event: .agent(at: at, tools: tools, tokens: tokens, messageKey: message["id"] as? String)
+            )
+        default:
+            return ParsedTranscriptLine()
+        }
+    }
+
+    /// A line too large to parse: classify by substring. The timestamp is the
+    /// LAST `"timestamp"` key, which for Claude is the line's own (nested tool
+    /// results come earlier).
+    private static func parseClaudeOversize(_ line: Data) -> ParsedTranscriptLine {
         if contains(line, "\"isSidechain\":true") { return ParsedTranscriptLine() }
-        let at = timestamp(in: line)
-        if isUser {
+        let at = timestamp(in: line, last: true)
+        if hasType(line, "user") {
             if contains(line, "\"tool_result\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
             if contains(line, "\"isMeta\":true") { return ParsedTranscriptLine() }
             return ParsedTranscriptLine(event: .prompt(at: at))
         }
-        guard line.count <= maxParseBytes, let object = parseObject(line),
-              let message = object["message"] as? [String: Any] else {
-            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
-        }
-        // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
-        if (message["model"] as? String) == "<synthetic>" { return ParsedTranscriptLine() }
-        var tools = 0
-        if let content = message["content"] as? [[String: Any]] {
-            tools = content.filter { ($0["type"] as? String) == "tool_use" }.count
-        }
-        var tokens = 0
-        if let usage = message["usage"] as? [String: Any] {
-            tokens = int(usage["input_tokens"]) + int(usage["cache_creation_input_tokens"]) + int(usage["output_tokens"])
-        }
-        return ParsedTranscriptLine(
-            model: normalized(message["model"] as? String),
-            event: .agent(at: at, tools: tools, tokens: tokens, messageKey: message["id"] as? String)
-        )
+        return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
     }
 
     private static func parseCodex(_ line: Data) -> ParsedTranscriptLine {
@@ -335,17 +393,26 @@ struct AgentModelProbe: Sendable {
                   let payload = object["payload"] as? [String: Any] else { return ParsedTranscriptLine() }
             return ParsedTranscriptLine(model: normalized(payload["model"] as? String))
         }
-        let at = timestamp(in: line)
+        // Codex writes `timestamp` as the first key of every line, so the first
+        // occurrence is the line's own.
+        let at = timestamp(in: line, last: false)
         if hasType(line, "task_started") { return ParsedTranscriptLine(event: .prompt(at: at)) }
         if hasType(line, "task_complete") { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
         if hasType(line, "token_count") {
             var tokens = 0
+            var key: String?
             if line.count <= maxParseBytes, let object = parseObject(line),
-               let info = (object["payload"] as? [String: Any])?["info"] as? [String: Any],
-               let last = info["last_token_usage"] as? [String: Any] {
-                tokens = max(0, int(last["input_tokens"]) - int(last["cached_input_tokens"])) + int(last["output_tokens"])
+               let info = (object["payload"] as? [String: Any])?["info"] as? [String: Any] {
+                if let last = info["last_token_usage"] as? [String: Any] {
+                    tokens = max(0, int(last["input_tokens"]) - int(last["cached_input_tokens"])) + int(last["output_tokens"])
+                }
+                // Rollouts repeat identical token_count lines. The session total only
+                // ever grows, so it identifies one API call: repeats collapse to one.
+                if let total = (info["total_token_usage"] as? [String: Any])?["total_tokens"] as? NSNumber {
+                    key = "total:\(total.intValue)"
+                }
             }
-            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: nil))
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key))
         }
         guard hasType(line, "response_item") else { return ParsedTranscriptLine() }
         if hasType(line, "custom_tool_call") || hasType(line, "function_call") || hasType(line, "local_shell_call") {
@@ -361,31 +428,47 @@ struct AgentModelProbe: Sendable {
     }
 
     private static func parsePiOmp(kind: String, line: Data) -> ParsedTranscriptLine {
-        if hasType(line, "model_change") {
-            guard let object = parseObject(line) else { return ParsedTranscriptLine() }
+        let isModelChange = hasType(line, "model_change")
+        guard isModelChange || hasType(line, "message") else { return ParsedTranscriptLine() }
+        guard line.count <= maxParseBytes, let object = parseObject(line) else {
+            return parsePiOmpOversize(line)
+        }
+        if isModelChange {
             let raw = kind == "omp"
                 ? ((object["model"] as? String) ?? (object["modelId"] as? String))
                 : (object["modelId"] as? String)
             return ParsedTranscriptLine(model: normalized(raw))
         }
-        guard hasType(line, "message") else { return ParsedTranscriptLine() }
-        let at = timestamp(in: line)
-        if contains(line, "\"role\":\"toolResult\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
-        if contains(line, "\"role\":\"user\"") { return ParsedTranscriptLine(event: .prompt(at: at)) }
-        guard contains(line, "\"role\":\"assistant\""),
-              line.count <= maxParseBytes, let object = parseObject(line),
-              let message = object["message"] as? [String: Any] else {
+        guard (object["type"] as? String) == "message", let message = object["message"] as? [String: Any] else {
             return ParsedTranscriptLine()
         }
-        var tools = 0
-        if let content = message["content"] as? [[String: Any]] {
-            tools = content.filter { ($0["type"] as? String) == "toolCall" }.count
+        let at = (object["timestamp"] as? String).flatMap(parseISO)
+        switch message["role"] as? String {
+        case "toolResult": return ParsedTranscriptLine(event: .toolResult(at: at))
+        case "user": return ParsedTranscriptLine(event: .prompt(at: at))
+        case "assistant":
+            var tools = 0
+            if let content = message["content"] as? [[String: Any]] {
+                tools = content.filter { ($0["type"] as? String) == "toolCall" }.count
+            }
+            var tokens = 0
+            if let usage = message["usage"] as? [String: Any] {
+                tokens = int(usage["input"]) + int(usage["output"]) + int(usage["cacheWrite"])
+            }
+            return ParsedTranscriptLine(event: .agent(at: at, tools: tools, tokens: tokens, messageKey: object["id"] as? String))
+        default:
+            return ParsedTranscriptLine()
         }
-        var tokens = 0
-        if let usage = message["usage"] as? [String: Any] {
-            tokens = int(usage["input"]) + int(usage["output"]) + int(usage["cacheWrite"])
-        }
-        return ParsedTranscriptLine(event: .agent(at: at, tools: tools, tokens: tokens, messageKey: object["id"] as? String))
+    }
+
+    /// Too large to parse: role by substring, timestamp from the end of the line.
+    private static func parsePiOmpOversize(_ line: Data) -> ParsedTranscriptLine {
+        guard hasType(line, "message") else { return ParsedTranscriptLine() }
+        let at = timestamp(in: line, last: true)
+        if contains(line, "\"role\":\"toolResult\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
+        if contains(line, "\"role\":\"user\"") { return ParsedTranscriptLine(event: .prompt(at: at)) }
+        if contains(line, "\"role\":\"assistant\"") { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
+        return ParsedTranscriptLine()
     }
 
     // MARK: - Line helpers
@@ -407,9 +490,20 @@ struct AgentModelProbe: Sendable {
         (value as? NSNumber)?.intValue ?? 0
     }
 
-    /// The line's top-level `"timestamp":"<ISO 8601>"`, read without parsing JSON.
-    static func timestamp(in line: Data) -> Date? {
-        guard let key = line.range(of: Data("\"timestamp\"".utf8)) else { return nil }
+    /// A line's `"timestamp":"<ISO 8601>"` read without parsing JSON: the first
+    /// occurrence, or the last (`last: true`) when nested objects may carry their
+    /// own earlier timestamp. Only for lines too large to parse; parsed lines use
+    /// `object["timestamp"]`.
+    static func timestamp(in line: Data, last: Bool = false) -> Date? {
+        let needle = Data("\"timestamp\"".utf8)
+        var found: Range<Data.Index>?
+        var searchStart = line.startIndex
+        while let range = line.range(of: needle, in: searchStart..<line.endIndex) {
+            found = range
+            if !last { break }
+            searchStart = range.upperBound
+        }
+        guard let key = found else { return nil }
         var i = key.upperBound
         while i < line.endIndex, line[i] == 0x3A || line[i] == 0x20 { i = line.index(after: i) }
         guard i < line.endIndex, line[i] == 0x22 else { return nil }
@@ -547,7 +641,9 @@ struct AgentModelProbe: Sendable {
     /// `summary.json`: `current_model_id` and `last_active_at`.
     func readGrokSummary(sessionDirectory: String) -> (model: String?, lastActiveAt: Date?)? {
         let url = URL(fileURLWithPath: sessionDirectory).appendingPathComponent("summary.json")
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+        // Plain read, not mapped: Grok rewrites this file in place, and a truncated
+        // mapping faults (SIGBUS) instead of failing.
+        guard let data = try? Data(contentsOf: url),
               data.count < 256 * 1024,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let last = ((object["last_active_at"] as? String) ?? (object["updated_at"] as? String)).flatMap(Self.parseISO)
@@ -666,10 +762,15 @@ final class AgentModelDetector: @unchecked Sendable {
                     for target in agents {
                         let ref = refs[target.surfaceId.uuidString]?.active
                         var state = states[target.surfaceId] ?? ModelTailState()
+                        let hadModel = state.model != nil
                         let result = probe.detect(kind: target.kind, ref: ref, state: &state)
                         states[target.surfaceId] = state
                         setSignals(state.signals, forSurface: target.surfaceId)
                         publish(result, target: target)
+                        if result == .none, hadModel {
+                            // The session this model came from is gone.
+                            clearDerived(workspaceId: target.workspaceId, surfaceId: target.surfaceId)
+                        }
                     }
                     for surface in plain {
                         setSignals(nil, forSurface: surface.surfaceId)

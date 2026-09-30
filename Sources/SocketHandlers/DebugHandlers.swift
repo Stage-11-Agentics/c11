@@ -881,8 +881,6 @@ extension TerminalController {
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
     }
 
-    /// Test seam: opens (default) or closes the tab sheet of the pane hosting
-    /// `surface_id` (or the focused surface), without a click.
     /// The detail the tab sheet would show for a surface, as JSON: agent tag,
     /// status, clocks (ISO 8601) and the text clocks (`turn`, `tools`, `tokens`).
     /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
@@ -910,6 +908,8 @@ extension TerminalController {
         return .ok(payload)
     }
 
+    /// Test seam: opens (default) or closes the tab sheet of the pane hosting
+    /// `surface_id` (or the focused surface), without a click.
     private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "surface not found", data: nil)

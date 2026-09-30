@@ -58265,13 +58265,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "令牌"
+            "value": "词元"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "權杖"
+            "value": "詞元"
           }
         },
         "ru": {
@@ -58347,13 +58347,13 @@
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Дотик"
+            "value": "Введення"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "조작"
+            "value": "입력"
           }
         },
         "zh-Hans": {

@@ -465,6 +465,7 @@
 		F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */; };
 		F3561BE21E032B0AB6FC9DFE /* AgentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */; };
 		F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */; };
+		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
 		F5D4593C9E4FA636B735FFBF /* TomlSubsetParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F003 /* TomlSubsetParserTests.swift */; };
 		F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */; };
 		F60C0DEA00000000000C0001 /* Grok.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60C0DEA00000000000C0002 /* Grok.swift */; };
@@ -962,6 +963,7 @@
 		F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CJKIMEInputTests.swift; sourceTree = "<group>"; };
 		F3B59DC588DFAF89D0678B39 /* StrategyRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StrategyRegistry.swift; path = Conversation/StrategyRegistry.swift; sourceTree = "<group>"; };
 		F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyConfigTests.swift; sourceTree = "<group>"; };
+		C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchModelTierTests.swift; sourceTree = "<group>"; };
 		F4C57DBBB7C3C6C27357EBA8 /* BrowserHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserHandlers.swift; sourceTree = "<group>"; };
 		F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceTests.swift; sourceTree = "<group>"; };
 		F5B86DD36D8CB96AA0FD94E1 /* PaneHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneHandlers.swift; sourceTree = "<group>"; };
@@ -1384,6 +1386,7 @@
 				F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
 				F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */,
 				F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */,
+				C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */,
 				F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */,
 				FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */,
 				F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */,
@@ -2200,6 +2203,7 @@
 				F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 				F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,
+				C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */,
 				F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */,
 				A5001702 /* TextBoxInputTests.swift in Sources */,
 				A5F1001001A1B2C3D4E5F009 /* ThemedValueEvaluatorTests.swift in Sources */,

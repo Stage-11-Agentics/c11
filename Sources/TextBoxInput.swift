@@ -777,6 +777,10 @@ struct TextBoxInputContainer: View {
                 enterToSend: enterToSend,
                 textViewHeight: $textViewHeight,
                 onKeyEvent: { event in
+                    // The operator is typing in the text box: stamp the "touched" clock
+                    // (a plain Date store). The keys it forwards to the terminal are
+                    // synthesized and deliberately do not stamp on their own.
+                    surface.lastOperatorInputAt = Date()
                     switch event {
                     case .submit:
                         submit()
@@ -822,6 +826,11 @@ struct TextBoxInputContainer: View {
         // When the VStack resizes the terminal, ghostty sends SIGWINCH which causes
         // TUI apps like Claude Code to re-render and snap to the bottom. We save the
         // scroll offset before the resize and restore it after a short delay.
+        .onChange(of: text) { _ in
+            // Typed characters reach the terminal only on submit; stamp "touched" as
+            // they are typed.
+            surface.lastOperatorInputAt = Date()
+        }
         .onChange(of: clampedHeight) { [clampedHeight] _ in
             guard clampedHeight > 0 else { return }
             guard surface.isScrolledUp,

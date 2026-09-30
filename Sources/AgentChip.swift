@@ -55,8 +55,13 @@ enum AgentChipResolver {
 
         let iconAsset = iconAssetName(forTerminalType: terminalType)
         let terminalTypeSource = sources[MetadataKey.terminalType]?.rawValue
-        let modelSource = sources[MetadataKey.model]?.rawValue
-            ?? (detectedModel != nil ? sources[AgentModelDetector.MetadataKeys.detected]?.rawValue : nil)
+        // The source that owns what `display_label` shows: the detected model's
+        // tier when detection supplied it, else the declared/launch `model`'s.
+        let displayedFromDetection = effective.model != nil && effective.model == detectedModel
+            && effective.model != model
+        let modelSource = displayedFromDetection
+            ? sources[AgentModelDetector.MetadataKeys.detected]?.rawValue
+            : sources[MetadataKey.model]?.rawValue
 
         // Winning source preference: declare > explicit > osc > heuristic, prefer terminal_type source
         // when both exist; otherwise fall back to model's source. This matches spec's

@@ -6410,6 +6410,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         requestPointerFocusRecovery()
         window?.makeFirstResponder(self)
         if let terminalSurface {
+            // Tab sheet "touched" clock: a click is the operator too. Plain Date store.
+            terminalSurface.lastOperatorInputAt = Date()
             // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
             // path; the keyDown / typing hot path is not touched here.
             if let workspace = AppDelegate.shared?.tabManager?.tabs.first(where: { $0.id == terminalSurface.tabId }),

@@ -359,6 +359,81 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertNil(AgentModelProbe.timestamp(in: Data(#"{"a":1}"#.utf8)))
     }
 
+    func testCodexRepeatedTokenCountLinesCountOnce() throws {
+        // The fixture repeats every token_count line three times, as real rollouts do.
+        let now = Date()
+        let id = uuidV7(now)
+        try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        _ = detect("codex", ref("codex", id: id), &state)
+        XCTAssertEqual(state.signals.turnTokens, (1000 - 600) + 50, "one call, not three")
+    }
+
+    func testPlaceholderRefDropsThePreviousSessionsState() throws {
+        try place(fixture("claude-session.jsonl"), at: claudePath())
+        var state = ModelTailState()
+        XCTAssertEqual(detect("claude-code", ref("claude-code", id: claudeId), &state), .model("claude-opus-5-5"))
+        XCTAssertNotNil(state.signals.lastEventAt)
+        let placeholder = ConversationRef(kind: "claude-code", id: "fresh", placeholder: true, capturedVia: .wrapperClaim, state: .alive)
+        XCTAssertEqual(detect("claude-code", placeholder, &state), .none)
+        XCTAssertNil(state.model)
+        XCTAssertEqual(state.signals, TranscriptSignals())
+    }
+
+    func testAVeryLongCodexTurnStillFindsItsModelByBackwardSearch() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        // turn_context at the top, then > 4 MiB of tool traffic with none.
+        var data = Data(#"{"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}"# .utf8) + Data([0x0A])
+        let filler = Data((#"{"timestamp":"2026-01-01T09:00:01.000Z","type":"response_item","payload":{"type":"reasoning","x":""# + String(repeating: "x", count: 900) + #""}}"# + "\n").utf8)
+        for _ in 0..<5_000 { data.append(filler) }
+        try place(data, at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        XCTAssertEqual(detect("codex", ref("codex", id: id), &state), .model("gpt-6-astra"))
+    }
+
+    func testTimestampComesFromTheLinesOwnKeyNotANestedOne() {
+        let line = Data((#"{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]},"toolUseResult":{"timestamp":"1999-01-01T00:00:00.000Z"},"timestamp":"2026-01-01T10:00:00.000Z"}"#).utf8)
+        let parsed = AgentModelProbe.parseLine(kind: "claude-code", line: line)
+        XCTAssertEqual(parsed.event, .toolResult(at: t("10:00:00")))
+        // Oversize fallback (no JSON parse) takes the last key, which is the line's own.
+        XCTAssertEqual(AgentModelProbe.timestamp(in: line, last: true), t("10:00:00"))
+    }
+
+    func testPiRoleComesFromTheParsedFieldNotASubstring() {
+        // An assistant message whose tool arguments contain {"role":"user"}.
+        let line = Data((#"{"type":"message","id":"a","timestamp":"2026-01-01T08:00:00.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"x","arguments":{"role":"user"}}],"usage":{"input":1,"output":2,"cacheWrite":0}}}"#).utf8)
+        let parsed = AgentModelProbe.parseLine(kind: "pi", line: line)
+        guard case .agent(let at, let tools, let tokens, _)? = parsed.event else { return XCTFail("not an agent event: \(String(describing: parsed.event))") }
+        XCTAssertEqual(at, t("08:00:00"))
+        XCTAssertEqual(tools, 1)
+        XCTAssertEqual(tokens, 3)
+    }
+
+    // MARK: - Tiering across upgrade and restore
+
+    func testSnapshotsFromBeforeTheTieringRestoreLaunchStampsAtTheLaunchTier() {
+        var values: [String: Any] = ["model": "claude-opus-4-7", "model_label": "gpt-5.2", "task": "x"]
+        var sources: [String: SurfaceMetadataStore.SourceRecord] = [
+            "model": .init(source: .declare, ts: 5),
+            "model_label": .init(source: .declare, ts: 6),
+            "task": .init(source: .declare, ts: 7),
+        ]
+        Workspace.migrateLaunchStampTiers(values: &values, sources: &sources)
+        XCTAssertEqual(sources["model"]?.source, .heuristic)
+        XCTAssertEqual(sources["model_label"]?.source, .heuristic)
+        XCTAssertEqual(sources["model"]?.ts, 5, "the original time is kept")
+        XCTAssertEqual(sources["task"]?.source, .declare, "only the launch model is re-tiered")
+    }
+
+    func testSnapshotsWrittenWithTheMarkerRestoreVerbatimAndDropTheMarker() {
+        var values: [String: Any] = ["model": "claude-haiku-4-5", Workspace.modelTieringMarkerKey: "2"]
+        var sources: [String: SurfaceMetadataStore.SourceRecord] = ["model": .init(source: .declare, ts: 5)]
+        Workspace.migrateLaunchStampTiers(values: &values, sources: &sources)
+        XCTAssertEqual(sources["model"]?.source, .declare, "an agent's own set-agent --model stays declared")
+        XCTAssertNil(values[Workspace.modelTieringMarkerKey])
+    }
+
     // MARK: - Model precedence
 
     func testAgentDeclaredBeatsDetectedBeatsLaunchStamp() {

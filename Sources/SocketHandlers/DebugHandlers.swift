@@ -81,6 +81,18 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugPanelSnapshotReset(params: params))
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
+        case "debug.tab_sheet.open":
+            return v2Result(id: id, self.v2DebugTabSheetOpen(params: params))
+        case "debug.tab_rail.open":
+            return v2Result(id: id, self.v2DebugTabRailOpen(params: params))
+        case "debug.tab_strip.scroll":
+            return v2Result(id: id, self.v2DebugTabStripScroll(params: params))
+        case "debug.tab_sheet.hover":
+            return v2Result(id: id, self.v2DebugTabSheetHover(params: params))
+        case "debug.tab_sheet.motion_scale":
+            let scale = debugDouble(params, "scale") ?? 1
+            v2MainSync { BonsplitDebug.tabSheetMotionScale = scale }
+            return v2Result(id: id, .ok(["scale": scale]))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
         case "debug.session.round_trip_workspaces":
@@ -865,6 +877,77 @@ extension TerminalController {
         }
         let resp = panelSnapshotReset(surfaceId)
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
+    }
+
+    /// Test seam: opens (default) or closes the tab sheet of the pane hosting
+    /// `surface_id` (or the focused surface), without a click.
+    private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        let open = v2Bool(params, "open") ?? true
+        var paneFound = false
+        v2MainSync {
+            guard let paneId = workspace.paneId(forPanelId: surfaceId) else { return }
+            paneFound = true
+            workspace.bonsplitController.setTabSheetOpen(open, inPane: paneId)
+        }
+        guard paneFound else {
+            return .err(code: "not_found", message: "pane not found", data: nil)
+        }
+        return .ok(["open": open, "surface_id": surfaceId.uuidString])
+    }
+
+    private func debugDouble(_ params: [String: Any], _ key: String) -> Double? {
+        (params[key] as? Double) ?? (params[key] as? Int).map(Double.init) ?? (params[key] as? NSNumber)?.doubleValue
+    }
+
+    /// Test seam: opens (default) or closes the rail of the pane hosting `surface_id`.
+    private func v2DebugTabRailOpen(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        let open = v2Bool(params, "open") ?? true
+        var found = false
+        v2MainSync {
+            guard let paneId = workspace.paneId(forPanelId: surfaceId) else { return }
+            found = true
+            workspace.bonsplitController.setRailOpen(open, inPane: paneId)
+        }
+        return found ? .ok(["open": open]) : .err(code: "not_found", message: "pane not found", data: nil)
+    }
+
+    /// Test seam: scrolls the tab strip of the pane hosting `surface_id` to `offset`.
+    private func v2DebugTabStripScroll(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        let offset = CGFloat(debugDouble(params, "offset") ?? 0)
+        var found = false
+        v2MainSync {
+            guard let paneId = workspace.paneId(forPanelId: surfaceId) else { return }
+            found = true
+            workspace.bonsplitController.setTabStripScrollOffset(offset, inPane: paneId)
+        }
+        return found ? .ok(["offset": Double(offset)]) : .err(code: "not_found", message: "pane not found", data: nil)
+    }
+
+    /// Test seam: lights the tab of `surface_id` (and its sheet row) as linked
+    /// hover would; `clear: true` clears. `from_sheet` picks the origin.
+    private func v2DebugTabSheetHover(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        let clear = v2Bool(params, "clear") ?? false
+        let fromSheet = v2Bool(params, "from_sheet") ?? true
+        v2MainSync {
+            if clear {
+                workspace.bonsplitController.setLinkedHover(tabId: nil, fromSheet: fromSheet)
+            } else if let tabId = workspace.surfaceIdFromPanelId(surfaceId) {
+                workspace.bonsplitController.setLinkedHover(tabId: tabId, fromSheet: fromSheet)
+            }
+        }
+        return .ok(["clear": clear, "from_sheet": fromSheet])
     }
 
     private func v2DebugScreenshot(params: [String: Any]) -> V2CallResult {

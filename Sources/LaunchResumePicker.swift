@@ -111,13 +111,13 @@ enum LaunchResumePicker {
     /// workspaces (nothing to choose from), the picker is skipped and
     /// `completion(.skipAll)` fires synchronously.
     ///
-    /// The sheet is non-cancellable via the standard ⎋ keystroke alone:
-    /// a misclick that dismisses the sheet should not silently throw the
-    /// session away. ⎋ inside the picker is wired to "Skip" so the
-    /// operator's intent is recorded explicitly.
+    /// ⎋ does nothing: a stray keystroke must not throw the session away.
+    /// Skip takes a click; Return resumes the selection. `onSheetEnded`
+    /// fires however the sheet ends, with or without a decision.
     static func presentSheet(
         on parentWindow: NSWindow,
         snapshot: AppSessionSnapshot,
+        onSheetEnded: (() -> Void)? = nil,
         completion: @escaping (LaunchResumePickerDecision) -> Void
     ) {
         let entries = entries(from: snapshot)
@@ -161,7 +161,7 @@ enum LaunchResumePicker {
         sheetWindow.setContentSize(NSSize(width: 460, height: 420))
 
         capturedSheetWindow = sheetWindow
-        parentWindow.beginSheet(sheetWindow, completionHandler: nil)
+        parentWindow.beginSheet(sheetWindow) { _ in onSheetEnded?() }
     }
 
     /// Filter `snapshot.windows[*].tabManager.workspaces` to only those
@@ -358,7 +358,6 @@ struct LaunchResumePickerView: View {
                     ))
                     .frame(minWidth: 60)
                 }
-                .keyboardShortcut(.cancelAction)
                 Button(action: {
                     if model.selection.isEmpty {
                         onComplete(.skipAll)

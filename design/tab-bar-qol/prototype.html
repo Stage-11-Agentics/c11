@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 Tab Bar QoL</title>
+<style>
+:root {
+  --void: #16171b;
+  --pane: #25272d;
+  --bar: #2b2d34;
+  --tab: #24262c;
+  --tab-active: #3a3c45;
+  --sheet: #33353d;
+  --row-hover: #3f424c;
+  --line: #45474f;
+  --text: #e8e8ea;
+  --dim: #9a9ca3;
+  --gold: #d4a72c;
+  --gold-soft: rgba(212,167,44,.16);
+  --green: #4cc38a;
+  --amber: #e0a030;
+  --violet: #a97cf0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--void); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 80px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 44px 0 6px; color: var(--gold); }
+h3 { font-size: 14px; margin: 0 0 4px; }
+p.lede { color: var(--dim); margin: 0 0 18px; max-width: 820px; }
+.grid.one { grid-template-columns: 1fr; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 22px; }
+.card { background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 16px; min-width: 0; }
+.card .note { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 1px 7px; border-radius: 4px; background: #2e3038; color: var(--dim); margin-left: 6px; vertical-align: 1px; }
+.tag.rec { background: var(--gold-soft); color: var(--gold); }
+
+/* ---------- mock pane ---------- */
+.pane { position: relative; background: var(--pane); border: 1px solid var(--gold); border-radius: 4px; margin-top: 10px; overflow: visible; }
+.pane.unfocused { border-color: #3a3c44; }
+.bar { position: relative; display: flex; align-items: stretch; height: 30px; background: var(--bar); border-bottom: 2px solid var(--gold); }
+.pane.unfocused .bar { border-bottom: 1px solid var(--line); }
+.body { height: 96px; padding: 10px 14px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: #7d8088; }
+.body b { color: var(--text); font-family: -apple-system, sans-serif; font-size: 13px; }
+
+.strip { display: flex; align-items: stretch; flex: 1; min-width: 0; padding-left: 4px; }
+.tabs { display: flex; align-items: stretch; gap: 1px; min-width: 0; overflow: hidden; flex: 0 1 auto; }
+.neutral { flex: 1; min-width: 30px; position: relative; }
+.controls { flex: none; background: var(--bar); position: relative; z-index: 1; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 6px; color: var(--dim); font-size: 12px; white-space: nowrap; }
+.controls .sep { width: 1px; height: 14px; background: var(--line); margin: 0 7px; }
+.controls span.b { width: 20px; text-align: center; }
+
+.tab { flex: 0 1 auto; min-width: 70px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 9px; background: var(--tab); color: var(--dim); font-size: 12px; white-space: nowrap; max-width: 190px; cursor: grab; user-select: none; }
+.tab .t { overflow: hidden; text-overflow: ellipsis; }
+.tab .x { color: #6d7078; font-size: 13px; padding: 0 3px; }
+.tab.active { background: var(--tab-active); color: var(--text); font-weight: 600; }
+.tab.dragging { opacity: .35; }
+.mark { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mark.working { background: var(--green); }
+.mark.waiting { background: var(--amber); }
+.mark.idle { background: #5d6068; }
+.mark.flag { background: var(--violet); }
+
+/* ---------- drop indicators ---------- */
+.ind-current { width: 2px; align-self: center; height: 20px; border-radius: 1px; background: #fff; margin: 0 -1px; flex: none; }
+.ind-bar { position: relative; width: 4px; background: var(--gold); margin: 0 3px; flex: none; box-shadow: 0 0 10px rgba(212,167,44,.8); }
+.ind-bar::before, .ind-bar::after { content: ""; position: absolute; left: -4px; border: 6px solid transparent; }
+.ind-bar::before { top: 0; border-top-color: var(--gold); border-bottom: 0; }
+.ind-bar::after { bottom: 0; border-bottom-color: var(--gold); border-top: 0; }
+.ind-ghost { display: flex; align-items: center; gap: 6px; padding: 0 12px 0 9px; margin: 2px 2px; flex: none;
+  border: 1.5px dashed var(--gold); background: var(--gold-soft); color: var(--gold); font-size: 12px; font-weight: 600; white-space: nowrap; border-radius: 3px; max-width: 190px; }
+.ind-ghost .t { overflow: hidden; text-overflow: ellipsis; opacity: .9; }
+.neutral.hot-zone { background: linear-gradient(90deg, rgba(212,167,44,.14), rgba(212,167,44,.05)); outline: 1px solid rgba(212,167,44,.35); outline-offset: -1px; }
+
+/* ---------- collapsed: current (chip + arrow popover) ---------- */
+.chip { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; margin: 4px 6px 4px 8px; padding: 0 8px; border-radius: 6px; background: rgba(212,167,44,.16); border: 1px solid rgba(212,167,44,.55); font-size: 12px; font-weight: 600; cursor: pointer; }
+.chip .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop { position: absolute; top: 40px; left: 30px; width: 260px; background: #2f3138; border: 1px solid #50535c; border-radius: 10px; padding: 4px 0; box-shadow: 0 10px 30px rgba(0,0,0,.5); z-index: 5; }
+.pop::before { content: ""; position: absolute; top: -8px; left: 110px; border: 8px solid transparent; border-top: 0; border-bottom-color: #50535c; }
+.pop .row { border-radius: 0; }
+
+/* ---------- collapsed: A solid block ---------- */
+.block { display: flex; align-items: stretch; flex: 1; min-width: 0; cursor: pointer; background: var(--tab-active); border-right: 1px solid var(--line); }
+.block:hover, .block.open { background: #444751; }
+.block .main { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.block .main .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block .count { display: flex; align-items: center; gap: 5px; padding: 0 10px; background: rgba(0,0,0,.18); border-left: 1px solid var(--line); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; }
+.block .count .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.block.open .count { background: var(--gold); color: #1b1b1b; }
+.chev { font-size: 9px; }
+
+/* ---------- collapsed: B tab + stubs ---------- */
+.stubs { flex: none; display: flex; align-items: stretch; gap: 1px; margin-left: 1px; }
+.stub { position: relative; display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 7px; background: var(--tab); color: var(--dim); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: grab; user-select: none; }
+.stub:hover { background: var(--row-hover); color: var(--text); }
+.stub .u { position: absolute; left: 6px; right: 6px; bottom: 3px; height: 2px; border-radius: 1px; }
+.stub .u.working { background: var(--green); } .stub .u.waiting { background: var(--amber); } .stub .u.flag { background: var(--violet); }
+.more { flex: none; display: flex; align-items: center; gap: 5px; padding: 0 9px; background: rgba(0,0,0,.18); border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 800; font-size: 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.more:hover, .more.open { background: var(--gold); color: #1b1b1b; }
+
+/* ---------- solid sheet (A and B) ---------- */
+.sheet { position: absolute; top: 30px; left: 0; min-width: 300px; background: var(--sheet); border: 1px solid #5a5d66; border-top: 2px solid var(--gold); box-shadow: 0 14px 28px rgba(0,0,0,.55); z-index: 5; }
+.row { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px 0 0; font-size: 13px; color: var(--dim); cursor: grab; user-select: none; border-left: 3px solid transparent; }
+.row:hover { background: var(--row-hover); color: var(--text); }
+.row .n { width: 34px; text-align: right; font: 700 11px ui-monospace, Menlo, monospace; color: #7d8088; flex: none; }
+.row .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .x { color: #6d7078; padding: 0 4px; visibility: hidden; }
+.row:hover .x { visibility: visible; }
+.row.active { background: #3d4049; color: var(--text); font-weight: 600; border-left-color: var(--gold); }
+.row.dragging { opacity: .35; }
+.row.drop-before { box-shadow: inset 0 3px 0 var(--gold); }
+.row.drop-after { box-shadow: inset 0 -3px 0 var(--gold); }
+.sheet-foot { font-size: 11px; color: #7d8088; padding: 5px 10px; border-top: 1px solid #45474f; }
+
+.controls-row { display: flex; gap: 2px; padding: 6px 10px; border-bottom: 1px solid #45474f; color: var(--dim); font-size: 12px; }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--dim); font-size: 12px; margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.picker { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0 0; }
+.picker button { font: inherit; font-size: 12px; min-width: 128px; padding: 5px 12px; background: #24262c; color: var(--dim); border: 0; border-right: 1px solid var(--line); cursor: pointer; }
+.picker button:last-child { border-right: 0; }
+.picker button.on { background: var(--gold); color: #1b1b1b; font-weight: 700; }
+.target-label { font-size: 11px; color: #7d8088; margin: 12px 0 -6px; }
+ol.plan li { margin: 4px 0; }
+code { font: 12px ui-monospace, Menlo, monospace; background: #26282e; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+<h1>c11 tab bar QoL</h1>
+<p class="lede">Three fixes, one PR. Everything below is live: click the collapsed headers, drag tabs and rows between panes. The selector at the top of section 3 changes the drop indicator in every mock on the page. Pick one option per section.</p>
+
+<h2>1 · The collapsed header: from a floating chip to a solid primitive</h2>
+<p class="lede">Today (left) the header is a rounded chip floating in the bar, and the list opens as a pop-out with an arrow. Both options below fill the bar edge to edge with square corners, and the list opens as a solid sheet flush under the bar, like a drawer pulled out of it.</p>
+<div class="grid">
+  <div class="card">
+    <h3>Current <span class="tag">TODAY</span></h3>
+    <div id="cur"></div>
+    <p class="note">Chip inset inside the bar, arrow popover. The popover is its own window, so a drag that starts in it dies when it dismisses.</p>
+  </div>
+  <div class="card">
+    <h3>A · Solid block <span class="tag rec">RECOMMENDED</span></h3>
+    <div id="optA"></div>
+    <p class="note">The active tab fills the bar as one solid block. The count sits in its own square cell, and it turns gold while the sheet is open. The sheet has square corners, a gold top rule, surface numbers in a column, and a gold left rule on the active row. Rows drag out of the sheet: it stays open while you reorder inside it and gets out of the way once the cursor leaves.</p>
+  </div>
+  <div class="card">
+    <h3>B · Active tab + stubs</h3>
+    <div id="optB"></div>
+    <p class="note">The active tab keeps its normal tab look, so the mode change doesn't jar. Every other tab shrinks to a square stub showing its surface number, with an activity underline. You can click a stub or drag it straight to another pane without opening anything. Once the stubs run out of room, "+N ▾" opens the same solid sheet.</p>
+  </div>
+</div>
+<div class="target-label">Drop target: another pane (drag sheet rows or stubs here)</div>
+<div id="targetPane"></div>
+
+<h2>2 · Dragging out of the list</h2>
+<p class="lede">You can try it in the mocks above: drag any row out of an open sheet into the target pane. The behavior we build:</p>
+<ol class="plan">
+  <li>A press-drag on a row starts a tab drag; a click still selects. The row is one drag source, not a Button with a drag bolted on.</li>
+  <li>The sheet stays open while the drag is inside it (reorder, with a gold rule between rows). It hides once the cursor leaves, so the panes beneath are exposed as drop targets. It never tears down the drag source mid-drag.</li>
+  <li>A drop anywhere a normal tab can land works: another pane's tab strip, a split edge, the neutral zone.</li>
+</ol>
+
+<h2>3 · Drop indicator: show exactly where the tab will land</h2>
+<p class="lede">Today it's a 2pt line. A drop in the neutral zone (the empty stretch between the last tab and the buttons) lands at the end, but the line draws next to the last tab, far from your cursor. Pick one:</p>
+<div class="picker" id="indPicker">
+  <button data-v="current">Current · 2pt line</button>
+  <button data-v="ghost" class="on">Ghost slot (rec)</button>
+  <button data-v="bar">Gold insertion bar</button>
+</div>
+<div class="grid one" style="margin-top:14px">
+  <div class="card">
+    <h3>Frozen: hovering the neutral zone</h3>
+    <div id="frozenNeutral"></div>
+    <p class="note">Ghost slot: a tab-sized slot opens at the landing index with the dragged tab's title in it, and the whole neutral zone tints gold, so the drop reads from anywhere in it. Bar: a 4pt gold bar with end caps, full height, plus the same zone tint.</p>
+  </div>
+  <div class="card">
+    <h3>Frozen: hovering between two tabs</h3>
+    <div id="frozenBetween"></div>
+    <p class="note">Mid-strip, the ghost slot pushes the neighbors apart, which previews the result instead of pointing at a seam.</p>
+  </div>
+</div>
+<div class="target-label">Live: drag tabs within or between these two panes</div>
+<div class="grid one">
+  <div id="liveL"></div>
+  <div id="liveR"></div>
+</div>
+
+<h2>What goes to the builder</h2>
+<p class="lede" id="summary"></p>
+</main>
+
+<script>
+const S = {
+  ind: 'ghost',
+  panes: {
+    cur:  { collapsed: 'current', tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
+    optA: { collapsed: 'block',   tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
+    optB: { collapsed: 'stubs',   tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
+    targetPane: { tabs: mk([[138,'~/Projects/Gregorovich',null],[161,'Awaiting first task','working']]), sel: 161 },
+    liveL: { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working']]), sel: 160 },
+    liveR: { tabs: mk([[138,'~/Projects/Gregorovich',null],[161,'Awaiting first task','working'],[162,'notes.md',null]]), sel: 161 },
+  },
+  drag: null,     // {from, id}
+  hover: null,    // {pane, index}
+};
+function mk(a){ return a.map(([n,t,m])=>({id:n,n,t,m})); }
+const esc = s => s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const title = t => `${t.n}: ${t.t}`;
+const markHTML = m => m ? `<span class="mark ${m}"></span>` : '';
+const controls = `<div class="controls"><span class="b">A</span><span class="b">•</span><span class="b">▭</span><span class="b">◎</span><span class="b">▤</span><span class="sep"></span><span class="b">◫</span><span class="b">⊟</span><span class="b">+</span><span class="b">×</span></div>`;
+
+function indicator(paneKey, index){
+  const h = S.hover;
+  if (!h || h.pane !== paneKey || h.index !== index || !S.drag) return '';
+  if (S.ind === 'current') return `<div class="ind-current"></div>`;
+  if (S.ind === 'bar') return `<div class="ind-bar"></div>`;
+  const t = findTab(S.drag.id);
+  return `<div class="ind-ghost">${markHTML(t.m)}<span class="t">${esc(title(t))}</span></div>`;
+}
+function findTab(id){ for (const p of Object.values(S.panes)) { const t = p.tabs.find(x=>x.id===id); if (t) return t; } }
+
+function fullStrip(key){
+  const p = S.panes[key];
+  let h = '<div class="strip"><div class="tabs">';
+  p.tabs.forEach((t,i)=>{
+    h += indicator(key,i);
+    const hideSelf = S.drag && S.drag.id===t.id && S.ind==='ghost' && S.hover;
+    if (hideSelf) return;
+    h += `<div class="tab ${t.id===p.sel?'active':''} ${S.drag&&S.drag.id===t.id?'dragging':''}" draggable="true" data-pane="${key}" data-id="${t.id}" data-i="${i}">${markHTML(t.m)}<span class="t">${esc(title(t))}</span><span class="x">×</span></div>`;
+  });
+  h += indicator(key,p.tabs.length);
+  const hot = S.drag && S.hover && S.hover.pane===key && S.hover.index===p.tabs.length && S.ind!=='current';
+  h += `</div><div class="neutral ${hot?'hot-zone':''}" data-pane="${key}" data-neutral="1"></div></div>${controls}`;
+  return h;
+}
+
+function sheetHTML(key, withControls){
+  const p = S.panes[key];
+  let h = `<div class="sheet" data-sheet="${key}">`;
+  if (withControls) h += `<div class="controls-row">A • ▭ ◎ ▤ │ ◫ ⊟ + ×</div>`;
+  p.tabs.forEach((t,i)=>{
+    const cls = [t.id===p.sel?'active':'', S.drag&&S.drag.id===t.id?'dragging':''];
+    if (S.drag && S.hover && S.hover.pane===key && S.hover.sheet) {
+      if (S.hover.index===i) cls.push('drop-before');
+      if (S.hover.index===p.tabs.length && i===p.tabs.length-1) cls.push('drop-after');
+    }
+    h += `<div class="row ${cls.join(' ')}" draggable="true" data-pane="${key}" data-id="${t.id}" data-i="${i}" data-row="1"><span class="n">${t.n}</span>${markHTML(t.m)||'<span class="mark"></span>'}<span class="t">${esc(t.t)}</span><span class="x">×</span></div>`;
+  });
+  h += `<div class="sheet-foot">Drag a row out to move it to another pane</div></div>`;
+  return h;
+}
+
+function collapsedBar(key){
+  const p = S.panes[key];
+  const a = p.tabs.find(t=>t.id===p.sel) || p.tabs[0];
+  const bgWaiting = p.tabs.some(t=>t.id!==a.id && t.m==='waiting');
+  const sheetOpen = p.open && !(S.drag && S.drag.from===key && S.hover && S.hover.pane!==key);
+  if (p.collapsed === 'current') {
+    return `<div class="chip" data-toggle="${key}">${markHTML(a.m)}<span class="t">${esc(title(a))}</span>${bgWaiting?'<span class="mark waiting" style="width:6px;height:6px"></span>':''}<b>${p.tabs.length}</b><span class="chev">▼</span></div>${controls}`
+      + (sheetOpen ? popHTML(key) : '');
+  }
+  if (p.collapsed === 'block') {
+    return `<div class="block ${sheetOpen?'open':''}" data-toggle="${key}"><div class="main">${markHTML(a.m)}<span class="t">${esc(title(a))}</span></div><div class="count">${bgWaiting?'<span class="dot"></span>':''}${p.tabs.length} <span class="chev">▼</span></div></div>${controls}`
+      + (sheetOpen ? sheetHTML(key) : '');
+  }
+  // stubs
+  const others = p.tabs.filter(t=>t.id!==a.id);
+  const shown = others.slice(0,3), hidden = others.length - shown.length;
+  let h = `<div class="strip" style="padding-left:0"><div class="tabs"><div class="tab active" style="max-width:220px" draggable="true" data-pane="${key}" data-id="${a.id}">${markHTML(a.m)}<span class="t">${esc(title(a))}</span><span class="x">×</span></div></div><div class="stubs">`;
+  shown.forEach(t=>{ h += `<div class="stub ${S.drag&&S.drag.id===t.id?'dragging':''}" draggable="true" data-pane="${key}" data-id="${t.id}" data-select="${t.id}" title="${esc(title(t))}">${t.n}${t.m&&t.m!=='idle'?`<span class="u ${t.m}"></span>`:''}</div>`; });
+  h += `</div><div class="more ${sheetOpen?'open':''}" data-toggle="${key}">+${hidden} <span class="chev">▼</span></div><div class="neutral"></div></div>${controls}`;
+  return h + (sheetOpen ? sheetHTML(key).replace('class="sheet"','class="sheet" style="left:0"') : '');
+}
+function popHTML(key){
+  const p = S.panes[key];
+  let h = `<div class="pop">`;
+  p.tabs.forEach(t=>{ h += `<div class="row ${t.id===p.sel?'active':''}" style="border-left:0;padding-left:10px" data-select="${t.id}" data-pane="${key}">${markHTML(t.m)||'<span class="mark"></span>'}<span class="t">${esc(title(t))}</span><span class="x">×</span></div>`; });
+  return h + `</div>`;
+}
+
+function paneHTML(key, opts={}){
+  const p = S.panes[key];
+  const bar = p.collapsed ? collapsedBar(key) : fullStrip(key);
+  const a = p.tabs.find(t=>t.id===p.sel) || p.tabs[0] || {n:'',t:'(empty)'};
+  return `<div class="pane ${opts.unfocused?'unfocused':''}" style="${opts.width?`width:${opts.width}px`:''}"><div class="bar" data-bar="${key}">${bar}</div><div class="body"><b>${esc(a.n+': '+a.t)}</b><br>~/Projects/Stage11/code/c11 ❯ _</div></div>`;
+}
+
+function frozen(){
+  const saveD = S.drag, saveH = S.hover, saveP = {...S.panes};
+  S.panes.fz1 = { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working']]), sel: 160 };
+  S.panes.fz2 = { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working'],[138,'~/Projects/Gregorovich',null]]), sel: 160 };
+  S.panes.__src = { tabs: mk([[158,'REPLY-2-DRAFT.md',null]]) };
+  S.drag = { from:'__src', id:158 };
+  S.hover = { pane:'fz1', index:2 };
+  document.getElementById('frozenNeutral').innerHTML = paneHTML('fz1');
+  S.hover = { pane:'fz2', index:1 };
+  document.getElementById('frozenBetween').innerHTML = paneHTML('fz2');
+  S.drag = saveD; S.hover = saveH;
+  delete S.panes.fz1; delete S.panes.fz2; delete S.panes.__src;
+}
+
+function render(){
+  for (const k of ['cur','optA','optB']) document.getElementById(k).innerHTML = paneHTML(k, {width: 520});
+  document.getElementById('targetPane').innerHTML = paneHTML('targetPane', {unfocused:true});
+  document.getElementById('liveL').innerHTML = paneHTML('liveL');
+  document.getElementById('liveR').innerHTML = paneHTML('liveR', {unfocused:true});
+  frozen();
+  document.querySelectorAll('#indPicker button').forEach(b=>b.classList.toggle('on', b.dataset.v===S.ind));
+  const names = {current:'current 2pt line', ghost:'ghost slot + neutral-zone tint', bar:'gold insertion bar + neutral-zone tint'};
+  document.getElementById('summary').textContent = `Drop indicator: ${names[S.ind]}. Collapsed header: tell me A or B in the terminal. Dragging out of the list ships with either one.`;
+}
+
+/* ---------- interaction ---------- */
+document.addEventListener('click', e=>{
+  const pk = e.target.closest('#indPicker button'); if (pk) { S.ind = pk.dataset.v; render(); return; }
+  const sel = e.target.closest('[data-select]');
+  if (sel && sel.dataset.pane) { const p = S.panes[sel.dataset.pane]; p.sel = +sel.dataset.select; p.open = false; render(); return; }
+  const row = e.target.closest('[data-row]');
+  if (row) { const p = S.panes[row.dataset.pane]; p.sel = +row.dataset.id; p.open = false; render(); return; }
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) { const k = tg.dataset.toggle; const was = S.panes[k].open; for (const p of Object.values(S.panes)) p.open=false; S.panes[k].open = !was; render(); return; }
+  const tab = e.target.closest('.tab[data-id]');
+  if (tab) { S.panes[tab.dataset.pane].sel = +tab.dataset.id; render(); return; }
+  if (!e.target.closest('.sheet,.pop')) { let ch=false; for (const p of Object.values(S.panes)) if (p.open){p.open=false;ch=true;} if (ch) render(); }
+});
+
+document.addEventListener('dragstart', e=>{
+  const el = e.target.closest('[draggable="true"]'); if (!el) return;
+  e.dataTransfer.setData('text/plain', el.dataset.id);
+  e.dataTransfer.effectAllowed = 'move';
+  // defer state change so the browser snapshots the drag image first
+  setTimeout(()=>{ S.drag = { from: el.dataset.pane, id: +el.dataset.id }; render(); }, 0);
+});
+document.addEventListener('dragend', ()=>{ S.drag = null; S.hover = null; for (const p of Object.values(S.panes)) p.open = false; render(); });
+
+function computeHover(e){
+  const row = e.target.closest('[data-row]');
+  if (row) {
+    const r = row.getBoundingClientRect(); const i = +row.dataset.i;
+    return { pane: row.dataset.pane, index: e.clientY < r.top + r.height/2 ? i : i+1, sheet: true };
+  }
+  const sheet = e.target.closest('.sheet');
+  if (sheet) return { pane: sheet.dataset.sheet, index: S.panes[sheet.dataset.sheet].tabs.length, sheet: true };
+  const bar = e.target.closest('[data-bar]'); if (!bar) return null;
+  const key = bar.dataset.bar, p = S.panes[key];
+  if (p.collapsed) return { pane: key, index: p.tabs.length };
+  if (e.target.closest('[data-neutral]') || e.target.closest('.controls')) return { pane: key, index: p.tabs.length };
+  const tabs = [...bar.querySelectorAll('.tab[data-id]')];
+  for (const t of tabs) {
+    const r = t.getBoundingClientRect();
+    if (e.clientX < r.left + r.width/2) return { pane: key, index: +t.dataset.i };
+  }
+  return { pane: key, index: p.tabs.length };
+}
+document.addEventListener('dragover', e=>{
+  if (!S.drag) return;
+  const h = computeHover(e);
+  if (h) e.preventDefault();
+  const same = (a,b)=> (!a&&!b) || (a&&b&&a.pane===b.pane&&a.index===b.index&&!!a.sheet===!!b.sheet);
+  if (!same(h, S.hover)) { S.hover = h; render(); }
+});
+document.addEventListener('drop', e=>{
+  e.preventDefault();
+  const h = S.hover, d = S.drag; if (!h || !d) return;
+  const src = S.panes[d.from], dst = S.panes[h.pane];
+  const si = src.tabs.findIndex(t=>t.id===d.id); if (si<0) return;
+  const [t] = src.tabs.splice(si,1);
+  let di = h.index; if (src===dst && si < di) di--;
+  dst.tabs.splice(di,0,t); dst.sel = t.id;
+  if (src!==dst && src.sel===t.id && src.tabs.length) src.sel = src.tabs[0].id;
+  S.drag = null; S.hover = null; for (const p of Object.values(S.panes)) p.open=false; render();
+});
+render();
+</script>
+</body>
+</html>

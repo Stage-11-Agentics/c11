@@ -20152,53 +20152,6 @@
         }
       }
     },
-    "contextMenu.closeOtherWorkspaces": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close Other Workspaces"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他のワークスペースを閉じる"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭其他工作区"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "關閉其他工作區"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다른 작업 공간 닫기"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Закрыть другие рабочие пространства"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Закрити інші робочі простори"
-          }
-        }
-      }
-    },
     "contextMenu.closeWorkspace": {
       "extractionState": "manual",
       "localizations": {
@@ -27292,53 +27245,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Это закроет текущее окно, его %1$lld рабочих пространств и все их панели:\n%2$@"
-          }
-        }
-      }
-    },
-    "dialog.dontWarnCmdQ": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Don't ask again for Cmd+Q"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q で次回から確認しない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q 时不再询问"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按 Cmd+Q 時不再詢問"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q에 대해 다시 묻지 않기"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Больше не спрашивать при Cmd+Q"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Більше не питати про Cmd+Q"
           }
         }
       }
@@ -38153,96 +38059,96 @@
         }
       }
     },
-    "settings.app.warnBeforeQuit.subtitleOff": {
+    "settings.app.warnBeforeQuit.confirmOff": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q quits immediately."
+            "value": "c11 quits immediately without confirmation."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q ですぐに終了します。"
+            "value": "c11 は確認なしですぐに終了します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 直接退出。"
+            "value": "c11 会立即退出，不再确认。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 會立即結束。"
+            "value": "c11 會立即結束，不會確認。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q를 누르면 즉시 종료됩니다."
+            "value": "c11이 확인 없이 즉시 종료됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q закрывает приложение сразу."
+            "value": "c11 закрывается сразу, без подтверждения."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q закриває миттєво."
+            "value": "c11 закривається одразу, без підтвердження."
           }
         }
       }
     },
-    "settings.app.warnBeforeQuit.subtitleOn": {
+    "settings.app.warnBeforeQuit.confirmOn": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q asks before quitting."
+            "value": "Ask for confirmation before c11 quits."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q は終了前に確認します。"
+            "value": "c11 を終了する前に確認します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 退出前先询问。"
+            "value": "退出 c11 前先询问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 結束前先詢問。"
+            "value": "結束 c11 前先詢問。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q는 종료 전에 확인합니다."
+            "value": "c11을 종료하기 전에 확인합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q спросит перед выходом."
+            "value": "Спрашивать подтверждение перед выходом из c11."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q питає перед закриттям."
+            "value": "Запитувати підтвердження перед виходом з c11."
           }
         }
       }
@@ -68900,6 +68806,241 @@
           "stringUnit": {
             "state": "translated",
             "value": "Очистити корінь"
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab Layout"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブのレイアウト"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Розташування вкладок"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 레이아웃"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页布局"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分頁版面"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расположение вкладок"
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.subtitleTabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser-style tabs across the top of each area; the count button opens the full list."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各エリアの上部にブラウザ風のタブを表示します。件数ボタンで全体の一覧を開きます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки в стилі браузера вгорі кожної області; кнопка з лічильником відкриває повний список."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 영역 상단에 브라우저 스타일 탭을 표시합니다. 개수 버튼으로 전체 목록을 엽니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个区域顶部显示浏览器风格的标签页；点击计数按钮可打开完整列表。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個區域頂部顯示瀏覽器風格的分頁；點擊計數按鈕可開啟完整清單。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки в стиле браузера вверху каждой области; кнопка со счётчиком открывает полный список."
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.subtitleRail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A vertical tab list docks on each area's left edge; the count button toggles it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各エリアの左端に縦型のタブ一覧を固定表示します。件数ボタンで開閉します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вертикальний список вкладок закріплюється на лівому краї кожної області; кнопка з лічильником відкриває й закриває його."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 영역의 왼쪽 가장자리에 세로 탭 목록이 고정됩니다. 개수 버튼으로 열고 닫습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个区域的左侧固定一个竖向标签列表；点击计数按钮可展开或收起。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個區域的左側固定一個直式分頁清單；點擊計數按鈕可展開或收合。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вертикальный список вкладок закрепляется у левого края каждой области; кнопка со счётчиком открывает и закрывает его."
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.tabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分頁"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки"
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.rail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rail"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レール"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "레일"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "側欄"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель"
           }
         }
       }

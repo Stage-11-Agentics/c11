@@ -42,7 +42,7 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 ### Title vs description: identity and the live subtitle
 
 - **Title = stable identity.** 2–3 words, role-first, DISTINCT from siblings — make the first word differ; the leading characters are all that survive sidebar truncation. A ticket ID is welcome (`C11-184 Attention`). No `Parent :: Child` chains, no shared prefixes. Rename only when your role or mission changes; check `c11 get-titlebar-state` first.
-- **Description = your live subtitle.** The operator reads it in two places: under the title in the title bar, and flattened to one truncated line in the sidebar. First sentence carries what you are doing *now* and the next meaningful gate, present tense: `"Auditing retry admission against the shipped tests; next, verify cancellation."` — not "Reviewing the code."
+- **Description = your live subtitle.** The operator reads it in three places: in the bar under the tabs (the bar shows only the description), as the subtitle row in the tab sheet, and flattened to one truncated line in the sidebar. First sentence carries what you are doing *now* and the next meaningful gate, present tense: `"Auditing retry admission against the shipped tests; next, verify cancellation."` — not "Reviewing the code."
 - **Plain English always.** A ticket number may appear in the subtitle, never *as* the subtitle — the operator should not need a tracker lookup to know what a surface is doing.
 - **Refresh at transitions** (task start, phase change, blocker hit or cleared, handoff) — not after every command. The description never decays, so a stale one is a lie the operator cannot detect. A working agent must not sit under a stale subtitle; same register as tab naming.
 - **Lineage is the LAST line**: `Lineage: <parent> → <role>`. Arrow, never `::`. Ancestry is static; the line that survives truncation must be the live one. Preserve it on every update.
@@ -151,6 +151,29 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.
 - **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
+
+## Tab bar and tab sheet
+
+**The strip.** Tabs stay visible: when they overflow, the strip scrolls sideways (edge fades show more off either end; a vertical wheel or two-finger scroll over it scrolls it too) and folds into the solid block only when under about 150pt remain for tabs after the count cell and controls. With "Show Surface IDs in Tab Titles" on, each tab carries its number in mono, gold on the visible tab.
+
+**The count cell** (`● ⌄ N`: attention dot, chevron, number) is on every bar. In the default layout it opens the area's tab sheet, a drawer exactly as wide as its area (320pt minimum): one two-line row per tab with its number (`Tab171`) and, under it, the tab's lifecycle mark, agent (`Harness · model`; the model shows only when `launch-agent` or `set-agent --model` recorded it), the state word with how long **that state** has held (`working 12m`, `waiting 6m`, `flagged 14m`, `idle 48m`), the live description as the subtitle (cwd, host or file path when there is none), and clocks. Columns drop by area width: 820+ everything, 600-819 the first clock only, 440-599 the agent moves to line 2 and clocks go, under 440 just number (with its mark), title and status. Hovering a row lights its tab in the strip and the reverse. **Active** is the time since the tab's last recorded activity (input, prompt and command edges, agent lifecycle events; not raw output); **Launched** is the time since it opened; **Seen** renders `—` until last-seen tracking lands. The clock order is one ordered list, a user default read each time a sheet opens (unknown names ignored). Write it as a string, or as an array:
+
+```bash
+defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"
+defaults write com.stage11.c11 c11.tabSheet.clocks -array launched active     # same
+defaults delete com.stage11.c11 c11.tabSheet.clocks                           # back to active,launched
+```
+
+**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `TabN · title`, and each area remembers its rail open or closed across relaunch. It is also in Settings > General > Surfaces > Tab Layout. Change it in one command:
+
+```bash
+defaults write com.stage11.c11 tabLayoutMode -string rail     # or: tabs
+defaults delete com.stage11.c11 tabLayoutMode                 # back to tabs
+```
+
+A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-bar-round-five` is `com.stage11.c11.debug.tab.bar.round.five`).
+
+The bar under the tabs shows only the surface's description (`c11 set-description`); with no description it takes no height.
 
 ## Editing this skill
 

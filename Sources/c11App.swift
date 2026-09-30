@@ -1383,12 +1383,6 @@ struct cmuxApp: App {
         manager.closeWorkspacesWithConfirmation(workspaceIds, allowPinned: allowPinned)
     }
 
-    private func closeOtherSelectedWorkspacePeers(in manager: TabManager) {
-        guard let workspace = manager.selectedWorkspace else { return }
-        let workspaceIds = manager.tabs.compactMap { $0.id == workspace.id ? nil : $0.id }
-        closeWorkspaceIds(workspaceIds, in: manager, allowPinned: false)
-    }
-
     private func closeSelectedWorkspacesBelow(in manager: TabManager) {
         guard let workspace = manager.selectedWorkspace,
               let anchorIndex = selectedWorkspaceIndex(in: manager, workspaceId: workspace.id) else { return }
@@ -1491,11 +1485,6 @@ struct cmuxApp: App {
             manager.closeCurrentWorkspaceWithConfirmation()
         }
         .disabled(workspace == nil)
-
-        Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
-            closeOtherSelectedWorkspacePeers(in: manager)
-        }
-        .disabled(workspace == nil || manager.tabs.count <= 1)
 
         Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
             closeSelectedWorkspacesBelow(in: manager)
@@ -4077,8 +4066,50 @@ enum QuitWarningSettings {
         return defaults.bool(forKey: warnBeforeQuitKey)
     }
 
-    static func setEnabled(_ isEnabled: Bool, defaults: UserDefaults = .standard) {
-        defaults.set(isEnabled, forKey: warnBeforeQuitKey)
+}
+
+/// Decides whether a quit request asks the operator first. Every quit path
+/// (Cmd+Q, the app menu, the Dock, the menu bar extra, AppleScript) arrives at
+/// `applicationShouldTerminate`, so the decision is made there once.
+enum QuitConfirmationPolicy {
+    /// Armed just before a quit that already carries the operator's intent
+    /// (an update relaunch, a settings relaunch) so it skips the prompt.
+    /// Consumed by the next quit request, and void after `bypassLifetime` so
+    /// a relaunch that never quits cannot waive a later operator quit.
+    private static var bypassArmedAt: Date?
+    static let bypassLifetime: TimeInterval = 10
+
+    /// Apple Event quit reasons macOS attaches for logout, restart and
+    /// shutdown. The session snapshot covers these; a prompt would only
+    /// stall the system.
+    static let systemSessionQuitReasons: Set<OSType> = [
+        OSType(kAELogOut),
+        OSType(kAEReallyLogOut),
+        OSType(kAEShowRestartDialog),
+        OSType(kAERestart),
+        OSType(kAEShowShutdownDialog),
+        OSType(kAEShutDown),
+    ]
+
+    static func armBypass(now: Date = Date()) {
+        bypassArmedAt = now
+    }
+
+    static func consumeBypass(now: Date = Date()) -> Bool {
+        defer { bypassArmedAt = nil }
+        guard let bypassArmedAt else { return false }
+        return now.timeIntervalSince(bypassArmedAt) <= bypassLifetime
+    }
+
+    static func shouldConfirm(
+        alreadyTerminating: Bool,
+        bypassArmed: Bool,
+        warnEnabled: Bool,
+        quitReason: OSType?
+    ) -> Bool {
+        if alreadyTerminating || bypassArmed || !warnEnabled { return false }
+        if let quitReason, systemSessionQuitReasons.contains(quitReason) { return false }
+        return true
     }
 }
 
@@ -4433,6 +4464,8 @@ struct SettingsView: View {
     private var markdownSpawnButtonVisible = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
+    @AppStorage(TabLayoutSettings.modeKey)
+    private var tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -5130,8 +5163,8 @@ struct SettingsView: View {
             SettingsCardRow(
                 String(localized: "settings.app.warnBeforeQuit", defaultValue: "Warn Before Quit"),
                 subtitle: warnBeforeQuitShortcut
-                    ? String(localized: "settings.app.warnBeforeQuit.subtitleOn", defaultValue: "Show a confirmation before quitting with Cmd+Q.")
-                    : String(localized: "settings.app.warnBeforeQuit.subtitleOff", defaultValue: "Cmd+Q quits immediately without confirmation.")
+                    ? String(localized: "settings.app.warnBeforeQuit.confirmOn", defaultValue: "Ask for confirmation before c11 quits.")
+                    : String(localized: "settings.app.warnBeforeQuit.confirmOff", defaultValue: "c11 quits immediately without confirmation.")
             ) {
                 Toggle("", isOn: $warnBeforeQuitShortcut)
                     .labelsHidden()
@@ -5192,6 +5225,26 @@ struct SettingsView: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.tabLayout", defaultValue: "Tab Layout"),
+                subtitle: TabLayoutSettings.mode(for: tabLayoutMode) == .rail
+                    ? String(localized: "settings.app.tabLayout.subtitleRail", defaultValue: "A vertical tab list docks on each area's left edge; the count button toggles it.")
+                    : String(localized: "settings.app.tabLayout.subtitleTabs", defaultValue: "Browser-style tabs across the top of each area; the count button opens the full list."),
+                controlWidth: pickerColumnWidth
+            ) {
+                Picker("", selection: $tabLayoutMode) {
+                    Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"))
+                        .tag(TabLayoutSettings.Mode.tabs.rawValue)
+                    Text(String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"))
+                        .tag(TabLayoutSettings.Mode.rail.rawValue)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsTabLayoutPicker")
             }
         }
     }
@@ -6531,6 +6584,7 @@ struct SettingsView: View {
         } catch {
             return
         }
+        QuitConfirmationPolicy.armBypass()
         NSApplication.shared.terminate(nil)
     }
 
@@ -6545,6 +6599,7 @@ struct SettingsView: View {
         internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
         showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
+        tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue

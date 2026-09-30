@@ -11,7 +11,7 @@ final class CloseWorkspacesConfirmDialogUITests: XCTestCase {
         try? FileManager.default.removeItem(atPath: socketPath)
     }
 
-    func testCommandPaletteCloseOtherWorkspacesShowsSingleSummaryDialog() {
+    func testCommandPaletteCloseWorkspacesBelowShowsSingleSummaryDialog() {
         let app = XCUIApplication()
         app.launchEnvironment["CMUX_SOCKET_PATH"] = socketPath
         app.launchEnvironment["CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"] = "1"
@@ -26,18 +26,18 @@ final class CloseWorkspacesConfirmDialogUITests: XCTestCase {
         XCTAssertEqual(socketCommand("new_workspace")?.prefix(2), "OK")
         XCTAssertTrue(
             waitForWorkspaceCount(3, timeout: 5.0),
-            "Expected 3 workspaces before running the close-other-workspaces command. list=\(socketCommand("list_workspaces") ?? "<nil>")"
+            "Expected 3 workspaces before running the close-workspaces-below command. list=\(socketCommand("list_workspaces") ?? "<nil>")"
         )
-        XCTAssertEqual(socketCommand("select_workspace 1"), "OK")
+        XCTAssertEqual(socketCommand("select_workspace 0"), "OK")
 
         app.typeKey("p", modifierFlags: [.command, .shift])
 
         let searchField = app.textFields["CommandPaletteSearchField"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5.0), "Expected command palette search field")
         searchField.click()
-        searchField.typeText("Close Other Workspaces")
+        searchField.typeText("Close Workspaces Below")
 
-        let resultButton = app.buttons["Close Other Workspaces"].firstMatch
+        let resultButton = app.buttons["Close Workspaces Below"].firstMatch
         if resultButton.waitForExistence(timeout: 5.0) {
             resultButton.click()
         } else {

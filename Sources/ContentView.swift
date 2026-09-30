@@ -1696,7 +1696,6 @@ struct ContentView: View {
         static let workspaceShouldPin = "workspace.shouldPin"
         static let workspaceHasPullRequests = "workspace.hasPullRequests"
         static let workspaceHasSplits = "workspace.hasSplits"
-        static let workspaceHasPeers = "workspace.hasPeers"
         static let workspaceHasAbove = "workspace.hasAbove"
         static let workspaceHasBelow = "workspace.hasBelow"
         static let workspaceHasUnread = "workspace.hasUnread"
@@ -5193,7 +5192,6 @@ struct ContentView: View {
                 workspace.bonsplitController.allPaneIds.count > 1
             )
             let workspaceIndex = tabManager.tabs.firstIndex { $0.id == workspace.id }
-            snapshot.setBool(CommandPaletteContextKeys.workspaceHasPeers, tabManager.tabs.count > 1)
             snapshot.setBool(CommandPaletteContextKeys.workspaceHasAbove, (workspaceIndex ?? 0) > 0)
             snapshot.setBool(
                 CommandPaletteContextKeys.workspaceHasBelow,
@@ -5555,16 +5553,6 @@ struct ContentView: View {
                 keywords: ["workspace", "move", "top", "reorder"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
                 enablement: { $0.bool(CommandPaletteContextKeys.workspaceHasAbove) }
-            )
-        )
-        contributions.append(
-            CommandPaletteCommandContribution(
-                commandId: "palette.closeOtherWorkspaces",
-                title: constant(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")),
-                subtitle: workspaceSubtitle,
-                keywords: ["close", "other", "workspaces", "reset", "workspace"],
-                when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
-                enablement: { $0.bool(CommandPaletteContextKeys.workspaceHasPeers) }
             )
         )
         contributions.append(
@@ -6138,9 +6126,6 @@ struct ContentView: View {
             }
             tabManager.moveTabsToTop([workspace.id])
             tabManager.selectWorkspace(workspace)
-        }
-        registry.register(commandId: "palette.closeOtherWorkspaces") {
-            closeOtherSelectedWorkspaces()
         }
         registry.register(commandId: "palette.closeWorkspacesBelow") {
             closeSelectedWorkspacesBelow()
@@ -7214,12 +7199,6 @@ struct ContentView: View {
 
     private func closeWorkspaceIds(_ workspaceIds: [UUID], allowPinned: Bool) {
         tabManager.closeWorkspacesWithConfirmation(workspaceIds, allowPinned: allowPinned)
-    }
-
-    private func closeOtherSelectedWorkspaces() {
-        guard let workspace = tabManager.selectedWorkspace else { return }
-        let workspaceIds = tabManager.tabs.compactMap { $0.id == workspace.id ? nil : $0.id }
-        closeWorkspaceIds(workspaceIds, allowPinned: false)
     }
 
     private func closeSelectedWorkspacesBelow() {
@@ -13143,11 +13122,6 @@ private struct TabItemView: View, Equatable {
             .disabled(targetIds.isEmpty)
         }
 
-        Button(String(localized: "contextMenu.closeOtherWorkspaces", defaultValue: "Close Other Workspaces")) {
-            closeOtherTabs(targetIds)
-        }
-        .disabled(tabManager.tabs.count <= 1 || targetIds.count == tabManager.tabs.count)
-
         Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
             closeTabsBelow(tabId: tab.id)
         }
@@ -13292,12 +13266,6 @@ private struct TabItemView: View, Equatable {
     private func closeTabs(_ targetIds: [UUID], allowPinned: Bool) {
         tabManager.closeWorkspacesWithConfirmation(targetIds, allowPinned: allowPinned)
         syncSelectionAfterMutation()
-    }
-
-    private func closeOtherTabs(_ targetIds: [UUID]) {
-        let keepIds = Set(targetIds)
-        let idsToClose = tabManager.tabs.compactMap { keepIds.contains($0.id) ? nil : $0.id }
-        closeTabs(idsToClose, allowPinned: false)
     }
 
     private func closeTabsBelow(tabId: UUID) {

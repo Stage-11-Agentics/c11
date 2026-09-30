@@ -401,7 +401,7 @@ final class CommandPaletteAllSurfacesUITests: XCTestCase {
             "Expected the restored workspace row to be visibly rendered. title=\(workspaceTitle) snapshot=\(switcherSnapshot)"
         )
 
-        let staleCommandLabel = app.staticTexts["Close Other Workspaces"].firstMatch
+        let staleCommandLabel = app.staticTexts["Close Workspaces Below"].firstMatch
         XCTAssertTrue(
             sidebarHelpPollUntil(timeout: 2.0) {
                 !staleCommandLabel.exists || !staleCommandLabel.isHittable

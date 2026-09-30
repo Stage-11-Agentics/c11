@@ -169,12 +169,27 @@ final class TabActivitySignalsTests: XCTestCase {
     }
 
     func testDefaultOrderExcludesTheOptInClocksButTheSettingCanAddThem() {
-        XCTAssertEqual(TabSheetDetailBuilder.defaultClockOrder, ["active", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.defaultClockOrder, ["active", "seen", "launched"])
         XCTAssertEqual(TabSheetDetailBuilder.parseClockOrder("active,touched,turn,tools,tokens"),
                        ["active", "touched", "turn", "tools", "tokens"])
         for name in TabSheetDetailBuilder.optInClocks {
             XCTAssertNotNil(TabSheetDetailBuilder.clockTitle(name), name)
         }
         XCTAssertNil(TabSheetDetailBuilder.clockTitle("active"), "bonsplit's built-in titles cover the rest")
+    }
+
+    func testSeenShowsTheStoredStampOrNowWhileBeingLookedAt() {
+        let stamp = Date(timeIntervalSince1970: 9_000)
+        let away = TabSheetDetailBuilder.build(inputs { $0.seenAt = stamp })
+        XCTAssertEqual(away.clocks["seen"], stamp)
+        XCTAssertNil(away.clockTexts["seen"])
+
+        // While being seen the stored stamp is stale: show "now", not an age.
+        let looking = TabSheetDetailBuilder.build(inputs { $0.seenAt = stamp; $0.isBeingSeen = true })
+        XCTAssertNil(looking.clocks["seen"])
+        XCTAssertEqual(looking.clockTexts["seen"], "now")
+
+        // Looked-at for the first time: nothing stored yet, still "now".
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs { $0.isBeingSeen = true }).clockTexts["seen"], "now")
     }
 }

@@ -9,11 +9,10 @@ enum TabSheetDetailBuilder {
     /// clock names. Change it in one command:
     /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
     static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
-    /// Every clock the sheet can show. The default order matches bonsplit's
-    /// (`active,launched`); `touched` (last operator input), `turn`, `tools` and
-    /// `tokens` are opt-in through the setting, and `seen` is accepted and renders
-    /// `—` until last-seen tracking (C11-243) supplies it.
-    static let defaultClockOrder = ["active", "launched"]
+    /// Every clock the sheet can show. The default order is `active,seen,launched`;
+    /// `touched` (last operator input), `turn`, `tools` and `tokens` are opt-in
+    /// through the setting.
+    static let defaultClockOrder = ["active", "seen", "launched"]
     static let optInClocks = ["touched", "turn", "tools", "tokens"]
 
     struct Inputs {
@@ -42,8 +41,11 @@ enum TabSheetDetailBuilder {
         var activeAt: Date?
         /// Last operator keystroke or click in the tab (`touched`).
         var touchedAt: Date?
-        /// Last time the operator looked at the tab (`seen`, C11-243).
+        /// The stored moment the operator last stopped looking at the tab (`seen`,
+        /// C11-243); nil if never.
         var seenAt: Date?
+        /// True while the operator is looking at the tab: `seen` reads "now".
+        var isBeingSeen: Bool = false
         /// Agent tabs: the current or last turn, from the transcript tail.
         var turnStartedAt: Date?
         var turnToolCalls: Int?
@@ -58,9 +60,13 @@ enum TabSheetDetailBuilder {
         var clocks: [String: Date] = [:]
         if let active = input.activeAt { clocks["active"] = active }
         if let launched = input.createdAt { clocks["launched"] = launched }
-        if let seen = input.seenAt { clocks["seen"] = seen }
+        if !input.isBeingSeen, let seen = input.seenAt { clocks["seen"] = seen }
         if let touched = input.touchedAt { clocks["touched"] = touched }
         var texts: [String: String] = [:]
+        // The tab being looked at has no age to show: `seen` reads "now".
+        if input.isBeingSeen {
+            texts["seen"] = String(localized: "tabSheet.clock.seenNow", defaultValue: "now")
+        }
         if let start = input.turnStartedAt {
             let end = input.activity == .running ? input.now : (input.lastAgentEventAt ?? input.now)
             texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
@@ -306,7 +312,8 @@ extension Workspace {
             createdAt: panel.createdAt,
             activeAt: signals.activeAt,
             touchedAt: signals.touchedAt,
-            seenAt: nil,
+            seenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId),
             turnStartedAt: signals.turnStartedAt,
             turnToolCalls: signals.turnToolCalls,
             tokens: signals.tokens,

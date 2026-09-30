@@ -1581,6 +1581,13 @@ final class SidebarHorizontalScrollWorkspaceStepperTests: XCTestCase {
         XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.1), .consume(step: 1))
     }
 
+    func testResetClearsTheWheelRateLimit() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        stepper.reset()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.02), .consume(step: 1))
+    }
+
     func testSmoothWheelAccumulatesPointsBeforeStepping() {
         var stepper = SidebarHorizontalScrollWorkspaceStepper()
         XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0), .consume(step: 0))

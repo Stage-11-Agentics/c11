@@ -9459,6 +9459,7 @@ struct SidebarHorizontalScrollWorkspaceStepper {
         gestureIsHorizontal = nil
         gestureHasStepped = false
         lastWheelEventTime = nil
+        lastWheelStepTime = nil
     }
 
     mutating func handle(
@@ -9579,13 +9580,17 @@ private final class SidebarHorizontalScrollWorkspaceMonitor: ObservableObject {
 
     /// Hardware scrolls carry their window. A scroll posted straight to the
     /// process (automation, agents) carries none, and its location is in
-    /// screen coordinates; it counts when that point is inside this window.
+    /// screen coordinates; it counts only for the window on top at that point,
+    /// so overlapping c11 windows never both step.
     private static func pointInWindow(of event: NSEvent, window: NSWindow) -> NSPoint? {
         if let eventWindow = event.window {
             return eventWindow === window ? event.locationInWindow : nil
         }
-        guard window.frame.contains(event.locationInWindow) else { return nil }
-        return window.convertPoint(fromScreen: event.locationInWindow)
+        let screenPoint = event.locationInWindow
+        guard window.frame.contains(screenPoint),
+              NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0) == window.windowNumber
+        else { return nil }
+        return window.convertPoint(fromScreen: screenPoint)
     }
 }
 

@@ -4060,6 +4060,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
             isARepeat: false,
             keyCode: keyCode
         ) else { return }
+        // Fabricated for socket `send` (and the text box): not the operator's own
+        // keystroke, so it must not stamp the "touched" clock.
+        view.isSynthesizingKey = true
+        defer { view.isSynthesizingKey = false }
         view.keyDown(with: event)
     }
 
@@ -4356,6 +4360,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     weak var terminalSurface: TerminalSurface?
     var scrollbar: GhosttyScrollbar?
+    /// True only while `TerminalSurface.sendSyntheticKey` drives `keyDown`.
+    var isSynthesizingKey = false
     var cellSize: CGSize = .zero
     var desiredFocus: Bool = false
     var suppressingReparentFocus: Bool = false
@@ -5631,8 +5637,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         ensureSurfaceMs = (ProcessInfo.processInfo.systemUptime - ensureSurfaceStart) * 1000.0
 #endif
         if let terminalSurface {
-            // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing published.
-            terminalSurface.lastOperatorInputAt = Date()
+            // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing
+            // published. Synthesized keys (socket `send`) are not the operator.
+            if !isSynthesizingKey { terminalSurface.lastOperatorInputAt = Date() }
 #if DEBUG
             let dismissNotificationStart = ProcessInfo.processInfo.systemUptime
 #endif

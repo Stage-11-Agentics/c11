@@ -125,7 +125,6 @@ struct CreateWorkspaceSheet: View {
     @State private var scrollBox = ScrollProxyBox()
     @State private var loadFailureMessage: String?
     @State private var submitting: Bool = false
-    @State private var helpPopoverOpen: Bool = false
     @State private var isDropTargeted: Bool = false
 
     private static let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -1075,7 +1074,7 @@ struct CreateWorkspaceSheet: View {
         }
     }
 
-    // MARK: - Layouts (one consolidated row: defaults + custom blueprints)
+    // MARK: - Layouts (the four standard layouts; custom blueprints are CLI-only)
 
     private var layoutsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1083,23 +1082,6 @@ struct CreateWorkspaceSheet: View {
                 Text(String(localized: "createWorkspace.layouts", defaultValue: "Layouts"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI)
-                Button {
-                    helpPopoverOpen.toggle()
-                } label: {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.7))
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(String(
-                    localized: "createWorkspace.customBlueprints.helpHint",
-                    defaultValue: "What is a custom blueprint?"
-                ))
-                .popover(isPresented: $helpPopoverOpen, arrowEdge: .top) {
-                    helpPopoverContent
-                }
                 Spacer()
             }
 
@@ -1107,15 +1089,6 @@ struct CreateWorkspaceSheet: View {
                 HStack(spacing: 10) {
                     ForEach(starterEntries) { entry in
                         blueprintCard(entry, showLetters: true)
-                    }
-                    if !savedEntries.isEmpty {
-                        Rectangle()
-                            .fill(BrandColors.ruleSwiftUI)
-                            .frame(width: 1, height: 80)
-                            .padding(.horizontal, 4)
-                    }
-                    ForEach(savedEntries) { entry in
-                        blueprintCard(entry, showLetters: false)
                     }
                 }
                 .padding(.vertical, 4)
@@ -1169,45 +1142,6 @@ struct CreateWorkspaceSheet: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
         }
-    }
-
-    private var helpPopoverContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(String(
-                localized: "createWorkspace.customBlueprints.help.body1",
-                defaultValue: "Saved pane and surface layouts you can launch a workspace from."
-            ))
-            Text(String(
-                localized: "createWorkspace.customBlueprints.help.body2",
-                defaultValue: "c11 is agent-first software, so we didn't build a UI to make these. Just ask your agent. It can write a blueprint file to your blueprints folder, and it'll show up here."
-            ))
-            Button {
-                revealBlueprintsFolder()
-            } label: {
-                Label(
-                    String(
-                        localized: "createWorkspace.customBlueprints.help.reveal",
-                        defaultValue: "Reveal blueprints folder"
-                    ),
-                    systemImage: "folder"
-                )
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
-        .font(.system(size: 12))
-        .frame(width: 320)
-        .padding(14)
-    }
-
-    private func revealBlueprintsFolder() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let url = home.appendingPathComponent(".config/c11/blueprints", isDirectory: true)
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
-            try? fm.createDirectory(at: url, withIntermediateDirectories: true)
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     // MARK: - Blueprint card (shared by default + custom)
@@ -1266,10 +1200,6 @@ struct CreateWorkspaceSheet: View {
 
     private var starterEntries: [BlueprintEntry] {
         entries.filter { $0.kind == .starter }
-    }
-
-    private var savedEntries: [BlueprintEntry] {
-        entries.filter { $0.kind == .saved }
     }
 
     // MARK: - Footer
@@ -1386,27 +1316,7 @@ struct CreateWorkspaceSheet: View {
                 ))
             }
         }
-        let starterFileNames = Set(starterDefs.map(\.fileName))
-        for index in allIndex where !starterFileNames.contains(index.name) {
-            collected.append(BlueprintEntry(
-                id: "saved:\(index.url)",
-                kind: .saved,
-                label: index.name,
-                description: index.description,
-                shape: .custom,
-                sourceBadge: badge(for: index.source),
-                loader: .index(index)
-            ))
-        }
         return collected
-    }
-
-    private static func badge(for source: WorkspaceBlueprintIndex.Source) -> String {
-        switch source {
-        case .repo:    return String(localized: "createWorkspace.badge.repo", defaultValue: "Repo")
-        case .user:    return String(localized: "createWorkspace.badge.user", defaultValue: "User")
-        case .builtIn: return String(localized: "createWorkspace.badge.builtIn", defaultValue: "Built-in")
-        }
     }
 }
 

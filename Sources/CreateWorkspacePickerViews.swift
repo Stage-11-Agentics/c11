@@ -364,11 +364,12 @@ struct RecentRowView: View {
                 }
                 .frame(width: 8, height: 8)
 
+                // The name hugs its own width (capped) so the path gets the
+                // rest; a flexible maxWidth frame would always claim the cap.
                 nameText
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 260, alignment: .leading)
-                    .layoutPriority(1)
+                    .frame(width: nameColumnWidth, alignment: .leading)
 
                 parentText
                     .lineLimit(1)
@@ -511,16 +512,31 @@ struct RecentRowView: View {
         .foregroundColor(BrandColors.whiteSwiftUI)
     }
 
+    private static let nameColumnMax: CGFloat = 200
+
+    /// Measured with the bold face so gold match highlights never clip.
+    private var nameColumnWidth: CGFloat {
+        let text = kind == .typed
+            ? String(
+                format: String(localized: "createWorkspace.path.createIn", defaultValue: "⏎ Create in %@"),
+                name
+            )
+            : name
+        let font = NSFont.systemFont(ofSize: 13, weight: .bold)
+        let measured = ceil((text as NSString).size(withAttributes: [.font: font]).width) + 2
+        return min(measured, Self.nameColumnMax)
+    }
+
     private var parentText: Text {
         PickerText.highlighted(
             parent,
             indices: match?.indices ?? [],
             offset: 0,
-            base: BrandColors.whiteSwiftUI.opacity(0.5),
-            emphasis: .system(size: 11, weight: .bold, design: .monospaced)
+            base: BrandColors.whiteSwiftUI.opacity(0.55),
+            emphasis: .system(size: 12, weight: .bold, design: .monospaced)
         )
-        .font(.system(size: 11, design: .monospaced))
-        .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.5))
+        .font(.system(size: 12, design: .monospaced))
+        .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.55))
     }
 }
 

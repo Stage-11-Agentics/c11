@@ -393,6 +393,26 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
     }
 
+    func testStandardConfirmStartsOnItsConfirmButton() {
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(ConfirmContent(
+            title: "Proceed?",
+            message: nil,
+            confirmLabel: "Proceed",
+            cancelLabel: "Cancel",
+            role: .standard,
+            source: .local,
+            completion: { result = $0 }
+        )))
+        XCTAssertFalse(runtime.hasActiveDestructiveConfirm(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .confirmed)
+    }
+
     func testReturnOnAFreshConfirmCancels() {
         // A destructive confirm must not be accepted by a reflexive Return.
         let runtime = PaneInteractionRuntime()

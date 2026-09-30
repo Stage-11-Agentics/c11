@@ -822,19 +822,6 @@ class TabManager: ObservableObject {
         return workspace.workspaceCloseInteractionRuntime.hasActive
     }
 
-    /// Accept the active workspace-close interaction in the selected
-    /// workspace. Used by the Cmd+D dispatcher: Cmd+D on a destructive
-    /// confirm should accept (matches the pane-interaction path).
-    @MainActor
-    @discardableResult
-    func acceptActiveWorkspaceCloseInteractionInKeyWorkspace() -> Bool {
-        guard let selectedTabId,
-              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
-            return false
-        }
-        return workspace.workspaceCloseInteractionRuntime.accept()
-    }
-
     /// Cancel the active workspace-close interaction in the selected
     /// workspace. Used as an Esc fallback when the overlay host did not
     /// receive keyDown directly (WKWebView responder edge cases).
@@ -857,7 +844,7 @@ class TabManager: ObservableObject {
     /// caller should also return true from its key-equivalent handler.
     @MainActor
     @discardableResult
-    func acceptActivePaneInteractionInKeyWorkspace(includingConfirms: Bool = true) -> Bool {
+    func acceptActivePaneInteractionInKeyWorkspace(includingDestructiveConfirms: Bool) -> Bool {
         guard let selectedTabId,
               let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
             return false
@@ -875,7 +862,7 @@ class TabManager: ObservableObject {
             return runtime.activePanelIds.first
         }()
         guard let targetPanelId else { return false }
-        if !includingConfirms, runtime.hasActiveConfirm(panelId: targetPanelId) { return false }
+        if !includingDestructiveConfirms, runtime.hasActiveDestructiveConfirm(panelId: targetPanelId) { return false }
         return runtime.acceptActive(panelId: targetPanelId)
     }
 

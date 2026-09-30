@@ -2163,6 +2163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func windowWillClose(_ notification: Notification) {
             forward?.windowWillClose?(notification)
+            // Must stay last: this drops the guard's only strong reference, so
+            // `self` may be released as it returns.
             if let window = notification.object as? NSWindow {
                 owner?.mainWindowCloseGuardDidClose(window)
             }
@@ -2369,6 +2371,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var didHandleExplicitOpenIntentAtStartup = false
     private(set) var isTerminatingApp = false
     private var didPersistCleanShutdownSnapshot = false
+    /// The snapshot on disk was written, conversations suspended, as the last
+    /// main window closed; cleared when a window registers again.
+    private var didPersistLastWindowSnapshot = false
     private var didInstallLifecycleSnapshotObservers = false
     private var didDisableSuddenTermination = false
     private var commandPaletteVisibilityByWindowId: [UUID: Bool] = [:]
@@ -4390,6 +4395,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Full clean boundary: resolve, optionally quarantine, suspend, read the
     /// final actor state, durably write it, then and only then promote clean.
     @discardableResult
+    /// The last main window is closing while c11 keeps running. Write its full
+    /// session now, with conversations suspended the way quit does, so the kept
+    /// snapshot matches what was on screen and a later quit with no windows
+    /// still counts as a clean shutdown. The next window's first save replaces
+    /// it.
+    private func persistLastWindowSnapshot() {
+        guard let conversations = prepareConversationsForPersistence(
+            includeScrollback: true,
+            suspendAlive: true
+        ) else {
+            return
+        }
+        didPersistLastWindowSnapshot = saveSessionSnapshot(
+            includeScrollback: true,
+            removeWhenEmpty: false,
+            conversationsByPanelId: conversations,
+            forceSynchronousWrite: true
+        )
+    }
+
     private func persistCleanShutdownSnapshot(bundleId: String) -> Bool {
         if didPersistCleanShutdownSnapshot { return true }
         if isAwaitingStartupResumeDecision {
@@ -4400,6 +4425,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   ShutdownSentinel.promoteToClean(bundleId: bundleId) else {
                 return false
             }
+            didPersistCleanShutdownSnapshot = true
+            return true
+        }
+        // Quitting with no windows: the snapshot written as the last window
+        // closed is the final one, conversations already suspended.
+        if mainWindowContexts.isEmpty, didPersistLastWindowSnapshot {
+            guard ShutdownSentinel.promoteToClean(bundleId: bundleId) else { return false }
             didPersistCleanShutdownSnapshot = true
             return true
         }
@@ -5002,6 +5034,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             existing.window = window
             reindexMainWindowContextIfNeeded(existing, for: window)
         } else {
+            didPersistLastWindowSnapshot = false
             mainWindowContexts[key] = MainWindowContext(
                 windowId: windowId,
                 tabManager: tabManager,
@@ -6157,7 +6190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .hasDestructiveAction = true
         alert.beginSheetModal(for: window) { response in
             guard response == .alertSecondButtonReturn else { return }
-            onConfirm()
+            // Close after the sheet has detached; performClose refuses a window
+            // that still has a sheet attached.
+            DispatchQueue.main.async { onConfirm() }
         }
     }
 
@@ -11074,9 +11109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if paneInteractionActive {
-            // Route Cmd+D through to the pane-interaction runtime: it submits the
-            // topmost text-input card in the focused workspace, but never accepts
-            // a destructive confirm. All app-level *shortcuts* are swallowed while
+            // Route Cmd+D through to the pane-interaction runtime: it accepts the
+            // topmost card in the focused workspace, but never a destructive
+            // confirm. All app-level *shortcuts* are swallowed while
             // the dialog is visible so keybindings don't fire through the overlay.
             //
             // The caller is an NSEvent local monitor (see installAppMonitor:
@@ -11089,7 +11124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if matchShortcut(
                 event: event,
                 shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ), shortcutTabManager?.acceptActivePaneInteractionInKeyWorkspace(includingConfirms: false) == true {
+            ), shortcutTabManager?.acceptActivePaneInteractionInKeyWorkspace(includingDestructiveConfirms: false) == true {
                 return true
             }
             let hasAppShortcutModifier = hasCommand || hasControl || hasOption
@@ -13092,11 +13127,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func unregisterMainWindow(_ window: NSWindow) {
+        // Closing the picker's window before answering leaves the previous
+        // session on disk untouched; it is not replaced by this launch window.
+        let closesUnansweredResumePicker = window === startupResumePickerParentWindow
+            && isAwaitingStartupResumeDecision
         if window === startupResumePickerParentWindow {
             endStartupResumeDecisionWait()
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
+        mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
+        if !isTerminatingApp,
+           !closesUnansweredResumePicker,
+           mainWindowContexts.count == 1,
+           mainWindowContexts[ObjectIdentifier(window)] != nil {
+            persistLastWindowSnapshot()
+        }
         guard let removed = unregisterMainWindowContext(for: window) else { return }
         commandPaletteVisibilityByWindowId.removeValue(forKey: removed.windowId)
         commandPalettePendingOpenByWindowId.removeValue(forKey: removed.windowId)

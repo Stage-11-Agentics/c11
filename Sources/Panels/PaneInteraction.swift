@@ -259,7 +259,7 @@ public final class PaneInteractionRuntime: ObservableObject {
 #endif
         if active[panelId] == nil {
             active[panelId] = interaction
-            if case .confirm = interaction { confirmSelection[panelId] = .cancel }
+            if case .confirm(let c) = interaction { confirmSelection[panelId] = Self.initialSelection(for: c) }
             if case .textInput = interaction { textInputSelection[panelId] = .field }
         } else {
             var queue = queues[panelId, default: []]
@@ -370,8 +370,8 @@ public final class PaneInteractionRuntime: ObservableObject {
             active[panelId] = next
             queues[panelId] = queue
             switch next {
-            case .confirm:
-                confirmSelection[panelId] = .cancel
+            case .confirm(let c):
+                confirmSelection[panelId] = Self.initialSelection(for: c)
                 textInputSelection[panelId] = nil
             case .textInput:
                 confirmSelection[panelId] = nil
@@ -526,8 +526,14 @@ public final class PaneInteractionRuntime: ObservableObject {
     }
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
-    public func hasActiveConfirm(panelId: UUID) -> Bool {
-        if case .confirm? = active[panelId] { return true }
+    /// A destructive card starts on Cancel so a reflexive Return keeps things
+    /// open; a standard question starts on its confirm button.
+    static func initialSelection(for content: ConfirmContent) -> ConfirmSelectionField {
+        content.role == .destructive ? .cancel : .confirm
+    }
+
+    public func hasActiveDestructiveConfirm(panelId: UUID) -> Bool {
+        if case .confirm(let c)? = active[panelId], c.role == .destructive { return true }
         return false
     }
     public var hasAnyActive: Bool { !active.isEmpty }

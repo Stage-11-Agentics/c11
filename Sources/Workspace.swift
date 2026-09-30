@@ -10481,7 +10481,6 @@ final class Workspace: Identifiable, ObservableObject {
         return newPanel
     }
 
-    /// Check if any panel needs close confirmation
     /// Whether closing this whole workspace asks first. Only a lone idle
     /// terminal closes without asking; a pinned workspace, several surfaces,
     /// a browser or markdown surface, or anything running all ask, because
@@ -10492,6 +10491,7 @@ final class Workspace: Identifiable, ObservableObject {
         return needsConfirmClose()
     }
 
+    /// Check if any panel needs close confirmation
     func needsConfirmClose() -> Bool {
         for (panelId, panel) in panels {
             if let terminalPanel = panel as? TerminalPanel,

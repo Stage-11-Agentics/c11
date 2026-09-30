@@ -172,6 +172,7 @@ or pool wait, shard skew) and probe one variable at a time on a quiet runner.
 Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
 
 - **Additive-registration conflicts** (`__init__.py` re-exports, CLI/plugin registries): resolve as the union, ordered by ticket ID — the standing pattern. Real semantic conflicts → escalate with a `🛑` banner.
+- **A squash carries only the ticket's own files, and a child lands after its anchor.** Before squashing, `git diff --stat <remote>/main...HEAD` shows only the ticket's own files; a branch that merged an unlanded anchor waits until that anchor lands. Otherwise the squash puts the anchor's files on main in whatever state the child last merged, and when those are migrations, the anchor's later edits change already-applied files: a runner that checksums applied migrations then refuses to boot, freezing deploys until the anchor lands.
 - **A squash-merged parent is NOT an ancestor of its children.** `git merge-base --is-ancestor` returns false even though the content landed, and child PRs show phantom diffs. Don't gate on ancestry after squash — gate on validating the assembled tree.
 - **Deep stacks:** prefer one `integration/<run>` branch — merge leaf tips in dependency order, validate the assembled tree once (assembled-tree checks catch what per-PR review can't), single PR to main, close the individual PRs with a "merged via integration/<run>" comment.
 - Record every auto-merge in agents.md.

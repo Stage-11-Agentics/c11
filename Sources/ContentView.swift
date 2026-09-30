@@ -8451,6 +8451,7 @@ struct VerticalTabsSidebar: View {
     @StateObject private var modifierKeyMonitor = SidebarShortcutHintModifierMonitor()
     @StateObject private var dragAutoScrollController = SidebarDragAutoScrollController()
     @StateObject private var dragFailsafeMonitor = SidebarDragFailsafeMonitor()
+    @StateObject private var horizontalScrollMonitor = SidebarHorizontalScrollWorkspaceMonitor()
     @State private var draggedTabId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
@@ -8763,6 +8764,7 @@ struct VerticalTabsSidebar: View {
                 // scroller renders as a grey bar over the cards (and the
                 // traffic-light strip) whenever the workspace list overflows.
                 .scrollIndicators(.never)
+                .background(SidebarHorizontalScrollAnchor(monitor: horizontalScrollMonitor))
                 .background(
                     SidebarScrollViewResolver { scrollView in
                         dragAutoScrollController.attach(scrollView: scrollView)
@@ -8826,6 +8828,13 @@ struct VerticalTabsSidebar: View {
         )
         .onAppear {
             modifierKeyMonitor.start()
+            horizontalScrollMonitor.start { [tabManager] step in
+                if step > 0 {
+                    tabManager.selectNextTab()
+                } else {
+                    tabManager.selectPreviousTab()
+                }
+            }
             draggedTabId = nil
             dropIndicator = nil
             SidebarDragLifecycleNotification.postStateDidChange(
@@ -8835,6 +8844,7 @@ struct VerticalTabsSidebar: View {
         }
         .onDisappear {
             modifierKeyMonitor.stop()
+            horizontalScrollMonitor.stop()
             dragAutoScrollController.stop()
             dragFailsafeMonitor.stop()
             draggedTabId = nil
@@ -9412,6 +9422,194 @@ enum SidebarDragFailsafePolicy {
     static func shouldRequestClear(forMouseEventType eventType: NSEvent.EventType) -> Bool {
         eventType == .leftMouseUp
     }
+}
+
+/// Turns horizontal scroll over the sidebar into workspace steps, so a mouse's
+/// horizontal wheel (the MX Master thumb wheel) or a two-finger swipe walks the
+/// workspace list like Next/Previous Workspace. Vertical scroll passes through
+/// untouched. Scrolling right (negative deltaX) steps to the next workspace.
+struct SidebarHorizontalScrollWorkspaceStepper {
+    enum Outcome: Equatable {
+        /// Not a horizontal scroll; the sidebar scrolls as usual.
+        case passThrough
+        /// A horizontal scroll, swallowed. `step` is 1 (next), -1 (previous) or 0.
+        case consume(step: Int)
+    }
+
+    /// Precise deltas (trackpads, smooth-scrolling wheels) arrive in points.
+    static let preciseThreshold: CGFloat = 36
+    /// Line-based wheels report lines; one line is one workspace.
+    static let lineThreshold: CGFloat = 1
+    /// Minimum spacing between wheel steps, so a fast spin of a free-running
+    /// thumb wheel stays countable instead of racing through the list.
+    static let minimumWheelStepInterval: TimeInterval = 0.09
+    /// A wheel pause this long discards a partial accumulation.
+    static let wheelIdleReset: TimeInterval = 0.35
+
+    private var accumulated: CGFloat = 0
+    /// Axis a phased gesture (trackpad, Magic Mouse) latched on its first
+    /// moving event; its remaining events and momentum follow it.
+    private var gestureIsHorizontal: Bool?
+    private var gestureHasStepped = false
+    private var lastWheelEventTime: TimeInterval?
+    private var lastWheelStepTime: TimeInterval?
+
+    mutating func reset() {
+        accumulated = 0
+        gestureIsHorizontal = nil
+        gestureHasStepped = false
+        lastWheelEventTime = nil
+        lastWheelStepTime = nil
+    }
+
+    mutating func handle(
+        deltaX: CGFloat,
+        deltaY: CGFloat,
+        hasPreciseDeltas: Bool,
+        phase: NSEvent.Phase,
+        momentumPhase: NSEvent.Phase,
+        timestamp: TimeInterval
+    ) -> Outcome {
+        if !momentumPhase.isEmpty {
+            return gestureIsHorizontal == true ? .consume(step: 0) : .passThrough
+        }
+
+        if !phase.isEmpty {
+            if phase.contains(.began) || phase.contains(.mayBegin) {
+                accumulated = 0
+                gestureIsHorizontal = nil
+                gestureHasStepped = false
+            }
+            if gestureIsHorizontal == nil, deltaX != 0 || deltaY != 0 {
+                gestureIsHorizontal = abs(deltaX) > abs(deltaY)
+            }
+            guard gestureIsHorizontal == true else { return .passThrough }
+            guard !gestureHasStepped else { return .consume(step: 0) }
+            accumulated += deltaX
+            guard abs(accumulated) >= Self.preciseThreshold else { return .consume(step: 0) }
+            gestureHasStepped = true
+            return .consume(step: accumulated < 0 ? 1 : -1)
+        }
+
+        // Unphased: a mouse wheel, decided event by event.
+        gestureIsHorizontal = nil
+        guard abs(deltaX) > abs(deltaY) else { return .passThrough }
+        if let last = lastWheelEventTime, timestamp - last > Self.wheelIdleReset {
+            accumulated = 0
+        }
+        lastWheelEventTime = timestamp
+        if let lastStep = lastWheelStepTime, timestamp - lastStep < Self.minimumWheelStepInterval {
+            return .consume(step: 0)
+        }
+        accumulated += deltaX
+        let threshold = hasPreciseDeltas ? Self.preciseThreshold : Self.lineThreshold
+        guard abs(accumulated) >= threshold else { return .consume(step: 0) }
+        let step = accumulated < 0 ? 1 : -1
+        accumulated = 0
+        lastWheelStepTime = timestamp
+        return .consume(step: step)
+    }
+}
+
+/// Watches scroll events over the sidebar's workspace list and hands
+/// horizontal ones to `SidebarHorizontalScrollWorkspaceStepper`. The list's
+/// area is measured from `SidebarHorizontalScrollAnchor`, a view laid out
+/// behind the list's ScrollView at the same frame.
+@MainActor
+private final class SidebarHorizontalScrollWorkspaceMonitor: ObservableObject {
+    private weak var anchorView: NSView?
+    private var scrollMonitor: Any?
+    private var stepper = SidebarHorizontalScrollWorkspaceStepper()
+    private var onStep: ((Int) -> Void)?
+
+    func attach(anchorView: NSView) {
+        self.anchorView = anchorView
+    }
+
+    func start(onStep: @escaping (Int) -> Void) {
+        self.onStep = onStep
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handle(event) ?? event
+        }
+    }
+
+    func stop() {
+        if let scrollMonitor {
+            NSEvent.removeMonitor(scrollMonitor)
+        }
+        scrollMonitor = nil
+        onStep = nil
+        stepper.reset()
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent? {
+        guard let anchorView,
+              let window = anchorView.window,
+              let pointInWindow = Self.pointInWindow(of: event, window: window),
+              anchorView.convert(anchorView.bounds, to: nil).contains(pointInWindow)
+        else {
+            stepper.reset()
+            return event
+        }
+        let outcome = stepper.handle(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            hasPreciseDeltas: event.hasPreciseScrollingDeltas,
+            phase: event.phase,
+            momentumPhase: event.momentumPhase,
+            timestamp: event.timestamp
+        )
+        switch outcome {
+        case .passThrough:
+            return event
+        case .consume(let step):
+#if DEBUG
+            dlog(
+                "sidebar.hscroll dx=\(event.scrollingDeltaX) dy=\(event.scrollingDeltaY) " +
+                "precise=\(event.hasPreciseScrollingDeltas ? 1 : 0) phase=\(event.phase.rawValue) " +
+                "momentum=\(event.momentumPhase.rawValue) step=\(step)"
+            )
+#endif
+            if step != 0 {
+                onStep?(step)
+            }
+            return nil
+        }
+    }
+
+    /// Hardware scrolls carry their window. A scroll posted straight to the
+    /// process (automation, agents) carries none, and its location is in
+    /// screen coordinates; it counts only for the window on top at that point,
+    /// so overlapping c11 windows never both step.
+    private static func pointInWindow(of event: NSEvent, window: NSWindow) -> NSPoint? {
+        if let eventWindow = event.window {
+            return eventWindow === window ? event.locationInWindow : nil
+        }
+        let screenPoint = event.locationInWindow
+        guard window.frame.contains(screenPoint),
+              NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0) == window.windowNumber
+        else { return nil }
+        return window.convertPoint(fromScreen: screenPoint)
+    }
+}
+
+private struct SidebarHorizontalScrollAnchor: NSViewRepresentable {
+    let monitor: SidebarHorizontalScrollWorkspaceMonitor
+
+    func makeNSView(context: Context) -> SidebarHorizontalScrollAnchorView {
+        let view = SidebarHorizontalScrollAnchorView()
+        monitor.attach(anchorView: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: SidebarHorizontalScrollAnchorView, context: Context) {
+        monitor.attach(anchorView: nsView)
+    }
+}
+
+private final class SidebarHorizontalScrollAnchorView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 @MainActor

@@ -3645,7 +3645,9 @@ class TerminalController {
         let descriptionApplied = applied[MetadataKey.description] == true || removedKeys.contains(MetadataKey.description)
         let terminalTypeApplied = applied[MetadataKey.terminalType] == true || removedKeys.contains(MetadataKey.terminalType)
         let activityApplied = applied[MetadataKey.activity] == true || removedKeys.contains(MetadataKey.activity)
-        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied else { return }
+        let modelApplied = [MetadataKey.model, MetadataKey.modelLabel]
+            .contains { applied[$0] == true || removedKeys.contains($0) }
+        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied || modelApplied else { return }
         let resolvedActivity: SidebarActivityState? = if activityApplied {
             (SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
                 .metadata[MetadataKey.activity] as? String)
@@ -3658,6 +3660,11 @@ class TerminalController {
             if titleApplied {
                 ws.syncPanelTitleFromMetadata(panelId: surfaceId)
             }
+            if descriptionApplied {
+                // The bar (and its height) follows the description; publish so it
+                // shows, updates and hides without waiting on unrelated state.
+                ws.objectWillChange.send()
+            }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
             }
@@ -3666,6 +3673,9 @@ class TerminalController {
             }
             if terminalTypeApplied {
                 ws.syncSurfaceTabActivityStateForPanel(surfaceId)
+            }
+            if descriptionApplied || modelApplied || titleApplied {
+                ws.syncSurfaceTabDetailForPanel(surfaceId)
             }
         }
     }

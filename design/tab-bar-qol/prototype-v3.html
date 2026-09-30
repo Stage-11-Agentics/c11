@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 Tab Sheet v3</title>
+<style>
+:root {
+  --void: #16171b; --bar: #2b2d34; --tab: #24262c; --tab-active: #3a3c45;
+  --line: #45474f; --text: #e8e8ea; --dim: #9a9ca3; --faint: #6f727a;
+  --gold: #d4a72c; --green: #4cc38a; --amber: #e0a030; --violet: #a97cf0;
+  --s-bg: #0e0f12; --s-hover: #1b1d22; --s-active: #17181c; --s-border: #3a3c44; --s-sep: #202227; --s-head: #0a0b0d;
+  --block: #111215; --block-hover: #1a1b1f; --count: #07080a;
+  /* the grid: every column has a fixed width except the title */
+  --c-num: 68px; --c-mark: 18px; --c-agent: 150px; --c-status: 104px; --c-clock: 78px; --c-x: 22px; --c-grip: 24px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--void); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+main { max-width: 1320px; margin: 0 auto; padding: 24px 16px 80px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+p.lede { color: var(--dim); margin: 0 0 14px; max-width: 980px; }
+.switches { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; align-items: center; background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; margin: 14px 0 18px; }
+.switches label { font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.picker { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.picker button { font: inherit; font-size: 12px; min-width: 170px; padding: 5px 12px; background: #24262c; color: var(--dim); border: 0; border-right: 1px solid var(--line); cursor: pointer; }
+.picker button:last-child { border-right: 0; }
+.picker button.on { background: var(--gold); color: #1b1b1b; font-weight: 700; }
+
+.win { display: flex; height: 600px; border: 1px solid #2c2e35; border-radius: 10px; overflow: hidden; background: #111; }
+.area { position: relative; display: flex; flex-direction: column; border: 1px solid #3a3c44; min-width: 0; }
+.area.focus { border-color: var(--gold); }
+.area.a1 { flex: 0 0 540px; } .area.a2 { flex: 1; }
+.bar { position: relative; display: flex; height: 30px; background: var(--bar); border-bottom: 2px solid var(--gold); flex: none; }
+.area:not(.focus) .bar { border-bottom: 1px solid var(--line); }
+.controls { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 6px; color: var(--dim); font-size: 12px; background: var(--bar); }
+.controls .sep { width: 1px; height: 14px; background: var(--line); margin: 0 7px; }
+.controls span.b { width: 20px; text-align: center; }
+.tabs { display: flex; gap: 1px; min-width: 0; overflow: hidden; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; background: var(--tab); color: var(--dim); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.tab.active { background: var(--tab-active); color: var(--text); font-weight: 600; }
+.tab .x { color: #6d7078; }
+.mark { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.mark.working { background: var(--green); } .mark.waiting { background: var(--amber); } .mark.idle { background: #5d6068; } .mark.flag { background: var(--violet); } .mark.none { background: transparent; border: 1px solid #4a4d55; }
+
+.block { display: flex; flex: 1; min-width: 0; cursor: pointer; background: var(--block); border-right: 1px solid var(--line); }
+.block:hover { background: var(--block-hover); }
+.block .main { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.block .main .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the count cell: one primitive, same look in every tier */
+.count { flex: none; display: flex; align-items: center; justify-content: center; gap: 5px; width: 54px; background: var(--count); border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; color: var(--text); }
+.count:hover { background: #1a1b1f; }
+.count.open { background: var(--gold); color: #1b1b1b; }
+.count .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.neutral { flex: 1; }
+
+.titlebar { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; background: #1f2126; border-bottom: 1px solid #2f3137; font-size: 13px; }
+.titlebar .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.titlebar .chev { color: var(--faint); }
+.term { flex: 1; padding: 10px 14px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: #8a8d95; background: #1a1b20; overflow: hidden; }
+.term .p { color: #9fd08a; }
+
+/* sheet */
+.sheet { position: absolute; top: 30px; background: var(--s-bg); border: 1px solid var(--s-border); border-top: 2px solid var(--gold); box-shadow: 0 18px 40px rgba(0,0,0,.7); z-index: 5; }
+.grid-row { display: flex; align-items: stretch; }
+.head { height: 24px; background: var(--s-head); border-bottom: 1px solid var(--s-sep); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); align-items: center; }
+.c-num { width: var(--c-num); flex: none; text-align: right; padding-right: 10px; }
+.c-mark { width: var(--c-mark); flex: none; display: flex; align-items: center; }
+.c-main { flex: 1; min-width: 0; }
+.c-agent { width: var(--c-agent); flex: none; padding-left: 10px; }
+.c-status { width: var(--c-status); flex: none; padding-left: 10px; }
+.c-clock { width: var(--c-clock); flex: none; text-align: right; }
+.c-x { width: var(--c-x); flex: none; text-align: center; }
+.c-grip { width: var(--c-grip); flex: none; text-align: center; }
+.row { position: relative; height: 46px; color: var(--dim); border-left: 3px solid transparent; border-bottom: 1px solid var(--s-sep); cursor: default; }
+.row:last-of-type { border-bottom: 0; }
+.row:hover { background: var(--s-hover); color: var(--text); }
+.row.active { background: var(--s-active); color: var(--text); border-left-color: var(--gold); }
+.row > div { display: flex; flex-direction: column; justify-content: center; }
+.row .line1, .row .line2 { height: 18px; display: flex; align-items: center; }
+.row .c-num .line1 { justify-content: flex-end; font: 700 11px ui-monospace, Menlo, monospace; color: var(--faint); white-space: nowrap; }
+.row.active .c-num .line1 { color: var(--gold); }
+.row .t { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.active .t { font-weight: 700; color: #fff; }
+.row .d { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row:hover .d, .row.active .d { color: var(--dim); }
+.chip { display: inline-block; max-width: calc(var(--c-agent) - 12px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; color: #b9bbc2; background: #1d1f24; border: 1px solid #33353c; border-radius: 3px; padding: 0 5px; line-height: 16px; }
+.dash { color: #4b4e56; font-size: 12px; }
+.state { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.state.working { color: var(--green); } .state.waiting { color: var(--amber); } .state.idle { color: var(--faint); font-weight: 600; } .state.flag { color: var(--violet); }
+.clock { font: 11px ui-monospace, Menlo, monospace; color: var(--dim); font-variant-numeric: tabular-nums; }
+.row .x { color: #6d7078; visibility: hidden; cursor: pointer; }
+.row:hover .x { visibility: visible; }
+.grip { color: #5a5d66; cursor: grab; font-size: 13px; letter-spacing: -2px; user-select: none; }
+.row:hover .grip { color: var(--dim); }
+.subspan { display: flex; min-width: 0; }
+.foot { font-size: 11px; color: var(--faint); padding: 6px 10px; border-top: 1px solid var(--s-sep); background: var(--s-head); display: flex; gap: 14px; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin-top: 18px; }
+.note { background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--dim); }
+.note h3 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
+.note ul { margin: 0; padding-left: 18px; } .note li { margin: 3px 0; } .note b { color: var(--text); }
+code { font: 12px ui-monospace, Menlo, monospace; background: #26282e; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+<h1>c11 tab sheet, round three</h1>
+<p class="lede">The count cell now appears on every tab bar, including the right area, where all the tabs fit. Click either one. Every column has a fixed width, so nothing moves when titles, agents or statuses change length. Drag rows by the grip on the far right.</p>
+
+<div class="switches">
+  <label>Clock order</label>
+  <div class="picker" data-k="clocks"><button data-v="active,launched">Active · Launched</button><button data-v="launched,active">Launched · Active</button><button data-v="active,seen,launched">+ Seen (its own ticket)</button></div>
+</div>
+
+<div class="win" id="win"></div>
+
+<div class="notes">
+  <div class="note">
+    <h3>The grid</h3>
+    <ul>
+      <li>Columns: <b>Tab N</b> · mark · <b>title / subtitle</b> (the only flexible column) · <b>agent</b> 150pt · <b>status</b> 104pt · clocks 78pt each · close · grip.</li>
+      <li>Line 1 is the scan line: title, agent tag, status, clocks. Line 2 is the subtitle, spanning the title, agent and status columns.</li>
+      <li>An empty cell shows <b>—</b>; it never collapses. Long text truncates inside its own column.</li>
+      <li>The visible tab has a bold title, a gold <b>Tab N</b>, and a gold left rule.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>Clocks</h3>
+    <ul>
+      <li><b>Active</b>: time since the tab last produced output or an agent last wrote to it. <b>Launched</b>: time since the tab opened. <b>Seen</b> comes with its own ticket.</li>
+      <li>One ordered list sets the order, e.g. <code>active,seen,launched</code>. It's read from a single c11 setting that an agent can change.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>Agent tag</h3>
+    <ul>
+      <li>Shows harness · model for Claude Code, Codex, Pi and OMP, from c11's existing agent identity (launch-agent, <code>set-agent</code>, the session wrappers).</li>
+      <li>If the model is unknown, it shows the harness alone. If there's no agent, it shows —.</li>
+    </ul>
+  </div>
+</div>
+</main>
+
+<script>
+const m = 60e3, h = 3600e3;
+const S = { clocks: 'active,launched', open: 'a1' };
+const A1 = [
+  { n:150, t:'Agent Build 3', d:'Implementing sheet anchor tracking; next, re-validate the workspace switch.', st:'working', since:12*m, active:5e3, seen:40e3, launched:2.2*h, agent:'Claude · Sonnet 5.5' },
+  { n:137, t:'Overwatch Assessment', d:'September 29 state, all nine surfaces, eight ordered actions.', st:'idle', since:48*m, active:48*m, seen:3*h, launched:6*h, agent:'Claude · Opus 5.5' },
+  { n:160, t:'Ralph DAF Intake', d:'Needs a call: attach the admin prototype or send the link?', st:'waiting', since:6*m, active:6*m, seen:25*m, launched:1.3*h, agent:'Codex · gpt-5.5' },
+  { n:158, t:'REPLY-2-DRAFT.md', d:'~/Projects/Stage11/deployments/ralph-daf/REPLY-2-DRAFT.md', st:null, active:30*m, seen:9*m, launched:50*m, agent:null },
+  { n:124, t:'Lattice Board', d:'localhost:8799 · Stage 11 company board', st:null, active:2*h, seen:2*h, launched:26*h, agent:null },
+  { n:154, t:'Migration Review', d:'Flagged: schema migration vs dual-write needs your ruling.', st:'flag', since:14*m, active:14*m, seen:1.1*h, launched:3.4*h, agent:'Pi · kimi-k2.5' },
+  { n:171, t:'zsh', d:'~/Projects/Stage11/code/c11', st:null, active:4*m, seen:4*m, launched:4*h, agent:null },
+  { n:1024, t:'Tests on Atlas', d:'Running c11Tests on Atlas: 812 of 1,340 done, 0 failures so far.', st:'working', since:21*m, active:2e3, seen:16*m, launched:22*m, agent:'OMP' },
+];
+const A2 = [
+  { n:162, t:'Docs', d:'', st:null, active:3*m, seen:1*m, launched:40*m, agent:null },
+  { n:138, t:'~/Projects/Gregorovich', d:'~/Projects/Gregorovich', st:null, active:1.2*h, seen:1*h, launched:5*h, agent:null },
+  { n:161, t:'Awaiting first task', d:'', st:'idle', since:3*m, active:3*m, seen:2*m, launched:3*m, agent:'Claude · Opus 5.5' },
+];
+const sel = { a1: 150, a2: 162 };
+const ago = ms => ms < m ? Math.max(1, Math.round(ms/1e3))+'s' : ms < h ? Math.round(ms/m)+'m' : ms < 48*h ? (ms/h).toFixed(ms < 10*h ? 1 : 0).replace('.0','')+'h' : Math.round(ms/(24*h))+'d';
+const stateText = r => !r.st ? '<span class="dash">—</span>' : `<span class="state ${r.st}">${({working:'working',waiting:'waiting',flag:'flagged',idle:'idle'})[r.st]} ${ago(r.since)}</span>`;
+const esc = s => s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const LABEL = { active:'Active', seen:'Seen', launched:'Launched' };
+const controls = `<div class="controls"><span class="b">A</span><span class="b">•</span><span class="b">▭</span><span class="b">◎</span><span class="b">▤</span><span class="sep"></span><span class="b">◫</span><span class="b">⊟</span><span class="b">+</span><span class="b">×</span></div>`;
+
+function sheet(key, tabs, align){
+  const clocks = S.clocks.split(',');
+  const head = `<div class="grid-row head"><span class="c-num">Tab</span><span class="c-mark"></span><span class="c-main">Title</span><span class="c-agent">Agent</span><span class="c-status">Status</span>${clocks.map(c=>`<span class="c-clock">${LABEL[c]}</span>`).join('')}<span class="c-x"></span><span class="c-grip"></span></div>`;
+  const rows = tabs.map(r=>{
+    const act = r.n===sel[key];
+    return `<div class="grid-row row ${act?'active':''}" data-area="${key}" data-n="${r.n}">
+      <div class="c-num"><div class="line1">Tab ${r.n}</div><div class="line2"></div></div>
+      <div class="c-mark"><div class="line1"><span class="mark ${r.st||'none'}"></span></div><div class="line2"></div></div>
+      <div class="c-main" style="flex:1;min-width:0">
+        <div class="line1" style="display:flex">
+          <span class="t" style="flex:1;min-width:0">${esc(r.t)}</span>
+          <span class="c-agent">${r.agent?`<span class="chip">${r.agent}</span>`:'<span class="dash">—</span>'}</span>
+          <span class="c-status">${stateText(r)}</span>
+        </div>
+        <div class="line2"><span class="d">${r.d?esc(r.d):'<span class="dash">—</span>'}</span></div>
+      </div>
+      ${clocks.map(c=>`<div class="c-clock"><div class="line1" style="justify-content:flex-end"><span class="clock">${ago(r[c])}</span></div><div class="line2"></div></div>`).join('')}
+      <div class="c-x"><div class="line1" style="justify-content:center"><span class="x" data-close>×</span></div><div class="line2"></div></div>
+      <div class="c-grip"><div class="line1" style="justify-content:center"><span class="grip" title="Drag to reorder or move">⋮⋮</span></div><div class="line2"></div></div>
+    </div>`;
+  }).join('');
+  const need = tabs.filter(r=>r.st==='waiting'||r.st==='flag').length;
+  const width = 68+18+260+150+104+clocks.length*78+22+24+8;
+  return `<div class="sheet" style="width:${width}px;${align}">${head}${rows}<div class="foot"><span>${tabs.length} tabs</span><span style="color:var(--amber)">${need ? need+' need you' : ''}</span></div></div>`;
+}
+function titlebar(d){ return d ? `<div class="titlebar"><span class="desc">${esc(d)}</span><span class="chev">›</span></div>` : ''; }
+function render(){
+  document.querySelectorAll('.picker').forEach(p=>p.querySelectorAll('button').forEach(b=>b.classList.toggle('on', S[p.dataset.k]===b.dataset.v)));
+  const a = A1.find(r=>r.n===sel.a1), b = A2.find(r=>r.n===sel.a2);
+  const bg1 = A1.some(r=>r.n!==sel.a1 && (r.st==='waiting'||r.st==='flag'));
+  const area1 = `<div class="area a1 focus"><div class="bar"><div class="block" data-open="a1"><div class="main"><span class="mark ${a.st||'none'}"></span><span class="t">${a.n}: ${esc(a.t)}</span></div></div><div class="count ${S.open==='a1'?'open':''}" data-open="a1">${bg1?'<span class="dot"></span>':''}${A1.length} ▾</div>${controls}</div>
+    ${titlebar(a.d)}
+    <div class="term"><span class="p">~/c11-worktrees/tab-bar-qol ❯</span> swift build<br>Building for debugging...</div>
+    ${S.open==='a1'?sheet('a1', A1, 'left:0'):''}</div>`;
+  const area2 = `<div class="area a2"><div class="bar"><div class="tabs">${A2.map(r=>`<div class="tab ${r.n===sel.a2?'active':''}" data-sel="${r.n}"><span class="mark ${r.st||'none'}"></span>${r.n}: ${esc(r.t)}<span class="x">×</span></div>`).join('')}</div><div class="neutral"></div><div class="count ${S.open==='a2'?'open':''}" data-open="a2">${A2.length} ▾</div>${controls}</div>
+    ${titlebar(b.d)}
+    <div class="term"><span class="p">/tmp ❯</span> _</div>
+    ${S.open==='a2'?sheet('a2', A2, 'right:0'):''}</div>`;
+  document.getElementById('win').innerHTML = area1 + area2;
+}
+document.addEventListener('click', e=>{
+  const b = e.target.closest('.picker button'); if (b) { S[b.closest('.picker').dataset.k] = b.dataset.v; render(); return; }
+  const o = e.target.closest('[data-open]'); if (o) { S.open = S.open===o.dataset.open ? null : o.dataset.open; render(); return; }
+  const t = e.target.closest('[data-sel]'); if (t) { sel.a2 = +t.dataset.sel; render(); return; }
+  const r = e.target.closest('.row[data-n]'); if (r && !e.target.closest('.grip')) { sel[r.dataset.area] = +r.dataset.n; S.open = null; render(); return; }
+  if (!e.target.closest('.sheet') && S.open && e.target.closest('.win')) { S.open = null; render(); }
+});
+render();
+</script>
+</body>
+</html>

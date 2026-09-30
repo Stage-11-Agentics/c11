@@ -268,6 +268,7 @@ extension TerminalController {
             "debug.panel_snapshot",
             "debug.panel_snapshot.reset",
             "debug.window.screenshot",
+            "debug.tab_sheet.open",
             "debug.session.round_trip",
             "debug.session.round_trip_workspaces",
         ])

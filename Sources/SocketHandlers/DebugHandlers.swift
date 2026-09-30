@@ -81,6 +81,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugPanelSnapshotReset(params: params))
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
+        case "debug.tab_sheet.open":
+            return v2Result(id: id, self.v2DebugTabSheetOpen(params: params))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
         case "debug.session.round_trip_workspaces":
@@ -865,6 +867,25 @@ extension TerminalController {
         }
         let resp = panelSnapshotReset(surfaceId)
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
+    }
+
+    /// Test seam: opens (default) or closes the tab sheet of the pane hosting
+    /// `surface_id` (or the focused surface), without a click.
+    private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        let open = v2Bool(params, "open") ?? true
+        var paneFound = false
+        v2MainSync {
+            guard let paneId = workspace.paneId(forPanelId: surfaceId) else { return }
+            paneFound = true
+            workspace.bonsplitController.setTabSheetOpen(open, inPane: paneId)
+        }
+        guard paneFound else {
+            return .err(code: "not_found", message: "pane not found", data: nil)
+        }
+        return .ok(["open": open, "surface_id": surfaceId.uuidString])
     }
 
     private func v2DebugScreenshot(params: [String: Any]) -> V2CallResult {

@@ -259,7 +259,12 @@ final class CmuxWebView: WKWebView {
         return result
     }
 
+    /// Set by the owning `BrowserPanel`: stamps the tab sheet's "touched" clock.
+    /// A plain closure call that stores a `Date`; nothing is published.
+    var onOperatorInput: (() -> Void)?
+
     override func keyDown(with event: NSEvent) {
+        onOperatorInput?()
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         var route = "super"
@@ -292,6 +297,7 @@ final class CmuxWebView: WKWebView {
     // NSView (WKWebView), not to sibling SwiftUI overlays. Notify the panel system so
     // bonsplit focus tracks which pane the user clicked in.
     override func mouseDown(with event: NSEvent) {
+        onOperatorInput?()
 #if DEBUG
         let windowNumber = window?.windowNumber ?? -1
         let firstResponderType = window?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"

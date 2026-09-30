@@ -87,6 +87,8 @@
 		592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */; };
 		C11840000000000000000005 /* AttentionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000006 /* AttentionModelTests.swift */; };
 		C1124300000000000000A004 /* SurfaceSeenClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A003 /* SurfaceSeenClockTests.swift */; };
+		C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B003 /* AgentModelDetectionTests.swift */; };
+		C1124400000000000000B014 /* TabActivitySignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B013 /* TabActivitySignalsTests.swift */; };
 		5A86082FF691F6FBCBDE52CB /* AgentLaunchOverlayCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0C8786B9F13542B2C4D9D35 /* AgentLaunchOverlayCompositionTests.swift */; };
 		5AE9C6CE7FCF928F695FE26D /* MainThreadHangMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */; };
 		491D3AF1D24AAEEE25816E7C /* HangPrecursorTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4CBAFA580923B84B757E04C /* HangPrecursorTracker.swift */; };
@@ -221,6 +223,8 @@
 		A5001542 /* SurfaceMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001543 /* SurfaceMetadataStore.swift */; };
 		C11840000000000000000001 /* AttentionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000002 /* AttentionModel.swift */; };
 		C1124300000000000000A002 /* SurfaceSeenClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A001 /* SurfaceSeenClock.swift */; };
+		C1124400000000000000B002 /* AgentModelDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B001 /* AgentModelDetection.swift */; };
+		C1124400000000000000B012 /* TabActivitySignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B011 /* TabActivitySignals.swift */; };
 		C11840000000000000000003 /* AttentionHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000004 /* AttentionHandlers.swift */; };
 		A5001544 /* AgentDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001545 /* AgentDetector.swift */; };
 		A5001601 /* SentryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001600 /* SentryHelper.swift */; };
@@ -467,6 +471,7 @@
 		F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */; };
 		F3561BE21E032B0AB6FC9DFE /* AgentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */; };
 		F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */; };
+		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
 		F5D4593C9E4FA636B735FFBF /* TomlSubsetParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F003 /* TomlSubsetParserTests.swift */; };
 		F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */; };
 		F60C0DEA00000000000C0001 /* Grok.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60C0DEA00000000000C0002 /* Grok.swift */; };
@@ -546,6 +551,8 @@
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		C11840000000000000000006 /* AttentionModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttentionModelTests.swift; sourceTree = "<group>"; };
 		C1124300000000000000A003 /* SurfaceSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SurfaceSeenClockTests.swift; sourceTree = "<group>"; };
+		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
+		C1124400000000000000B013 /* TabActivitySignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabActivitySignalsTests.swift; sourceTree = "<group>"; };
 		0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneSizePolicy.swift; sourceTree = "<group>"; };
 		00B9399C201ED734873E67B9 /* EventEmitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EventEmitter.swift; path = Events/EventEmitter.swift; sourceTree = "<group>"; };
 		01822B693A5DD01EFE28F75F /* SnapshotHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotHandlers.swift; sourceTree = "<group>"; };
@@ -684,6 +691,8 @@
 		A5001543 /* SurfaceMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceMetadataStore.swift; sourceTree = "<group>"; };
 		C11840000000000000000002 /* AttentionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionModel.swift; sourceTree = "<group>"; };
 		C1124300000000000000A001 /* SurfaceSeenClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceSeenClock.swift; sourceTree = "<group>"; };
+		C1124400000000000000B001 /* AgentModelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelDetection.swift; sourceTree = "<group>"; };
+		C1124400000000000000B011 /* TabActivitySignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabActivitySignals.swift; sourceTree = "<group>"; };
 		C11840000000000000000004 /* AttentionHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionHandlers.swift; sourceTree = "<group>"; };
 		A5001545 /* AgentDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetector.swift; sourceTree = "<group>"; };
 		A5001600 /* SentryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryHelper.swift; sourceTree = "<group>"; };
@@ -964,6 +973,7 @@
 		F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CJKIMEInputTests.swift; sourceTree = "<group>"; };
 		F3B59DC588DFAF89D0678B39 /* StrategyRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StrategyRegistry.swift; path = Conversation/StrategyRegistry.swift; sourceTree = "<group>"; };
 		F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyConfigTests.swift; sourceTree = "<group>"; };
+		C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchModelTierTests.swift; sourceTree = "<group>"; };
 		F4C57DBBB7C3C6C27357EBA8 /* BrowserHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserHandlers.swift; sourceTree = "<group>"; };
 		F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceTests.swift; sourceTree = "<group>"; };
 		F5B86DD36D8CB96AA0FD94E1 /* PaneHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneHandlers.swift; sourceTree = "<group>"; };
@@ -1140,6 +1150,8 @@
 				A5001543 /* SurfaceMetadataStore.swift */,
 				C11840000000000000000002 /* AttentionModel.swift */,
 				C1124300000000000000A001 /* SurfaceSeenClock.swift */,
+				C1124400000000000000B001 /* AgentModelDetection.swift */,
+				C1124400000000000000B011 /* TabActivitySignals.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
@@ -1390,6 +1402,7 @@
 				F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
 				F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */,
 				F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */,
+				C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */,
 				F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */,
 				FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */,
 				F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */,
@@ -1543,6 +1556,8 @@
 				0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */,
 				C11840000000000000000006 /* AttentionModelTests.swift */,
 				C1124300000000000000A003 /* SurfaceSeenClockTests.swift */,
+				C1124400000000000000B003 /* AgentModelDetectionTests.swift */,
+				C1124400000000000000B013 /* TabActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketSurfaceRefValidatorTests.swift */,
 				36732611CC1BEFB8D99BB606 /* SocketSurfaceRefRejectionWiringTests.swift */,
 				91488CE83CF7CEC3B741B1E5 /* EventLogTests.swift */,
@@ -1901,6 +1916,8 @@
 				592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */,
 				C11840000000000000000005 /* AttentionModelTests.swift in Sources */,
 				C1124300000000000000A004 /* SurfaceSeenClockTests.swift in Sources */,
+				C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */,
+				C1124400000000000000B014 /* TabActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketSurfaceRefValidatorTests.swift in Sources */,
 				0D76F685D48115A43B14C5D5 /* EventLogTests.swift in Sources */,
 				8713E62944414CDC27EA1AD8 /* AgentLaunchStatsTests.swift in Sources */,
@@ -1948,6 +1965,8 @@
 				A5001542 /* SurfaceMetadataStore.swift in Sources */,
 				C11840000000000000000001 /* AttentionModel.swift in Sources */,
 				C1124300000000000000A002 /* SurfaceSeenClock.swift in Sources */,
+				C1124400000000000000B002 /* AgentModelDetection.swift in Sources */,
+				C1124400000000000000B012 /* TabActivitySignals.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
@@ -2208,6 +2227,7 @@
 				F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 				F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,
+				C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */,
 				F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */,
 				A5001702 /* TextBoxInputTests.swift in Sources */,
 				A5F1001001A1B2C3D4E5F009 /* ThemedValueEvaluatorTests.swift in Sources */,

@@ -2161,6 +2161,7 @@ class GhosttyApp {
         case GHOSTTY_ACTION_SCROLLBAR:
             let scrollbar = GhosttyScrollbar(c: action.action.scrollbar)
             surfaceView.scrollbar = scrollbar
+            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
             NotificationCenter.default.post(
                 name: .ghosttyDidUpdateScrollbar,
                 object: surfaceView,
@@ -3846,6 +3847,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             ghostty_surface_set_size(surface, wpx, hpx)
             lastPixelWidth = wpx
             lastPixelHeight = hpx
+            scrollbackGrowth.noteResized()
         }
 
         // Let Ghostty continue rendering on its own wakeups for steady-state frames.
@@ -3923,6 +3925,25 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func setOcclusion(_ visible: Bool) {
         guard let surface = surface else { return }
         ghostty_surface_set_occlusion(surface, visible)
+        scrollbackGrowth.noteVisibilityChanged()
+    }
+
+    // MARK: Tab sheet signals (plain stores; see TabActivitySignals.swift)
+
+    /// When the operator last pressed a key in this terminal. Deliberately not
+    /// `@Published`: it changes per keystroke and must never invalidate SwiftUI.
+    var lastOperatorInputAt: Date?
+    /// When the scrollback last grew while the surface was visible: real output,
+    /// not an in-place repaint. Not `@Published`.
+    var lastOutputGrowthAt: Date?
+    private var scrollbackGrowth = ScrollbackGrowthTracker()
+
+    /// One `GHOSTTY_ACTION_SCROLLBAR` event (main thread, only when the value
+    /// changed). Cost: a subtraction, a compare and at most one `Date()`.
+    func noteScrollbar(total: UInt64, len: UInt64) {
+        if scrollbackGrowth.observe(total: total, len: len) {
+            lastOutputGrowthAt = Date()
+        }
     }
 
     func needsConfirmClose() -> Bool {
@@ -4039,6 +4060,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
             isARepeat: false,
             keyCode: keyCode
         ) else { return }
+        // Fabricated for socket `send` (and the text box): not the operator's own
+        // keystroke, so it must not stamp the "touched" clock.
+        view.isSynthesizingKey = true
+        defer { view.isSynthesizingKey = false }
         view.keyDown(with: event)
     }
 
@@ -4335,6 +4360,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     weak var terminalSurface: TerminalSurface?
     var scrollbar: GhosttyScrollbar?
+    /// True only while `TerminalSurface.sendSyntheticKey` drives `keyDown`.
+    var isSynthesizingKey = false
     var cellSize: CGSize = .zero
     var desiredFocus: Bool = false
     var suppressingReparentFocus: Bool = false
@@ -5610,6 +5637,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         ensureSurfaceMs = (ProcessInfo.processInfo.systemUptime - ensureSurfaceStart) * 1000.0
 #endif
         if let terminalSurface {
+            // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing
+            // published. Synthesized keys (socket `send`) are not the operator.
+            if !isSynthesizingKey { terminalSurface.lastOperatorInputAt = Date() }
 #if DEBUG
             let dismissNotificationStart = ProcessInfo.processInfo.systemUptime
 #endif
@@ -6380,6 +6410,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         requestPointerFocusRecovery()
         window?.makeFirstResponder(self)
         if let terminalSurface {
+            // Tab sheet "touched" clock: a click is the operator too. Plain Date store.
+            terminalSurface.lastOperatorInputAt = Date()
             // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
             // path; the keyDown / typing hot path is not touched here.
             if let workspace = AppDelegate.shared?.tabManager?.tabs.first(where: { $0.id == terminalSurface.tabId }),

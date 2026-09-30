@@ -317,7 +317,8 @@ c11 set-agent --type opencode --model <model-id>
 
 - `--type` accepts canonical values (`claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot`, `pi`, `omp`) and any kebab-case custom value.
 - Writes land as `source: declare` in the metadata store, overriding heuristic auto-detection but not user-explicit writes.
-- Environment declaration: `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK` in the surface's startup env are read once at surface-child-process start.
+- c11 also **detects the live model** for Claude Code, Codex, pi, omp, Grok and opencode from their own session files (read-only) and publishes it as `model_detected` (raw id) at the derived tier; the v2 `sidebar.state` payload's `agent_chip` carries it as `model_detected` (the v1 text `sidebar_state` does not), with `display_label` the friendly name (`Opus 5.5`) and `per_key_sources.model` the tier of whichever source `display_label` shows. An agent's own `set-agent --model` wins over detection; launch stamps do not (they are recorded at the `heuristic` tier), so the detected id follows `/model` changes within ~10 s. Kimi and GitHub Copilot files carry no model, so their surfaces read `model_detection: unsupported: …`. Read it with `c11 get-metadata --surface <s> --key model_detected`.
+- Environment declaration: `C11_AGENT_TYPE`, `C11_AGENT_TASK`, `C11_AGENT_ROLE` in the surface's startup env are read once at surface-child-process start. `C11_AGENT_MODEL` is the model the launch asked for; c11 records it as a launch stamp (tier `heuristic`), not a declaration, so the detected model outranks it.
 - Clear with `c11 clear-metadata --key terminal_type` (no `c11 unset-agent`).
 - Bundled provider wrappers and runtime plugins may report exact loop state with
   `c11 agent-hook working|idle`. This is a bundle-private lifecycle bridge,

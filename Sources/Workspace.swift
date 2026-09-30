@@ -862,7 +862,7 @@ extension Workspace {
             )
         }
 
-        let persistedMetadata: [String: PersistedJSONValue]?
+        var persistedMetadata: [String: PersistedJSONValue]?
         let persistedMetadataSources: [String: PersistedMetadataSource]?
         do {
             let snapshot = SurfaceMetadataStore.shared.getMetadata(
@@ -888,6 +888,11 @@ extension Workspace {
                 persistedMetadata = cappedValues.isEmpty ? nil : cappedValues
                 persistedMetadataSources = alignedSources.isEmpty ? nil : alignedSources
             }
+        }
+        // Marks this snapshot as written with launch-stamp tiering (see
+        // `Workspace.migrateLaunchStampTiers`); stripped again on restore.
+        if persistedMetadata != nil {
+            persistedMetadata?[Self.modelTieringMarkerKey] = .string("2")
         }
 
         // C11-24: lookup the surface's ConversationRefs from the
@@ -5583,6 +5588,9 @@ final class Workspace: Identifiable, ObservableObject {
         return formatter
     }()
     private var panelShellActivityStates: [UUID: PanelShellActivityState] = [:]
+    /// When each panel's shell last started or finished a command (tab sheet
+    /// `active` for plain terminals). Plain store, not published.
+    var panelShellEdgeAt: [UUID: Date] = [:]
     /// C11-144: per-surface queue of framed `<c11-msg>` blocks that arrived
     /// while the recipient shell was busy. Flushed when the surface returns to
     /// `.promptIdle` (see `flushBufferedMailboxStdin`). Main-actor-confined.
@@ -6484,6 +6492,8 @@ final class Workspace: Identifiable, ObservableObject {
         let attention: SurfaceAttentionSnapshot
         /// When the surface entered its sheet-visible state, so a moved tab keeps its clock.
         let tabSheetStatusEntered: TabSheetStatusEntry?
+        /// The last command start/finish, so a moved terminal keeps its `active` clock.
+        let shellEdgeAt: Date?
     }
 
     private var detachingTabIds: Set<TabID> = []
@@ -7343,6 +7353,8 @@ final class Workspace: Identifiable, ObservableObject {
         let previousState = panelShellActivityStates[panelId] ?? .unknown
         guard previousState != state else { return }
         panelShellActivityStates[panelId] = state
+        // Tab sheet `active` for plain terminals: a command starting or finishing.
+        panelShellEdgeAt[panelId] = Date()
 #if DEBUG
         dlog(
             "surface.shellState workspace=\(id.uuidString.prefix(5)) " +
@@ -7915,6 +7927,30 @@ final class Workspace: Identifiable, ObservableObject {
     /// the precedence chain (the snapshot IS the prior session's source of
     /// truth). Runs before `pruneSurfaceMetadata` so anything not in the
     /// current panel set gets cleaned up on the same tick.
+    /// Persisted-metadata marker written by builds that record launch-stamped
+    /// models at the `heuristic` tier. Never enters the live store.
+    nonisolated static let modelTieringMarkerKey = "c11.model_tiering"
+
+    /// Snapshots written before launch stamps moved to the `heuristic` tier hold
+    /// the launch's model at `declare`, which would outrank a detected model
+    /// forever. A snapshot without the tiering marker predates the change, so its
+    /// `model`/`model_label` are demoted to the launch-stamp tier. Later snapshots
+    /// carry the marker and restore verbatim (an agent's own `set-agent --model`
+    /// stays `declare`).
+    nonisolated static func migrateLaunchStampTiers(
+        values: inout [String: Any],
+        sources: inout [String: SurfaceMetadataStore.SourceRecord]
+    ) {
+        let migrated = values.removeValue(forKey: modelTieringMarkerKey) != nil
+        sources.removeValue(forKey: modelTieringMarkerKey)
+        guard !migrated else { return }
+        for key in [MetadataKey.model, MetadataKey.modelLabel] {
+            if let record = sources[key], record.source == .declare {
+                sources[key] = SurfaceMetadataStore.SourceRecord(source: .heuristic, ts: record.ts)
+            }
+        }
+    }
+
     private func restoreSurfaceMetadataFromSnapshot(
         panels snapshotPanels: [SessionPanelSnapshot]
     ) {
@@ -7931,6 +7967,7 @@ final class Workspace: Identifiable, ObservableObject {
             // do not see an attention state with no live timer behind it.
             values.removeValue(forKey: FlashState.metadataKey)
             sources.removeValue(forKey: FlashState.metadataKey)
+            Self.migrateLaunchStampTiers(values: &values, sources: &sources)
             SurfaceMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 surfaceId: panelId,
@@ -8012,6 +8049,7 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceListeningPorts = surfaceListeningPorts.filter { validSurfaceIds.contains($0.key) }
         surfaceTTYNames = surfaceTTYNames.filter { validSurfaceIds.contains($0.key) }
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
+        panelShellEdgeAt = panelShellEdgeAt.filter { validSurfaceIds.contains($0.key) }
         // TEL-4: drop derived-activity for surfaces that no longer exist so the
         // @Published map doesn't leak stale liveness for pruned surfaces.
         derivedActivityBySurface = derivedActivityBySurface.filter { validSurfaceIds.contains($0.key) }
@@ -9823,6 +9861,9 @@ final class Workspace: Identifiable, ObservableObject {
         }
         if let entered = detached.tabSheetStatusEntered {
             tabSheetStatusEntered[detached.panelId] = entered
+        }
+        if let edge = detached.shellEdgeAt {
+            panelShellEdgeAt[detached.panelId] = edge
         }
         if let derivedActivity = detached.derivedActivity {
             derivedActivityBySurface[detached.panelId] = derivedActivity
@@ -12157,7 +12198,8 @@ extension Workspace: BonsplitDelegate {
                     hasExactSurfaceNotification: false
                 ),
                 attention: attentionSnapshot(panelId: panelId),
-                tabSheetStatusEntered: tabSheetStatusEntered[panelId]
+                tabSheetStatusEntered: tabSheetStatusEntered[panelId],
+                shellEdgeAt: panelShellEdgeAt[panelId]
             )
         } else {
             if let closedBrowserRestoreSnapshot {
@@ -12193,6 +12235,7 @@ extension Workspace: BonsplitDelegate {
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        panelShellEdgeAt.removeValue(forKey: panelId)
         derivedActivityBySurface.removeValue(forKey: panelId)
         attentionBySurface.removeValue(forKey: panelId)
         coldAgentSurfaceIds.remove(panelId)
@@ -12382,6 +12425,7 @@ extension Workspace: BonsplitDelegate {
                 manualUnreadPanelIds.remove(panelId)
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
+                panelShellEdgeAt.removeValue(forKey: panelId)
                 derivedActivityBySurface.removeValue(forKey: panelId)
                 coldAgentSurfaceIds.remove(panelId)
                 detectedTerminalTypesBySurface.removeValue(forKey: panelId)
@@ -12921,23 +12965,16 @@ extension Workspace: BonsplitDelegate {
     /// source `.declare` so a later explicit `set-agent` / `set-title` from the
     /// agent or operator cleanly wins. The agent *type* is intentionally not
     /// stamped here — `AgentDetector` owns it authoritatively.
-    private func stampLaunchIdentity(
+    func stampLaunchIdentity(
         surfaceId: UUID,
         resolvedModel: String
     ) {
-        var partial: [String: Any] = [
+        let partial: [String: Any] = [
             MetadataKey.title: String(
                 localized: "agent.launch.placeholderTitle",
                 defaultValue: "Awaiting first task"
             )
         ]
-        // `resolvedModel` is the overlay-resolved model the launch actually used
-        // (C11-179), so the chip shows what c11 launched with — including a
-        // saved-config override, not just the harness base pin.
-        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !model.isEmpty {
-            partial[MetadataKey.model] = model
-        }
         _ = try? SurfaceMetadataStore.shared.setMetadata(
             workspaceId: id,
             surfaceId: surfaceId,
@@ -12945,6 +12982,21 @@ extension Workspace: BonsplitDelegate {
             mode: .merge,
             source: .declare
         )
+        // `resolvedModel` is the overlay-resolved model the launch actually used
+        // (C11-179), so the chip shows what c11 launched with — including a
+        // saved-config override, not just the harness base pin. It is a launch
+        // stamp (tier `heuristic`): what c11 asked for, so a model detected from
+        // the session files or declared by the agent outranks it.
+        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty {
+            _ = try? SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: surfaceId,
+                partial: [MetadataKey.model: model],
+                mode: .merge,
+                source: .heuristic
+            )
+        }
         syncPanelTitleFromMetadata(panelId: surfaceId)
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }
@@ -12973,13 +13025,16 @@ extension Workspace: BonsplitDelegate {
                     defaultValue: "Awaiting first task"
                 )
         ]
+        // The launch model is a stamp (tier `heuristic`), written below apart from
+        // the declared identity: detection and `set-agent --model` outrank it.
+        var launchModel: [String: Any] = [:]
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedModel.isEmpty {
             if trimmedModel.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil,
                trimmedModel.count <= 64 {
-                partial[MetadataKey.model] = trimmedModel
+                launchModel[MetadataKey.model] = trimmedModel
             } else {
-                partial[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
+                launchModel[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
             }
         }
         if let task = task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
@@ -12992,6 +13047,15 @@ extension Workspace: BonsplitDelegate {
             mode: .merge,
             source: .declare
         )
+        if !launchModel.isEmpty {
+            _ = try? SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: surfaceId,
+                partial: launchModel,
+                mode: .merge,
+                source: .heuristic
+            )
+        }
         syncPanelTitleFromMetadata(panelId: surfaceId)
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }

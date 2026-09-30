@@ -41,7 +41,8 @@ final class TabSheetDetailBuilderTests: XCTestCase {
             stateStartedAt: t0,
             flagRaisedAt: t0.addingTimeInterval(30),
             lastActivityAt: t0.addingTimeInterval(60),
-            createdAt: t0.addingTimeInterval(-3600)
+            createdAt: t0.addingTimeInterval(-3600),
+            activeAt: t0.addingTimeInterval(60)
         )
     }
 
@@ -175,11 +176,12 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     // MARK: Clocks
 
-    func testBuildFillsActiveAndLaunchedButNeverSeen() {
+    func testBuildFillsActiveAndLaunchedAndLeavesSeenBlankWhenNeverSeen() {
         let detail = TabSheetDetailBuilder.build(inputs())
         XCTAssertEqual(detail.clocks["active"], t0.addingTimeInterval(60))
         XCTAssertEqual(detail.clocks["launched"], t0.addingTimeInterval(-3600))
         XCTAssertNil(detail.clocks["seen"])
+        XCTAssertNil(detail.clockTexts["seen"])
     }
 
     func testClockOrderAcceptsAnArrayToo() {
@@ -190,13 +192,13 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     func testClockOrderSettingRoundTrips() {
         let suite = UserDefaults(suiteName: "TabSheetDetailBuilderTests.\(UUID().uuidString)")!
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
         suite.set("launched,active", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
         XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["launched", "active"])
         suite.set("active, seen launched", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
         XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
         suite.set("", forKey: TabSheetDetailBuilder.clockOrderDefaultsKey)
-        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "launched"])
+        XCTAssertEqual(TabSheetDetailBuilder.clockOrder(defaults: suite), ["active", "seen", "launched"])
     }
 
     func testIgnoringClocksComparesEverythingElse() {

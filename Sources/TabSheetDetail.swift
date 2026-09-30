@@ -9,8 +9,11 @@ enum TabSheetDetailBuilder {
     /// clock names. Change it in one command:
     /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
     static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
-    /// `seen` is accepted and renders `—` until last-seen tracking (C11-243) supplies it.
-    static let defaultClockOrder = ["active", "launched"]
+    /// Every clock the sheet can show. The default order is `active,seen,launched`;
+    /// `touched` (last operator input), `turn`, `tools` and `tokens` are opt-in
+    /// through the setting.
+    static let defaultClockOrder = ["active", "seen", "launched"]
+    static let optInClocks = ["touched", "turn", "tools", "tokens"]
 
     struct Inputs {
         var panelType: PanelType
@@ -33,12 +36,43 @@ enum TabSheetDetailBuilder {
         var flagRaisedAt: Date?
         var lastActivityAt: Date?
         var createdAt: Date?
+        /// The `active` clock: "how long since something was added to this tab",
+        /// per tab type (see `TabActivitySignals.swift`). nil renders `—`.
+        var activeAt: Date?
+        /// Last operator keystroke or click in the tab (`touched`).
+        var touchedAt: Date?
+        /// The stored moment the operator last stopped looking at the tab (`seen`,
+        /// C11-243); nil if never.
+        var seenAt: Date?
+        /// True while the operator is looking at the tab: `seen` reads "now".
+        var isBeingSeen: Bool = false
+        /// Agent tabs: the current or last turn, from the transcript tail.
+        var turnStartedAt: Date?
+        var turnToolCalls: Int?
+        var tokens: Int?
+        /// The turn's end: the last agent event, used once the agent is no longer working.
+        var lastAgentEventAt: Date?
+        var now: Date = Date()
+        var locale: Locale = TabSheetClockText.appLocale
     }
 
     static func build(_ input: Inputs) -> BonsplitTabDetail {
         var clocks: [String: Date] = [:]
-        if let active = input.lastActivityAt { clocks["active"] = active }
+        if let active = input.activeAt { clocks["active"] = active }
         if let launched = input.createdAt { clocks["launched"] = launched }
+        if !input.isBeingSeen, let seen = input.seenAt { clocks["seen"] = seen }
+        if let touched = input.touchedAt { clocks["touched"] = touched }
+        var texts: [String: String] = [:]
+        // The tab being looked at has no age to show: `seen` reads "now".
+        if input.isBeingSeen {
+            texts["seen"] = String(localized: "tabSheet.clock.seenNow", defaultValue: "now")
+        }
+        if let start = input.turnStartedAt {
+            let end = input.activity == .running ? input.now : (input.lastAgentEventAt ?? input.now)
+            texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
+            if let tools = input.turnToolCalls { texts["tools"] = String(tools) }
+        }
+        if let tokens = input.tokens { texts["tokens"] = TabSheetClockText.count(tokens, locale: input.locale) }
         return BonsplitTabDetail(
             title: collapsedWhitespace(input.title),
             agentLabel: agentLabel(
@@ -55,7 +89,8 @@ enum TabSheetDetailBuilder {
                 flagRaisedAt: input.flagRaisedAt,
                 lastActivityAt: input.lastActivityAt
             ),
-            clocks: clocks
+            clocks: clocks,
+            clockTexts: texts
         )
     }
 
@@ -144,6 +179,25 @@ enum TabSheetDetailBuilder {
         }
     }
 
+    /// `active` for a terminal tab: an agent's last transcript event when it has
+    /// one; otherwise (plain shell, or an agent whose files say nothing) the later
+    /// of scrollback growth while visible and the last command start/finish.
+    /// Operator input never counts; nil renders `—`.
+    static func terminalActiveAt(agentLastEventAt: Date?, outputGrowthAt: Date?, commandEdgeAt: Date?) -> Date? {
+        agentLastEventAt ?? [outputGrowthAt, commandEdgeAt].compactMap { $0 }.max()
+    }
+
+    /// Header title for the opt-in clocks (short: the column is narrow).
+    static func clockTitle(_ name: String) -> String? {
+        switch name {
+        case "touched": return String(localized: "tabSheet.clock.touched", defaultValue: "Touched")
+        case "turn": return String(localized: "tabSheet.clock.turn", defaultValue: "Turn")
+        case "tools": return String(localized: "tabSheet.clock.tools", defaultValue: "Tools")
+        case "tokens": return String(localized: "tabSheet.clock.tokens", defaultValue: "Tokens")
+        default: return nil
+        }
+    }
+
     /// Reads the operator/agent setting: comma-separated, unknown names are
     /// dropped by the sheet itself, an empty or missing value means the default.
     static func clockOrder(defaults: UserDefaults = .standard) -> [String] {
@@ -166,6 +220,7 @@ enum TabSheetDetailBuilder {
     static func ignoringClocks(_ detail: BonsplitTabDetail?) -> BonsplitTabDetail? {
         guard var detail else { return nil }
         detail.clocks = [:]
+        detail.clockTexts = [:]
         return detail
     }
 
@@ -208,7 +263,7 @@ extension Workspace {
         let snapshot = SurfaceMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
-            keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel]
+            keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel, AgentModelDetector.MetadataKeys.detected]
         )
         let activity = resolvedSurfaceTabActivityState(panelId: panelId)
         // Idempotent: makes sure the entry describes the state we are about to
@@ -223,12 +278,27 @@ extension Workspace {
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panel.displayTitle
         )
+        func source(_ key: String) -> MetadataSource? {
+            (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
+        }
+        // Agent-declared (`set-agent --model`) > detected from the session files >
+        // launch stamp.
+        let effectiveModel = AgentModelPrecedence.effective(
+            model: snapshot.metadata[MetadataKey.model] as? String,
+            modelSource: source(MetadataKey.model),
+            modelLabel: snapshot.metadata[MetadataKey.modelLabel] as? String,
+            labelSource: source(MetadataKey.modelLabel),
+            detected: snapshot.metadata[AgentModelDetector.MetadataKeys.detected] as? String
+        )
+        let signals = tabSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
+        let legacyActivityAt = help?.lastActivityAt
+            ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
         return TabSheetDetailBuilder.build(.init(
             panelType: panel.panelType,
             title: fullTitle,
             terminalKind: terminalKind,
-            model: snapshot.metadata[MetadataKey.model] as? String,
-            modelLabel: snapshot.metadata[MetadataKey.modelLabel] as? String,
+            model: effectiveModel.model,
+            modelLabel: effectiveModel.label,
             description: snapshot.metadata[MetadataKey.description] as? String,
             directory: panelDirectories[panelId],
             browserURL: (panel as? BrowserPanel)?.currentURL,
@@ -238,10 +308,57 @@ extension Workspace {
             stateEnteredAt: entered,
             stateStartedAt: activity == .waiting || activity == .cold ? help?.stateStartedAt : nil,
             flagRaisedAt: attention.flagRaisedAt,
-            lastActivityAt: help?.lastActivityAt
-                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
-            createdAt: panel.createdAt
+            lastActivityAt: legacyActivityAt,
+            createdAt: panel.createdAt,
+            activeAt: signals.activeAt,
+            touchedAt: signals.touchedAt,
+            seenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId),
+            turnStartedAt: signals.turnStartedAt,
+            turnToolCalls: signals.turnToolCalls,
+            tokens: signals.tokens,
+            lastAgentEventAt: signals.lastAgentEventAt
         ))
+    }
+
+    /// The per-type signals behind `active`, `touched`, `turn`, `tools` and
+    /// `tokens`. Plain reads of stores the panels keep up to date; no work here
+    /// scales with output.
+    private func tabSheetSignals(
+        panel: any Panel,
+        panelId: UUID,
+        terminalKind: String?
+    ) -> (activeAt: Date?, touchedAt: Date?, turnStartedAt: Date?, turnToolCalls: Int?, tokens: Int?, lastAgentEventAt: Date?) {
+        switch panel.panelType {
+        case .terminal:
+            let surface = (panel as? TerminalPanel)?.surface
+            let touched = surface?.lastOperatorInputAt
+            // Plain terminal, or an agent whose files say nothing (Kimi, Copilot,
+            // no transcript yet): output that scrolled while visible, or a command
+            // starting/finishing. Hidden terminals only see command edges. Operator
+            // input is never part of Active; with no signal the clock reads `—`.
+            let growth = surface?.lastOutputGrowthAt
+            let edge = panelShellEdgeAt[panelId]
+            let plainActive = TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
+            if AgentIdentityPolicy.isAgentKind(terminalKind),
+               let signals = AgentModelDetector.shared.signals(forSurface: panelId) {
+                let hasTurn = signals.turnStartedAt != nil
+                return (
+                    TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: signals.lastEventAt, outputGrowthAt: growth, commandEdgeAt: edge),
+                    touched,
+                    signals.turnStartedAt,
+                    hasTurn ? signals.turnToolCalls : nil,
+                    hasTurn ? signals.turnTokens : signals.sessionTokens,
+                    signals.lastEventAt
+                )
+            }
+            return (plainActive, touched, nil, nil, nil, nil)
+        case .markdown:
+            return ((panel as? MarkdownPanel)?.lastContentChangeAt, nil, nil, nil, nil, nil)
+        case .browser:
+            let browser = panel as? BrowserPanel
+            return (browser?.lastLoadedAt, browser?.lastOperatorInputAt, nil, nil, nil, nil)
+        }
     }
 
     /// Pushes the tab's sheet detail into bonsplit when anything other than a
@@ -308,6 +425,10 @@ extension Workspace {
         }
         bonsplitController.sheetClockOrderProvider = {
             TabSheetDetailBuilder.clockOrder()
+        }
+        // Titles for the opt-in clocks; `active`, `launched` and `seen` use bonsplit's own.
+        bonsplitController.sheetClockTitleProvider = { name in
+            TabSheetDetailBuilder.clockTitle(name)
         }
     }
 }

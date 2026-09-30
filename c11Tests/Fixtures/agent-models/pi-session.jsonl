@@ -1,0 +1,5 @@
+{"type":"session","version":"3","id":"019b0000-0000-7000-8000-000000000002","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/work/demo"}
+{"type":"model_change","id":"a1","parentId":null,"timestamp":"2026-01-01T00:00:00.100Z","provider":"kimi","modelId":"k3-256k"}
+{"type":"thinking_level_change","id":"a2","parentId":"a1","timestamp":"2026-01-01T00:00:00.100Z","thinkingLevel":"medium"}
+{"type":"message","id":"a3","message":{"role":"user","timestamp":"1"}}
+{"type":"model_change","id":"a4","parentId":"a3","timestamp":"2026-01-01T00:10:00.000Z","provider":"anthropic","modelId":"claude-opus-5-5"}

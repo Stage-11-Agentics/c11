@@ -162,6 +162,8 @@ A per-kind scraper performs bounded filesystem I/O on demand:
 
 Future strategies inherit this rule; new kinds do not get to relax it without an explicit plan-review-level decision.
 
+**Model detection (`AgentModelDetection.swift`) is the one approved content read.** To show which model a live agent tab is using, c11 tails the session file it already located for resume: the first read scans at most the last 4 MiB, later polls read only appended bytes (never the whole transcript again), all off-main. Each line is parsed in memory and only one allowlisted field is kept (`message.model`, `turn_context.payload.model`, `model_change.modelId`/`model`; `session.model` in opencode's SQLite; `current_model_id` in grok's `summary.json`). The id is stored as `model_detected`; no other transcript content is retained, logged or published. The rule above is otherwise unchanged.
+
 ### Wrapper-claim (lowest priority)
 
 The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` so the surface has *something* before the TUI fires its first hook. The store mints a placeholder ref with `placeholder: true`. For TUIs that never fire hooks, this is the only push-side signal the strategy ever sees; the scraper is responsible for replacing the placeholder id with the real one once a candidate session file appears.

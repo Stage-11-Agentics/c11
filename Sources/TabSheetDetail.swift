@@ -208,7 +208,7 @@ extension Workspace {
         let snapshot = SurfaceMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
-            keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel]
+            keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel, AgentModelDetector.MetadataKeys.detected]
         )
         let activity = resolvedSurfaceTabActivityState(panelId: panelId)
         // Idempotent: makes sure the entry describes the state we are about to
@@ -227,7 +227,10 @@ extension Workspace {
             panelType: panel.panelType,
             title: fullTitle,
             terminalKind: terminalKind,
-            model: snapshot.metadata[MetadataKey.model] as? String,
+            // Declared/explicit model (launch stamp, `set-agent --model`) wins;
+            // the model detected from the harness's session files fills in.
+            model: (snapshot.metadata[MetadataKey.model] as? String)
+                ?? (snapshot.metadata[AgentModelDetector.MetadataKeys.detected] as? String),
             modelLabel: snapshot.metadata[MetadataKey.modelLabel] as? String,
             description: snapshot.metadata[MetadataKey.description] as? String,
             directory: panelDirectories[panelId],

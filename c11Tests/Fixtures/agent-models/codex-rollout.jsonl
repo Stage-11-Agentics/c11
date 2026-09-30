@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T00:00:00Z","type":"session_meta","payload":{"id":"019a0000-0000-7000-8000-000000000001","cwd":"/work/demo","originator":"codex-tui","model_provider":"openai"}}
+{"timestamp":"2026-01-01T00:00:01Z","type":"turn_context","payload":{"cwd":"/work/demo","model":"gpt-5.5","effort":"high"}}
+{"timestamp":"2026-01-01T00:00:02Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-01-01T00:05:00Z","type":"turn_context","payload":{"cwd":"/work/demo","model":"gpt-6-astra","effort":"high"}}

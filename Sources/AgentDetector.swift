@@ -107,6 +107,20 @@ final class AgentDetector: @unchecked Sendable {
                     detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
+            // Live model detection rides the same sweep: tail each agent's own
+            // session file off-main; surfaces with no agent in front clear any
+            // derived model left by a session that ended.
+            var modelTargets: [AgentModelDetector.Target] = []
+            var plainSurfaces: [(workspaceId: UUID, surfaceId: UUID)] = []
+            for key in self.ttyNames.keys {
+                if let kind = AgentIdentityPolicy.normalizedKind(self.detectedTerminalTypes[key]),
+                   AgentIdentityPolicy.isAgentKind(kind) {
+                    modelTargets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind))
+                } else if self.detectedTerminalTypes[key] != nil {
+                    plainSurfaces.append((key.workspaceId, key.panelId))
+                }
+            }
+            AgentModelDetector.shared.sweep(agents: modelTargets, plain: plainSurfaces)
         }
         sweepTimer = timer
         timer.resume()

@@ -9,6 +9,7 @@ import Foundation
 struct AgentChip: Equatable {
     let terminalType: String          // canonical terminal_type, or "unknown"
     let model: String?                // canonical model, if set
+    let detectedModel: String?        // raw model id read from the harness's session files, if detected
     let modelLabel: String?           // non-canonical display hint, if set (trimmed, ≤16 chars)
     let displayLabel: String?         // final resolved label (post-shortening), may be nil
     let iconAsset: String             // "AgentIcons/<type>" or "sf:<symbol>" fallback
@@ -29,22 +30,27 @@ enum AgentChipResolver {
         let rawTerminalType = metadata[MetadataKey.terminalType] as? String
         let model = metadata[MetadataKey.model] as? String
         let modelLabel = normalizedModelLabel(metadata[MetadataKey.modelLabel])
+        // C11 live detection: the model read from the harness's own session
+        // files. Declared/explicit `model`/`model_label` win; this wins over nothing.
+        let detectedModel = (metadata[AgentModelDetector.MetadataKeys.detected] as? String)
+            .flatMap { $0.isEmpty ? nil : $0 }
 
         let normalizedTerminalType = AgentIdentityPolicy.normalizedKind(rawTerminalType)
         let hasTerminalType = normalizedTerminalType != nil && normalizedTerminalType != "unknown"
-        if !hasTerminalType && model == nil {
+        if !hasTerminalType && model == nil && detectedModel == nil {
             return nil
         }
 
         let terminalType = normalizedTerminalType ?? "unknown"
         let displayLabel: String? = {
             if let modelLabel { return modelLabel }
-            return shortenModel(model)
+            return shortenModel(model ?? detectedModel)
         }()
 
         let iconAsset = iconAssetName(forTerminalType: terminalType)
         let terminalTypeSource = sources[MetadataKey.terminalType]?.rawValue
         let modelSource = sources[MetadataKey.model]?.rawValue
+            ?? (detectedModel != nil ? sources[AgentModelDetector.MetadataKeys.detected]?.rawValue : nil)
 
         // Winning source preference: declare > explicit > osc > heuristic, prefer terminal_type source
         // when both exist; otherwise fall back to model's source. This matches spec's
@@ -54,6 +60,7 @@ enum AgentChipResolver {
         return AgentChip(
             terminalType: terminalType,
             model: model,
+            detectedModel: detectedModel,
             modelLabel: modelLabel,
             displayLabel: displayLabel,
             iconAsset: iconAsset,
@@ -77,41 +84,70 @@ enum AgentChipResolver {
 
     /// Registered alias table — maps known model IDs to short display labels.
     private static let modelAliasTable: [String: String] = [
-        "claude-opus-4-7": "Opus 4.7",
-        "claude-opus-4-6": "Opus 4.6",
-        "claude-sonnet-4-6": "Sonnet 4.6",
-        "claude-haiku-4-5": "Haiku 4.5",
-        "gpt-5.4-pro": "GPT-5.4 Pro",
-        "gpt-5.4": "GPT-5.4",
         "kimi-k2-0711": "K2",
         "opencode-qwen-3-coder": "Qwen 3"
     ]
 
-    /// Deterministic shortening rules per spec.
-    static func shortenModel(_ model: String?) -> String? {
-        guard let model, !model.isEmpty else { return nil }
+    /// Anthropic model ids: `claude-<family>-<major>[-<minor>]` and the legacy
+    /// `claude-<major>[-<minor>]-<family>`; a trailing `-YYYYMMDD` snapshot is
+    /// stripped before matching.
+    private static let claudeModernPattern = try! NSRegularExpression(
+        pattern: "^claude-(opus|sonnet|haiku|fable)-(\\d+)(?:-(\\d+))?$"
+    )
+    private static let claudeLegacyPattern = try! NSRegularExpression(
+        pattern: "^claude-(\\d+)(?:-(\\d+))?-(opus|sonnet|haiku|fable)$"
+    )
 
-        if let alias = modelAliasTable[model] {
+    private static let datedSuffixPattern = try! NSRegularExpression(pattern: "-\\d{8}$")
+
+    /// Deterministic shortening rules, shared by the sidebar chip and the tab
+    /// sheet. Claude ids become `Opus 5.5`; other ids stay as the vendor wrote
+    /// them (`gpt-5.5`), minus provider prefixes, `[1m]`-style suffixes and
+    /// dated snapshot suffixes.
+    static func shortenModel(_ model: String?) -> String? {
+        guard var id = model?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else { return nil }
+
+        // `claude-opus-4-7[1m]` → `claude-opus-4-7`.
+        if let bracket = id.firstIndex(of: "["), id.hasSuffix("]") {
+            id = String(id[..<bracket])
+        }
+        // `openrouter/~x-ai/grok-latest` → `grok-latest`.
+        if let slash = id.lastIndex(of: "/") {
+            id = String(id[id.index(after: slash)...])
+        }
+        // `claude-haiku-4-5-20251001` → `claude-haiku-4-5`.
+        let full = NSRange(id.startIndex..., in: id)
+        if let m = datedSuffixPattern.firstMatch(in: id, range: full), let r = Range(m.range, in: id) {
+            id = String(id[..<r.lowerBound])
+        }
+        guard !id.isEmpty else { return nil }
+
+        if let alias = modelAliasTable[id] {
             return alias
         }
 
-        // Versioned family: <family>-<variant>-<major>-<minor> → "<Variant> <major>.<minor>"
-        let parts = model.split(separator: "-")
-        if parts.count >= 4 {
-            let variant = String(parts[parts.count - 3])
-            let major = String(parts[parts.count - 2])
-            let minor = String(parts[parts.count - 1])
-            if Int(major) != nil, Int(minor) != nil, !variant.isEmpty {
-                let titled = variant.prefix(1).uppercased() + variant.dropFirst()
-                return "\(titled) \(major).\(minor)"
-            }
+        let range = NSRange(id.startIndex..., in: id)
+        func group(_ m: NSTextCheckingResult, _ n: Int) -> String? {
+            guard n < m.numberOfRanges, let r = Range(m.range(at: n), in: id) else { return nil }
+            return String(id[r])
+        }
+        func titled(_ family: String) -> String {
+            family.prefix(1).uppercased() + family.dropFirst()
+        }
+        if let m = claudeModernPattern.firstMatch(in: id, range: range), let family = group(m, 1), let major = group(m, 2) {
+            let version = group(m, 3).map { "\(major).\($0)" } ?? major
+            return "\(titled(family)) \(version)"
+        }
+        if let m = claudeLegacyPattern.firstMatch(in: id, range: range), let major = group(m, 1), let family = group(m, 3) {
+            let version = group(m, 2).map { "\(major).\($0)" } ?? major
+            return "\(titled(family)) \(version)"
         }
 
-        // Pass-through, truncate to 10 chars with ellipsis.
-        if model.count > 10 {
-            return String(model.prefix(9)) + "…"
+        // Pass-through, truncate to 14 chars with ellipsis.
+        if id.count > 14 {
+            return String(id.prefix(13)) + "…"
         }
-        return model
+        return id
     }
 
     /// Icon asset name per spec. Returns "AgentIcons/<type>" for known types; for now,

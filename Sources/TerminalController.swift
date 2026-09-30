@@ -4095,6 +4095,9 @@ class TerminalController {
             "source_surface_ref": v2Ref(kind: .surface, uuid: chip.sourceSurfaceId)
         ]
         if let model = chip.model { out["model"] = model }
+        // Raw id detected from the harness's own session files; `display_label`
+        // is the friendly name (declared/explicit model wins over detection).
+        if let detected = chip.detectedModel { out["model_detected"] = detected }
         if let modelLabel = chip.modelLabel { out["model_label"] = modelLabel }
         if let displayLabel = chip.displayLabel { out["display_label"] = displayLabel }
         if let source = chip.source { out["source"] = source }

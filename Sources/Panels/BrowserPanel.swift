@@ -2763,6 +2763,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     private func bindWebView(_ webView: CmuxWebView) {
+        webView.onOperatorInput = { [weak self] in MainActor.assumeIsolated { self?.lastOperatorInputAt = Date() } }
         webView.onContextMenuDownloadStateChanged = { [weak self] downloading in
             if downloading {
                 self?.beginDownloadActivity()
@@ -2805,6 +2806,23 @@ final class BrowserPanel: Panel, ObservableObject {
         SurfaceMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
     }
 
+    /// Tab sheet `active`: when a page last finished loading. Plain store, not
+    /// published. The first load after a session restore or a hibernate resume is
+    /// the browser rebuilding old state, not new content, so it is skipped.
+    private(set) var lastLoadedAt: Date?
+    /// When the operator last pressed a key or clicked in the page (tab sheet
+    /// "touched"). Plain store, not published.
+    private(set) var lastOperatorInputAt: Date?
+    private var skipNextLoadStamp = false
+
+    private func noteLoadFinished() {
+        if skipNextLoadStamp {
+            skipNextLoadStamp = false
+            return
+        }
+        lastLoadedAt = Date()
+    }
+
     private func configureNavigationDelegateCallbacks() {
         guard let navigationDelegate else { return }
         let boundWebViewInstanceID = webViewInstanceID
@@ -2813,6 +2831,7 @@ final class BrowserPanel: Panel, ObservableObject {
         navigationDelegate.didFinish = { [weak self] webView in
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentWebView(webView, instanceID: boundWebViewInstanceID) else { return }
+                self.noteLoadFinished()
                 boundHistoryStore.recordVisit(url: webView.url, title: webView.title)
                 self.refreshFavicon(from: webView)
                 self.applyBrowserThemeModeIfNeeded()
@@ -2869,6 +2888,10 @@ final class BrowserPanel: Panel, ObservableObject {
     ) {
         self.id = id ?? UUID()
         self.createdAt = createdAt
+        // A panel rebuilt from a snapshot (older creation time, or born hibernated)
+        // reloads its page on mount; that first load is not new content.
+        self.skipNextLoadStamp = pendingHibernate
+            || (createdAt.map { Date().timeIntervalSince($0) > 5 } ?? true)
         self.workspaceId = workspaceId
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
@@ -3172,6 +3195,8 @@ final class BrowserPanel: Panel, ObservableObject {
         case (let prior, .hibernated) where prior != .hibernated:
             performHibernate()
         case (.hibernated, .active):
+            // The reload that follows is a restore, not new content.
+            skipNextLoadStamp = true
             performResumeFromHibernate()
         default:
             break

@@ -233,6 +233,7 @@ final class AgentModelDetectionTests: XCTestCase {
                     payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
         var state = ModelTailState()
         XCTAssertEqual(detect("grok", r, &state), .model("grok-4.7"))
+        XCTAssertEqual(state.signals.lastEventAt, AgentModelProbe.parseISO("2026-01-01T06:00:00.123Z"))
         let updated = String(data: try fixture("grok-summary.json"), encoding: .utf8)!.replacingOccurrences(of: "grok-4.7", with: "grok-5")
         try Data(updated.utf8).write(to: url)
         XCTAssertEqual(detect("grok", r, &state), .model("grok-5"))
@@ -246,13 +247,16 @@ final class AgentModelDetectionTests: XCTestCase {
         defer { sqlite3_close(db) }
         let sid = "ses_f2a0e887affevLMZYvNBsbaFBj"
         let sql = """
-            CREATE TABLE session (id text PRIMARY KEY, model text);
-            INSERT INTO session VALUES ('\(sid)', '{"id":"k3","providerID":"kimi","variant":"default"}');
-            INSERT INTO session VALUES ('ses_00000000000000000000000000', NULL);
+            CREATE TABLE session (id text PRIMARY KEY, model text, time_updated integer, tokens_input integer, tokens_output integer, tokens_reasoning integer);
+            INSERT INTO session VALUES ('\(sid)', '{"id":"k3","providerID":"kimi","variant":"default"}', 1790296534888, 100, 20, 5);
+            INSERT INTO session VALUES ('ses_00000000000000000000000000', NULL, 0, 0, 0, 0);
             """
         XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
         var state = ModelTailState()
         XCTAssertEqual(detect("opencode", ref("opencode", id: sid), &state), .model("k3"))
+        XCTAssertEqual(state.signals.lastEventAt, Date(timeIntervalSince1970: 1_790_296_534.888))
+        XCTAssertEqual(state.signals.sessionTokens, 125, "opencode's row holds session totals, not a turn")
+        XCTAssertNil(state.signals.turnStartedAt)
 
         XCTAssertEqual(sqlite3_exec(db, "UPDATE session SET model = '{\"id\":\"gpt-5.5\"}' WHERE id = '\(sid)'", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(detect("opencode", ref("opencode", id: sid), &state), .model("gpt-5.5"))
@@ -266,6 +270,121 @@ final class AgentModelDetectionTests: XCTestCase {
                        .unsupported("kimi session files carry no model"))
         XCTAssertEqual(detect("github-copilot", nil, &state),
                        .unsupported("copilot session files carry no model c11 can read"))
+    }
+
+    // MARK: - Agent signals (active, turn, tools, tokens)
+
+    private func t(_ hms: String) -> Date { AgentModelProbe.parseISO("2026-01-01T\(hms).000Z")! }
+
+    func testClaudeSignalsForTheCurrentTurn() throws {
+        try place(fixture("claude-session.jsonl"), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        let s = state.signals
+        XCTAssertEqual(s.lastEventAt, t("10:05:12"), "the tool result is the last thing the agent added")
+        XCTAssertEqual(s.turnStartedAt, t("10:05:00"), "the second human prompt starts the turn")
+        XCTAssertEqual(s.turnToolCalls, 1)
+        XCTAssertEqual(s.turnTokens, 200 + 30 + 300 + 40, "fresh input + output; cache reads excluded")
+    }
+
+    func testClaudeMessageSplitAcrossLinesCountsOnce() throws {
+        // Turn one of the fixture: message m2 is written on two lines with the same usage.
+        let lines = try String(data: fixture("claude-session.jsonl"), encoding: .utf8)!
+            .split(separator: "\n").prefix(8).joined(separator: "\n") + "\n"
+        try place(Data(lines.utf8), at: claudePath())
+        var state = ModelTailState()
+        _ = detect("claude-code", ref("claude-code", id: claudeId), &state)
+        XCTAssertEqual(state.signals.turnStartedAt, t("10:00:00"))
+        XCTAssertEqual(state.signals.turnTokens, (100 + 50 + 10) + (100 + 20), "m1 + m2 once")
+        XCTAssertEqual(state.signals.turnToolCalls, 2, "sidechain tool calls are not the agent's own")
+        XCTAssertEqual(state.signals.lastEventAt, t("10:00:15"), "sidechain and synthetic lines add nothing")
+    }
+
+    func testAppendedEventsMoveActiveAndANewPromptResetsTheTurn() throws {
+        let url = try place(fixture("claude-session.jsonl"), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+
+        try append(#"{"type":"assistant","isSidechain":false,"timestamp":"2026-01-01T10:06:00.000Z","message":{"model":"claude-opus-5-5","id":"m9","content":[{"type":"tool_use","id":"a"}],"usage":{"input_tokens":10,"output_tokens":5}}}"# + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertEqual(state.signals.lastEventAt, t("10:06:00"))
+        XCTAssertEqual(state.signals.turnToolCalls, 2)
+        XCTAssertEqual(state.signals.turnTokens, 570 + 15)
+
+        try append(#"{"type":"user","isSidechain":false,"timestamp":"2026-01-01T10:07:00.000Z","message":{"role":"user","content":"next"}}"# + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertEqual(state.signals.turnStartedAt, t("10:07:00"))
+        XCTAssertEqual(state.signals.turnToolCalls, 0)
+        XCTAssertEqual(state.signals.turnTokens, 0)
+        XCTAssertEqual(state.signals.lastEventAt, t("10:06:00"), "a human prompt is not the agent adding something")
+    }
+
+    func testCodexSignalsUseTaskStartedAndTokenCounts() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        _ = detect("codex", ref("codex", id: id), &state)
+        let s = state.signals
+        XCTAssertEqual(s.turnStartedAt, t("09:05:00"))
+        XCTAssertEqual(s.turnToolCalls, 2)
+        XCTAssertEqual(s.turnTokens, (1000 - 600) + 50)
+        XCTAssertEqual(s.lastEventAt, t("09:05:07"))
+    }
+
+    func testPiAndOmpSignalsFollowMessageRoles() throws {
+        let pid = "019b0000-0000-7000-8000-000000000002"
+        try place(fixture("pi-session.jsonl"),
+                  at: ".pi/agent/sessions/\(PiScraper.sessionSlug(forCwd: "/work/demo"))/2026-01-01T00-00-00-000Z_\(pid).jsonl")
+        var pi = ModelTailState()
+        _ = detect("pi", ref("pi", id: pid), &pi)
+        XCTAssertEqual(pi.signals.turnStartedAt, t("08:10:05"))
+        XCTAssertEqual(pi.signals.turnToolCalls, 1)
+        XCTAssertEqual(pi.signals.turnTokens, 300 + 30 + 5)
+        XCTAssertEqual(pi.signals.lastEventAt, t("08:10:09"))
+
+        let oid = "019c0000-0000-7000-8000-000000000003"
+        let slug = OmpScraper.sessionSlug(forCwd: "/work/demo", homeDirectory: home)
+        try place(fixture("omp-session.jsonl"), at: ".omp/agent/sessions/\(slug)/2026-01-01T00-00-00-000Z_\(oid).jsonl")
+        var omp = ModelTailState()
+        _ = detect("omp", ref("omp", id: oid), &omp)
+        XCTAssertEqual(omp.signals.turnStartedAt, t("07:00:05"))
+        XCTAssertNil(omp.signals.lastEventAt, "only the operator has spoken so far")
+    }
+
+    func testTimestampParsingToleratesSixFractionalDigitsAndSpaces() {
+        XCTAssertEqual(AgentModelProbe.parseISO("2026-01-01T06:00:00.123456Z"), AgentModelProbe.parseISO("2026-01-01T06:00:00.123Z"))
+        XCTAssertNotNil(AgentModelProbe.timestamp(in: Data(#"{"a":1, "timestamp" : "2026-01-01T06:00:00Z"}"#.utf8)))
+        XCTAssertNil(AgentModelProbe.timestamp(in: Data(#"{"a":1}"#.utf8)))
+    }
+
+    // MARK: - Model precedence
+
+    func testAgentDeclaredBeatsDetectedBeatsLaunchStamp() {
+        typealias P = AgentModelPrecedence
+        // Launch stamp only: shown.
+        XCTAssertEqual(P.effective(model: "claude-opus-4-7", modelSource: .heuristic, modelLabel: nil, labelSource: nil, detected: nil).model, "claude-opus-4-7")
+        // Detection outranks the launch stamp (a later /model wins).
+        let detected = P.effective(model: "claude-opus-4-7", modelSource: .heuristic, modelLabel: "gpt-5.2", labelSource: .heuristic, detected: "claude-sonnet-4-6")
+        XCTAssertEqual(detected.model, "claude-sonnet-4-6")
+        XCTAssertNil(detected.label, "a launch model_label must not mask the detected model")
+        // An agent's own set-agent --model wins over detection.
+        let declared = P.effective(model: "claude-haiku-4-5", modelSource: .declare, modelLabel: nil, labelSource: nil, detected: "claude-sonnet-4-6")
+        XCTAssertEqual(declared.model, "claude-haiku-4-5")
+        // Explicit (operator) also wins.
+        XCTAssertEqual(P.effective(model: "x", modelSource: .explicit, modelLabel: nil, labelSource: nil, detected: "y").model, "x")
+    }
+
+    func testChipUsesTheSamePrecedence() {
+        let surface = UUID()
+        let detected = AgentModelDetector.MetadataKeys.detected
+        let chip = AgentChipResolver.resolve(
+            focusedSurfaceId: surface,
+            metadata: ["terminal_type": "claude-code", "model": "claude-opus-4-7", detected: "claude-sonnet-4-6"],
+            sources: ["model": .heuristic]
+        )
+        XCTAssertEqual(chip?.displayLabel, "Sonnet 4.6")
     }
 
     // MARK: - Friendly names and display precedence

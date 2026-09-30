@@ -42,9 +42,15 @@ enum AgentChipResolver {
         }
 
         let terminalType = normalizedTerminalType ?? "unknown"
+        // Agent-declared > detected > launch stamp (`AgentModelPrecedence`).
+        let effective = AgentModelPrecedence.effective(
+            model: model, modelSource: sources[MetadataKey.model],
+            modelLabel: modelLabel, labelSource: sources[MetadataKey.modelLabel],
+            detected: detectedModel
+        )
         let displayLabel: String? = {
-            if let modelLabel { return modelLabel }
-            return shortenModel(model ?? detectedModel)
+            if let label = effective.label { return label }
+            return shortenModel(effective.model)
         }()
 
         let iconAsset = iconAssetName(forTerminalType: terminalType)

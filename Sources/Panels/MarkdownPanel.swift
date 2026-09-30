@@ -218,8 +218,14 @@ final class MarkdownPanel: Panel, ObservableObject {
             parseSegments()
             return
         }
-        applyExternalContent(Self.readContent(path: filePath))
+        applyExternalContent(Self.readContent(path: filePath), isLiveChange: false)
+        // Tab sheet `active`: a load is not a change; seed from the file's mtime.
+        lastContentChangeAt = (try? FileManager.default.attributesOfItem(atPath: filePath))?[.modificationDate] as? Date
     }
+
+    /// When the watched file's content last changed (mtime at load, then each
+    /// live reload that actually changed the text). Plain store, not published.
+    private(set) var lastContentChangeAt: Date?
 
     /// Read file content with the UTF-8 → ISO Latin-1 fallback chain.
     /// Safe to call from any queue.
@@ -239,7 +245,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Apply content produced by a read (sync or debounced). Skips the
     /// reparse + republish entirely when the content is unchanged, which is
     /// the common case for spurious watcher events.
-    private func applyExternalContent(_ newContent: String?) {
+    private func applyExternalContent(_ newContent: String?, isLiveChange: Bool = true) {
         guard !isClosed else { return }
         guard let newContent else {
             isFileUnavailable = true
@@ -249,6 +255,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         isFileUnavailable = false
         guard newContent != content || wasUnavailable else { return }
         content = newContent
+        if isLiveChange { lastContentChangeAt = Date() }
         parseSegments()
     }
 

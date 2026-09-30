@@ -5583,6 +5583,9 @@ final class Workspace: Identifiable, ObservableObject {
         return formatter
     }()
     private var panelShellActivityStates: [UUID: PanelShellActivityState] = [:]
+    /// When each panel's shell last started or finished a command (tab sheet
+    /// `active` for plain terminals). Plain store, not published.
+    var panelShellEdgeAt: [UUID: Date] = [:]
     /// C11-144: per-surface queue of framed `<c11-msg>` blocks that arrived
     /// while the recipient shell was busy. Flushed when the surface returns to
     /// `.promptIdle` (see `flushBufferedMailboxStdin`). Main-actor-confined.
@@ -7343,6 +7346,8 @@ final class Workspace: Identifiable, ObservableObject {
         let previousState = panelShellActivityStates[panelId] ?? .unknown
         guard previousState != state else { return }
         panelShellActivityStates[panelId] = state
+        // Tab sheet `active` for plain terminals: a command starting or finishing.
+        panelShellEdgeAt[panelId] = Date()
 #if DEBUG
         dlog(
             "surface.shellState workspace=\(id.uuidString.prefix(5)) " +
@@ -12925,19 +12930,12 @@ extension Workspace: BonsplitDelegate {
         surfaceId: UUID,
         resolvedModel: String
     ) {
-        var partial: [String: Any] = [
+        let partial: [String: Any] = [
             MetadataKey.title: String(
                 localized: "agent.launch.placeholderTitle",
                 defaultValue: "Awaiting first task"
             )
         ]
-        // `resolvedModel` is the overlay-resolved model the launch actually used
-        // (C11-179), so the chip shows what c11 launched with — including a
-        // saved-config override, not just the harness base pin.
-        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !model.isEmpty {
-            partial[MetadataKey.model] = model
-        }
         _ = try? SurfaceMetadataStore.shared.setMetadata(
             workspaceId: id,
             surfaceId: surfaceId,
@@ -12945,6 +12943,21 @@ extension Workspace: BonsplitDelegate {
             mode: .merge,
             source: .declare
         )
+        // `resolvedModel` is the overlay-resolved model the launch actually used
+        // (C11-179), so the chip shows what c11 launched with — including a
+        // saved-config override, not just the harness base pin. It is a launch
+        // stamp (tier `heuristic`): what c11 asked for, so a model detected from
+        // the session files or declared by the agent outranks it.
+        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty {
+            _ = try? SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: surfaceId,
+                partial: [MetadataKey.model: model],
+                mode: .merge,
+                source: .heuristic
+            )
+        }
         syncPanelTitleFromMetadata(panelId: surfaceId)
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }
@@ -12973,13 +12986,16 @@ extension Workspace: BonsplitDelegate {
                     defaultValue: "Awaiting first task"
                 )
         ]
+        // The launch model is a stamp (tier `heuristic`), written below apart from
+        // the declared identity: detection and `set-agent --model` outrank it.
+        var launchModel: [String: Any] = [:]
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedModel.isEmpty {
             if trimmedModel.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil,
                trimmedModel.count <= 64 {
-                partial[MetadataKey.model] = trimmedModel
+                launchModel[MetadataKey.model] = trimmedModel
             } else {
-                partial[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
+                launchModel[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
             }
         }
         if let task = task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
@@ -12992,6 +13008,15 @@ extension Workspace: BonsplitDelegate {
             mode: .merge,
             source: .declare
         )
+        if !launchModel.isEmpty {
+            _ = try? SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: surfaceId,
+                partial: launchModel,
+                mode: .merge,
+                source: .heuristic
+            )
+        }
         syncPanelTitleFromMetadata(panelId: surfaceId)
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }

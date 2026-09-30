@@ -1041,13 +1041,17 @@ enum WorkspaceLayoutExecutor {
                         ))
                     }
                     let decoded = PersistedMetadataBridge.decodeValues([key: value])
+                    // A blueprint's model records what the launch asked for, not what
+                    // is running: launch-stamp tier, so a detected or agent-declared
+                    // model outranks it.
+                    let isLaunchModel = key == MetadataKey.model || key == MetadataKey.modelLabel
                     do {
                         _ = try SurfaceMetadataStore.shared.setMetadata(
                             workspaceId: workspaceId,
                             surfaceId: panelId,
                             partial: decoded,
                             mode: .merge,
-                            source: .explicit
+                            source: isLaunchModel ? .heuristic : .explicit
                         )
                     } catch {
                         let message = "surface[\(spec.id)] metadata[\"\(key)\"] write failed: \(error)"

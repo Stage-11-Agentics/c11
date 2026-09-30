@@ -273,6 +273,7 @@ extension TerminalController {
             "debug.tab_strip.scroll",
             "debug.tab_sheet.hover",
             "debug.tab_sheet.motion_scale",
+            "debug.tab_sheet.detail",
             "debug.session.round_trip",
             "debug.session.round_trip_workspaces",
         ])

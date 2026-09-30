@@ -41,8 +41,61 @@ enum AgentModelDetection: Equatable {
     case unsupported(String)
 }
 
+/// What the agent did most recently, as read from the same tail as the model.
+/// The tab sheet's `active`, `turn`, `tools` and `tokens` clocks are built from
+/// this; only counts and timestamps are kept, never transcript text.
+struct TranscriptSignals: Equatable, Sendable {
+    /// Last assistant message or tool result: "an agent added to this tab".
+    var lastEventAt: Date?
+    /// When the current (or last) turn began: the last human prompt (Codex:
+    /// `task_started`). nil when the scanned window never reached one.
+    var turnStartedAt: Date?
+    var turnToolCalls = 0
+    /// Fresh input + output tokens spent in the current turn. Cache reads are
+    /// excluded: they re-count the whole context on every call.
+    var turnTokens = 0
+    /// Claude Code splits one API message across several lines that repeat its
+    /// usage; keyed by message id so a message counts once.
+    var messageTokens: [String: Int] = [:]
+    /// Whole-session token total where a harness records one (opencode).
+    var sessionTokens: Int?
+
+    mutating func apply(_ event: TranscriptEvent) {
+        switch event {
+        case .prompt(let at):
+            turnStartedAt = at
+            turnToolCalls = 0
+            turnTokens = 0
+            messageTokens = [:]
+        case .agent(let at, let tools, let tokens, let messageKey):
+            if let at { lastEventAt = max(lastEventAt ?? at, at) }
+            turnToolCalls += tools
+            if let messageKey {
+                messageTokens[messageKey] = tokens
+                turnTokens = messageTokens.values.reduce(0, +)
+            } else {
+                turnTokens += tokens
+            }
+        case .toolResult(let at):
+            if let at { lastEventAt = max(lastEventAt ?? at, at) }
+        }
+    }
+}
+
+enum TranscriptEvent: Equatable, Sendable {
+    case prompt(at: Date?)
+    case agent(at: Date?, tools: Int, tokens: Int, messageKey: String?)
+    case toolResult(at: Date?)
+}
+
+struct ParsedTranscriptLine: Equatable, Sendable {
+    var model: String?
+    var event: TranscriptEvent?
+}
+
 /// Incremental tail position for one surface's transcript.
 struct ModelTailState: Equatable {
+    var signals = TranscriptSignals()
     var path: String?
     var inode: UInt64 = 0
     /// Byte offset just past the last fully-consumed line.
@@ -97,11 +150,16 @@ struct AgentModelProbe: Sendable {
 
         switch kind {
         case "opencode":
-            if let model = readOpencodeModel(sessionId: ref.id) { state.model = model }
+            if let row = readOpencodeRow(sessionId: ref.id) {
+                if let model = row.model { state.model = model }
+                state.signals.lastEventAt = row.updatedAt
+                state.signals.sessionTokens = row.tokens
+            }
         case "grok":
             if case .string(let dir)? = ref.payload?[GrokStrategy.sessionDirectoryPayloadKey],
-               let model = readGrokModel(sessionDirectory: dir) {
-                state.model = model
+               let summary = readGrokSummary(sessionDirectory: dir) {
+                if let model = summary.model { state.model = model }
+                state.signals.lastEventAt = summary.lastActiveAt
             }
         case "claude-code", "codex", "pi", "omp":
             tail(kind: kind, ref: ref, state: &state, now: now)
@@ -148,25 +206,23 @@ struct AgentModelProbe: Sendable {
         }
     }
 
-    /// First contact: scan backwards from the end so the newest model wins, and
-    /// leave the offset at the end of the last complete line.
+    /// First contact: read a window ending at EOF, processing every line forward
+    /// so the newest model wins and the current turn's counters are exact. The
+    /// window grows (to `maxInitialWindow`) until it holds a model and, unless it
+    /// already reaches the file start, the start of the current turn. The offset
+    /// is left at the end of the last complete line.
     private func initialScan(kind: String, handle: FileHandle, size: UInt64, state: inout ModelTailState) {
         var window = UInt64(Self.initialWindow)
         while true {
             let start = size > window ? size - window : 0
             guard let data = readRange(handle, from: start, to: size) else { return }
             let (lines, consumed) = Self.completeLines(in: data, droppingLeadingPartial: start > 0)
-            if let found = lines.reversed().lazy.compactMap({ Self.lineModel(kind: kind, line: $0) }).first {
-                state.model = found
-                state.offset = start + UInt64(consumed)
-                return
-            }
-            if start == 0 || window >= UInt64(Self.maxInitialWindow) {
-                // Nothing yet in the window we are willing to read; continue
-                // from the end so future appends are picked up.
-                state.offset = start + UInt64(consumed)
-                return
-            }
+            state.model = nil
+            state.signals = TranscriptSignals()
+            for line in lines { Self.fold(kind: kind, line: line, into: &state) }
+            state.offset = start + UInt64(consumed)
+            let complete = state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
+            if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) { return }
             window *= 4
         }
     }
@@ -180,10 +236,14 @@ struct AgentModelProbe: Sendable {
         }
         guard let data = readRange(handle, from: start, to: size) else { return }
         let (lines, consumed) = Self.completeLines(in: data, droppingLeadingPartial: dropLeading)
-        for line in lines {
-            if let found = Self.lineModel(kind: kind, line: line) { state.model = found }
-        }
+        for line in lines { Self.fold(kind: kind, line: line, into: &state) }
         state.offset = start + UInt64(consumed)
+    }
+
+    private static func fold(kind: String, line: Data, into state: inout ModelTailState) {
+        let parsed = parseLine(kind: kind, line: line)
+        if let model = parsed.model { state.model = model }
+        if let event = parsed.event { state.signals.apply(event) }
     }
 
     private func readRange(_ handle: FileHandle, from: UInt64, to: UInt64) -> Data? {
@@ -222,47 +282,156 @@ struct AgentModelProbe: Sendable {
 
     // MARK: - Line parsing
 
-    /// The model a single transcript line asserts, or nil. Parses JSON only for
-    /// lines that could carry a model, and only keeps the id.
-    static func lineModel(kind: String, line: Data) -> String? {
+    /// What one transcript line asserts: a model, and/or an agent/operator
+    /// event. Parses JSON only for lines that can carry either, and never keeps
+    /// text. Timestamps and classification use substring checks so a multi-MB
+    /// tool result costs a memory scan, not a parse.
+    static func parseLine(kind: String, line: Data) -> ParsedTranscriptLine {
         switch kind {
-        case "claude-code":
-            guard contains(line, "\"assistant\"") else { return nil }
-            guard let object = parseObject(line) else { return nil }
-            if (object["isSidechain"] as? Bool) == true { return nil }
-            guard (object["type"] as? String) == "assistant",
-                  let message = object["message"] as? [String: Any],
-                  let model = message["model"] as? String else { return nil }
-            return normalized(model)
-        case "codex":
-            guard contains(line, "turn_context") || contains(line, "session_meta") else { return nil }
-            guard let object = parseObject(line),
-                  let payload = object["payload"] as? [String: Any] else { return nil }
-            switch object["type"] as? String {
-            case "turn_context", "session_meta":
-                return normalized(payload["model"] as? String)
-            default:
-                return nil
-            }
-        case "pi":
-            guard contains(line, "model_change") else { return nil }
-            guard let object = parseObject(line), (object["type"] as? String) == "model_change" else { return nil }
-            return normalized(object["modelId"] as? String)
-        case "omp":
-            guard contains(line, "model_change") else { return nil }
-            guard let object = parseObject(line), (object["type"] as? String) == "model_change" else { return nil }
-            return normalized((object["model"] as? String) ?? (object["modelId"] as? String))
-        default:
-            return nil
+        case "claude-code": return parseClaude(line)
+        case "codex": return parseCodex(line)
+        case "pi", "omp": return parsePiOmp(kind: kind, line: line)
+        default: return ParsedTranscriptLine()
         }
     }
+
+    /// Largest line worth a JSON parse; bigger ones are classified by substring.
+    private static let maxParseBytes = 1_048_576
+
+    private static func parseClaude(_ line: Data) -> ParsedTranscriptLine {
+        let isAssistant = hasType(line, "assistant")
+        let isUser = !isAssistant && hasType(line, "user")
+        guard isAssistant || isUser else { return ParsedTranscriptLine() }
+        if contains(line, "\"isSidechain\":true") { return ParsedTranscriptLine() }
+        let at = timestamp(in: line)
+        if isUser {
+            if contains(line, "\"tool_result\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
+            if contains(line, "\"isMeta\":true") { return ParsedTranscriptLine() }
+            return ParsedTranscriptLine(event: .prompt(at: at))
+        }
+        guard line.count <= maxParseBytes, let object = parseObject(line),
+              let message = object["message"] as? [String: Any] else {
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
+        }
+        // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
+        if (message["model"] as? String) == "<synthetic>" { return ParsedTranscriptLine() }
+        var tools = 0
+        if let content = message["content"] as? [[String: Any]] {
+            tools = content.filter { ($0["type"] as? String) == "tool_use" }.count
+        }
+        var tokens = 0
+        if let usage = message["usage"] as? [String: Any] {
+            tokens = int(usage["input_tokens"]) + int(usage["cache_creation_input_tokens"]) + int(usage["output_tokens"])
+        }
+        return ParsedTranscriptLine(
+            model: normalized(message["model"] as? String),
+            event: .agent(at: at, tools: tools, tokens: tokens, messageKey: message["id"] as? String)
+        )
+    }
+
+    private static func parseCodex(_ line: Data) -> ParsedTranscriptLine {
+        if hasType(line, "turn_context") || hasType(line, "session_meta") {
+            guard line.count <= maxParseBytes, let object = parseObject(line),
+                  let payload = object["payload"] as? [String: Any] else { return ParsedTranscriptLine() }
+            return ParsedTranscriptLine(model: normalized(payload["model"] as? String))
+        }
+        let at = timestamp(in: line)
+        if hasType(line, "task_started") { return ParsedTranscriptLine(event: .prompt(at: at)) }
+        if hasType(line, "task_complete") { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
+        if hasType(line, "token_count") {
+            var tokens = 0
+            if line.count <= maxParseBytes, let object = parseObject(line),
+               let info = (object["payload"] as? [String: Any])?["info"] as? [String: Any],
+               let last = info["last_token_usage"] as? [String: Any] {
+                tokens = max(0, int(last["input_tokens"]) - int(last["cached_input_tokens"])) + int(last["output_tokens"])
+            }
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: nil))
+        }
+        guard hasType(line, "response_item") else { return ParsedTranscriptLine() }
+        if hasType(line, "custom_tool_call") || hasType(line, "function_call") || hasType(line, "local_shell_call") {
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 1, tokens: 0, messageKey: nil))
+        }
+        if hasType(line, "custom_tool_call_output") || hasType(line, "function_call_output") {
+            return ParsedTranscriptLine(event: .toolResult(at: at))
+        }
+        if contains(line, "\"role\":\"user\"") || contains(line, "\"role\":\"developer\"") || contains(line, "\"role\":\"system\"") {
+            return ParsedTranscriptLine()
+        }
+        return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
+    }
+
+    private static func parsePiOmp(kind: String, line: Data) -> ParsedTranscriptLine {
+        if hasType(line, "model_change") {
+            guard let object = parseObject(line) else { return ParsedTranscriptLine() }
+            let raw = kind == "omp"
+                ? ((object["model"] as? String) ?? (object["modelId"] as? String))
+                : (object["modelId"] as? String)
+            return ParsedTranscriptLine(model: normalized(raw))
+        }
+        guard hasType(line, "message") else { return ParsedTranscriptLine() }
+        let at = timestamp(in: line)
+        if contains(line, "\"role\":\"toolResult\"") { return ParsedTranscriptLine(event: .toolResult(at: at)) }
+        if contains(line, "\"role\":\"user\"") { return ParsedTranscriptLine(event: .prompt(at: at)) }
+        guard contains(line, "\"role\":\"assistant\""),
+              line.count <= maxParseBytes, let object = parseObject(line),
+              let message = object["message"] as? [String: Any] else {
+            return ParsedTranscriptLine()
+        }
+        var tools = 0
+        if let content = message["content"] as? [[String: Any]] {
+            tools = content.filter { ($0["type"] as? String) == "toolCall" }.count
+        }
+        var tokens = 0
+        if let usage = message["usage"] as? [String: Any] {
+            tokens = int(usage["input"]) + int(usage["output"]) + int(usage["cacheWrite"])
+        }
+        return ParsedTranscriptLine(event: .agent(at: at, tools: tools, tokens: tokens, messageKey: object["id"] as? String))
+    }
+
+    // MARK: - Line helpers
 
     private static func contains(_ data: Data, _ needle: String) -> Bool {
         data.range(of: Data(needle.utf8)) != nil
     }
 
+    /// `"type":"<value>"`, tolerating a space after the colon.
+    private static func hasType(_ data: Data, _ value: String) -> Bool {
+        contains(data, "\"type\":\"\(value)\"") || contains(data, "\"type\": \"\(value)\"")
+    }
+
     private static func parseObject(_ line: Data) -> [String: Any]? {
         try? JSONSerialization.jsonObject(with: line) as? [String: Any]
+    }
+
+    private static func int(_ value: Any?) -> Int {
+        (value as? NSNumber)?.intValue ?? 0
+    }
+
+    /// The line's top-level `"timestamp":"<ISO 8601>"`, read without parsing JSON.
+    static func timestamp(in line: Data) -> Date? {
+        guard let key = line.range(of: Data("\"timestamp\"".utf8)) else { return nil }
+        var i = key.upperBound
+        while i < line.endIndex, line[i] == 0x3A || line[i] == 0x20 { i = line.index(after: i) }
+        guard i < line.endIndex, line[i] == 0x22 else { return nil }
+        let start = line.index(after: i)
+        guard let end = line[start...].firstIndex(of: 0x22), end > start, line.distance(from: start, to: end) < 40 else { return nil }
+        return parseISO(String(decoding: line[start..<end], as: UTF8.self))
+    }
+
+    private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
+
+    /// ISO 8601 with any number of fractional digits (Grok writes six).
+    static func parseISO(_ raw: String) -> Date? {
+        if let d = isoFractional.date(from: raw) ?? isoPlain.date(from: raw) { return d }
+        guard let dot = raw.firstIndex(of: "."), let z = raw.firstIndex(where: { $0 == "Z" || $0 == "+" || $0 == "-" }), z > dot else { return nil }
+        let digits = raw[raw.index(after: dot)..<z]
+        let trimmed = String(raw[..<dot]) + "." + String(digits.prefix(3)) + String(raw[z...])
+        return isoFractional.date(from: trimmed)
     }
 
     /// Model ids worth showing: non-empty, not a harness placeholder.
@@ -372,15 +541,27 @@ struct AgentModelProbe: Sendable {
     // MARK: - Non-transcript harnesses
 
     func readGrokModel(sessionDirectory: String) -> String? {
+        readGrokSummary(sessionDirectory: sessionDirectory)?.model
+    }
+
+    /// `summary.json`: `current_model_id` and `last_active_at`.
+    func readGrokSummary(sessionDirectory: String) -> (model: String?, lastActiveAt: Date?)? {
         let url = URL(fileURLWithPath: sessionDirectory).appendingPathComponent("summary.json")
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
               data.count < 256 * 1024,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return Self.normalized(object["current_model_id"] as? String)
+        let last = ((object["last_active_at"] as? String) ?? (object["updated_at"] as? String)).flatMap(Self.parseISO)
+        return (Self.normalized(object["current_model_id"] as? String), last)
     }
 
-    /// `session.model` is a JSON blob: `{"id":"k3","providerID":"kimi",...}`.
     func readOpencodeModel(sessionId: String) -> String? {
+        readOpencodeRow(sessionId: sessionId)?.model
+    }
+
+    /// One row of the opencode `session` table: `model` is a JSON blob
+    /// (`{"id":"k3","providerID":"kimi",...}`), `time_updated` is epoch
+    /// milliseconds, and the token columns are whole-session totals.
+    func readOpencodeRow(sessionId: String) -> (model: String?, updatedAt: Date?, tokens: Int?)? {
         guard isValidOpencodeSessionId(sessionId) else { return nil }
         let db = home.appendingPathComponent(".local/share/opencode/opencode.db").path
         guard FileManager.default.fileExists(atPath: db) else { return nil }
@@ -393,21 +574,36 @@ struct AgentModelProbe: Sendable {
         defer { sqlite3_close(handle) }
         sqlite3_busy_timeout(handle, 500)
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(handle, "SELECT model FROM session WHERE id = ? LIMIT 1", -1, &statement, nil) == SQLITE_OK,
-              let statement else {
+        // Older opencode versions lack the time/token columns: fall back to `model` alone.
+        let full = "SELECT model, time_updated, tokens_input + tokens_output + tokens_reasoning FROM session WHERE id = ? LIMIT 1"
+        let minimal = "SELECT model, NULL, NULL FROM session WHERE id = ? LIMIT 1"
+        if sqlite3_prepare_v2(handle, full, -1, &statement, nil) != SQLITE_OK {
             sqlite3_finalize(statement)
-            return nil
+            statement = nil
+            guard sqlite3_prepare_v2(handle, minimal, -1, &statement, nil) == SQLITE_OK else {
+                sqlite3_finalize(statement)
+                return nil
+            }
         }
+        guard let statement else { return nil }
         defer { sqlite3_finalize(statement) }
         let bound = sessionId.withCString { sqlite3_bind_text(statement, 1, $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
-        guard bound == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW,
-              let text = sqlite3_column_text(statement, 0) else { return nil }
-        let raw = String(cString: text)
-        if let data = raw.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return Self.normalized(object["id"] as? String)
+        guard bound == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else { return nil }
+
+        var model: String?
+        if let text = sqlite3_column_text(statement, 0) {
+            let raw = String(cString: text)
+            if let data = raw.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                model = Self.normalized(object["id"] as? String)
+            } else {
+                model = Self.normalized(raw)   // older opencode stored the bare id
+            }
         }
-        return Self.normalized(raw)   // older opencode stored the bare id
+        let updated: Date? = sqlite3_column_type(statement, 1) == SQLITE_NULL
+            ? nil : Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 1)) / 1000)
+        let tokens: Int? = sqlite3_column_type(statement, 2) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(statement, 2))
+        return (model, updated, tokens)
     }
 }
 
@@ -432,6 +628,22 @@ final class AgentModelDetector: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.stage11.c11.agent-model", qos: .utility)
     private var states: [UUID: ModelTailState] = [:]
     private var inFlight = false
+    private let publishedLock = NSLock()
+    private var publishedSignals: [UUID: TranscriptSignals] = [:]
+
+    /// The latest agent signals for a surface (from the last sweep), or nil.
+    /// Cheap and safe from any thread; the sheet reads it when it opens.
+    func signals(forSurface surfaceId: UUID) -> TranscriptSignals? {
+        publishedLock.lock()
+        defer { publishedLock.unlock() }
+        return publishedSignals[surfaceId]
+    }
+
+    private func setSignals(_ signals: TranscriptSignals?, forSurface surfaceId: UUID) {
+        publishedLock.lock()
+        defer { publishedLock.unlock() }
+        publishedSignals[surfaceId] = signals
+    }
 
     /// Called from the 10 s sweep. `agents` are surfaces running a recognized
     /// harness; `plain` are surfaces with no agent in the foreground, whose
@@ -448,14 +660,19 @@ final class AgentModelDetector: @unchecked Sendable {
                     let probe = AgentModelProbe()
                     let live = Set(agents.map(\.surfaceId))
                     states = states.filter { live.contains($0.key) }
+                    publishedLock.lock()
+                    publishedSignals = publishedSignals.filter { live.contains($0.key) }
+                    publishedLock.unlock()
                     for target in agents {
                         let ref = refs[target.surfaceId.uuidString]?.active
                         var state = states[target.surfaceId] ?? ModelTailState()
                         let result = probe.detect(kind: target.kind, ref: ref, state: &state)
                         states[target.surfaceId] = state
+                        setSignals(state.signals, forSurface: target.surfaceId)
                         publish(result, target: target)
                     }
                     for surface in plain {
+                        setSignals(nil, forSurface: surface.surfaceId)
                         clearDerived(workspaceId: surface.workspaceId, surfaceId: surface.surfaceId)
                     }
                 }
@@ -502,5 +719,31 @@ final class AgentModelDetector: @unchecked Sendable {
                 workspace.syncSurfaceTabDetailForPanel(surfaceId)
             }
         }
+    }
+}
+
+// MARK: - Display precedence
+
+/// Which model a tab shows when several sources disagree:
+/// an agent's own declaration (`c11 set-agent --model`, tier `declare` or above)
+/// > the model detected from the harness's session files
+/// > a launch stamp (tier `heuristic`, written by launch-agent, the A button and
+/// blueprints, which record what c11 *asked* for, not what is running).
+enum AgentModelPrecedence {
+    static func isAgentDeclared(_ source: MetadataSource?) -> Bool {
+        guard let source else { return true }   // unknown provenance (legacy): treat as declared
+        return source.precedence >= MetadataSource.declare.precedence
+    }
+
+    static func effective(
+        model: String?, modelSource: MetadataSource?,
+        modelLabel: String?, labelSource: MetadataSource?,
+        detected: String?
+    ) -> (model: String?, label: String?) {
+        let declaredModel = model != nil && isAgentDeclared(modelSource) ? model : nil
+        let declaredLabel = modelLabel != nil && isAgentDeclared(labelSource) ? modelLabel : nil
+        if declaredModel != nil || declaredLabel != nil { return (declaredModel, declaredLabel) }
+        if let detected, !detected.isEmpty { return (detected, nil) }
+        return (model, modelLabel)
     }
 }

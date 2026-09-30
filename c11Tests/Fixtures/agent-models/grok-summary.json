@@ -8,5 +8,7 @@
   "num_messages": 2,
   "current_model_id": "grok-4.7",
   "agent_name": "grok-build-plan",
-  "reasoning_effort": "high"
+  "reasoning_effort": "high",
+  "last_active_at": "2026-01-01T06:00:00.123456Z",
+  "updated_at": "2026-01-01T06:00:00.123456Z"
 }

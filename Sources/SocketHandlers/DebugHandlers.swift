@@ -93,6 +93,8 @@ extension TerminalController {
             let scale = debugDouble(params, "scale") ?? 1
             v2MainSync { BonsplitDebug.tabSheetMotionScale = scale }
             return v2Result(id: id, .ok(["scale": scale]))
+        case "debug.tab_sheet.detail":
+            return v2Result(id: id, self.v2DebugTabSheetDetail(params: params))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
         case "debug.session.round_trip_workspaces":
@@ -881,6 +883,33 @@ extension TerminalController {
 
     /// Test seam: opens (default) or closes the tab sheet of the pane hosting
     /// `surface_id` (or the focused surface), without a click.
+    /// The detail the tab sheet would show for a surface, as JSON: agent tag,
+    /// status, clocks (ISO 8601) and the text clocks (`turn`, `tools`, `tokens`).
+    /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
+    private func v2DebugTabSheetDetail(params: [String: Any]) -> V2CallResult {
+        guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "surface not found", data: nil)
+        }
+        var payload: [String: Any]?
+        v2MainSync {
+            guard let detail = workspace.tabSheetDetail(panelId: surfaceId) else { return }
+            let iso = ISO8601DateFormatter()
+            payload = [
+                "surface_id": surfaceId.uuidString,
+                "title": v2OrNull(detail.title),
+                "agent_label": v2OrNull(detail.agentLabel),
+                "subtitle": v2OrNull(detail.subtitle),
+                "status": v2OrNull(detail.status?.kind.rawValue),
+                "clocks": detail.clocks.mapValues { iso.string(from: $0) },
+                "clock_texts": detail.clockTexts,
+            ]
+        }
+        guard let payload else {
+            return .err(code: "not_found", message: "no detail for surface", data: nil)
+        }
+        return .ok(payload)
+    }
+
     private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
             return .err(code: "not_found", message: "surface not found", data: nil)

@@ -36,6 +36,15 @@ This is not the `c11` operating skill. That one teaches an agent to drive the ro
 
 Use the tagged build's socket (`C11_SOCKET=/tmp/c11-debug-<tag>.sock`) to build the scene (workspaces, splits, seed terminals with size-revealing content) and to read state (`tree`, `read-screen`). The socket **cannot** drive AppKit menus, keys, the text box, settings, or the sidebar — that is exactly why the PID-scoped GUI-scripting path above exists for the actual UI trigger. `send` reaches PTYs only.
 
+## Synthesized input disrupts the person at the keyboard
+
+The operator is usually working on the machine you are driving, so real input has a cost. Spend it deliberately.
+
+- **Get consent before a synthesized drag-and-drop.** It takes over the pointer for its whole duration. If a drag must be verified and consent isn't given, hand the operator a short numbered manual check script instead.
+- **A click now and then is fine.** If a click, app activation, or focus steal will disrupt whoever is typing, tell them first, or right after when it was unavoidable.
+- **Prefer what takes no input:** socket/CLI setup, socket/CLI oracles, and window screenshots by window ID (`screencapture -l <windowid>`), which don't take focus.
+- Unrestricted, free-running driving belongs in a sandboxed c11 instance (Lattice C11-244) once it exists.
+
 ## Launch discipline
 
 - Launch **only tagged builds** (`./scripts/reload.sh --tag <tag>`, or `./scripts/launch-tagged-automation.sh <tag> --qa fresh`). Never `open` an untagged `c11 DEV.app` — it conflicts with the operator's running instance.

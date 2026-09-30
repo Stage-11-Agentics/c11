@@ -2254,7 +2254,7 @@ class TerminalController {
                 "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
                 "tty": v2OrNull(workspace.surfaceTTYNames[panel.id])
             ]
-            item.merge(v2SeenFields(panelId: panel.id)) { _, new in new }
+            v2SetSeenFields(&item, panelId: panel.id)
 
             if panel.panelType == .browser, let browserPanel = panel as? BrowserPanel {
                 item["url"] = browserPanel.currentURL?.absoluteString ?? ""

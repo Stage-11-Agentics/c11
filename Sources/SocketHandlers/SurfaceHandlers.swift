@@ -8,16 +8,16 @@ import WebKit
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 extension TerminalController {
-    /// C11-243: `last_seen_at` (ISO-8601, "now" while being seen, null if never
-    /// seen) and `being_seen` for a surface item. Main-actor read, no allocation
-    /// beyond the timestamp string.
-    func v2SeenFields(panelId: UUID) -> [String: Any] {
+    private static let seenTimestampFormatter = ISO8601DateFormatter()
+
+    /// C11-243: set `last_seen_at` (ISO-8601 to the second, "now" while being
+    /// seen, null if never seen) and `being_seen` on a surface item. Main-actor
+    /// read; formats one timestamp string per surface, with a shared formatter.
+    func v2SetSeenFields(_ item: inout [String: Any], panelId: UUID) {
         let tracker = SurfaceSeenTracker.shared
-        let stamp = tracker.lastSeenAt(panelId: panelId)
-        return [
-            "last_seen_at": stamp.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
-            "being_seen": tracker.isBeingSeen(panelId: panelId)
-        ]
+        item["last_seen_at"] = tracker.lastSeenAt(panelId: panelId)
+            .map { Self.seenTimestampFormatter.string(from: $0) } ?? NSNull()
+        item["being_seen"] = tracker.isBeingSeen(panelId: panelId)
     }
 
     /// v2 dispatch slice for the `surface.*` domain(s).
@@ -113,7 +113,7 @@ extension TerminalController {
                     "tty": v2OrNull(ws.surfaceTTYNames[panel.id]),
                     "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
                 ]
-                item.merge(v2SeenFields(panelId: panel.id)) { _, new in new }
+                v2SetSeenFields(&item, panelId: panel.id)
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
                 }

@@ -105,4 +105,84 @@ final class SurfaceSeenClockTests: XCTestCase {
         let legacy = try JSONEncoder().encode(snapshot(nil))
         XCTAssertNil(try JSONDecoder().decode(SessionPanelSnapshot.self, from: legacy).lastSeenAt)
     }
+
+    // MARK: - Tracker (injected seen provider and clock)
+
+    @MainActor
+    private final class Harness {
+        var seen: UUID?
+        var time = Date(timeIntervalSince1970: 5_000)
+        lazy var tracker = SurfaceSeenTracker(seenProvider: { [unowned self] in self.seen }, now: { [unowned self] in self.time })
+        func advance(_ s: TimeInterval) { time = time.addingTimeInterval(s) }
+    }
+
+    @MainActor
+    func testTrackerStampsOnSwitchAndReportsBeingSeen() {
+        let h = Harness()
+        h.seen = a
+        h.tracker.refresh()
+        XCTAssertTrue(h.tracker.isBeingSeen(panelId: a))
+        h.advance(10)
+        h.seen = b
+        h.tracker.refresh()
+        XCTAssertFalse(h.tracker.isBeingSeen(panelId: a))
+        XCTAssertTrue(h.tracker.isBeingSeen(panelId: b))
+        XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), Date(timeIntervalSince1970: 5_010))
+    }
+
+    @MainActor
+    func testWakeWhileStillLockedStaysInterrupted() {
+        let h = Harness()
+        h.seen = a
+        h.tracker.refresh()
+        h.advance(5)
+        h.tracker.setInterruption(.locked, active: true)
+        h.tracker.setInterruption(.displaysAsleep, active: true)
+        XCTAssertFalse(h.tracker.isBeingSeen(panelId: a))
+        let stamp = h.tracker.lastSeenAt(panelId: a)
+        XCTAssertEqual(stamp, Date(timeIntervalSince1970: 5_005))
+
+        // Display wakes but the lock screen is still up: still not seen, no restamp.
+        h.advance(30)
+        h.tracker.setInterruption(.displaysAsleep, active: false)
+        XCTAssertFalse(h.tracker.isBeingSeen(panelId: a))
+        XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), stamp)
+
+        // Unlock lifts the last reason: seen again.
+        h.tracker.setInterruption(.locked, active: false)
+        XCTAssertTrue(h.tracker.isBeingSeen(panelId: a))
+    }
+
+    @MainActor
+    func testInterruptionWithNothingSeenStampsNothing() {
+        let h = Harness()
+        h.tracker.setInterruption(.systemAsleep, active: true)
+        h.tracker.setInterruption(.systemAsleep, active: false)
+        XCTAssertNil(h.tracker.lastSeenAt(panelId: a))
+    }
+
+    @MainActor
+    func testCloseThenForgetDropsStamp() {
+        let h = Harness()
+        h.seen = a
+        h.tracker.refresh()
+        h.seen = b
+        h.tracker.refresh()
+        XCTAssertNotNil(h.tracker.lastSeenAt(panelId: a))
+        h.tracker.forget(panelId: a)
+        XCTAssertNil(h.tracker.lastSeenAt(panelId: a))
+    }
+
+    @MainActor
+    func testSeedThenSwitchOverridesRestoredStamp() {
+        let h = Harness()
+        h.tracker.seed(panelId: a, at: Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), Date(timeIntervalSince1970: 100))
+        h.seen = a
+        h.tracker.refresh()
+        h.advance(4)
+        h.seen = nil
+        h.tracker.refresh()
+        XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), Date(timeIntervalSince1970: 5_004))
+    }
 }

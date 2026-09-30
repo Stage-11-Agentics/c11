@@ -5007,6 +5007,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !isTerminatingApp {
             _ = saveSessionSnapshot(includeScrollback: false)
         }
+        // C11-243: a fresh window's first tab is seen without any selection event.
+        SurfaceSeenTracker.shared.refresh()
     }
 
     struct MainWindowSummary {
@@ -5500,12 +5502,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// C11-243: the panel the operator is looking at right now, or nil. Being
     /// seen = selected tab of the focused pane, in the selected workspace of the
-    /// key main terminal window, while c11 is frontmost. Definition and rationale
-    /// in `SurfaceSeenClock.swift`. Read-only: `reindex: false` avoids the
-    /// context-lookup side effects.
+    /// key main terminal window, while c11 is frontmost and that window is on the
+    /// active Space and not fully occluded. Definition and rationale in
+    /// `SurfaceSeenClock.swift`. `reindex: false` skips the context re-keying; the
+    /// lookup still refreshes `context.window`, which is harmless here.
     func operatorSeenPanelId() -> UUID? {
         guard NSApp.isActive,
               let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow,
+              keyWindow.isOnActiveSpace, keyWindow.occlusionState.contains(.visible),
               let context = contextForMainTerminalWindow(keyWindow, reindex: false),
               let workspace = context.tabManager.selectedWorkspace else { return nil }
         return workspace.focusedPanelId
@@ -13039,6 +13043,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState = context.sidebarState
         sidebarSelectionState = context.sidebarSelectionState
         TerminalController.shared.setActiveTabManager(context.tabManager)
+        // C11-243: the key window's context is now resolvable.
+        SurfaceSeenTracker.shared.refresh()
 #if DEBUG
         dlog(
             "mainWindow.active window={\(debugWindowToken(window))} context={\(debugContextToken(context))} beforeMgr=\(beforeManagerToken) afterMgr=\(debugManagerToken(tabManager)) \(debugShortcutRouteSnapshot())"

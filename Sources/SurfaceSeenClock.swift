@@ -8,7 +8,10 @@ import Foundation
 //   2. that workspace is the selected workspace of its window,
 //   3. that window is the key window and a c11 main terminal window,
 //   4. c11 is the active (frontmost) app,
-//   5. the screen is not locked or asleep and the login session is active.
+//   5. that window is on the active Space and not fully occluded,
+//   6. the screen is not locked, in screensaver, or asleep (displays or system)
+//      and the login session is active. These are independent reasons; one
+//      clearing (a display waking) does not lift another (the lock screen).
 // At most one panel in the whole app is being seen at any moment.
 //
 // `lastSeenAt` is the moment a panel last STOPPED being seen. While a panel is
@@ -30,7 +33,9 @@ import Foundation
 // (never from keystroke, hit-test, or `forceRefresh` paths). The steady state is
 // a handful of property reads and an equality check; a `Date` is allocated only
 // when the seen-panel actually changes. Nothing is written to disk here: the
-// stamps ride the existing session snapshot cadence (`last_seen_at`).
+// stamps ride the existing session snapshot cadence (`last_seen_at`), so the
+// persisted value can lag by up to the autosave interval (~60 s). Precision is
+// one second on the socket. Closed panels are dropped via `forget(panelId:)`.
 
 /// Pure state machine behind `lastSeenAt`. No AppKit, no clock of its own.
 struct SurfaceSeenClock {
@@ -73,23 +78,48 @@ struct SurfaceSeenClock {
 final class SurfaceSeenTracker {
     static let shared = SurfaceSeenTracker()
 
+    /// Independent reasons the operator cannot be looking at c11 even though its
+    /// focus state is unchanged. Each is cleared only by its own counterpart, so a
+    /// display waking while the lock screen is still up stays interrupted.
+    enum InterruptReason: Hashable {
+        case locked
+        case screensaver
+        case displaysAsleep
+        case systemAsleep
+        case sessionInactive
+    }
+
     private var clock = SurfaceSeenClock()
-    /// True while the screen is locked/asleep or the login session is inactive.
-    private var interrupted = false
+    private(set) var interruptions: Set<InterruptReason> = []
+    private let seenProvider: @MainActor () -> UUID?
+    private let now: () -> Date
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
-    private init() {}
+    /// `seenProvider` answers "which panel is on screen in front of the operator";
+    /// `now` is the clock. Both are injectable for tests.
+    init(
+        seenProvider: @escaping @MainActor () -> UUID? = { AppDelegate.shared?.operatorSeenPanelId() },
+        now: @escaping () -> Date = { Date() }
+    ) {
+        self.seenProvider = seenProvider
+        self.now = now
+    }
 
     /// Recompute what the operator is looking at; stamp the previous panel if it
     /// changed. Cheap enough for selection/focus paths; do not call per keystroke.
     func refresh() {
-        let seen = interrupted ? nil : AppDelegate.shared?.operatorSeenPanelId()
+        let seen = interruptions.isEmpty ? seenProvider() : nil
         guard seen != clock.current else { return }
-        clock.observe(seen: seen, at: Date())
+        clock.observe(seen: seen, at: now())
+    }
+
+    func setInterruption(_ reason: InterruptReason, active: Bool) {
+        if active { interruptions.insert(reason) } else { interruptions.remove(reason) }
+        refresh()
     }
 
     func lastSeenAt(panelId: UUID) -> Date? {
-        clock.lastSeenAt(panelId, now: Date())
+        clock.lastSeenAt(panelId, now: now())
     }
 
     func isBeingSeen(panelId: UUID) -> Bool {
@@ -100,24 +130,28 @@ final class SurfaceSeenTracker {
         clock.seed(panelId, at: date)
     }
 
+    /// Drop a closed panel's stamp. Not for detach/move, where the id survives.
     func forget(panelId: UUID) {
         clock.forget(panelId)
     }
 
-    /// Idempotent. Observes app/window/screen state; selection and focus paths
-    /// call `refresh()` directly.
+    /// Idempotent. Observes app/window/Space/screen state; selection and focus
+    /// paths call `refresh()` directly.
     func install() {
         guard observers.isEmpty else { return }
         let nc = NotificationCenter.default
         let ws = NSWorkspace.shared.notificationCenter
         let dnc = DistributedNotificationCenter.default()
 
-        func add(_ center: NotificationCenter, _ name: Notification.Name, interrupt: Bool? = nil) {
+        func add(_ center: NotificationCenter, _ name: Notification.Name, reason: InterruptReason? = nil, active: Bool = false) {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if let interrupt { self.interrupted = interrupt }
-                    self.refresh()
+                    if let reason {
+                        self.setInterruption(reason, active: active)
+                    } else {
+                        self.refresh()
+                    }
                 }
             }
             observers.append((center, token))
@@ -127,14 +161,18 @@ final class SurfaceSeenTracker {
         add(nc, NSApplication.didResignActiveNotification)
         add(nc, NSWindow.didBecomeKeyNotification)
         add(nc, NSWindow.didResignKeyNotification)
-        add(ws, NSWorkspace.screensDidSleepNotification, interrupt: true)
-        add(ws, NSWorkspace.screensDidWakeNotification, interrupt: false)
-        add(ws, NSWorkspace.willSleepNotification, interrupt: true)
-        add(ws, NSWorkspace.didWakeNotification, interrupt: false)
-        add(ws, NSWorkspace.sessionDidResignActiveNotification, interrupt: true)
-        add(ws, NSWorkspace.sessionDidBecomeActiveNotification, interrupt: false)
-        add(dnc, Notification.Name("com.apple.screenIsLocked"), interrupt: true)
-        add(dnc, Notification.Name("com.apple.screenIsUnlocked"), interrupt: false)
+        add(nc, NSWindow.didChangeOcclusionStateNotification)
+        add(ws, NSWorkspace.activeSpaceDidChangeNotification)
+        add(ws, NSWorkspace.screensDidSleepNotification, reason: .displaysAsleep, active: true)
+        add(ws, NSWorkspace.screensDidWakeNotification, reason: .displaysAsleep, active: false)
+        add(ws, NSWorkspace.willSleepNotification, reason: .systemAsleep, active: true)
+        add(ws, NSWorkspace.didWakeNotification, reason: .systemAsleep, active: false)
+        add(ws, NSWorkspace.sessionDidResignActiveNotification, reason: .sessionInactive, active: true)
+        add(ws, NSWorkspace.sessionDidBecomeActiveNotification, reason: .sessionInactive, active: false)
+        add(dnc, Notification.Name("com.apple.screenIsLocked"), reason: .locked, active: true)
+        add(dnc, Notification.Name("com.apple.screenIsUnlocked"), reason: .locked, active: false)
+        add(dnc, Notification.Name("com.apple.screensaver.didstart"), reason: .screensaver, active: true)
+        add(dnc, Notification.Name("com.apple.screensaver.didstop"), reason: .screensaver, active: false)
         refresh()
     }
 }

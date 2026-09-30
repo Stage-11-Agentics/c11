@@ -545,7 +545,7 @@ enum SessionPersistenceStore {
             if let existingData = try? Data(contentsOf: fileURL), existingData == data {
                 return true
             }
-            archiveBeforeFirstOverwrite(fileURL: fileURL)
+            guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return false }
             try data.write(to: fileURL, options: .atomic)
             return true
         } catch {
@@ -561,7 +561,7 @@ enum SessionPersistenceStore {
 
     static func removeSnapshot(fileURL: URL? = nil) {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return }
-        archiveBeforeFirstOverwrite(fileURL: fileURL)
+        guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return }
         try? FileManager.default.removeItem(at: fileURL)
     }
 
@@ -575,12 +575,19 @@ enum SessionPersistenceStore {
     /// `session-history/<name>-<UTC timestamp>.json` beside it, so a launch
     /// that skips, filters or never attempts the restore cannot destroy the
     /// prior session. Keeps the newest `historyRetentionCount` copies per file.
-    static func archiveBeforeFirstOverwrite(fileURL: URL, now: Date = Date()) {
+    /// Returns false when the copy failed; the caller must not overwrite, and
+    /// the next attempt retries the copy.
+    @discardableResult
+    static func archiveBeforeFirstOverwrite(fileURL: URL, now: Date = Date()) -> Bool {
         archiveLock.lock()
         defer { archiveLock.unlock() }
-        guard archivedFilePaths.insert(fileURL.standardizedFileURL.path).inserted else { return }
+        let key = fileURL.standardizedFileURL.path
+        guard !archivedFilePaths.contains(key) else { return true }
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            archivedFilePaths.insert(key)
+            return true
+        }
 
         let historyDirectory = historyDirectoryURL(for: fileURL)
         let stem = fileURL.deletingPathExtension().lastPathComponent
@@ -596,13 +603,15 @@ enum SessionPersistenceStore {
             try fileManager.createDirectory(at: historyDirectory, withIntermediateDirectories: true, attributes: nil)
             try fileManager.copyItem(at: fileURL, to: archiveURL)
         } catch {
-            return
+            return false
         }
+        archivedFilePaths.insert(key)
 
         let archives = historyFileURLs(for: fileURL)
         for stale in archives.dropFirst(historyRetentionCount) {
             try? fileManager.removeItem(at: stale)
         }
+        return true
     }
 
     static func historyDirectoryURL(for fileURL: URL) -> URL {
@@ -612,13 +621,24 @@ enum SessionPersistenceStore {
 
     /// Archived copies of `fileURL`, newest first.
     static func historyFileURLs(for fileURL: URL) -> [URL] {
+        // Exact match on the timestamp suffix: dev-build stems can prefix one
+        // another (`…debug.foo` and `…debug.foo-bar`).
         let prefix = fileURL.deletingPathExtension().lastPathComponent + "-"
+        let timestamp = try? NSRegularExpression(pattern: #"^\d{8}T\d{6}\.\d{3}Z\.json$"#)
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: historyDirectoryURL(for: fileURL),
             includingPropertiesForKeys: nil
         )) ?? []
         return contents
-            .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            .filter { url in
+                let name = url.lastPathComponent
+                guard name.hasPrefix(prefix), let timestamp else { return false }
+                let suffix = String(name.dropFirst(prefix.count))
+                return timestamp.firstMatch(
+                    in: suffix,
+                    range: NSRange(suffix.startIndex..., in: suffix)
+                ) != nil
+            }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 

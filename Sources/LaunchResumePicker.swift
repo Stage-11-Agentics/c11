@@ -112,10 +112,12 @@ enum LaunchResumePicker {
     /// `completion(.skipAll)` fires synchronously.
     ///
     /// ⎋ does nothing: a stray keystroke must not throw the session away.
-    /// Skip takes a click; Return resumes the selection.
+    /// Skip takes a click; Return resumes the selection. `onSheetEnded`
+    /// fires however the sheet ends, with or without a decision.
     static func presentSheet(
         on parentWindow: NSWindow,
         snapshot: AppSessionSnapshot,
+        onSheetEnded: (() -> Void)? = nil,
         completion: @escaping (LaunchResumePickerDecision) -> Void
     ) {
         let entries = entries(from: snapshot)
@@ -159,7 +161,7 @@ enum LaunchResumePicker {
         sheetWindow.setContentSize(NSSize(width: 460, height: 420))
 
         capturedSheetWindow = sheetWindow
-        parentWindow.beginSheet(sheetWindow, completionHandler: nil)
+        parentWindow.beginSheet(sheetWindow) { _ in onSheetEnded?() }
     }
 
     /// Filter `snapshot.windows[*].tabManager.workspaces` to only those

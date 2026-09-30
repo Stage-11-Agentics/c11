@@ -814,6 +814,21 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(archives.contains { $0.lastPathComponent == "session-20000101T000000.000Z.json" })
     }
 
+    func testSessionHistoryKeepsPrefixSharingStemsApart() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        let fooURL = tempDir.appendingPathComponent("session-dev.foo.json", isDirectory: false)
+        let historyDir = SessionPersistenceStore.historyDirectoryURL(for: fooURL)
+        try FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try Data("foo".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-20260101T000000.000Z.json"))
+        try Data("bar".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-bar-20260102T000000.000Z.json"))
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: fooURL)
+        XCTAssertEqual(archives.map(\.lastPathComponent), ["session-dev.foo-20260101T000000.000Z.json"])
+    }
+
     func testShouldSkipSessionSaveDuringStartupRestorePolicy() {
         XCTAssertTrue(
             AppDelegate.shouldSkipSessionSaveDuringStartupRestore(

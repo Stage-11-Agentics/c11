@@ -66,6 +66,9 @@ extension TerminalController {
             return v2Result(id: id, self.v2WorkspaceExportBlueprint(params: params))
         case "workspace.parse_blueprint":
             return v2Result(id: id, self.v2WorkspaceParseBlueprint(params: params))
+        case "workspace.recents.list", "workspace.recents.pin", "workspace.recents.unpin",
+             "workspace.recents.remove", "workspace.recents.resolve", "workspace.create_in_directory":
+            return v2DispatchWorkspaceRecents(method, id: id, params: params)
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }

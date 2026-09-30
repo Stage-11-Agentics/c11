@@ -1993,7 +1993,7 @@ struct CMUXCLI {
             // CMUX-37: `c11 workspace <subcommand>`. Subcommands added across
             // phases: apply (Phase 0), new + export-blueprint (Phase 2).
             guard let sub = commandArgs.first else {
-                throw CLIError(message: "workspace: missing subcommand. Known subcommands: apply, new, export-blueprint")
+                throw CLIError(message: "workspace: missing subcommand. Known subcommands: apply, new, export-blueprint, recents")
             }
             let subArgs = Array(commandArgs.dropFirst())
             switch sub {
@@ -2018,8 +2018,10 @@ struct CMUXCLI {
                     client: client,
                     jsonOutput: jsonOutput
                 )
+            case "recents":
+                try runWorkspaceRecents(subArgs, client: client, jsonOutput: jsonOutput)
             default:
-                throw CLIError(message: "workspace: unknown subcommand '\(sub)'. Known subcommands: apply, new, export-blueprint")
+                throw CLIError(message: "workspace: unknown subcommand '\(sub)'. Known subcommands: apply, new, export-blueprint, recents")
             }
 
         case "workspace-apply":
@@ -3487,9 +3489,15 @@ struct CMUXCLI {
         jsonOutput: Bool,
         idFormat: CLIIDFormat
     ) throws {
+        let (dirOpt, argsAfterDir) = parseOption(args, name: "--dir")
+        if let dirOpt {
+            try requireOptionValue(dirOpt, flag: "--dir", command: "workspace new")
+            try runWorkspaceNewInDirectory(dirOpt, args: argsAfterDir, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+            return
+        }
         let (blueprintOpt, remaining) = parseOption(args, name: "--blueprint")
         if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "workspace new: unknown flag '\(unknown)'. Known flags: --blueprint <path>")
+            throw CLIError(message: "workspace new: unknown flag '\(unknown)'. Known flags: --blueprint <path>, --dir <path-or-query>")
         }
 
         if jsonOutput && blueprintOpt == nil {
@@ -3536,6 +3544,136 @@ struct CMUXCLI {
                     print("  info: [\(code)] \(step): \(msg)")
                 }
             }
+        }
+    }
+
+    /// `c11 workspace new --dir <path-or-query> [--layout <id|name>] [--name <n>] [--agent]`.
+    /// The query is ranked exactly like the New Workspace picker; a tie fails
+    /// loudly and lists the candidates. The open is recorded in recents.
+    private func runWorkspaceNewInDirectory(
+        _ dir: String,
+        args: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (layoutOpt, r1) = parseOption(args, name: "--layout")
+        let (nameOpt, r2) = parseOption(r1, name: "--name")
+        if let layoutOpt { try requireOptionValue(layoutOpt, flag: "--layout", command: "workspace new --dir") }
+        if let nameOpt { try requireOptionValue(nameOpt, flag: "--name", command: "workspace new --dir") }
+        let launchAgent = hasFlag(r2, name: "--agent")
+        let remaining = r2.filter { $0 != "--agent" }
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "workspace new --dir: unknown flag '\(unknown)'. Known flags: --layout <blueprint id|name>, --name <text>, --agent")
+        }
+        if let stray = remaining.first {
+            throw CLIError(message: "workspace new --dir: unexpected argument '\(stray)'. Quote a query that contains spaces.")
+        }
+        var params: [String: Any] = [
+            "dir": dir,
+            "cwd": FileManager.default.currentDirectoryPath,
+            "launch_agent": launchAgent,
+        ]
+        if let layoutOpt {
+            // A layout file path is resolved against this shell's directory, not
+            // the app's.
+            let asPath = resolvePath(layoutOpt)
+            params["layout"] = FileManager.default.fileExists(atPath: asPath) ? asPath : layoutOpt
+        }
+        if let nameOpt { params["name"] = nameOpt }
+        let payload = try client.sendV2(method: "workspace.create_in_directory", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let ref = (payload["workspace_ref"] as? String) ?? "?"
+            let path = (payload["path"] as? String) ?? dir
+            print("OK workspace=\(ref) dir=\(path)")
+        }
+    }
+
+    /// An option value that starts with `--` is the next flag, not a value.
+    private func requireOptionValue(_ value: String, flag: String, command: String) throws {
+        if value.hasPrefix("--") {
+            throw CLIError(message: "\(command): \(flag) needs a value (got '\(value)')")
+        }
+    }
+
+    /// `c11 workspace recents list [--json] [--pinned]` and
+    /// `pin|unpin|remove <path-or-query> [--at <n>]`. Shares the New Workspace
+    /// picker's model, so an open picker updates live.
+    private func runWorkspaceRecents(_ args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let sub = args.first else {
+            throw CLIError(message: "workspace recents: missing subcommand. Known subcommands: list, pin, unpin, remove")
+        }
+        let rest = Array(args.dropFirst())
+        let cwd = FileManager.default.currentDirectoryPath
+        switch sub {
+        case "list":
+            let pinned = hasFlag(rest, name: "--pinned")
+            let extra = rest.filter { $0 != "--pinned" && $0 != "--json" }
+            if let unknown = extra.first {
+                throw CLIError(message: "workspace recents list: unexpected '\(unknown)'. Known flags: --pinned, --json")
+            }
+            let payload = try client.sendV2(method: "workspace.recents.list", params: ["pinned": pinned])
+            if jsonOutput || rest.contains("--json") {
+                print(jsonString(payload))
+                return
+            }
+            let items = payload["recents"] as? [[String: Any]] ?? []
+            if items.isEmpty {
+                print(pinned ? "No pinned directories." : "No recent directories.")
+                return
+            }
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            for item in items {
+                let path = (item["path"] as? String) ?? "?"
+                let shown = path == home ? "~" : (path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path)
+                let pin = (item["pin_index"] as? Int).map { "*\($0)" } ?? "  "
+                let open = (item["open"] as? Bool) == true ? "open" : "    "
+                let missing = (item["exists"] as? Bool) == false ? "missing" : ""
+                let count = (item["open_count"] as? Int) ?? 0
+                let when = (item["last_opened_at"] as? String) ?? ""
+                print("\(pin.padding(toLength: 3, withPad: " ", startingAt: 0)) \(open) \(shown)  x\(count)  \(when) \(missing)".trimmingCharacters(in: .whitespaces))
+            }
+        case "pin", "unpin", "remove":
+            let (atOpt, r1) = parseOption(rest, name: "--at")
+            if let atOpt { try requireOptionValue(atOpt, flag: "--at", command: "workspace recents \(sub)") }
+            if let unknown = r1.first(where: { $0.hasPrefix("--") && $0 != "--json" }) {
+                throw CLIError(message: "workspace recents \(sub): unknown flag '\(unknown)'. Known flags: --at <n> (pin only)")
+            }
+            let positionals = r1.filter { !$0.hasPrefix("--") }
+            guard let target = positionals.first else {
+                throw CLIError(message: "workspace recents \(sub): missing <path>")
+            }
+            if positionals.count > 1 {
+                throw CLIError(message: "workspace recents \(sub): unexpected argument '\(positionals[1])'. Quote a query that contains spaces.")
+            }
+            var params: [String: Any] = ["path": target, "cwd": cwd]
+            if let atOpt {
+                guard sub == "pin" else {
+                    throw CLIError(message: "workspace recents \(sub): --at applies to pin only")
+                }
+                guard let n = Int(atOpt), n >= 1 else {
+                    throw CLIError(message: "workspace recents pin: --at needs an integer >= 1 (the number on the pin's cmd badge)")
+                }
+                params["at"] = n
+            }
+            let payload = try client.sendV2(method: "workspace.recents.\(sub)", params: params)
+            if jsonOutput || rest.contains("--json") {
+                print(jsonString(payload))
+            } else {
+                let path = (payload["path"] as? String) ?? target
+                switch sub {
+                case "pin":
+                    print("OK pinned \(path) at \((payload["pin_index"] as? Int).map(String.init) ?? "?")")
+                case "unpin":
+                    print("OK unpinned \(path)")
+                default:
+                    print("OK removed \(path)")
+                }
+            }
+        default:
+            throw CLIError(message: "workspace recents: unknown subcommand '\(sub)'. Known subcommands: list, pin, unpin, remove")
         }
     }
 
@@ -10105,6 +10243,7 @@ struct CMUXCLI {
             case "new":
                 return """
                 Usage: c11 workspace new [--blueprint <path>]
+                       c11 workspace new --dir <path-or-query> [--layout <id|name>] [--name <text>] [--agent]
 
                 Create a new workspace from a blueprint. Without `--blueprint`,
                 drops into an interactive picker that lists the built-in
@@ -10113,13 +10252,52 @@ struct CMUXCLI {
                 their legacy `cmux` siblings. Both `.md` (operator-edited
                 markdown) and `.json` blueprint files are accepted.
 
+                With `--dir`, create a workspace rooted at a directory the way the
+                New Workspace picker does. The value is a path (`~`, `/`, `./`) or a
+                fuzzy query over your recents, ranked exactly like the picker's
+                search; a real subdirectory of the current directory with that name wins
+                over a fuzzy match. If the top two recents tie, the command fails and lists the
+                candidates. The open is recorded in recents. The directory must
+                exist.
+
                 Flags:
                   --blueprint <path>   Apply the blueprint at the given path
                                        directly, skipping the picker.
+                  --dir <path|query>   Root the workspace here (path or fuzzy recents query).
+                  --layout <id|name>   With --dir: starter (quad, two-columns, two-by-three,
+                                       one-column, or starter:<name>), saved:<url>, or a
+                                       blueprint name. Default: the picker's last layout.
+                  --name <text>        With --dir: workspace title (default: directory name).
+                  --agent              With --dir: launch the default coding agent in the
+                                       first pane (the picker's checkbox; off by default here).
 
                 Examples:
                   c11 workspace new
                   c11 workspace new --blueprint ~/.config/c11/blueprints/agent-room.md
+                  c11 workspace new --dir ace --layout quad
+                  c11 workspace new --dir ~/Projects/site --name "Site"
+                """
+            case "recents":
+                return """
+                Usage: c11 workspace recents list [--pinned] [--json]
+                       c11 workspace recents pin <path-or-query> [--at <n>]
+                       c11 workspace recents unpin <path-or-query>
+                       c11 workspace recents remove <path-or-query>
+
+                Read and edit the New Workspace picker's recent directories and
+                pins. An open picker updates live. `<path-or-query>` is a path or
+                a fuzzy query over recents (ties fail and list the candidates).
+
+                `list` prints, per directory: path, lastOpenedAt, openCount, whether
+                it is pinned, its pin number, whether a workspace for it is open in
+                c11, and whether the directory still exists. `--pinned` lists pins in
+                pin order. `pin --at <n>` places the pin at number n (the number on
+                its tile); `remove` also drops the pin.
+
+                Examples:
+                  c11 workspace recents list --json
+                  c11 workspace recents pin ~/Projects/site --at 1
+                  c11 workspace recents remove old-client
                 """
             case "export-blueprint":
                 return """
@@ -10157,6 +10335,7 @@ struct CMUXCLI {
                   apply              Apply a WorkspaceApplyPlan JSON document.
                   new                Create a workspace from a blueprint (interactive or by path).
                   export-blueprint   Capture a workspace as a reusable blueprint file.
+                  recents            List, pin, unpin and remove New Workspace recents.
 
                 Run `c11 workspace <subcommand> --help` for per-subcommand flags.
                 """

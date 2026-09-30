@@ -5610,6 +5610,10 @@ extension TabManager {
             hasher.combine(workspace.panelPullRequests.count)
             hasher.combine(workspace.panelGitBranches.count)
             hasher.combine(workspace.surfaceListeningPorts.count)
+            // Round five: which areas have their tab rail open.
+            for railPane in workspace.bonsplitController.railOpenPaneIds.map({ $0.id.uuidString }).sorted() {
+                hasher.combine(railPane)
+            }
 
             if let progress = workspace.progress {
                 hasher.combine(Int((progress.value * 1000).rounded()))

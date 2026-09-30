@@ -6079,6 +6079,12 @@ final class Workspace: Identifiable, ObservableObject {
             self?.applyTabOrdinalDisplay()
         }
 
+        // Remember a toggled rail: the fingerprint sees the new set, so the
+        // autosave pass this asks for writes it.
+        bonsplitController.onRailToggled = { _, _ in
+            AppDelegate.shared?.requestSessionAutosave(source: "rail.toggle")
+        }
+
         // React to the Tab layout setting (Tabs | Rail) live.
         self.tabLayoutObserver = TabLayoutObserver { [weak self] in
             self?.applyTabLayout()

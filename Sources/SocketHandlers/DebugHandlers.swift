@@ -90,8 +90,9 @@ extension TerminalController {
         case "debug.tab_sheet.hover":
             return v2Result(id: id, self.v2DebugTabSheetHover(params: params))
         case "debug.tab_sheet.motion_scale":
-            BonsplitDebug.tabSheetMotionScale = debugDouble(params, "scale") ?? 1
-            return v2Result(id: id, .ok(["scale": BonsplitDebug.tabSheetMotionScale]))
+            let scale = debugDouble(params, "scale") ?? 1
+            v2MainSync { BonsplitDebug.tabSheetMotionScale = scale }
+            return v2Result(id: id, .ok(["scale": scale]))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
         case "debug.session.round_trip_workspaces":

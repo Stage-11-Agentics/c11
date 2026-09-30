@@ -250,7 +250,9 @@ extension Workspace {
     func syncSurfaceTabDetailForPanel(_ panelId: UUID) {
         // Nothing can show the detail unless a sheet is open in this pane;
         // opening one refreshes it, so skip the work otherwise.
-        guard let paneId = paneId(forPanelId: panelId),
+        // Nothing open anywhere (the common case): no pane lookup, no work.
+        guard bonsplitController.hasVisibleTabDetail,
+              let paneId = paneId(forPanelId: panelId),
               bonsplitController.isTabDetailVisible(inPane: paneId),
               let tabId = surfaceIdFromPanelId(panelId),
               let existing = bonsplitController.tab(tabId),

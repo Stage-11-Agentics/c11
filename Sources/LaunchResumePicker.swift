@@ -111,10 +111,8 @@ enum LaunchResumePicker {
     /// workspaces (nothing to choose from), the picker is skipped and
     /// `completion(.skipAll)` fires synchronously.
     ///
-    /// The sheet is non-cancellable via the standard ⎋ keystroke alone:
-    /// a misclick that dismisses the sheet should not silently throw the
-    /// session away. ⎋ inside the picker is wired to "Skip" so the
-    /// operator's intent is recorded explicitly.
+    /// ⎋ does nothing: a stray keystroke must not throw the session away.
+    /// Skip takes a click; Return resumes the selection.
     static func presentSheet(
         on parentWindow: NSWindow,
         snapshot: AppSessionSnapshot,
@@ -358,7 +356,6 @@ struct LaunchResumePickerView: View {
                     ))
                     .frame(minWidth: 60)
                 }
-                .keyboardShortcut(.cancelAction)
                 Button(action: {
                     if model.selection.isEmpty {
                         onComplete(.skipAll)

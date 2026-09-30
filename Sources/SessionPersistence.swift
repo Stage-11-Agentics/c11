@@ -545,6 +545,7 @@ enum SessionPersistenceStore {
             if let existingData = try? Data(contentsOf: fileURL), existingData == data {
                 return true
             }
+            archiveBeforeFirstOverwrite(fileURL: fileURL)
             try data.write(to: fileURL, options: .atomic)
             return true
         } catch {
@@ -560,7 +561,65 @@ enum SessionPersistenceStore {
 
     static func removeSnapshot(fileURL: URL? = nil) {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return }
+        archiveBeforeFirstOverwrite(fileURL: fileURL)
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    static let historyDirectoryName = "session-history"
+    static let historyRetentionCount = 10
+    private static let archiveLock = NSLock()
+    private nonisolated(unsafe) static var archivedFilePaths = Set<String>()
+
+    /// The session file is the only copy of the previous session. The first
+    /// time this process is about to overwrite or remove it, copy it to
+    /// `session-history/<name>-<UTC timestamp>.json` beside it, so a launch
+    /// that skips, filters or never attempts the restore cannot destroy the
+    /// prior session. Keeps the newest `historyRetentionCount` copies per file.
+    static func archiveBeforeFirstOverwrite(fileURL: URL, now: Date = Date()) {
+        archiveLock.lock()
+        defer { archiveLock.unlock() }
+        guard archivedFilePaths.insert(fileURL.standardizedFileURL.path).inserted else { return }
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+
+        let historyDirectory = historyDirectoryURL(for: fileURL)
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss.SSS'Z'"
+        let archiveURL = historyDirectory.appendingPathComponent(
+            "\(stem)-\(formatter.string(from: now)).json",
+            isDirectory: false
+        )
+        do {
+            try fileManager.createDirectory(at: historyDirectory, withIntermediateDirectories: true, attributes: nil)
+            try fileManager.copyItem(at: fileURL, to: archiveURL)
+        } catch {
+            return
+        }
+
+        let archives = historyFileURLs(for: fileURL)
+        for stale in archives.dropFirst(historyRetentionCount) {
+            try? fileManager.removeItem(at: stale)
+        }
+    }
+
+    static func historyDirectoryURL(for fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent(historyDirectoryName, isDirectory: true)
+    }
+
+    /// Archived copies of `fileURL`, newest first.
+    static func historyFileURLs(for fileURL: URL) -> [URL] {
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + "-"
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: historyDirectoryURL(for: fileURL),
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return contents
+            .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 
     static func defaultSnapshotFileURL(

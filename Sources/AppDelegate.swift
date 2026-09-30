@@ -2312,6 +2312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
     private var isApplyingStartupSessionRestore = false
+    private var isAwaitingStartupResumeDecision = false
     private var sessionAutosaveTimer: DispatchSourceTimer?
     private var sessionAutosaveTickInFlight = false
     private var sessionAutosaveDeferredRetryPending = false
@@ -3566,8 +3567,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if policy == .ask,
            let snapshot = startupSessionSnapshot,
            snapshot.windows.contains(where: { !$0.tabManager.workspaces.isEmpty }) {
+            isAwaitingStartupResumeDecision = true
             LaunchResumePicker.presentSheet(on: primaryWindow, snapshot: snapshot) { [weak self] decision in
                 guard let self else { return }
+                self.isAwaitingStartupResumeDecision = false
                 switch decision {
                 case .resumeAll:
                     break  // startupSessionSnapshot stays as-is
@@ -4350,6 +4353,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         conversationsByPanelId: [String: SurfaceConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
+        // While the resume picker is open, the file on disk is the only copy
+        // of the session it offers; the empty launch window must not replace
+        // it, whether the operator answers, quits, or c11 crashes first.
+        if isAwaitingStartupResumeDecision {
+#if DEBUG
+            dlog("session.save.skipped reason=awaiting_resume_decision")
+#endif
+            return false
+        }
         if Self.shouldSkipSessionSaveDuringStartupRestore(
             isApplyingStartupSessionRestore: isApplyingStartupSessionRestore,
             includeScrollback: includeScrollback

@@ -386,6 +386,8 @@ c11 tree --json                      # Structured JSON (pixel + percent coords, 
 
 Every pane's JSON output includes: `pixel_rect`, `percent_rect`, `h_range` / `v_range` (both pixel and percent), `split_path` (a non-persistent ordered list of `H:left | H:right | V:top | V:bottom`), and the workspace `content_area` dimensions. Use `split_path` for current-layout reasoning only; use `pane:<n>` / pane UUID for stable references across layout mutations.
 
+Every surface node (in `tree --json` and `surface.list`) also carries `last_seen_at` and `being_seen`: when the operator last looked at that tab. A tab is *being seen* while it is the selected tab of the focused pane, in the selected workspace of the key c11 window, with c11 frontmost, that window on the active Space and not occluded, and the screen unlocked, awake and out of screensaver. `last_seen_at` is an ISO-8601 UTC timestamp (second precision) of the moment it last stopped being seen (equal to now while `being_seen` is true), or `null` if the operator has never looked at it. A socket focus change while c11 is frontmost DOES stamp the old tab and mark the new one `being_seen`; while c11 is in the background it changes nothing. The value survives relaunch, but it rides the session autosave, so the persisted copy can lag by up to about a minute. Use it to tell tabs the operator has read from ones they have not: `c11 tree --json | jq '.. | objects | select(has("being_seen") and .last_seen_at == null)'`.
+
 ## Notifications
 
 ```bash

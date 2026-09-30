@@ -2723,6 +2723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.start()
         windowDecorationsController.start()
         installMainWindowKeyObserver()
+        SurfaceSeenTracker.shared.install()
         refreshGhosttyGotoSplitShortcuts()
         installGhosttyConfigObserver()
         installWindowResponderSwizzles()
@@ -5006,6 +5007,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !isTerminatingApp {
             _ = saveSessionSnapshot(includeScrollback: false)
         }
+        // C11-243: a fresh window's first tab is seen without any selection event.
+        SurfaceSeenTracker.shared.refresh()
     }
 
     struct MainWindowSummary {
@@ -5495,6 +5498,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func tabManagerFor(windowId: UUID) -> TabManager? {
         mainWindowContexts.values.first(where: { $0.windowId == windowId })?.tabManager
+    }
+
+    /// C11-243: the panel the operator is looking at right now, or nil. Being
+    /// seen = selected tab of the focused pane, in the selected workspace of the
+    /// key main terminal window, while c11 is frontmost and that window is on the
+    /// active Space and not fully occluded. Definition and rationale in
+    /// `SurfaceSeenClock.swift`. `reindex: false` skips the context re-keying; the
+    /// lookup still refreshes `context.window`, which is harmless here.
+    func operatorSeenPanelId() -> UUID? {
+        guard NSApp.isActive,
+              let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow,
+              keyWindow.isOnActiveSpace, keyWindow.occlusionState.contains(.visible),
+              let context = contextForMainTerminalWindow(keyWindow, reindex: false),
+              let workspace = context.tabManager.selectedWorkspace else { return nil }
+        return workspace.focusedPanelId
     }
 
     func windowId(for tabManager: TabManager) -> UUID? {
@@ -13025,6 +13043,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState = context.sidebarState
         sidebarSelectionState = context.sidebarSelectionState
         TerminalController.shared.setActiveTabManager(context.tabManager)
+        // C11-243: the key window's context is now resolvable.
+        SurfaceSeenTracker.shared.refresh()
 #if DEBUG
         dlog(
             "mainWindow.active window={\(debugWindowToken(window))} context={\(debugContextToken(context))} beforeMgr=\(beforeManagerToken) afterMgr=\(debugManagerToken(tabManager)) \(debugShortcutRouteSnapshot())"
@@ -13054,6 +13074,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 store.clearNotifications(forTabId: tab.id)
             }
         }
+
+        // C11-243: a really closed window drops its panels' last-seen stamps. A
+        // workspace move re-homes the workspace before this runs, so moved panels
+        // are no longer in `removed.tabManager.tabs`.
+        for workspace in removed.tabManager.tabs {
+            for panelId in workspace.panels.keys {
+                SurfaceSeenTracker.shared.forget(panelId: panelId)
+            }
+        }
+        SurfaceSeenTracker.shared.refresh()
 
         if tabManager === removed.tabManager {
             // Repoint "active" pointers to any remaining main terminal window.

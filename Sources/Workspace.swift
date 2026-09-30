@@ -933,7 +933,8 @@ extension Workspace {
             metadata: persistedMetadata,
             metadataSources: persistedMetadataSources,
             surfaceConversations: surfaceConversations,
-            lastActivityAt: lastActivityAt
+            lastActivityAt: lastActivityAt,
+            lastSeenAt: SurfaceSeenTracker.shared.lastSeenAt(panelId: panelId)
         )
     }
 
@@ -1144,6 +1145,10 @@ extension Workspace {
     }
 
     private func applySessionPanelMetadata(_ snapshot: SessionPanelSnapshot, toPanelId panelId: UUID) {
+        // C11-243: restore the persisted last-seen stamp onto the created panel id.
+        if let lastSeenAt = snapshot.lastSeenAt {
+            SurfaceSeenTracker.shared.seed(panelId: panelId, at: lastSeenAt)
+        }
         if let title = snapshot.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             panelTitles[panelId] = title
         }
@@ -6937,7 +6942,9 @@ final class Workspace: Identifiable, ObservableObject {
             activityHelp: activityHelp,
             createdAt: panels[panelId]?.createdAt,
             lastActivityAt: activityHelp?.lastActivityAt
-                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
+            lastSeenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId)
         )
     }
 
@@ -9304,6 +9311,8 @@ final class Workspace: Identifiable, ObservableObject {
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             panel.close()
+            // C11-243: workspace teardown; these panels are gone.
+            SurfaceSeenTracker.shared.forget(panelId: panelId)
         }
 
         panels.removeAll(keepingCapacity: false)
@@ -11659,6 +11668,9 @@ extension Workspace: BonsplitDelegate {
         if let owningTabManager {
             applyPanelVisibility(workspaceVisible: owningTabManager.selectedTabId == id)
         }
+
+        // C11-243: tab switch / pane focus changes what the operator is seeing.
+        SurfaceSeenTracker.shared.refresh()
     }
 
     private func applyTabSelectionNow(
@@ -12152,6 +12164,8 @@ extension Workspace: BonsplitDelegate {
                 onClosedBrowserPanel?(closedBrowserRestoreSnapshot)
             }
             panel?.close()
+            // C11-243: the panel is gone for good (detach keeps its id and the stamp).
+            SurfaceSeenTracker.shared.forget(panelId: panelId)
         }
 
         // Resolve any pending pane interactions on this panel with .dismissed so
@@ -12353,6 +12367,10 @@ extension Workspace: BonsplitDelegate {
                 cancelPersistentFlash(panelId: panelId)
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
+                // C11-243: pane closed for good; a detaching transaction keeps ids.
+                if !isDetachingCloseTransaction {
+                    SurfaceSeenTracker.shared.forget(panelId: panelId)
+                }
                 untrackRemoteTerminalSurface(panelId)
                 panelDirectories.removeValue(forKey: panelId)
                 panelGitBranches.removeValue(forKey: panelId)

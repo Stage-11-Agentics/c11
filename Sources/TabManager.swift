@@ -944,6 +944,8 @@ class TabManager: ObservableObject {
         }
         didSet {
             guard selectedTabId != oldValue else { return }
+            // C11-243: workspace switch changes what the operator is looking at.
+            SurfaceSeenTracker.shared.refresh()
             // C11-163: workspace selected → events stream. Fires on every
             // selection route (socket, keyboard, click, close-fallback) since
             // they all land here.

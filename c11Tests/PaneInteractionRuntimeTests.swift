@@ -382,6 +382,8 @@ final class PaneInteractionRuntimeTests: XCTestCase {
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
 
+        XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 124)) // right
         XCTAssertEqual(runtime.confirmSelection[panelId], .confirm)
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 123)) // left
         XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
@@ -389,6 +391,18 @@ final class PaneInteractionRuntimeTests: XCTestCase {
 
         XCTAssertEqual(result, .cancelled)
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
+    }
+
+    func testReturnOnAFreshConfirmCancels() {
+        // A destructive confirm must not be accepted by a reflexive Return.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .cancelled)
     }
 
     func testHandleKeyDownConfirmUpDownAndReturn() {

@@ -10482,6 +10482,16 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// Check if any panel needs close confirmation
+    /// Whether closing this whole workspace asks first. Only a lone idle
+    /// terminal closes without asking; a pinned workspace, several surfaces,
+    /// a browser or markdown surface, or anything running all ask, because
+    /// a closed workspace cannot be reopened.
+    func needsConfirmCloseWorkspace() -> Bool {
+        if isPinned { return true }
+        guard panels.count == 1, panels.values.first is TerminalPanel else { return true }
+        return needsConfirmClose()
+    }
+
     func needsConfirmClose() -> Bool {
         for (panelId, panel) in panels {
             if let terminalPanel = panel as? TerminalPanel,
@@ -11431,33 +11441,25 @@ extension Workspace: BonsplitDelegate {
             )
         }
 
-        // Legacy NSAlert path — kept as a rollback/fallback.
+        // Legacy NSAlert path — kept as a rollback/fallback. Cancel is the
+        // first button, so Return and Escape keep the tab; closing takes a click.
         let alert = NSAlert()
         alert.messageText = String(localized: "dialog.closeTab.title", defaultValue: "Close tab?")
         alert.informativeText = String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
-
-        if let closeButton = alert.buttons.first {
-            closeButton.keyEquivalent = "\r"
-            closeButton.keyEquivalentModifierMask = []
-            alert.window.defaultButtonCell = closeButton.cell as? NSButtonCell
-            alert.window.initialFirstResponder = closeButton
-        }
-        if let cancelButton = alert.buttons.dropFirst().first {
-            cancelButton.keyEquivalent = "\u{1b}"
-        }
+        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
+            .hasDestructiveAction = true
 
         if let window = NSApp.keyWindow ?? NSApp.mainWindow {
             return await withCheckedContinuation { continuation in
                 alert.beginSheetModal(for: window) { response in
-                    continuation.resume(returning: response == .alertFirstButtonReturn)
+                    continuation.resume(returning: response == .alertSecondButtonReturn)
                 }
             }
         }
 
-        return alert.runModal() == .alertFirstButtonReturn
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     /// Present a .confirm pane interaction on the given panel and await the

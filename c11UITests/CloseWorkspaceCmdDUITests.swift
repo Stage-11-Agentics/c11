@@ -7,23 +7,39 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testCmdDConfirmsCloseWhenClosingLastWorkspaceClosesWindow() {
+    func testCmdDDoesNotConfirmClose() {
         let app = XCUIApplication()
-        // Force a confirmation alert when closing the current workspace so we can validate Cmd+D.
         app.launchEnvironment["CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"] = "1"
         app.launch()
         app.activate()
 
-        // Close current workspace. With a single workspace/window, this will close the window after confirmation.
         app.typeKey("w", modifierFlags: [.command, .shift])
         XCTAssertTrue(waitForCloseWorkspaceAlert(app: app, timeout: 5.0))
 
-        // Cmd+D should accept the destructive close and close the window.
+        // Cmd+D is Split Right; habit must never be able to confirm a close.
         app.typeKey("d", modifierFlags: [.command])
+        Thread.sleep(forTimeInterval: 1.0)
+        XCTAssertTrue(
+            waitForWindowCount(app: app, atLeast: 1, timeout: 2.0),
+            "Expected Cmd+D to leave the close confirmation unanswered"
+        )
+        XCTAssertTrue(waitForCloseWorkspaceAlert(app: app, timeout: 2.0))
+    }
+
+    func testConfirmingCloseOfLastWorkspaceClosesWindow() {
+        let app = XCUIApplication()
+        app.launchEnvironment["CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"] = "1"
+        app.launch()
+        app.activate()
+
+        // Close current workspace. With a single workspace/window, this closes the window after confirmation.
+        app.typeKey("w", modifierFlags: [.command, .shift])
+        XCTAssertTrue(waitForCloseWorkspaceAlert(app: app, timeout: 5.0))
+        clickConfirmOnCloseWorkspaceAlert(app: app)
 
         XCTAssertTrue(
             waitForNoWindowsOrAppNotRunningForeground(app: app, timeout: 6.0),
-            "Expected Cmd+D to confirm close and close the last window"
+            "Expected confirming the close to close the last window"
         )
     }
 
@@ -65,7 +81,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         // Close the only window.
         app.typeKey("w", modifierFlags: [.command, .shift])
         XCTAssertTrue(waitForCloseWorkspaceAlert(app: app, timeout: 5.0))
-        app.typeKey("d", modifierFlags: [.command])
+        clickConfirmOnCloseWorkspaceAlert(app: app)
 
         XCTAssertTrue(
             waitForWindowCount(app: app, toBe: 0, timeout: 6.0),
@@ -600,6 +616,18 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 waitForWindowCount(app: app, atLeast: 1, timeout: 2.0),
                 "Attempt \(attempt): app window should remain open after early Ctrl+D. data=\(done)"
             )
+        }
+    }
+
+    private func clickConfirmOnCloseWorkspaceAlert(app: XCUIApplication) {
+        let overlayConfirm = app.buttons["WorkspaceCloseOverlay.confirm"].firstMatch
+        if overlayConfirm.waitForExistence(timeout: 2.0) {
+            overlayConfirm.click()
+            return
+        }
+        let alert = app.alerts.containing(.staticText, identifier: "Close workspace?").firstMatch
+        if alert.exists {
+            alert.buttons["Close"].firstMatch.click()
         }
     }
 

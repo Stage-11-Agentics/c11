@@ -2135,6 +2135,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Sits in front of a main window's own delegate (SwiftUI's, or a
+    /// `MainWindowController`), answers `windowShouldClose` through the close
+    /// prompt, and forwards everything else unchanged.
+    fileprivate final class MainWindowCloseGuardDelegate: NSObject, NSWindowDelegate {
+        private let forward: NSWindowDelegate?
+        private weak var owner: AppDelegate?
+
+        init(forwardingTo forward: NSWindowDelegate?, owner: AppDelegate) {
+            self.forward = forward
+            self.owner = owner
+        }
+
+        override func responds(to aSelector: Selector!) -> Bool {
+            super.responds(to: aSelector) || (forward?.responds(to: aSelector) ?? false)
+        }
+
+        override func forwardingTarget(for aSelector: Selector!) -> Any? {
+            if let forward, forward.responds(to: aSelector) { return forward }
+            return super.forwardingTarget(for: aSelector)
+        }
+
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            guard owner?.mainWindowShouldClose(sender) ?? true else { return false }
+            return forward?.windowShouldClose?(sender) ?? true
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            forward?.windowWillClose?(notification)
+            if let window = notification.object as? NSWindow {
+                owner?.mainWindowCloseGuardDidClose(window)
+            }
+        }
+    }
+
     struct ScriptableMainWindowState {
         let windowId: UUID
         let tabManager: TabManager
@@ -4471,10 +4505,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         !isTerminatingApp
     }
 
+    /// Never. Closing the last window keeps the snapshot of what it held, so
+    /// the next launch can still offer those workspaces back.
     nonisolated static func shouldRemoveSnapshotWhenNoWindowsRemainOnWindowUnregister(
         isTerminatingApp: Bool
     ) -> Bool {
-        !isTerminatingApp
+        false
     }
 
     nonisolated static func shouldSkipSessionSaveDuringStartupRestore(
@@ -4954,6 +4990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState: SidebarSelectionState
     ) {
         tabManager.window = window
+        installMainWindowCloseGuard(on: window)
 
         let key = ObjectIdentifier(window)
         #if DEBUG
@@ -6031,18 +6068,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// Socket `window.close`: an agent asked for this exact window, so no prompt.
     func closeMainWindow(windowId: UUID) -> Bool {
         guard let window = windowForMainWindowId(windowId) else { return false }
-        window.performClose(nil)
+        closeMainWindowWithoutPrompt(window)
         return true
     }
 
-    private func confirmCloseMainWindow(_ window: NSWindow) -> Bool {
+    // MARK: - Main window close guard
+
+    /// Main windows c11 is closing on purpose: a workspace close that already
+    /// confirmed (or had nothing to confirm), a shell exiting in the last
+    /// pane, an agent's socket or AppleScript close, or a confirmed prompt.
+    private var mainWindowsClosingWithoutPrompt: Set<ObjectIdentifier> = []
+
+    /// Wraps each main window's delegate so `windowShouldClose` can ask
+    /// first. That covers every `performClose`: the red close button, File >
+    /// Close All, and any other caller. The close button is also routed
+    /// straight to `closeWindowWithConfirmation` in case AppKit or SwiftUI
+    /// swaps the delegate later. Closes c11 means to make pass through
+    /// `closeMainWindowWithoutPrompt`.
+    private var mainWindowCloseGuards: [ObjectIdentifier: MainWindowCloseGuardDelegate] = [:]
+
+    private func installMainWindowCloseGuard(on window: NSWindow) {
+        if let closeButton = window.standardWindowButton(.closeButton) {
+            closeButton.target = self
+            closeButton.action = #selector(mainWindowCloseButtonPressed(_:))
+        }
+        let key = ObjectIdentifier(window)
+        if let existing = mainWindowCloseGuards[key], window.delegate === existing { return }
+        let closeGuard = MainWindowCloseGuardDelegate(forwardingTo: window.delegate, owner: self)
+        mainWindowCloseGuards[key] = closeGuard
+        window.delegate = closeGuard
+    }
+
+    fileprivate func mainWindowShouldClose(_ window: NSWindow) -> Bool {
+        if isTerminatingApp || mainWindowsClosingWithoutPrompt.contains(ObjectIdentifier(window)) {
+            return true
+        }
+        closeWindowWithConfirmation(window)
+        return false
+    }
+
+    fileprivate func mainWindowCloseGuardDidClose(_ window: NSWindow) {
+        mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
+    }
+
+    @objc private func mainWindowCloseButtonPressed(_ sender: NSButton) {
+        guard let window = sender.window else { return }
+        if isTerminatingApp || mainWindowsClosingWithoutPrompt.contains(ObjectIdentifier(window)) {
+            window.close()
+            return
+        }
+        closeWindowWithConfirmation(window)
+    }
+
+    func closeMainWindowWithoutPrompt(_ window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        mainWindowsClosingWithoutPrompt.insert(key)
+        defer { mainWindowsClosingWithoutPrompt.remove(key) }
+        window.performClose(nil)
+    }
+
+    /// Asks before closing a main window. Cancel is the first button, so
+    /// Return and Escape keep the window; closing takes a click. Presented as
+    /// a sheet so nothing on this path can block the main thread.
+    private func confirmCloseMainWindow(_ window: NSWindow, onConfirm: @escaping () -> Void) {
 #if DEBUG
         if let debugCloseMainWindowConfirmationHandler {
-            return debugCloseMainWindowConfirmationHandler(window)
+            if debugCloseMainWindowConfirmationHandler(window) { onConfirm() }
+            return
         }
 #endif
+        guard window.attachedSheet == nil else {
+            NSSound.beep()
+            return
+        }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -6051,19 +6152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             localized: "dialog.closeWindow.message",
             defaultValue: "This will close the current window and all of its workspaces."
         )
-        alert.addButton(withTitle: String(localized: "common.close", defaultValue: "Close"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
-
-        let alertWindow = alert.window
-        if let closeButton = alert.buttons.first {
-            alertWindow.defaultButtonCell = closeButton.cell as? NSButtonCell
-            alertWindow.initialFirstResponder = closeButton
-            DispatchQueue.main.async {
-                _ = alertWindow.makeFirstResponder(closeButton)
-            }
+        alert.addButton(withTitle: String(localized: "common.close", defaultValue: "Close"))
+            .hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertSecondButtonReturn else { return }
+            onConfirm()
         }
-
-        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @discardableResult
@@ -6072,8 +6167,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             window.performClose(nil)
             return true
         }
-        guard confirmCloseMainWindow(window) else { return true }
-        window.performClose(nil)
+        confirmCloseMainWindow(window) { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.closeMainWindowWithoutPrompt(window)
+        }
         return true
     }
 
@@ -10954,36 +11051,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let paneInteractionActive = shortcutTabManager?.hasActivePaneInteraction ?? false
         let workspaceCloseOverlayActive = shortcutTabManager?.hasActiveWorkspaceCloseInteraction ?? false
 
-        if let closeConfirmationPanel {
-            // Special-case: Cmd+D should confirm destructive close on alerts.
-            // XCUITest key events often hit the app-level local monitor first, so forward the key
-            // equivalent to the alert panel explicitly.
-            if matchShortcut(
-                event: event,
-                shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ),
-               let root = closeConfirmationPanel.contentView,
-               let closeButton = findButton(
-                   in: root,
-                   titled: String(localized: "common.close", defaultValue: "Close")
-               ) {
-                closeButton.performClick(nil)
-                return true
-            }
+        // Destructive confirmations take a click on the destructive button.
+        // Cmd+D is also Split Right, so it never accepts a close: habit must
+        // not be able to confirm one.
+        if closeConfirmationPanel != nil {
             return false
         }
 
         if workspaceCloseOverlayActive {
-            // C11-30: workspace-scoped close-confirmation overlay. Cmd+D accepts
-            // the destructive close — same contract as the NSPanel and pane-
-            // interaction paths. All app-level shortcuts stay suppressed so
-            // keybindings don't fire through the overlay.
-            if matchShortcut(
-                event: event,
-                shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ), shortcutTabManager?.acceptActiveWorkspaceCloseInteractionInKeyWorkspace() == true {
-                return true
-            }
+            // C11-30: workspace-scoped close-confirmation overlay. All app-level
+            // shortcuts stay suppressed so keybindings (Cmd+D included) don't
+            // fire through the overlay.
             // Esc fallback for cases where the overlay host did not receive
             // keyDown directly (WKWebView responder edge cases). keyCode 53 = Esc.
             let hasAppShortcutModifier = hasCommand || hasControl || hasOption
@@ -10996,10 +11074,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if paneInteractionActive {
-            // Route Cmd+D through to the pane-interaction runtime — same contract as
-            // the NSPanel close-confirmation path: accept the topmost dialog in the
-            // focused workspace. All app-level *shortcuts* are swallowed while the
-            // dialog is visible so keybindings don't fire through the overlay.
+            // Route Cmd+D through to the pane-interaction runtime: it submits the
+            // topmost text-input card in the focused workspace, but never accepts
+            // a destructive confirm. All app-level *shortcuts* are swallowed while
+            // the dialog is visible so keybindings don't fire through the overlay.
             //
             // The caller is an NSEvent local monitor (see installAppMonitor:
             // true → return nil = consume, false → return event = pass through).
@@ -11011,7 +11089,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if matchShortcut(
                 event: event,
                 shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ), shortcutTabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
+            ), shortcutTabManager?.acceptActivePaneInteractionInKeyWorkspace(includingConfirms: false) == true {
                 return true
             }
             let hasAppShortcutModifier = hasCommand || hasControl || hasOption
@@ -12497,18 +12575,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 #endif
 
-    private func findButton(in view: NSView, titled title: String) -> NSButton? {
-        if let button = view as? NSButton, button.title == title {
-            return button
-        }
-        for subview in view.subviews {
-            if let found = findButton(in: subview, titled: title) {
-                return found
-            }
-        }
-        return nil
-    }
-
     private func findStaticText(in view: NSView, equals text: String) -> Bool {
         if let field = view as? NSTextField, field.stringValue == text {
             return true
@@ -13029,8 +13095,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if window === startupResumePickerParentWindow {
             endStartupResumeDecisionWait()
         }
-        // Keep geometry available as a fallback even if the full session snapshot
-        // is removed when the last window closes.
+        // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
         guard let removed = unregisterMainWindowContext(for: window) else { return }
         commandPaletteVisibilityByWindowId.removeValue(forKey: removed.windowId)
@@ -13110,7 +13175,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let context = contextContainingTabId(tabId) else { return }
         let expectedIdentifier = "cmux.main.\(context.windowId.uuidString)"
         let window: NSWindow? = context.window ?? NSApp.windows.first(where: { $0.identifier?.rawValue == expectedIdentifier })
-        window?.performClose(nil)
+        // Reached when the last workspace closes (already confirmed, or had
+        // nothing to confirm) or the last shell exited, so no second prompt.
+        if let window { closeMainWindowWithoutPrompt(window) }
     }
 
     @discardableResult

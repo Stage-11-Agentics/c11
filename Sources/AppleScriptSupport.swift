@@ -336,7 +336,8 @@ final class ScriptWindow: NSObject {
             return nil
         }
 
-        window.performClose(nil)
+        // A script asked for this exact window; no prompt, which would stall it.
+        AppDelegate.shared?.closeMainWindowWithoutPrompt(window) ?? window.performClose(nil)
         return nil
     }
 
@@ -474,7 +475,8 @@ final class ScriptTab: NSObject {
             return nil
         }
 
-        window.performClose(nil)
+        // A script asked for this exact window; no prompt, which would stall it.
+        AppDelegate.shared?.closeMainWindowWithoutPrompt(window) ?? window.performClose(nil)
         return nil
     }
 
@@ -622,7 +624,8 @@ final class ScriptTerminal: NSObject {
                 return nil
             }
 
-            window.performClose(nil)
+            // A script asked for this exact window; no prompt, which would stall it.
+            AppDelegate.shared?.closeMainWindowWithoutPrompt(window) ?? window.performClose(nil)
             return nil
         }
 

@@ -5,13 +5,12 @@ import MarkdownUI
 // M7 — Surface title bar.
 //
 // Renders above every terminal surface (and, when mounted, browser/markdown).
-// Shows a short title and an optional structured description; both ride on the
-// per-surface metadata blob (`title` / `description` canonical keys owned by M2).
-//
-// The expand/collapse animation, description Markdown subset, and inline edit
-// overlay are staged additively. The v1 mount renders a static single-line
-// header fed from the M2 blob; the edit field is reserved for portal hosting in
-// GhosttySurfaceScrollView (see spec: Layering constraint).
+// Shows only the live description (the surface's `description` metadata key):
+// the tab already carries the title, so the bar never repeats it, and with no
+// description the bar takes no height at all. Collapsed it is one truncated
+// line; expanded it is the full description (Markdown subset), capped and
+// scrollable. Title and description editing live on the tab (context menu and
+// the metadata CLI), not in this bar.
 
 struct SurfaceTitleBarState: Equatable {
     var title: String?
@@ -23,6 +22,13 @@ struct SurfaceTitleBarState: Equatable {
     /// The surface's `surface:N` ordinal, rendered as an "N: " title prefix
     /// when the "Show surface IDs in tab titles" setting is on.
     var ordinal: Int?
+
+    /// The bar renders only when the workspace shows title bars and the surface
+    /// has a description. Everything that reserves space for the bar (the
+    /// portal's top frame edge included) keys off this.
+    var rendersBar: Bool {
+        visible && !(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
 }
 
 /// Maximum description render region: ~5 × line height at 11pt.
@@ -39,18 +45,13 @@ struct SurfaceTitleBarView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
-    @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
-    private var showSurfaceIds = TabOrdinalDisplaySettings.defaultShowSurfaceIds
 
-    private var descriptionIsEmpty: Bool {
-        state.description?.isEmpty ?? true
+    private var descriptionText: String {
+        state.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    /// Render-time collapsed state. When description is empty the bar must
-    /// render as if collapsed regardless of the flag, to avoid a multi-line
-    /// title + empty description + disabled chevron visual trap.
     private var effectiveCollapsed: Bool {
-        state.collapsed || descriptionIsEmpty
+        state.collapsed
     }
 
     private var themeContext: ThemeContext {
@@ -102,30 +103,25 @@ struct SurfaceTitleBarView: View {
     }
 
     var body: some View {
-        if !state.visible {
+        if !state.rendersBar {
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
-                if !effectiveCollapsed, let description = state.description, !description.isEmpty {
-                    descriptionRow(description)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color(nsColor: resolvedBackgroundColor)
-                    .opacity(resolvedBackgroundOpacity)
-            )
-            .overlay(
-                Rectangle()
-                    .fill(resolvedBottomBorderColor)
-                    .frame(height: 1),
-                alignment: .bottom
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(accessibilityText)
+            descriptionBar
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Color(nsColor: resolvedBackgroundColor)
+                        .opacity(resolvedBackgroundOpacity)
+                )
+                .overlay(
+                    Rectangle()
+                        .fill(resolvedBottomBorderColor)
+                        .frame(height: 1),
+                    alignment: .bottom
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilityText)
         }
     }
 
@@ -139,20 +135,18 @@ struct SurfaceTitleBarView: View {
         }
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 6) {
-            Text(TitleFormatting.ordinalPrefixed(
-                ordinal: state.ordinal,
-                title: state.title ?? String(localized: "titlebar.empty_title",
-                                             defaultValue: "Untitled"),
-                show: showSurfaceIds
-            ))
-                .font(.system(size: chromeTokens.surfaceTitleBarTitle, weight: .semibold))
-                .foregroundColor(resolvedForegroundColor)
-                .lineLimit(effectiveCollapsed ? 1 : nil)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+    /// The description with its toggle chevron: one truncated line collapsed,
+    /// the full Markdown description (capped, scrollable) expanded.
+    private var descriptionBar: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Group {
+                if effectiveCollapsed {
+                    collapsedDescription
+                } else {
+                    expandedDescription(descriptionText)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onToggleCollapsed) {
                 Image(systemName: effectiveCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: chromeTokens.surfaceTitleBarAccessory, weight: .semibold))
@@ -160,16 +154,32 @@ struct SurfaceTitleBarView: View {
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 2)
             }
             .buttonStyle(.plain)
-            .disabled(descriptionIsEmpty)
             .accessibilityLabel(Text(chevronAccessibilityLabel))
         }
     }
 
+    private var collapsedDescription: some View {
+        Text(Self.singleLine(descriptionText))
+            .font(.system(size: chromeTokens.surfaceTitleBarTitle))
+            .foregroundColor(resolvedForegroundColor)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.vertical, 2)
+    }
+
+    /// Newlines and runs of whitespace collapse to single spaces.
+    static func singleLine(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     @ViewBuilder
-    private func descriptionRow(_ description: String) -> some View {
+    private func expandedDescription(_ description: String) -> some View {
         let sanitized = sanitizeDescriptionMarkdown(description)
         let markdown = Markdown(sanitized)
             .markdownTheme(titleBarMarkdownTheme(for: colorScheme))
@@ -200,19 +210,10 @@ struct SurfaceTitleBarView: View {
                 measuredDescriptionHeight = newValue
             }
         }
-        .padding(.leading, 20)
-        .padding(.top, 2)
     }
 
     private var accessibilityText: String {
-        var parts: [String] = []
-        if let title = state.title, !title.isEmpty {
-            parts.append(title)
-        }
-        if !effectiveCollapsed, let description = state.description, !description.isEmpty {
-            parts.append(description)
-        }
-        return parts.joined(separator: " — ")
+        Self.singleLine(descriptionText)
     }
 }
 

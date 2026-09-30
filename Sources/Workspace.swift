@@ -6101,6 +6101,7 @@ final class Workspace: Identifiable, ObservableObject {
             guard let self, let panelId = self.panelIdFromSurfaceId(tabId) else { return nil }
             return TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panelId)
         }
+        installTabSheetDetailProviders()
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
@@ -6915,6 +6916,7 @@ final class Workspace: Identifiable, ObservableObject {
             activityState: activityState
         )
         let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
+        syncSurfaceTabDetailForPanel(panelId)
         guard existing.activityState != activityState
             || existing.activityPresentation != activityPresentation
             || existing.showsNotificationBadge != shouldShowLegacyUnread else { return }

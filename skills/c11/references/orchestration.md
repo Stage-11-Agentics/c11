@@ -48,7 +48,7 @@ Read `c11 tree` before reshaping — splits reshape the screen and disorient eve
 
 ## Tab naming (mandatory)
 
-**Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the title bar.
+**Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the tab sheet.
 
 ### Titles are short and DISTINCT; the description is the live subtitle
 

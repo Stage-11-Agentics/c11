@@ -318,7 +318,7 @@ c11 set-agent --type opencode --model <model-id>
 
 ## Title & description
 
-Sugar over metadata writes to the canonical `title` and `description` keys. Rendered in the surface's title bar.
+Sugar over metadata writes to the canonical `title` and `description` keys. The description renders in the bar under the tabs (the bar shows only the description and takes no height without one); the title labels the tab.
 
 ```bash
 c11 set-title "SIG Delegator — reviewing PR #42"

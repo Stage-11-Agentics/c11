@@ -108,6 +108,7 @@ extension UpdateDriver: SPUUpdaterDelegate {
     }
 
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        QuitConfirmationPolicy.armBypass()
         Task { @MainActor in
             AppDelegate.shared?.persistSessionForUpdateRelaunch()
             TerminalController.shared.stop()

@@ -853,6 +853,57 @@ final class QuitWarningSettingsTests: XCTestCase {
 }
 
 
+final class QuitConfirmationPolicyTests: XCTestCase {
+    private func shouldConfirm(
+        alreadyTerminating: Bool = false,
+        bypassArmed: Bool = false,
+        warnEnabled: Bool = true,
+        quitReason: OSType? = nil
+    ) -> Bool {
+        QuitConfirmationPolicy.shouldConfirm(
+            alreadyTerminating: alreadyTerminating,
+            bypassArmed: bypassArmed,
+            warnEnabled: warnEnabled,
+            quitReason: quitReason
+        )
+    }
+
+    func testOperatorQuitConfirmsByDefault() {
+        XCTAssertTrue(shouldConfirm())
+    }
+
+    func testQuitsThatAlreadyCarryIntentSkipConfirmation() {
+        XCTAssertFalse(shouldConfirm(alreadyTerminating: true))
+        XCTAssertFalse(shouldConfirm(bypassArmed: true))
+        XCTAssertFalse(shouldConfirm(warnEnabled: false))
+    }
+
+    func testSystemLogoutRestartAndShutdownSkipConfirmation() {
+        for reason in [kAELogOut, kAEReallyLogOut, kAERestart, kAEShowRestartDialog, kAEShutDown, kAEShowShutdownDialog] {
+            XCTAssertFalse(shouldConfirm(quitReason: OSType(reason)), "reason \(reason)")
+        }
+    }
+
+    func testUnrecognizedQuitReasonStillConfirms() {
+        XCTAssertTrue(shouldConfirm(quitReason: OSType(kAEQuitApplication)))
+    }
+
+    func testArmedBypassIsConsumedByOneQuitRequest() {
+        let armedAt = Date()
+        QuitConfirmationPolicy.armBypass(now: armedAt)
+        XCTAssertTrue(QuitConfirmationPolicy.consumeBypass(now: armedAt.addingTimeInterval(1)))
+        XCTAssertFalse(QuitConfirmationPolicy.consumeBypass(now: armedAt.addingTimeInterval(2)))
+    }
+
+    func testStaleBypassDoesNotWaiveALaterQuit() {
+        let armedAt = Date()
+        QuitConfirmationPolicy.armBypass(now: armedAt)
+        let later = armedAt.addingTimeInterval(QuitConfirmationPolicy.bypassLifetime + 1)
+        XCTAssertFalse(QuitConfirmationPolicy.consumeBypass(now: later))
+    }
+}
+
+
 final class UpdateChannelSettingsTests: XCTestCase {
     func testResolvedFeedFallsBackWhenInfoFeedMissing() {
         let resolved = UpdateFeedResolver.resolvedFeedURLString(infoFeedURL: nil)

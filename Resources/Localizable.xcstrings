@@ -25651,53 +25651,6 @@
         }
       }
     },
-    "dialog.dontWarnCmdQ": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Don't ask again for Cmd+Q"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q で次回から確認しない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q 时不再询问"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按 Cmd+Q 時不再詢問"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cmd+Q에 대해 다시 묻지 않기"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Больше не спрашивать при Cmd+Q"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Більше не питати про Cmd+Q"
-          }
-        }
-      }
-    },
     "dialog.enableNotifications.message": {
       "extractionState": "manual",
       "localizations": {
@@ -36508,96 +36461,96 @@
         }
       }
     },
-    "settings.app.warnBeforeQuit.subtitleOff": {
+    "settings.app.warnBeforeQuit.confirmOff": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q quits immediately."
+            "value": "c11 quits immediately without confirmation."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q ですぐに終了します。"
+            "value": "c11 は確認なしですぐに終了します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 直接退出。"
+            "value": "c11 会立即退出，不再确认。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 會立即結束。"
+            "value": "c11 會立即結束，不會確認。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q를 누르면 즉시 종료됩니다."
+            "value": "c11이 확인 없이 즉시 종료됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q закрывает приложение сразу."
+            "value": "c11 закрывается сразу, без подтверждения."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q закриває миттєво."
+            "value": "c11 закривається одразу, без підтвердження."
           }
         }
       }
     },
-    "settings.app.warnBeforeQuit.subtitleOn": {
+    "settings.app.warnBeforeQuit.confirmOn": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q asks before quitting."
+            "value": "Ask for confirmation before c11 quits."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q は終了前に確認します。"
+            "value": "c11 を終了する前に確認します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 退出前先询问。"
+            "value": "退出 c11 前先询问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q 結束前先詢問。"
+            "value": "結束 c11 前先詢問。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q는 종료 전에 확인합니다."
+            "value": "c11을 종료하기 전에 확인합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q спросит перед выходом."
+            "value": "Спрашивать подтверждение перед выходом из c11."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q питає перед закриттям."
+            "value": "Запитувати підтвердження перед виходом з c11."
           }
         }
       }

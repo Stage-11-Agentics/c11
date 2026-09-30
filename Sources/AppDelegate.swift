@@ -7326,29 +7326,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? NSScreen.main
 
         // visibleFrame excludes the menu bar and a visible Dock, so the sheet is
-        // sized to what the operator can actually see.
-        var visibleHeight = targetScreen?.visibleFrame.height ?? 900
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["C11_CREATE_WORKSPACE_VISIBLE_HEIGHT"],
-           let simulated = Double(raw), simulated > 300 {
-            visibleHeight = CGFloat(simulated)
-        }
-        #endif
-        let pinRows = PinGridShape.rows(forPinCount: CreateWorkspaceRecents.pins().count)
+        // sized to what the operator can actually see. The list is always sized
+        // against two rows of pins, so adding pins mid-use never outgrows it.
+        let visibleHeight = Self.createWorkspaceVisibleHeight(of: targetScreen)
+        let sizing = CreateWorkspaceSizing(visibleHeight: visibleHeight)
         #if DEBUG
         dlog(
-            "createWorkspace.size visibleHeight=\(Int(visibleHeight)) pinRows=\(pinRows) " +
-            "fixed=\(Int(CreateWorkspaceSheetMetrics.fixedHeight(pinRows: pinRows))) " +
-            "listRows=\(CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight, pinRows: pinRows)) " +
-            "scroll=\(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visibleHeight, pinRows: pinRows))"
+            "createWorkspace.size visibleHeight=\(Int(visibleHeight)) " +
+            "fixed=\(Int(CreateWorkspaceSheetMetrics.fixedHeight(pinRows: CreateWorkspaceSheetMetrics.budgetPinRows))) " +
+            "listRows=\(sizing.listRows) scroll=\(sizing.maxContentHeight != nil)"
         )
         #endif
         let rootView = CreateWorkspaceSheet(
             initialDirectory: initialDirectory,
-            listRows: CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight, pinRows: pinRows),
-            maxContentHeight: CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visibleHeight, pinRows: pinRows)
-                ? CreateWorkspaceSheetMetrics.maxContentHeight(visibleHeight: visibleHeight)
-                : nil,
+            sizing: sizing,
             openRoots: { [weak self] in self?.openWorkspaceRootDirectories() ?? [] },
             onSwitchToOpen: { [weak self] path in
                 guard let self, self.switchToOpenWorkspace(rootDirectory: path) else { return false }
@@ -7397,14 +7388,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let visible = screen.visibleFrame
             let frame = window.frame
             let x = visible.origin.x + (visible.width - frame.width) / 2
-            let preferredY = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0
-            // Never any part off-screen: the window is at most visibleFrame tall,
-            // so clamping the origin into the frame is always possible.
-            let y = min(max(preferredY, visible.minY), visible.maxY - frame.height)
+            let preferredTop = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0 + frame.height
+            // Never any part off-screen: clamp the top edge as well as the bottom.
+            let y = CreateWorkspaceSheetMetrics.originY(
+                desiredTop: preferredTop, height: frame.height, minY: visible.minY, maxY: visible.maxY
+            )
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
         createWorkspaceSheetWindow = window
-        pinCreateWorkspaceSheetTopEdge(window)
+        pinCreateWorkspaceSheetTopEdge(window, sizing: sizing)
         createWorkspaceSheetCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -7419,13 +7411,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// The sheet's height changes with the pin rows (one row, two rows, none).
-    /// Keep its top edge where it is so the title never jumps; a user drag
-    /// moves the anchor.
-    private func pinCreateWorkspaceSheetTopEdge(_ window: NSWindow) {
+    /// `visibleFrame` height of the screen the picker opens on (DEBUG builds can
+    /// simulate another with C11_CREATE_WORKSPACE_VISIBLE_HEIGHT).
+    private static func createWorkspaceVisibleHeight(of screen: NSScreen?) -> CGFloat {
+        var height = screen?.visibleFrame.height ?? 900
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["C11_CREATE_WORKSPACE_VISIBLE_HEIGHT"],
+           let simulated = Double(raw), simulated > 300 {
+            height = CGFloat(simulated)
+        }
+        #endif
+        return height
+    }
+
+    /// The sheet's height changes with the pin rows (none, one, two). Keep its
+    /// top edge where it is so the title never jumps, but always inside the
+    /// screen's visible frame (top and bottom); a user drag moves the anchor,
+    /// and a move to another screen re-sizes the list for that screen.
+    private func pinCreateWorkspaceSheetTopEdge(_ window: NSWindow, sizing: CreateWorkspaceSizing) {
         var anchoredTop = window.frame.maxY
         var adjusting = false
         let center = NotificationCenter.default
+
+        func clamp() {
+            guard let visible = window.screen?.visibleFrame else { return }
+            let frame = window.frame
+            let y = CreateWorkspaceSheetMetrics.originY(
+                desiredTop: anchoredTop, height: frame.height, minY: visible.minY, maxY: visible.maxY
+            )
+            guard abs(y - frame.origin.y) > 0.5 else { return }
+            adjusting = true
+            window.setFrameOrigin(NSPoint(x: frame.origin.x, y: y))
+            adjusting = false
+            anchoredTop = window.frame.maxY
+        }
+
         let moved = center.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { _ in
             if !adjusting { anchoredTop = window.frame.maxY }
         }
@@ -7433,15 +7453,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let frame = window.frame
             guard abs(frame.maxY - anchoredTop) > 0.5 else { return }
             adjusting = true
-            var y = anchoredTop - frame.height
-            if let visible = window.screen?.visibleFrame, y < visible.minY {
-                // A taller sheet must not slide under the Dock: give up the pinned
-                // top edge before letting any part go off-screen.
-                y = visible.minY
-                anchoredTop = y + frame.height
-            }
-            window.setFrameOrigin(NSPoint(x: frame.origin.x, y: y))
+            window.setFrameOrigin(NSPoint(x: frame.origin.x, y: anchoredTop - frame.height))
             adjusting = false
+            clamp()
+        }
+        let screenChanged = center.addObserver(forName: NSWindow.didChangeScreenNotification, object: window, queue: .main) { _ in
+            sizing.update(visibleHeight: Self.createWorkspaceVisibleHeight(of: window.screen))
+            // The new list size lands on the next layout pass; clamp once now
+            // and the resize observer clamps again after it.
+            anchoredTop = window.frame.maxY
+            clamp()
         }
         // The first placement (centering) runs asynchronously after the window
         // opens; adopt whatever top edge it settles on.
@@ -7450,6 +7471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         closeToken = center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
             center.removeObserver(moved)
             center.removeObserver(resized)
+            center.removeObserver(screenChanged)
             if let closeToken { center.removeObserver(closeToken) }
         }
     }
@@ -10902,9 +10924,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func handleCustomShortcut(event: NSEvent) -> Bool {
         // The New Workspace picker is a window, not a sheet, so the modal
-        // guards below never see it. Its keys (⌘1–⌘9 open a pin, ⌘F, ...) are
-        // the picker's own; nothing here may treat them as app shortcuts.
-        if let picker = createWorkspaceSheetWindow, event.window === picker {
+        // guards below never see it. Its chords (⌘1–⌘9 open a pin, ⌘F focuses
+        // search, ⌘W closes it) are the picker's own; ⌘W would otherwise close
+        // a pane of the window behind it.
+        if let picker = createWorkspaceSheetWindow, event.window === picker,
+           PickerShortcutPolicy.appShouldStandAside(
+               flags: event.modifierFlags,
+               chars: event.charactersIgnoringModifiers ?? ""
+           ) {
             return false
         }
         // `charactersIgnoringModifiers` can be nil for some synthetic NSEvents and certain special keys.

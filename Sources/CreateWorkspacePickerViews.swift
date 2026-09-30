@@ -140,6 +140,8 @@ struct PickerKeyMonitor: NSViewRepresentable {
     /// ⌘1…⌘9. Return true when handled.
     let onPinShortcut: (Int) -> Bool
     let onFocusSearch: () -> Void
+    /// cmd-W: close the picker.
+    let onClose: () -> Void
     let onTypeToSearch: (String) -> Void
     let onArrow: (Int) -> Void
     /// Esc while focus is outside the search field. Return true when handled.
@@ -168,18 +170,16 @@ struct PickerKeyMonitor: NSViewRepresentable {
 
         private func handle(_ event: NSEvent) -> Bool {
             guard let owner, let window, event.window === window, window.isKeyWindow else { return false }
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let flags = event.modifierFlags
             let chars = event.charactersIgnoringModifiers ?? ""
 
-            if flags == .command {
-                if let digit = Int(chars), (1...9).contains(digit) {
-                    return owner.onPinShortcut(digit)
+            if PickerShortcutPolicy.effectiveFlags(flags) == .command {
+                switch PickerShortcutPolicy.action(flags: flags, chars: chars) {
+                case .pin(let n): return owner.onPinShortcut(n)
+                case .focusSearch: owner.onFocusSearch(); return true
+                case .close: owner.onClose(); return true
+                case nil: return false
                 }
-                if chars.lowercased() == "f" {
-                    owner.onFocusSearch()
-                    return true
-                }
-                return false
             }
 
             let responder = window.firstResponder
@@ -187,25 +187,18 @@ struct PickerKeyMonitor: NSViewRepresentable {
             let inTextEditing = editor != nil
             let inSearch = (editor?.delegate is NSSearchField)
 
-            if event.keyCode == 53, flags.isEmpty, !inSearch {
+            if event.keyCode == 53, PickerShortcutPolicy.effectiveFlags(flags).isEmpty, !inSearch {
                 return owner.onEscapeOutsideSearch()
             }
             if inTextEditing { return false }
-            if flags.isEmpty || flags == .shift {
-                if event.keyCode == 125 { owner.onArrow(+1); return true }
-                if event.keyCode == 126 { owner.onArrow(-1); return true }
+            if let delta = PickerShortcutPolicy.arrowDelta(keyCode: event.keyCode, flags: flags) {
+                owner.onArrow(delta)
+                return true
             }
-            guard flags.subtracting(.shift).isEmpty,
-                  let typed = event.characters, !typed.isEmpty,
-                  typed.unicodeScalars.allSatisfy({ isPrintable($0) }),
-                  typed != " " else { return false }
+            guard let typed = PickerShortcutPolicy.typeToSearchText(flags: flags, characters: event.characters) else {
+                return false
+            }
             owner.onTypeToSearch(typed)
-            return true
-        }
-
-        private func isPrintable(_ s: Unicode.Scalar) -> Bool {
-            if s.value < 0x20 || s.value == 0x7F { return false }
-            if (0xF700...0xF8FF).contains(s.value) { return false }
             return true
         }
     }
@@ -668,20 +661,40 @@ struct PinTileView: View {
 // MARK: - Pin reorder
 
 /// Live reorder while a pin tile is dragged over its neighbours.
+///
+/// A drag is ours only if the drag pasteboard carries this pin's payload
+/// (`payload(for:)`): a stale `dragging` value, or a foreign text/file drag,
+/// never reorders anything. A drag that ends outside every tile leaves the
+/// value behind, so a mismatch clears it.
 struct PinReorderDropDelegate: DropDelegate {
+    static let marker = "c11.createWorkspace.pin:"
+
+    static func payload(for path: String) -> String { marker + path }
+
+    /// Pure check: does the drag pasteboard string carry `dragging`'s payload?
+    static func carries(_ pasteboardString: String?, pin dragging: String?) -> Bool {
+        guard let dragging, let pasteboardString else { return false }
+        return pasteboardString == payload(for: dragging)
+    }
+
     let target: String
     @Binding var dragging: String?
     let pins: () -> [String]
     let move: (_ path: String, _ index: Int) -> Void
 
     func dropEntered(info: DropInfo) {
+        let onPasteboard = NSPasteboard(name: .drag).string(forType: .string)
+        guard Self.carries(onPasteboard, pin: dragging) else {
+            dragging = nil
+            return
+        }
         guard let dragging, dragging != target,
               let to = pins().firstIndex(of: target) else { return }
         move(dragging, to)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        DropProposal(operation: dragging == nil ? .cancel : .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {

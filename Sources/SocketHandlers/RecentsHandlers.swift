@@ -41,26 +41,11 @@ extension TerminalController {
         }
     }
 
-    /// Stat many paths with one shared deadline so a hung network mount cannot
-    /// stall the socket. Paths that do not answer in time are absent from the result.
+    /// Stat many paths through a bounded pool with one shared deadline, so a
+    /// hung network mount cannot stall the socket. Paths that do not answer in
+    /// time are absent from the result.
     private func v2StatDirectories(_ paths: [String], deadline: TimeInterval = 2.0) -> [String: Bool] {
-        let lock = NSLock()
-        var results: [String: Bool] = [:]
-        let group = DispatchGroup()
-        for path in paths {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                let exists = Workspace.isExistingDirectory((path as NSString).expandingTildeInPath)
-                lock.lock()
-                results[path] = exists
-                lock.unlock()
-                group.leave()
-            }
-        }
-        _ = group.wait(timeout: .now() + deadline)
-        lock.lock()
-        defer { lock.unlock() }
-        return results
+        DirectoryProbe().statAll(paths, deadline: deadline)
     }
 
     private func v2OpenRoots() -> Set<String> {
@@ -273,10 +258,21 @@ extension TerminalController {
         case .success(let s): state = s
         case .failure(let err): return err
         }
+        let cwd = params["cwd"] as? String
+        var resolved: String?
+        // A real subdirectory of the caller's directory beats a fuzzy guess.
+        if let candidate = RecentsQueryResolver.cwdCandidate(query: raw, cwd: cwd ?? ""),
+           v2StatDirectories([candidate])[candidate] == true {
+            resolved = candidate
+        }
         let path: String
-        switch v2RecentsResolveQuery(raw, entries: state.entries, cwd: params["cwd"] as? String) {
-        case .success(let p): path = p
-        case .failure(let err): return err
+        if let resolved {
+            path = resolved
+        } else {
+            switch v2RecentsResolveQuery(raw, entries: state.entries, cwd: cwd) {
+            case .success(let p): path = p
+            case .failure(let err): return err
+            }
         }
         // Path stat is answered in time or the call fails: never create blind.
         guard let exists = v2StatDirectories([path])[path] else {

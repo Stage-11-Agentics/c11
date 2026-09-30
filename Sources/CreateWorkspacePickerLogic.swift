@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 // Pure logic behind the New Workspace picker (C11-240): sort, fuzzy search,
@@ -100,16 +101,27 @@ enum RecentsFuzzy {
             return RecentMatch(score: score, indices: idx)
         }
 
-        // Contiguous substring anywhere in the path.
+        // Contiguous substring anywhere in the path. The best occurrence wins:
+        // one that ends at the end of the path (a suffix such as
+        // `greenwood-tech/site`), then ones lined up with folder boundaries, so
+        // a query with a slash in it does not tie across every path containing it.
         let needle = q
         if lower.count >= needle.count {
+            var best: RecentMatch?
             for start in 0...(lower.count - needle.count) {
                 var ok = true
                 for k in 0..<needle.count where lower[start + k] != needle[k] { ok = false; break }
-                if ok {
-                    return RecentMatch(score: 5, indices: Array(start..<(start + needle.count)))
+                guard ok else { continue }
+                let end = start + needle.count
+                var score = 5
+                if end == chars.count { score += 10 }
+                if start == 0 || chars[start - 1] == "/" { score += 5 }
+                if end == chars.count || chars[end] == "/" { score += 3 }
+                if best == nil || score > best!.score {
+                    best = RecentMatch(score: score, indices: Array(start..<end))
                 }
             }
+            if let best { return best }
         }
         return nil
     }
@@ -298,30 +310,71 @@ enum CreateWorkspaceSheetMetrics {
     /// Breathing room kept between the window and the screen edges.
     static let screenMargin: CGFloat = 6
 
-    /// Height of every section except the list, measured on the real window
-    /// for none/one row of pins (595) and two rows (689). Zero pins is sized
-    /// like one row so adding a first pin does not resize the window.
+    /// Height of every section except the list, measured on the real window:
+    /// 689 with two rows of pins (the most the grid ever shows), 595 with none
+    /// or one row.
     static func fixedHeight(pinRows: Int) -> CGFloat {
         pinRows >= 2 ? 689 : 595
     }
+
+    /// The list is always sized against the tallest state (two pin rows), so
+    /// adding pins mid-use can never grow the window past the screen.
+    static let budgetPinRows = 2
 
     private static func available(visibleHeight: CGFloat) -> CGFloat {
         visibleHeight - windowChrome - screenMargin
     }
 
     /// Rows for the list: as many as the screen leaves, 5 at least, 16 at most.
-    static func listRows(visibleHeight: CGFloat, pinRows: Int = 2) -> Int {
-        let spare = available(visibleHeight: visibleHeight) - fixedHeight(pinRows: pinRows)
+    static func listRows(visibleHeight: CGFloat) -> Int {
+        let spare = available(visibleHeight: visibleHeight) - fixedHeight(pinRows: budgetPinRows)
         return max(minRows, min(maxRows, Int((spare / rowHeight).rounded(.down))))
     }
 
     /// True when even the minimum list overflows the screen: the sheet scrolls.
-    static func needsScroll(visibleHeight: CGFloat, pinRows: Int = 2) -> Bool {
-        fixedHeight(pinRows: pinRows) + CGFloat(minRows) * rowHeight > available(visibleHeight: visibleHeight)
+    static func needsScroll(visibleHeight: CGFloat) -> Bool {
+        fixedHeight(pinRows: budgetPinRows) + CGFloat(minRows) * rowHeight > available(visibleHeight: visibleHeight)
     }
 
     static func maxContentHeight(visibleHeight: CGFloat) -> CGFloat {
         available(visibleHeight: visibleHeight)
+    }
+
+    /// Total window height for a list of `rows` and the given pin rows.
+    static func windowHeight(rows: Int, pinRows: Int) -> CGFloat {
+        windowChrome + fixedHeight(pinRows: pinRows) + CGFloat(rows) * rowHeight
+    }
+
+    /// Bottom-left y for a window of `height`, wanting its top at `desiredTop`,
+    /// kept wholly inside `minY ... maxY`. The top edge is clamped as well as
+    /// the bottom; a window taller than the span sits on its top edge.
+    static func originY(desiredTop: CGFloat, height: CGFloat, minY: CGFloat, maxY: CGFloat) -> CGFloat {
+        let y = desiredTop - height
+        return min(max(y, minY), maxY - height)
+    }
+}
+
+/// Live sizing for the picker: recomputed when the window changes screens.
+final class CreateWorkspaceSizing: ObservableObject {
+    @Published private(set) var listRows: Int
+    /// Non-nil when even the minimum list does not fit: the sheet scrolls in
+    /// this height.
+    @Published private(set) var maxContentHeight: CGFloat?
+
+    init(visibleHeight: CGFloat) {
+        listRows = CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight)
+        maxContentHeight = CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visibleHeight)
+            ? CreateWorkspaceSheetMetrics.maxContentHeight(visibleHeight: visibleHeight)
+            : nil
+    }
+
+    func update(visibleHeight: CGFloat) {
+        let rows = CreateWorkspaceSheetMetrics.listRows(visibleHeight: visibleHeight)
+        let scroll = CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visibleHeight)
+            ? CreateWorkspaceSheetMetrics.maxContentHeight(visibleHeight: visibleHeight)
+            : nil
+        if rows != listRows { listRows = rows }
+        if scroll != maxContentHeight { maxContentHeight = scroll }
     }
 }
 
@@ -438,6 +491,15 @@ enum RecentsQueryResolver {
         case none
     }
 
+    /// `cwd/<query>` for a bare (not path-like) query, so a real subdirectory
+    /// of the caller's directory can be preferred over a fuzzy guess. nil for
+    /// `~`, `/` and `./`-style queries, which are already paths.
+    static func cwdCandidate(query: String, cwd: String) -> String? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !q.hasPrefix("~"), !q.hasPrefix("/"), !q.hasPrefix("."), !cwd.isEmpty else { return nil }
+        return RecentsPath.normalize((cwd as NSString).appendingPathComponent(q))
+    }
+
     static func resolve(
         query: String,
         entries: [RecentDirectory],
@@ -457,5 +519,199 @@ enum RecentsQueryResolver {
             return .ambiguous(Array(tied.prefix(8)))
         }
         return .match(top.entry.path)
+    }
+}
+
+// MARK: - Directory existence probe
+
+/// Existence checks that cannot wedge the picker or the socket on a hung
+/// network mount: a fixed-width pool (not a job per path), one job per path
+/// however many callers ask, a per-check deadline, and no further checks under
+/// a mount after one of its paths hangs. Use one instance per open of the
+/// sheet (or per socket call), so the hang memory does not outlive its context.
+final class DirectoryProbe {
+    enum Result: Equatable {
+        case exists
+        case missing
+        /// No answer within the deadline, or the path is under a mount that
+        /// already hung. Neither "exists" nor "missing" is known.
+        case timedOut
+    }
+
+    private struct Job {
+        var waiters: [(queue: DispatchQueue, completion: (Result) -> Void)]
+    }
+
+    private let stat: (String) -> Bool
+    private let pool: OperationQueue
+    private let timers = DispatchQueue(label: "c11.directory-probe.timers", qos: .utility)
+    private let lock = NSLock()
+    private var jobs: [String: Job] = [:]
+    private var hungRoots: [String] = []
+
+    init(
+        width: Int = 4,
+        stat: @escaping (String) -> Bool = { path in
+            Workspace.isExistingDirectory((path as NSString).expandingTildeInPath)
+        }
+    ) {
+        self.stat = stat
+        pool = OperationQueue()
+        pool.maxConcurrentOperationCount = max(1, width)
+        pool.qualityOfService = .utility
+    }
+
+    /// The prefix to stop probing after `path` hangs: the mount root for
+    /// `/Volumes/<name>/...` and `/net/...`-style mounts, else the parent.
+    static func hangRoot(of path: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        if parts.count >= 2, parts[0] == "Volumes" { return "/Volumes/" + parts[1] }
+        if parts.count >= 2, parts[0] == "net" || parts[0] == "mnt" { return "/" + parts[0] + "/" + parts[1] }
+        let parent = RecentsPath.parent(path)
+        return parent.isEmpty ? path : parent
+    }
+
+    func isUnderHungRoot(_ path: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hungRoots.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
+    /// `completion` runs on `callbackQueue`. A path whose check is already
+    /// running joins that check instead of starting another.
+    func check(
+        _ path: String,
+        timeout: TimeInterval = 2,
+        callbackQueue: DispatchQueue = .main,
+        completion: @escaping (Result) -> Void
+    ) {
+        lock.lock()
+        if hungRoots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
+            lock.unlock()
+            callbackQueue.async { completion(.timedOut) }
+            return
+        }
+        if jobs[path] != nil {
+            jobs[path]!.waiters.append((callbackQueue, completion))
+            lock.unlock()
+            return
+        }
+        jobs[path] = Job(waiters: [(callbackQueue, completion)])
+        lock.unlock()
+
+        pool.addOperation { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let stillWanted = self.jobs[path] != nil
+            self.lock.unlock()
+            // The deadline passed while this job waited for a slot: skip the stat.
+            guard stillWanted else { return }
+            let exists = self.stat(path)
+            self.finish(path, exists ? .exists : .missing, hung: false)
+        }
+        timers.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            self?.finish(path, .timedOut, hung: true)
+        }
+    }
+
+    private func finish(_ path: String, _ result: Result, hung: Bool) {
+        lock.lock()
+        guard let job = jobs.removeValue(forKey: path) else {
+            lock.unlock()
+            return
+        }
+        if hung {
+            let root = Self.hangRoot(of: path)
+            if !hungRoots.contains(root) { hungRoots.append(root) }
+        }
+        lock.unlock()
+        for waiter in job.waiters {
+            waiter.queue.async { waiter.completion(result) }
+        }
+    }
+
+    /// Blocking convenience for callers on their own thread (the socket):
+    /// definitive answers only; unanswered paths are absent.
+    func statAll(_ paths: [String], deadline: TimeInterval = 2) -> [String: Bool] {
+        let resultLock = NSLock()
+        var results: [String: Bool] = [:]
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "c11.directory-probe.statall", qos: .userInitiated)
+        for path in paths {
+            group.enter()
+            check(path, timeout: deadline, callbackQueue: queue) { result in
+                resultLock.lock()
+                if result == .exists { results[path] = true } else if result == .missing { results[path] = false }
+                resultLock.unlock()
+                group.leave()
+            }
+        }
+        _ = group.wait(timeout: .now() + deadline + 1)
+        resultLock.lock()
+        defer { resultLock.unlock() }
+        return results
+    }
+}
+
+// MARK: - Picker key policy
+
+/// Which keys belong to the picker window. Pure so the decisions are testable.
+enum PickerShortcutPolicy {
+    enum Action: Equatable {
+        case pin(Int)
+        case focusSearch
+        case close
+    }
+
+    /// Modifier flags that mean something to a shortcut. Arrow keys carry
+    /// `.numericPad` and `.function`, and caps lock is not a chord modifier, so
+    /// those are dropped before any comparison.
+    static func effectiveFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.numericPad, .function, .capsLock])
+    }
+
+    /// The command chords the picker owns: cmd-1...9 (open a pin), cmd-F
+    /// (focus search) and cmd-W (close the picker, never a pane of the window
+    /// behind it).
+    static func action(flags: NSEvent.ModifierFlags, chars: String) -> Action? {
+        guard effectiveFlags(flags) == .command else { return nil }
+        let c = chars.lowercased()
+        if let digit = Int(c), (1...9).contains(digit) { return .pin(digit) }
+        if c == "f" { return .focusSearch }
+        if c == "w" { return .close }
+        return nil
+    }
+
+    /// The app-level shortcut handler stands aside for exactly these keys when
+    /// the picker window is the event's window.
+    static func appShouldStandAside(flags: NSEvent.ModifierFlags, chars: String) -> Bool {
+        action(flags: flags, chars: chars) != nil
+    }
+
+    /// -1 up, +1 down, for an unmodified (or shift-only) arrow key; nil otherwise.
+    static func arrowDelta(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Int? {
+        let f = effectiveFlags(flags)
+        guard f.isEmpty || f == .shift else { return nil }
+        switch keyCode {
+        case 125: return +1
+        case 126: return -1
+        default: return nil
+        }
+    }
+
+    /// Type-to-search: only plain (shift allowed) printable, non-space text.
+    static func typeToSearchText(flags: NSEvent.ModifierFlags, characters: String?) -> String? {
+        guard effectiveFlags(flags).subtracting(.shift).isEmpty,
+              let typed = characters, !typed.isEmpty, typed != " ",
+              typed.unicodeScalars.allSatisfy({ isPrintable($0) }) else { return nil }
+        return typed
+    }
+
+    private static func isPrintable(_ s: Unicode.Scalar) -> Bool {
+        if s.value < 0x20 || s.value == 0x7F { return false }
+        if (0xF700...0xF8FF).contains(s.value) { return false }
+        return true
     }
 }

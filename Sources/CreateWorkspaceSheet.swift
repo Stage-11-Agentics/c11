@@ -47,6 +47,13 @@ private final class ScrollProxyBox {
     var proxy: ScrollViewProxy?
 }
 
+/// Per-open state that must outlive view re-creation: the existence probe
+/// (and what it learned about hung mounts) and whether the window is still open.
+private final class PickerSession {
+    let probe = DirectoryProbe()
+    var isOpen = true
+}
+
 private struct ListRow: Identifiable {
     let entry: RecentDirectory
     let match: RecentMatch?
@@ -81,11 +88,9 @@ struct CreateWorkspaceSheet: View {
     }
 
     let initialDirectory: String
-    /// Rows the list shows (8...16), computed from the target screen.
-    let listRows: Int
-    /// Non-nil when even the minimum list does not fit the screen: the whole
-    /// sheet scrolls inside this height.
-    let maxContentHeight: CGFloat?
+    /// Rows the list shows (5...16) and the scroll fallback, from the screen
+    /// the window is on (recomputed when it moves to another screen).
+    @ObservedObject var sizing: CreateWorkspaceSizing
     /// Standardized root directories of the workspaces open in this c11.
     let openRoots: () -> Set<String>
     /// Select the open workspace rooted at this path and close the window.
@@ -105,6 +110,10 @@ struct CreateWorkspaceSheet: View {
     @State private var openRootSet: Set<String> = []
     @State private var missingPaths: Set<String> = []
     @State private var verifiedPaths: Set<String> = []
+    @State private var session = PickerSession()
+    /// The path an existence check (for create) is waiting on; repeated return
+    /// presses do not stack checks.
+    @State private var checkingPath: String?
     @State private var pathChildren: [String] = []
     @State private var pathChildrenKey: String = ""
     @State private var pathToken: Int = 0
@@ -123,16 +132,14 @@ struct CreateWorkspaceSheet: View {
 
     init(
         initialDirectory: String,
-        listRows: Int = 12,
-        maxContentHeight: CGFloat? = nil,
+        sizing: CreateWorkspaceSizing = CreateWorkspaceSizing(visibleHeight: 900),
         openRoots: @escaping () -> Set<String> = { [] },
         onSwitchToOpen: @escaping (String) -> Bool = { _ in false },
         onCancel: @escaping () -> Void,
         onCreate: @escaping (Outcome) -> Void
     ) {
         self.initialDirectory = initialDirectory
-        self.listRows = listRows
-        self.maxContentHeight = maxContentHeight
+        self.sizing = sizing
         self.openRoots = openRoots
         self.onSwitchToOpen = onSwitchToOpen
         _directory = State(initialValue: initialDirectory)
@@ -163,7 +170,7 @@ struct CreateWorkspaceSheet: View {
         .frame(width: 720)
 
         Group {
-            if let maxContentHeight {
+            if let maxContentHeight = sizing.maxContentHeight {
                 ScrollView(.vertical) { content }
                     .frame(width: 720, height: maxContentHeight)
             } else {
@@ -179,6 +186,7 @@ struct CreateWorkspaceSheet: View {
                     return true
                 },
                 onFocusSearch: { requestSearchFocus(selectAll: true) },
+                onClose: { onCancel() },
                 onTypeToSearch: { typed in
                     query += typed
                     requestSearchFocus(selectAll: false)
@@ -198,10 +206,12 @@ struct CreateWorkspaceSheet: View {
             openRootSet = openRoots()
             refreshMissing()
         }
+        .onDisappear { session.isOpen = false }
         .onChange(of: query) { _, _ in queryDidChange() }
         .onReceive(NotificationCenter.default.publisher(for: CreateWorkspaceRecents.didChangeNotification)) { _ in
             // An agent (or this sheet) changed recents or pins: stay in step.
             reloadRecents()
+            liveReloadFollowUp()
         }
         .onChange(of: directory) { _, newValue in
             let normalized = RecentsPath.normalize(newValue)
@@ -325,7 +335,12 @@ struct CreateWorkspaceSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .controlSize(.large)
-                    .onSubmit { submit() }
+                    .onSubmit {
+                        // Same guards as every other way to create: no-match,
+                        // missing directory and option-to-switch all apply.
+                        guard canSubmit else { NSSound.beep(); return }
+                        activateCurrent(alt: NSEvent.modifierFlags.contains(.option))
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(String(
@@ -475,7 +490,7 @@ struct CreateWorkspaceSheet: View {
         )
         .onDrag {
             draggingPin = path
-            return NSItemProvider(object: path as NSString)
+            return NSItemProvider(object: PinReorderDropDelegate.payload(for: path) as NSString)
         }
         .onDrop(
             of: [.plainText],
@@ -570,7 +585,7 @@ struct CreateWorkspaceSheet: View {
     // MARK: List
 
     private func recentsList(_ currentRows: [ListRow]) -> some View {
-        let height = CGFloat(listRows) * RecentRowView.height
+        let height = CGFloat(sizing.listRows) * RecentRowView.height
         return Group {
             if currentRows.isEmpty {
                 VStack(spacing: 4) {
@@ -628,7 +643,15 @@ struct CreateWorkspaceSheet: View {
 
     private var recentsFooter: some View {
         HStack(spacing: 6) {
-            if let notice {
+            if let checkingPath {
+                Text(String(
+                    format: String(localized: "createWorkspace.notice.checking", defaultValue: "Checking “%@”…"),
+                    RecentsPath.lastComponent(checkingPath)
+                ))
+                .font(.system(size: 11))
+                .foregroundStyle(BrandColors.goldSwiftUI)
+                .lineLimit(1)
+            } else if let notice {
                 Text(notice)
                     .font(.system(size: 11))
                     .foregroundStyle(BrandColors.goldSwiftUI)
@@ -772,25 +795,35 @@ struct CreateWorkspaceSheet: View {
     }
 
     /// Real filesystem children of the typed path, listed off the main thread;
-    /// the typed path is stat'ed there too, so a missing path shows as missing.
+    /// the typed path is stat'ed through the probe too, so a missing path shows
+    /// as missing and a hung mount is skipped after its first timeout.
     private func refreshPathChildren() {
         let resolution = RecentsPathMode.resolve(query: trimmedQuery)
         let key = resolution.listDirectory + "\n" + resolution.namePrefix
         pathToken += 1
         let token = pathToken
-        DispatchQueue.global(qos: .userInitiated).async {
-            let kids = RecentsPathMode.listChildren(of: resolution.listDirectory, prefix: resolution.namePrefix)
-            let exists = Workspace.isExistingDirectory(resolution.typedPath)
-            DispatchQueue.main.async {
-                guard token == pathToken else { return }
-                pathChildren = kids
-                pathChildrenKey = key
-                if exists {
-                    missingPaths.remove(resolution.typedPath)
-                    verifiedPaths.insert(resolution.typedPath)
-                } else {
-                    verifiedPaths.remove(resolution.typedPath)
-                    missingPaths.insert(resolution.typedPath)
+        let session = self.session
+        session.probe.check(resolution.typedPath) { result in
+            guard session.isOpen, token == pathToken else { return }
+            switch result {
+            case .exists:
+                missingPaths.remove(resolution.typedPath)
+                verifiedPaths.insert(resolution.typedPath)
+            case .missing:
+                verifiedPaths.remove(resolution.typedPath)
+                missingPaths.insert(resolution.typedPath)
+            case .timedOut:
+                break
+            }
+        }
+        session.probe.check(resolution.listDirectory) { result in
+            guard session.isOpen, token == pathToken, result == .exists else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let kids = RecentsPathMode.listChildren(of: resolution.listDirectory, prefix: resolution.namePrefix)
+                DispatchQueue.main.async {
+                    guard session.isOpen, token == pathToken else { return }
+                    pathChildren = kids
+                    pathChildrenKey = key
                 }
             }
         }
@@ -856,19 +889,41 @@ struct CreateWorkspaceSheet: View {
             return
         }
         if !verifiedPaths.contains(path) {
-            // Not stat'ed yet (a path typed a moment ago): check off the main
-            // thread, then decide.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let exists = Workspace.isExistingDirectory(path)
-                DispatchQueue.main.async {
-                    if exists { verifiedPaths.insert(path) } else { missingPaths.insert(path) }
-                    activate(rawPath, alt: alt)
-                }
-            }
+            verifyThenActivate(path: path, rawPath: rawPath, alt: alt)
             return
         }
         directory = rawPath.hasPrefix("~") ? rawPath : path
         submit()
+    }
+
+    /// Not stat'ed yet (a path typed a moment ago): check through the probe
+    /// (2 s deadline, off the main thread), show the checking state, and decide.
+    /// Repeated presses do not stack checks; a result that arrives after the
+    /// window closed is ignored.
+    private func verifyThenActivate(path: String, rawPath: String, alt: Bool) {
+        guard checkingPath == nil else { return }
+        checkingPath = path
+        let session = self.session
+        session.probe.check(path, timeout: 2) { result in
+            guard session.isOpen else { return }
+            checkingPath = nil
+            switch result {
+            case .exists:
+                verifiedPaths.insert(path)
+                activate(rawPath, alt: alt)
+            case .missing:
+                missingPaths.insert(path)
+                activate(rawPath, alt: alt)
+            case .timedOut:
+                showNotice(String(
+                    format: String(
+                        localized: "createWorkspace.notice.unreachable",
+                        defaultValue: "Could not check “%@” (the volume is not answering), so no workspace was created."
+                    ),
+                    RecentsPath.lastComponent(path)
+                ))
+            }
+        }
     }
 
     private func flash(_ path: String) {
@@ -942,18 +997,33 @@ struct CreateWorkspaceSheet: View {
         )
     }
 
-    /// Stat every recent off the main thread (a hung network mount must not
-    /// stall the UI). Results are cached for this open of the sheet.
-    private func refreshMissing() {
-        let paths = recentsState.entries.map(\.path)
-        for path in paths {
-            DispatchQueue.global(qos: .utility).async {
-                let exists = Workspace.isExistingDirectory((path as NSString).expandingTildeInPath)
-                DispatchQueue.main.async {
-                    if exists { verifiedPaths.insert(path) } else { missingPaths.insert(path) }
+    /// Stat every recent through the probe (a small fixed pool, off the main
+    /// thread, a deadline per path, nothing further under a hung mount). Results
+    /// are cached for this open of the sheet.
+    private func refreshMissing(paths: [String]? = nil) {
+        let session = self.session
+        for path in paths ?? recentsState.entries.map(\.path) {
+            guard !verifiedPaths.contains(path), !missingPaths.contains(path) else { continue }
+            session.probe.check(path) { result in
+                guard session.isOpen else { return }
+                switch result {
+                case .exists: verifiedPaths.insert(path)
+                case .missing: missingPaths.insert(path)
+                case .timedOut: break
                 }
             }
         }
+    }
+
+    /// After a live reload (an agent changed recents): drop a selection that is
+    /// no longer listed, check the existence of paths that just appeared, and
+    /// refresh which directories have an open workspace.
+    private func liveReloadFollowUp() {
+        if let selectedPath, !rows.contains(where: { $0.id == selectedPath }) {
+            self.selectedPath = nil
+        }
+        openRootSet = openRoots()
+        refreshMissing()
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
@@ -1244,6 +1314,7 @@ struct CreateWorkspaceSheet: View {
     /// ⏎ never creates in a stale directory.
     private var canSubmit: Bool {
         !submitting
+            && checkingPath == nil
             && !directory.trimmingCharacters(in: .whitespaces).isEmpty
             && entries.contains(where: { $0.id == selectionId })
             && (trimmedQuery.isEmpty || selectedPath != nil || !rows.isEmpty)

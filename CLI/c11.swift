@@ -3491,6 +3491,7 @@ struct CMUXCLI {
     ) throws {
         let (dirOpt, argsAfterDir) = parseOption(args, name: "--dir")
         if let dirOpt {
+            try requireOptionValue(dirOpt, flag: "--dir", command: "workspace new")
             try runWorkspaceNewInDirectory(dirOpt, args: argsAfterDir, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
             return
         }
@@ -3558,17 +3559,27 @@ struct CMUXCLI {
     ) throws {
         let (layoutOpt, r1) = parseOption(args, name: "--layout")
         let (nameOpt, r2) = parseOption(r1, name: "--name")
+        if let layoutOpt { try requireOptionValue(layoutOpt, flag: "--layout", command: "workspace new --dir") }
+        if let nameOpt { try requireOptionValue(nameOpt, flag: "--name", command: "workspace new --dir") }
         let launchAgent = hasFlag(r2, name: "--agent")
         let remaining = r2.filter { $0 != "--agent" }
         if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
             throw CLIError(message: "workspace new --dir: unknown flag '\(unknown)'. Known flags: --layout <blueprint id|name>, --name <text>, --agent")
+        }
+        if let stray = remaining.first {
+            throw CLIError(message: "workspace new --dir: unexpected argument '\(stray)'. Quote a query that contains spaces.")
         }
         var params: [String: Any] = [
             "dir": dir,
             "cwd": FileManager.default.currentDirectoryPath,
             "launch_agent": launchAgent,
         ]
-        if let layoutOpt { params["layout"] = layoutOpt }
+        if let layoutOpt {
+            // A layout file path is resolved against this shell's directory, not
+            // the app's.
+            let asPath = resolvePath(layoutOpt)
+            params["layout"] = FileManager.default.fileExists(atPath: asPath) ? asPath : layoutOpt
+        }
         if let nameOpt { params["name"] = nameOpt }
         let payload = try client.sendV2(method: "workspace.create_in_directory", params: params)
         if jsonOutput {
@@ -3577,6 +3588,13 @@ struct CMUXCLI {
             let ref = (payload["workspace_ref"] as? String) ?? "?"
             let path = (payload["path"] as? String) ?? dir
             print("OK workspace=\(ref) dir=\(path)")
+        }
+    }
+
+    /// An option value that starts with `--` is the next flag, not a value.
+    private func requireOptionValue(_ value: String, flag: String, command: String) throws {
+        if value.hasPrefix("--") {
+            throw CLIError(message: "\(command): \(flag) needs a value (got '\(value)')")
         }
     }
 
@@ -3619,11 +3637,16 @@ struct CMUXCLI {
             }
         case "pin", "unpin", "remove":
             let (atOpt, r1) = parseOption(rest, name: "--at")
+            if let atOpt { try requireOptionValue(atOpt, flag: "--at", command: "workspace recents \(sub)") }
             if let unknown = r1.first(where: { $0.hasPrefix("--") && $0 != "--json" }) {
                 throw CLIError(message: "workspace recents \(sub): unknown flag '\(unknown)'. Known flags: --at <n> (pin only)")
             }
-            guard let target = r1.first(where: { !$0.hasPrefix("--") }) else {
+            let positionals = r1.filter { !$0.hasPrefix("--") }
+            guard let target = positionals.first else {
                 throw CLIError(message: "workspace recents \(sub): missing <path>")
+            }
+            if positionals.count > 1 {
+                throw CLIError(message: "workspace recents \(sub): unexpected argument '\(positionals[1])'. Quote a query that contains spaces.")
             }
             var params: [String: Any] = ["path": target, "cwd": cwd]
             if let atOpt {
@@ -10232,7 +10255,8 @@ struct CMUXCLI {
                 With `--dir`, create a workspace rooted at a directory the way the
                 New Workspace picker does. The value is a path (`~`, `/`, `./`) or a
                 fuzzy query over your recents, ranked exactly like the picker's
-                search. If the top two recents tie, the command fails and lists the
+                search; a real subdirectory of the current directory with that name wins
+                over a fuzzy match. If the top two recents tie, the command fails and lists the
                 candidates. The open is recorded in recents. The directory must
                 exist.
 

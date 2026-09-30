@@ -118,7 +118,7 @@ c11 <path>                           # Open directory in new workspace (launches
 c11 new-workspace [--cwd <path>] [--root <path>] [--command <text>] [--title <text>] [--layout <path|name>]
 c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--agent]
     # Like the New Workspace picker: <query> is a path (~, /, ./) or a fuzzy query over the picker's
-    # recents, ranked exactly as the picker ranks them. A tie between the top two fails and lists the
+    # recents, ranked exactly as the picker ranks them; a real subdirectory of the current directory with that name wins over a fuzzy match. A tie between the top two fails and lists the
     # candidates; a missing directory fails and creates nothing. Records the open in recents. --layout takes
     # quad | two-columns | two-by-three | one-column (or starter:<name>), saved:<url>, or a blueprint name
     # (default: the picker's last layout). No agent is launched unless --agent. Does not steal focus.
@@ -444,15 +444,20 @@ The New Workspace picker's directory history is scriptable and shared with the s
 live when you change it.
 
 ```bash
-c11 workspace recents list [--pinned] [--json]   # newest first (--pinned: pin order); per directory:
-                                                 # path, lastOpenedAt, openCount, pinned, pin number,
-                                                 # open in c11, exists
+c11 workspace recents list [--pinned] [--json]   # newest first (--pinned: pin order)
 c11 workspace recents pin <path|query> [--at <n>]   # n is the 1-based pin number (the tile's cmd badge)
 c11 workspace recents unpin <path|query>
 c11 workspace recents remove <path|query>            # also drops the pin
 ```
 
+`list --json` returns `{recents: [...], count, total}`; each item has `path`, `name`, `last_opened_at`
+(ISO 8601), `open_count`, `pinned`, `pin_index` (1-based, null when unpinned), `open` (a workspace for it is
+open in c11) and `exists` (null when the check did not answer in 2 s). `pin`/`unpin` return `path`, `pinned`,
+`pin_index`, `pins`; `remove` returns `path`, `removed`.
+
 `<path|query>` is an exact path or a fuzzy query over recents; ties fail with the candidates listed. Only
-directories already in recents can be pinned. Socket methods: `workspace.recents.list`, `.pin` (`path`, `at`),
-`.unpin`, `.remove`, `.resolve` (`query`), and `workspace.create_in_directory` (`dir`, `layout`, `name`,
-`launch_agent`). The recents cap is 250; the oldest unpinned entry is evicted first, never a pin.
+directories already in recents can be pinned. Socket methods: `workspace.recents.list` (`pinned`), `.pin`
+(`path`, `at`, `cwd`), `.unpin`, `.remove`, `.resolve` (`query`, `cwd`), and `workspace.create_in_directory`
+(`dir`, `layout`, `name`, `launch_agent`, `cwd`). `cwd` is the caller's directory: it anchors `./` and `../`
+queries, and for `workspace new --dir <name>` a real subdirectory `cwd/<name>` is preferred over a fuzzy match.
+The CLI sends its own cwd and resolves a relative `--layout` file path against it. The recents cap is 250; the oldest unpinned entry is evicted first, never a pin.

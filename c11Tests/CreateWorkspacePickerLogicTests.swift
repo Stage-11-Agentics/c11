@@ -211,25 +211,54 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
     }
 
     /// The 14-inch MacBook Pro at its default 1512 x 982: the menu bar leaves
-    /// 945 pt, a visible Dock leaves about 875 to 883. With two rows of pins
-    /// the whole sheet must fit, the list giving up rows first.
-    func testSheetFitsA982PointScreenWithAndWithoutTheDock() {
+    /// 945 pt, a visible Dock leaves about 875 to 883. The list is sized for
+    /// two rows of pins (the most the grid shows), so the whole sheet fits with
+    /// any number of pins, now or after pins are added mid-use.
+    func testSheetFitsA982PointScreenWithAndWithoutTheDockAtEveryPinCount() {
         for (visible, expectedRows) in [(CGFloat(945), 7), (883, 5), (875, 5)] {
-            let rows = CreateWorkspaceSheetMetrics.listRows(visibleHeight: visible, pinRows: 2)
+            let rows = CreateWorkspaceSheetMetrics.listRows(visibleHeight: visible)
             XCTAssertEqual(rows, expectedRows, "visibleFrame \(visible)")
-            XCTAssertFalse(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visible, pinRows: 2))
-            let window = CreateWorkspaceSheetMetrics.windowChrome
-                + CreateWorkspaceSheetMetrics.fixedHeight(pinRows: 2)
-                + CGFloat(rows) * CreateWorkspaceSheetMetrics.rowHeight
-            XCTAssertLessThanOrEqual(window, visible, "window must fit visibleFrame \(visible)")
+            XCTAssertFalse(CreateWorkspaceSheetMetrics.needsScroll(visibleHeight: visible))
+            for pinRows in 0...2 {
+                XCTAssertLessThanOrEqual(
+                    CreateWorkspaceSheetMetrics.windowHeight(rows: rows, pinRows: pinRows),
+                    visible,
+                    "pin rows \(pinRows) must fit visibleFrame \(visible)"
+                )
+            }
         }
     }
 
-    func testAShorterPinAreaGivesTheListMoreRows() {
-        XCTAssertGreaterThan(
-            CreateWorkspaceSheetMetrics.listRows(visibleHeight: 945, pinRows: 1),
-            CreateWorkspaceSheetMetrics.listRows(visibleHeight: 945, pinRows: 2)
+    func testTheListIsAlwaysSizedForTwoPinRows() {
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.budgetPinRows, 2)
+        XCTAssertEqual(
+            CreateWorkspaceSheetMetrics.listRows(visibleHeight: 945),
+            Int(((945 - CreateWorkspaceSheetMetrics.windowChrome - CreateWorkspaceSheetMetrics.screenMargin
+                  - CreateWorkspaceSheetMetrics.fixedHeight(pinRows: 2)) / CreateWorkspaceSheetMetrics.rowHeight).rounded(.down))
         )
+    }
+
+    func testWindowOriginIsClampedAtTheTopAndTheBottom() {
+        // Plenty of room: the wanted top edge is kept.
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.originY(desiredTop: 900, height: 500, minY: 0, maxY: 1000), 400)
+        // The wanted top is above the screen: pulled down so the window is inside.
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.originY(desiredTop: 1200, height: 500, minY: 0, maxY: 1000), 500)
+        // The window would sink under the Dock: pulled up to the bottom edge.
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.originY(desiredTop: 300, height: 500, minY: 60, maxY: 1000), 60)
+        // Taller than the span: sits on the top edge (scrolling mode prevents this in practice).
+        XCTAssertEqual(CreateWorkspaceSheetMetrics.originY(desiredTop: 900, height: 1200, minY: 0, maxY: 1000), -200)
+    }
+
+    func testSizingRecomputesForAnotherScreen() {
+        let sizing = CreateWorkspaceSizing(visibleHeight: 945)
+        XCTAssertEqual(sizing.listRows, 7)
+        XCTAssertNil(sizing.maxContentHeight)
+        sizing.update(visibleHeight: 700)
+        XCTAssertEqual(sizing.listRows, 5)
+        XCTAssertNotNil(sizing.maxContentHeight)
+        sizing.update(visibleHeight: 5000)
+        XCTAssertEqual(sizing.listRows, 16)
+        XCTAssertNil(sizing.maxContentHeight)
     }
 
     // MARK: Relative time
@@ -379,5 +408,154 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
             RecentsQueryResolver.resolve(query: "qqq", entries: [entry("/Users/tester/code/c11")], home: "/Users/tester", cwd: "/"),
             .none
         )
+    }
+
+    // MARK: Key policy
+
+    func testArrowKeysCarryNumericPadAndFunctionFlagsAndStillCount() {
+        let arrowFlags: NSEvent.ModifierFlags = [.numericPad, .function]
+        XCTAssertEqual(PickerShortcutPolicy.effectiveFlags(arrowFlags), [])
+        XCTAssertEqual(PickerShortcutPolicy.effectiveFlags([.numericPad, .function, .capsLock, .shift]), .shift)
+        XCTAssertEqual(PickerShortcutPolicy.arrowDelta(keyCode: 125, flags: arrowFlags), +1)
+        XCTAssertEqual(PickerShortcutPolicy.arrowDelta(keyCode: 126, flags: arrowFlags), -1)
+        XCTAssertEqual(PickerShortcutPolicy.arrowDelta(keyCode: 125, flags: [.numericPad, .function, .shift]), +1)
+        XCTAssertNil(PickerShortcutPolicy.arrowDelta(keyCode: 125, flags: [.numericPad, .function, .command]))
+        XCTAssertNil(PickerShortcutPolicy.arrowDelta(keyCode: 125, flags: [.option]))
+        XCTAssertNil(PickerShortcutPolicy.arrowDelta(keyCode: 123, flags: arrowFlags))
+    }
+
+    func testPickerOwnsCommandDigitsFAndW() {
+        for d in 1...9 {
+            XCTAssertEqual(PickerShortcutPolicy.action(flags: .command, chars: "\(d)"), .pin(d))
+        }
+        XCTAssertEqual(PickerShortcutPolicy.action(flags: .command, chars: "f"), .focusSearch)
+        XCTAssertEqual(PickerShortcutPolicy.action(flags: .command, chars: "F"), .focusSearch)
+        XCTAssertEqual(PickerShortcutPolicy.action(flags: .command, chars: "w"), .close)
+        XCTAssertEqual(PickerShortcutPolicy.action(flags: [.command, .capsLock], chars: "w"), .close)
+    }
+
+    func testTheAppHandlerStandsAsideOnlyForThosePickerChords() {
+        XCTAssertTrue(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "2"))
+        XCTAssertTrue(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "w"))
+        XCTAssertTrue(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "f"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "0"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "n"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: .command, chars: "q"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: [.command, .shift], chars: "w"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: [.command, .option], chars: "1"))
+        XCTAssertFalse(PickerShortcutPolicy.appShouldStandAside(flags: [], chars: "w"))
+    }
+
+    func testTypeToSearchTakesPlainPrintableTextOnly() {
+        XCTAssertEqual(PickerShortcutPolicy.typeToSearchText(flags: [], characters: "a"), "a")
+        XCTAssertEqual(PickerShortcutPolicy.typeToSearchText(flags: .shift, characters: "A"), "A")
+        XCTAssertNil(PickerShortcutPolicy.typeToSearchText(flags: .command, characters: "a"))
+        XCTAssertNil(PickerShortcutPolicy.typeToSearchText(flags: .control, characters: "a"))
+        XCTAssertNil(PickerShortcutPolicy.typeToSearchText(flags: [], characters: " "))
+        XCTAssertNil(PickerShortcutPolicy.typeToSearchText(flags: [], characters: "\r"))
+        XCTAssertNil(PickerShortcutPolicy.typeToSearchText(flags: [.numericPad, .function], characters: "\u{F701}"))
+    }
+
+    func testAPinDragIsOursOnlyWhenThePasteboardCarriesThatPin() {
+        let payload = PinReorderDropDelegate.payload(for: "/p/a")
+        XCTAssertTrue(PinReorderDropDelegate.carries(payload, pin: "/p/a"))
+        XCTAssertFalse(PinReorderDropDelegate.carries(payload, pin: "/p/b"))
+        XCTAssertFalse(PinReorderDropDelegate.carries("/p/a", pin: "/p/a"))
+        XCTAssertFalse(PinReorderDropDelegate.carries(nil, pin: "/p/a"))
+        XCTAssertFalse(PinReorderDropDelegate.carries(payload, pin: nil))
+    }
+
+    // MARK: Slash queries and cwd (CLI)
+
+    func testAQueryWithASlashPrefersASuffixAtAFolderBoundary() {
+        let entries = [
+            entry("/Users/tester/deployments/greenwood-tech/site-old", age: 1),
+            entry("/Users/tester/deployments/greenwood-tech/site", age: 50),
+            entry("/Users/tester/other/greenwood-tech/sitemap/x", age: 2),
+        ]
+        let outcome = RecentsQueryResolver.resolve(query: "greenwood-tech/site", entries: entries, home: "/Users/tester", cwd: "/")
+        XCTAssertEqual(outcome, .match("/Users/tester/deployments/greenwood-tech/site"))
+    }
+
+    func testSlashQueryScoresStayBelowNameMatches() {
+        let viaName = RecentsFuzzy.match(query: "site", displayPath: "~/x/site")
+        let viaPath = RecentsFuzzy.match(query: "tech/site", displayPath: "~/greenwood-tech/site")
+        XCTAssertNotNil(viaName)
+        XCTAssertNotNil(viaPath)
+        XCTAssertGreaterThan(viaName!.score, viaPath!.score)
+    }
+
+    func testCwdCandidateOnlyForBareQueries() {
+        XCTAssertEqual(RecentsQueryResolver.cwdCandidate(query: "sub/dir", cwd: "/work"), "/work/sub/dir")
+        XCTAssertEqual(RecentsQueryResolver.cwdCandidate(query: " site ", cwd: "/work/"), "/work/site")
+        XCTAssertNil(RecentsQueryResolver.cwdCandidate(query: "~/x", cwd: "/work"))
+        XCTAssertNil(RecentsQueryResolver.cwdCandidate(query: "/x", cwd: "/work"))
+        XCTAssertNil(RecentsQueryResolver.cwdCandidate(query: "./x", cwd: "/work"))
+        XCTAssertNil(RecentsQueryResolver.cwdCandidate(query: "", cwd: "/work"))
+        XCTAssertNil(RecentsQueryResolver.cwdCandidate(query: "x", cwd: ""))
+    }
+
+    // MARK: Directory probe
+
+    func testAHungPathTimesOutAndItsMountIsNotProbedAgain() {
+        var statCalls = [String]()
+        let lock = NSLock()
+        let probe = DirectoryProbe(width: 2, stat: { path in
+            lock.lock(); statCalls.append(path); lock.unlock()
+            if path.hasPrefix("/Volumes/hung") { Thread.sleep(forTimeInterval: 3) }
+            return true
+        })
+        let first = expectation(description: "hung path times out")
+        probe.check("/Volumes/hung/a", timeout: 0.15) { result in
+            XCTAssertEqual(result, .timedOut)
+            first.fulfill()
+        }
+        wait(for: [first], timeout: 2)
+        XCTAssertTrue(probe.isUnderHungRoot("/Volumes/hung/b"))
+
+        let second = expectation(description: "sibling on the hung mount is skipped")
+        probe.check("/Volumes/hung/b", timeout: 0.15) { result in
+            XCTAssertEqual(result, .timedOut)
+            second.fulfill()
+        }
+        let healthy = expectation(description: "other paths still answer")
+        probe.check("/tmp/fine", timeout: 1) { result in
+            XCTAssertEqual(result, .exists)
+            healthy.fulfill()
+        }
+        wait(for: [second, healthy], timeout: 2)
+        lock.lock(); defer { lock.unlock() }
+        XCTAssertFalse(statCalls.contains("/Volumes/hung/b"), "no stat is issued under a hung mount")
+    }
+
+    func testTheSamePathIsStatedOnceAndPoolWidthIsBounded() {
+        var inFlight = 0, peak = 0, calls = 0
+        let lock = NSLock()
+        let probe = DirectoryProbe(width: 2, stat: { _ in
+            lock.lock(); inFlight += 1; peak = max(peak, inFlight); calls += 1; lock.unlock()
+            Thread.sleep(forTimeInterval: 0.05)
+            lock.lock(); inFlight -= 1; lock.unlock()
+            return false
+        })
+        let done = expectation(description: "all answered")
+        let paths = (0..<12).map { "/tmp/p\($0)" }
+        done.expectedFulfillmentCount = paths.count + 5
+        for p in paths {
+            probe.check(p, timeout: 5) { XCTAssertEqual($0, .missing); done.fulfill() }
+        }
+        // Five more askers for a path that is already running or queued.
+        for _ in 0..<5 {
+            probe.check("/tmp/p0", timeout: 5) { XCTAssertEqual($0, .missing); done.fulfill() }
+        }
+        wait(for: [done], timeout: 5)
+        lock.lock(); defer { lock.unlock() }
+        XCTAssertLessThanOrEqual(peak, 2)
+        XCTAssertEqual(calls, paths.count, "one stat per distinct path")
+    }
+
+    func testHangRootIsTheMountForVolumesAndTheParentOtherwise() {
+        XCTAssertEqual(DirectoryProbe.hangRoot(of: "/Volumes/share/a/b"), "/Volumes/share")
+        XCTAssertEqual(DirectoryProbe.hangRoot(of: "/net/host/x"), "/net/host")
+        XCTAssertEqual(DirectoryProbe.hangRoot(of: "/srv/data/x"), "/srv/data")
     }
 }

@@ -9,9 +9,8 @@ enum TabSheetDetailBuilder {
     /// clock names. Change it in one command:
     /// `defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"`.
     static let clockOrderDefaultsKey = "c11.tabSheet.clocks"
+    /// `seen` is accepted and renders `—` until last-seen tracking (C11-243) supplies it.
     static let defaultClockOrder = ["active", "launched"]
-    /// Names the sheet can render. `seen` renders `—` until C11-243 supplies it.
-    static let knownClocks: Set<String> = ["active", "launched", "seen"]
 
     struct Inputs {
         var panelType: PanelType
@@ -27,6 +26,9 @@ enum TabSheetDetailBuilder {
         var markdownPath: String?
         var activity: BonsplitTabActivityState?
         var isFlagged: Bool
+        /// When the surface entered its current state, as the workspace saw it happen.
+        var stateEnteredAt: Date?
+        /// Exact start the projection knows for waiting (notification time) and cold.
         var stateStartedAt: Date?
         var flagRaisedAt: Date?
         var lastActivityAt: Date?
@@ -48,8 +50,10 @@ enum TabSheetDetailBuilder {
             status: status(
                 activity: input.activity,
                 isFlagged: input.isFlagged,
+                enteredAt: input.stateEnteredAt,
                 stateStartedAt: input.stateStartedAt,
-                flagRaisedAt: input.flagRaisedAt
+                flagRaisedAt: input.flagRaisedAt,
+                lastActivityAt: input.lastActivityAt
             ),
             clocks: clocks
         )
@@ -82,29 +86,43 @@ enum TabSheetDetailBuilder {
         }
     }
 
+    /// The state word and how long the state has held. Waiting counts from the
+    /// notification, cold from the projection's start and flagged from the flag
+    /// raise (each an exact event time when known); working and idle count from
+    /// when the workspace saw the surface enter the state. Any missing time falls
+    /// back to the recorded entry, and working/idle last to the last activity.
     static func status(
         activity: BonsplitTabActivityState?,
         isFlagged: Bool,
+        enteredAt: Date?,
         stateStartedAt: Date?,
-        flagRaisedAt: Date?
+        flagRaisedAt: Date?,
+        lastActivityAt: Date? = nil
     ) -> BonsplitTabDetail.Status? {
         guard let activity else { return nil }
         if isFlagged {
-            return .init(kind: .flagged, since: flagRaisedAt ?? stateStartedAt)
+            return .init(kind: .flagged, since: flagRaisedAt ?? enteredAt)
         }
-        let kind: BonsplitTabDetail.StatusKind
         switch activity {
-        case .running: kind = .working
-        case .waiting: kind = .waiting
-        case .idle: kind = .idle
-        case .cold: kind = .cold
+        case .running: return .init(kind: .working, since: enteredAt ?? lastActivityAt)
+        case .idle: return .init(kind: .idle, since: enteredAt ?? lastActivityAt)
+        case .waiting: return .init(kind: .waiting, since: stateStartedAt ?? enteredAt)
+        case .cold: return .init(kind: .cold, since: stateStartedAt ?? enteredAt)
         }
-        return .init(kind: kind, since: stateStartedAt)
+    }
+
+    /// The kind alone, for recording transitions.
+    static func statusKind(activity: BonsplitTabActivityState?, isFlagged: Bool) -> BonsplitTabDetail.StatusKind? {
+        status(activity: activity, isFlagged: isFlagged, enteredAt: nil, stateStartedAt: nil, flagRaisedAt: nil)?.kind
     }
 
     /// Reads the operator/agent setting: comma-separated, unknown names are
     /// dropped by the sheet itself, an empty or missing value means the default.
     static func clockOrder(defaults: UserDefaults = .standard) -> [String] {
+        // `-string "a,b"` is the documented form; `-array a b` works too.
+        if let list = defaults.array(forKey: clockOrderDefaultsKey) as? [String] {
+            return parseClockOrder(list.joined(separator: ","))
+        }
         guard let raw = defaults.string(forKey: clockOrderDefaultsKey) else { return defaultClockOrder }
         return parseClockOrder(raw)
     }
@@ -114,20 +132,16 @@ enum TabSheetDetailBuilder {
         return names.isEmpty ? defaultClockOrder : names
     }
 
-    /// The detail without its time-varying parts: the clocks, and the `since`
-    /// of working/idle (measured from the last activity, so it moves with every
-    /// burst of output). Those refresh when the sheet opens; everything else is
-    /// pushed as it changes, so a stream of activity never churns the tab bar.
+    /// The detail without its clocks. Clocks move with every burst of output,
+    /// so they refresh when a sheet opens (and on its slow tick); everything
+    /// else is pushed as it changes.
     static func ignoringClocks(_ detail: BonsplitTabDetail?) -> BonsplitTabDetail? {
         guard var detail else { return nil }
         detail.clocks = [:]
-        if let kind = detail.status?.kind, kind == .working || kind == .idle {
-            detail.status?.since = nil
-        }
         return detail
     }
 
-    private static func collapsedWhitespace(_ raw: String?) -> String? {
+    static func collapsedWhitespace(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let collapsed = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         return collapsed.isEmpty ? nil : collapsed
@@ -147,6 +161,12 @@ enum TabSheetDetailBuilder {
         guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else { return nil }
         return (path as NSString).abbreviatingWithTildeInPath
     }
+}
+
+/// The state a surface last entered and when.
+struct TabSheetStatusEntry: Equatable {
+    var kind: BonsplitTabDetail.StatusKind
+    var at: Date
 }
 
 // MARK: - Workspace wiring
@@ -182,7 +202,8 @@ extension Workspace {
             markdownPath: (panel as? MarkdownPanel)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
-            stateStartedAt: help?.stateStartedAt,
+            stateEnteredAt: tabSheetStatusEntered[panelId]?.at,
+            stateStartedAt: activity == .waiting || activity == .cold ? help?.stateStartedAt : nil,
             flagRaisedAt: attention.flagRaisedAt,
             lastActivityAt: help?.lastActivityAt
                 ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
@@ -194,12 +215,42 @@ extension Workspace {
     /// clock changed. Clocks are refreshed by `tabDetailProvider` as the sheet
     /// opens, so a stream of activity never churns the tab bar.
     func syncSurfaceTabDetailForPanel(_ panelId: UUID) {
-        guard let tabId = surfaceIdFromPanelId(panelId),
+        // Nothing can show the detail unless a sheet is open in this pane;
+        // opening one refreshes it, so skip the work otherwise.
+        guard !bonsplitController.openTabSheetPaneIds.isEmpty,
+              let paneId = paneId(forPanelId: panelId),
+              bonsplitController.openTabSheetPaneIds.contains(paneId),
+              let tabId = surfaceIdFromPanelId(panelId),
               let existing = bonsplitController.tab(tabId),
               let detail = tabSheetDetail(panelId: panelId) else { return }
         guard TabSheetDetailBuilder.ignoringClocks(existing.detail)
                 != TabSheetDetailBuilder.ignoringClocks(detail) else { return }
         bonsplitController.updateTab(tabId, detail: .some(detail))
+    }
+
+    /// Notes a change of the surface's presented state (activity plus flag) so
+    /// the sheet can say how long it has held. Cheap: one dictionary compare.
+    func recordTabSheetStatusTransition(panelId: UUID, activity: BonsplitTabActivityState?) {
+        let kind = TabSheetDetailBuilder.statusKind(
+            activity: activity,
+            isFlagged: attentionSnapshot(panelId: panelId).isFlagged
+        )
+        guard let kind else {
+            tabSheetStatusEntered.removeValue(forKey: panelId)
+            return
+        }
+        if tabSheetStatusEntered[panelId]?.kind != kind {
+            tabSheetStatusEntered[panelId] = TabSheetStatusEntry(kind: kind, at: Date())
+        }
+    }
+
+    /// The tab's current detail with its title replaced, for the same
+    /// `updateTab` call that changes the tab's title. nil when the tab has no
+    /// detail yet (opening a sheet supplies it).
+    func tabDetailReplacingTitle(tabId: TabID, with title: String) -> BonsplitTabDetail?? {
+        guard var detail = bonsplitController.tab(tabId)?.detail else { return nil }
+        detail.title = TabSheetDetailBuilder.collapsedWhitespace(title)
+        return .some(detail)
     }
 
     func installTabSheetDetailProviders() {

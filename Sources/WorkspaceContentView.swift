@@ -278,6 +278,7 @@ struct WorkspaceContentView: View {
                         activityState: expectedActivity
                     )
                 }
+                if let panelId { workspace.recordTabSheetStatusTransition(panelId: panelId, activity: expectedActivity) }
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 

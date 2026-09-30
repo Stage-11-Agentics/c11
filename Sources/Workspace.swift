@@ -5505,6 +5505,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published private(set) var pinnedPanelIds: Set<UUID> = []
     @Published private(set) var manualUnreadPanelIds: Set<UUID> = []
     private var manualUnreadMarkedAt: [UUID: Date] = [:]
+    /// When each surface entered the state its tab sheet row shows (working,
+    /// waiting, flagged, idle, cold). Written at the transitions the workspace
+    /// already sees; not published, nothing renders from it directly.
+    var tabSheetStatusEntered: [UUID: TabSheetStatusEntry] = [:]
     nonisolated private static let manualUnreadFocusGraceInterval: TimeInterval = 0.2
     nonisolated private static let manualUnreadClearDelayAfterFocusFlash: TimeInterval = 0.2
     @Published var statusEntries: [String: SidebarStatusEntry] = [:]
@@ -6916,6 +6920,7 @@ final class Workspace: Identifiable, ObservableObject {
             activityState: activityState
         )
         let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
+        recordTabSheetStatusTransition(panelId: panelId, activity: activityState)
         syncSurfaceTabDetailForPanel(panelId)
         guard existing.activityState != activityState
             || existing.activityPresentation != activityPresentation
@@ -7581,7 +7586,8 @@ final class Workspace: Identifiable, ObservableObject {
             bonsplitController.updateTab(
                 tabId,
                 title: TitleFormatting.sidebarLabel(from: resolvedTitle),
-                hasCustomTitle: panelCustomTitles[panelId] != nil
+                hasCustomTitle: panelCustomTitles[panelId] != nil,
+                detail: tabDetailReplacingTitle(tabId: tabId, with: resolvedTitle)
             )
             // [TextBox] Keep TerminalPanel.title in sync so TextBox key
             // routing can detect running apps (Claude Code, Codex) via
@@ -7770,7 +7776,11 @@ final class Workspace: Identifiable, ObservableObject {
             bonsplitController.updateTab(
                 tabId,
                 title: sidebarLabel,
-                hasCustomTitle: panelCustomTitles[panelId] != nil
+                hasCustomTitle: panelCustomTitles[panelId] != nil,
+                detail: tabDetailReplacingTitle(
+                    tabId: tabId,
+                    with: resolvedPanelTitle(panelId: panelId, fallback: baseTitle)
+                )
             )
         }
 
@@ -7811,8 +7821,7 @@ final class Workspace: Identifiable, ObservableObject {
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
             descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
             visible: titleBarVisible,
-            collapsed: titleBarCollapsed[panelId] ?? true,
-            ordinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId)
+            collapsed: titleBarCollapsed[panelId] ?? true
         )
     }
 
@@ -12137,6 +12146,7 @@ extension Workspace: BonsplitDelegate {
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
+        tabSheetStatusEntered.removeValue(forKey: panelId)
         SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)

@@ -19,9 +19,6 @@ struct SurfaceTitleBarState: Equatable {
     var descriptionSource: MetadataSource?
     var visible: Bool = true
     var collapsed: Bool = true
-    /// The surface's `surface:N` ordinal, rendered as an "N: " title prefix
-    /// when the "Show surface IDs in tab titles" setting is on.
-    var ordinal: Int?
 
     /// The bar renders only when the workspace shows title bars and the surface
     /// has a description. Everything that reserves space for the bar (the

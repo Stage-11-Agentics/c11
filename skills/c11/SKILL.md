@@ -154,12 +154,15 @@ A few cross-cutting rules worth knowing before you reach for those:
 
 ## Tab sheet
 
-The `N ▾` count cell on every tab bar opens the pane's tab sheet: one two-line row per tab with its number (`Tab 171`), agent (`Harness · model`, from `set-agent` / `launch-agent` metadata), state word with how long it has held, the live description as the subtitle (cwd, host or file path when there is none), and clocks. **Active** is the time since the tab's last recorded activity (input, lifecycle edges); **Launched** is the time since it opened; **Seen** renders `—` until last-seen tracking lands. The column order is one ordered list; change it in one command (read each time a sheet opens, unknown names ignored):
+The `N ▾` count cell on every tab bar opens the pane's tab sheet: one two-line row per tab with its number (`Tab 171`), agent (`Harness · model`; the model shows only when `launch-agent` or `set-agent --model` recorded it), the state word with how long **that state** has held (`working 12m`, `waiting 6m`, `flagged 14m`, `idle 48m`), the live description as the subtitle (cwd, host or file path when there is none), and clocks. **Active** is the time since the tab's last recorded activity (input, prompt and command edges, agent lifecycle events; not raw output); **Launched** is the time since it opened; **Seen** renders `—` until last-seen tracking lands. The column order is one ordered list, a user default read each time a sheet opens (unknown names ignored). Write it as a string, or as an array:
 
 ```bash
-defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"   # com.stage11.c11.debug for dev builds
-defaults delete com.stage11.c11 c11.tabSheet.clocks                            # back to active,launched
+defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"
+defaults write com.stage11.c11 c11.tabSheet.clocks -array launched active     # same
+defaults delete com.stage11.c11 c11.tabSheet.clocks                           # back to active,launched
 ```
+
+A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-sheet-grid` is `com.stage11.c11.debug.tab.sheet.grid`).
 
 The bar under the tabs shows only the surface's description (`c11 set-description`); with no description it takes no height.
 

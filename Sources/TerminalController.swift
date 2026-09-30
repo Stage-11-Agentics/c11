@@ -3660,6 +3660,11 @@ class TerminalController {
             if titleApplied {
                 ws.syncPanelTitleFromMetadata(panelId: surfaceId)
             }
+            if descriptionApplied {
+                // The bar (and its height) follows the description; publish so it
+                // shows, updates and hides without waiting on unrelated state.
+                ws.objectWillChange.send()
+            }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
             }

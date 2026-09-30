@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 Tab Sheet v5</title>
+<style>
+:root {
+  --void: #16171b; --bar: #2b2d34; --tab: #24262c; --tab-active: #3a3c45;
+  --line: #45474f; --text: #e8e8ea; --dim: #9a9ca3; --faint: #74777f;
+  --gold: #d4a72c; --gold-soft: rgba(212,167,44,.14); --amber: #e0a030; --violet: #9D8AD9;
+  /* v4: lifted a touch from v3 (#0e0f12 -> #16171b) */
+  --s-bg: #1d1e23; --s-hover: #282a31; --s-active: #25272d; --s-border: #4a4c55; --s-sep: #2c2e34; --s-head: #191a1e;
+  --block: #34363e; --block-hover: #3c3e47; --count: #2f3138;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #0f1013; color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 22px 16px 80px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+p.lede { color: var(--dim); margin: 0 0 12px; max-width: 1000px; }
+.switches { display: grid; grid-template-columns: max-content 1fr; gap: 9px 14px; align-items: center; background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; margin: 12px 0 16px; }
+.switches label { font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.picker { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.picker button { font: inherit; font-size: 12px; min-width: 190px; padding: 5px 12px; background: #24262c; color: var(--dim); border: 0; border-right: 1px solid var(--line); cursor: pointer; }
+.picker button:last-child { border-right: 0; }
+.picker button.on { background: var(--gold); color: #1b1b1b; font-weight: 700; }
+.slider { display: flex; align-items: center; gap: 12px; }
+.slider input { width: 420px; accent-color: var(--gold); }
+.slider .v { font: 700 12px ui-monospace, Menlo, monospace; color: var(--gold); width: 150px; }
+.presets button { font: inherit; font-size: 11px; padding: 3px 8px; margin-right: 4px; background: #24262c; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+
+.stage { position: relative; height: 560px; background: #0b0c0e; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px; overflow: hidden; }
+.area { position: relative; display: flex; flex-direction: column; height: 100%; border: 1px solid var(--gold); background: #1a1b20;  }
+.bar { position: relative; display: flex; height: 30px; background: var(--bar); border-bottom: 2px solid var(--gold); flex: none; z-index: 6; }
+.controls { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 6px; color: var(--dim); font-size: 12px; background: var(--bar); }
+.controls .sep { width: 1px; height: 14px; background: var(--line); margin: 0 7px; }
+.controls span.b { width: 20px; text-align: center; }
+.tabs { display: flex; gap: 1px; min-width: 0; overflow-x: auto; scrollbar-width: none; flex: 0 1 auto; position: relative; }
+.tabs::-webkit-scrollbar { display: none; }
+.stripwrap { position: relative; display: flex; min-width: 0; flex: 0 1 auto; }
+.fade { position: absolute; top: 0; bottom: 0; width: 26px; pointer-events: none; z-index: 2; }
+.fade.l { left: 0; background: linear-gradient(90deg, var(--bar), transparent); }
+.fade.r { right: 0; background: linear-gradient(270deg, var(--bar), transparent); }
+.tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; background: var(--tab); color: var(--dim); font-size: 12px; white-space: nowrap; cursor: pointer; flex: none; max-width: 132px; overflow: hidden; text-overflow: ellipsis; transition: background .08s; }
+.tab.active { background: var(--tab-active); color: var(--text); font-weight: 600; }
+.tab .x { color: #6d7078; }
+.tab.linked { background: #34363f; color: var(--text); }
+.tab.linked::after, .block.linked::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: #fff; }
+.tab .num { font: 700 10px ui-monospace, Menlo, monospace; color: var(--faint); }
+.tab.active .num { color: var(--gold); }
+.mark { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.mark.working { background: #d8d9dd; } .mark.waiting { background: var(--amber); } .mark.idle { background: #6a6d75; } .mark.flag { background: var(--violet); } .mark.none { background: transparent; border: 1px solid #4a4d55; }
+.block { position: relative; display: flex; flex: 1; min-width: 0; cursor: pointer; background: var(--block); border-right: 1px solid var(--line); }
+.block .main { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.block .main .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.count { flex: none; color: var(--text); display: flex; align-items: center; justify-content: center; gap: 5px; width: 64px; gap: 6px; background: var(--count); border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.count:hover { background: #3a3c45; color: var(--text); }
+.count.open { background: var(--gold); color: #1b1b1b; }
+.count.open .dot { background: #1b1b1b; }
+.count .cn { min-width: 14px; text-align: left; font-variant-numeric: tabular-nums; }
+.count .chev { flex: none; }
+.count .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.neutral { flex: 1; }
+.titlebar { flex: none; display: flex; align-items: center; height: 32px; padding: 0 12px; background: #1f2126; border-bottom: 1px solid #2f3137; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.content { flex: 1; display: flex; min-height: 0; }
+.term { flex: 1; padding: 10px 14px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: #8a8d95; overflow: hidden; min-width: 0; }
+.term .p { color: #9fd08a; }
+
+/* ---------- drawer sheet (A, B) ---------- */
+.sheet { position: absolute; top: 30px; left: -1px; right: -1px; background: var(--s-bg); border: 1px solid var(--s-border); border-top: 0; box-shadow: 0 18px 36px rgba(0,0,0,.6); z-index: 5; }
+.sheet.minw { right: auto; }
+.grid-row { display: flex; align-items: stretch; }
+.head { height: 22px; background: var(--s-head); border-bottom: 1px solid var(--s-sep); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); align-items: center; }
+.c-num { flex: none; text-align: right; padding-right: 10px; }
+.c-mark { width: 16px; flex: none; display: flex; align-items: center; }
+.c-main { flex: 1; min-width: 0; }
+.c-agent { width: 150px; flex: none; padding-left: 10px; }
+.c-status { width: 104px; flex: none; padding-left: 10px; }
+.c-clock { width: 78px; flex: none; text-align: right; }
+.c-grip { width: 26px; flex: none; text-align: center; }
+.row { position: relative; color: var(--dim); border-left: 3px solid transparent; border-bottom: 1px solid var(--s-sep); cursor: default; }
+.row:last-of-type { border-bottom: 0; }
+.row.linked { background: var(--s-hover); color: var(--text); }
+.row.active { background: var(--s-active); color: var(--text); border-left-color: var(--gold); }
+.row.active.linked { background: #262830; }
+.row > div { display: flex; flex-direction: column; justify-content: center; }
+.row .l1, .row .l2 { height: 18px; display: flex; align-items: center; min-width: 0; }
+.row .c-num .l1 { justify-content: flex-end; font: 700 11px ui-monospace, Menlo, monospace; color: var(--faint); white-space: nowrap; }
+.row.active .c-num .l1 { color: var(--gold); }
+.row .t { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.active .t { font-weight: 700; color: #fff; }
+.row .d { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.linked .d, .row.active .d { color: var(--dim); }
+.chip { display: inline-block; max-width: 138px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; color: #b9bbc2; background: #202227; border: 1px solid #34363d; border-radius: 3px; padding: 0 5px; line-height: 16px; }
+.dash { color: #50535b; font-size: 12px; }
+.state { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.state.working { color: #e2e3e6; } .state.waiting { color: var(--amber); } .state.idle { color: var(--faint); font-weight: 600; } .state.flag { color: var(--violet); }
+.clock { font: 11px ui-monospace, Menlo, monospace; color: var(--dim); }
+.grip { color: #5a5d66; cursor: grab; font-size: 13px; letter-spacing: -2px; user-select: none; }
+.meta2 { color: var(--faint); font-size: 11px; white-space: nowrap; margin-right: 6px; }
+.foot { font-size: 11px; color: var(--faint); padding: 5px 10px; border-top: 1px solid var(--s-sep); background: var(--s-head); display: flex; gap: 14px; }
+.tierlabel { position: absolute; right: 8px; bottom: 6px; font: 700 10px ui-monospace, Menlo, monospace; color: #5d6068; }
+
+/* ---------- B: unfold ghosts ---------- */
+.ghost { position: absolute; z-index: 20; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12px; color: var(--text); background: #2e3038; border: 1px solid #50535c; white-space: nowrap; overflow: hidden; transition: transform 140ms cubic-bezier(.2,.8,.2,1), opacity 140ms; will-change: transform; }
+.sheet.rows-hidden .row { opacity: 0; }
+
+.sheet { transform-origin: top; }
+.sheet.unroll { animation: unroll 120ms cubic-bezier(.2,.9,.25,1); }
+.sheet.rollup { animation: unroll 90ms cubic-bezier(.4,0,1,1) reverse; }
+@keyframes unroll { from { clip-path: inset(0 0 100% 0); transform: translateY(-6px); } to { clip-path: inset(0 0 0 0); transform: none; } }
+
+/* ---------- C: docked rail ---------- */
+.rail { flex: none; background: var(--s-bg); border-right: 1px solid var(--s-border); overflow: hidden; display: flex; flex-direction: column; }
+.rail .row { height: auto; }
+.rail .rrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 7px; border-left: 3px solid transparent; border-bottom: 1px solid var(--s-sep); cursor: pointer; min-width: 0; }
+.rail .rrow.active { background: var(--s-active); border-left-color: var(--gold); }
+.rail .rrow.linked { background: var(--s-hover); }
+.rail .rn { font: 700 10px ui-monospace, Menlo, monospace; color: var(--faint); width: 52px; flex: none; text-align: right; }
+.rail .rrow.active .rn { color: var(--gold); }
+.rail .rt { flex: 1; min-width: 0; }
+.rail .rt .t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.rail .rrow.active .rt .t { color: #fff; font-weight: 700; }
+.rail .rt .s { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail .rh { height: 22px; display: flex; align-items: center; padding: 0 10px; background: var(--s-head); border-bottom: 1px solid var(--s-sep); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.bar .railtitle { display: flex; align-items: center; gap: 8px; flex: 1; padding: 0 10px; font-size: 12px; font-weight: 600; min-width: 0; }
+.bar .railtitle .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; margin-top: 16px; }
+.note { background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--dim); }
+.note h3 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
+.note ul { margin: 0; padding-left: 18px; } .note li { margin: 3px 0; } .note b { color: var(--text); }
+.tag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; background: rgba(212,167,44,.16); color: var(--gold); margin-left: 6px; vertical-align: 1px; }
+</style>
+</head>
+<body>
+<main>
+<h1>c11 tab sheet, round five</h1>
+<p class="lede">Drag the width slider to see a small window, then a big one. Click the count cell (<b>N ▾</b>) to open the list. Hover a row and watch its tab in the bar; hover a tab while the list is open and watch its row.</p>
+
+<div class="switches">
+  <label>Area width</label>
+  <div class="slider"><input type="range" id="w" min="300" max="1130" value="560"><span class="v" id="wv"></span>
+    <span class="presets"><button data-w="340">Tiny</button><button data-w="560">Small window</button><button data-w="820">Half screen</button><button data-w="1120">Full screen</button></span></div>
+  <label>Relationship</label>
+  <div class="picker" data-k="dir"><button data-v="unfold">Tabs (default): drawer + fast unroll</button><button data-v="rail">Rail (setting, experts)</button></div>
+</div>
+
+<div class="stage"><div class="area" id="area"></div></div>
+
+<div class="notes">
+  <div class="note">
+    <h3>Size: the list belongs to its area</h3>
+    <ul>
+      <li>The list is exactly as wide as its area, flush under the bar on both edges, like a drawer pulled out of that area. It never overhangs into a neighbour, except that a very narrow area still gets a 320pt minimum.</li>
+      <li>Columns drop out by width, the same way the tab bar already collapses. Columns are fixed within each width tier, so nothing jitters.
+        <br><b>≥ 820</b> everything · <b>600–819</b> one clock · <b>440–599</b> the agent moves to line 2, clocks go · <b>&lt; 440</b> Tab N, title, status.</li>
+      <li><b>Palette steps back:</b> the count cell is bar-colored, not black, so it reads like part of the bar and only goes gold while open. The sheet is #1d1e23.</li>
+      <li><b>Tabs stay visible longer:</b> the strip scrolls horizontally, with edge fades showing more tabs, instead of folding into the block. It only collapses when fewer than 150pt remain for tabs. A vertical wheel or two-finger scroll over the strip scrolls it sideways. The count cell stays, for the full list.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>The relationship: one set of tabs, two orientations</h3>
+    <ul>
+      <li><b>Shared vocabulary.</b> Same mark, same Tab N, same order, and the same gold for the visible tab in both the bar and the list.</li>
+      <li><b>Linked hover (A, B, C).</b> Hovering a row lights its tab in the bar with a white underline, and vice versa. Your eye always knows which tab a row means.</li>
+      <li><b>Fast unroll:</b> one axis only. The sheet slides down out of the bar in 120ms (clip plus a 6pt translate), and rolls back up in 90ms. There's no per-tab motion, so it's GPU-composited and CPU-light.</li>
+      <li><b>Count cell:</b> the attention dot, a bold chevron, then the number. The dot's slot is always reserved, so nothing shifts when it appears.</li>
+      <li><b>Rail (a setting for experts):</b> the count cell slides a vertical list in from the area's left edge. The default stays browser-style tabs.</li>
+    </ul>
+  </div>
+</div>
+</main>
+
+<script>
+const m = 60e3, h = 3600e3;
+const TABS = [
+  { n:150, t:'Agent Build 3', d:'Implementing sheet anchor tracking; next, re-validate the workspace switch.', st:'working', since:12*m, active:5e3, launched:2.2*h, agent:'Claude · Sonnet 5.5' },
+  { n:137, t:'Overwatch Assessment', d:'September 29 state, all nine surfaces, eight ordered actions.', st:'idle', since:48*m, active:48*m, launched:6*h, agent:'Claude · Opus 5.5' },
+  { n:160, t:'Ralph DAF Intake', d:'Needs a call: attach the admin prototype or send the link?', st:'waiting', since:6*m, active:6*m, launched:1.3*h, agent:'Codex · gpt-5.5' },
+  { n:158, t:'REPLY-2-DRAFT.md', d:'~/Projects/Stage11/deployments/ralph-daf/REPLY-2-DRAFT.md', st:null, active:30*m, launched:50*m, agent:null },
+  { n:154, t:'Migration Review', d:'Flagged: schema migration vs dual-write needs your ruling.', st:'flag', since:14*m, active:14*m, launched:3.4*h, agent:'Pi · kimi-k2.5' },
+  { n:171, t:'zsh', d:'~/Projects/Stage11/code/c11', st:null, active:4*m, launched:4*h, agent:null },
+];
+const S = { w: 560, dir: 'unfold', open: false, sel: 150, hover: null };
+const ago = ms => ms < m ? Math.max(1, Math.floor(ms/1e3))+'s' : ms < h ? Math.floor(ms/m)+'m' : (ms/h).toFixed(ms < 10*h ? 1 : 0).replace('.0','')+'h';
+const stateText = r => !r.st ? '<span class="dash">—</span>' : `<span class="state ${r.st}">${({working:'working',waiting:'waiting',flag:'flagged',idle:'idle'})[r.st]} ${ago(r.since)}</span>`;
+const CHEV = '<svg class="chev" width="12" height="8" viewBox="0 0 12 8"><path d="M1.5 1.5 L6 6 L10.5 1.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const esc = s => s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const controlsFull = `<div class="controls"><span class="b">A</span><span class="b">•</span><span class="b">▭</span><span class="b">◎</span><span class="b">▤</span><span class="sep"></span><span class="b">◫</span><span class="b">⊟</span><span class="b">+</span><span class="b">×</span></div>`;
+
+function tabWidth(r){ return 26 + 7 + (String(r.n).length + 2 + r.t.length) * 6.6 + 16; }
+function barTier(){ // full | medium | narrow, mirrors the Swift tiers
+  const chrome = 54 + 250, need = TABS.reduce((a,r)=>a+tabWidth(r)+1,0);
+  if (need + chrome <= S.w) return 'full';
+  if (72 + 54 + 250 <= S.w) return 'medium';
+  return 'narrow';
+}
+function sheetTier(W){ return W >= 820 ? 'xl' : W >= 600 ? 'l' : W >= 440 ? 'm' : 's'; }
+
+function rowHTML(r, tier){
+  const act = r.n===S.sel, lk = S.hover===r.n;
+  const numW = tier==='s' ? 56 : 68;
+  const agentCol = (tier==='xl'||tier==='l');
+  const clocks = tier==='xl' ? ['active','launched'] : tier==='l' ? ['active'] : [];
+  const line2 = (!agentCol && r.agent ? `<span class="meta2">${r.agent} ·</span>` : '') + `<span class="d">${r.d?esc(r.d):'<span class="dash">—</span>'}</span>`;
+  return `<div class="grid-row row ${act?'active':''} ${lk?'linked':''}" style="height:46px" data-n="${r.n}">
+    <div class="c-num" style="width:${numW}px"><div class="l1">Tab ${r.n}</div><div class="l2"></div></div>
+    <div class="c-mark"><div class="l1"><span class="mark ${r.st||'none'}"></span></div><div class="l2"></div></div>
+    <div class="c-main"><div class="l1"><span class="t" style="flex:1;min-width:0">${esc(r.t)}</span>${agentCol?`<span class="c-agent">${r.agent?`<span class="chip">${r.agent}</span>`:'<span class="dash">—</span>'}</span>`:''}<span class="c-status">${stateText(r)}</span></div><div class="l2">${line2}</div></div>
+    ${clocks.map(c=>`<div class="c-clock"><div class="l1" style="justify-content:flex-end"><span class="clock">${ago(r[c])}</span></div><div class="l2"></div></div>`).join('')}
+    <div class="c-grip"><div class="l1" style="justify-content:center"><span class="grip">⋮⋮</span></div><div class="l2"></div></div></div>`;
+}
+function sheetHTML(){
+  const W = Math.max(320, S.w), tier = sheetTier(W);
+  const numW = tier==='s' ? 56 : 68;
+  const agentCol = (tier==='xl'||tier==='l');
+  const clocks = tier==='xl' ? ['Active','Launched'] : tier==='l' ? ['Active'] : [];
+  const head = `<div class="grid-row head"><span class="c-num" style="width:${numW}px">Tab</span><span class="c-mark"></span><span class="c-main">Title</span>${agentCol?'<span class="c-agent">Agent</span>':''}<span class="c-status">Status</span>${clocks.map(c=>`<span class="c-clock">${c}</span>`).join('')}<span class="c-grip"></span></div>`;
+  const need = TABS.filter(r=>r.st==='waiting'||r.st==='flag').length;
+  const style = S.w < 320 ? 'right:auto;width:320px' : '';
+  return `<div class="sheet" id="sheet" style="${style}">${head}${TABS.map(r=>rowHTML(r,tier)).join('')}<div class="foot"><span>${TABS.length} tabs</span><span style="color:var(--amber)">${need} need you</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,monospace">${W}pt · tier ${tier}</span></div></div>`;
+}
+function stripHTML(tier){
+  const a = TABS.find(r=>r.n===S.sel);
+  const bg = TABS.some(r=>r.n!==S.sel && (r.st==='waiting'||r.st==='flag'));
+  const count = `<div class="count ${S.open?'open':''}" data-toggle><span class="dot" style="visibility:${bg?'visible':'hidden'}"></span>${CHEV}<span class="cn">${TABS.length}</span></div>`;
+  if (tier==='full') {
+    return `<div class="stripwrap"><div class="fade l" id="fl" style="display:none"></div><div class="tabs" id="tabs">${TABS.map(r=>`<div class="tab ${r.n===S.sel?'active':''} ${S.hover===r.n?'linked':''}" data-tab="${r.n}"><span class="mark ${r.st||'none'}"></span><span class="num">${r.n}</span>${esc(r.t)}<span class="x">×</span></div>`).join('')}</div><div class="fade r" id="fr" style="display:none"></div></div><div class="neutral"></div>${count}${controlsFull}`;
+  }
+  const lk = S.hover && S.hover===a.n;
+  return `<div class="block ${lk?'linked':''}" data-toggle data-tab="${a.n}"><div class="main"><span class="mark ${a.st||'none'}"></span><span class="num" style="font:700 10px ui-monospace,Menlo,monospace;color:var(--gold)">${a.n}</span><span class="t">${esc(a.t)}</span></div></div>${count}${tier==='medium'?controlsFull:''}`;
+}
+function railHTML(){
+  const RW = Math.min(300, Math.max(200, Math.round(S.w*0.38)));
+  const rows = TABS.map(r=>`<div class="rrow ${r.n===S.sel?'active':''} ${S.hover===r.n?'linked':''}" data-n="${r.n}"><span class="mark ${r.st||'none'}"></span><div class="rt"><div class="t">${esc(r.t)}</div><div class="s">${stateText(r)}</div></div><span class="rn">Tab ${r.n}</span></div>`).join('');
+  return `<div class="rail" style="width:${RW}px"><div class="rh">${TABS.length} tabs</div>${rows}</div>`;
+}
+function render(){
+  document.getElementById('wv').textContent = S.w + 'pt area';
+  document.getElementById('w').value = S.w;
+  document.querySelectorAll('.picker').forEach(p=>p.querySelectorAll('button').forEach(b=>b.classList.toggle('on', S[p.dataset.k]===b.dataset.v)));
+  const area = document.getElementById('area');
+  area.style.width = S.w + 'px';
+  const a = TABS.find(r=>r.n===S.sel);
+  const tier = (S.w - 54 - 250 >= 150) ? 'full' : 'narrow';
+  let bar;
+  if (S.dir==='rail' && S.open) {
+    bar = `<div class="railtitle"><span class="mark ${a.st||'none'}"></span><span class="t">Tab ${a.n} · ${esc(a.t)}</span></div><div class="count open" data-toggle><span class="dot" style="visibility:hidden"></span>${CHEV}<span class="cn">${TABS.length}</span></div>${tier!=='narrow'?controlsFull:''}`;
+  } else bar = stripHTML(tier);
+  const content = `<div class="content">${S.dir==='rail'&&S.open?railHTML():''}<div class="term"><span class="p">~/c11 ❯</span> swift build<br>Building for debugging...<br>[412/418] Compiling Bonsplit CollapsedTabSheet.swift</div></div>`;
+  const prevScroll = (document.getElementById('tabs')||{}).scrollLeft || 0;
+  area.innerHTML = `<div class="bar" id="bar">${bar}</div>${a.d?`<div class="titlebar">${esc(a.d)}</div>`:''}${content}${S.open && S.dir!=='rail' ? sheetHTML() : ''}`;
+  const tabsEl = document.getElementById('tabs');
+  if (tabsEl) {
+    tabsEl.scrollLeft = prevScroll;
+    const fades = () => { const l = tabsEl.scrollLeft > 1, r = tabsEl.scrollLeft < tabsEl.scrollWidth - tabsEl.clientWidth - 1; document.getElementById('fl').style.display = l?'block':'none'; document.getElementById('fr').style.display = r?'block':'none'; };
+    tabsEl.addEventListener('wheel', e=>{ if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { tabsEl.scrollLeft += e.deltaY; e.preventDefault(); } fades(); }, { passive: false });
+    tabsEl.addEventListener('scroll', fades);
+    const act = tabsEl.querySelector('.tab.active'); if (act && !S.open) { const a0 = act.offsetLeft, a1 = a0 + act.offsetWidth; if (a0 < tabsEl.scrollLeft) tabsEl.scrollLeft = a0; else if (a1 > tabsEl.scrollLeft + tabsEl.clientWidth) tabsEl.scrollLeft = a1 - tabsEl.clientWidth; }
+    fades();
+  }
+}
+
+/* B: unfold motion (FLIP from tab rects to row rects) */
+function unfold(opening){
+  const area = document.getElementById('area'), ar = area.getBoundingClientRect();
+  const sheet = document.getElementById('sheet'); if (!sheet) return;
+  const from = {}; document.querySelectorAll('#bar [data-tab]').forEach(el=>{ from[el.dataset.tab] = el.getBoundingClientRect(); });
+  const barRect = document.getElementById('bar').getBoundingClientRect();
+  const ghosts = [];
+  sheet.querySelectorAll('.row').forEach(row=>{
+    const n = row.dataset.n, rr = row.getBoundingClientRect(), r = TABS.find(t=>String(t.n)===n);
+    const f = from[n] || { left: barRect.right - 110, top: barRect.top, width: 54, height: 30 };
+    const g = document.createElement('div'); g.className = 'ghost';
+    g.innerHTML = `<span class="mark ${r.st||'none'}"></span>${n}: ${esc(r.t)}`;
+    // one fixed box at the row; the tab position is expressed as a transform, so only compositing work runs
+    g.style.left = (rr.left-ar.left)+'px'; g.style.top = (rr.top-ar.top)+'px'; g.style.width = rr.width+'px'; g.style.height = rr.height+'px'; g.style.transformOrigin = '0 0';
+    const tf = `translate(${f.left-rr.left}px, ${f.top-rr.top}px) scale(${f.width/rr.width}, ${f.height/rr.height})`;
+    if (opening) { g.style.transform = tf; g.style.opacity = 1; area.appendChild(g); requestAnimationFrame(()=>requestAnimationFrame(()=>{ g.style.transform = 'none'; g.style.opacity = 0; })); }
+    else { g.style.transform = 'none'; g.style.opacity = .9; area.appendChild(g); requestAnimationFrame(()=>requestAnimationFrame(()=>{ g.style.transform = tf; g.style.opacity = 0; })); }
+    ghosts.push(g);
+  });
+  if (opening) { sheet.style.clipPath = 'inset(0 0 100% 0)'; requestAnimationFrame(()=>requestAnimationFrame(()=>{ sheet.style.clipPath = 'inset(0 0 0 0)'; })); setTimeout(()=>sheet.classList.remove('rows-hidden'), 90); }
+  else { sheet.classList.add('rows-hidden'); sheet.style.clipPath = 'inset(0 0 100% 0)'; }
+  setTimeout(()=>{ ghosts.forEach(g=>g.remove()); if (!opening) { S.open = false; render(); } }, 160);
+}
+function toggle(){
+  if (S.dir==='unfold') {
+    if (!S.open) { S.open = true; render(); const sh = document.getElementById('sheet'); sh.classList.remove('rows-hidden'); sh.classList.add('unroll'); setTimeout(()=>sh.classList.remove('unroll'), 140); }
+    else { const sh = document.getElementById('sheet'); sh.classList.remove('unroll'); sh.classList.add('rollup'); setTimeout(()=>{ S.open = false; render(); }, 90); }
+  } else { S.open = !S.open; render(); }
+}
+
+document.getElementById('w').addEventListener('input', e=>{ S.w = +e.target.value; render(); });
+document.addEventListener('click', e=>{
+  const p = e.target.closest('.presets button'); if (p) { S.w = +p.dataset.w; render(); return; }
+  const b = e.target.closest('.picker button'); if (b) { S[b.closest('.picker').dataset.k] = b.dataset.v; S.open = false; render(); return; }
+  if (e.target.closest('[data-toggle]')) { toggle(); return; }
+  const row = e.target.closest('.row[data-n], .rrow[data-n]');
+  if (row) { S.sel = +row.dataset.n; if (S.dir!=='rail') { S.open = false; } render(); return; }
+  const tab = e.target.closest('.tab[data-tab]'); if (tab) { S.sel = +tab.dataset.tab; render(); return; }
+  if (S.open && S.dir!=='rail' && !e.target.closest('.sheet') && e.target.closest('.stage')) toggle();
+});
+document.addEventListener('mouseover', e=>{
+  const el = e.target.closest('[data-n], [data-tab]');
+  const n = el ? +(el.dataset.n || el.dataset.tab) : null;
+  const want = S.open ? n : null;
+  if (want !== S.hover) { S.hover = want; if (S.open) { // update link classes in place (no re-render, keeps motion smooth)
+      document.querySelectorAll('[data-n],[data-tab]').forEach(x=>{ const k = +(x.dataset.n || x.dataset.tab); x.classList.toggle('linked', k===S.hover); }); } }
+});
+render();
+</script>
+</body>
+</html>

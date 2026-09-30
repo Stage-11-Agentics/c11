@@ -4510,6 +4510,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Asks for an autosave pass soon (the normal quiet-period and unchanged-
+    /// fingerprint rules still apply). Used by layout state that changes rarely
+    /// and should not wait for the next timer tick.
+    func requestSessionAutosave(source: String) {
+        runSessionAutosaveTick(source: source)
+    }
+
     private func runSessionAutosaveTick(source: String) {
         guard Self.shouldRunSessionAutosaveTick(isTerminatingApp: isTerminatingApp) else { return }
         guard !sessionAutosaveTickInFlight else { return }

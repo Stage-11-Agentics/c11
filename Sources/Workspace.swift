@@ -6756,7 +6756,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    private func resolvedPanelTitle(panelId: UUID, fallback: String) -> String {
+    func resolvedPanelTitle(panelId: UUID, fallback: String) -> String {
         let trimmedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackTitle = trimmedFallback.isEmpty ? "Tab" : trimmedFallback
         if let custom = panelCustomTitles[panelId]?.trimmingCharacters(in: .whitespacesAndNewlines),

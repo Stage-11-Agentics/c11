@@ -14,6 +14,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
 
     private func inputs(
         panelType: PanelType = .terminal,
+        title: String? = nil,
         terminalKind: String? = nil,
         model: String? = nil,
         modelLabel: String? = nil,
@@ -26,6 +27,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
     ) -> TabSheetDetailBuilder.Inputs {
         .init(
             panelType: panelType,
+            title: title,
             terminalKind: terminalKind,
             model: model,
             modelLabel: modelLabel,
@@ -117,6 +119,17 @@ final class TabSheetDetailBuilderTests: XCTestCase {
             "~/notes/A.md"
         )
         XCTAssertNil(TabSheetDetailBuilder.build(inputs()).subtitle)
+    }
+
+    // MARK: Title
+
+    func testFullTitleIsKeptWhole() {
+        let long = "Tests on Atlas with a deliberately   very long tab title that the tab strip shortens"
+        XCTAssertEqual(
+            TabSheetDetailBuilder.build(inputs(title: long)).title,
+            "Tests on Atlas with a deliberately very long tab title that the tab strip shortens"
+        )
+        XCTAssertNil(TabSheetDetailBuilder.build(inputs(title: "  ")).title)
     }
 
     // MARK: Clocks

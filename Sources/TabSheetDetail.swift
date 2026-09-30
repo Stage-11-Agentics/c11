@@ -15,6 +15,8 @@ enum TabSheetDetailBuilder {
 
     struct Inputs {
         var panelType: PanelType
+        /// Full title (custom or process title), untruncated.
+        var title: String?
         /// The kind used for live agent presentation (`nil` for a plain shell).
         var terminalKind: String?
         var model: String?
@@ -36,6 +38,7 @@ enum TabSheetDetailBuilder {
         if let active = input.lastActivityAt { clocks["active"] = active }
         if let launched = input.createdAt { clocks["launched"] = launched }
         return BonsplitTabDetail(
+            title: collapsedWhitespace(input.title),
             agentLabel: agentLabel(
                 terminalKind: input.terminalKind,
                 model: input.model,
@@ -124,6 +127,12 @@ enum TabSheetDetailBuilder {
         return detail
     }
 
+    private static func collapsedWhitespace(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let collapsed = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return collapsed.isEmpty ? nil : collapsed
+    }
+
     private static func oneLine(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let flattened = raw
@@ -157,8 +166,13 @@ extension Workspace {
         let help = resolvedAgentActivityHelp(panelId: panelId, activityState: activity)
         let attention = attentionSnapshot(panelId: panelId)
         let terminalKind = panel.panelType == .terminal ? surfaceActivityTerminalKind(panelId: panelId) : nil
+        let fullTitle = resolvedPanelTitle(
+            panelId: panelId,
+            fallback: panelTitles[panelId] ?? panel.displayTitle
+        )
         return TabSheetDetailBuilder.build(.init(
             panelType: panel.panelType,
+            title: fullTitle,
             terminalKind: terminalKind,
             model: snapshot.metadata[MetadataKey.model] as? String,
             modelLabel: snapshot.metadata[MetadataKey.modelLabel] as? String,

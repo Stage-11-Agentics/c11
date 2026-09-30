@@ -71,7 +71,22 @@ enum RecentsPath {
 
 /// Persistent ring of working directories the operator has previously used to
 /// spawn a workspace, plus the ordered pins list.
+///
+/// Concurrency: the picker (main thread) and the socket handlers (socket
+/// threads) both read-modify-write the same defaults keys, so every load that
+/// may write (migration, normalization) and every `mutate` runs under one
+/// process-wide recursive lock.
+///
+/// Known limit: two processes sharing one defaults domain (this build and an
+/// older build, or two c11 instances with the same bundle id) are not
+/// coordinated. An older build keeps `prefix(50)` of the list on save and knows
+/// nothing of the pins key, so after it writes, pinned entries beyond its first
+/// 50 can be dropped and pin order is lost (the per-entry `pinned` flag
+/// still round-trips). Do not run mixed versions against one domain.
 enum CreateWorkspaceRecents {
+    /// Serializes read-modify-write of the two keys within this process.
+    private static let storeLock = NSRecursiveLock()
+
     static let storageKey = "createWorkspace.recents.v2"
     static let pinsKey    = "createWorkspace.pins.v1"
     static let legacyKey  = "createWorkspace.recentDirectories"
@@ -96,6 +111,31 @@ enum CreateWorkspaceRecents {
         mutating func syncPinnedFlags() {
             let set = Set(pins)
             for i in entries.indices { entries[i].pinned = set.contains(entries[i].path) }
+        }
+
+        /// One normal form for stored data: every path normalized, duplicates
+        /// merged (counts add, the latest date wins, the first position is kept,
+        /// pinned if either was), empty paths dropped. Pins are normalized,
+        /// de-duplicated and keep their order.
+        static func normalized(entries: [RecentDirectory], pins: [String]) -> (entries: [RecentDirectory], pins: [String]) {
+            var out: [RecentDirectory] = []
+            var index: [String: Int] = [:]
+            for var e in entries {
+                let path = RecentsPath.normalize(e.path)
+                guard !path.isEmpty else { continue }
+                e.path = path
+                if let i = index[path] {
+                    out[i].openCount += e.openCount
+                    out[i].lastOpenedAt = max(out[i].lastOpenedAt, e.lastOpenedAt)
+                    out[i].pinned = out[i].pinned || e.pinned
+                } else {
+                    index[path] = out.count
+                    out.append(e)
+                }
+            }
+            var seen = Set<String>()
+            let normalizedPins = pins.map(RecentsPath.normalize).filter { !$0.isEmpty && seen.insert($0).inserted }
+            return (out, normalizedPins)
         }
 
         /// Bump an existing entry or add a new one at the front. Then enforce
@@ -180,6 +220,8 @@ enum CreateWorkspaceRecents {
     // MARK: Load
 
     static func loadOutcome(defaults: UserDefaults = .standard) -> LoadOutcome {
+        storeLock.lock()
+        defer { storeLock.unlock() }
         var entries: [RecentDirectory]
         var migratedLegacy = false
         if let data = defaults.data(forKey: storageKey) {
@@ -223,13 +265,18 @@ enum CreateWorkspaceRecents {
                 .map { $0.element.path }
             needsPinsWrite = true
         }
+        // Legacy data may hold non-normal paths (a trailing slash, `..`) and
+        // duplicates; fold them once so selection and ids are unambiguous.
+        let normalizedState = State.normalized(entries: entries, pins: pins)
+        let changedByNormalization = normalizedState.entries != entries || normalizedState.pins != pins
+        entries = normalizedState.entries
+        pins = normalizedState.pins
         // A pin only means something while its directory is a recent.
         let known = Set(entries.map(\.path))
-        var seen = Set<String>()
-        pins = pins.filter { known.contains($0) && seen.insert($0).inserted }
+        pins = pins.filter { known.contains($0) }
 
         let state = State(entries: entries, pins: pins)
-        if needsPinsWrite || migratedLegacy {
+        if needsPinsWrite || migratedLegacy || changedByNormalization {
             write(state, defaults: defaults)
             if migratedLegacy { defaults.removeObject(forKey: legacyKey) }
         }
@@ -271,6 +318,8 @@ enum CreateWorkspaceRecents {
     /// and reports false.
     @discardableResult
     static func mutate(defaults: UserDefaults = .standard, _ body: (inout State) -> Void) -> Bool {
+        storeLock.lock()
+        defer { storeLock.unlock() }
         guard case .ok(var state) = loadOutcome(defaults: defaults) else { return false }
         body(&state)
         write(state, defaults: defaults)

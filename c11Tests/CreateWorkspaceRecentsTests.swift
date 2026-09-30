@@ -158,26 +158,28 @@ final class CreateWorkspaceRecentsTests: XCTestCase {
 
     // MARK: Migration
 
-    func testMigrationFromV2BlobKeepsEveryEntryAndPinInDisplayOrder() throws {
-        // A v2 blob as an older build wrote it: pinned flags, no pins key.
-        let stored = [
-            entry("/p/old-pin", age: 500, count: 9, pinned: true),
-            entry("/p/plain-1", age: 5, count: 2),
-            entry("/p/new-pin", age: 50, count: 1, pinned: true),
-            entry("/p/plain-2", age: 700, count: 40),
-            entry("/p/mid-pin", age: 100, count: 3, pinned: true),
-        ]
-        try writeV2(stored)
+    /// A v2 blob exactly as an older build wrote it (dates are seconds since the
+    /// 2001 reference date, the JSONEncoder default), pinned flags, no pins key.
+    private static let legacyV2Blob = """
+    [{"path":"/p/old-pin","lastOpenedAt":1000.0,"openCount":9,"pinned":true},
+     {"path":"/p/plain-1","lastOpenedAt":9000.5,"openCount":2,"pinned":false},
+     {"path":"/p/new-pin","lastOpenedAt":8000.0,"openCount":1,"pinned":true},
+     {"path":"/p/plain-2","lastOpenedAt":500.0,"openCount":40,"pinned":false},
+     {"path":"/p/mid-pin","lastOpenedAt":4000.0,"openCount":3,"pinned":true}]
+    """
+
+    func testMigrationFromAV2BlobKeepsEveryEntryAndPinInDisplayOrder() throws {
+        defaults.set(Data(Self.legacyV2Blob.utf8), forKey: CreateWorkspaceRecents.storageKey)
         XCTAssertNil(defaults.data(forKey: CreateWorkspaceRecents.pinsKey))
 
         let state = CreateWorkspaceRecents.loadState(defaults: defaults)
-        XCTAssertEqual(state.entries.map(\.path), stored.map(\.path), "no entry is lost or reordered")
-        XCTAssertEqual(state.entries.map(\.openCount), stored.map(\.openCount))
+        XCTAssertEqual(state.entries.map(\.path), ["/p/old-pin", "/p/plain-1", "/p/new-pin", "/p/plain-2", "/p/mid-pin"],
+                       "no entry is lost or reordered")
+        XCTAssertEqual(state.entries.map(\.openCount), [9, 2, 1, 40, 3])
+        XCTAssertEqual(state.entries[1].lastOpenedAt.timeIntervalSinceReferenceDate, 9000.5)
         // Pinned first, most recent first: the order the old list drew them in.
         XCTAssertEqual(state.pins, ["/p/new-pin", "/p/mid-pin", "/p/old-pin"])
-        // The migrated order is now stored, so later loads do not re-derive it.
-        let second = CreateWorkspaceRecents.pins(defaults: defaults)
-        XCTAssertEqual(second, state.pins)
+        XCTAssertEqual(CreateWorkspaceRecents.pins(defaults: defaults), state.pins)
         XCTAssertNotNil(defaults.data(forKey: CreateWorkspaceRecents.pinsKey))
     }
 
@@ -233,5 +235,61 @@ final class CreateWorkspaceRecentsTests: XCTestCase {
         ]
         XCTAssertEqual(RecentsOrdering.sorted(entries, by: .recent).map(\.path), ["/p/b", "/p/c", "/p/a"])
         XCTAssertEqual(RecentsOrdering.sorted(entries, by: .opened).map(\.path), ["/p/c", "/p/b", "/p/a"])
+    }
+
+    // MARK: Legacy non-normal paths
+
+    func testLegacyTrailingSlashDuplicatesMergeOncePreservingPinAndOrder() throws {
+        let blob = """
+        [{"path":"/p/a/","lastOpenedAt":100.0,"openCount":3,"pinned":true},
+         {"path":"/p/b","lastOpenedAt":50.0,"openCount":1,"pinned":false},
+         {"path":"/p/a","lastOpenedAt":700.0,"openCount":4,"pinned":false},
+         {"path":"/p/./c//","lastOpenedAt":10.0,"openCount":2,"pinned":true},
+         {"path":"   ","lastOpenedAt":10.0,"openCount":2,"pinned":false}]
+        """
+        defaults.set(Data(blob.utf8), forKey: CreateWorkspaceRecents.storageKey)
+        defaults.set(try JSONEncoder().encode(["/p/c/", "/p/a/", "/p/a"]), forKey: CreateWorkspaceRecents.pinsKey)
+
+        let state = CreateWorkspaceRecents.loadState(defaults: defaults)
+        XCTAssertEqual(state.entries.map(\.path), ["/p/a", "/p/b", "/p/c"], "first position kept, empty path dropped")
+        let a = try XCTUnwrap(state.entries.first { $0.path == "/p/a" })
+        XCTAssertEqual(a.openCount, 7, "counts add")
+        XCTAssertEqual(a.lastOpenedAt.timeIntervalSinceReferenceDate, 700.0, "latest date wins")
+        XCTAssertEqual(state.pins, ["/p/c", "/p/a"], "pin order kept, duplicates folded")
+        XCTAssertEqual(Set(state.entries.map(\.id)).count, state.entries.count, "ids are unique")
+
+        // The folded form is what is stored, so a second load is stable.
+        XCTAssertEqual(CreateWorkspaceRecents.loadState(defaults: defaults), state)
+    }
+
+    func testNormalizedIsPureAndIdempotent() {
+        let raw = [entry("/q/x/", age: 5), entry("/q/x", age: 1, count: 2)]
+        let once = CreateWorkspaceRecents.State.normalized(entries: raw, pins: ["/q/x/", "/q/x"])
+        let twice = CreateWorkspaceRecents.State.normalized(entries: once.entries, pins: once.pins)
+        XCTAssertEqual(once.entries, twice.entries)
+        XCTAssertEqual(once.pins, ["/q/x"])
+        XCTAssertEqual(once.entries.count, 1)
+        XCTAssertEqual(once.entries[0].openCount, 3)
+    }
+
+    // MARK: Concurrency
+
+    func testConcurrentWritersDoNotLoseUpdates() {
+        let writers = 8, perWriter = 25
+        let group = DispatchGroup()
+        for w in 0..<writers {
+            group.enter()
+            DispatchQueue.global().async {
+                for i in 0..<perWriter {
+                    CreateWorkspaceRecents.record("/c/w\(w)/d\(i)", defaults: self.defaults)
+                    if i % 5 == 0 { CreateWorkspaceRecents.pin("/c/w\(w)/d\(i)", defaults: self.defaults) }
+                }
+                group.leave()
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 30), .success)
+        let state = CreateWorkspaceRecents.loadState(defaults: defaults)
+        XCTAssertEqual(state.entries.count, writers * perWriter, "every recorded directory survives")
+        XCTAssertEqual(state.pins.count, writers * (perWriter / 5), "every pin survives")
     }
 }

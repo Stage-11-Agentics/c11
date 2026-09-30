@@ -38,7 +38,7 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
 
 15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang.
 16. **Questions go to the parent's surface.** Every question, decision request and receipt is sent with `c11 send` + `send-key enter` to the named parent surface, and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read.
-17. **The CI window (shared runner).** A branch push without a PR costs no CI; opening or updating a PR starts a gate run. When the gate shares one runner, children push freely but open or update a PR only when the Orchestrator grants the window by name.
+17. **The CI window (shared runner).** A branch push without a PR costs no CI; opening or updating a PR starts a gate run. When the gate shares one runner and its wall budget is tight, children push freely but open or update a PR only when the Orchestrator grants the window by name. With headroom, the window is off and runs overlap.
 18. **Shared enumerations are edited at their canonical source.** A child adding a value to a shared allow-list or replacing a shared object uses the canonical list and landing order its ticket names, never a copy from the last migration it saw.
 
 ## Spawning: atomic cwd binding
@@ -163,9 +163,9 @@ drops a sibling's value) are visible only against the assembled base. After merg
 parent, a dependent child merges the new `<remote>/main`, waits out the forge's
 mergeability recompute (~5–15s Forgejo, 10–25s GitHub), and then enters the front slot.
 
-**The gate is shared capacity.** When PR CI runs on one shared runner, grant the CI
-window (Clause 17) to one PR at a time: on a wall-clock gate, our own concurrent runs
-are the foreign load. When `main` itself fails the gate, reruns cannot clear it; fix
+**The gate is shared capacity.** On a wall-clock gate, our own concurrent runs are the
+foreign load: when PR CI shares one runner and the budget is tight, grant the CI window
+(Clause 17) to one PR at a time; with headroom, let runs overlap. When `main` itself fails the gate, reruns cannot clear it; fix
 `main` first. Measure before hypothesizing a lever: instrument the phases (setup, queue
 or pool wait, shard skew) and probe one variable at a time on a quiet runner.
 

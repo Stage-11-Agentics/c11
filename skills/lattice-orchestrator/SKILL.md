@@ -39,7 +39,7 @@ Mechanics, schemas, and templates: `references/intake.md`.
 
 ## Phase 1 — Dispatch (Orchestrator)
 
-The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge; on a shared CI runner, one PR run at a time) → close finished surfaces → spawn next available delegators → schedule the next wake.
+The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → landing-train pass if auto-merge is enabled (parallel build, one finalization slot; fresh exact-head review + gate immediately before merge; serial PR runs when a shared runner's wall budget is tight) → close finished surfaces → spawn next available delegators → schedule the next wake.
 
 Delegators run one of three modes, chosen per ticket at Phase 0:
 

@@ -13075,6 +13075,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
+        // C11-243: a really closed window drops its panels' last-seen stamps. A
+        // workspace move re-homes the workspace before this runs, so moved panels
+        // are no longer in `removed.tabManager.tabs`.
+        for workspace in removed.tabManager.tabs {
+            for panelId in workspace.panels.keys {
+                SurfaceSeenTracker.shared.forget(panelId: panelId)
+            }
+        }
+        SurfaceSeenTracker.shared.refresh()
+
         if tabManager === removed.tabManager {
             // Repoint "active" pointers to any remaining main terminal window.
             let nextContext: MainWindowContext? = {

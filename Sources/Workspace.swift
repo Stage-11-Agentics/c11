@@ -6943,7 +6943,7 @@ final class Workspace: Identifiable, ObservableObject {
             createdAt: panels[panelId]?.createdAt,
             lastActivityAt: activityHelp?.lastActivityAt
                 ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
-            lastSeenAt: SurfaceSeenTracker.shared.lastSeenAt(panelId: panelId),
+            lastSeenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
             isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId)
         )
     }

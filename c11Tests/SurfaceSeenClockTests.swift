@@ -112,7 +112,7 @@ final class SurfaceSeenClockTests: XCTestCase {
     private final class Harness {
         var seen: UUID?
         var time = Date(timeIntervalSince1970: 5_000)
-        lazy var tracker = SurfaceSeenTracker(seenProvider: { [unowned self] in self.seen }, now: { [unowned self] in self.time })
+        lazy var tracker = SurfaceSeenTracker(seenProvider: { [unowned self] in self.seen }, now: { [unowned self] in self.time }, screenLockedProvider: { false })
         func advance(_ s: TimeInterval) { time = time.addingTimeInterval(s) }
     }
 
@@ -184,5 +184,50 @@ final class SurfaceSeenClockTests: XCTestCase {
         h.seen = nil
         h.tracker.refresh()
         XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), Date(timeIntervalSince1970: 5_004))
+    }
+
+    @MainActor
+    func testScreensaverWithoutStopIsHealedByAppActivation() {
+        let h = Harness()
+        h.seen = a
+        h.tracker.refresh()
+        h.tracker.setInterruption(.screensaver, active: true)
+        h.tracker.setInterruption(.systemAsleep, active: true)
+        XCTAssertFalse(h.tracker.isBeingSeen(panelId: a))
+        // No didstop / didWake ever arrives; the app coming to the front proves both stale.
+        h.tracker.appBecameActive()
+        XCTAssertTrue(h.tracker.interruptions.isEmpty)
+        XCTAssertTrue(h.tracker.isBeingSeen(panelId: a))
+    }
+
+    @MainActor
+    func testActivationRederivesLockFromWindowServer() {
+        var locked = true
+        let seen = a
+        let tracker = SurfaceSeenTracker(seenProvider: { seen }, now: { Date() }, screenLockedProvider: { locked })
+        tracker.appBecameActive()
+        XCTAssertEqual(tracker.interruptions, [.locked])
+        XCTAssertFalse(tracker.isBeingSeen(panelId: a))
+        // Unlock notification was missed; the window server says unlocked.
+        locked = false
+        tracker.appBecameActive()
+        XCTAssertTrue(tracker.interruptions.isEmpty)
+        XCTAssertTrue(tracker.isBeingSeen(panelId: a))
+    }
+
+    @MainActor
+    func testStoredStampIsRawNotNow() {
+        let h = Harness()
+        h.seen = a
+        h.tracker.refresh()
+        XCTAssertNil(h.tracker.storedLastSeenAt(panelId: a))
+        XCTAssertEqual(h.tracker.lastSeenAt(panelId: a), h.time)
+        h.advance(8)
+        h.seen = b
+        h.tracker.refresh()
+        h.advance(20)
+        XCTAssertEqual(h.tracker.storedLastSeenAt(panelId: a), Date(timeIntervalSince1970: 5_008))
+        XCTAssertNil(h.tracker.storedLastSeenAt(panelId: b))
+        XCTAssertTrue(h.tracker.isBeingSeen(panelId: b))
     }
 }

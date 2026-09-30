@@ -123,10 +123,10 @@ struct SurfaceActivityDetailsSnapshot: Equatable {
     let activityHelp: AgentActivityHelpProjection?
     let createdAt: Date?
     let lastActivityAt: Date?
-    /// C11-243: when the operator last looked at this tab (now, while being
-    /// seen; nil if never). The tab sheet's "Seen" clock reads this.
+    /// C11-243: the stored moment the operator last STOPPED looking at this tab
+    /// (nil if never). Not "now" while being seen: when `isBeingSeen` is true the
+    /// Seen clock renders "now"; otherwise it renders this value.
     var lastSeenAt: Date? = nil
-    /// True while the operator is looking at this tab (render the Seen clock as "now").
     var isBeingSeen: Bool = false
 }
 

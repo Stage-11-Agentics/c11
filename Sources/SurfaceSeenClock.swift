@@ -56,6 +56,11 @@ struct SurfaceSeenClock {
     }
 
     /// `now` while `panelId` is being seen, else its last stop time (or nil).
+    /// The stored stop time, ignoring whether the panel is being seen right now.
+    func storedStamp(_ panelId: UUID) -> Date? {
+        stamps[panelId]
+    }
+
     func lastSeenAt(_ panelId: UUID, now: Date) -> Date? {
         if panelId == current { return now }
         return stamps[panelId]
@@ -93,16 +98,41 @@ final class SurfaceSeenTracker {
     private(set) var interruptions: Set<InterruptReason> = []
     private let seenProvider: @MainActor () -> UUID?
     private let now: () -> Date
+    private let screenLockedProvider: () -> Bool
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private var distributedRelay: DistributedRelay?
 
     /// `seenProvider` answers "which panel is on screen in front of the operator";
     /// `now` is the clock. Both are injectable for tests.
     init(
         seenProvider: @escaping @MainActor () -> UUID? = { AppDelegate.shared?.operatorSeenPanelId() },
-        now: @escaping () -> Date = { Date() }
+        now: @escaping () -> Date = { Date() },
+        screenLockedProvider: @escaping () -> Bool = { SurfaceSeenTracker.systemScreenIsLocked() }
     ) {
         self.seenProvider = seenProvider
         self.now = now
+        self.screenLockedProvider = screenLockedProvider
+    }
+
+    /// The window server's own view of the lock state; authoritative when a
+    /// lock/unlock distributed notification was missed.
+    nonisolated static func systemScreenIsLocked() -> Bool {
+        let dict = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return (dict?["CGSSessionScreenIsLocked"] as? Bool) ?? false
+    }
+
+    /// Self-heal on activation. c11 cannot come to the front while the screensaver
+    /// runs or the machine/displays sleep, so those reasons are stale by now (a
+    /// missed `didstop`, or a sleep during the screensaver). The lock state is
+    /// re-read from the window server instead of trusting notification pairing.
+    func appBecameActive() {
+        interruptions.subtract([.screensaver, .displaysAsleep, .systemAsleep])
+        if screenLockedProvider() {
+            interruptions.insert(.locked)
+        } else {
+            interruptions.remove(.locked)
+        }
+        refresh()
     }
 
     /// Recompute what the operator is looking at; stamp the previous panel if it
@@ -120,6 +150,12 @@ final class SurfaceSeenTracker {
 
     func lastSeenAt(panelId: UUID) -> Date? {
         clock.lastSeenAt(panelId, now: now())
+    }
+
+    /// The stored stop time without the "now while seen" substitution. Pair with
+    /// `isBeingSeen` so a consumer can tell "now" from "a second ago".
+    func storedLastSeenAt(panelId: UUID) -> Date? {
+        clock.storedStamp(panelId)
     }
 
     func isBeingSeen(panelId: UUID) -> Bool {
@@ -157,7 +193,10 @@ final class SurfaceSeenTracker {
             observers.append((center, token))
         }
 
-        add(nc, NSApplication.didBecomeActiveNotification)
+        let activeToken = nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.appBecameActive() }
+        }
+        observers.append((nc, activeToken))
         add(nc, NSApplication.didResignActiveNotification)
         add(nc, NSWindow.didBecomeKeyNotification)
         add(nc, NSWindow.didResignKeyNotification)
@@ -169,10 +208,56 @@ final class SurfaceSeenTracker {
         add(ws, NSWorkspace.didWakeNotification, reason: .systemAsleep, active: false)
         add(ws, NSWorkspace.sessionDidResignActiveNotification, reason: .sessionInactive, active: true)
         add(ws, NSWorkspace.sessionDidBecomeActiveNotification, reason: .sessionInactive, active: false)
-        add(dnc, Notification.Name("com.apple.screenIsLocked"), reason: .locked, active: true)
-        add(dnc, Notification.Name("com.apple.screenIsUnlocked"), reason: .locked, active: false)
-        add(dnc, Notification.Name("com.apple.screensaver.didstart"), reason: .screensaver, active: true)
-        add(dnc, Notification.Name("com.apple.screensaver.didstop"), reason: .screensaver, active: false)
+        // Distributed notifications are coalesced or suspended while c11 is in the
+        // background unless registered with `.deliverImmediately`, which needs the
+        // selector-based API.
+        let relay = DistributedRelay { [weak self] name in
+            guard let self else { return }
+            switch name.rawValue {
+            case "com.apple.screenIsLocked": self.setInterruption(.locked, active: true)
+            case "com.apple.screenIsUnlocked": self.setInterruption(.locked, active: false)
+            case "com.apple.screensaver.didstart": self.setInterruption(.screensaver, active: true)
+            case "com.apple.screensaver.willstop", "com.apple.screensaver.didstop":
+                self.setInterruption(.screensaver, active: false)
+            default: break
+            }
+        }
+        distributedRelay = relay
+        for name in [
+            "com.apple.screenIsLocked", "com.apple.screenIsUnlocked",
+            "com.apple.screensaver.didstart", "com.apple.screensaver.willstop",
+            "com.apple.screensaver.didstop",
+        ] {
+            dnc.addObserver(
+                relay,
+                selector: #selector(DistributedRelay.received(_:)),
+                name: Notification.Name(name),
+                object: nil,
+                suspensionBehavior: .deliverImmediately
+            )
+        }
+        interruptions.formUnion(screenLockedProvider() ? [.locked] : [])
         refresh()
+    }
+}
+
+/// Selector target for distributed notifications (the block API cannot set
+/// `suspensionBehavior`). Hops to main before calling the handler.
+private final class DistributedRelay: NSObject {
+    private let handler: @MainActor (Notification.Name) -> Void
+
+    init(handler: @escaping @MainActor (Notification.Name) -> Void) {
+        self.handler = handler
+    }
+
+    @objc func received(_ note: Notification) {
+        let name = note.name
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { handler(name) }
+        } else {
+            DispatchQueue.main.async { [handler] in
+                MainActor.assumeIsolated { handler(name) }
+            }
+        }
     }
 }

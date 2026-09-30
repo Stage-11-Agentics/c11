@@ -123,6 +123,9 @@ struct SurfaceActivityDetailsSnapshot: Equatable {
     let activityHelp: AgentActivityHelpProjection?
     let createdAt: Date?
     let lastActivityAt: Date?
+    /// C11-243: when the operator last looked at this tab (now, while being
+    /// seen; nil if never). The tab sheet's "Seen" clock reads this.
+    var lastSeenAt: Date? = nil
 }
 
 struct WorkspacePulseAgent: Equatable, Identifiable {

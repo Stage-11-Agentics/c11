@@ -2723,6 +2723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.start()
         windowDecorationsController.start()
         installMainWindowKeyObserver()
+        SurfaceSeenTracker.shared.install()
         refreshGhosttyGotoSplitShortcuts()
         installGhosttyConfigObserver()
         installWindowResponderSwizzles()
@@ -5495,6 +5496,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func tabManagerFor(windowId: UUID) -> TabManager? {
         mainWindowContexts.values.first(where: { $0.windowId == windowId })?.tabManager
+    }
+
+    /// C11-243: the panel the operator is looking at right now, or nil. Being
+    /// seen = selected tab of the focused pane, in the selected workspace of the
+    /// key main terminal window, while c11 is frontmost. Definition and rationale
+    /// in `SurfaceSeenClock.swift`. Read-only: `reindex: false` avoids the
+    /// context-lookup side effects.
+    func operatorSeenPanelId() -> UUID? {
+        guard NSApp.isActive,
+              let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow,
+              let context = contextForMainTerminalWindow(keyWindow, reindex: false),
+              let workspace = context.tabManager.selectedWorkspace else { return nil }
+        return workspace.focusedPanelId
     }
 
     func windowId(for tabManager: TabManager) -> UUID? {

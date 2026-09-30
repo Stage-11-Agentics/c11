@@ -933,7 +933,8 @@ extension Workspace {
             metadata: persistedMetadata,
             metadataSources: persistedMetadataSources,
             surfaceConversations: surfaceConversations,
-            lastActivityAt: lastActivityAt
+            lastActivityAt: lastActivityAt,
+            lastSeenAt: SurfaceSeenTracker.shared.lastSeenAt(panelId: panelId)
         )
     }
 
@@ -1066,6 +1067,10 @@ extension Workspace {
         // (surface.list callers, cached-id scripts) see the same UUID across
         // restarts.
         let restoredPanelId: UUID? = snapshot.id
+        // C11-243: restore the persisted last-seen stamp (ids are preserved).
+        if let lastSeenAt = snapshot.lastSeenAt {
+            SurfaceSeenTracker.shared.seed(panelId: snapshot.id, at: lastSeenAt)
+        }
 
         switch snapshot.type {
         case .terminal:
@@ -6937,7 +6942,8 @@ final class Workspace: Identifiable, ObservableObject {
             activityHelp: activityHelp,
             createdAt: panels[panelId]?.createdAt,
             lastActivityAt: activityHelp?.lastActivityAt
-                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
+            lastSeenAt: SurfaceSeenTracker.shared.lastSeenAt(panelId: panelId)
         )
     }
 
@@ -11659,6 +11665,9 @@ extension Workspace: BonsplitDelegate {
         if let owningTabManager {
             applyPanelVisibility(workspaceVisible: owningTabManager.selectedTabId == id)
         }
+
+        // C11-243: tab switch / pane focus changes what the operator is seeing.
+        SurfaceSeenTracker.shared.refresh()
     }
 
     private func applyTabSelectionNow(

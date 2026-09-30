@@ -374,6 +374,11 @@ struct SessionPanelSnapshot: Codable, Sendable {
     /// `ScrapeCaptureContext` key on across a restart.
     var lastActivityAt: Date? = nil
 
+    /// C11-243: when the operator last looked at this tab (`SurfaceSeenTracker`).
+    /// A tab being seen at capture time is stamped with the capture time. Optional
+    /// for backcompat: older snapshots decode with `lastSeenAt == nil`.
+    var lastSeenAt: Date? = nil
+
     private enum CodingKeys: String, CodingKey {
         case id, type, title, customTitle, customColor, directory, isPinned,
              isManuallyUnread, gitBranch, listeningPorts, ttyName,
@@ -381,6 +386,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
         case createdAt = "created_at"
         case surfaceConversations = "surface_conversations"
         case lastActivityAt = "last_activity_at"
+        case lastSeenAt = "last_seen_at"
     }
 }
 

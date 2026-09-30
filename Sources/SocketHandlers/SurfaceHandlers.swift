@@ -8,6 +8,18 @@ import WebKit
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 extension TerminalController {
+    /// C11-243: `last_seen_at` (ISO-8601, "now" while being seen, null if never
+    /// seen) and `being_seen` for a surface item. Main-actor read, no allocation
+    /// beyond the timestamp string.
+    func v2SeenFields(panelId: UUID) -> [String: Any] {
+        let tracker = SurfaceSeenTracker.shared
+        let stamp = tracker.lastSeenAt(panelId: panelId)
+        return [
+            "last_seen_at": stamp.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
+            "being_seen": tracker.isBeingSeen(panelId: panelId)
+        ]
+    }
+
     /// v2 dispatch slice for the `surface.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchSurface(_ method: String, id: Any?, params: [String: Any]) -> String {
@@ -101,6 +113,7 @@ extension TerminalController {
                     "tty": v2OrNull(ws.surfaceTTYNames[panel.id]),
                     "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
                 ]
+                item.merge(v2SeenFields(panelId: panel.id)) { _, new in new }
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
                 }

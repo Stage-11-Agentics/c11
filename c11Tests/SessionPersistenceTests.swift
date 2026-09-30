@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -1535,5 +1536,84 @@ final class SidebarDragFailsafePolicyTests: XCTestCase {
                 forMouseEventType: .leftMouseDragged
             )
         )
+    }
+}
+
+final class SidebarHorizontalScrollWorkspaceStepperTests: XCTestCase {
+    private func wheel(
+        _ stepper: inout SidebarHorizontalScrollWorkspaceStepper,
+        dx: CGFloat,
+        dy: CGFloat = 0,
+        precise: Bool = false,
+        at time: TimeInterval
+    ) -> SidebarHorizontalScrollWorkspaceStepper.Outcome {
+        stepper.handle(deltaX: dx, deltaY: dy, hasPreciseDeltas: precise, phase: [], momentumPhase: [], timestamp: time)
+    }
+
+    private func gesture(
+        _ stepper: inout SidebarHorizontalScrollWorkspaceStepper,
+        dx: CGFloat,
+        dy: CGFloat = 0,
+        phase: NSEvent.Phase,
+        momentum: NSEvent.Phase = [],
+        at time: TimeInterval
+    ) -> SidebarHorizontalScrollWorkspaceStepper.Outcome {
+        stepper.handle(deltaX: dx, deltaY: dy, hasPreciseDeltas: true, phase: phase, momentumPhase: momentum, timestamp: time)
+    }
+
+    func testVerticalWheelPassesThrough() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: 0, dy: -3, at: 0), .passThrough)
+        XCTAssertEqual(wheel(&stepper, dx: 1, dy: -3, at: 0.2), .passThrough)
+    }
+
+    func testWheelNotchStepsOneWorkspaceEachWay() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        XCTAssertEqual(wheel(&stepper, dx: 1, at: 0.5), .consume(step: -1))
+    }
+
+    func testFastWheelSpinIsRateLimited() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        XCTAssertEqual(wheel(&stepper, dx: -4, at: 0.02), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.05), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.1), .consume(step: 1))
+    }
+
+    func testSmoothWheelAccumulatesPointsBeforeStepping() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0.01), .consume(step: 1))
+    }
+
+    func testWheelPauseDiscardsPartialAccumulation() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 1), .consume(step: 0))
+    }
+
+    func testHorizontalSwipeStepsOnceAndSwallowsItsTailAndMomentum() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .mayBegin, at: 0), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: 20, dy: 2, phase: .began, at: 0.01), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 30, phase: .changed, at: 0.02), .consume(step: -1))
+        XCTAssertEqual(gesture(&stepper, dx: 200, phase: .changed, at: 0.03), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .ended, at: 0.04), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 80, phase: [], momentum: .began, at: 0.05), .consume(step: 0))
+    }
+
+    func testVerticalSwipeStaysVerticalEvenIfItDriftsSideways() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: 1, dy: -10, phase: .began, at: 0), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: -60, dy: -2, phase: .changed, at: 0.01), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: -40, dy: -1, phase: [], momentum: .changed, at: 0.02), .passThrough)
+    }
+
+    func testEachSwipeStepsAgain() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: -40, phase: .began, at: 0), .consume(step: 1))
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .ended, at: 0.01), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: -40, phase: .began, at: 0.3), .consume(step: 1))
     }
 }

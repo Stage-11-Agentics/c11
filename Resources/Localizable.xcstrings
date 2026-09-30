@@ -67258,6 +67258,241 @@
           }
         }
       }
+    },
+    "settings.app.tabLayout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab Layout"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブのレイアウト"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Розташування вкладок"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 레이아웃"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页布局"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分頁版面"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расположение вкладок"
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.subtitleTabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser-style tabs across the top of each area; the count button opens the full list."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各エリアの上部にブラウザ風のタブを表示します。件数ボタンで全体の一覧を開きます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки в стилі браузера вгорі кожної області; кнопка з лічильником відкриває повний список."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 영역 상단에 브라우저 스타일 탭을 표시합니다. 개수 버튼으로 전체 목록을 엽니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个区域顶部显示浏览器风格的标签页；点击计数按钮可打开完整列表。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個區域頂部顯示瀏覽器風格的分頁；點擊計數按鈕可開啟完整清單。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки в стиле браузера вверху каждой области; кнопка со счётчиком открывает полный список."
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.subtitleRail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A vertical tab list docks on each area's left edge; the count button toggles it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各エリアの左端に縦型のタブ一覧を固定表示します。件数ボタンで開閉します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вертикальний список вкладок закріплюється на лівому краї кожної області; кнопка з лічильником відкриває й закриває його."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 영역의 왼쪽 가장자리에 세로 탭 목록이 고정됩니다. 개수 버튼으로 열고 닫습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个区域的左侧固定一个竖向标签列表；点击计数按钮可展开或收起。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個區域的左側固定一個直式分頁清單；點擊計數按鈕可展開或收合。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вертикальный список вкладок закрепляется у левого края каждой области; кнопка со счётчиком открывает и закрывает его."
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.tabs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分頁"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки"
+          }
+        }
+      }
+    },
+    "settings.app.tabLayout.rail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rail"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レール"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "레일"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "側欄"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель"
+          }
+        }
+      }
     }
   }
 }

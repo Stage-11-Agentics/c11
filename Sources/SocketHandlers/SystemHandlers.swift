@@ -269,6 +269,10 @@ extension TerminalController {
             "debug.panel_snapshot.reset",
             "debug.window.screenshot",
             "debug.tab_sheet.open",
+            "debug.tab_rail.open",
+            "debug.tab_strip.scroll",
+            "debug.tab_sheet.hover",
+            "debug.tab_sheet.motion_scale",
             "debug.session.round_trip",
             "debug.session.round_trip_workspaces",
         ])

@@ -152,9 +152,11 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
 
-## Tab sheet
+## Tab bar and tab sheet
 
-The `N ▾` count cell on every tab bar opens the pane's tab sheet: one two-line row per tab with its number (`Tab 171`), agent (`Harness · model`; the model shows only when `launch-agent` or `set-agent --model` recorded it), the state word with how long **that state** has held (`working 12m`, `waiting 6m`, `flagged 14m`, `idle 48m`), the live description as the subtitle (cwd, host or file path when there is none), and clocks. **Active** is the time since the tab's last recorded activity (input, prompt and command edges, agent lifecycle events; not raw output); **Launched** is the time since it opened; **Seen** renders `—` until last-seen tracking lands. The column order is one ordered list, a user default read each time a sheet opens (unknown names ignored). Write it as a string, or as an array:
+**The strip.** Tabs stay visible: when they overflow, the strip scrolls sideways (edge fades show more off either end; a vertical wheel or two-finger scroll over it scrolls it too) and folds into the solid block only when under about 150pt remain for tabs after the count cell and controls. With "Show Surface IDs in Tab Titles" on, each tab carries its number in mono, gold on the visible tab.
+
+**The count cell** (`● ⌄ N`: attention dot, chevron, number) is on every bar. In the default layout it opens the area's tab sheet, a drawer exactly as wide as its area (320pt minimum): one two-line row per tab with its number (`Tab 171`), agent (`Harness · model`; the model shows only when `launch-agent` or `set-agent --model` recorded it), the state word with how long **that state** has held (`working 12m`, `waiting 6m`, `flagged 14m`, `idle 48m`), the live description as the subtitle (cwd, host or file path when there is none), and clocks. Columns drop by area width: 820+ everything, 600-819 the first clock only, 440-599 the agent moves to line 2 and clocks go, under 440 just number, mark, title and status. Hovering a row lights its tab in the strip and the reverse. **Active** is the time since the tab's last recorded activity (input, prompt and command edges, agent lifecycle events; not raw output); **Launched** is the time since it opened; **Seen** renders `—` until last-seen tracking lands. The clock order is one ordered list, a user default read each time a sheet opens (unknown names ignored). Write it as a string, or as an array:
 
 ```bash
 defaults write com.stage11.c11 c11.tabSheet.clocks -string "launched,active"
@@ -162,7 +164,14 @@ defaults write com.stage11.c11 c11.tabSheet.clocks -array launched active     # 
 defaults delete com.stage11.c11 c11.tabSheet.clocks                           # back to active,launched
 ```
 
-A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-sheet-grid` is `com.stage11.c11.debug.tab.sheet.grid`).
+**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `Tab N · title`, and each area remembers its rail open or closed across relaunch. It is also in Settings > App > Tab Layout. Change it in one command:
+
+```bash
+defaults write com.stage11.c11 tabLayoutMode -string rail     # or: tabs
+defaults delete com.stage11.c11 tabLayoutMode                 # back to tabs
+```
+
+A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-bar-round-five` is `com.stage11.c11.debug.tab.bar.round.five`).
 
 The bar under the tabs shows only the surface's description (`c11 set-description`); with no description it takes no height.
 

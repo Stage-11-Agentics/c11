@@ -4422,6 +4422,8 @@ struct SettingsView: View {
     private var markdownSpawnButtonVisible = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
+    @AppStorage(TabLayoutSettings.modeKey)
+    private var tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -5181,6 +5183,26 @@ struct SettingsView: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.tabLayout", defaultValue: "Tab Layout"),
+                subtitle: TabLayoutSettings.mode(for: tabLayoutMode) == .rail
+                    ? String(localized: "settings.app.tabLayout.subtitleRail", defaultValue: "A vertical tab list docks on each area's left edge; the count button toggles it.")
+                    : String(localized: "settings.app.tabLayout.subtitleTabs", defaultValue: "Browser-style tabs across the top of each area; the count button opens the full list."),
+                controlWidth: pickerColumnWidth
+            ) {
+                Picker("", selection: $tabLayoutMode) {
+                    Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"))
+                        .tag(TabLayoutSettings.Mode.tabs.rawValue)
+                    Text(String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"))
+                        .tag(TabLayoutSettings.Mode.rail.rawValue)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsTabLayoutPicker")
             }
         }
     }
@@ -6534,6 +6556,7 @@ struct SettingsView: View {
         internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
         showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
+        tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue

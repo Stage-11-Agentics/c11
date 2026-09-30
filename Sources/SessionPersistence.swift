@@ -432,6 +432,10 @@ struct SessionPaneLayoutSnapshot: Codable, Sendable {
     /// `explicit > declare > osc > heuristic` precedence chain survives a
     /// restart. See `PersistedMetadataSource`.
     var metadataSources: [String: PersistedMetadataSource]? = nil
+
+    /// Round five: whether this area's tab rail was open (Rail layout).
+    /// Optional for backcompat; absent means closed.
+    var railOpen: Bool? = nil
 }
 
 struct SessionSplitLayoutSnapshot: Codable, Sendable {

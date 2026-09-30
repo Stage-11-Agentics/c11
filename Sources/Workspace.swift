@@ -703,13 +703,18 @@ extension Workspace {
             }
             #endif
             let (persistedPaneMetadata, persistedPaneSources) = persistedPaneMetadata(forPaneUUID: paneUUID)
+            // Remember an open rail per area across relaunch (nil when closed, to keep snapshots minimal).
+            let railOpen: Bool? = paneUUID.flatMap { uuid in
+                bonsplitController.railOpenPaneIds.contains(PaneID(id: uuid)) ? true : nil
+            }
             return .pane(
                 SessionPaneLayoutSnapshot(
                     panelIds: panelIds,
                     selectedPanelId: selectedPanelId,
                     id: paneUUID,
                     metadata: persistedPaneMetadata,
-                    metadataSources: persistedPaneSources
+                    metadataSources: persistedPaneSources,
+                    railOpen: railOpen
                 )
             )
         case .split(let split):
@@ -1030,6 +1035,10 @@ extension Workspace {
             guard let panelSnapshot = panelSnapshotsById[desiredPanelId] else { continue }
             guard let createdPanelId = createPanel(from: panelSnapshot, inPane: paneId) else { continue }
             createdPanelIds.append(createdPanelId)
+        }
+
+        if snapshot.railOpen == true {
+            bonsplitController.restoreRailOpen(true, inPane: paneId)
         }
 
         guard !createdPanelIds.isEmpty else { return }
@@ -5332,6 +5341,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// `defaults write`). Same composed-NSObject KVO pattern as
     /// `chromeScaleObserver`.
     private var tabOrdinalDisplayObserver: TabOrdinalDisplayObserver?
+    private var tabLayoutObserver: TabLayoutObserver?
 
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
@@ -5861,6 +5871,15 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.configuration = next
     }
 
+    /// Live-update path for the Tab layout setting (Tabs | Rail).
+    func applyTabLayout() {
+        let layout = TabLayoutSettings.bonsplitLayout(TabLayoutSettings.mode())
+        var next = bonsplitController.configuration
+        guard next.appearance.tabLayout != layout else { return }
+        next.appearance.tabLayout = layout
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -6010,6 +6029,7 @@ final class Workspace: Identifiable, ObservableObject {
         // C11-41: tab bar chrome state was removed; always show the full tab bar.
         appearance.showsTabBar = true
         appearance.showTabOrdinals = TabOrdinalDisplaySettings.showsSurfaceIds()
+        appearance.tabLayout = TabLayoutSettings.bonsplitLayout(TabLayoutSettings.mode())
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,
@@ -6057,6 +6077,11 @@ final class Workspace: Identifiable, ObservableObject {
         // React to the "Show surface IDs in tab titles" toggle live.
         self.tabOrdinalDisplayObserver = TabOrdinalDisplayObserver { [weak self] in
             self?.applyTabOrdinalDisplay()
+        }
+
+        // React to the Tab layout setting (Tabs | Rail) live.
+        self.tabLayoutObserver = TabLayoutObserver { [weak self] in
+            self?.applyTabLayout()
         }
 
         // Remove the default "Welcome" tab that bonsplit creates

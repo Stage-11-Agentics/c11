@@ -10,6 +10,11 @@ Declare the seat at invoke, per the c11 skill's orientation block: `c11 set-agen
 
 Run the checks listed in SKILL.md Phase 0. On any failure: name the gap, propose the remedy, let the operator route it — upstream to the contract's author (an amendment), or into the run as an early ticket (e.g., "split the test suite: `test` ≤60s hermetic + `test:full`"). Never quietly patch the contract yourself; the audit's independence depends on the builders not authoring their own contract.
 
+Two checks carry most of a long run's risk, so do them at intake, before any builder starts:
+
+- **A gate with a time budget needs a blocking per-PR growth check from the first ticket.** Every feature adds tests, and no single PR exceeds its own noise, so without a per-PR check `main` drifts over budget by accumulation and the whole train goes red at once, with no PR to send back. Measure the baseline before building, make each PR state and offset its own cost, and log `main`'s gate at every merge.
+- **Shared objects that several tickets write need one source and a landing order.** List every enumeration (a CHECK allow-list, an enum, a registry) and every create-or-replace object (a function, trigger or view) that more than one ticket writes. Give each enumeration one canonical list in code and a test that scans every writer, and pin each replaced object's landing order in run-state. Fresh CI applies migrations in number order while a live environment applies a late-landing lower number after a higher one, so a per-ticket copy silently drops another ticket's values on one of them.
+
 ## Install facts to pin (recorded in run-state § Configuration)
 
 - **Status vocabulary / terminal pre-merge status.** From `.lattice/config.json` plus the project `CLAUDE.md`. Installs differ — some collapse `pr_open` into `review`, some end at `done`, some `shipped`. A delegator that blindly runs `lattice status <ID> pr_open` on the wrong install hits `Invalid transition` and thrashes or strands the ticket. Verify with `lattice show <ID> --json | jq .valid_transitions`; thread the pinned value into every boot prompt in place of any literal status.
@@ -19,7 +24,7 @@ Run the checks listed in SKILL.md Phase 0. On any failure: name the gap, propose
 
 ## Config dialogue
 
-Auto-suggest from plan size, ask only what the defaults don't settle: autonomy (project `CLAUDE.md` may declare `## Autonomy default`); N concurrent delegators (default 5); PR merge policy (default leave-at-terminal-pre-merge unless `CLAUDE.md` declares auto-merge; pin to run-state); per-ticket workflow mode (default inline-full for medium work; a typical wave is 50–80% fast-track + inline-full); Master Validator (default on >3 tickets); Result Validator (default on); auto-close finished surfaces (default on); c11 workspace preferences. Fold any operator global comments (style, libraries to avoid, time windows) into run-state. Close by describing Phase 1 concretely — panes, escalation banners, what "done" looks like.
+Auto-suggest from plan size, ask only what the defaults don't settle: autonomy (project `CLAUDE.md` may declare `## Autonomy default`); N concurrent delegators (default 5; landing capacity, meaning the serial gate on the runner, and the account's usage window bind before builder count, so raise N only when PRs land faster than builders produce them); PR merge policy (default leave-at-terminal-pre-merge unless `CLAUDE.md` declares auto-merge; pin to run-state); per-ticket workflow mode (default inline-full for medium work; a typical wave is 50–80% fast-track + inline-full); Master Validator (default on >3 tickets); Result Validator (default on); auto-close finished surfaces (default on); c11 workspace preferences. Seat boxes (remote VMs, `lattice-hosted-orchestrator`) help when the laptop is the constraint: builder isolation, more parallel builders, heavy local test runs. They cannot time a wall-clock gate and add nothing when landing is the constraint. Fold any operator global comments (style, libraries to avoid, time windows) into run-state. Close by describing Phase 1 concretely — panes, escalation banners, what "done" looks like.
 
 ## Minting tickets
 
@@ -35,7 +40,7 @@ lattice link <id> depends_on <other-id> --actor "agent:orchestrator-intake"
 - Dependencies conservative: link only when a ticket needs the other's code or runtime artifact. Loose dependencies kill parallelism.
 - Preserve the BUILDPLAN's checkpoint-shaped order in the dependency structure; default ticket size half-day to a day.
 - **Fidelity:** verbose (full description, acceptance criteria by ID, "Plan: filled in by delegator's plan phase", depends-on) or minimal (one line + BUILDPLAN anchor). Either way the ticket must reference its SPEC criteria IDs — the Result Validator maps audit rows through them.
-- Unavoidable shared-file edits (from the BUILDPLAN) flagged in the affected tickets so dispatch serializes them.
+- Unavoidable shared-file edits (from the BUILDPLAN) flagged in the affected tickets so dispatch serializes them; shared enumerations and replaced objects (Contract checks) name their canonical source and landing order in each writer's ticket.
 
 ## External work and delivery receipts (pilot convention)
 

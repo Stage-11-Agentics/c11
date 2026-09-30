@@ -20,7 +20,7 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
 1. **Worktree assertion, line 1:** `test "$(pwd)" = "<abs-worktree>" || { echo "FATAL: wrong cwd"; exit 99; }`. On mismatch, HALT — do not `cd` to the expected worktree, do not improvise; the bug is at the spawn side and downstream repair only hides it. Line 1 because that's the only point where `pwd` reflects the launch cwd unmolested.
 2. **Environment:** `export LATTICE_SPAWN_BACKEND=headless` and `export LATTICE_ROOT=<primary-checkout-root>` — never `$PWD`. A worktree carries its own `.lattice/` from its branch point; writing to that divergent board surfaces later as duplicate short IDs and unmapped tickets.
 3. **Status discipline:** bump ticket status BEFORE starting each phase; only the delegator bumps (sub-agents post a completion comment and stop); verify bumps with `lattice show --json`; re-bump after triage roundtrips. Status drift is the #1 silent-failure mode of well-meaning delegators.
-4. **Re-fetch at phase boundaries:** `git fetch <remote>` and record "working against <remote>/main @ <sha>"; impl phases rebase before editing.
+4. **Re-fetch at phase boundaries; never rebase a pushed branch.** `git fetch <remote>` and record "working against <remote>/main @ <sha>". Before the first push, rebase freely. After it, bring in `<remote>/main` (or a landed anchor) by merge only: others may already stand on the branch, and every rewrite forces each dependent to restack, then theirs.
 5. **Deviate-with-flag (impl):** when the plan contradicts SPEC, the codebase, or itself — deviate and flag the contradiction, the side taken, and why, in the completion comment.
 6. **Lattice items live in the root repo.** The CLI auto-routes from worktrees, but Claude's `Write` tool does not: a planner writing `.lattice/plans/<uuid>.md` by relative path lands it in the worktree's shadow copy — the parent plan file stays an empty scaffold and plan-review reads stale content. Plan files are written with the **absolute parent-repo path**. (Recovery: the planner's context still holds the plan — nudge it to re-Write to the absolute path.) `Invalid transition` errors usually mean wrong `LATTICE_ROOT` or an old install, not corrupted state.
 7. **Monitor/watcher paths include `.lattice/`:** a watcher on `$REPO_ROOT/plans/...` (missing the `.lattice/` segment) silently never fires and the run stalls.
@@ -37,6 +37,9 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
     surface creation and an idle TUI prove only liveness.
 
 15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang.
+16. **Questions go to the parent's surface.** Every question, decision request and receipt is sent with `c11 send` + `send-key enter` to the named parent surface, and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read.
+17. **The CI window (shared runner).** A branch push without a PR costs no CI; opening or updating a PR starts a gate run. When the gate shares one runner, children push freely but open or update a PR only when the Orchestrator grants the window by name.
+18. **Shared enumerations are edited at their canonical source.** A child adding a value to a shared allow-list or replacing a shared object uses the canonical list and landing order its ticket names, never a copy from the last migration it saw.
 
 ## Spawning: atomic cwd binding
 
@@ -60,7 +63,7 @@ Base is `<remote>/main` — or the parent's branch for press-ahead children. The
 
 ## The dispatch loop
 
-Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) landing-train pass if auto-merge is enabled; (5) auto-close finished surfaces (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
+Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) landing-train pass if auto-merge is enabled; (5) auto-close finished surfaces (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge; also kill any process whose cwd is a merged ticket's worktree, since an orphaned test worker outlives its delegator); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
 
 **Cadence:** active dispatch 270s (inside the 5-minute prompt-cache window); quiescent 1200–1800s; never 300s (pays the cache miss without amortizing it). End the loop explicitly at run completion; silence after closeout is correct.
 
@@ -73,6 +76,8 @@ The canonical stall tell is a **cost counter frozen across 2+ ticks**. Diagnose 
 - Real stall → `c11 send` an "ORCHESTRATOR NOTE: cost frozen N ticks — report status and continue" **plus** `send-key enter`. Never trust `send-key enter` alone — the TUI sometimes swallows synthetic Return; always pair it with a fresh `send`.
 - Auth halt (`⎿ Not logged in · Please run /login` in a deep screen read — typically after the operator swaps accounts mid-run) → once restored, send "auth restored, retry the tool call, resume /loop".
 - Queued-but-unsubmitted text (cost moves slightly, input box shows stuck content) → a new `send` replaces the buffer.
+- **After a usage-limit reset or any fleet-wide outage, nudge every surface**: delegators, their sub-agent surfaces (planners, implementers, fixers), in-process review agents and captains. Verify each shows fresh commits or activity within one tick. A nudged delegator whose implementer died waits forever, and one whose work is done may be waiting on a CI window you never gave it.
+- **A subtitle unchanged for over 45 minutes means read the screen.** The description is self-reported and goes stale exactly when an agent is stuck or waiting on you.
 - Two consecutive dead sends → the session is dead; surface to the operator and offer a respawn from the latest commit. Dead-session state recovery itself belongs to c11 (workspace persistence + session-resume hook), not the Orchestrator.
 
 ## Mode boot templates
@@ -81,7 +86,7 @@ Every template begins with Standard Clause 1 (worktree assertion), the Clause-2 
 
 **Fast-track** (no sub-agents, no headless reviews, no `/loop` — runs synchronously):
 1. *Plan* — bump `in_planning`; write the plan to `$LATTICE_ROOT/.lattice/plans/<task_uuid>.md` (absolute path, Clause 6); bump `planned`.
-2. *Implement* — bump `in_progress`; fetch/rebase; edit + tests; commit.
+2. *Implement* — bump `in_progress`; fetch (Clause 4); edit + tests; commit.
 3. *Self-review* — bump `review`; attach the verdict: `lattice attach <ID> --type note --role review --inline "<verdict>" --actor agent:<id>-reviewer`.
 4. *Validate* — bump `in_validation`; exercise the change end-to-end (browser, simulator, curl — whatever proves behavior); attach evidence `--role validation` (or a one-line justified N/A). The terminal pre-merge status is **gated on this artifact**.
 5. *PR* — push with Clause-10 verification; attach the PR as a `--type reference`; bump to the terminal pre-merge status. Stop there — the Orchestrator merges and completes.
@@ -124,7 +129,7 @@ The single highest-leverage discipline in an auto-merge run — never act on wha
 
 Spawn dependents when a dependency reaches `review` or the terminal pre-merge status — not at merge.
 
-**Planning-only variant (merge-barrier runs).** When the run config forbids cutting dependent branches before the dependency merges, press-ahead still applies to *planning*: spawn the dependent delegators at the dependency's `review` in a **scratch-sandbox cwd** (no worktree, no branch), reading the in-review branch's code shape read-only, writing plans to the board, and halting at `planned` until an explicit `RESUME IMPLEMENTATION` message names their post-merge worktree. Costs zero barrier wall-clock; the sandbox cwd also means a confused delegator has no repo to damage. After every transition, audit all unspawned tickets; default to spawning; don't wait for operator approval to start an unblocked ticket. Children branch **off the in-review parent** (`git worktree add ... -b <child> <remote>/<parent-branch>`), never off main — they inherit the parent's interfaces import-stable. The child PR body names its anchor ("based on #N — merge that first; this rebases"), and the anchor is recorded in run-state's ticket table.
+**Planning-only variant (merge-barrier runs).** When the run config forbids cutting dependent branches before the dependency merges, press-ahead still applies to *planning*: spawn the dependent delegators at the dependency's `review` in a **scratch-sandbox cwd** (no worktree, no branch), reading the in-review branch's code shape read-only, writing plans to the board, and halting at `planned` until an explicit `RESUME IMPLEMENTATION` message names their post-merge worktree. Costs zero barrier wall-clock; the sandbox cwd also means a confused delegator has no repo to damage. After every transition, audit all unspawned tickets; default to spawning; don't wait for operator approval to start an unblocked ticket. Children branch **off the in-review parent** (`git worktree add ... -b <child> <remote>/<parent-branch>`), never off main — they inherit the parent's interfaces import-stable. The child PR body names its anchor ("based on #N — merge that first"), and the anchor is recorded in run-state's ticket table. When the anchor lands, the child merges `<remote>/main` (Clause 4): the squashed content merges cleanly, the PR diff shows only the child's work, and its own dependents need not restack.
 
 ## Landing train and auto-merge (opt-in at Phase 0)
 
@@ -135,8 +140,9 @@ exact review/gate against a base another merge is about to replace.
 
 For the front PR only:
 
-1. Fetch `<remote>` and compare the PR with current `<remote>/main`. Rebase once if
-   required, push with Clause 10, and record the resulting base/head pair.
+1. Fetch `<remote>` and compare the PR with current `<remote>/main`. Merge
+   `<remote>/main` into the head if required, push with Clause 10, and record the
+   resulting base/head pair.
 2. Obtain fresh review evidence naming that exact head. Require the reviewer's
    positive `REVIEWING <work-item> CWD <path> HEAD <head> BASE <base>` receipt before
    spending the review cycle.
@@ -151,9 +157,17 @@ For the front PR only:
 Do not final-review several queued PRs "to save time"; that creates stale evidence
 as soon as the first one lands. Early reviews remain valuable for finding design and
 implementation defects, but only the front-of-train exact-head review and gate
-authorize merge. After merging a parent, a dependent child rebases onto the new
-`<remote>/main`, `git push --force-with-lease`, waits out the forge's mergeability
-recompute (~5–15s Forgejo, 10–25s GitHub), and then enters the front slot.
+authorize merge. Keep that review on every PR however clean the builder's own reviews
+were: cross-ticket defects (a deadlock with another ticket's lock order, a list that
+drops a sibling's value) are visible only against the assembled base. After merging a
+parent, a dependent child merges the new `<remote>/main`, waits out the forge's
+mergeability recompute (~5–15s Forgejo, 10–25s GitHub), and then enters the front slot.
+
+**The gate is shared capacity.** When PR CI runs on one shared runner, grant the CI
+window (Clause 17) to one PR at a time: on a wall-clock gate, our own concurrent runs
+are the foreign load. When `main` itself fails the gate, reruns cannot clear it; fix
+`main` first. Measure before hypothesizing a lever: instrument the phases (setup, queue
+or pool wait, shard skew) and probe one variable at a time on a quiet runner.
 
 Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
 
@@ -164,14 +178,16 @@ Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
 
 ## Captains
 
-One-shot recovery agents for cross-cutting batch work (a Merge Captain, a Rebase Captain, a Status Captain) — distinct from delegators (ticket-scoped) and sub-agents (phase-scoped). Name them `<Scope> Captain`; spawn a fresh one per engagement rather than re-tasking the last.
+One-shot recovery agents for cross-cutting batch work (a Merge Captain, a Diagnostic Captain, a Status Captain) — distinct from delegators (ticket-scoped) and sub-agents (phase-scoped). Name them `<Scope> Captain`; spawn a fresh one per engagement rather than re-tasking the last.
 
 **Merge Captain** — for the stacked-branches-after-squash artifact (every PR after the first hits conflicts; expect it on nearly all stacked PRs, ~1–2 minutes each):
 1. Hygiene first: `git -C <wt> reset --hard HEAD && git -C <wt> clean -fd` per worktree.
-2. Mechanical fix: `git rebase --onto <remote>/main <cut-sha> <branch>` + `--force-with-lease`, then wait out the recompute window.
+2. Mechanical fix: merge `<remote>/main` into the branch, resolving the parent's files to main's version. `git rebase --onto <remote>/main <cut-sha> <branch>` + `--force-with-lease` only for a branch nobody stands on. Then wait out the recompute window.
 3. **Retarget before delete:** `gh pr merge --delete-branch` auto-closes any PR based on the deleted branch, and closed PRs with a missing base **cannot be reopened or retargeted** — `gh pr edit <child> --base main` first. Orphan recovery = rebase, force-push, fresh PRs.
 4. Conflict triage: additive manifests/lockfiles → union + regenerate the lockfile; empty/no-op rebase conflicts → the `--onto` recipe; modify/delete in code, schemas, or tests → **stop and run the touched tests first** (deleting code the other side modified without running its suite is how broken tests ship); anything novel → surface.
 5. Terminal-state check: installs differ on the final status name — confirm with `lattice show <done-ticket> --json` before completing.
+
+**Reproduce before attributing.** Before naming the cause of a red check (a ticket's regression, a harness race, load), read the failing request's status and body and reproduce with the smallest set: the failing file alone, then with each co-tenant of its process. A failure that tracks one branch can still be shared state that branch merely exposed. **Diagnostic Captain:** the second time a failure repeats unexplained, spawn a read-only captain to reproduce and bisect it, rather than guessing again.
 
 **Degraded mode (Orchestrator-as-captain):** direct merging from the Orchestrator session is the last resort when captain dispatch itself is blocked (e.g., a PTY wedge) — fix the underlying problem first, and log every direct merge in agents.md.
 

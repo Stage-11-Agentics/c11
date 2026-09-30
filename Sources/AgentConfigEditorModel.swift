@@ -252,6 +252,12 @@ enum AgentConfigAxes {
     /// can always launch. With no model pinned every harness is reachable,
     /// which is how Custom and any harness that publishes no catalog stay
     /// selectable.
+    ///
+    /// `grok-latest` is not such a pair. OpenRouter's floating alias is the
+    /// only row with that name, and `grok --model grok-latest` fails with
+    /// "unknown model id". Selecting it retargets onto the newest model the
+    /// grok CLI itself published (see `selectingModel`), whose harness list
+    /// leads with Grok Build.
     static func harnessOptions(
         for selection: AgentConfigAxisSelection,
         catalog: EditorModelCatalog
@@ -261,6 +267,68 @@ enum AgentConfigAxes {
         }
         let served = catalog.harnesses(forModel: model)
         return served.isEmpty ? [model.harness] : served
+    }
+
+    /// xAI's native harness. Offered when `grok models` published the id.
+    static let grokHarnessKey = "grok"
+
+    /// OpenRouter spells its floating xAI alias `~x-ai/grok-latest`. After the
+    /// catalog strips the gateway, the row id is `grok-latest`.
+    private static func isGrokLatestAlias(_ model: CatalogModel) -> Bool {
+        model.provider == "xai" && (model.id == "grok-latest" || model.id.hasSuffix("/grok-latest"))
+    }
+
+    /// The model `grok models` would star today: the highest `grok-<version>`,
+    /// with the bare id beating a same-version variant (`grok-4.7` over
+    /// `grok-4.7-build-fast`). That matches the CLI, which rejects every other
+    /// xAI id the routers publish.
+    private static func grokDefaultModel(catalog: EditorModelCatalog) -> CatalogModel? {
+        catalog.models(forProvider: "xai")
+            .filter { $0.harness == grokHarnessKey }
+            .max { grokModelRank($0.id) < grokModelRank($1.id) }
+    }
+
+    /// Version sort key for a grok CLI id. Non-matching ids rank lowest.
+    private struct GrokModelRank: Comparable {
+        var components: [Int]
+        /// The unsuffixed id. `grok models` marks that one as the default and
+        /// lists `grok-4.7-build-fast` under it.
+        var bare: Bool
+
+        static func < (lhs: GrokModelRank, rhs: GrokModelRank) -> Bool {
+            let count = max(lhs.components.count, rhs.components.count)
+            for index in 0..<count {
+                let left = index < lhs.components.count ? lhs.components[index] : 0
+                let right = index < rhs.components.count ? rhs.components[index] : 0
+                if left != right { return left < right }
+            }
+            if lhs.bare != rhs.bare { return rhs.bare }
+            return false
+        }
+    }
+
+    private static func grokModelRank(_ id: String) -> GrokModelRank {
+        let prefix = "grok-"
+        guard id.hasPrefix(prefix) else { return GrokModelRank(components: [], bare: false) }
+        var components: [Int] = []
+        var number = 0
+        var inNumber = false
+        var stopped = false
+        for character in id.dropFirst(prefix.count) {
+            if let digit = character.wholeNumberValue {
+                number = number * 10 + digit
+                inNumber = true
+            } else if character == ".", inNumber {
+                components.append(number)
+                number = 0
+                inNumber = false
+            } else {
+                stopped = true
+                break
+            }
+        }
+        if inNumber { components.append(number) }
+        return GrokModelRank(components: components, bare: !stopped && !components.isEmpty)
     }
 
     // MARK: Effort axis (Part E1)
@@ -420,6 +488,12 @@ enum AgentConfigAxes {
     /// it can serve the model, otherwise the model's default (top-line) harness
     /// is auto-selected. The stored value is always the *chosen harness's* flag
     /// spelling, never the harness-independent `CatalogModel.id`.
+    ///
+    /// xAI models the grok CLI published default to Grok Build. Routers stay
+    /// on the harness cards. The floating `grok-latest` alias is retargeted
+    /// onto that CLI's current default first — grok.com rejects the alias
+    /// string, so leaving it selected would offer only OpenCode, Pi, and
+    /// oh-my-pi, and choosing Grok Build would fail at launch.
     static func selectingModel(
         _ model: CatalogModel?,
         in selection: AgentConfigAxisSelection,
@@ -432,11 +506,22 @@ enum AgentConfigAxes {
         }
         guard !model.isComingSoon else { return selection }
 
+        if isGrokLatestAlias(model),
+           let concrete = grokDefaultModel(catalog: catalog),
+           concrete.id != model.id {
+            return selectingModel(concrete, in: selection, catalog: catalog)
+        }
+
         next.provider = model.provider
         let served = catalog.harnesses(forModel: model)
-        let harness = served.contains(selection.config.harness)
-            ? selection.config.harness
-            : (served.first ?? model.harness)
+        let harness: String
+        if model.provider == "xai", served.contains(grokHarnessKey) {
+            harness = grokHarnessKey
+        } else if served.contains(selection.config.harness) {
+            harness = selection.config.harness
+        } else {
+            harness = served.first ?? model.harness
+        }
         next.config.harness = harness
         next.config.model = catalog.modelFlagValue(for: model, harness: harness)
         return reconciled(next, from: selection, catalog: catalog)

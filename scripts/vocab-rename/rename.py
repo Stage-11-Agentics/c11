@@ -511,8 +511,8 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         if new is None:
             continue
         pre = src[max(0, a - 20):a]
-        if pre.endswith(VENDOR_RECEIVERS):
-            continue
+        if pre.endswith(VENDOR_RECEIVERS) or pre.endswith("@objc("):
+            continue  # vendor member / ObjC runtime name (an external contract)
         if "labelonly" in flags or "recvmgr" in flags:
             ok = ("labelonly" in flags and is_call_label(src, a, b) and not vendor_callee(src, a)) or (
                 "recvmgr" in flags and RECV_MGR.search(src[max(0, a - 80):a]) is not None)

@@ -74,10 +74,16 @@ enum TabRailTipPreviewWindow {
 /// this same rule. The host keeps its own "this offer is on screen" flag:
 /// `shouldOffer` means a new offer may start, and it becomes false as soon
 /// as the tip is stamped.
+///
+/// `forceOffer` skips the 4-day count and the 30-day gap for one showing.
+/// It does not skip dismissal, Tabs layout, or a quiet area. Stamping the
+/// offer clears it.
 struct TabRailTipPolicy {
     static let overflowDaysKey = "c11.tabRailTip.overflowDays"
     static let lastOfferedKey = "c11.tabRailTip.lastOffered"
     static let dismissedKey = "c11.tabRailTip.dismissed"
+    /// One-shot. The next qualifying area offers the tip, then this clears.
+    static let forceOfferKey = "c11.tabRailTip.forceOffer"
     static let overflowWindowDays = 14
     static let overflowDaysRequired = 4
     static let offerSpacingDays = 30
@@ -133,12 +139,24 @@ struct TabRailTipPolicy {
 
     func shouldOffer(now: Date, layoutIsTabs: Bool, areaOverflowing: Bool) -> Bool {
         guard layoutIsTabs, areaOverflowing, !isDismissed else { return false }
+        if isForceOffer { return true }
         guard spacingAllowsOffer(now: now) else { return false }
         return overflowCount(inWindowEndingAt: now) >= Self.overflowDaysRequired
     }
 
     func markOffered(now: Date) {
         store.setString(dayKey(for: now), forKey: Self.lastOfferedKey)
+        clearForceOffer()
+    }
+
+    /// Drops the one-shot flag. No write when it is already clear.
+    func clearForceOffer() {
+        guard isForceOffer else { return }
+        store.setBool(false, forKey: Self.forceOfferKey)
+    }
+
+    var isForceOffer: Bool {
+        store.bool(forKey: Self.forceOfferKey)
     }
 
     func dismiss() {

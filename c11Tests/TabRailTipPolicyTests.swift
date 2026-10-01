@@ -195,6 +195,39 @@ final class TabRailTipPolicyTests: XCTestCase {
         XCTAssertFalse(tip.shouldOffer(now: day(2026, 9, 30, calendar: tip.calendar), layoutIsTabs: true, areaOverflowing: false))
     }
 
+    func testForceOfferSkipsTheWaitAndClearsWhenShown() {
+        let store = MemoryStore()
+        let tip = policy(store)
+        let now = day(2026, 9, 30, calendar: tip.calendar)
+        store.boolByKey[TabRailTipPolicy.forceOfferKey] = true
+        XCTAssertTrue(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: false))
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: false, areaOverflowing: true))
+        XCTAssertNil(store.stringsByKey[TabRailTipPolicy.overflowDaysKey])
+
+        // Showing the tip consumes the flag. A later force still skips a recent offer.
+        tip.markOffered(now: day(2026, 9, 29, calendar: tip.calendar))
+        XCTAssertEqual(store.boolByKey[TabRailTipPolicy.forceOfferKey], false)
+        XCTAssertEqual(store.boolWrites, 1)
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+
+        store.boolByKey[TabRailTipPolicy.forceOfferKey] = true
+        XCTAssertTrue(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+
+        tip.dismiss()
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+        XCTAssertTrue(tip.isForceOffer)
+
+        store.boolByKey[TabRailTipPolicy.dismissedKey] = false
+        let writes = store.boolWrites
+        tip.markOffered(now: now)
+        XCTAssertFalse(tip.isForceOffer)
+        XCTAssertEqual(store.boolWrites, writes + 1)
+        XCTAssertFalse(tip.shouldOffer(now: now, layoutIsTabs: true, areaOverflowing: true))
+        tip.markOffered(now: now)
+        XCTAssertEqual(store.boolWrites, writes + 1)
+    }
+
     func testUndoLeavesTheTipEligibleAfterTheSpacingGap() {
         let store = MemoryStore()
         let tip = policy(store)

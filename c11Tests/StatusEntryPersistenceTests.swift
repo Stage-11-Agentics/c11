@@ -67,7 +67,7 @@ final class StatusEntryPersistenceTests: XCTestCase {
         // A plain-format, zero-priority, non-stale, URL-less entry should
         // serialize without the Phase 3 fields so old readers (and
         // diff-minimizing tests) aren't affected by the schema bump.
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -89,7 +89,7 @@ final class StatusEntryPersistenceTests: XCTestCase {
     // MARK: - Restore path
 
     func testRestorePopulatesStatusEntriesWithStaleFlag() {
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -106,9 +106,9 @@ final class StatusEntryPersistenceTests: XCTestCase {
         )
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
 
-        let restored = WorkspaceManager()
+        let restored = TabManager()
         restored.restoreSessionSnapshot(snapshot)
-        guard let restoredWorkspace = restored.workspaces.first else {
+        guard let restoredWorkspace = restored.tabs.first else {
             XCTFail("Expected restored workspace")
             return
         }
@@ -128,7 +128,7 @@ final class StatusEntryPersistenceTests: XCTestCase {
         // Once restored with stale=true, the flag must serialize back out
         // on the subsequent save. Without this, a crash before any agent
         // writes would silently drop the stale marker.
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -138,7 +138,7 @@ final class StatusEntryPersistenceTests: XCTestCase {
             value: "v"
         )
         let first = manager.sessionSnapshot(includeScrollback: false)
-        let restored = WorkspaceManager()
+        let restored = TabManager()
         restored.restoreSessionSnapshot(first)
         let second = restored.sessionSnapshot(includeScrollback: false)
         let entry = second.workspaces[0].statusEntries.first { $0.key == "k" }

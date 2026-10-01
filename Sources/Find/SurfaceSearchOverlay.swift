@@ -16,7 +16,7 @@ private extension NSView {
 }
 
 struct SurfaceSearchOverlay: View {
-    let workspaceId: UUID
+    let tabId: UUID
     let surfaceId: UUID
     @ObservedObject var searchState: TerminalSurface.SearchState
     let onMoveFocusToTerminal: () -> Void
@@ -118,7 +118,7 @@ struct SurfaceSearchOverlay: View {
             .shadow(radius: 4)
             .onAppear {
                 #if DEBUG
-                dlog("find.overlay.appear tab=\(workspaceId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
+                dlog("find.overlay.appear tab=\(tabId.uuidString.prefix(5)) surface=\(surfaceId.uuidString.prefix(5))")
                 #endif
                 isSearchFieldFocused = true
             }

@@ -175,7 +175,7 @@ enum LaunchResumePicker {
     ) -> AppSessionSnapshot? {
         var newWindows: [SessionWindowSnapshot] = []
         for window in snapshot.windows {
-            let kept = window.workspaceManager.workspaces.filter { keep.contains($0.id) }
+            let kept = window.tabManager.workspaces.filter { keep.contains($0.id) }
             guard !kept.isEmpty else { continue }
             var newWindow = window
             // Reanchor selectedWorkspaceIndex to a kept workspace —
@@ -185,17 +185,17 @@ enum LaunchResumePicker {
             // fallback). Map the prior selected ID to the new index, or
             // fall back to the first kept workspace.
             let priorSelectedId: UUID? = {
-                if let idx = window.workspaceManager.selectedWorkspaceIndex,
+                if let idx = window.tabManager.selectedWorkspaceIndex,
                    idx >= 0,
-                   idx < window.workspaceManager.workspaces.count {
-                    return window.workspaceManager.workspaces[idx].id
+                   idx < window.tabManager.workspaces.count {
+                    return window.tabManager.workspaces[idx].id
                 }
                 return nil
             }()
             let newSelectedIndex = priorSelectedId.flatMap { id in
                 kept.firstIndex { $0.id == id }
             } ?? 0
-            newWindow.workspaceManager = SessionWorkspaceManagerSnapshot(
+            newWindow.tabManager = SessionTabManagerSnapshot(
                 selectedWorkspaceIndex: newSelectedIndex,
                 workspaces: kept
             )
@@ -214,7 +214,7 @@ enum LaunchResumePicker {
     private static func entries(from snapshot: AppSessionSnapshot) -> [LaunchResumePickerEntry] {
         var out: [LaunchResumePickerEntry] = []
         for (windowIndex, window) in snapshot.windows.enumerated() {
-            for workspace in window.workspaceManager.workspaces {
+            for workspace in window.tabManager.workspaces {
                 let resolvedTitle = (workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
                     ?? workspace.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
                     ?? workspace.processTitle.trimmingCharacters(in: .whitespacesAndNewlines)

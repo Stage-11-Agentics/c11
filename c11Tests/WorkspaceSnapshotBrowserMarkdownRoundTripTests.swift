@@ -23,15 +23,15 @@ import Bonsplit
 @MainActor
 final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
-    private var workspaceManager: WorkspaceManager!
+    private var tabManager: TabManager!
 
     override func setUp() {
         super.setUp()
-        workspaceManager = WorkspaceManager()
+        tabManager = TabManager()
     }
 
     override func tearDown() {
-        workspaceManager = nil
+        tabManager = nil
         super.tearDown()
     }
 
@@ -69,7 +69,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             "workspaceRef resolves to live Workspace"
         )
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager, c11Version: "test+0"
+            tabManager: tabManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(
             source.capture(workspaceId: workspace.id, origin: .manual),
@@ -114,7 +114,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager, c11Version: "test+0"
+            tabManager: tabManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(source.capture(workspaceId: workspace.id, origin: .manual))
 
@@ -157,7 +157,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager, c11Version: "test+0"
+            tabManager: tabManager, c11Version: "test+0"
         )
         let captured = try XCTUnwrap(source.capture(workspaceId: workspace.id, origin: .manual))
 
@@ -193,7 +193,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
         XCTAssertTrue(result.failures.isEmpty, "no apply failures: \(result.failures)")
 
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
-        let exporter = WorkspaceBlueprintExporter(workspaceManager: workspaceManager)
+        let exporter = WorkspaceBlueprintExporter(tabManager: tabManager)
         let file = try XCTUnwrap(
             exporter.export(workspaceId: workspace.id, name: "test-bp", description: "desc"),
             "exporter returns a file for the live workspace"
@@ -210,7 +210,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
     private func makeDependencies() -> WorkspaceLayoutExecutorDependencies {
         WorkspaceLayoutExecutorDependencies(
-            workspaceManager: workspaceManager,
+            tabManager: tabManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -220,6 +220,6 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
     private func resolveWorkspace(from ref: String) -> Workspace? {
         guard let uuidString = ref.split(separator: ":").last,
               let uuid = UUID(uuidString: String(uuidString)) else { return nil }
-        return workspaceManager.workspaces.first { $0.id == uuid }
+        return tabManager.tabs.first { $0.id == uuid }
     }
 }

@@ -562,18 +562,20 @@ HEADER_START = re.compile(
     r"^\s*(?:@\w+(?:\([^)]*\))?\s+|(?:private|fileprivate|internal|public|open|static|final|override|mutating|"
     r"nonisolated|class|lazy|required|convenience)\s+)*(?:func|init|subscript|if|else|for|while|catch|case|do|"
     r"repeat|get|set|willSet|didSet|deinit|switch)\b")
-TYPE_HEAD = re.compile(r"\b(?:class|struct|enum|extension|protocol|actor)\b")
+TYPE_HEAD = re.compile(
+    r"(?m)^\s*(?:@\w+(?:\([^)]*\))?\s+|\w+(?:\([^)]*\))?\s+)*(?:class|struct|enum|extension|protocol|actor)\s+"
+    r"(?!func\b|var\b|let\b|init\b|subscript\b|final\b)[A-Za-z_]")
 CLOSURE_PARAMS = re.compile(r"\s*(?:\[[^\]]*\]\s*)?(?:\(([^)]*)\)|([\w, ]+?))(?:\s*->\s*[^\n{]+?)?\s+in\b")
 
 
 class Block:
     __slots__ = ("open", "close", "parent", "header", "header_start", "own", "children", "is_type", "_desc")
 
-    def __init__(self, open_, parent, header, header_start):
+    def __init__(self, open_, parent, header, header_start, seg=""):
         self.open, self.close, self.parent = open_, None, parent
         self.header, self.header_start = header, header_start
         self.own, self.children = set(), []
-        self.is_type = bool(TYPE_HEAD.search(header))
+        self.is_type = bool(TYPE_HEAD.search("\n".join(seg.split("\n")[-6:])))
         self._desc = None
 
 
@@ -596,7 +598,7 @@ class Scopes:
                         hstart = seg_start + offset
                         break
                     offset += len(line) + 1
-                blk = Block(pos, stack[-1] if stack else None, header, hstart)
+                blk = Block(pos, stack[-1] if stack else None, header, hstart, seg)
                 if stack:
                     stack[-1].children.append(blk)
                 self.blocks.append(blk)

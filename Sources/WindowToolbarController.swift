@@ -6,7 +6,7 @@ import SwiftUI
 final class WindowToolbarController: NSObject, NSToolbarDelegate {
     private let commandItemIdentifier = NSToolbarItem.Identifier("cmux.focusedCommand")
 
-    private weak var workspaceManager: WorkspaceManager?
+    private weak var tabManager: TabManager?
 
     private var commandLabels: [ObjectIdentifier: NSTextField] = [:]
     private var observers: [NSObjectProtocol] = []
@@ -22,8 +22,8 @@ final class WindowToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
-    func start(workspaceManager: WorkspaceManager) {
-        self.workspaceManager = workspaceManager
+    func start(tabManager: TabManager) {
+        self.tabManager = tabManager
         attachToExistingWindows()
         installObservers()
         scheduleFocusedCommandTextUpdate()
@@ -90,11 +90,11 @@ final class WindowToolbarController: NSObject, NSToolbarDelegate {
     }
 
     private func updateFocusedCommandText() {
-        guard let workspaceManager else { return }
+        guard let tabManager else { return }
         let text: String
-        if let selectedId = workspaceManager.selectedWorkspaceId,
-           let workspace = workspaceManager.workspaces.first(where: { $0.id == selectedId }) {
-            let title = workspace.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if let selectedId = tabManager.selectedTabId,
+           let tab = tabManager.tabs.first(where: { $0.id == selectedId }) {
+            let title = tab.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
             text = title.isEmpty ? "Cmd: —" : "Cmd: \(title)"
         } else {
             text = "Cmd: —"

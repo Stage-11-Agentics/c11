@@ -21,8 +21,8 @@ enum KeyboardShortcutSettings {
         // Navigation
         case nextSurface
         case prevSurface
-        case nextSidebarWorkspace = "nextSidebarTab"
-        case prevSidebarWorkspace = "prevSidebarTab"
+        case nextSidebarTab
+        case prevSidebarTab
         case renameTab
         case renameWorkspace
         case closeWorkspace
@@ -68,8 +68,8 @@ enum KeyboardShortcutSettings {
             case .triggerFlash: return String(localized: "shortcut.flashFocusedPanel.label", defaultValue: "Flash Focused Pane")
             case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Surface")
             case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Surface")
-            case .nextSidebarWorkspace: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
-            case .prevSidebarWorkspace: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
+            case .nextSidebarTab: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
+            case .prevSidebarTab: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
             case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Tab")
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
             case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
@@ -105,8 +105,8 @@ enum KeyboardShortcutSettings {
             case .showNotifications: return "shortcut.showNotifications"
             case .jumpToUnread: return "shortcut.jumpToUnread"
             case .triggerFlash: return "shortcut.triggerFlash"
-            case .nextSidebarWorkspace: return "shortcut.nextSidebarTab"
-            case .prevSidebarWorkspace: return "shortcut.prevSidebarTab"
+            case .nextSidebarTab: return "shortcut.nextSidebarTab"
+            case .prevSidebarTab: return "shortcut.prevSidebarTab"
             case .renameTab: return "shortcut.renameTab"
             case .renameWorkspace: return "shortcut.renameWorkspace"
             case .closeWorkspace: return "shortcut.closeWorkspace"
@@ -153,9 +153,9 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "\r", command: true, shift: false, option: false, control: true)
             case .triggerFlash:
                 return StoredShortcut(key: "h", command: true, shift: true, option: false, control: false)
-            case .nextSidebarWorkspace:
+            case .nextSidebarTab:
                 return StoredShortcut(key: "]", command: true, shift: false, option: false, control: true)
-            case .prevSidebarWorkspace:
+            case .prevSidebarTab:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
             case .renameTab:
                 // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
@@ -279,8 +279,8 @@ enum KeyboardShortcutSettings {
     static func jumpToUnreadShortcut() -> StoredShortcut { shortcut(for: .jumpToUnread) }
     static func setJumpToUnreadShortcut(_ shortcut: StoredShortcut) { setShortcut(shortcut, for: .jumpToUnread) }
 
-    static func nextSidebarWorkspaceShortcut() -> StoredShortcut { shortcut(for: .nextSidebarWorkspace) }
-    static func prevSidebarWorkspaceShortcut() -> StoredShortcut { shortcut(for: .prevSidebarWorkspace) }
+    static func nextSidebarTabShortcut() -> StoredShortcut { shortcut(for: .nextSidebarTab) }
+    static func prevSidebarTabShortcut() -> StoredShortcut { shortcut(for: .prevSidebarTab) }
     static func renameWorkspaceShortcut() -> StoredShortcut { shortcut(for: .renameWorkspace) }
     static func closeWorkspaceShortcut() -> StoredShortcut { shortcut(for: .closeWorkspace) }
 

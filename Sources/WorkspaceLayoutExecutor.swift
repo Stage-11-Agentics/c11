@@ -11,7 +11,7 @@ import Bonsplit
 /// synthetic minter that derives a stable string from the UUID.
 @MainActor
 struct WorkspaceLayoutExecutorDependencies {
-    var workspaceManager: WorkspaceManager
+    var tabManager: TabManager
     var workspaceRefMinter: (UUID) -> String
     var surfaceRefMinter: (UUID) -> String
     var paneRefMinter: (UUID) -> String
@@ -20,13 +20,13 @@ struct WorkspaceLayoutExecutorDependencies {
     var applyCompanionLink: (@MainActor (Workspace, UUID, UUID) throws -> Void)?
 
     init(
-        workspaceManager: WorkspaceManager,
+        tabManager: TabManager,
         workspaceRefMinter: @escaping (UUID) -> String,
         surfaceRefMinter: @escaping (UUID) -> String,
         paneRefMinter: @escaping (UUID) -> String,
         applyCompanionLink: (@MainActor (Workspace, UUID, UUID) throws -> Void)? = nil
     ) {
-        self.workspaceManager = workspaceManager
+        self.tabManager = tabManager
         self.workspaceRefMinter = workspaceRefMinter
         self.surfaceRefMinter = surfaceRefMinter
         self.paneRefMinter = paneRefMinter
@@ -97,7 +97,7 @@ enum WorkspaceLayoutExecutor {
         // tree shape entirely; the `autoWelcomeIfNeeded` field on options
         // is informational for future callers.
         let createClock = StepClock()
-        let workspace = dependencies.workspaceManager.addWorkspace(
+        let workspace = dependencies.tabManager.addWorkspace(
             workingDirectory: plan.workspace.workingDirectory,
             initialTerminalCommand: nil,
             select: options.select,
@@ -497,7 +497,7 @@ enum WorkspaceLayoutExecutor {
         // Step 2: resolve the target. A missing id is a user/scripting
         // mistake, not a partial failure: surface it as `invalid_params`
         // so the v2 handler can map to the right socket error code.
-        guard let existing = dependencies.workspaceManager.workspaces.first(where: { $0.id == existingWorkspaceId }) else {
+        guard let existing = dependencies.tabManager.tabs.first(where: { $0.id == existingWorkspaceId }) else {
             let failure = ApplyFailure(
                 code: "invalid_params",
                 step: "validate",
@@ -517,7 +517,7 @@ enum WorkspaceLayoutExecutor {
         // apply produced a usable workspace.
         var result = apply(plan, options: options, dependencies: dependencies)
         if !result.workspaceRef.isEmpty {
-            dependencies.workspaceManager.closeWorkspace(existing)
+            dependencies.tabManager.closeWorkspace(existing)
             // Scripted consumers consume `workspaceRef` directly; the
             // UUID change is otherwise invisible until a follow-up
             // restore fails. Surface it as a warning so callers can log
@@ -536,11 +536,11 @@ enum WorkspaceLayoutExecutor {
         _ value: String,
         defaults: UserDefaults = .standard
     ) -> String? {
-        if let hex = WorkspaceColorSettings.normalizedHex(value) {
+        if let hex = WorkspaceTabColorSettings.normalizedHex(value) {
             return hex
         }
         let lower = value.lowercased()
-        let palette = WorkspaceColorSettings.defaultPaletteWithOverrides(defaults: defaults)
+        let palette = WorkspaceTabColorSettings.defaultPaletteWithOverrides(defaults: defaults)
         if let entry = palette.first(where: { $0.name.lowercased() == lower }) {
             return entry.hex
         }

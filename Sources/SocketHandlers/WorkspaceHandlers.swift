@@ -75,19 +75,19 @@ extension TerminalController {
     }
 
     private func v2WorkspaceList(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var workspaces: [[String: Any]] = []
         v2MainSync {
-            workspaces = workspaceManager.workspaces.enumerated().map { index, ws in
+            workspaces = tabManager.tabs.enumerated().map { index, ws in
                 return [
                     "id": ws.id.uuidString,
                     "ref": v2Ref(kind: .workspace, uuid: ws.id),
                     "index": index,
                     "title": ws.title,
-                    "selected": ws.id == workspaceManager.selectedWorkspaceId,
+                    "selected": ws.id == tabManager.selectedTabId,
                     "pinned": ws.isPinned,
                     "listening_ports": ws.listeningPorts,
                     "remote": ws.remoteStatusPayload(),
@@ -98,7 +98,7 @@ extension TerminalController {
             }
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -107,7 +107,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceCreate(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -174,8 +174,8 @@ extension TerminalController {
                 if let refStr = resultDict["workspaceRef"] as? String,
                    let wsUUID = v2ResolveHandleRef(refStr) {
                     v2MainSync {
-                        if let ws = workspaceManager.workspaces.first(where: { $0.id == wsUUID }) {
-                            workspaceManager.closeWorkspace(ws)
+                        if let ws = tabManager.tabs.first(where: { $0.id == wsUUID }) {
+                            tabManager.closeWorkspace(ws)
                         }
                     }
                 }
@@ -192,19 +192,19 @@ extension TerminalController {
             let appliedLayoutTitle = (layoutTitle?.isEmpty == false) ? layoutTitle : nil
             if let appliedLayoutTitle, let wsUUID {
                 v2MainSync {
-                    if workspaceManager.workspaces.contains(where: { $0.id == wsUUID }) {
-                        workspaceManager.setCustomTitle(workspaceId: wsUUID, title: appliedLayoutTitle)
+                    if tabManager.tabs.contains(where: { $0.id == wsUUID }) {
+                        tabManager.setCustomTitle(tabId: wsUUID, title: appliedLayoutTitle)
                     }
                 }
             }
             if rootWasSpecified, let wsUUID {
                 v2MainSync {
-                    workspaceManager.workspaces.first(where: { $0.id == wsUUID })?
+                    tabManager.tabs.first(where: { $0.id == wsUUID })?
                         .setRootDirectory(rootDirectory)
                 }
             }
 
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
             return .ok([
                 "workspace_id": v2OrNull(wsUUID?.uuidString),
                 "workspace_ref": workspaceRef as Any,
@@ -225,7 +225,7 @@ extension TerminalController {
         var newId: UUID?
         let shouldFocus = v2FocusAllowed()
         guard v2MainSyncWithDeadline({
-            let ws = workspaceManager.addWorkspace(
+            let ws = tabManager.addWorkspace(
                 workingDirectory: initialWorkingDirectory,
                 rootDirectory: rootDirectory,
                 establishRootFromWorkingDirectory: false,
@@ -236,7 +236,7 @@ extension TerminalController {
             )
             newId = ws.id
             if let customTitle {
-                workspaceManager.setCustomTitle(workspaceId: ws.id, title: customTitle)
+                tabManager.setCustomTitle(tabId: ws.id, title: customTitle)
             }
             return
         }) != nil else {
@@ -247,7 +247,7 @@ extension TerminalController {
             return .err(code: "internal_error", message: "Failed to create workspace", data: nil)
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -259,7 +259,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceSelect(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let wsId = v2UUID(params, "workspace_id") else {
@@ -268,23 +268,23 @@ extension TerminalController {
 
         var success = false
         v2MainSync {
-            if let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
+            if let ws = tabManager.tabs.first(where: { $0.id == wsId }) {
                 // If this workspace belongs to another window, bring it forward so focus is visible.
-                if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
+                if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                     _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                    setActiveWorkspaceManager(workspaceManager)
+                    setActiveTabManager(tabManager)
                     // Bring c11 to the macOS foreground for explicit focus-intent commands.
                     // workspace.select is in focusIntentV2Methods, so this is intentional.
                     DispatchQueue.main.async {
                         NSApp.activate(ignoringOtherApps: true)
                     }
                 }
-                workspaceManager.selectWorkspace(ws)
+                tabManager.selectWorkspace(ws)
                 success = true
             }
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return success
             ? .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -299,14 +299,14 @@ extension TerminalController {
     }
 
     private func v2WorkspaceCurrent(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var wsId: UUID?
         var wsPayload: [String: Any]?
         v2MainSync {
-            wsId = workspaceManager.selectedWorkspaceId
-            if let wsId, let workspace = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
+            wsId = tabManager.selectedTabId
+            if let wsId, let workspace = tabManager.tabs.first(where: { $0.id == wsId }) {
                 wsPayload = [
                     "id": workspace.id.uuidString,
                     "ref": v2Ref(kind: .workspace, uuid: workspace.id),
@@ -322,7 +322,7 @@ extension TerminalController {
         guard let wsId else {
             return .err(code: "not_found", message: "No workspace selected", data: nil)
         }
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -333,7 +333,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceClose(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let wsId = v2UUID(params, "workspace_id") else {
@@ -342,13 +342,13 @@ extension TerminalController {
 
         var found = false
         v2MainSync {
-            if let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
-                workspaceManager.closeWorkspace(ws)
+            if let ws = tabManager.tabs.first(where: { $0.id == wsId }) {
+                tabManager.closeWorkspace(ws)
                 found = true
             }
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return found
             ? .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -373,15 +373,15 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to move workspace", data: nil)
         v2MainSync {
-            guard let srcTM = AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) else {
+            guard let srcTM = AppDelegate.shared?.tabManagerFor(tabId: wsId) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: ["workspace_id": wsId.uuidString])
                 return
             }
-            guard let dstTM = AppDelegate.shared?.workspaceManagerFor(windowId: windowId) else {
+            guard let dstTM = AppDelegate.shared?.tabManagerFor(windowId: windowId) else {
                 result = .err(code: "not_found", message: "Window not found", data: ["window_id": windowId.uuidString])
                 return
             }
-            guard let ws = srcTM.detachWorkspace(workspaceId: wsId) else {
+            guard let ws = srcTM.detachWorkspace(tabId: wsId) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: ["workspace_id": wsId.uuidString])
                 return
             }
@@ -389,7 +389,7 @@ extension TerminalController {
             dstTM.attachWorkspace(ws, select: focus)
             if focus {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(dstTM)
+                setActiveTabManager(dstTM)
             }
             result = .ok([
                 "workspace_id": wsId.uuidString,
@@ -402,7 +402,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceReorder(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let workspaceId = v2UUID(params, "workspace_id") else {
@@ -426,18 +426,18 @@ extension TerminalController {
         var newIndex: Int?
         v2MainSync {
             if let index {
-                moved = workspaceManager.reorderWorkspace(workspaceId: workspaceId, toIndex: index)
+                moved = tabManager.reorderWorkspace(tabId: workspaceId, toIndex: index)
             } else {
-                moved = workspaceManager.reorderWorkspace(workspaceId: workspaceId, before: beforeId, after: afterId)
+                moved = tabManager.reorderWorkspace(tabId: workspaceId, before: beforeId, after: afterId)
             }
-            newIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspaceId })
+            newIndex = tabManager.tabs.firstIndex(where: { $0.id == workspaceId })
         }
 
         guard moved else {
             return .err(code: "not_found", message: "Workspace not found", data: ["workspace_id": workspaceId.uuidString])
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "workspace_id": workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
@@ -448,7 +448,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceSetCustomColor(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let workspaceId = v2UUID(params, "workspace_id") else {
@@ -466,7 +466,7 @@ extension TerminalController {
         var applied: String? = nil
         var found = false
         v2MainSync {
-            guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else { return }
+            guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             found = true
             if clear {
                 workspace.setCustomColor(nil)
@@ -493,7 +493,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceRename(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let workspaceId = v2UUID(params, "workspace_id") else {
@@ -507,8 +507,8 @@ extension TerminalController {
         let title = titleRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         var renamed = false
         v2MainSync {
-            guard workspaceManager.workspaces.contains(where: { $0.id == workspaceId }) else { return }
-            workspaceManager.setCustomTitle(workspaceId: workspaceId, title: title)
+            guard tabManager.tabs.contains(where: { $0.id == workspaceId }) else { return }
+            tabManager.setCustomTitle(tabId: workspaceId, title: title)
             renamed = true
         }
 
@@ -519,7 +519,7 @@ extension TerminalController {
             ])
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "workspace_id": workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
@@ -530,7 +530,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceSetRoot(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let workspaceId = v2UUID(params, "workspace_id") else {
@@ -551,7 +551,7 @@ extension TerminalController {
 
         var updated = false
         v2MainSync {
-            guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else { return }
+            guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             workspace.setRootDirectory(rootDirectory)
             updated = true
         }
@@ -562,7 +562,7 @@ extension TerminalController {
             ])
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "workspace_id": workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
@@ -578,7 +578,7 @@ extension TerminalController {
     /// back to the focused surface's cwd); `root_adoption_armed` is true while a
     /// rootless workspace is still waiting to adopt its first shell cwd.
     private func v2WorkspaceGetRoot(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         // Main only for the model snapshot (Workspace is main-actor state); the
@@ -586,8 +586,8 @@ extension TerminalController {
         var payload: [String: Any]?
         var rootDirectory: String?
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
             rootDirectory = workspace.rootDirectory
             payload = [
                 "workspace_id": workspace.id.uuidString,
@@ -632,20 +632,20 @@ extension TerminalController {
     }
 
     private func v2WorkspaceNext(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var result: V2CallResult = .err(code: "not_found", message: "No workspace selected", data: nil)
         v2MainSync {
-            guard workspaceManager.selectedWorkspaceId != nil else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
+            guard tabManager.selectedTabId != nil else { return }
+            if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
+                setActiveTabManager(tabManager)
             }
-            workspaceManager.selectNextWorkspace()
-            guard let workspaceId = workspaceManager.selectedWorkspaceId else { return }
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            tabManager.selectNextTab()
+            guard let workspaceId = tabManager.selectedTabId else { return }
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
                 "workspace_id": workspaceId.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
@@ -657,20 +657,20 @@ extension TerminalController {
     }
 
     private func v2WorkspacePrevious(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var result: V2CallResult = .err(code: "not_found", message: "No workspace selected", data: nil)
         v2MainSync {
-            guard workspaceManager.selectedWorkspaceId != nil else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
+            guard tabManager.selectedTabId != nil else { return }
+            if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
+                setActiveTabManager(tabManager)
             }
-            workspaceManager.selectPreviousWorkspace()
-            guard let workspaceId = workspaceManager.selectedWorkspaceId else { return }
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            tabManager.selectPreviousTab()
+            guard let workspaceId = tabManager.selectedTabId else { return }
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
                 "workspace_id": workspaceId.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
@@ -682,20 +682,20 @@ extension TerminalController {
     }
 
     private func v2WorkspaceLast(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var result: V2CallResult = .err(code: "not_found", message: "No previous workspace in history", data: nil)
         v2MainSync {
-            guard let before = workspaceManager.selectedWorkspaceId else { return }
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
+            guard let before = tabManager.selectedTabId else { return }
+            if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
+                setActiveTabManager(tabManager)
             }
-            workspaceManager.navigateBack()
-            guard let after = workspaceManager.selectedWorkspaceId, after != before else { return }
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            tabManager.navigateBack()
+            guard let after = tabManager.selectedTabId, after != before else { return }
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
                 "workspace_id": after.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: after),
@@ -711,8 +711,8 @@ extension TerminalController {
         if v2HasNonNullParam(params, "workspace_id"), requestedWorkspaceId == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
-        let fallbackWorkspaceManager = v2ResolveWorkspaceManager(params: params)
-        let workspaceId = requestedWorkspaceId ?? fallbackWorkspaceManager?.selectedWorkspaceId
+        let fallbackTabManager = v2ResolveTabManager(params: params)
+        let workspaceId = requestedWorkspaceId ?? fallbackTabManager?.selectedTabId
         guard let workspaceId else {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
@@ -784,8 +784,8 @@ extension TerminalController {
 
         // Must run on main for v2MainSync because Workspace.configureRemoteConnection mutates TabManager/UI-owned workspace state.
         v2MainSync {
-            guard let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                  let workspace = owner.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
                 return
             }
 
@@ -803,7 +803,7 @@ extension TerminalController {
             )
             workspace.configureRemoteConnection(config, autoConnect: autoConnect)
 
-            let windowId = v2ResolveWindowId(workspaceManager: owner)
+            let windowId = v2ResolveWindowId(tabManager: owner)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -821,8 +821,8 @@ extension TerminalController {
         if v2HasNonNullParam(params, "workspace_id"), requestedWorkspaceId == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
-        let fallbackWorkspaceManager = v2ResolveWorkspaceManager(params: params)
-        let workspaceId = requestedWorkspaceId ?? fallbackWorkspaceManager?.selectedWorkspaceId
+        let fallbackTabManager = v2ResolveTabManager(params: params)
+        let workspaceId = requestedWorkspaceId ?? fallbackTabManager?.selectedTabId
         guard let workspaceId else {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
@@ -835,13 +835,13 @@ extension TerminalController {
 
         // Must run on main for v2MainSync because disconnect mutates TabManager/UI-owned workspace state.
         v2MainSync {
-            guard let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                  let workspace = owner.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
                 return
             }
 
             workspace.disconnectRemoteConnection(clearConfiguration: clearConfiguration)
-            let windowId = v2ResolveWindowId(workspaceManager: owner)
+            let windowId = v2ResolveWindowId(tabManager: owner)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -859,8 +859,8 @@ extension TerminalController {
         if v2HasNonNullParam(params, "workspace_id"), requestedWorkspaceId == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
-        let fallbackWorkspaceManager = v2ResolveWorkspaceManager(params: params)
-        let workspaceId = requestedWorkspaceId ?? fallbackWorkspaceManager?.selectedWorkspaceId
+        let fallbackTabManager = v2ResolveTabManager(params: params)
+        let workspaceId = requestedWorkspaceId ?? fallbackTabManager?.selectedTabId
         guard let workspaceId else {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
@@ -872,8 +872,8 @@ extension TerminalController {
 
         // Must run on main for v2MainSync because reconnect mutates TabManager/UI-owned workspace state.
         v2MainSync {
-            guard let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                  let workspace = owner.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
                 return
             }
 
@@ -886,7 +886,7 @@ extension TerminalController {
             }
 
             workspace.reconnectRemoteConnection()
-            let windowId = v2ResolveWindowId(workspaceManager: owner)
+            let windowId = v2ResolveWindowId(tabManager: owner)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -904,8 +904,8 @@ extension TerminalController {
         if v2HasNonNullParam(params, "workspace_id"), requestedWorkspaceId == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
-        let fallbackWorkspaceManager = v2ResolveWorkspaceManager(params: params)
-        let workspaceId = requestedWorkspaceId ?? fallbackWorkspaceManager?.selectedWorkspaceId
+        let fallbackTabManager = v2ResolveTabManager(params: params)
+        let workspaceId = requestedWorkspaceId ?? fallbackTabManager?.selectedTabId
         guard let workspaceId else {
             return .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
         }
@@ -917,11 +917,11 @@ extension TerminalController {
 
         // Must run on main for v2MainSync because Workspace.remoteStatusPayload reads TabManager/UI-owned state.
         v2MainSync {
-            guard let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                  let workspace = owner.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
                 return
             }
-            let windowId = v2ResolveWindowId(workspaceManager: owner)
+            let windowId = v2ResolveWindowId(tabManager: owner)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -956,12 +956,12 @@ extension TerminalController {
         ])
 
         v2MainSync {
-            guard let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                  let workspace = owner.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let owner = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = owner.tabs.first(where: { $0.id == workspaceId }) else {
                 return
             }
             workspace.markRemoteTerminalSessionEnded(surfaceId: surfaceId, relayPort: relayPort)
-            let windowId = v2ResolveWindowId(workspaceManager: owner)
+            let windowId = v2ResolveWindowId(tabManager: owner)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -1038,7 +1038,7 @@ extension TerminalController {
             )
         }
 
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -1057,7 +1057,7 @@ extension TerminalController {
         var result: ApplyResult?
         v2MainSync {
             let deps = WorkspaceLayoutExecutorDependencies(
-                workspaceManager: workspaceManager,
+                tabManager: tabManager,
                 workspaceRefMinter: { [weak self] uuid in
                     self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                 },
@@ -1138,14 +1138,14 @@ extension TerminalController {
             )
         }
 
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var blueprintFile: WorkspaceBlueprintFile?
         v2MainSync {
-            let exporter = WorkspaceBlueprintExporter(workspaceManager: workspaceManager)
-            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
+            let exporter = WorkspaceBlueprintExporter(tabManager: tabManager)
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
             blueprintFile = exporter.export(workspaceId: workspace.id, name: name, description: description)
         }
 
@@ -1296,7 +1296,7 @@ extension TerminalController {
         // Workspace is @MainActor; the mutation must run on the main actor.
         // Precedent: workspace.rename handler (v2WorkspaceRename).
         v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
+            guard let ws = resolved.tabManager.tabs.first(where: { $0.id == resolved.workspaceId }) else {
                 return
             }
             var next = ws.metadata
@@ -1324,7 +1324,7 @@ extension TerminalController {
             return .err(code: err.code, message: err.message, data: err.detail)
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: resolved.tabManager)
         return .ok([
             "workspace_id": resolved.workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
@@ -1344,7 +1344,7 @@ extension TerminalController {
 
         var full: [String: String] = [:]
         v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
+            guard let ws = resolved.tabManager.tabs.first(where: { $0.id == resolved.workspaceId }) else {
                 return
             }
             full = ws.metadata
@@ -1361,7 +1361,7 @@ extension TerminalController {
             if let v = full[single] { metadataOut[single] = v }
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: resolved.tabManager)
         var payload: [String: Any] = [
             "workspace_id": resolved.workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
@@ -1407,7 +1407,7 @@ extension TerminalController {
 
         var resultMetadata: [String: String] = [:]
         v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
+            guard let ws = resolved.tabManager.tabs.first(where: { $0.id == resolved.workspaceId }) else {
                 return
             }
             if let keys {
@@ -1420,7 +1420,7 @@ extension TerminalController {
             resultMetadata = ws.metadata
         }
 
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
+        let windowId = v2ResolveWindowId(tabManager: resolved.tabManager)
         return .ok([
             "workspace_id": resolved.workspaceId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
@@ -1431,7 +1431,7 @@ extension TerminalController {
     }
 
     private func v2WorkspaceAction(params: [String: Any]) -> V2CallResult {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let action = v2ActionKey(params) else {
@@ -1451,23 +1451,23 @@ extension TerminalController {
         ])
 
         v2MainSync {
-            let requestedWorkspaceId = v2UUID(params, "workspace_id") ?? workspaceManager.selectedWorkspaceId
+            let requestedWorkspaceId = v2UUID(params, "workspace_id") ?? tabManager.selectedTabId
             guard let workspaceId = requestedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+                  let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
 
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
 
             @MainActor
             func closeWorkspaces(_ workspaces: [Workspace]) -> Int {
                 var closed = 0
                 for candidate in workspaces where candidate.id != workspace.id {
-                    let existedBefore = workspaceManager.workspaces.contains(where: { $0.id == candidate.id })
+                    let existedBefore = tabManager.tabs.contains(where: { $0.id == candidate.id })
                     guard existedBefore else { continue }
-                    workspaceManager.closeWorkspace(candidate)
-                    if !workspaceManager.workspaces.contains(where: { $0.id == candidate.id }) {
+                    tabManager.closeWorkspace(candidate)
+                    if !tabManager.tabs.contains(where: { $0.id == candidate.id }) {
                         closed += 1
                     }
                 }
@@ -1491,11 +1491,11 @@ extension TerminalController {
 
             switch action {
             case "pin":
-                workspaceManager.setPinned(workspace, pinned: true)
+                tabManager.setPinned(workspace, pinned: true)
                 finish(["pinned": true])
 
             case "unpin":
-                workspaceManager.setPinned(workspace, pinned: false)
+                tabManager.setPinned(workspace, pinned: false)
                 finish(["pinned": false])
 
             case "rename":
@@ -1505,55 +1505,55 @@ extension TerminalController {
                     return
                 }
                 let title = titleRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-                workspaceManager.setCustomTitle(workspaceId: workspace.id, title: title)
+                tabManager.setCustomTitle(tabId: workspace.id, title: title)
                 finish(["title": title])
 
             case "clear_name":
-                workspaceManager.clearCustomTitle(workspaceId: workspace.id)
+                tabManager.clearCustomTitle(tabId: workspace.id)
                 finish(["title": workspace.title])
 
             case "move_up":
-                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let currentIndex = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: max(currentIndex - 1, 0))
-                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
+                _ = tabManager.reorderWorkspace(tabId: workspace.id, toIndex: max(currentIndex - 1, 0))
+                finish(["index": v2OrNull(tabManager.tabs.firstIndex(where: { $0.id == workspace.id }))])
 
             case "move_down":
-                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let currentIndex = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: min(currentIndex + 1, workspaceManager.workspaces.count - 1))
-                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
+                _ = tabManager.reorderWorkspace(tabId: workspace.id, toIndex: min(currentIndex + 1, tabManager.tabs.count - 1))
+                finish(["index": v2OrNull(tabManager.tabs.firstIndex(where: { $0.id == workspace.id }))])
 
             case "move_top":
-                workspaceManager.moveWorkspaceToTop(workspace.id)
-                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
+                tabManager.moveTabToTop(workspace.id)
+                finish(["index": v2OrNull(tabManager.tabs.firstIndex(where: { $0.id == workspace.id }))])
 
             case "close_others":
-                let candidates = workspaceManager.workspaces.filter { $0.id != workspace.id && !$0.isPinned }
+                let candidates = tabManager.tabs.filter { $0.id != workspace.id && !$0.isPinned }
                 let closed = closeWorkspaces(candidates)
                 finish(["closed": closed])
 
             case "close_above":
-                guard let index = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                let candidates = Array(workspaceManager.workspaces.prefix(index)).filter { !$0.isPinned }
+                let candidates = Array(tabManager.tabs.prefix(index)).filter { !$0.isPinned }
                 let closed = closeWorkspaces(candidates)
                 finish(["closed": closed])
 
             case "close_below":
-                guard let index = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
                 let candidates: [Workspace]
-                if index + 1 < workspaceManager.workspaces.count {
-                    candidates = Array(workspaceManager.workspaces.suffix(from: index + 1)).filter { !$0.isPinned }
+                if index + 1 < tabManager.tabs.count {
+                    candidates = Array(tabManager.tabs.suffix(from: index + 1)).filter { !$0.isPinned }
                 } else {
                     candidates = []
                 }
@@ -1561,11 +1561,11 @@ extension TerminalController {
                 finish(["closed": closed])
 
             case "mark_read":
-                AppDelegate.shared?.notificationStore?.markRead(forWorkspaceId: workspace.id)
+                AppDelegate.shared?.notificationStore?.markRead(forTabId: workspace.id)
                 finish()
 
             case "mark_unread":
-                AppDelegate.shared?.notificationStore?.markUnread(forWorkspaceId: workspace.id)
+                AppDelegate.shared?.notificationStore?.markUnread(forTabId: workspace.id)
                 finish()
 
             default:

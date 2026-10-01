@@ -21,11 +21,11 @@ final class NewWorkspaceTitleTests: XCTestCase {
     /// published `title` and the durable `customTitle`, identical to what a
     /// follow-up rename would have produced.
     func testTitleAppliedAtCreationSetsCustomTitle() {
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
 
         // Mirror v2WorkspaceCreate's no-layout path: addWorkspace then setCustomTitle.
-        manager.setCustomTitle(workspaceId: workspace.id, title: "Auth refactor")
+        manager.setCustomTitle(tabId: workspace.id, title: "Auth refactor")
 
         XCTAssertEqual(workspace.customTitle, "Auth refactor")
         XCTAssertEqual(workspace.title, "Auth refactor")
@@ -34,14 +34,14 @@ final class NewWorkspaceTitleTests: XCTestCase {
     /// An inline title at creation is indistinguishable from the two-call
     /// create-then-rename sequence it replaces — same observable end state.
     func testInlineTitleMatchesCreateThenRename() {
-        let inlineManager = WorkspaceManager()
+        let inlineManager = TabManager()
         let inline = inlineManager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        inlineManager.setCustomTitle(workspaceId: inline.id, title: "Release prep")
+        inlineManager.setCustomTitle(tabId: inline.id, title: "Release prep")
 
-        let twoStepManager = WorkspaceManager()
+        let twoStepManager = TabManager()
         let twoStep = twoStepManager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         // The historical path: create, then a separate workspace.rename call.
-        twoStepManager.setCustomTitle(workspaceId: twoStep.id, title: "Release prep")
+        twoStepManager.setCustomTitle(tabId: twoStep.id, title: "Release prep")
 
         XCTAssertEqual(inline.customTitle, twoStep.customTitle)
         XCTAssertEqual(inline.title, twoStep.title)
@@ -51,15 +51,15 @@ final class NewWorkspaceTitleTests: XCTestCase {
     /// A title applied at creation is the same durable field a snapshot
     /// persists and restore rebuilds — confirming it is not an ephemeral title.
     func testTitleAppliedAtCreationSurvivesSnapshotRoundtrip() {
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        manager.setCustomTitle(workspaceId: workspace.id, title: "Persisted name")
+        manager.setCustomTitle(tabId: workspace.id, title: "Persisted name")
 
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
-        let restored = WorkspaceManager()
+        let restored = TabManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        let restoredWorkspace = restored.workspaces.first { $0.customTitle == "Persisted name" }
+        let restoredWorkspace = restored.tabs.first { $0.customTitle == "Persisted name" }
         XCTAssertNotNil(restoredWorkspace, "Custom title set at creation should survive snapshot/restore")
         XCTAssertEqual(restoredWorkspace?.title, "Persisted name")
     }
@@ -67,7 +67,7 @@ final class NewWorkspaceTitleTests: XCTestCase {
     /// Whitespace-only titles are treated as no title (the CLI and socket both
     /// trim and drop empties), so the workspace keeps its default title.
     func testBlankTitleLeavesDefaultTitleIntact() {
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let defaultTitle = workspace.title
 

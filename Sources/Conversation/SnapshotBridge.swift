@@ -49,7 +49,7 @@ enum WorkspaceSnapshotConversationBridge {
         var nativeCount = 0
         var seedMap: [String: SurfaceConversations] = [:]
         for window in snapshot.windows {
-            for ws in window.workspaceManager.workspaces {
+            for ws in window.tabManager.workspaces {
                 for panel in ws.panels {
                     guard panel.type == .terminal else { continue }
                     let surfaceId = panel.id.uuidString

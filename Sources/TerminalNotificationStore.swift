@@ -639,7 +639,7 @@ struct TerminalNotification: Identifiable, Hashable {
     /// use their UUID; direct flag alerts use workspace/surface/flag-epoch so
     /// an active reason revision replaces the existing delivered alert.
     let systemIdentifier: String?
-    let workspaceId: UUID
+    let tabId: UUID
     let surfaceId: UUID?
     let title: String
     let subtitle: String
@@ -650,7 +650,7 @@ struct TerminalNotification: Identifiable, Hashable {
     init(
         id: UUID,
         systemIdentifier: String? = nil,
-        workspaceId: UUID,
+        tabId: UUID,
         surfaceId: UUID?,
         title: String,
         subtitle: String,
@@ -660,7 +660,7 @@ struct TerminalNotification: Identifiable, Hashable {
     ) {
         self.id = id
         self.systemIdentifier = systemIdentifier
-        self.workspaceId = workspaceId
+        self.tabId = tabId
         self.surfaceId = surfaceId
         self.title = title
         self.subtitle = subtitle
@@ -672,20 +672,20 @@ struct TerminalNotification: Identifiable, Hashable {
 
 @MainActor
 final class TerminalNotificationStore: ObservableObject {
-    struct WorkspaceSurfaceKey: Hashable {
-        let workspaceId: UUID
+    struct TabSurfaceKey: Hashable {
+        let tabId: UUID
         let surfaceId: UUID?
     }
 
     struct NotificationIndexes {
         var rawUnreadCount = 0
-        var rawUnreadCountByWorkspaceId: [UUID: Int] = [:]
-        var rawUnreadByWorkspaceSurface = Set<WorkspaceSurfaceKey>()
+        var rawUnreadCountByTabId: [UUID: Int] = [:]
+        var rawUnreadByTabSurface = Set<TabSurfaceKey>()
         var unreadCount = 0
-        var unreadCountByWorkspaceId: [UUID: Int] = [:]
-        var unreadByWorkspaceSurface = Set<WorkspaceSurfaceKey>()
-        var latestUnreadByWorkspaceId: [UUID: TerminalNotification] = [:]
-        var latestByWorkspaceId: [UUID: TerminalNotification] = [:]
+        var unreadCountByTabId: [UUID: Int] = [:]
+        var unreadByTabSurface = Set<TabSurfaceKey>()
+        var latestUnreadByTabId: [UUID: TerminalNotification] = [:]
+        var latestByTabId: [UUID: TerminalNotification] = [:]
     }
 
     static let shared = TerminalNotificationStore(
@@ -709,12 +709,12 @@ final class TerminalNotificationStore: ObservableObject {
         didSet {
             // C11-163: capture the prior per-tab unread counts before the
             // rebuild so waiting-agent edges can be detected (amendment H).
-            let previousUnreadByWorkspace = indexes.unreadCountByWorkspaceId
+            let previousUnreadByTab = indexes.unreadCountByTabId
             indexes = Self.buildIndexes(
                 for: notifications,
                 signalEligible: Self.isSignalEligible
             )
-            emitWaitingEdges(previous: previousUnreadByWorkspace, current: indexes.unreadCountByWorkspaceId)
+            emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
@@ -779,19 +779,19 @@ final class TerminalNotificationStore: ObservableObject {
     /// waiting signal is a TEL-6 seam — if the waiting-agent cluster plan
     /// redefines "attention demand", rewire the source here.
     private func emitWaitingEdges(previous: [UUID: Int], current: [UUID: Int]) {
-        let workspaces = Set(previous.keys).union(current.keys)
-        for workspace in workspaces {
-            let before = previous[workspace] ?? 0
-            let after = current[workspace] ?? 0
+        let tabs = Set(previous.keys).union(current.keys)
+        for tab in tabs {
+            let before = previous[tab] ?? 0
+            let after = current[tab] ?? 0
             if before == 0, after > 0 {
-                EventEmitter.shared.emitWaiting(entered: true, workspace: workspace, surface: nil)
+                EventEmitter.shared.emitWaiting(entered: true, workspace: tab, surface: nil)
 #if DEBUG
-                waitingEdgeHandlerForTesting?(true, workspace)
+                waitingEdgeHandlerForTesting?(true, tab)
 #endif
             } else if before > 0, after == 0 {
-                EventEmitter.shared.emitWaiting(entered: false, workspace: workspace, surface: nil)
+                EventEmitter.shared.emitWaiting(entered: false, workspace: tab, surface: nil)
 #if DEBUG
-                waitingEdgeHandlerForTesting?(false, workspace)
+                waitingEdgeHandlerForTesting?(false, tab)
 #endif
             }
         }
@@ -916,28 +916,28 @@ final class TerminalNotificationStore: ObservableObject {
         refreshAuthorizationStatus()
     }
 
-    func unreadCount(forWorkspaceId workspaceId: UUID) -> Int {
-        indexes.unreadCountByWorkspaceId[workspaceId] ?? 0
+    func unreadCount(forTabId tabId: UUID) -> Int {
+        indexes.unreadCountByTabId[tabId] ?? 0
     }
 
-    func hasUnreadNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
-        indexes.unreadByWorkspaceSurface.contains(WorkspaceSurfaceKey(workspaceId: workspaceId, surfaceId: surfaceId))
+    func hasUnreadNotification(forTabId tabId: UUID, surfaceId: UUID?) -> Bool {
+        indexes.unreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }
 
     /// Exact creation boundary for the signal-eligible unread notification
     /// driving one surface into waiting. Callers use this as tooltip timing
     /// evidence; absence stays nil rather than manufacturing an age.
-    func unreadNotificationCreatedAt(forWorkspaceId workspaceId: UUID, surfaceId: UUID) -> Date? {
+    func unreadNotificationCreatedAt(forTabId tabId: UUID, surfaceId: UUID) -> Date? {
         notifications.first {
             !$0.isRead
-                && $0.workspaceId == workspaceId
+                && $0.tabId == tabId
                 && $0.surfaceId == surfaceId
                 && Self.isSignalEligible($0)
         }?.createdAt
     }
 
-    func hasRawUnreadNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
-        indexes.rawUnreadByWorkspaceSurface.contains(WorkspaceSurfaceKey(workspaceId: workspaceId, surfaceId: surfaceId))
+    func hasRawUnreadNotification(forTabId tabId: UUID, surfaceId: UUID?) -> Bool {
+        indexes.rawUnreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }
 
     func isSignalEligible(_ notification: TerminalNotification) -> Bool {
@@ -945,46 +945,46 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func refreshSignalEligibility() {
-        let previous = indexes.unreadCountByWorkspaceId
+        let previous = indexes.unreadCountByTabId
         let next = Self.buildIndexes(
             for: notifications,
             signalEligible: Self.isSignalEligible
         )
-        guard previous != next.unreadCountByWorkspaceId
-                || indexes.unreadByWorkspaceSurface != next.unreadByWorkspaceSurface else {
+        guard previous != next.unreadCountByTabId
+                || indexes.unreadByTabSurface != next.unreadByTabSurface else {
             indexes = next
             return
         }
         objectWillChange.send()
         indexes = next
-        emitWaitingEdges(previous: previous, current: indexes.unreadCountByWorkspaceId)
-        for workspaceId in Set(previous.keys).union(indexes.unreadCountByWorkspaceId.keys) {
-            AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
-                .workspaces.first(where: { $0.id == workspaceId })?
+        emitWaitingEdges(previous: previous, current: indexes.unreadCountByTabId)
+        for workspaceId in Set(previous.keys).union(indexes.unreadCountByTabId.keys) {
+            AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
+                .tabs.first(where: { $0.id == workspaceId })?
                 .syncSurfaceTabActivityStates()
         }
     }
 
-    func latestNotification(forWorkspaceId workspaceId: UUID) -> TerminalNotification? {
-        indexes.latestUnreadByWorkspaceId[workspaceId] ?? indexes.latestByWorkspaceId[workspaceId]
+    func latestNotification(forTabId tabId: UUID) -> TerminalNotification? {
+        indexes.latestUnreadByTabId[tabId] ?? indexes.latestByTabId[tabId]
     }
 
-    func addNotification(workspaceId: UUID, surfaceId: UUID?, title: String, subtitle: String, body: String) {
+    func addNotification(tabId: UUID, surfaceId: UUID?, title: String, subtitle: String, body: String) {
         var updated = notifications
         var idsToClear: [String] = []
         updated.removeAll { existing in
-            guard existing.workspaceId == workspaceId, existing.surfaceId == surfaceId else { return false }
+            guard existing.tabId == tabId, existing.surfaceId == surfaceId else { return false }
             idsToClear.append(existing.id.uuidString)
             return true
         }
 
-        let isActiveTab = AppDelegate.shared?.workspaceManager?.selectedWorkspaceId == workspaceId
-        let focusedSurfaceId = AppDelegate.shared?.workspaceManager?.focusedSurfaceId(for: workspaceId)
+        let isActiveTab = AppDelegate.shared?.tabManager?.selectedTabId == tabId
+        let focusedSurfaceId = AppDelegate.shared?.tabManager?.focusedSurfaceId(for: tabId)
         let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
         let isFocusedPanel = isActiveTab && isFocusedSurface
         let isAppFocused = AppFocusState.isAppFocused()
         let attentionSuppressed = surfaceId.map {
-            SurfaceAttentionIndex.shared.snapshot(workspaceId: workspaceId, surfaceId: $0).suppressed
+            SurfaceAttentionIndex.shared.snapshot(workspaceId: tabId, surfaceId: $0).suppressed
         } ?? false
         let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
 
@@ -996,18 +996,18 @@ final class TerminalNotificationStore: ObservableObject {
         if let surfaceId {
             SurfaceLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: surfaceId,
-                workspaceId: workspaceId,
+                workspaceId: tabId,
                 activity: .idle
             )
         }
 
         if WorkspaceAutoReorderSettings.isEnabled() {
-            AppDelegate.shared?.workspaceManager?.moveWorkspaceToTopForNotification(workspaceId)
+            AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
         }
 
         let notification = TerminalNotification(
             id: UUID(),
-            workspaceId: workspaceId,
+            tabId: tabId,
             surfaceId: surfaceId,
             title: title,
             subtitle: subtitle,
@@ -1055,7 +1055,7 @@ final class TerminalNotificationStore: ObservableObject {
         let notification = TerminalNotification(
             id: UUID(),
             systemIdentifier: identifier,
-            workspaceId: workspaceId,
+            tabId: workspaceId,
             surfaceId: surfaceId,
             title: normalizedTitle ?? fallback,
             subtitle: "",
@@ -1115,7 +1115,7 @@ final class TerminalNotificationStore: ObservableObject {
 
     func cancelRoutineExternalNotifications(workspaceId: UUID, surfaceId: UUID) {
         let identifiers = notifications.compactMap { notification in
-            notification.workspaceId == workspaceId && notification.surfaceId == surfaceId
+            notification.tabId == workspaceId && notification.surfaceId == surfaceId
                 ? notification.id.uuidString
                 : nil
         }
@@ -1133,11 +1133,11 @@ final class TerminalNotificationStore: ObservableObject {
         center?.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
     }
 
-    func markRead(forWorkspaceId workspaceId: UUID) {
+    func markRead(forTabId tabId: UUID) {
         var updated = notifications
         var idsToClear: [String] = []
         for index in updated.indices {
-            if updated[index].workspaceId == workspaceId && !updated[index].isRead {
+            if updated[index].tabId == tabId && !updated[index].isRead {
                 updated[index].isRead = true
                 idsToClear.append(updated[index].id.uuidString)
             }
@@ -1148,11 +1148,11 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
-    func markRead(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) {
+    func markRead(forTabId tabId: UUID, surfaceId: UUID?) {
         var updated = notifications
         var idsToClear: [String] = []
         for index in updated.indices {
-            if updated[index].workspaceId == workspaceId,
+            if updated[index].tabId == tabId,
                updated[index].surfaceId == surfaceId,
                !updated[index].isRead {
                 updated[index].isRead = true
@@ -1166,11 +1166,11 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
-    func markUnread(forWorkspaceId workspaceId: UUID) {
+    func markUnread(forTabId tabId: UUID) {
         var updated = notifications
         var didChange = false
         for index in updated.indices {
-            if updated[index].workspaceId == workspaceId, updated[index].isRead {
+            if updated[index].tabId == tabId, updated[index].isRead {
                 updated[index].isRead = false
                 didChange = true
             }
@@ -1213,12 +1213,12 @@ final class TerminalNotificationStore: ObservableObject {
         center?.removePendingNotificationRequestsOffMain(withIdentifiers: ids)
     }
 
-    func clearNotifications(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) {
+    func clearNotifications(forTabId tabId: UUID, surfaceId: UUID?) {
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
         for notification in notifications {
-            if notification.workspaceId == workspaceId, notification.surfaceId == surfaceId {
+            if notification.tabId == tabId, notification.surfaceId == surfaceId {
                 idsToClear.append(notification.id.uuidString)
             } else {
                 updated.append(notification)
@@ -1230,12 +1230,12 @@ final class TerminalNotificationStore: ObservableObject {
         center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
     }
 
-    func clearNotifications(forWorkspaceId workspaceId: UUID) {
+    func clearNotifications(forTabId tabId: UUID) {
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
         for notification in notifications {
-            if notification.workspaceId == workspaceId {
+            if notification.tabId == tabId {
                 idsToClear.append(notification.id.uuidString)
             } else {
                 updated.append(notification)
@@ -1249,12 +1249,12 @@ final class TerminalNotificationStore: ObservableObject {
 
     /// Remove raw history for surfaces no longer present in a workspace.
     /// Surface-less workspace notifications remain valid and are retained.
-    func clearNotifications(forWorkspaceId workspaceId: UUID, excludingSurfaceIds validSurfaceIds: Set<UUID>) {
+    func clearNotifications(forTabId tabId: UUID, excludingSurfaceIds validSurfaceIds: Set<UUID>) {
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
         for notification in notifications {
-            if notification.workspaceId == workspaceId,
+            if notification.tabId == tabId,
                let surfaceId = notification.surfaceId,
                !validSurfaceIds.contains(surfaceId) {
                 idsToClear.append(notification.systemIdentifier ?? notification.id.uuidString)
@@ -1282,7 +1282,7 @@ final class TerminalNotificationStore: ObservableObject {
             content.sound = NotificationSoundSettings.sound()
             content.categoryIdentifier = Self.categoryIdentifier
             content.userInfo = [
-                "tabId": notification.workspaceId.uuidString,
+                "tabId": notification.tabId.uuidString,
                 "notificationId": notification.id.uuidString,
             ]
             if let surfaceId = notification.surfaceId {
@@ -1382,7 +1382,7 @@ final class TerminalNotificationStore: ObservableObject {
         content.sound = NotificationSoundSettings.sound()
         content.categoryIdentifier = Self.categoryIdentifier
         content.userInfo = [
-            "tabId": notification.workspaceId.uuidString,
+            "tabId": notification.tabId.uuidString,
             "notificationId": notification.id.uuidString,
         ]
         if let surfaceId = notification.surfaceId {
@@ -1578,7 +1578,7 @@ final class TerminalNotificationStore: ObservableObject {
     private static func isSignalEligible(_ notification: TerminalNotification) -> Bool {
         guard let surfaceId = notification.surfaceId else { return true }
         return SurfaceAttentionIndex.shared.snapshot(
-            workspaceId: notification.workspaceId,
+            workspaceId: notification.tabId,
             surfaceId: surfaceId
         ).isSignalEligible
     }
@@ -1589,23 +1589,23 @@ final class TerminalNotificationStore: ObservableObject {
     ) -> NotificationIndexes {
         var indexes = NotificationIndexes()
         for notification in notifications {
-            if indexes.latestByWorkspaceId[notification.workspaceId] == nil {
-                indexes.latestByWorkspaceId[notification.workspaceId] = notification
+            if indexes.latestByTabId[notification.tabId] == nil {
+                indexes.latestByTabId[notification.tabId] = notification
             }
             guard !notification.isRead else { continue }
             indexes.rawUnreadCount += 1
-            indexes.rawUnreadCountByWorkspaceId[notification.workspaceId, default: 0] += 1
-            indexes.rawUnreadByWorkspaceSurface.insert(
-                WorkspaceSurfaceKey(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId)
+            indexes.rawUnreadCountByTabId[notification.tabId, default: 0] += 1
+            indexes.rawUnreadByTabSurface.insert(
+                TabSurfaceKey(tabId: notification.tabId, surfaceId: notification.surfaceId)
             )
             guard signalEligible(notification) else { continue }
             indexes.unreadCount += 1
-            indexes.unreadCountByWorkspaceId[notification.workspaceId, default: 0] += 1
-            indexes.unreadByWorkspaceSurface.insert(
-                WorkspaceSurfaceKey(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId)
+            indexes.unreadCountByTabId[notification.tabId, default: 0] += 1
+            indexes.unreadByTabSurface.insert(
+                TabSurfaceKey(tabId: notification.tabId, surfaceId: notification.surfaceId)
             )
-            if indexes.latestUnreadByWorkspaceId[notification.workspaceId] == nil {
-                indexes.latestUnreadByWorkspaceId[notification.workspaceId] = notification
+            if indexes.latestUnreadByTabId[notification.tabId] == nil {
+                indexes.latestUnreadByTabId[notification.tabId] = notification
             }
         }
         return indexes

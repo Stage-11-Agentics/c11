@@ -47,16 +47,29 @@ def _has_floor_plan(text: str) -> bool:
     """Return True iff the output contains a floor plan (box drawing rows)."""
     # Tree hierarchy lines also use box characters (├── └──); only grid rows made of
     # box characters and spaces alone are floor plan.
-    return bool(_floor_plan_rows(text))
+    return bool(_floor_plan_label_rows(text))
 
 
 def _floor_plan_rows(text: str) -> List[str]:
-    """Return the lines that look like floor-plan grid rows."""
+    """Return the lines that look like floor-plan grid rows (box characters and spaces only)."""
     out: List[str] = []
     for line in text.splitlines():
         # A grid row is a line containing at least one box-drawing character
         # AND only box chars + spaces (heuristic that excludes the tree section).
         if any(ch in BOX_CHARS for ch in line) and all(ch in ALL_BOX_CHARS or not ch.strip() for ch in line):
+            out.append(line)
+    return out
+
+
+def _floor_plan_label_rows(text: str) -> List[str]:
+    """Floor-plan rows that carry a box label: they begin and end with a box character.
+
+    Tree hierarchy lines end in text, which keeps the tree section out.
+    """
+    out: List[str] = []
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped and stripped[0] in BOX_CHARS and stripped[-1] in BOX_CHARS:
             out.append(line)
     return out
 
@@ -135,7 +148,7 @@ def test_box_content_includes_pane_ref_and_size(c: cmux, cli: str) -> None:
     wsid = _make_split_workspace(c)
     try:
         text = run_tree_text(cli, canvas_cols=120)
-        rows = _floor_plan_rows(text)
+        rows = _floor_plan_label_rows(text)
         body = "\n".join(rows)
         _must(rows, f"expected floor plan rows; output:\n{text}")
         # Two panes → at least two pane:N references should appear inside boxes.

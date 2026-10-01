@@ -287,12 +287,17 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
     ws = f.ws
     _call(c, "tab.focus", {"workspace_id": ws, "tab_id": f.t1})  # notify a tab that is not focused
     for method, key in (("notification.create_for_surface", "surface_id"), ("notification.create_for_tab", "tab_id")):
-        _call(c, method, {key: f.t3, "title": f"vocab {method}", "subtitle": "", "body": "alias check"})
-    items = list(_call(c, "notification.list").get("notifications") or [])
-    mine = [n for n in items if str(n.get("title") or "").startswith("vocab notification.create_for_")]
-    _must(len(mine) >= 2, f"expected both notification aliases to create a notification, got {mine}")
-    for n in mine:
-        _must(n.get("tab_id") == n.get("surface_id") == f.t3, f"notification should name the tab under both keys: {n}")
+        # A tab holds one notification at a time, so check each alias on its own.
+        title = f"vocab {method}"
+        _call(c, method, {key: f.t3, "title": title, "subtitle": "", "body": "alias check"})
+        items = list(_call(c, "notification.list").get("notifications") or [])
+        mine = [n for n in items if n.get("title") == title]
+        _must(len(mine) == 1, f"{method} should create a notification, got {mine}")
+        _must(mine[0].get("tab_id") == mine[0].get("surface_id") == f.t3, f"notification should name the tab under both keys: {mine[0]}")
+        try:
+            c.clear_notifications()
+        except Exception:
+            pass
     try:
         c.clear_notifications()
     except Exception:
@@ -477,8 +482,8 @@ def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
     _cli(cli, ["focus-area", "--workspace", ws, "--area", f.area_b])
     _must(_focused_tab_id(c, ws) == f.t3, "focus-area --area did not focus the area's tab")
     _cli(cli, ["focus-pane", "--workspace", ws, "--pane", f.area_a])
-    _cli(cli, ["focus-area", "--workspace", ws, f.area_b])
-    _cli(cli, ["focus-pane", "--workspace", ws, f.area_a])
+    _cli(cli, ["focus-area", f.area_b, "--workspace", ws])  # positional comes first
+    _cli(cli, ["focus-pane", f.area_a, "--workspace", ws])
 
     # send-tab / send-panel, send-key-tab / send-key-panel.
     for cmd, flag in (("send-tab", "--tab"), ("send-panel", "--panel")):

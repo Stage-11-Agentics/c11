@@ -5557,26 +5557,6 @@ struct ContentView: View {
         )
         contributions.append(
             CommandPaletteCommandContribution(
-                commandId: "palette.closeWorkspacesBelow",
-                title: constant(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")),
-                subtitle: workspaceSubtitle,
-                keywords: ["close", "below", "workspaces", "workspace"],
-                when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
-                enablement: { $0.bool(CommandPaletteContextKeys.workspaceHasBelow) }
-            )
-        )
-        contributions.append(
-            CommandPaletteCommandContribution(
-                commandId: "palette.closeWorkspacesAbove",
-                title: constant(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")),
-                subtitle: workspaceSubtitle,
-                keywords: ["close", "above", "workspaces", "workspace"],
-                when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
-                enablement: { $0.bool(CommandPaletteContextKeys.workspaceHasAbove) }
-            )
-        )
-        contributions.append(
-            CommandPaletteCommandContribution(
                 commandId: "palette.markWorkspaceRead",
                 title: constant(String(localized: "contextMenu.markWorkspaceRead", defaultValue: "Mark Workspace as Read")),
                 subtitle: workspaceSubtitle,
@@ -6126,12 +6106,6 @@ struct ContentView: View {
             }
             tabManager.moveTabsToTop([workspace.id])
             tabManager.selectWorkspace(workspace)
-        }
-        registry.register(commandId: "palette.closeWorkspacesBelow") {
-            closeSelectedWorkspacesBelow()
-        }
-        registry.register(commandId: "palette.closeWorkspacesAbove") {
-            closeSelectedWorkspacesAbove()
         }
         registry.register(commandId: "palette.markWorkspaceRead") {
             guard let workspaceId = tabManager.selectedWorkspace?.id else {
@@ -7195,24 +7169,6 @@ struct ContentView: View {
         guard targetIndex >= 0, targetIndex < tabManager.tabs.count else { return }
         _ = tabManager.reorderWorkspace(tabId: workspace.id, toIndex: targetIndex)
         tabManager.selectWorkspace(workspace)
-    }
-
-    private func closeWorkspaceIds(_ workspaceIds: [UUID], allowPinned: Bool) {
-        tabManager.closeWorkspacesWithConfirmation(workspaceIds, allowPinned: allowPinned)
-    }
-
-    private func closeSelectedWorkspacesBelow() {
-        guard tabManager.selectedWorkspace != nil,
-              let anchorIndex = selectedWorkspaceIndex() else { return }
-        let workspaceIds = tabManager.tabs.suffix(from: anchorIndex + 1).map(\.id)
-        closeWorkspaceIds(workspaceIds, allowPinned: false)
-    }
-
-    private func closeSelectedWorkspacesAbove() {
-        guard tabManager.selectedWorkspace != nil,
-              let anchorIndex = selectedWorkspaceIndex() else { return }
-        let workspaceIds = tabManager.tabs.prefix(upTo: anchorIndex).map(\.id)
-        closeWorkspaceIds(workspaceIds, allowPinned: false)
     }
 
     private func syncSidebarSelectedWorkspaceIds() {
@@ -13320,16 +13276,6 @@ private struct TabItemView: View, Equatable {
             .disabled(targetIds.isEmpty)
         }
 
-        Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
-            closeTabsBelow(tabId: tab.id)
-        }
-        .disabled(index >= tabManager.tabs.count - 1)
-
-        Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
-            closeTabsAbove(tabId: tab.id)
-        }
-        .disabled(index == 0)
-
         Divider()
 
         // C11-25: hibernate / resume the right-clicked workspace. Mirrors
@@ -13464,18 +13410,6 @@ private struct TabItemView: View, Equatable {
     private func closeTabs(_ targetIds: [UUID], allowPinned: Bool) {
         tabManager.closeWorkspacesWithConfirmation(targetIds, allowPinned: allowPinned)
         syncSelectionAfterMutation()
-    }
-
-    private func closeTabsBelow(tabId: UUID) {
-        guard let anchorIndex = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        let idsToClose = tabManager.tabs.suffix(from: anchorIndex + 1).map { $0.id }
-        closeTabs(idsToClose, allowPinned: false)
-    }
-
-    private func closeTabsAbove(tabId: UUID) {
-        guard let anchorIndex = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        let idsToClose = tabManager.tabs.prefix(upTo: anchorIndex).map { $0.id }
-        closeTabs(idsToClose, allowPinned: false)
     }
 
     private func markTabsRead(_ targetIds: [UUID]) {

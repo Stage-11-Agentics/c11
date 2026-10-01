@@ -1375,28 +1375,6 @@ struct cmuxApp: App {
         _ = AppDelegate.shared?.moveWorkspaceToNewWindow(workspaceId: workspace.id, focus: true)
     }
 
-    private func closeWorkspaceIds(
-        _ workspaceIds: [UUID],
-        in manager: TabManager,
-        allowPinned: Bool
-    ) {
-        manager.closeWorkspacesWithConfirmation(workspaceIds, allowPinned: allowPinned)
-    }
-
-    private func closeSelectedWorkspacesBelow(in manager: TabManager) {
-        guard let workspace = manager.selectedWorkspace,
-              let anchorIndex = selectedWorkspaceIndex(in: manager, workspaceId: workspace.id) else { return }
-        let workspaceIds = manager.tabs.suffix(from: anchorIndex + 1).map(\.id)
-        closeWorkspaceIds(workspaceIds, in: manager, allowPinned: false)
-    }
-
-    private func closeSelectedWorkspacesAbove(in manager: TabManager) {
-        guard let workspace = manager.selectedWorkspace,
-              let anchorIndex = selectedWorkspaceIndex(in: manager, workspaceId: workspace.id) else { return }
-        let workspaceIds = manager.tabs.prefix(upTo: anchorIndex).map(\.id)
-        closeWorkspaceIds(workspaceIds, in: manager, allowPinned: false)
-    }
-
     private func selectedWorkspaceHasUnreadNotifications(in manager: TabManager) -> Bool {
         guard let workspaceId = manager.selectedWorkspace?.id else { return false }
         return notificationStore.notifications.contains { $0.tabId == workspaceId && !$0.isRead }
@@ -1485,16 +1463,6 @@ struct cmuxApp: App {
             manager.closeCurrentWorkspaceWithConfirmation()
         }
         .disabled(workspace == nil)
-
-        Button(String(localized: "contextMenu.closeWorkspacesBelow", defaultValue: "Close Workspaces Below")) {
-            closeSelectedWorkspacesBelow(in: manager)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.tabs.count - 1)
-
-        Button(String(localized: "contextMenu.closeWorkspacesAbove", defaultValue: "Close Workspaces Above")) {
-            closeSelectedWorkspacesAbove(in: manager)
-        }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
 
         Divider()
 

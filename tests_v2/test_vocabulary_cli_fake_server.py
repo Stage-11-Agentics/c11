@@ -150,7 +150,7 @@ class FakeApp:
         area = self._area_by_handle(aid)
         legacy_row = {
             "id": tid, "ref": self.tab_ref(n, legacy=True), "title": title,
-            "index": n, "selected": tid == T1,
+            "index": n, "selected": tid == T1, "focused": tid == T1,
             "pane_id": aid, "pane_ref": self.area_ref(area[1], legacy=True),
         }
         if self.legacy:
@@ -635,7 +635,7 @@ def test_legacy_app_gets_legacy_wire(cli: str, run: Running) -> None:
     _must(not app.violations, f"legacy app saw canonical wire: {app.violations}")
 
     fresh()
-    out = _run(cli, run, ["identify", "--workspace", WS, "--tab", "tab:2"]).stdout
+    out = _run(cli, run, ["--id-format", "both", "identify", "--workspace", WS, "--tab", "tab:2"]).stdout
     calls = app.calls("system.identify")
     _must(len(calls) == 1, f"identify sent {app.methods()}")
     caller = calls[0].get("caller") or {}

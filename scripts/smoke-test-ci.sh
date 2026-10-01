@@ -94,19 +94,149 @@ if [ "$PING_RESPONSE" != "PONG" ]; then
   exit 1
 fi
 
+# --- Wait until a focused terminal is attached ---
+# send waits at most 2s for the ghostty surface. On the virtual-display runner
+# that attach can take ~3s, which blows the 5s recv timeout. Poll until
+# debug.terminals reports runtime_surface_ready and surface_focused — the same
+# predicate send uses — with a 20s deadline.
+echo "Waiting for a focused, attached terminal (up to 20s)..."
+if ! python3 - "$SOCKET_PATH" "$APP_PID" <<'PY'
+import json, os, socket, sys, time
+
+socket_path = sys.argv[1]
+app_pid = int(sys.argv[2])
+deadline_s = 20.0
+poll_gap_s = 0.5
+recv_timeout_s = 5.0
+start = time.monotonic()
+poll = 0
+
+def app_alive():
+    try:
+        os.kill(app_pid, 0)
+    except OSError:
+        return False
+    return True
+
+def recv_line(conn):
+    buf = b""
+    while b"\n" not in buf:
+        chunk = conn.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+        if len(buf) > 8000000:
+            break
+    return buf.split(b"\n", 1)[0].decode("utf-8", "replace")
+
+while True:
+    elapsed = time.monotonic() - start
+    if elapsed >= deadline_s:
+        print(
+            "ERROR: Timed out after 20s waiting for a focused, attached terminal surface",
+            flush=True,
+        )
+        sys.exit(1)
+    if not app_alive():
+        print("ERROR: App crashed while waiting for a terminal surface", flush=True)
+        sys.exit(1)
+    poll += 1
+    remaining = deadline_s - elapsed
+    summary = "no response"
+    ready = False
+    conn = None
+    try:
+        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        conn.settimeout(min(recv_timeout_s, max(0.1, remaining)))
+        conn.connect(socket_path)
+        request = json.dumps({
+            "id": poll,
+            "method": "debug.terminals",
+            "params": {},
+        }) + "\n"
+        conn.sendall(request.encode())
+        line = recv_line(conn)
+        msg = json.loads(line) if line else {}
+        if not msg.get("ok"):
+            err = msg.get("error") or {}
+            summary = "error %s: %s" % (err.get("code"), err.get("message"))
+        else:
+            terminals = (msg.get("result") or {}).get("terminals") or []
+            focused_attached = 0
+            for terminal in terminals:
+                if (
+                    terminal.get("runtime_surface_ready") is True
+                    and terminal.get("surface_focused") is True
+                ):
+                    focused_attached += 1
+            summary = "terminals=%d focused_attached=%d" % (
+                len(terminals),
+                focused_attached,
+            )
+            ready = focused_attached > 0
+    except socket.timeout:
+        summary = "timed out"
+    except Exception as exc:
+        summary = "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+    now = time.monotonic() - start
+    print("Readiness poll %d (%.1fs): %s" % (poll, now, summary), flush=True)
+    if ready:
+        print("Focused terminal surface is attached after %.1fs" % now, flush=True)
+        sys.exit(0)
+    time.sleep(min(poll_gap_s, max(0.0, deadline_s - (time.monotonic() - start))))
+PY
+then
+  echo "--- stdout/stderr ---"
+  cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -50 || true
+  echo "--- debug log ---"
+  tail -50 /tmp/c11-debug.log 2>/dev/null || true
+  exit 1
+fi
+
 # --- Send a command to the terminal ---
 echo "Sending 'time' command to terminal..."
-SEND_RESPONSE=$(python3 -c "
-import socket
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect('$SOCKET_PATH')
-s.settimeout(5.0)
-s.sendall(b'send time\\\n\n')
-data = s.recv(1024).decode().strip()
-s.close()
-print(data)
-")
+send_time() {
+  python3 - "$SOCKET_PATH" <<'PY'
+import socket, sys
+
+path = sys.argv[1]
+conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+conn.settimeout(5.0)
+try:
+    conn.connect(path)
+    # v1 command is "send time\n" (the handler turns \n into Enter), plus the
+    # socket's framing newline.
+    conn.sendall(b"send time\\n\n")
+    data = b""
+    while b"\n" not in data:
+        chunk = conn.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    line = data.split(b"\n", 1)[0].decode("utf-8", "replace").strip()
+    print(line if line else "ERROR: empty send reply")
+except socket.timeout:
+    print("TIMEOUT")
+finally:
+    conn.close()
+PY
+}
+SEND_RESPONSE=$(send_time)
 echo "Send response: $SEND_RESPONSE"
+case "$SEND_RESPONSE" in
+  TIMEOUT|ERROR*)
+    echo "Send timed out or returned an error; retried"
+    SEND_RESPONSE=$(send_time)
+    echo "Send response after retry: $SEND_RESPONSE"
+    if [ "$SEND_RESPONSE" = "TIMEOUT" ]; then
+      echo "ERROR: send timed out after retry"
+      exit 1
+    fi
+    ;;
+esac
 
 # --- Wait and verify stability ---
 echo "Waiting ${STABILITY_WAIT}s to verify stability..."

@@ -173,6 +173,8 @@ defaults write com.stage11.c11 tabLayoutMode -string rail     # or: tabs
 defaults delete com.stage11.c11 tabLayoutMode                 # back to tabs
 ```
 
+When the tab bar overflows on 4 days inside 14 and Tab Layout is still Tabs, c11 may offer one tip under the count cell: the number opens the tab list, Try Rail switches Tab Layout to Rail for every area and the tip becomes Undo (Undo puts Tabs back and is not a dismissal), and Don't show again retires it. Leaving the tip alone waits 30 days. Reset it with `defaults delete` on `c11.tabRailTip.overflowDays`, `c11.tabRailTip.lastOffered`, and `c11.tabRailTip.dismissed`, in the same domain as `tabLayoutMode`.
+
 A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-bar-round-five` is `com.stage11.c11.debug.tab.bar.round.five`).
 
 The bar under the tabs shows only the tab's description (`c11 set-description`); with no description it takes no height.

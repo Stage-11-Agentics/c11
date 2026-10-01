@@ -25,6 +25,12 @@ enum TabLayoutSettings {
         mode(for: defaults.string(forKey: modeKey))
     }
 
+    /// Writes the same key the Settings picker and `defaults write` use.
+    /// The per-workspace observer applies it. This does not touch the rail tip.
+    static func setMode(_ mode: Mode, defaults: UserDefaults = .standard) {
+        defaults.set(mode.rawValue, forKey: modeKey)
+    }
+
     static func bonsplitLayout(_ mode: Mode) -> BonsplitTabLayout {
         switch mode {
         case .tabs: return .tabs

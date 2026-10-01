@@ -5891,6 +5891,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard next.appearance.tabLayout != layout else { return }
         next.appearance.tabLayout = layout
         bonsplitController.configuration = next
+        TabRailTipCenter.shared.scheduleRefresh()
     }
 
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
@@ -6101,6 +6102,21 @@ final class Workspace: Identifiable, ObservableObject {
         // React to the Tab layout setting (Tabs | Rail) live.
         self.tabLayoutObserver = TabLayoutObserver { [weak self] in
             self?.applyTabLayout()
+        }
+
+        // The rail tip reads overflow, the count-cell anchor, and the sheet.
+        // Any area can record an overflow day; only the front one shows the tip.
+        bonsplitController.onTabStripOverflow = { [weak self] paneId, overflowing in
+            guard let self else { return }
+            TabRailTipCenter.shared.noteOverflow(workspace: self, paneId: paneId, overflowing: overflowing)
+        }
+        bonsplitController.onCountCellAnchor = { [weak self] paneId, view in
+            guard let self else { return }
+            TabRailTipCenter.shared.noteAnchor(workspace: self, paneId: paneId, view: view)
+        }
+        bonsplitController.onTabSheetOpenChanged = { [weak self] paneId, open in
+            guard let self else { return }
+            TabRailTipCenter.shared.noteSheet(workspace: self, paneId: paneId, open: open)
         }
 
         // Remove the default "Welcome" tab that bonsplit creates
@@ -12303,6 +12319,7 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, didSelectTab tab: Bonsplit.Tab, inPane pane: PaneID) {
         applyTabSelection(tabId: tab.id, inPane: pane)
+        TabRailTipCenter.shared.scheduleRefresh()
     }
 
     func splitTabBar(_ controller: BonsplitController, didMoveTab tab: Bonsplit.Tab, fromPane source: PaneID, toPane destination: PaneID) {
@@ -12360,6 +12377,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didFocusPane pane: PaneID) {
+        TabRailTipCenter.shared.scheduleRefresh()
         // When a pane is focused, focus its selected tab's panel
         guard let tab = controller.selectedTab(inPane: pane) else { return }
 #if DEBUG

@@ -5151,7 +5151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return windowId
     }
 
-    func locateBonsplitSurface(workspaceId tabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
+    func locateBonsplitSurface(tabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
         let bonsplitTabId = TabID(uuid: tabId)
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
@@ -5444,7 +5444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func moveBonsplitTab(
-        workspaceId tabId: UUID,
+        tabId: UUID,
         toWorkspace targetWorkspaceId: UUID,
         targetPane: PaneID? = nil,
         targetIndex: Int? = nil,
@@ -5463,7 +5463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "targetPane=\(targetPane?.id.uuidString.prefix(5) ?? "auto") targetIndex=\(targetIndex.map(String.init) ?? "nil")"
         )
 #endif
-        guard let located = locateBonsplitSurface(workspaceId: tabId) else {
+        guard let located = locateBonsplitSurface(tabId: tabId) else {
 #if DEBUG
             dlog(
                 "surface.moveBonsplit.fail tab=\(tabId.uuidString.prefix(5)) reason=tabNotFound " +
@@ -8534,7 +8534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private struct DebugStressTerminalLoadTarget {
         let workspace: Workspace
         let paneId: PaneID
-        let workspaceId: TabID
+        let tabId: TabID
         let panelId: UUID
     }
 
@@ -8618,12 +8618,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                           workspace.panel(for: ws.id) is TerminalPanel else {
                         continue
                     }
-                    if workspace.preloadTerminalPanelForDebugStress(workspaceId: ws.id, inPane: paneId) != nil {
+                    if workspace.preloadTerminalPanelForDebugStress(tabId: ws.id, inPane: paneId) != nil {
                         queuedTargets.append(
                             DebugStressTerminalLoadTarget(
                                 workspace: workspace,
                                 paneId: paneId,
-                                workspaceId: ws.id,
+                                tabId: ws.id,
                                 panelId: panelId
                             )
                         )

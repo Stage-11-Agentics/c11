@@ -14831,14 +14831,14 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
             return false
         }
 
-        if let source = app.locateBonsplitSurface(workspaceId: transfer.workspace.id),
+        if let source = app.locateBonsplitSurface(tabId: transfer.workspace.id),
            source.workspaceId == targetWorkspaceId {
             syncSidebarSelection()
             return true
         }
 
         guard app.moveBonsplitTab(
-            workspaceId: transfer.workspace.id,
+            tabId: transfer.workspace.id,
             toWorkspace: targetWorkspaceId,
             focus: true,
             focusWindow: true

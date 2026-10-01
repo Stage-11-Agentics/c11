@@ -706,7 +706,7 @@ final class WorkspaceReorderTests: XCTestCase {
         manager.selectWorkspace(second)
         XCTAssertEqual(manager.selectedWorkspaceId, second.id)
 
-        XCTAssertTrue(manager.reorderWorkspace(tabId: second.id, toIndex: 0))
+        XCTAssertTrue(manager.reorderWorkspace(workspaceId: second.id, toIndex: 0))
         XCTAssertEqual(manager.workspaces.map(\.id), [second.id, first.id, third.id])
         XCTAssertEqual(manager.selectedWorkspaceId, second.id)
     }
@@ -718,14 +718,14 @@ final class WorkspaceReorderTests: XCTestCase {
         let second = manager.addWorkspace()
         let third = manager.addWorkspace()
 
-        XCTAssertTrue(manager.reorderWorkspace(tabId: first.id, toIndex: 999))
+        XCTAssertTrue(manager.reorderWorkspace(workspaceId: first.id, toIndex: 999))
         XCTAssertEqual(manager.workspaces.map(\.id), [second.id, third.id, first.id])
     }
 
     @MainActor
     func testReorderWorkspaceReturnsFalseForUnknownWorkspace() {
         let manager = WorkspaceManager()
-        XCTAssertFalse(manager.reorderWorkspace(tabId: UUID(), toIndex: 0))
+        XCTAssertFalse(manager.reorderWorkspace(workspaceId: UUID(), toIndex: 0))
     }
 
     @MainActor
@@ -737,7 +737,7 @@ final class WorkspaceReorderTests: XCTestCase {
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
-        XCTAssertTrue(manager.reorderWorkspace(tabId: unpinned.id, toIndex: 0))
+        XCTAssertTrue(manager.reorderWorkspace(workspaceId: unpinned.id, toIndex: 0))
         XCTAssertEqual(manager.workspaces.map(\.id), [firstPinned.id, secondPinned.id, unpinned.id])
     }
 
@@ -750,7 +750,7 @@ final class WorkspaceReorderTests: XCTestCase {
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
-        XCTAssertTrue(manager.reorderWorkspace(tabId: firstPinned.id, toIndex: 999))
+        XCTAssertTrue(manager.reorderWorkspace(workspaceId: firstPinned.id, toIndex: 999))
         XCTAssertEqual(manager.workspaces.map(\.id), [secondPinned.id, firstPinned.id, unpinned.id])
     }
 }
@@ -797,7 +797,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
         let expectedOrder = [firstPinned.id, secondPinned.id, unpinned.id]
 
         notificationStore.addNotification(
-            tabId: secondPinned.id,
+            workspaceId: secondPinned.id,
             surfaceId: nil,
             title: "Build finished",
             subtitle: "",
@@ -1047,7 +1047,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         let drift = makeDirectory("drift")
         let selected = manager.addWorkspace(workingDirectory: root, select: true, autoWelcomeIfNeeded: false)
         guard let focused = selected.focusedPanelId else { return XCTFail("Expected a focused panel") }
-        manager.updateSurfaceDirectory(tabId: selected.id, surfaceId: focused, directory: drift)
+        manager.updateSurfaceDirectory(workspaceId: selected.id, surfaceId: focused, directory: drift)
 
         let fromRoot = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         XCTAssertEqual(fromRoot.focusedTerminalPanel?.requestedWorkingDirectory, root)
@@ -1092,8 +1092,8 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         XCTAssertTrue(workspace.rootAdoptionArmed)
 
         // A fresh shell lands in ~ or /: not a project, keep waiting.
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: home)
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: "/")
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: home)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: "/")
         XCTAssertNil(workspace.rootDirectory)
         XCTAssertTrue(workspace.rootAdoptionArmed)
 
@@ -1101,14 +1101,14 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         guard let other = workspace.newTerminalSplit(from: focused, orientation: .horizontal, focus: false) else {
             return XCTFail("Expected split")
         }
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: other.id, directory: later)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: other.id, directory: later)
         XCTAssertNil(workspace.rootDirectory)
 
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: project)
         XCTAssertEqual(workspace.rootDirectory, project)
         XCTAssertFalse(workspace.rootAdoptionArmed)
 
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: later)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: later)
         XCTAssertEqual(workspace.rootDirectory, project, "Adoption is one-shot; later navigation never moves the root")
     }
 
@@ -1119,11 +1119,11 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         guard let focused = workspace.focusedPanelId else { return XCTFail("Expected a focused panel") }
 
         workspace.setRootDirectory(home)
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: project)
         XCTAssertEqual(workspace.rootDirectory, home)
 
         workspace.setRootDirectory(nil)
-        manager.updateSurfaceDirectory(tabId: workspace.id, surfaceId: focused, directory: project)
+        manager.updateSurfaceDirectory(workspaceId: workspace.id, surfaceId: focused, directory: project)
         XCTAssertNil(workspace.rootDirectory, "A cleared root stays cleared")
         XCTAssertFalse(workspace.rootAdoptionArmed)
     }
@@ -2426,7 +2426,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a],
             selected: b,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: false,
             maxMounted: WorkspaceMountPolicy.maxMountedWorkspaces
         )
@@ -2444,7 +2444,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a, b, c],
             selected: c,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: false,
             maxMounted: 2
         )
@@ -2460,7 +2460,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [b, a],
             selected: nil,
             pinnedIds: [],
-            orderedTabIds: [a],
+            orderedWorkspaceIds: [a],
             isCycleHot: false,
             maxMounted: 2
         )
@@ -2477,7 +2477,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a],
             selected: b,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: false,
             maxMounted: 2
         )
@@ -2494,7 +2494,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a, b],
             selected: nil,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: false,
             maxMounted: 0
         )
@@ -2513,7 +2513,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a],
             selected: c,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: true,
             maxMounted: WorkspaceMountPolicy.maxMountedWorkspacesDuringCycle
         )
@@ -2531,7 +2531,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a, b, c],
             selected: b,
             pinnedIds: [],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: true,
             maxMounted: 2
         )
@@ -2549,7 +2549,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a],
             selected: c,
             pinnedIds: [a],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: false,
             maxMounted: 2
         )
@@ -2566,7 +2566,7 @@ final class WorkspaceMountPolicyTests: XCTestCase {
             current: [a],
             selected: b,
             pinnedIds: [a],
-            orderedTabIds: orderedTabIds,
+            orderedWorkspaceIds: orderedTabIds,
             isCycleHot: true,
             maxMounted: WorkspaceMountPolicy.maxMountedWorkspacesDuringCycle
         )

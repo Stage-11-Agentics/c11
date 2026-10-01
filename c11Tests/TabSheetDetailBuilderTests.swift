@@ -7,7 +7,7 @@ import Bonsplit
 @testable import c11
 #endif
 
-/// Pure logic behind the tab sheet's per-tab detail: agent tag, status word,
+/// Pure logic behind the tab sheet's per-tab detail: agent tag, type, status word,
 /// subtitle fallbacks, clocks and the clock-order setting.
 final class TabSheetDetailBuilderTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000_000)
@@ -77,6 +77,32 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: nil, model: "claude-opus-4-7", modelLabel: nil))
         XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: "shell", model: nil, modelLabel: nil))
         XCTAssertNil(TabSheetDetailBuilder.agentLabel(terminalKind: "unknown", model: nil, modelLabel: nil))
+    }
+
+    // MARK: Type
+
+    func testTypeLabelNamesTheTabKind() {
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .terminal)).typeLabel, "Terminal")
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .browser)).typeLabel, "Browser")
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(panelType: .markdown)).typeLabel, "Markdown")
+        let agent = TabSheetDetailBuilder.build(inputs(terminalKind: "codex", modelLabel: "gpt-5.5"))
+        XCTAssertEqual(agent.agentLabel, "Codex · gpt-5.5")
+        XCTAssertEqual(agent.typeLabel, "Terminal")
+    }
+
+    func testAgentTintFollowsTheModelFamily() {
+        func tint(_ kind: String?, _ model: String?, _ label: String? = nil) -> String? {
+            TabSheetDetailBuilder.agentTintHex(terminalKind: kind, model: model, modelLabel: label)
+        }
+        XCTAssertEqual(tint("claude-code", "claude-fable-5-1"), "#AF5FFF")
+        XCTAssertEqual(tint("claude-code", "claude-opus-5-5"), "#FFFFFF")
+        XCTAssertEqual(tint("claude-code", nil, "Sonnet 5.5"), "#5AA0FF")
+        XCTAssertEqual(tint("claude-code", "claude-haiku-4-5-20251001"), "#FF80C8")
+        XCTAssertEqual(tint("codex", "gpt-5.5"), "#5FD7D7")
+        XCTAssertEqual(tint("claude-code", nil), "#5FD7D7")
+        XCTAssertNil(tint(nil, "claude-opus-5-5"))
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(terminalKind: "claude-code", model: "claude-opus-5-5")).agentTintHex, "#FFFFFF")
+        XCTAssertNil(TabSheetDetailBuilder.build(inputs(panelType: .browser)).agentTintHex)
     }
 
     // MARK: Status

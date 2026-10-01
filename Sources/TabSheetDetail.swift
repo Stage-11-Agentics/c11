@@ -1,7 +1,7 @@
 import Foundation
 import Bonsplit
 
-/// Assembles the tab sheet's per-tab detail (agent, subtitle, status, clocks)
+/// Assembles the tab sheet's per-tab detail (type, subtitle, status, clocks)
 /// from already-resolved inputs. Pure: no stores, no AppKit. `Workspace` gathers
 /// the inputs; bonsplit only renders the result.
 enum TabSheetDetailBuilder {
@@ -80,6 +80,12 @@ enum TabSheetDetailBuilder {
                 model: input.model,
                 modelLabel: input.modelLabel
             ),
+            agentTintHex: agentTintHex(
+                terminalKind: input.terminalKind,
+                model: input.model,
+                modelLabel: input.modelLabel
+            ),
+            typeLabel: typeLabel(input.panelType),
             subtitle: subtitle(input),
             status: status(
                 activity: input.activity,
@@ -104,6 +110,31 @@ enum TabSheetDetailBuilder {
             ?? AgentChipResolver.shortenModel(model?.trimmingCharacters(in: .whitespacesAndNewlines))
         guard let shortModel, !shortModel.isEmpty else { return harness }
         return "\(harness) · \(shortModel)"
+    }
+
+    /// The agent chip's colour by model family, the same scheme as the Claude
+    /// Code statusline: Fable purple, Opus white, Sonnet blue, Haiku pink, any
+    /// other model (or harness) cyan. nil when the surface is not an agent.
+    static func agentTintHex(terminalKind: String?, model: String?, modelLabel: String?) -> String? {
+        guard AgentIdentityPolicy.isAgentKind(terminalKind) else { return nil }
+        let name = [model, modelLabel].compactMap { $0 }.joined(separator: " ").lowercased()
+        if name.contains("fable") { return "#AF5FFF" }
+        if name.contains("opus") { return "#FFFFFF" }
+        if name.contains("sonnet") { return "#5AA0FF" }
+        if name.contains("haiku") { return "#FF80C8" }
+        return "#5FD7D7"
+    }
+
+    /// The tab's kind for the sheet's Type column, shown when it hosts no agent.
+    static func typeLabel(_ panelType: PanelType) -> String {
+        switch panelType {
+        case .terminal:
+            return String(localized: "tabSheet.type.terminal", defaultValue: "Terminal")
+        case .browser:
+            return String(localized: "tabSheet.type.browser", defaultValue: "Browser")
+        case .markdown:
+            return String(localized: "tabSheet.type.markdown", defaultValue: "Markdown")
+        }
     }
 
     /// The description flattened to one line; else the kind's own locator: cwd

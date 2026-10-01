@@ -17,7 +17,7 @@ import XCTest
 /// member. This test never calls `stop()`, so it does not disturb the
 /// per-PID host socket.
 @MainActor
-final class SocketSurfaceRefRejectionWiringTests: XCTestCase {
+final class SocketTabRefRejectionWiringTests: XCTestCase {
 
     private func responseCode(for json: String) -> String {
         let response = TerminalController.shared.processV2Command(json)

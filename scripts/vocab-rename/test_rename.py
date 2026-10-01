@@ -721,5 +721,69 @@ class LiteralSweep(unittest.TestCase):
         self.assertEqual(self.run_check(allow).returncode, 1)
 
 
+gp6 = _load("gen_p6", "gen-p6.py")
+
+
+class TestNames(unittest.TestCase):
+    """P6: a test name follows the subject it names, only when a pass renamed that subject."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="vr-p6-")
+        cls.tables = os.path.join(cls.root, "tables")
+        os.makedirs(cls.tables)
+        open(os.path.join(cls.tables, "pass-9.tsv"), "w").write(
+            "PaneMetadataStore\tAreaMetadataStore\t*\t\tev:T\n"
+            "BrowserPaneDropRouting\tBrowserAreaDropRouting\t*\t\tev:T\n"
+            "SurfaceThing\tTabThing\t*\t\tev:T\n")
+        os.makedirs(os.path.join(cls.root, "c11Tests"))
+        w = lambda n, t: open(os.path.join(cls.root, "c11Tests", n), "w").write(t)
+        w("PaneMetadataStoreTests.swift",
+          "final class PaneMetadataStoreTests: XCTestCase {\n"
+          "    func testPaneRemoved() { let s = AreaMetadataStore(); use(s) }\n"
+          "    func testPaneIdLegacy() { let x = 1; use(x) }\n"
+          "}\n")
+        w("GhosttyOverlayTests.swift",
+          "final class GhosttySurfaceOverlayTests: XCTestCase {\n"
+          "    func testSurfaceDraws() { let s: TerminalSurface = f(); use(s) }\n"
+          "}\n")
+        w("BrowserPaneDropRoutingTests.swift",
+          "final class BrowserPaneDropRoutingTests: XCTestCase {\n"
+          "    func testRoutes() { let id: PaneID = p; use(id) }\n"
+          "}\n")
+        w("LegacyTests.swift",
+          "final class ThingTests: XCTestCase {\n"
+          "    func testRenameAcceptsEitherSurfaceOrTabId() { let t = TabThing(); use(t) }\n"
+          "    func testSurfaceThingRoundTrips() { let t = TabThing(); use(t) }\n"
+          "}\n")
+        cls.out = os.path.join(cls.root, "pass-p6.tsv")
+        cls.result = gp6.main(["gen-p6.py", "--root", cls.root, "--tables", cls.tables, "--out", cls.out])
+        cls.rows = [l.rstrip("\n").split("\t") for l in open(cls.out) if not l.startswith("#")]
+
+    def test_class_body_evidence_renames_class_function_and_file(self):
+        classes = {r[0]: r[1] for r in self.rows if r[0] != "@path" and r[2] == "c11Tests/*"}
+        self.assertEqual(classes["PaneMetadataStoreTests"], "AreaMetadataStoreTests")
+        funcs = {r[0]: r[1] for r in self.rows if r[0] != "@path" and r[2] != "c11Tests/*"}
+        self.assertEqual(funcs["testPaneRemoved"], "testAreaRemoved")
+        self.assertNotIn("testPaneIdLegacy", funcs)  # no evidence in its own body
+        self.assertIn(["@path", "c11Tests/PaneMetadataStoreTests.swift", "c11Tests/AreaMetadataStoreTests.swift", "ev:Test"], self.rows)
+
+    def test_name_prefix_evidence_beats_a_bonsplit_token_in_the_body(self):
+        classes = {r[0]: r[1] for r in self.rows if r[0] != "@path" and r[2] == "c11Tests/*"}
+        self.assertEqual(classes["BrowserPaneDropRoutingTests"], "BrowserAreaDropRoutingTests")
+
+    def test_ghostty_subject_and_legacy_alias_tests_keep_their_names(self):
+        names = {r[0] for r in self.rows if r[0] != "@path"}
+        self.assertNotIn("GhosttySurfaceOverlayTests", names)
+        self.assertNotIn("testSurfaceDraws", names)
+        self.assertNotIn("testRenameAcceptsEitherSurfaceOrTabId", names)  # the old word is the point of the test
+        self.assertIn("testSurfaceThingRoundTrips", names)
+
+    def test_gate_proves_a_renamed_test_and_rejects_an_unsupported_one(self):
+        entries = [("c11Tests/PaneMetadataStoreTests.swift", "0", "testPaneRemoved", "testAreaRemoved", "Test", "")]
+        # the fixture file still holds the old name: the declaration check must fail
+        self.assertTrue(rename.verify_classes(entries, "WORKTREE", self.root))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

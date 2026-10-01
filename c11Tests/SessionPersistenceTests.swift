@@ -9,7 +9,7 @@ import AppKit
 
 final class SessionPersistenceTests: XCTestCase {
     @MainActor
-    func testWorkspaceSessionSnapshotRestoresMarkdownPanel() throws {
+    func testWorkspaceSessionSnapshotRestoresMarkdownTab() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-markdown-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -164,7 +164,7 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
-    func testSessionPanelSnapshotCustomColorRoundTrip() throws {
+    func testSessionTabSnapshotCustomColorRoundTrip() throws {
         let panelId = UUID()
         let snapshot = SessionTabSnapshot(
             id: panelId,
@@ -195,7 +195,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.id, panelId)
     }
 
-    func testSessionPanelSnapshotCustomColorOmittedWhenNil() throws {
+    func testSessionTabSnapshotCustomColorOmittedWhenNil() throws {
         let snapshot = SessionTabSnapshot(
             id: UUID(),
             type: .terminal,
@@ -226,7 +226,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.customColor)
     }
 
-    func testSessionPanelSnapshotDecodesLegacyJSONWithoutCustomColor() throws {
+    func testSessionTabSnapshotDecodesLegacyJSONWithoutCustomColor() throws {
         let panelId = UUID()
         // Hand-rolled legacy JSON without the customColor field; mirrors a
         // pre-C11-10 snapshot. Must decode with customColor == nil.
@@ -255,7 +255,7 @@ final class SessionPersistenceTests: XCTestCase {
     /// decode-tolerate yet silently never encode (a persistence no-op a naive
     /// nil-on-both-sides test would pass). Asserting the JSON key is present
     /// AND a real value round-trips catches that.
-    func testSessionPanelSnapshotLastActivityAtRoundTrip() throws {
+    func testSessionTabSnapshotLastActivityAtRoundTrip() throws {
         let panelId = UUID()
         let floor = Date(timeIntervalSince1970: 1_700_000_123)
         var snapshot = SessionTabSnapshot(
@@ -277,7 +277,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     /// Pre-C11-164 snapshots have no `last_activity_at` key; they must decode
     /// with `lastActivityAt == nil` (no floor, prior behaviour) — not throw.
-    func testSessionPanelSnapshotDecodesLegacyJSONWithoutLastActivity() throws {
+    func testSessionTabSnapshotDecodesLegacyJSONWithoutLastActivity() throws {
         let panelId = UUID()
         let legacyJSON = """
         {
@@ -294,7 +294,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.lastActivityAt)
     }
 
-    func testSessionPanelSnapshotLogicalCreationRoundTrip() throws {
+    func testSessionTabSnapshotLogicalCreationRoundTrip() throws {
         let createdAt = Date(timeIntervalSince1970: 1_700_000_456)
         let snapshot = SessionTabSnapshot(
             id: UUID(),
@@ -321,7 +321,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.createdAt, createdAt)
     }
 
-    func testSessionPanelSnapshotLegacyCreationIsNotInvented() throws {
+    func testSessionTabSnapshotLegacyCreationIsNotInvented() throws {
         let panelId = UUID()
         let legacyJSON = """
         {
@@ -501,7 +501,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(object["height"]), 704.5, accuracy: 0.001)
     }
 
-    func testSessionBrowserPanelSnapshotHistoryRoundTrip() throws {
+    func testSessionBrowserTabSnapshotHistoryRoundTrip() throws {
         let profileID = try XCTUnwrap(UUID(uuidString: "8F03A658-5A84-428B-AD03-5A6D04692F64"))
         let source = SessionBrowserTabSnapshot(
             urlString: "https://example.com/current",
@@ -550,7 +550,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(SessionSnapshotSchema.currentVersion, 1)
     }
 
-    func testSessionBrowserPanelSnapshotHistoryDecodesWhenKeysAreMissing() throws {
+    func testSessionBrowserTabSnapshotHistoryDecodesWhenKeysAreMissing() throws {
         let json = """
         {
           "urlString": "https://example.com/current",

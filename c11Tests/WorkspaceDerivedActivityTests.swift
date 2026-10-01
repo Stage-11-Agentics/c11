@@ -16,7 +16,7 @@ import XCTest
 /// working-dominates-idle / nil-when-empty rollup contract.
 final class WorkspaceDerivedActivityTests: XCTestCase {
     @MainActor
-    func testSetDerivedActivityStoresPerSurfaceState() {
+    func testSetDerivedActivityStoresPerTabState() {
         let workspace = Workspace()
         let surface = UUID()
 
@@ -52,7 +52,7 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
     }
 
     @MainActor
-    func testSetDerivedActivityIsPerSurfaceIndependent() {
+    func testSetDerivedActivityIsPerTabIndependent() {
         let workspace = Workspace()
         let surfaceA = UUID()
         let surfaceB = UUID()

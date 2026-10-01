@@ -75,7 +75,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     // MARK: - SurfaceSpec
 
-    func testSurfaceSpecTerminalRoundTrips() throws {
+    func testTabSpecTerminalRoundTrips() throws {
         let spec = TabSpec(
             id: "main",
             kind: .terminal,
@@ -97,7 +97,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testSurfaceSpecBrowserRoundTrips() throws {
+    func testTabSpecBrowserRoundTrips() throws {
         let spec = TabSpec(
             id: "docs",
             kind: .browser,
@@ -107,7 +107,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testSurfaceSpecCompanionFieldsRoundTrip() throws {
+    func testTabSpecCompanionFieldsRoundTrip() throws {
         let browser = TabSpec(
             id: "browser",
             kind: .browser,
@@ -122,7 +122,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(agent)
     }
 
-    func testSurfaceSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
+    func testTabSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal"}"#
         let decoded = try decode(TabSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertNil(decoded.linkedAgentSurfacePlanId)
@@ -130,7 +130,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertFalse(decoded.submitCommand)
     }
 
-    func testSurfaceSpecMarkdownRoundTrips() throws {
+    func testTabSpecMarkdownRoundTrips() throws {
         let spec = TabSpec(
             id: "notes",
             kind: .markdown,
@@ -140,7 +140,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
-    func testSurfaceSpecPreservesMailboxStarKeysVerbatim() throws {
+    func testTabSpecPreservesMailboxStarKeysVerbatim() throws {
         // Per docs/c11-13-cmux-37-alignment.md: the mailbox.* namespace
         // round-trips without normalization. The string-value type guard
         // lives in the executor, not the Codable layer, so a non-string value
@@ -166,7 +166,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     // MARK: - SurfaceSpec.submitCommand (opt-in, back-compat)
 
-    func testSurfaceSpecSubmitCommandRoundTrips() throws {
+    func testTabSpecSubmitCommandRoundTrips() throws {
         let spec = TabSpec(
             id: "launcher",
             kind: .terminal,
@@ -181,7 +181,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     /// An older plan/snapshot serialized before `submitCommand` existed has no
     /// such key. Swift's *synthesized* decoder would throw `keyNotFound`; the
     /// custom `init(from:)` must instead default it to `false`.
-    func testSurfaceSpecDecodesMissingSubmitCommandAsFalse() throws {
+    func testTabSpecDecodesMissingSubmitCommandAsFalse() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal","command":"ls"}"#
         let decoded = try decode(TabSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertFalse(decoded.submitCommand)
@@ -190,7 +190,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     /// When `submitCommand` is `false` the encoder omits the key entirely, so
     /// serialized output for every pre-existing spec stays byte-identical.
-    func testSurfaceSpecOmitsSubmitCommandWhenFalse() throws {
+    func testTabSpecOmitsSubmitCommandWhenFalse() throws {
         let spec = TabSpec(id: "t", kind: .terminal, command: "ls")
         let json = String(data: try encode(spec), encoding: .utf8) ?? ""
         XCTAssertFalse(json.contains("submitCommand"), "false must not serialize; got \(json)")
@@ -380,7 +380,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertEqual(failure?.step, "validate")
     }
 
-    func testValidateRejectsDuplicateSurfaceId() {
+    func testValidateRejectsDuplicateTabId() {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
@@ -394,7 +394,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertEqual(failure?.code, "duplicate_surface_id")
     }
 
-    func testValidateRejectsDuplicateSurfaceReferenceAcrossPanes() {
+    func testValidateRejectsDuplicateTabReferenceAcrossAreas() {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
@@ -410,7 +410,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertEqual(failure?.code, "duplicate_surface_reference")
     }
 
-    func testValidateRejectsDuplicateSurfaceReferenceWithinSinglePane() {
+    func testValidateRejectsDuplicateTabReferenceWithinSingleArea() {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
@@ -421,7 +421,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertEqual(failure?.code, "duplicate_surface_reference")
     }
 
-    func testValidateRejectsUnknownSurfaceReference() {
+    func testValidateRejectsUnknownTabReference() {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),

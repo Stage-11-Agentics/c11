@@ -52,16 +52,16 @@ PURE_FILES = %w[
   MailboxIOTests.swift
   MailboxLayoutTests.swift
   MailboxOutboxWatcherTests.swift
-  MailboxSurfaceResolverTests.swift
+  MailboxTabResolverTests.swift
   MailboxULIDTests.swift
   MetadataPersistencePrecedenceTests.swift
   MetadataPersistenceRoundTripTests.swift
   MetadataPersistenceUncoercibleTests.swift
   MetadataStoreRevisionCounterTests.swift
-  PaneInteractionRuntimeTests.swift
-  PanelIdentityRestoreTests.swift
-  PaneMetadataPersistenceTests.swift
-  PaneMetadataStoreTests.swift
+  AreaInteractionRuntimeTests.swift
+  TabIdentityRestoreTests.swift
+  AreaMetadataPersistenceTests.swift
+  AreaMetadataStoreTests.swift
   SessionEndShutdownPolicyTests.swift
   SessionPersistenceTests.swift
   SidebarWidthPolicyTests.swift
@@ -69,8 +69,8 @@ PURE_FILES = %w[
   StatusBarButtonDisplayTests.swift
   StatusEntryPersistenceTests.swift
   StdinHandlerFormattingTests.swift
-  SurfaceMetadataStoreValidationTests.swift
-  TabManagerSessionSnapshotTests.swift
+  TabMetadataStoreValidationTests.swift
+  WorkspaceManagerSessionSnapshotTests.swift
   TCCPrimerTests.swift
   TerminalControllerTelemetryWorkerTests.swift
   ThemeCycleAndInvalidValueTests.swift

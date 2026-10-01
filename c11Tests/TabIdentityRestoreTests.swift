@@ -13,9 +13,9 @@ import XCTest
 /// had in the snapshot. External consumers (Lattice, CLI, socket tests) cache
 /// panel IDs, so the restore path must preserve them — not mint fresh UUIDs and
 /// remap them internally the way pre-Phase-1 code did.
-final class PanelIdentityRestoreTests: XCTestCase {
+final class TabIdentityRestoreTests: XCTestCase {
     @MainActor
-    func testTerminalPanelIdIsStableAcrossRoundTrip() throws {
+    func testTerminalTabIdIsStableAcrossRoundTrip() throws {
         let workspace = Workspace()
         let originalPanelIds = Set(workspace.panels.keys)
         XCTAssertEqual(originalPanelIds.count, 1, "Workspace() should seed exactly one terminal panel")
@@ -36,7 +36,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testMarkdownPanelIdIsStableAcrossRoundTrip() throws {
+    func testMarkdownTabIdIsStableAcrossRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-panel-identity-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -67,7 +67,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testBrowserPanelIdIsStableAcrossRoundTrip() throws {
+    func testBrowserTabIdIsStableAcrossRoundTrip() throws {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let browserPanel = try XCTUnwrap(
@@ -90,7 +90,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
     }
 
     @MainActor
-    func testMixedPanelTypesAllSurviveRoundTripWithSameIds() throws {
+    func testMixedTabTypesAllSurviveRoundTripWithSameIds() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-panel-identity-mixed-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

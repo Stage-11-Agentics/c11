@@ -67,7 +67,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         super.tearDown()
     }
 
-    func testNotificationPaneFlashPreferenceDefaultsToEnabled() {
+    func testNotificationAreaFlashPreferenceDefaultsToEnabled() {
         let suiteName = "NotificationPaneFlashSettingsTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")

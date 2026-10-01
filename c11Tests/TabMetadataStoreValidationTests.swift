@@ -15,7 +15,7 @@ import XCTest
 /// never lands in the metadata blob in the first place.
 ///
 /// Per `CLAUDE.md`, never run locally — CI only.
-final class SurfaceMetadataStoreValidationTests: XCTestCase {
+final class TabMetadataStoreValidationTests: XCTestCase {
 
     private let store = TabMetadataStore.shared
 

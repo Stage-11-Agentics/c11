@@ -7,7 +7,7 @@ import XCTest
 #endif
 
 @MainActor
-final class TabManagerSessionSnapshotTests: XCTestCase {
+final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
     func testSessionSnapshotSerializesWorkspacesAndRestoreRebuildsSelection() {
         let manager = WorkspaceManager()
         guard let firstWorkspace = manager.selectedWorkspace else {

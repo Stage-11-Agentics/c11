@@ -98,7 +98,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Cmd+N should add workspace to the event's window")
     }
 
-    func testAddWorkspaceInPreferredMainWindowIgnoresStaleTabManagerPointer() {
+    func testAddWorkspaceInPreferredMainWindowIgnoresStaleWorkspaceManagerPointer() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return

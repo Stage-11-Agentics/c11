@@ -58,7 +58,7 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertTrue(decoded.placeholder)
     }
 
-    func testSurfaceConversationsCodableEmitsHistoryArrayExplicitly() throws {
+    func testTabConversationsCodableEmitsHistoryArrayExplicitly() throws {
         let surface = TabConversations(active: nil, history: [])
         let data = try JSONEncoder().encode(surface)
         let json = String(data: data, encoding: .utf8) ?? ""
@@ -956,7 +956,7 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertEqual(active?.diagnosticReason, "operator ended")
     }
 
-    func testClearWipesSurface() async {
+    func testClearWipesTab() async {
         let store = ConversationStore()
         await store.push(
             surfaceId: "S1",

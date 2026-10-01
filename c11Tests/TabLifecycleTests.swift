@@ -30,7 +30,7 @@ private final class CallCounter: @unchecked Sendable {
 /// in `SurfaceMetadataStore`, and the controller's transition gating.
 ///
 /// Per `CLAUDE.md`, never run locally — CI only.
-final class SurfaceLifecycleTests: XCTestCase {
+final class TabLifecycleTests: XCTestCase {
 
     // MARK: - Transition validator
 
@@ -260,7 +260,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     /// and a billable pageview against the persisted URL during the
     /// gap between construction and the legacy re-hibernate dispatch.
     @MainActor
-    func testBrowserPanelPendingHibernateSkipsInitialLoad() throws {
+    func testBrowserTabPendingHibernateSkipsInitialLoad() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/c11-25-pending-hibernate"))
         let surfaceId = UUID()
         BrowserSnapshotStore.shared.clear(forSurfaceId: surfaceId)
@@ -307,7 +307,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     /// panel still drives the initial navigate. Guards against an
     /// over-broad fix that suppresses the navigate for the normal case.
     @MainActor
-    func testBrowserPanelDefaultConstructionStillFiresInitialLoad() throws {
+    func testBrowserTabDefaultConstructionStillFiresInitialLoad() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/c11-25-default"))
         let panel = BrowserTab(
             workspaceId: UUID(),

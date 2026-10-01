@@ -9,7 +9,7 @@ import XCTest
 /// C11-243: behavior of the per-tab "last seen" state machine and its
 /// snapshot persistence. Drives the pure `SurfaceSeenClock`, so no AppKit
 /// focus state is needed.
-final class SurfaceSeenClockTests: XCTestCase {
+final class TabSeenClockTests: XCTestCase {
     private let a = UUID()
     private let b = UUID()
     private func t(_ s: TimeInterval) -> Date { Date(timeIntervalSince1970: 1_000 + s) }
@@ -86,7 +86,7 @@ final class SurfaceSeenClockTests: XCTestCase {
         XCTAssertNil(clock.current)
     }
 
-    func testLastSeenAtRoundTripsThroughPanelSnapshot() throws {
+    func testLastSeenAtRoundTripsThroughTabSnapshot() throws {
         let stamp = Date(timeIntervalSince1970: 1_700_000_123)
         func snapshot(_ lastSeenAt: Date?) -> SessionTabSnapshot {
             SessionTabSnapshot(

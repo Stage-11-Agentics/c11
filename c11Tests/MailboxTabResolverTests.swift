@@ -6,7 +6,7 @@ import XCTest
 @testable import c11
 #endif
 
-final class MailboxSurfaceResolverTests: XCTestCase {
+final class MailboxTabResolverTests: XCTestCase {
 
     private var workspaceId: UUID!
     private var store: TabMetadataStore!
@@ -81,13 +81,13 @@ final class MailboxSurfaceResolverTests: XCTestCase {
 
     // MARK: - Surface name
 
-    func testSurfaceNameReturnsTitle() {
+    func testTabNameReturnsTitle() {
         let surfaceId = seedSurface(name: "my-agent")
         let resolver = makeResolver(candidates: [surfaceId])
         XCTAssertEqual(resolver.tabName(for: surfaceId), "my-agent")
     }
 
-    func testSurfaceNameReturnsNilWhenNoTitle() {
+    func testTabNameReturnsNilWhenNoTitle() {
         let surfaceId = seedSurface(name: nil)
         let resolver = makeResolver(candidates: [surfaceId])
         XCTAssertNil(resolver.tabName(for: surfaceId))
@@ -95,7 +95,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
 
     // MARK: - Mailbox metadata enumeration
 
-    func testEnumeratesMailboxMetadataForTitledSurfaces() {
+    func testEnumeratesMailboxMetadataForTitledTabs() {
         let watcher = seedSurface(
             name: "watcher",
             extraMailbox: [
@@ -143,7 +143,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
 
     // MARK: - Stable address / role identity (C11-143)
 
-    func testSurfaceMetadataExposesAddressAndRole() {
+    func testTabMetadataExposesAddressAndRole() {
         let s = seedSurface(
             name: "builder-display",
             extraMailbox: [
@@ -160,7 +160,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         )
     }
 
-    func testSurfaceMetadataAddressAndRoleNilWhenUnset() {
+    func testTabMetadataAddressAndRoleNilWhenUnset() {
         let s = seedSurface(name: "title-only")
         let row = makeResolver(candidates: [s]).tabsWithMailboxMetadata().first
         XCTAssertNil(row?.address)
@@ -168,7 +168,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         XCTAssertEqual(row?.identity, MailboxIdentity(title: "title-only", address: nil, role: nil))
     }
 
-    func testSurfaceMetadataRoleDoesNotFallBackToCanonicalRole() {
+    func testTabMetadataRoleDoesNotFallBackToCanonicalRole() {
         // Canonical `role` is NOT a mailbox.* key — role addressing is opt-in
         // via mailbox.role so bare-name resolution stays title-stable.
         let s = seedSurface(name: "agent", extraMailbox: ["role": "reviewer"])

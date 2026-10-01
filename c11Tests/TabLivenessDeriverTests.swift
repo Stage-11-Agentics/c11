@@ -15,7 +15,7 @@ import Bonsplit
 /// `SurfaceMetadataStore` (the durable liveness *truth*), driven through the
 /// deriver's public API. The Workspace projection mirror is covered by
 /// `WorkspaceDerivedActivityTests`; here we assert only the store side.
-final class SurfaceLivenessDeriverTests: XCTestCase {
+final class TabLivenessDeriverTests: XCTestCase {
 
     private let store = TabMetadataStore.shared
 
@@ -87,7 +87,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(activitySource(workspaceId, surfaceId), .derived)
     }
 
-    func testSurfaceTabResolverMapsRecognizedAgentStates() {
+    func testTabResolverMapsRecognizedAgentStates() {
         XCTAssertEqual(
             TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
@@ -123,7 +123,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
     }
 
-    func testSurfaceTabResolverGivesExactDemandPrecedence() {
+    func testTabResolverGivesExactDemandPrecedence() {
         for activity in [SidebarActivityState.working, .idle, nil] {
             XCTAssertEqual(
                 TabActivityResolver.resolve(
@@ -136,7 +136,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         }
     }
 
-    func testSurfaceTabResolverDoesNotManufactureWaitingFromWorkspaceOrManualUnread() {
+    func testTabResolverDoesNotManufactureWaitingFromWorkspaceOrManualUnread() {
         XCTAssertEqual(
             TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
@@ -155,7 +155,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
     }
 
-    func testSurfaceTabResolverOmitsNonAgentActivity() {
+    func testTabResolverOmitsNonAgentActivity() {
         XCTAssertNil(TabActivityResolver.resolve(
             hasExactSurfaceNotification: false,
             derivedActivity: .working,
@@ -338,7 +338,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         }
     }
 
-    func testSurfaceTabActivityColorsMatchDarkAndLightContract() {
+    func testTabActivityColorsMatchDarkAndLightContract() {
         let dark = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#101114")!)
         XCTAssertEqual(dark.runningHex, "#E8E8E8")
         XCTAssertEqual(dark.idleHex, "#9AA0A9")

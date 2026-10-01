@@ -79,7 +79,7 @@ final class WorkspaceFlashTests: XCTestCase {
         XCTAssertTrue(workspace.persistentFlashTabs.isEmpty)
     }
 
-    func testCancelOnUnregisteredPanelIsIdempotent() {
+    func testCancelOnUnregisteredTabIsIdempotent() {
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()
         // No prior persistent flash; cancel should not crash or alter state.
@@ -117,7 +117,7 @@ final class WorkspaceFlashTests: XCTestCase {
         workspace.cancelPersistentFlash(panelId: panelId)
     }
 
-    func testTeardownAllPanelsCancelsEveryPersistentFlash() {
+    func testTeardownAllTabsCancelsEveryPersistentFlash() {
         let workspace = Workspace(title: "flash-test")
         let panelA = UUID()
         let panelB = UUID()
@@ -167,7 +167,7 @@ final class WorkspaceFlashTests: XCTestCase {
         XCTAssertEqual(capturedTimer?.isValid, false, "deinit must invalidate persistent timers")
     }
 
-    func testPaneFlashDisabledGuardSilencesAllChannels() {
+    func testAreaFlashDisabledGuardSilencesAllChannels() {
         UserDefaults.standard.set(false, forKey: NotificationAreaFlashSettings.enabledKey)
         defer { UserDefaults.standard.set(true, forKey: NotificationAreaFlashSettings.enabledKey) }
 

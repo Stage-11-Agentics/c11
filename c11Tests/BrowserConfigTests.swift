@@ -1097,7 +1097,7 @@ final class BrowserDeveloperToolsShortcutDefaultsTests: XCTestCase {
 
 @MainActor
 final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
-    func testBrowserPanelEnablesInspectableWebViewAndDeveloperExtras() {
+    func testBrowserTabEnablesInspectableWebViewAndDeveloperExtras() {
         let panel = BrowserTab(workspaceId: UUID())
         let developerExtras = panel.webView.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool
         XCTAssertEqual(developerExtras, true)
@@ -1107,7 +1107,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         }
     }
 
-    func testBrowserPanelRefreshesUnderPageBackgroundColorWhenGhosttyBackgroundChanges() {
+    func testBrowserTabRefreshesUnderPageBackgroundColorWhenGhosttyBackgroundChanges() {
         let panel = BrowserTab(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
         let updatedOpacity = 0.57
@@ -1151,7 +1151,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         XCTAssertFalse(panel.isShowingNewTabPage)
     }
 
-    func testBrowserPanelThemeModeUpdatesWebViewAppearance() {
+    func testBrowserTabThemeModeUpdatesWebViewAppearance() {
         let panel = BrowserTab(workspaceId: UUID())
 
         panel.setBrowserThemeMode(.dark)
@@ -1164,7 +1164,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
         XCTAssertNil(panel.webView.appearance)
     }
 
-    func testBrowserPanelRefreshesUnderPageBackgroundColorWithGhosttyOpacity() {
+    func testBrowserTabRefreshesUnderPageBackgroundColorWithGhosttyOpacity() {
         let panel = BrowserTab(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
 
@@ -1614,7 +1614,7 @@ final class BrowserPopupContentRectTests: XCTestCase {
 
 @MainActor
 final class BrowserJavaScriptDialogDelegateTests: XCTestCase {
-    func testBrowserPanelUIDelegateImplementsJavaScriptDialogSelectors() {
+    func testBrowserTabUIDelegateImplementsJavaScriptDialogSelectors() {
         let panel = BrowserTab(workspaceId: UUID())
         guard let uiDelegate = panel.webView.uiDelegate as? NSObject else {
             XCTFail("Expected BrowserPanel webView.uiDelegate to be an NSObject")

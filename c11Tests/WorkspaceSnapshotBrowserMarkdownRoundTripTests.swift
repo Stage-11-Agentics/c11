@@ -38,7 +38,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
     // MARK: - Tests
 
     /// Apply a plan with one terminal + one browser, capture, check kinds.
-    func testBrowserSurfaceKindRoundTrips() throws {
+    func testBrowserTabKindRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
@@ -127,7 +127,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
     /// Apply a three-surface plan (terminal + browser + markdown), verify all
     /// kinds survive capture and no surface is dropped.
-    func testMixedThreeSurfacePlanRoundTrips() throws {
+    func testMixedThreeTabPlanRoundTrips() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "mixed"),

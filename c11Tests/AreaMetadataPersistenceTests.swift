@@ -11,7 +11,7 @@ import XCTest
 /// Mirrors `MetadataPersistenceRoundTripTests` but keys on panes instead of
 /// surfaces. End-to-end save/load via the live workspace + bonsplit tree is
 /// covered by the Python socket test in `tests_v2/test_pane_metadata_persistence.py`.
-final class PaneMetadataPersistenceTests: XCTestCase {
+final class AreaMetadataPersistenceTests: XCTestCase {
     // MARK: - SessionPaneLayoutSnapshot Codable backcompat
 
     func testPrePhase3SnapshotDecodesCleanlyWithoutMetadataFields() throws {

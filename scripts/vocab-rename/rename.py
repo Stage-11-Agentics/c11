@@ -80,6 +80,7 @@ IDENT_START = re.compile(r"[A-Za-z_\u0080-￿]")
 IDENT_CHAR = re.compile(r"[A-Za-z0-9_\u0080-￿]")
 
 
+PATH_EVIDENCE = {}  # (old path, new path) -> evidence class, for @path rows that carry one
 SNIP = {}  # name -> the binding statement that taints it (evidence site of the last find_tainted call)
 EVIDENCE = []  # (file, line, old, new, class, site): every renamed token with the evidence class its rule declared
 
@@ -149,9 +150,11 @@ def load_table(path):
                 deletes.append((cols[1], cols[2]))
                 continue
             if cols[0] == "@path":
-                if len(cols) != 3:
+                if len(cols) not in (3, 4):
                     sys.exit(f"{path}:{ln}: @path needs old and new")
                 paths.append((cols[1], cols[2]))
+                if len(cols) == 4 and cols[3].startswith("ev:"):
+                    PATH_EVIDENCE[(cols[1], cols[2])] = cols[3][3:]  # a file move that carries an evidence class
                 continue
             if len(cols) < 2:
                 sys.exit(f"{path}:{ln}: need old<TAB>new")
@@ -1846,6 +1849,88 @@ def check_evidence_main(argv):
     return 1 if unproven or unalignable or classless or structural else 0
 
 
+# ---- test names (P6): a test class, function or file is renamed when the thing it names was renamed
+TEST_WORDS = [("TabManager", "WorkspaceManager"), ("Surfaces", "Tabs"), ("Surface", "Tab"), ("Panels", "Tabs"), ("Panel", "Tab"),
+              ("Panes", "Areas"), ("Pane", "Area")]
+TEST_OLD_RX = {"TabManager": r"tabmanager", "Surface": r"surface", "Panel": r"panel", "Pane": r"pane(?!l)"}
+# a body that touches the Ghostty surface, an AppKit panel or a Bonsplit pane is about that domain, not about the c11 concept
+TEST_DOMAIN_RX = {"Surface": r"\bTerminalSurface\b|\bGhosttySurface\w*|ghostty_surface_\w+|\bIOSurface\w*|\.surface\.surface\b|\.runtimeSurface\b",
+                  "Panel": r"\bNS(?:Open|Save)?Panel\b|\bNSPanel\b|\bWKOpenPanelParameters\b",
+                  "Pane": r"\bPaneID\b|\bbonsplitController\b|\binPane\b|\bfocusedPaneId\b|\ballPaneIds\b|\bBonsplit\.",
+                  "TabManager": r"(?!x)x"}
+
+
+def test_word_of(word):
+    return {"Surfaces": "Surface", "Panels": "Panel", "Panes": "Pane"}.get(word, word)
+
+
+def test_new_name(name):
+    """Apply the vocabulary map to the old-word segments of a test name: (new name, [old words]) or (None, [])."""
+    words = []
+    out = name
+    for old, new in TEST_WORDS:
+        # a segment is delimited by case changes, digits and underscores; `Pane` must not eat `Panel`
+        rx = re.compile(r"(?<![A-Za-z])" + old + r"(?![a-z])") if old[0].isupper() else None
+        pat = re.compile(old + r"(?![a-z])")
+        if pat.search(out):
+            words.append(test_word_of(old))
+            out = pat.sub(new, out)
+    out = out.replace("TabTab", "Tab")
+    return (out, words) if out != name else (None, [])
+
+
+def renamed_new_names(tables_dir):
+    """{new name: old name} for every identifier the pass tables and evidence logs renamed (old-word spellings only)."""
+    pairs = {}
+    for path in sorted(glob.glob(os.path.join(tables_dir, "pass-*.tsv"))):
+        renames = load_table(path)[0]
+        for o, lst in renames.items():
+            for n, *_ in lst:
+                if n != o:
+                    pairs.setdefault(n, o)
+    for path in sorted(glob.glob(os.path.join(tables_dir, "evidence-*.tsv"))):
+        for line in open(path, encoding="utf-8"):
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) > 4 and cols[2] and cols[3] and cols[2] != cols[3].split()[-1]:
+                pairs.setdefault(cols[3].split()[-1], cols[2])
+    return pairs
+
+
+def _name_segments(name):
+    return re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", name[4:] if name.startswith("test") else name)
+
+
+def test_name_evidence(name, word, pairs):
+    """The test name starts with (two or more segments of) the old name of a renamed identifier, and that shared
+    prefix carries the old word: it plainly names the renamed subject (`BrowserPaneDropRoutingTests`)."""
+    segs = _name_segments(name)
+    rx = re.compile(TEST_OLD_RX[word], re.I)
+    for old in set(pairs.values()):
+        osegs = _name_segments(old)
+        n = 0
+        while n < len(segs) and n < len(osegs) and segs[n] == osegs[n]:
+            n += 1
+        if n >= 2 and rx.search("".join(segs[:n])):
+            return old
+    return None
+
+
+def test_evidenced(name, tokens, word, pairs):
+    """('body', token) / ('name', old identifier) / None: why `word` in this test name may follow the rename."""
+    if test_name_evidence(name, word, pairs):
+        return ("name", test_name_evidence(name, word, pairs))
+    ev = test_evidence(tokens, word, pairs)
+    if ev and not any(re.search(TEST_DOMAIN_RX[word], t) for t in tokens):
+        return ("body", ev[0])
+    return None
+
+
+def test_evidence(src_tokens, word, pairs):
+    """Identifiers in a test body that a pass renamed away from `word`: the subject the test names was renamed."""
+    rx = re.compile(TEST_OLD_RX[word], re.I)
+    return sorted(t for t in src_tokens if t in pairs and rx.search(pairs[t]) and not rx.search(t))
+
+
 LEAF_TYPE_RX = r"(?:\[TabID\]|Set<TabID>|TabID|\[Bonsplit\.Tab\]|Bonsplit\.Tab)"
 LEAF_EVIDENCE = (r"\bTabID\b|Bonsplit\.Tab\b|[bB]onsplit|\bExternalTab|\bTabInfo\b|\bselectedTab\(|\btabs\(inPane|"
                  r"\bcreateTab\(|\.createTab\b|\bcontroller\.|\bcontroller\b")
@@ -1893,6 +1978,7 @@ def verify_classes(entries, head, logdir="."):
                               "TabContent", "TerminalTab", "BrowserTab", "MarkdownTab"}
     ghost = re.compile(r"\bghostty_surface_\w+|\bGhosttySurface\w*|\bTerminalSurface(?:Registry)?\b|\bIOSurface\w*")
     bad, direct_names, pending, curated = [], {}, [], {}
+    test_pairs = renamed_new_names(logdir) if any(e[4] == "Test" for e in entries) else {}
     leaf_names, leaf_pending = {}, []
     for f, ln, o, n, cls, site in entries:
         n1 = n.split()[-1]
@@ -1914,6 +2000,17 @@ def verify_classes(entries, head, logdir="."):
         elif cls == "Leafuse":
             if not any(re.search(r"\bTabID\b|Bonsplit\.Tab\b", sig) for owner, sig in decls.get(n1, [])):
                 bad.append((f, ln, o, n, "use of a name with no leaf-typed declaration"))
+        elif cls == "Test":
+            # the new test name is declared in the file, and the file's body names a subject a pass renamed away from the old word
+            full = os.path.join(root, f)
+            text = open(full, encoding="utf-8").read() if os.path.exists(full) else ""
+            if not re.search(r"\b(?:class|func)\s+" + re.escape(n1) + r"\b", text) and "@path" not in site:
+                bad.append((f, ln, o, n, "the renamed test is not declared in the file"))
+            else:
+                _, words = test_new_name(o)
+                toks = set(re.findall(r"[A-Za-z_]\w*", text))
+                if words and not any(test_evidenced(o, toks, w, test_pairs) for w in words):
+                    bad.append((f, ln, o, n, "no renamed subject found in the test file for " + "/".join(words)))
         elif cls in ("F", "X"):
             curated[cls] = curated.get(cls, 0) + 1
         elif cls == "Muse":
@@ -2037,20 +2134,28 @@ def main(argv):
                 if tag == "replace" and (i2 - i1) == (j2 - j1):
                     for o_, n_ in zip(ta[i1:i2], tb[j1:j2]):
                         EVIDENCE.append((rel, 0, o_, n_, "F", "curated @fix row"))
-    if "--evidence-log" in argv and not dry:
-        with open(argv[argv.index("--evidence-log") + 1], "w", encoding="utf-8") as fh:
-            for rel_, ln_, old_, new_, cls_, site_ in sorted(set(EVIDENCE)):
-                fh.write(f"{rel_}\t{ln_}\t{old_}\t{new_}\t{cls_}\t{site_.replace(chr(9), ' ').replace(chr(10), ' ')}\n")
     for line in report:
         print(line)
     print(f"identifiers renamed: {total_hits} in {total_files} files; collisions left: {len(report)}")
     if stale:
         print(f"{stale} stale @fix entries: the code drifted; update the table", file=sys.stderr)
         return 3
+    moved = {}
     if paths:
         # Paths after contents: edits above are by path as it was on entry.
         n = apply_paths(root, paths, dry, use_git)
         print(f"paths renamed: {n}")
+        moved = {o: nw for o, nw in paths if not dry and os.path.exists(os.path.join(root, nw)) and o.endswith(".swift")}
+    for (o, nw), cls in PATH_EVIDENCE.items():  # a moved file is evidence too: stem old -> stem new
+        so, sn = os.path.splitext(os.path.basename(o))[0], os.path.splitext(os.path.basename(nw))[0]
+        if so != sn:
+            EVIDENCE.append((o, 0, so, sn, cls, "@path"))
+    # entries are logged under the file's final path
+    EVIDENCE[:] = [(moved.get(r, r), ln, a, b, c, sd) for r, ln, a, b, c, sd in EVIDENCE]
+    if "--evidence-log" in argv and not dry:
+        with open(argv[argv.index("--evidence-log") + 1], "w", encoding="utf-8") as fh:
+            for rel_, ln_, old_, new_, cls_, site_ in sorted(set(EVIDENCE)):
+                fh.write(f"{rel_}\t{ln_}\t{old_}\t{new_}\t{cls_}\t{site_.replace(chr(9), ' ').replace(chr(10), ' ')}\n")
     return 0
 
 

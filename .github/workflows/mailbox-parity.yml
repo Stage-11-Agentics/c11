@@ -159,7 +159,7 @@ jobs:
             -only-testing:c11LogicTests/MailboxDispatchLogTests \
             -only-testing:c11LogicTests/MailboxIOTests \
             -only-testing:c11LogicTests/MailboxLayoutTests \
-            -only-testing:c11LogicTests/MailboxSurfaceResolverTests \
+            -only-testing:c11LogicTests/MailboxTabResolverTests \
             -only-testing:c11LogicTests/MailboxULIDTests \
             -only-testing:c11LogicTests/StdinHandlerFormattingTests \
             COMPILER_INDEX_STORE_ENABLE=NO \

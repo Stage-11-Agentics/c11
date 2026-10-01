@@ -17,7 +17,7 @@ import XCTest
 /// (Lattice, CLI, scripted tests) to safely cache the tuple.
 @MainActor
 final class WorkspaceIdentityRestoreTests: XCTestCase {
-    func testSingleWorkspaceIdIsStableAcrossTabManagerRoundTrip() throws {
+    func testSingleWorkspaceIdIsStableAcrossWorkspaceManagerRoundTrip() throws {
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let originalId = workspace.id

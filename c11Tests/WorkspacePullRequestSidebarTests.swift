@@ -25,7 +25,7 @@ final class WorkspacePullRequestSidebarTests: XCTestCase {
         XCTAssertEqual(workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: [panelId]), [])
     }
 
-    func testSidebarPullRequestsFilterBranchMismatchPerPanel() throws {
+    func testSidebarPullRequestsFilterBranchMismatchPerTab() throws {
         let workspace = Workspace(title: "Test")
         let panelId = UUID()
         let staleURL = try XCTUnwrap(URL(string: "https://github.com/manaflow-ai/cmux/pull/1640"))
@@ -42,7 +42,7 @@ final class WorkspacePullRequestSidebarTests: XCTestCase {
         XCTAssertEqual(workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: [panelId]), [])
     }
 
-    func testSidebarPullRequestsPreferBestStateAcrossPanels() throws {
+    func testSidebarPullRequestsPreferBestStateAcrossTabs() throws {
         let workspace = Workspace(title: "Test")
         let firstPanelId = UUID()
         let secondPanelId = UUID()

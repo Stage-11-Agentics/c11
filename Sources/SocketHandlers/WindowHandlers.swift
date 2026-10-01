@@ -23,7 +23,7 @@ extension TerminalController {
         case "window.create":
             return v2Result(id: id, self.v2WindowCreate(params: params))
         case "window.close":
-            return v2Result(id: id, self.v2WindowClose(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WindowClose(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }

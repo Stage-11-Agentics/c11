@@ -209,7 +209,7 @@ struct cmuxApp: App {
         // system light/dark setting doesn't recolor NSColor-based chrome under us.
         UserDefaults.standard.set(AppearanceMode.dark.rawValue, forKey: AppearanceSettings.appearanceModeKey)
         Self.applyAppearance(.dark)
-        _tabManager = StateObject(wrappedValue: WorkspaceManager())
+        _workspaceManager = StateObject(wrappedValue: WorkspaceManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
         if let stored = defaults.string(forKey: SocketControlSettings.appStorageKey) {

@@ -2870,14 +2870,14 @@ class WorkspaceManager: ObservableObject {
 
         let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
         guard !tabsInPane.isEmpty else { return nil }
-        guard let selectedTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id ?? tabsInPane.first?.id else {
+        guard let selectedWorkspaceId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id ?? tabsInPane.first?.id else {
             return nil
         }
 
         var targetPanelIds: [UUID] = []
         var targetTitles: [String] = []
-        for tab in tabsInPane where tab.id != selectedTabId {
-            guard let panelId = workspace.panelIdFromSurfaceId(tab.id) else { continue }
+        for ws in tabsInPane where ws.id != selectedWorkspaceId {
+            guard let panelId = workspace.panelIdFromSurfaceId(ws.id) else { continue }
             if workspace.isPanelPinned(panelId) {
                 continue
             }
@@ -3025,32 +3025,32 @@ class WorkspaceManager: ObservableObject {
             workspace.panels[panelId] != nil
     }
 
-    private func closePanelWithConfirmation(tab: Workspace, panelId: UUID) {
-        guard tab.panels[panelId] != nil else {
+    private func closePanelWithConfirmation(workspace: Workspace, panelId: UUID) {
+        guard workspace.panels[panelId] != nil else {
 #if DEBUG
             dlog(
-                "surface.close.shortcut.skip tab=\(tab.id.uuidString.prefix(5)) " +
+                "surface.close.shortcut.skip tab=\(workspace.id.uuidString.prefix(5)) " +
                 "panel=\(panelId.uuidString.prefix(5)) reason=missingPanel"
             )
 #endif
             return
         }
 
-        let bonsplitTabCount = tab.bonsplitController.allPaneIds.reduce(0) { partial, paneId in
-            partial + tab.bonsplitController.tabs(inPane: paneId).count
+        let bonsplitTabCount = workspace.bonsplitController.allPaneIds.reduce(0) { partial, paneId in
+            partial + workspace.bonsplitController.tabs(inPane: paneId).count
         }
         let panelKind: String = {
-            guard let panel = tab.panels[panelId] else { return "missing" }
+            guard let panel = workspace.panels[panelId] else { return "missing" }
             if panel is TerminalPanel { return "terminal" }
             if panel is BrowserPanel { return "browser" }
             return String(describing: type(of: panel))
         }()
-        let closesWorkspaceOnLastSurfaceShortcut = shouldCloseWorkspaceOnLastSurfaceShortcut(tab, panelId: panelId)
+        let closesWorkspaceOnLastSurfaceShortcut = shouldCloseWorkspaceOnLastSurfaceShortcut(workspace, panelId: panelId)
 #if DEBUG
         dlog(
-            "surface.close.shortcut.begin tab=\(tab.id.uuidString.prefix(5)) " +
+            "surface.close.shortcut.begin tab=\(workspace.id.uuidString.prefix(5)) " +
             "panel=\(panelId.uuidString.prefix(5)) kind=\(panelKind) " +
-            "panelCount=\(tab.panels.count) bonsplitTabs=\(bonsplitTabCount) " +
+            "panelCount=\(workspace.panels.count) bonsplitTabs=\(bonsplitTabCount) " +
             "closeWorkspaceOnLastSurface=\(closesWorkspaceOnLastSurfaceShortcut ? 1 : 0)"
         )
 #endif
@@ -3058,15 +3058,15 @@ class WorkspaceManager: ObservableObject {
         // The last-surface shortcut preference only affects Cmd+W. The tab close button
         // continues to use Workspace's explicit-close path when it closes the last surface.
         if closesWorkspaceOnLastSurfaceShortcut,
-           let surfaceId = tab.surfaceIdFromPanelId(panelId) {
-            tab.markExplicitClose(surfaceId: surfaceId)
+           let surfaceId = workspace.surfaceIdFromPanelId(panelId) {
+            workspace.markExplicitClose(surfaceId: surfaceId)
         }
-        let closed = tab.closePanel(panelId)
+        let closed = workspace.closePanel(panelId)
 #if DEBUG
         dlog(
-            "surface.close.shortcut tab=\(tab.id.uuidString.prefix(5)) " +
+            "surface.close.shortcut tab=\(workspace.id.uuidString.prefix(5)) " +
             "panel=\(panelId.uuidString.prefix(5)) closed=\(closed ? 1 : 0) " +
-            "panelsAfterCall=\(tab.panels.count)"
+            "panelsAfterCall=\(workspace.panels.count)"
         )
 #endif
     }
@@ -3988,14 +3988,14 @@ class WorkspaceManager: ObservableObject {
     }
 
     /// Equalize splits - not directly supported by bonsplit
-    func equalizeSplits(workspaceId tabId: UUID) -> Bool {
-        guard let tab = tabs.first(where: { $0.id == tabId }) else { return false }
+    func equalizeSplits(workspaceId: UUID) -> Bool {
+        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return false }
 
         var foundSplit = false
         var allSucceeded = true
         equalizeSplits(
-            in: tab.bonsplitController.treeSnapshot(),
-            controller: tab.bonsplitController,
+            in: workspace.bonsplitController.treeSnapshot(),
+            controller: workspace.bonsplitController,
             foundSplit: &foundSplit,
             allSucceeded: &allSucceeded
         )
@@ -4088,13 +4088,13 @@ class WorkspaceManager: ObservableObject {
 
     /// Create a new browser surface in a pane
     func newBrowserSurface(
-        tabId: UUID,
+        workspaceId: UUID,
         inPane paneId: PaneID,
         url: URL? = nil,
         preferredProfileID: UUID? = nil
     ) -> UUID? {
-        guard let tab = tabs.first(where: { $0.id == tabId }) else { return nil }
-        return tab.newBrowserSurface(
+        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
+        return workspace.newBrowserSurface(
             inPane: paneId,
             url: url,
             preferredProfileID: preferredProfileID
@@ -4110,15 +4110,15 @@ class WorkspaceManager: ObservableObject {
     /// Open a browser in a specific workspace, optionally preferring a split-right layout.
     @discardableResult
     func openBrowser(
-        inWorkspace tabId: UUID,
+        inWorkspace workspaceId: UUID,
         url: URL? = nil,
         preferSplitRight: Bool = false,
         preferredProfileID: UUID? = nil,
         insertAtEnd: Bool = false
     ) -> UUID? {
-        guard let workspace = tabs.first(where: { $0.id == tabId }) else { return nil }
-        if selectedTabId != tabId {
-            selectedTabId = tabId
+        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
+        if selectedWorkspaceId != workspaceId {
+            selectedWorkspaceId = workspaceId
         }
 
         if preferSplitRight {
@@ -4130,7 +4130,7 @@ class WorkspaceManager: ObservableObject {
                    insertAtEnd: insertAtEnd,
                    preferredProfileID: preferredProfileID
                ) {
-                rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
+                rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
                 return browserPanel.id
             }
 
@@ -4139,7 +4139,7 @@ class WorkspaceManager: ObservableObject {
                    workspace.panels[focusedPanelId] != nil {
                     return focusedPanelId
                 }
-                if let rememberedPanelId = lastFocusedPanelByWorkspace[tabId],
+                if let rememberedPanelId = lastFocusedPanelByWorkspace[workspaceId],
                    workspace.panels[rememberedPanelId] != nil {
                     return rememberedPanelId
                 }
@@ -4157,7 +4157,7 @@ class WorkspaceManager: ObservableObject {
                    preferredProfileID: preferredProfileID,
                    focus: true
                ) {
-                rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
+                rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
                 return browserPanel.id
             }
         }
@@ -4172,7 +4172,7 @@ class WorkspaceManager: ObservableObject {
               ) else {
             return nil
         }
-        rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
+        rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
         return browserPanel.id
     }
 
@@ -4556,23 +4556,23 @@ class WorkspaceManager: ObservableObject {
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard let tab = self.selectedWorkspace else {
+                guard let workspace = self.selectedWorkspace else {
                     self.writeSplitCloseRightTestData(["setupError": "Missing selected workspace"], at: path)
                     return
                 }
 
-                guard let topLeftPanelId = tab.focusedPanelId else {
+                guard let topLeftPanelId = workspace.focusedPanelId else {
                     self.writeSplitCloseRightTestData(["setupError": "Missing initial focused panel"], at: path)
                     return
                 }
                 let initialTerminalReadiness = await self.waitForTerminalPanelReadyForUITest(
-                    tab: tab,
+                    workspace: workspace,
                     panelId: topLeftPanelId
                 )
 
                 guard initialTerminalReadiness.attached,
                       initialTerminalReadiness.hasSurface,
-                      let terminal = tab.terminalPanel(for: topLeftPanelId) else {
+                      let terminal = workspace.terminalPanel(for: topLeftPanelId) else {
                     self.writeSplitCloseRightTestData([
                         "preTerminalAttached": initialTerminalReadiness.attached ? "1" : "0",
                         "preTerminalSurfaceNil": initialTerminalReadiness.hasSurface ? "0" : "1",
@@ -4597,7 +4597,7 @@ class WorkspaceManager: ObservableObject {
                     ], at: path)
 
                     await self.runSplitCloseRightVisualRepro(
-                        tab: tab,
+                        workspace: workspace,
                         topLeftPanelId: topLeftPanelId,
                         path: path,
                         shotsDir: shotsDir,
@@ -4613,45 +4613,45 @@ class WorkspaceManager: ObservableObject {
 
                 // Layout goal: 2x2 grid (2 top, 2 bottom), then close both right panels.
                 // Order matters: split down first, then split right in each row (matches UI shortcut repro).
-                guard let bottomLeft = tab.newTerminalSplit(from: topLeftPanelId, orientation: .vertical) else {
+                guard let bottomLeft = workspace.newTerminalSplit(from: topLeftPanelId, orientation: .vertical) else {
                     self.writeSplitCloseRightTestData(["setupError": "Failed to create bottom-left split"], at: path)
                     return
                 }
-                guard let bottomRight = tab.newTerminalSplit(from: bottomLeft.id, orientation: .horizontal) else {
+                guard let bottomRight = workspace.newTerminalSplit(from: bottomLeft.id, orientation: .horizontal) else {
                     self.writeSplitCloseRightTestData(["setupError": "Failed to create bottom-right split"], at: path)
                     return
                 }
-                tab.focusPanel(topLeftPanelId)
-                guard let topRight = tab.newTerminalSplit(from: topLeftPanelId, orientation: .horizontal) else {
+                workspace.focusPanel(topLeftPanelId)
+                guard let topRight = workspace.newTerminalSplit(from: topLeftPanelId, orientation: .horizontal) else {
                     self.writeSplitCloseRightTestData(["setupError": "Failed to create top-right split"], at: path)
                     return
                 }
 
                 self.writeSplitCloseRightTestData([
-                    "tabId": tab.id.uuidString,
+                    "tabId": workspace.id.uuidString,
                     "topLeftPanelId": topLeftPanelId.uuidString,
                     "bottomLeftPanelId": bottomLeft.id.uuidString,
                     "topRightPanelId": topRight.id.uuidString,
                     "bottomRightPanelId": bottomRight.id.uuidString,
-                    "createdPaneCount": String(tab.bonsplitController.allPaneIds.count),
-                    "createdPanelCount": String(tab.panels.count)
+                    "createdPaneCount": String(workspace.bonsplitController.allPaneIds.count),
+                    "createdPanelCount": String(workspace.panels.count)
                 ], at: path)
 
                 DebugUIEventCounters.resetEmptyPanelAppearCount()
 
                 // Close the two right panes via the same path as Cmd+W.
-                tab.focusPanel(topRight.id)
-                tab.closePanel(topRight.id, force: true)
-                tab.focusPanel(bottomRight.id)
-                tab.closePanel(bottomRight.id, force: true)
+                workspace.focusPanel(topRight.id)
+                workspace.closePanel(topRight.id, force: true)
+                workspace.focusPanel(bottomRight.id)
+                workspace.closePanel(bottomRight.id, force: true)
 
 
                 // Capture final state after Bonsplit/AppKit/Ghostty geometry reconciliation.
                 // We avoid sleep-based timing and converge over a few main-actor turns.
                  @MainActor func collectSplitCloseRightState() -> (data: [String: String], settled: Bool) {
-                    let paneIds = tab.bonsplitController.allPaneIds
-                    let bonsplitTabCount = tab.bonsplitController.allTabIds.count
-                    let panelCount = tab.panels.count
+                    let paneIds = workspace.bonsplitController.allPaneIds
+                    let bonsplitTabCount = workspace.bonsplitController.allTabIds.count
+                    let panelCount = workspace.panels.count
 
                     var missingSelectedTabCount = 0
                     var missingPanelMappingCount = 0
@@ -4661,11 +4661,11 @@ class WorkspaceManager: ObservableObject {
                     var selectedTerminalSurfaceNilCount = 0
 
                     for paneId in paneIds {
-                        guard let selected = tab.bonsplitController.selectedTab(inPane: paneId) else {
+                        guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId) else {
                             missingSelectedTabCount += 1
                             continue
                         }
-                        guard let panel = tab.panel(for: selected.id) else {
+                        guard let panel = workspace.panel(for: selected.id) else {
                             missingPanelMappingCount += 1
                             continue
                         }
@@ -4715,9 +4715,9 @@ class WorkspaceManager: ObservableObject {
                         window.contentView?.layoutSubtreeIfNeeded()
                         window.contentView?.displayIfNeeded()
                     }
-                    for paneId in tab.bonsplitController.allPaneIds {
-                        guard let selected = tab.bonsplitController.selectedTab(inPane: paneId),
-                              let terminal = tab.panel(for: selected.id) as? TerminalPanel else {
+                    for paneId in workspace.bonsplitController.allPaneIds {
+                        guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId),
+                              let terminal = workspace.panel(for: selected.id) as? TerminalPanel else {
                             continue
                         }
                         terminal.hostedView.reconcileGeometryNow()
@@ -4743,7 +4743,7 @@ class WorkspaceManager: ObservableObject {
 
 	    @MainActor
 	    private func runSplitCloseRightVisualRepro(
-	        tab: Workspace,
+	        workspace: Workspace,
 	        topLeftPanelId: UUID,
 	        path: String,
 	        shotsDir: String,
@@ -4755,7 +4755,7 @@ class WorkspaceManager: ObservableObject {
         _ = shotsDir // legacy: screenshots removed in favor of IOSurface sampling
 
         func sendText(_ panelId: UUID, _ text: String) {
-            guard let tp = tab.terminalPanel(for: panelId) else { return }
+            guard let tp = workspace.terminalPanel(for: panelId) else { return }
             tp.surface.sendText(text)
         }
 
@@ -4765,10 +4765,10 @@ class WorkspaceManager: ObservableObject {
 
         for i in 1...iterations {
             // Reset to a single pane: close everything except the top-left panel.
-            tab.focusPanel(topLeftPanelId)
-            let toClose = Array(tab.panels.keys).filter { $0 != topLeftPanelId }
+            workspace.focusPanel(topLeftPanelId)
+            let toClose = Array(workspace.panels.keys).filter { $0 != topLeftPanelId }
             for pid in toClose {
-                tab.closePanel(pid, force: true)
+                workspace.closePanel(pid, force: true)
             }
 
             // Create the repro layout. Most patterns use a 2x2 grid, but keep a single-split
@@ -4780,22 +4780,22 @@ class WorkspaceManager: ObservableObject {
 
             switch pattern {
             case "close_right_single":
-                guard let tr = tab.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
+                guard let tr = workspace.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split right from top-left (iteration \(i))"], at: path)
                     return
                 }
                 topRight = tr
             case "close_right_lrtd", "close_right_lrtd_bottom_first", "close_right_bottom_first", "close_right_lrtd_unfocused":
                 // User repro: split left/right first, then split top/down in each column.
-                guard let tr = tab.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
+                guard let tr = workspace.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split right from top-left (iteration \(i))"], at: path)
                     return
                 }
-                guard let bl = tab.newTerminalSplit(from: topLeftId, orientation: .vertical) else {
+                guard let bl = workspace.newTerminalSplit(from: topLeftId, orientation: .vertical) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split down from left (iteration \(i))"], at: path)
                     return
                 }
-                guard let br = tab.newTerminalSplit(from: tr.id, orientation: .vertical) else {
+                guard let br = workspace.newTerminalSplit(from: tr.id, orientation: .vertical) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split down from right (iteration \(i))"], at: path)
                     return
                 }
@@ -4804,15 +4804,15 @@ class WorkspaceManager: ObservableObject {
                 bottomRight = br
             default:
                 // Default: split top/down first, then split left/right in each row.
-                guard let bl = tab.newTerminalSplit(from: topLeftId, orientation: .vertical) else {
+                guard let bl = workspace.newTerminalSplit(from: topLeftId, orientation: .vertical) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split down from top-left (iteration \(i))"], at: path)
                     return
                 }
-                guard let br = tab.newTerminalSplit(from: bl.id, orientation: .horizontal) else {
+                guard let br = workspace.newTerminalSplit(from: bl.id, orientation: .horizontal) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split right from bottom-left (iteration \(i))"], at: path)
                     return
                 }
-                guard let tr = tab.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
+                guard let tr = workspace.newTerminalSplit(from: topLeftId, orientation: .horizontal) else {
                     writeSplitCloseRightTestData(["setupError": "Failed to split right from top-left (iteration \(i))"], at: path)
                     return
                 }
@@ -4849,8 +4849,8 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "TR_ONLY"
                     return [
                         (frame: closeFrame, action: {
-                            tab.focusPanel(topRight.id)
-                            tab.closePanel(topRight.id, force: true)
+                            workspace.focusPanel(topRight.id)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                     ]
                 case "close_bottom":
@@ -4858,12 +4858,12 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "BR_THEN_BL"
                     return [
                         (frame: closeFrame, action: {
-                            tab.focusPanel(bottomRight.id)
-                            tab.closePanel(bottomRight.id, force: true)
+                            workspace.focusPanel(bottomRight.id)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
-                            tab.focusPanel(bottomLeft.id)
-                            tab.closePanel(bottomLeft.id, force: true)
+                            workspace.focusPanel(bottomLeft.id)
+                            workspace.closePanel(bottomLeft.id, force: true)
                         }),
                     ]
                 case "close_right_lrtd_bottom_first", "close_right_bottom_first":
@@ -4871,12 +4871,12 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "BR_THEN_TR"
                     return [
                         (frame: closeFrame, action: {
-                            tab.focusPanel(bottomRight.id)
-                            tab.closePanel(bottomRight.id, force: true)
+                            workspace.focusPanel(bottomRight.id)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
-                            tab.focusPanel(topRight.id)
-                            tab.closePanel(topRight.id, force: true)
+                            workspace.focusPanel(topRight.id)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                     ]
                 case "close_right_lrtd_unfocused":
@@ -4884,10 +4884,10 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "TR_THEN_BR_UNFOCUSED"
                     return [
                         (frame: closeFrame, action: {
-                            tab.closePanel(topRight.id, force: true)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
-                            tab.closePanel(bottomRight.id, force: true)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                     ]
                 default:
@@ -4895,12 +4895,12 @@ class WorkspaceManager: ObservableObject {
                     closeOrder = "TR_THEN_BR"
                     return [
                         (frame: closeFrame, action: {
-                            tab.focusPanel(topRight.id)
-                            tab.closePanel(topRight.id, force: true)
+                            workspace.focusPanel(topRight.id)
+                            workspace.closePanel(topRight.id, force: true)
                         }),
                         (frame: secondCloseFrame, action: {
-                            tab.focusPanel(bottomRight.id)
-                            tab.closePanel(bottomRight.id, force: true)
+                            workspace.focusPanel(bottomRight.id)
+                            workspace.closePanel(bottomRight.id, force: true)
                         }),
                     ]
                 }
@@ -4910,22 +4910,22 @@ class WorkspaceManager: ObservableObject {
                 switch pattern {
                 case "close_right_single":
                     return [
-                        ("TL", tab.terminalPanel(for: topLeftId)!.surface.hostedView),
+                        ("TL", workspace.terminalPanel(for: topLeftId)!.surface.hostedView),
                     ]
                 case "close_bottom":
                     return [
-                        ("TL", tab.terminalPanel(for: topLeftId)!.surface.hostedView),
+                        ("TL", workspace.terminalPanel(for: topLeftId)!.surface.hostedView),
                         ("TR", topRight.surface.hostedView),
                     ]
                 case "close_right_lrtd_bottom_first", "close_right_bottom_first":
                     return [
                         ("TR", topRight.surface.hostedView),
-                        ("TL", tab.terminalPanel(for: topLeftId)!.surface.hostedView),
+                        ("TL", workspace.terminalPanel(for: topLeftId)!.surface.hostedView),
                     ]
                 default:
                     guard let bottomLeft else { return [] }
                     return [
-                        ("TL", tab.terminalPanel(for: topLeftId)!.surface.hostedView),
+                        ("TL", workspace.terminalPanel(for: topLeftId)!.surface.hostedView),
                         ("BL", bottomLeft.surface.hostedView),
                     ]
                 }
@@ -4940,18 +4940,18 @@ class WorkspaceManager: ObservableObject {
             )
 
             let paneStateTrace: String = {
-                tab.bonsplitController.allPaneIds.map { paneId in
-                    let tabs = tab.bonsplitController.tabs(inPane: paneId)
-                    let selected = tab.bonsplitController.selectedTab(inPane: paneId)
+                workspace.bonsplitController.allPaneIds.map { paneId in
+                    let workspaces = workspace.bonsplitController.tabs(inPane: paneId)
+                    let selected = workspace.bonsplitController.selectedTab(inPane: paneId)
                     let selectedId = selected.map { String(describing: $0.id) } ?? "nil"
-                    let selectedPanelId = selected.flatMap { tab.panelIdFromSurfaceId($0.id) }
+                    let selectedPanelId = selected.flatMap { workspace.panelIdFromSurfaceId($0.id) }
                     let selectedPanelLive: String = {
                         guard let selected else { return "0" }
-                        return tab.panel(for: selected.id) != nil ? "1" : "0"
+                        return workspace.panel(for: selected.id) != nil ? "1" : "0"
                     }()
-                    let mappedCount = tabs.filter { tab.panelIdFromSurfaceId($0.id) != nil }.count
+                    let mappedCount = workspaces.filter { workspace.panelIdFromSurfaceId($0.id) != nil }.count
                     let selectedPanel = selectedPanelId?.uuidString.prefix(8) ?? "nil"
-                    return "pane=\(paneId.id.uuidString.prefix(8)):tabs=\(tabs.count):mapped=\(mappedCount):selected=\(selectedId.prefix(8)):selectedPanel=\(selectedPanel):selectedLive=\(selectedPanelLive)"
+                    return "pane=\(paneId.id.uuidString.prefix(8)):tabs=\(workspaces.count):mapped=\(mappedCount):selected=\(selectedId.prefix(8)):selectedPanel=\(selectedPanel):selectedLive=\(selectedPanelLive)"
                 }.joined(separator: ";")
             }()
 
@@ -5569,8 +5569,8 @@ class WorkspaceManager: ObservableObject {
 extension WorkspaceManager {
     func sessionAutosaveFingerprint() -> Int {
         var hasher = Hasher()
-        hasher.combine(selectedTabId)
-        hasher.combine(tabs.count)
+        hasher.combine(selectedWorkspaceId)
+        hasher.combine(workspaces.count)
         // Tier 1 Phase 2: fold in the monotonic per-process revision counter
         // from SurfaceMetadataStore so metadata-only changes (which never
         // touch workspace/panel counts or titles) still flip the fingerprint
@@ -5582,7 +5582,7 @@ extension WorkspaceManager {
         // the same 8s cadence as surface metadata.
         hasher.combine(PaneMetadataStore.shared.currentRevision())
 
-        for workspace in tabs.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
+        for workspace in workspaces.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
             hasher.combine(workspace.id)
             hasher.combine(workspace.focusedPanelId)
             hasher.combine(workspace.currentDirectory)

@@ -772,11 +772,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         // `TabID` wrapper. Parse the string back to UUID and wrap before
         // looking up — same conversion `WorkspacePlanCapture.panelID(forTabIDString:)`
         // does at the v2 socket boundary.
-        let livePlanIds: [String] = livePane.tabs.map { tab in
-            guard let tabUUID = UUID(uuidString: tab.id),
+        let livePlanIds: [String] = livePane.workspaces.map { ws in
+            guard let tabUUID = UUID(uuidString: ws.id),
                   let panelId = workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID)),
                   let planId = panelUUIDToPlanId[panelId] else {
-                return "unknown(\(tab.id))"
+                return "unknown(\(ws.id))"
             }
             return planId
         }
@@ -790,7 +790,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         if expectedSelectedIndex >= 0, expectedSelectedIndex < planPane.surfaceIds.count {
             let expectedSurfaceId = planPane.surfaceIds[expectedSelectedIndex]
             guard let expectedPanelId = planSurfaceIdToPanelUUID[expectedSurfaceId],
-                  let expectedTabId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
+                  let expectedWorkspaceId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
                 XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
                 return
             }
@@ -800,7 +800,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             // the same value space.
             XCTAssertEqual(
                 livePane.selectedWorkspaceId,
-                expectedTabId.uuid.uuidString,
+                expectedWorkspaceId.uuid.uuidString,
                 "[\(fixtureName) @ \(path)] selectedTabId mismatch (expected surface \(expectedSurfaceId))"
             )
         }

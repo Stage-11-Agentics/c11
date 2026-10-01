@@ -85,9 +85,9 @@ extension TerminalController {
             var indexInPaneByPanelId: [UUID: Int] = [:]
             var selectedInPaneByPanelId: [UUID: Bool] = [:]
             for paneId in ws.bonsplitController.allPaneIds {
-                let tabs = ws.bonsplitController.tabs(inPane: paneId)
+                let workspaces = ws.bonsplitController.tabs(inPane: paneId)
                 let selected = ws.bonsplitController.selectedTab(inPane: paneId)
-                for (idx, tab) in tabs.enumerated() {
+                for (idx, tab) in workspaces.enumerated() {
                     guard let panelId = ws.panelIdFromSurfaceId(tab.id) else { continue }
                     paneByPanelId[panelId] = paneId.id
                     indexInPaneByPanelId[panelId] = idx

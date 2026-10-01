@@ -568,7 +568,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        guard let newPanelId = state.workspaceManager.newSplit(workspaceId: workspaceId, surfaceId: terminalId, direction: direction),
+        guard let newPanelId = state.workspaceManager.newSplit(tabId: workspaceId, surfaceId: terminalId, direction: direction),
               workspace.terminalPanel(for: newPanelId) != nil else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = AppleScriptStrings.failedToCreateSplit
@@ -632,7 +632,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspaceId, surfaceId: terminalId)
+        AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: workspaceId, surfaceId: terminalId)
         return nil
     }
 

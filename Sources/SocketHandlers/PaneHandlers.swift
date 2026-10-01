@@ -54,10 +54,10 @@ extension TerminalController {
 
             let focusedPaneId = ws.bonsplitController.focusedPaneId
             let panes: [[String: Any]] = ws.bonsplitController.allPaneIds.enumerated().map { index, paneId in
-                let tabs = ws.bonsplitController.tabs(inPane: paneId)
-                let surfaceUUIDs: [UUID] = tabs.compactMap { ws.panelIdFromSurfaceId($0.id) }
-                let selectedTab = ws.bonsplitController.selectedTab(inPane: paneId)
-                let selectedSurfaceUUID = selectedTab.flatMap { ws.panelIdFromSurfaceId($0.id) }
+                let workspaces = ws.bonsplitController.tabs(inPane: paneId)
+                let surfaceUUIDs: [UUID] = workspaces.compactMap { ws.panelIdFromSurfaceId($0.id) }
+                let selectedWorkspace = ws.bonsplitController.selectedTab(inPane: paneId)
+                let selectedSurfaceUUID = selectedWorkspace.flatMap { ws.panelIdFromSurfaceId($0.id) }
                 return [
                     "id": paneId.id.uuidString,
                     "ref": v2Ref(kind: .pane, uuid: paneId.id),
@@ -137,10 +137,10 @@ extension TerminalController {
             }()
             guard let paneId else { return }
 
-            let selectedTab = ws.bonsplitController.selectedTab(inPane: paneId)
-            let tabs = ws.bonsplitController.tabs(inPane: paneId)
+            let selectedWorkspace = ws.bonsplitController.selectedTab(inPane: paneId)
+            let workspaces = ws.bonsplitController.tabs(inPane: paneId)
 
-            let surfaces: [[String: Any]] = tabs.enumerated().map { index, tab in
+            let surfaces: [[String: Any]] = workspaces.enumerated().map { index, tab in
                 let panelId = ws.panelIdFromSurfaceId(tab.id)
                 let panel = panelId.flatMap { ws.panels[$0] }
                 return [
@@ -149,7 +149,7 @@ extension TerminalController {
                     "index": index,
                     "title": tab.title,
                     "type": v2OrNull(panel?.panelType.rawValue),
-                    "selected": tab.id == selectedTab?.id
+                    "selected": tab.id == selectedWorkspace?.id
                 ]
             }
 

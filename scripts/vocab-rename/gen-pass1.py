@@ -67,7 +67,7 @@ selectedTabIdWhenPrompted initialTabIds initialSelectedTabId secondFirstTabId ex
 expectedLatestTabId probeTabId focusedTabId targetTabIndex tabForSidebarMutation resolveTabIdForSidebarMutation
 resolveTabForReport tabResolution tabArg tabRaw""".split()
 GENERIC = {"tab": ("workspace", "ws"), "tabs": ("workspaces", "workspaceList")}
-SKIP_NAME = re.compile(r"^test|Tests?$|(?i:m1b)|_|Bonsplit|bonsplit|CmuxScriptTab")
+SKIP_NAME = re.compile(r"^test|Tests?$|(?i:m1b)|.+_|Bonsplit|bonsplit|CmuxScriptTab")
 
 
 def main():
@@ -98,10 +98,6 @@ def main():
            "@delete\tSources/TabManager.swift\tvar selectedTab: Workspace? { selectedWorkspace }"]
     for name, how in sorted(CALLEES.items()):
         out.append(f"@callee\t{name}\t{how}")
-    out.append("# Members that touch the bonsplit leaf-tab API keep the generic names (they mean bonsplit tabs there).")
-    keep_names = ",".join(sorted(set(ID_FAMILY) | {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}))
-    exempt = ",".join(sorted(set(ID_FAMILY) | {"selectedTabId", "tabId", "tabIds"}))
-    out.append("@keep\tSources/**,c11Tests/**\t" + BONSPLIT_SIGNAL + "\t" + keep_names + "\t" + exempt)
     out.append("@keep\tSources/TerminalController.swift\tLayoutDebugSelectedPanel|splitViews: \\[LayoutDebugSplitView\\]\tselectedTabId")
     leaf_positive = ",".join(g[1:] for g in LEAF_FILES if not g.startswith("!c11UITests"))
     for old in sorted(rows):
@@ -110,8 +106,6 @@ def main():
         flags = "noimplicit" if old in NOIMPLICIT else ""
         out.append("\t".join([old, new, ",".join(globs), fb, flags]))
         lf = []
-        if old in ID_FAMILY and old in universe:
-            lf.append("labelonly")
         if old in ("tabs", "selectedTab", "selectedTabId"):
             lf.append("recvmgr")
         if lf:

@@ -221,7 +221,7 @@ class Lexer:
         return n
 
 
-VENDOR_RECEIVERS = ("Bonsplit.", "bonsplitController.", "bonsplitController?.", "controller.")
+VENDOR_RECEIVERS = ("TabLayoutSettings.Mode.", "Bonsplit.", "bonsplitController.", "bonsplitController?.", "controller.")
 TYPE_KEYWORDS = {"class", "struct", "enum", "extension", "protocol", "actor"}
 
 

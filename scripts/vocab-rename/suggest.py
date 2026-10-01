@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn xcodebuild 'incorrect argument label' errors into @callee suggestions.
 
-  suggest.py BUILD_LOG
+  suggest.py BUILD_LOG [PASS_TABLE]
 Prints `@callee<TAB>Name<TAB>keep|rename` lines to paste into the pass table:
   keep   = declaration was left alone, call sites must keep the old label
   rename = declaration was renamed, call sites must follow
@@ -11,6 +11,13 @@ import re, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rename
 
+table = {}
+if len(sys.argv) > 2:
+    for line in open(sys.argv[2]):
+        c = line.rstrip("\n").split("\t")
+        if len(c) >= 2 and not c[0].startswith(("#", "@")):
+            table.setdefault(c[0], c[1])
+old_names, new_names = set(table), set(table.values())
 pat = re.compile(r"^(/[^:]+):(\d+):(\d+): error: incorrect argument label in call \(have '([^']*)', expected '([^']*)'\)")
 seen, others = {}, []
 for line in open(sys.argv[1], errors="replace"):
@@ -33,8 +40,10 @@ for line in open(sys.argv[1], errors="replace"):
     if not callee or not diff:
         others.append(f"{path}:{ln}:{col} callee={callee} have={have} expected={exp}")
         continue
-    seen.setdefault((callee, "keep" if True else ""), set()).add(diff[0])
-for (callee, _), diffs in sorted(seen.items()):
-    print(f"@callee\t{callee}\tkeep\t# labels differ: {sorted(diffs)}")
+    h, e = diff[0]
+    how = "rename" if e in new_names and h in old_names and table.get(h) == e else "keep"
+    seen.setdefault((callee, how), set()).add(diff[0])
+for (callee, how), diffs in sorted(seen.items()):
+    print(f"@callee\t{callee}\t{how}\t# labels differ: {sorted(diffs)}")
 for o in sorted(set(others)):
     print("# other:", o)

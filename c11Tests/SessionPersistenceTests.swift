@@ -1314,6 +1314,15 @@ final class SessionPersistenceTests: XCTestCase {
         var reencodedKeys = Set<String>()
         collectKeys(try JSONSerialization.jsonObject(with: try JSONEncoder().encode(decoded)), into: &reencodedKeys)
         XCTAssertEqual(reencodedKeys, originalKeys)
+
+        // Areas were persisted as panes: the layout leaf keeps its "pane" key and a pre-rename file still decodes.
+        XCTAssertTrue(originalKeys.contains("pane"), "missing on-disk key pane")
+        XCTAssertFalse(originalKeys.contains("area"), "renamed vocabulary leaked into the file as area")
+        let legacyLeaf = Data(#"{"type":"pane","pane":{"panelIds":[]}}"#.utf8)
+        guard case .pane(let leaf) = try JSONDecoder().decode(SessionWorkspaceLayoutSnapshot.self, from: legacyLeaf) else {
+            return XCTFail("a legacy pane leaf did not decode as a leaf")
+        }
+        XCTAssertTrue(leaf.panelIds.isEmpty)
     }
 
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {

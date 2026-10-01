@@ -46,6 +46,33 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(WorkspaceSpec())
     }
 
+    // MARK: - Area vocabulary keeps the pane wire shape
+
+    func testAreaSpecAndPaneMetadataKeepTheirPaneWireKeys() throws {
+        let layout = LayoutTreeSpec.split(LayoutTreeSpec.SplitSpec(
+            orientation: .horizontal,
+            dividerPosition: 0.5,
+            first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"], selectedIndex: 0)),
+            second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["b"]))
+        ))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try encode(layout)) as? [String: Any])
+        let split = try XCTUnwrap(object["split"] as? [String: Any])
+        let first = try XCTUnwrap(split["first"] as? [String: Any])
+        XCTAssertEqual(first["type"] as? String, "pane")
+        XCTAssertNotNil(first["pane"])
+        XCTAssertNil(first["area"])
+
+        // A plan written before the rename still decodes.
+        let legacy = Data(#"{"type":"pane","pane":{"surfaceIds":["a"],"selectedIndex":0}}"#.utf8)
+        XCTAssertEqual(try decode(LayoutTreeSpec.self, from: legacy),
+                       .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"], selectedIndex: 0)))
+
+        let tab = TabSpec(id: "m", kind: .terminal, paneMetadata: ["k": .string("v")])
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: try encode(tab)) as? [String: Any])
+        XCTAssertNotNil(keys["paneMetadata"])
+        XCTAssertNil(keys["areaMetadata"])
+    }
+
     // MARK: - SurfaceSpec
 
     func testSurfaceSpecTerminalRoundTrips() throws {

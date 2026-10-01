@@ -674,17 +674,17 @@ func TestCLIBrowserSubcommand(t *testing.T) {
 	}
 }
 
-func TestCLINewPaneDefaultsDirectionAndForwardsExtraFlags(t *testing.T) {
+func TestCLINewAreaDefaultsDirectionAndForwardsExtraFlags(t *testing.T) {
 	sockPath, requests := startMockV2SocketWithRequestCapture(t)
 	code := runCLI([]string{
 		"--socket", sockPath, "--json",
-		"new-pane",
+		"new-area",
 		"--workspace", "ws-1",
 		"--type", "browser",
 		"--url", "https://example.com",
 	})
 	if code != 0 {
-		t.Fatalf("new-pane should return 0, got %d", code)
+		t.Fatalf("new-area should return 0, got %d", code)
 	}
 
 	select {
@@ -706,15 +706,15 @@ func TestCLINewPaneDefaultsDirectionAndForwardsExtraFlags(t *testing.T) {
 			t.Fatalf("expected url to be forwarded, got %v", got)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for new-pane request")
+		t.Fatal("timed out waiting for new-area request")
 	}
 }
 
-func TestCLIListPanelsUsesSurfaceList(t *testing.T) {
+func TestCLIListTabsUsesSurfaceList(t *testing.T) {
 	sockPath, requests := startMockV2SocketWithRequestCapture(t)
-	code := runCLI([]string{"--socket", sockPath, "--json", "list-panels", "--workspace", "ws-1"})
+	code := runCLI([]string{"--socket", sockPath, "--json", "list-tabs", "--workspace", "ws-1"})
 	if code != 0 {
-		t.Fatalf("list-panels should return 0, got %d", code)
+		t.Fatalf("list-tabs should return 0, got %d", code)
 	}
 
 	select {
@@ -727,15 +727,15 @@ func TestCLIListPanelsUsesSurfaceList(t *testing.T) {
 			t.Fatalf("expected workspace_id ws-1, got %v", got)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for list-panels request")
+		t.Fatal("timed out waiting for list-tabs request")
 	}
 }
 
-func TestCLIFocusPanelUsesSurfaceFocus(t *testing.T) {
+func TestCLIFocusTabUsesSurfaceFocus(t *testing.T) {
 	sockPath, requests := startMockV2SocketWithRequestCapture(t)
-	code := runCLI([]string{"--socket", sockPath, "--json", "focus-panel", "--workspace", "ws-1", "--panel", "surface-1"})
+	code := runCLI([]string{"--socket", sockPath, "--json", "focus-tab", "--workspace", "ws-1", "--tab", "tab-1"})
 	if code != 0 {
-		t.Fatalf("focus-panel should return 0, got %d", code)
+		t.Fatalf("focus-tab should return 0, got %d", code)
 	}
 
 	select {
@@ -747,14 +747,14 @@ func TestCLIFocusPanelUsesSurfaceFocus(t *testing.T) {
 		if got := params["workspace_id"]; got != "ws-1" {
 			t.Fatalf("expected workspace_id ws-1, got %v", got)
 		}
-		if got := params["surface_id"]; got != "surface-1" {
-			t.Fatalf("expected surface_id surface-1, got %v", got)
+		if got := params["surface_id"]; got != "tab-1" {
+			t.Fatalf("expected surface_id tab-1, got %v", got)
 		}
-		if _, ok := params["panel_id"]; ok {
-			t.Fatalf("did not expect panel_id in params: %v", params)
+		if _, ok := params["tab_id"]; ok {
+			t.Fatalf("did not expect tab_id in params: %v", params)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for focus-panel request")
+		t.Fatal("timed out waiting for focus-tab request")
 	}
 }
 
@@ -783,9 +783,10 @@ func TestCLIBrowserOpenUsesOpenSplitAndWorkspaceEnv(t *testing.T) {
 	}
 }
 
-func TestCLIBrowserGetURLUsesCurrentMethodAndSurfaceEnv(t *testing.T) {
+func TestCLIBrowserGetURLUsesCurrentMethodAndTabEnv(t *testing.T) {
 	sockPath, requests := startMockV2SocketWithRequestCapture(t)
-	t.Setenv("CMUX_SURFACE_ID", "env-sf")
+	clearTabEnv(t)
+	t.Setenv("C11_TAB_ID", "env-sf")
 	code := runCLI([]string{"--socket", sockPath, "--json", "browser", "get-url"})
 	if code != 0 {
 		t.Fatalf("browser get-url should return 0, got %d", code)
@@ -831,9 +832,8 @@ func TestFlagToParamKey(t *testing.T) {
 		input, expected string
 	}{
 		{"workspace", "workspace_id"},
-		{"surface", "surface_id"},
-		{"panel", "panel_id"},
-		{"pane", "pane_id"},
+		{"tab", "surface_id"},
+		{"area", "pane_id"},
 		{"window", "window_id"},
 		{"command", "initial_command"},
 		{"name", "title"},
@@ -851,24 +851,24 @@ func TestFlagToParamKey(t *testing.T) {
 }
 
 func TestParseFlags(t *testing.T) {
-	args := []string{"positional-cmd", "--workspace", "ws-1", "--surface", "sf-2", "--unknown", "val"}
-	_, err := parseFlags(args, []string{"workspace", "surface"})
+	args := []string{"positional-cmd", "--workspace", "ws-1", "--tab", "sf-2", "--unknown", "val"}
+	_, err := parseFlags(args, []string{"workspace", "tab"})
 	if err == nil {
 		t.Fatal("parseFlags should reject unknown flags")
 	}
 }
 
 func TestParseFlagsCollectsKnownFlagsAndPositionalArgs(t *testing.T) {
-	args := []string{"positional-cmd", "--workspace", "ws-1", "--surface", "sf-2"}
-	result, err := parseFlags(args, []string{"workspace", "surface"})
+	args := []string{"positional-cmd", "--workspace", "ws-1", "--tab", "sf-2"}
+	result, err := parseFlags(args, []string{"workspace", "tab"})
 	if err != nil {
 		t.Fatalf("parseFlags should succeed for known flags: %v", err)
 	}
 	if result.flags["workspace"] != "ws-1" {
 		t.Errorf("expected workspace=ws-1, got %q", result.flags["workspace"])
 	}
-	if result.flags["surface"] != "sf-2" {
-		t.Errorf("expected surface=sf-2, got %q", result.flags["surface"])
+	if result.flags["tab"] != "sf-2" {
+		t.Errorf("expected tab=sf-2, got %q", result.flags["tab"])
 	}
 	if len(result.positional) == 0 || result.positional[0] != "positional-cmd" {
 		t.Errorf("expected first positional=positional-cmd, got %v", result.positional)
@@ -876,7 +876,7 @@ func TestParseFlagsCollectsKnownFlagsAndPositionalArgs(t *testing.T) {
 }
 
 func TestCLIEnvVarDefaults(t *testing.T) {
-	// Test that CMUX_WORKSPACE_ID and CMUX_SURFACE_ID are used as defaults
+	// Test that CMUX_WORKSPACE_ID and the legacy CMUX_SURFACE_ID are used as defaults
 	dir := t.TempDir()
 	sockPath := filepath.Join(dir, "cmux.sock")
 
@@ -904,14 +904,15 @@ func TestCLIEnvVarDefaults(t *testing.T) {
 		conn.Close()
 	}()
 
+	clearTabEnv(t)
 	os.Setenv("CMUX_WORKSPACE_ID", "env-ws-id")
 	os.Setenv("CMUX_SURFACE_ID", "env-sf-id")
 	defer os.Unsetenv("CMUX_WORKSPACE_ID")
 	defer os.Unsetenv("CMUX_SURFACE_ID")
 
-	code := runCLI([]string{"--socket", sockPath, "--json", "close-surface"})
+	code := runCLI([]string{"--socket", sockPath, "--json", "close-tab"})
 	if code != 0 {
-		t.Fatalf("close-surface should return 0, got %d", code)
+		t.Fatalf("close-tab should return 0, got %d", code)
 	}
 	select {
 	case receivedParams := <-receivedParamsCh:
@@ -922,6 +923,95 @@ func TestCLIEnvVarDefaults(t *testing.T) {
 			t.Errorf("expected surface_id from env, got %v", receivedParams["surface_id"])
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for close-surface payload")
+		t.Fatal("timed out waiting for close-tab payload")
+	}
+}
+
+// clearTabEnv blanks every env var the tab fallback reads, so a test does not
+// inherit the identity of the c11 tab it runs in.
+func clearTabEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"} {
+		t.Setenv(name, "")
+	}
+}
+
+func TestParseFlagsNormalizesHiddenLegacyAliases(t *testing.T) {
+	result, err := parseFlags(
+		[]string{"--surface", "a", "--pane", "b"},
+		[]string{"tab", "area"},
+	)
+	if err != nil {
+		t.Fatalf("legacy flag spellings should parse: %v", err)
+	}
+	if result.flags["tab"] != "a" || result.flags["area"] != "b" {
+		t.Errorf("expected tab=a area=b, got %v", result.flags)
+	}
+	if _, err := parseFlags([]string{"--panel", "x"}, []string{"area"}); err == nil {
+		t.Error("alias must not apply when the command lacks the canonical flag")
+	}
+}
+
+func TestCLILegacyCommandAndFlagAliasesStillRelay(t *testing.T) {
+	sockPath, requests := startMockV2SocketWithRequestCapture(t)
+	code := runCLI([]string{"--socket", sockPath, "--json", "focus-panel", "--workspace", "ws-1", "--panel", "legacy-1"})
+	if code != 0 {
+		t.Fatalf("legacy focus-panel should return 0, got %d", code)
+	}
+	select {
+	case req := <-requests:
+		if got := req["method"]; got != "surface.focus" {
+			t.Fatalf("expected surface.focus, got %v", got)
+		}
+		params, _ := req["params"].(map[string]any)
+		if got := params["surface_id"]; got != "legacy-1" {
+			t.Fatalf("expected surface_id legacy-1, got %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for legacy focus-panel request")
+	}
+}
+
+func TestCLIListAreaTabsSendsLegacyPaneParam(t *testing.T) {
+	sockPath, requests := startMockV2SocketWithRequestCapture(t)
+	code := runCLI([]string{"--socket", sockPath, "--json", "list-area-tabs", "--area", "area-1"})
+	if code != 0 {
+		t.Fatalf("list-area-tabs should return 0, got %d", code)
+	}
+	select {
+	case req := <-requests:
+		if got := req["method"]; got != "pane.surfaces" {
+			t.Fatalf("expected pane.surfaces, got %v", got)
+		}
+		params, _ := req["params"].(map[string]any)
+		if got := params["pane_id"]; got != "area-1" {
+			t.Fatalf("expected pane_id area-1, got %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for list-area-tabs request")
+	}
+}
+
+func TestApplyTabEnvFallbackPrecedence(t *testing.T) {
+	for _, name := range []string{"C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"} {
+		t.Setenv(name, name+"-value")
+	}
+	params := map[string]any{}
+	applyTabEnvFallback(params)
+	if params["surface_id"] != "C11_TAB_ID-value" {
+		t.Fatalf("expected C11_TAB_ID first, got %v", params["surface_id"])
+	}
+	t.Setenv("C11_TAB_ID", "")
+	params = map[string]any{}
+	applyTabEnvFallback(params)
+	if params["surface_id"] != "C11_SURFACE_ID-value" {
+		t.Fatalf("expected C11_SURFACE_ID next, got %v", params["surface_id"])
+	}
+	t.Setenv("C11_SURFACE_ID", "")
+	t.Setenv("CMUX_TAB_ID", "")
+	params = map[string]any{}
+	applyTabEnvFallback(params)
+	if params["surface_id"] != "CMUX_SURFACE_ID-value" {
+		t.Fatalf("expected CMUX_SURFACE_ID last, got %v", params["surface_id"])
 	}
 }

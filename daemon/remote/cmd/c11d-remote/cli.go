@@ -32,12 +32,14 @@ const (
 
 // commandSpec describes a single CLI command and how to relay it.
 type commandSpec struct {
-	name     string          // CLI command name (e.g. "ping", "new-window")
+	name     string          // canonical CLI command name (e.g. "ping", "new-window")
+	aliases  []string        // hidden legacy command names; accepted, never listed in help
 	proto    protocolVersion // v1 text or v2 JSON-RPC
 	v1Cmd    string          // v1: literal command string sent over the socket
 	v2Method string          // v2: JSON-RPC method name
-	// flagKeys lists parameter keys this command accepts.
-	// They are extracted from --key flags and added to params.
+	// flagKeys lists the canonical flag names this command accepts.
+	// They are extracted from --key flags and added to params. Hidden legacy
+	// spellings (see flagAliases) are normalized onto these before matching.
 	flagKeys []string
 	// noParams means the command takes no parameters at all.
 	noParams bool
@@ -63,26 +65,34 @@ var commands = []commandSpec{
 	{name: "close-workspace", proto: protoV2, v2Method: "workspace.close", flagKeys: []string{"workspace"}},
 	{name: "select-workspace", proto: protoV2, v2Method: "workspace.select", flagKeys: []string{"workspace"}},
 	{name: "current-workspace", proto: protoV2, v2Method: "workspace.current", noParams: true},
-	{name: "list-panels", proto: protoV2, v2Method: "surface.list", flagKeys: []string{"workspace"}},
-	{name: "focus-panel", proto: protoV2, v2Method: "surface.focus", flagKeys: []string{"panel", "workspace"}, paramKeyOverrides: map[string]string{"panel": "surface_id"}},
-	{name: "list-panes", proto: protoV2, v2Method: "pane.list", flagKeys: []string{"workspace"}},
-	{name: "list-pane-surfaces", proto: protoV2, v2Method: "pane.surfaces", flagKeys: []string{"pane"}},
-	{name: "new-pane", proto: protoV2, v2Method: "pane.create", flagKeys: []string{"workspace", "direction", "type", "url", "cwd"}, defaultParams: map[string]any{"direction": "right"}},
-	{name: "new-surface", proto: protoV2, v2Method: "surface.create", flagKeys: []string{"workspace", "pane", "type", "url"}},
-	{name: "new-split", proto: protoV2, v2Method: "surface.split", flagKeys: []string{"surface", "direction", "cwd"}},
-	{name: "close-surface", proto: protoV2, v2Method: "surface.close", flagKeys: []string{"surface"}},
-	{name: "send", proto: protoV2, v2Method: "surface.send_text", flagKeys: []string{"surface", "text"}},
-	{name: "send-key", proto: protoV2, v2Method: "surface.send_key", flagKeys: []string{"surface", "key"}},
+	// Wire note: these commands use the canonical c11 vocabulary (tab, area) on
+	// the command line, but the daemon deliberately keeps sending the LEGACY v2
+	// method names (surface.*, pane.*) and param keys (surface_id, pane_id). The
+	// app accepts them forever, and a remote daemon may face an older app that
+	// only knows the legacy names.
+	{name: "list-tabs", aliases: []string{"list-panels"}, proto: protoV2, v2Method: "surface.list", flagKeys: []string{"workspace"}},
+	{name: "focus-tab", aliases: []string{"focus-panel"}, proto: protoV2, v2Method: "surface.focus", flagKeys: []string{"tab", "workspace"}},
+	{name: "list-areas", aliases: []string{"list-panes"}, proto: protoV2, v2Method: "pane.list", flagKeys: []string{"workspace"}},
+	{name: "list-area-tabs", aliases: []string{"list-pane-surfaces"}, proto: protoV2, v2Method: "pane.surfaces", flagKeys: []string{"area"}},
+	{name: "new-area", aliases: []string{"new-pane"}, proto: protoV2, v2Method: "pane.create", flagKeys: []string{"workspace", "direction", "type", "url", "cwd"}, defaultParams: map[string]any{"direction": "right"}},
+	{name: "new-tab", aliases: []string{"new-surface"}, proto: protoV2, v2Method: "surface.create", flagKeys: []string{"workspace", "area", "type", "url"}},
+	{name: "new-split", proto: protoV2, v2Method: "surface.split", flagKeys: []string{"tab", "direction", "cwd"}},
+	{name: "close-tab", aliases: []string{"close-surface"}, proto: protoV2, v2Method: "surface.close", flagKeys: []string{"tab"}},
+	{name: "send", proto: protoV2, v2Method: "surface.send_text", flagKeys: []string{"tab", "text"}},
+	{name: "send-key", proto: protoV2, v2Method: "surface.send_key", flagKeys: []string{"tab", "key"}},
 	{name: "notify", proto: protoV2, v2Method: "notification.create", flagKeys: []string{"title", "body", "workspace"}},
-	{name: "refresh-surfaces", proto: protoV2, v2Method: "surface.refresh", noParams: true},
+	{name: "refresh-tabs", aliases: []string{"refresh-surfaces"}, proto: protoV2, v2Method: "surface.refresh", noParams: true},
 }
 
 var commandIndex map[string]*commandSpec
 
 func init() {
-	commandIndex = make(map[string]*commandSpec, len(commands))
+	commandIndex = make(map[string]*commandSpec, len(commands)*2)
 	for i := range commands {
 		commandIndex[commands[i].name] = &commands[i]
+		for _, alias := range commands[i].aliases {
+			commandIndex[alias] = &commands[i]
+		}
 	}
 }
 
@@ -226,7 +236,7 @@ func execV2(socketPath string, spec *commandSpec, args []string, jsonOutput bool
 		}
 
 		applyWorkspaceEnvFallback(params)
-		applySurfaceEnvFallback(params)
+		applyTabEnvFallback(params)
 	}
 
 	resp, err := socketRoundTripV2(socketPath, spec.v2Method, params, refreshAddr)
@@ -281,34 +291,34 @@ func runBrowserRelay(socketPath string, args []string, jsonOutput bool, refreshA
 	var flagKeys []string
 	var allowPositionalURL bool
 	var useWorkspaceEnv bool
-	var useSurfaceEnv bool
+	var useTabEnv bool
 	switch sub {
 	case "open", "open-split", "new":
 		method = "browser.open_split"
-		flagKeys = []string{"url", "workspace", "surface"}
+		flagKeys = []string{"url", "workspace", "tab"}
 		allowPositionalURL = true
 		useWorkspaceEnv = true
 	case "navigate":
 		method = "browser.navigate"
-		flagKeys = []string{"url", "surface"}
+		flagKeys = []string{"url", "tab"}
 		allowPositionalURL = true
-		useSurfaceEnv = true
+		useTabEnv = true
 	case "back":
 		method = "browser.back"
-		flagKeys = []string{"surface"}
-		useSurfaceEnv = true
+		flagKeys = []string{"tab"}
+		useTabEnv = true
 	case "forward":
 		method = "browser.forward"
-		flagKeys = []string{"surface"}
-		useSurfaceEnv = true
+		flagKeys = []string{"tab"}
+		useTabEnv = true
 	case "reload":
 		method = "browser.reload"
-		flagKeys = []string{"surface"}
-		useSurfaceEnv = true
+		flagKeys = []string{"tab"}
+		useTabEnv = true
 	case "get-url":
 		method = "browser.url.get"
-		flagKeys = []string{"surface"}
-		useSurfaceEnv = true
+		flagKeys = []string{"tab"}
+		useTabEnv = true
 	default:
 		fmt.Fprintf(os.Stderr, "c11 browser: unknown subcommand %q\n", sub)
 		return 2
@@ -334,8 +344,8 @@ func runBrowserRelay(socketPath string, args []string, jsonOutput bool, refreshA
 	if useWorkspaceEnv {
 		applyWorkspaceEnvFallback(params)
 	}
-	if useSurfaceEnv {
-		applySurfaceEnvFallback(params)
+	if useTabEnv {
+		applyTabEnvFallback(params)
 	}
 
 	resp, err := socketRoundTripV2(socketPath, method, params, refreshAddr)
@@ -360,12 +370,17 @@ func applyWorkspaceEnvFallback(params map[string]any) {
 	}
 }
 
-func applySurfaceEnvFallback(params map[string]any) {
+// applyTabEnvFallback fills the tab target from the environment: C11_TAB_ID,
+// then the hidden legacy spellings. The param key stays the legacy surface_id.
+func applyTabEnvFallback(params map[string]any) {
 	if _, ok := params["surface_id"]; ok {
 		return
 	}
-	if envSf := os.Getenv("CMUX_SURFACE_ID"); envSf != "" {
-		params["surface_id"] = envSf
+	for _, name := range []string{"C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"} {
+		if v := os.Getenv(name); v != "" {
+			params["surface_id"] = v
+			return
+		}
 	}
 }
 
@@ -415,12 +430,10 @@ func flagToParamKey(key string) string {
 	switch key {
 	case "workspace":
 		return "workspace_id"
-	case "surface":
-		return "surface_id"
-	case "panel":
-		return "panel_id"
-	case "pane":
-		return "pane_id"
+	case "tab":
+		return "surface_id" // legacy wire key, see the note on commands
+	case "area":
+		return "pane_id" // legacy wire key, see the note on commands
 	case "window":
 		return "window_id"
 	case "command":
@@ -438,6 +451,14 @@ func flagToParamKey(key string) string {
 type parsedFlags struct {
 	flags      map[string]string // --key value pairs
 	positional []string          // non-flag arguments
+}
+
+// flagAliases maps hidden legacy flag spellings onto the canonical flag name.
+// An alias is only honored when the command accepts the canonical flag.
+var flagAliases = map[string]string{
+	"surface": "tab",
+	"panel":   "tab",
+	"pane":    "area",
 }
 
 // parseFlags extracts --key value pairs from args for the given allowed keys.
@@ -460,7 +481,11 @@ func parseFlags(args []string, keys []string) (parsedFlags, error) {
 		}
 		key := strings.TrimPrefix(args[i], "--")
 		if !allowed[key] {
-			return parsedFlags{}, fmt.Errorf("unknown flag --%s", key)
+			canonical, aliased := flagAliases[key]
+			if !aliased || !allowed[canonical] {
+				return parsedFlags{}, fmt.Errorf("unknown flag --%s", key)
+			}
+			key = canonical
 		}
 		if i+1 < len(args) {
 			result.flags[key] = args[i+1]
@@ -749,13 +774,19 @@ func cliUsage() {
 	fmt.Fprintln(os.Stderr, "  list-workspaces           List all workspaces")
 	fmt.Fprintln(os.Stderr, "  new-window                Create a new window")
 	fmt.Fprintln(os.Stderr, "  new-workspace             Create a new workspace")
-	fmt.Fprintln(os.Stderr, "  new-surface               Create a new surface")
-	fmt.Fprintln(os.Stderr, "  new-split                 Split an existing surface")
-	fmt.Fprintln(os.Stderr, "  close-surface             Close a surface")
+	fmt.Fprintln(os.Stderr, "  new-area                  Create a new area")
+	fmt.Fprintln(os.Stderr, "  new-tab                   Create a new tab")
+	fmt.Fprintln(os.Stderr, "  new-split                 Split an existing tab")
+	fmt.Fprintln(os.Stderr, "  close-tab                 Close a tab")
+	fmt.Fprintln(os.Stderr, "  list-tabs                 List tabs in a workspace")
+	fmt.Fprintln(os.Stderr, "  focus-tab                 Focus a tab")
+	fmt.Fprintln(os.Stderr, "  list-areas                List areas in a workspace")
+	fmt.Fprintln(os.Stderr, "  list-area-tabs            List tabs in an area")
+	fmt.Fprintln(os.Stderr, "  refresh-tabs              Refresh tabs")
 	fmt.Fprintln(os.Stderr, "  close-workspace           Close a workspace")
 	fmt.Fprintln(os.Stderr, "  select-workspace          Select a workspace")
-	fmt.Fprintln(os.Stderr, "  send                      Send text to a surface")
-	fmt.Fprintln(os.Stderr, "  send-key                  Send a key to a surface")
+	fmt.Fprintln(os.Stderr, "  send                      Send text to a tab")
+	fmt.Fprintln(os.Stderr, "  send-key                  Send a key to a tab")
 	fmt.Fprintln(os.Stderr, "  notify                    Create a notification")
 	fmt.Fprintln(os.Stderr, "  browser <sub>             Browser commands (open, navigate, back, forward, reload, get-url)")
 	fmt.Fprintln(os.Stderr, "  rpc <method> [json-params] Send arbitrary JSON-RPC")

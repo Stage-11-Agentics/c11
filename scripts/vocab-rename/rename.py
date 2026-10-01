@@ -394,7 +394,7 @@ def is_implicit_member(src, a):
     return True
 
 
-VENDOR_CALLEES = {"setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
+VENDOR_CALLEES = {"moveBonsplitTab", "locateBonsplitSurface", "setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
 
 
 def vendor_callee(src, a):
@@ -413,6 +413,34 @@ def vendor_callee(src, a):
             depth -= 1
         i -= 1
     return False
+
+
+def is_func_decl_param(src, a, b):
+    """True if the token at [a,b) is a parameter name `name: Type` in a func/init declaration."""
+    j = b
+    while j < len(src) and src[j] in " \t":
+        j += 1
+    if j >= len(src) or src[j] != ":":
+        return False
+    i = a - 1
+    while i >= 0 and src[i] in " \t\n":
+        i -= 1
+    if i < 0 or src[i] not in "(,":
+        return False
+    depth, k = 0, a - 1
+    while k >= 0:
+        c = src[k]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                break
+            depth -= 1
+        k -= 1
+    if k < 0:
+        return False
+    m = re.search(r"(?:\bfunc\s+[A-Za-z_]\w*\s*(?:<[^>]*>)?|\binit[?!]?\s*(?:<[^>]*>)?)\s*$", src[max(0, k - 120):k])
+    return m is not None
 
 
 def is_call_label(src, a, b):
@@ -507,7 +535,10 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
                 continue
         present = by_region[r]
         if new in present and not member and not is_call_label(src, a, b):
-            if fallback and fallback not in present:
+            if is_func_decl_param(src, a, b):
+                inner = fallback if fallback and fallback not in present else tok
+                new = f"{new} {inner}"  # `func f(newLabel inner: T)`: the label follows the rename, the body keeps a safe name
+            elif fallback and fallback not in present:
                 new = fallback
             else:
                 if report is not None:

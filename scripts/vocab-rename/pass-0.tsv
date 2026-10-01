@@ -1,0 +1,6 @@
+# Pass 0: remove typealias Tab = Workspace; bare Tab (workspace meaning) -> Workspace.
+# Bonsplit.Tab is never touched (the tool skips Bonsplit.-qualified tokens).
+@delete	Sources/TabManager.swift	typealias Tab = Workspace
+Tab	Workspace
+@delete	Sources/TabManager.swift	// MARK: - Tab Type Alias for Backwards Compatibility
+@delete	Sources/TabManager.swift	// The old Tab class is replaced by Workspace

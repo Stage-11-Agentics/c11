@@ -50,7 +50,7 @@ scripts/sandbox-down.sh <run-id>
 scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]
 ```
 
-`sandbox-up` clones a stopped golden image and launches the `.app` inside that guest. It does not boot the golden image. The Tart host is `C11_SANDBOX_HOST` (default `atlas`). A second guest needs `--allow-second`. Live `tests_v2` runs go through `sandbox-tests-v2.sh` after `sandbox-up`; they are python3 scripts, not pytest, and they never attach to the operator's c11. A new clone can show Setup Assistant over the window until `scripts/sandbox-skip-setup.mobileconfig` is installed on the golden image. Leave that process running. Why this shape, and the one-time host setup, live in `docs/c11-sandbox-research.md`.
+`sandbox-up` clones a stopped golden image and launches the `.app` inside that guest. It does not boot the golden image. `--app-source local-app` (the default) is a bundle path on this machine. `--app-source atlas-build` is reserved for a later branch build on the Tart host and exits before SSH; it does not install Xcode. The Tart host is `C11_SANDBOX_HOST` (default `atlas`). A second guest needs `--allow-second`. Live `tests_v2` runs go through `sandbox-tests-v2.sh` after `sandbox-up`; they are python3 scripts, not pytest, and they never attach to the operator's c11. A new clone can show Setup Assistant over the window until `scripts/sandbox-skip-setup.mobileconfig` is installed on the golden image. Leave that process running. Why this shape, and the one-time host setup, live in `docs/c11-sandbox-research.md`.
 
 ## Launch discipline
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Clone the golden Tart image on the sandbox host, boot it headless, and launch a c11 .app inside it.
 # Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
+#        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,21 +11,61 @@ source "$SCRIPT_DIR/sandbox-common.sh"
 usage() {
   cat <<'EOF'
 Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
+       scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
 
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
-clone headless, copy the .app in, and launch it with the automation socket.
-The golden image is never booted. A second running guest needs --allow-second.
-Two running guests is always refused.
+clone headless, place one .app on the Tart host, copy it into the guest,
+and launch it with the automation socket. The golden image is never booted.
+A second running guest needs --allow-second. Two running guests is always refused.
+
+--app-source (or C11_SANDBOX_APP_SOURCE) names where the .app comes from.
+Every source leaves one bundle at ~/.c11-sandbox/apps/<run-id>/ on the Tart
+host. The boot path only reads that directory.
+  local-app    A .app path on this machine, copied up. This is the default.
+  atlas-build  Reserved for a later branch build on the Tart host.
+               Not implemented: exits before SSH, does not install Xcode,
+               and does not wait for Xcode.
 EOF
+}
+
+# local-app: copy a bundle from this machine into the host staging directory.
+stage_local_app() {
+  local app="$1" rel="$2"
+  [[ -d "$app" ]] || sandbox_die "app not found: $app"
+  [[ "$app" == *.app ]] || sandbox_die "expected a .app bundle: $app"
+  [[ -f "$app/Contents/Info.plist" ]] || sandbox_die "not an app bundle: $app"
+  app="$(cd "$(dirname "$app")" && pwd)/$(basename "$app")"
+  local app_base ssh_host
+  app_base="$(basename "$app")"
+  ssh_host="$(sandbox_host_name)"
+  if [[ "$ssh_host" != "local" ]]; then
+    ssh -o BatchMode=yes -o ConnectTimeout=25 -o LogLevel=ERROR "$ssh_host" \
+      "rm -rf \"\$HOME/${rel}\" && mkdir -p \"\$HOME/${rel}\""
+  else
+    rm -rf "${HOME:?}/${rel}"
+    mkdir -p "${HOME}/${rel}"
+  fi
+  COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -cf - "$app_base" | sandbox_extract_tar "$rel"
 }
 
 run_id=""
 app=""
 allow_second=0
+app_source="${C11_SANDBOX_APP_SOURCE:-local-app}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --allow-second) allow_second=1; shift ;;
+    --app-source)
+      [[ $# -ge 2 ]] || sandbox_die "--app-source needs a name"
+      app_source="$2"
+      shift 2
+      ;;
+    --app-source=*)
+      app_source="${1#--app-source=}"
+      [[ -n "$app_source" ]] || sandbox_die "--app-source needs a name"
+      shift
+      ;;
     --) shift; break ;;
     -*) sandbox_die "unknown flag: $1" ;;
     *)
@@ -42,25 +83,24 @@ done
 if [[ $# -gt 0 ]]; then
   sandbox_die "unexpected argument: $1"
 fi
-[[ -n "$run_id" && -n "$app" ]] || { usage >&2; exit 1; }
+[[ -n "$run_id" ]] || { usage >&2; exit 1; }
 sandbox_validate_run_id "$run_id"
-[[ -d "$app" ]] || sandbox_die "app not found: $app"
-[[ "$app" == *.app ]] || sandbox_die "expected a .app bundle: $app"
-[[ -f "$app/Contents/Info.plist" ]] || sandbox_die "not an app bundle: $app"
-
-app="$(cd "$(dirname "$app")" && pwd)/$(basename "$app")"
-app_base="$(basename "$app")"
 rel=".c11-sandbox/apps/${run_id}"
 
-ssh_host="$(sandbox_host_name)"
-if [[ "$ssh_host" != "local" ]]; then
-  ssh -o BatchMode=yes -o ConnectTimeout=25 -o LogLevel=ERROR "$ssh_host" \
-    "rm -rf \"\$HOME/${rel}\" && mkdir -p \"\$HOME/${rel}\""
-else
-  rm -rf "${HOME:?}/${rel}"
-  mkdir -p "${HOME}/${rel}"
-fi
-COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -cf - "$app_base" | sandbox_extract_tar "$rel"
+# The case is the seam. Add a source by staging one .app into $rel on the
+# Tart host. Do not teach the boot path about the source.
+case "$app_source" in
+  local-app)
+    [[ -n "$app" ]] || { usage >&2; exit 1; }
+    stage_local_app "$app" "$rel"
+    ;;
+  atlas-build)
+    sandbox_die "app source atlas-build is not implemented. It will build a branch on the Tart host and leave the .app in ${rel}. This script does not install Xcode and does not wait for it. Pass a local .app path."
+    ;;
+  *)
+    sandbox_die "unknown app source: $app_source. Known sources: local-app, atlas-build."
+    ;;
+esac
 
 guest_b64="$(
   {
@@ -68,6 +108,7 @@ guest_b64="$(
     cat <<'GUEST'
 set -eu
 setopt pipefail
+# One .app, staged by whichever app source sandbox-up selected.
 dest_parent="$HOME/c11-sandbox/apps/$SANDBOX_RUN_ID"
 setopt null_glob
 srcs=("$dest_parent"/*.app)
@@ -103,6 +144,7 @@ setopt pipefail no_hup no_monitor
 $(sandbox_host_prelude)
 run_id=$(printf '%q' "$run_id")
 allow_second=$(printf '%q' "$allow_second")
+app_source=$(printf '%q' "$app_source")
 vm="c11-sb-\$run_id"
 refuse_protected "\$vm"
 tart="\$(tart_bin)" || die "tart is not installed on this host"
@@ -189,7 +231,8 @@ write_meta "\$(meta_path "\$run_id")" \
   "STDOUT=\${STDOUT:-}" \
   "DSOCK=\${DSOCK:-}" \
   "CLONE_SECS=\$clone_secs" \
-  "BOOT_SECS=\$boot_secs"
+  "BOOT_SECS=\$boot_secs" \
+  "APP_SOURCE=\$app_source"
 failed=0
 printf 'run_id=%s\n' "\$run_id"
 printf 'vm=%s\n' "\$vm"

@@ -125,13 +125,15 @@ Window-id screenshots stay the right tool for "look without touching." They do n
 
 Phase 1 recommended keeping the guest on Hyperion. Phase 2 moved it to Atlas: the cursor that must stay put is still Hyperion's, and a guest on another machine protects it the same way, without putting VM CPU on the laptop. Atlas is one Apple-silicon Mac, so it has the same two-guest cap. The scripts default to `ssh atlas`. Set `C11_SANDBOX_HOST=local` to run Tart on the machine where the script is invoked.
 
-Atlas has no Xcode. Nothing is built there. A tagged `.app` is copied from the laptop to Atlas, then into the guest. Long image pulls run detached on Atlas. Do not reboot Atlas to clear a stuck VM slot; that takes the always-on services down with it. Scanner VMs already on the machine (`scanner-base`, `scanner-golden`) are left alone.
+The app source is pluggable. Today it is `local-app`: a `.app` on the machine running the script, copied to Atlas, then into the guest. `--app-source atlas-build` is the later source, a branch built on Atlas. It is not implemented. `sandbox-up` does not install Xcode and does not wait for it. Both sources have to leave one `.app` in `~/.c11-sandbox/apps/<run-id>/` on the Tart host. The boot path only reads that directory. Long image pulls run detached on Atlas. Do not reboot Atlas to clear a stuck VM slot; that takes the always-on services down with it. Scanner VMs already on the machine (`scanner-base`, `scanner-golden`) are left alone.
 
 ## Scripts
 
 The scripts run on the laptop (or wherever you invoke them) and talk to the Tart host over SSH. They refuse to download an image or install Tart. If `tart` is missing or `c11-sandbox-golden` is missing, they exit and do nothing else. The golden image is never booted for a run. State on the Tart host lives under `~/.c11-sandbox/` (run metadata, the copied `.app`, screenshots, test logs). The guest SSH key is `~/.ssh/c11-sandbox` on that host. It is not in this repo.
 
 `scripts/sandbox-up.sh <run-id> <path-to-tagged.app> [--allow-second]`
+
+`--app-source` (or `C11_SANDBOX_APP_SOURCE`) selects the source. `local-app` is the default and takes the path above. `atlas-build` exits before SSH. The run metadata records `APP_SOURCE`.
 
 - Refuse if any guest is already running, unless `--allow-second` is passed, and refuse always if two are already not stopped. A suspended guest counts, because it can still hold a macOS VM slot.
 - `tart clone c11-sandbox-golden c11-sb-<run-id>`

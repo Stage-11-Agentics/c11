@@ -5,37 +5,23 @@ CLI/c11.swift	bonsplitTab	log	debug/diagnostic log text, never looked up: leave
 CLI/c11.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 CLI/c11.swift	surfaceRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 CLI/c11.swift	tabManager	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	alphaPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	betaPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	browserPaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	browserPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/AppDelegate.swift	expectedLatestTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	expectedSurfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	expectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	failedPanels	log	debug/diagnostic log text, never looked up: leave
-Sources/AppDelegate.swift	focusedPaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	focusedPanel	log	debug/diagnostic log text, never looked up: leave
-Sources/AppDelegate.swift	focusedPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	focusedSurfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	focusedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	handleBrowserSurfaceKeyEquivalent	log	debug/diagnostic log text, never looked up: leave
-Sources/AppDelegate.swift	initialPaneCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	loadedPanels	log	debug/diagnostic log text, never looked up: leave
 Sources/AppDelegate.swift	openTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/AppDelegate.swift	panelId	log	debug/diagnostic log text, never looked up: leave
 Sources/AppDelegate.swift	pendingSurfaces	log	debug/diagnostic log text, never looked up: leave
 Sources/AppDelegate.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/AppDelegate.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	surfaceId1	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	surfaceId2	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	tabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	tabId1	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	tabId2	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/AppDelegate.swift	tabsPerPane	log	debug/diagnostic log text, never looked up: leave
 Sources/AppDelegate.swift	targetPane	log	debug/diagnostic log text, never looked up: leave
-Sources/AppDelegate.swift	terminalPaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/AppDelegate.swift	trackedPaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/BrowserWindowPortal.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/ContentView.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/ContentView.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
@@ -163,37 +149,19 @@ Sources/WorkspaceLayoutExecutor.swift	TabManager	msg	message text naming a type 
 Sources/WorkspaceLayoutExecutor.swift	paneMetadata	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/WorkspaceLayoutExecutor.swift	surfaceIds	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
 Sources/WorkspaceManager.swift	bonsplitTabs	log	debug/diagnostic log text, never looked up: leave
-Sources/WorkspaceManager.swift	bottomLeftPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	bottomRightPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/WorkspaceManager.swift	commandPaletteRenameTabRequested	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
-Sources/WorkspaceManager.swift	emptyPanelAppearCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	exitPanelAttachedBeforeCtrlD	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	exitPanelHasSurfaceBeforeCtrlD	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	exitPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	expectedPanelsAfter	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	finalPaneCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	firstResponderPanelAfter	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	firstResponderPanelBefore	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	focusPanel	log	debug/diagnostic log text, never looked up: leave
-Sources/WorkspaceManager.swift	focusedPanelAfter	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	focusedPanelBefore	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	leftPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	missingPanel	log	debug/diagnostic log text, never looked up: leave
-Sources/WorkspaceManager.swift	missingPanelMappingCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	missingSelectedTabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	panelCount	log	debug/diagnostic log text, never looked up: leave
-Sources/WorkspaceManager.swift	panelCountAfter	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	panelCountBefore	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	rightPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	selectedPanel	log	debug/diagnostic log text, never looked up: leave
 Sources/WorkspaceManager.swift	selectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	showSurfaceIdsInTabTitles	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	sidebarActiveTabIndicatorStyle	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/WorkspaceManager.swift	tabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	topLeftPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-Sources/WorkspaceManager.swift	topRightPanelId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/c11App.swift	closeWorkspaceOnLastSurfaceShortcut	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/c11App.swift	commandPaletteSearchAllSurfaces	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 Sources/c11App.swift	newSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
@@ -235,31 +203,9 @@ c11UITests/BonsplitTabDragUITests.swift	alphaTab	harness	debug payload key share
 c11UITests/BonsplitTabDragUITests.swift	betaTab	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/BonsplitTabDragUITests.swift	newTab	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/BonsplitTabDragUITests.swift	paneLeadingGap	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/BrowserPaneNavigationKeybindUITests.swift	browserPaneId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/BrowserPaneNavigationKeybindUITests.swift	browserPanelId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/BrowserPaneNavigationKeybindUITests.swift	focusedPaneId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/BrowserPaneNavigationKeybindUITests.swift	initialPaneCount	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/BrowserPaneNavigationKeybindUITests.swift	terminalPaneId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	exitPanelId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	firstResponderPanelAfter	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	firstResponderPanelBefore	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	focusedPanelAfter	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	focusedPanelBefore	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	panelCountAfter	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/CloseWorkspaceCmdDUITests.swift	rightPanelId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/JumpToUnreadUITests.swift	expectedSurfaceId	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/JumpToUnreadUITests.swift	expectedTabId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/JumpToUnreadUITests.swift	focusedSurfaceId	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/JumpToUnreadUITests.swift	focusedTabId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MenuKeyEquivalentRoutingUITests.swift	browserPanelId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MenuKeyEquivalentRoutingUITests.swift	emptyPanelAppearCount	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MenuKeyEquivalentRoutingUITests.swift	finalPaneCount	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MenuKeyEquivalentRoutingUITests.swift	missingPanelMappingCount	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/MenuKeyEquivalentRoutingUITests.swift	missingSelectedTabCount	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MultiWindowNotificationsUITests.swift	expectedLatestTabId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MultiWindowNotificationsUITests.swift	focusedTabId	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MultiWindowNotificationsUITests.swift	surfaceId2	harness	debug payload key shared by the app and c11UITests: leave
-c11UITests/MultiWindowNotificationsUITests.swift	tabId1	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/MultiWindowNotificationsUITests.swift	tabId2	harness	debug payload key shared by the app and c11UITests: leave
 c11UITests/UpdatePillUITests.swift	newTab	harness	debug payload key shared by the app and c11UITests: leave
 Sources/SocketHandlers/BrowserHandlers.swift	tabIndex	wire	JavaScript source evaluated in the page (the page's own variable): leave
@@ -269,3 +215,4 @@ c11Tests/AppDelegateShortcutRoutingTests.swift	selectedTabId	msg	message text na
 c11Tests/PaneMetadataPersistenceTests.swift	panelIds	wire	JSON fixture of an on-disk file: leave
 c11Tests/WorkspaceBlueprintFileCodableTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
 c11Tests/WorkspaceSnapshotCaptureTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
+Sources/TerminalController.swift	selectedTabs	harness	debug layout JSON key (area/tab vocabulary) read by tests and tests_v2: leave

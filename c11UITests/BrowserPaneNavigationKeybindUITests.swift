@@ -35,7 +35,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertEqual(setup["webViewFocused"], "true", "Expected WKWebView to be first responder for this test")
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 
@@ -112,7 +112,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertFalse((setup["ghosttyGotoSplitLeftShortcut"] ?? "").isEmpty, "Expected Ghostty trigger metadata to be present")
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 
@@ -338,12 +338,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         guard let originalBrowserPanelId = setup["browserTabId"] else {
-            XCTFail("Missing browserPanelId in goto_split setup data")
+            XCTFail("Missing browserTabId in goto_split setup data")
             return
         }
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 
@@ -387,12 +387,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         guard let expectedBrowserPanelId = setup["browserTabId"] else {
-            XCTFail("Missing browserPanelId in goto_split setup data")
+            XCTFail("Missing browserTabId in goto_split setup data")
             return
         }
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 
@@ -442,12 +442,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         guard let expectedBrowserPanelId = setup["browserTabId"] else {
-            XCTFail("Missing browserPanelId in goto_split setup data")
+            XCTFail("Missing browserTabId in goto_split setup data")
             return
         }
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 
@@ -572,7 +572,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         guard let browserPanelId = setup["browserTabId"] else {
-            XCTFail("Missing browserPanelId in goto_split setup data")
+            XCTFail("Missing browserTabId in goto_split setup data")
             return
         }
 
@@ -664,7 +664,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
-            XCTFail("Missing terminalPaneId in goto_split setup data")
+            XCTFail("Missing terminalAreaId in goto_split setup data")
             return
         }
 

@@ -160,7 +160,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
 
         let rightPanelId = ready["rightTabId"] ?? ""
         guard !rightPanelId.isEmpty else {
-            XCTFail("Missing rightPanelId in setup data. data=\(ready)")
+            XCTFail("Missing rightTabId in setup data. data=\(ready)")
             return
         }
         assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: rightPanelId, context: "Horizontal split")
@@ -220,7 +220,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
 
         let rightPanelId = ready["rightTabId"] ?? ""
         guard !rightPanelId.isEmpty else {
-            XCTFail("Missing rightPanelId in setup data. data=\(ready)")
+            XCTFail("Missing rightTabId in setup data. data=\(ready)")
             return
         }
         assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: rightPanelId, context: "Three-pane layout")
@@ -289,7 +289,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 "Attempt \(attempt): expected two panels before Ctrl+D in 2x2-right-close repro. data=\(ready)"
             )
             guard !exitPanelId.isEmpty else {
-                XCTFail("Attempt \(attempt): missing exitPanelId in setup data. data=\(ready)")
+                XCTFail("Attempt \(attempt): missing exitTabId in setup data. data=\(ready)")
                 return
             }
             assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: exitPanelId, context: "Attempt \(attempt): 2x2-right-close")
@@ -362,7 +362,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 "Attempt \(attempt): expected two panels before Ctrl+D in 2x2-bottom-close repro. data=\(ready)"
             )
             guard !exitPanelId.isEmpty else {
-                XCTFail("Attempt \(attempt): missing exitPanelId in setup data. data=\(ready)")
+                XCTFail("Attempt \(attempt): missing exitTabId in setup data. data=\(ready)")
                 return
             }
             assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: exitPanelId, context: "Attempt \(attempt): 2x2-bottom-close")
@@ -434,7 +434,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 "Attempt \(attempt): expected two panels before Ctrl+D in 2x2-right-close repro. data=\(ready)"
             )
             guard !exitPanelId.isEmpty else {
-                XCTFail("Attempt \(attempt): missing exitPanelId in setup data. data=\(ready)")
+                XCTFail("Attempt \(attempt): missing exitTabId in setup data. data=\(ready)")
                 return
             }
             assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: exitPanelId, context: "Attempt \(attempt): 2x2-right-close real key")
@@ -514,7 +514,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 "Attempt \(attempt): expected two panels before Ctrl+D in left/right repro. data=\(ready)"
             )
             guard !exitPanelId.isEmpty else {
-                XCTFail("Attempt \(attempt): missing exitPanelId in setup data. data=\(ready)")
+                XCTFail("Attempt \(attempt): missing exitTabId in setup data. data=\(ready)")
                 return
             }
             assertCtrlDPreconditionsBeforeTrigger(ready, expectedExitPanelId: exitPanelId, context: "Attempt \(attempt): left/right real key")

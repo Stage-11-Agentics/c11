@@ -350,10 +350,11 @@ def test_debug_method_aliases(c: cmux, f: Fixture) -> None:
     _call(c, "debug.empty_area.reset")
     _call(c, "debug.empty_panel.reset")
     for method in ("debug.tab_snapshot", "debug.panel_snapshot"):
-        snap = _call(c, method, {"tab_id": f.t1, "label": "vocab"})
-        _same(snap.get("tab_id"), f.t1, f"{method} tab_id")
+        # t3 is the selected tab of its area, so its hosted view is on screen and capturable.
+        snap = _call(c, method, {"tab_id": f.t3, "label": "vocab"})
+        _same(snap.get("tab_id"), f.t3, f"{method} tab_id")
     for method in ("debug.tab_snapshot.reset", "debug.panel_snapshot.reset"):
-        _call(c, method, {"tab_id": f.t1})
+        _call(c, method, {"tab_id": f.t3})
     print("PASS: debug.empty_panel / debug.panel_snapshot == debug.empty_area / debug.tab_snapshot")
 
 

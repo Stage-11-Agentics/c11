@@ -9993,7 +9993,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 awaitingInputId: expectedInputId
             ) { snapshot in
                 self.writeGotoSplitTestData([
-                    "\(keyPrefix)PanelId": panelId.uuidString,
+                    "\(keyPrefix)TabId": panelId.uuidString,
                     "\(keyPrefix)ActiveElementId": snapshot["id"] ?? "",
                     "\(keyPrefix)ActiveElementTag": snapshot["tag"] ?? "",
                     "\(keyPrefix)ActiveElementType": snapshot["type"] ?? "",

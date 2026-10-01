@@ -6069,7 +6069,7 @@ class TerminalController {
         enum CodingKeys: String, CodingKey {
             case paneId = "areaId"
             case paneFrame = "areaFrame"
-            case selectedBonsplitTabId = "selectedTabId"
+            case selectedBonsplitTabId
             case panelId = "tabId"
             case panelType = "tabType"
             case inWindow

@@ -4693,7 +4693,7 @@ class WorkspaceManager: ObservableObject {
                             "finalTabCount": String(panelCount),
                             "missingSelectedTabCount": String(missingSelectedTabCount),
                             "missingTabMappingCount": String(missingPanelMappingCount),
-                            "emptyTabAppearCount": String(DebugUIEventCounters.emptyPanelAppearCount),
+                            "emptyAreaAppearCount": String(DebugUIEventCounters.emptyPanelAppearCount),
                             "selectedTerminalCount": String(selectedTerminalCount),
                             "selectedTerminalAttachedCount": String(selectedTerminalAttachedCount),
                             "selectedTerminalZeroSizeCount": String(selectedTerminalZeroSizeCount),

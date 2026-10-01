@@ -86,7 +86,6 @@ Sources/Tabs/BrowserTabView.swift	switchToTab	id	stable identifier (localization
 Sources/Tabs/TerminalTab.swift	runtimeSurface	log	debug/diagnostic log text, never looked up: leave
 Sources/Tabs/TerminalTab.swift	terminalPanel	log	debug/diagnostic log text, never looked up: leave
 Sources/TerminalController.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-Sources/TerminalController.swift	selectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/TerminalController.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/TerminalNotificationStore.swift	notificationPaneFlashEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 Sources/TerminalNotificationStore.swift	notificationPaneRingEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave

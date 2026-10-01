@@ -228,7 +228,7 @@ final class SplitCloseRightBlankRegressionUITests: XCTestCase {
         let finalPaneCount = Int(data["finalAreaCount"] ?? "") ?? -1
         let missingSelected = Int(data["missingSelectedTabCount"] ?? "") ?? -1
         let missingMapping = Int(data["missingTabMappingCount"] ?? "") ?? -1
-        let emptyPanels = Int(data["emptyTabAppearCount"] ?? "") ?? -1
+        let emptyPanels = Int(data["emptyAreaAppearCount"] ?? "") ?? -1
         let selectedTerminalCount = Int(data["selectedTerminalCount"] ?? "") ?? -1
         let selectedTerminalAttached = Int(data["selectedTerminalAttachedCount"] ?? "") ?? -1
         let selectedTerminalZeroSize = Int(data["selectedTerminalZeroSizeCount"] ?? "") ?? -1
@@ -833,7 +833,7 @@ final class SplitCloseRightBlankRegressionUITests: XCTestCase {
             let finalPaneCount = Int(data["finalAreaCount"] ?? "") ?? -1
             let missingSelected = Int(data["missingSelectedTabCount"] ?? "") ?? -1
             let missingMapping = Int(data["missingTabMappingCount"] ?? "") ?? -1
-            let emptyPanels = Int(data["emptyTabAppearCount"] ?? "") ?? -1
+            let emptyPanels = Int(data["emptyAreaAppearCount"] ?? "") ?? -1
             let selectedTerminalCount = Int(data["selectedTerminalCount"] ?? "") ?? -1
             let selectedTerminalAttached = Int(data["selectedTerminalAttachedCount"] ?? "") ?? -1
             let selectedTerminalZeroSize = Int(data["selectedTerminalZeroSizeCount"] ?? "") ?? -1

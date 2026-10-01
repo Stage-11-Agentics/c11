@@ -162,8 +162,8 @@ final class AgentDetector: @unchecked Sendable {
             if changed || detectionChanged {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: key.workspaceId),
-                              let workspace = workspaceManager.workspaces.first(where: { $0.id == key.workspaceId }) else {
+                        guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: key.workspaceId),
+                              let workspace = tabManager.tabs.first(where: { $0.id == key.workspaceId }) else {
                             return
                         }
                         workspace.setDetectedTerminalType(

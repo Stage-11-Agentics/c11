@@ -384,6 +384,8 @@ def is_implicit_member(src, a):
     if j < 0:
         return True
     c = src[j]
+    if c == "?" and j >= 1 and src[j - 1] == "?":
+        return True  # `x ?? .case`
     if c in ")]}?!>\\":
         return False
     if c.isalnum() or c == "_":

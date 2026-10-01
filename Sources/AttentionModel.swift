@@ -334,13 +334,13 @@ final class SurfaceAttentionService {
         // projected. Removing the modifier first would transiently manufacture
         // a waiting edge for a surface that is already gone.
         TerminalNotificationStore.shared.clearNotifications(
-            forWorkspaceId: workspaceId,
+            forTabId: workspaceId,
             surfaceId: surfaceId
         )
         SurfaceMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
         SurfaceAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
-        AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
-            .workspaces.first(where: { $0.id == workspaceId })?
+        AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
+            .tabs.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)
     }
 
@@ -359,7 +359,7 @@ final class SurfaceAttentionService {
         // As with single-surface removal, clear raw history before removing the
         // attention projection that currently keeps it signal-ineligible.
         TerminalNotificationStore.shared.clearNotifications(
-            forWorkspaceId: workspaceId,
+            forTabId: workspaceId,
             excludingSurfaceIds: validSurfaceIds
         )
         SurfaceMetadataStore.shared.pruneWorkspace(
@@ -459,8 +459,8 @@ final class SurfaceAttentionService {
 
     private func publishProjection(_ snapshot: SurfaceAttentionSnapshot) {
         SurfaceAttentionIndex.shared.publish(snapshot)
-        AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
-            .workspaces.first(where: { $0.id == snapshot.workspaceId })?
+        AppDelegate.shared?.tabManagerFor(tabId: snapshot.workspaceId)?
+            .tabs.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
     }
 }

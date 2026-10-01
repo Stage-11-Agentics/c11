@@ -566,7 +566,7 @@ struct HiddenTitlebarSidebarControlsView: View {
                 if let appDelegate = AppDelegate.shared {
                     appDelegate.presentCreateWorkspaceSheet()
                 } else {
-                    _ = AppDelegate.shared?.workspaceManager?.addTab()
+                    _ = AppDelegate.shared?.tabManager?.addTab()
                 }
             },
             visibilityMode: .onHover
@@ -796,7 +796,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             if let appDelegate = AppDelegate.shared {
                 appDelegate.presentCreateWorkspaceSheet()
             } else {
-                _ = AppDelegate.shared?.workspaceManager?.addTab()
+                _ = AppDelegate.shared?.tabManager?.addTab()
             }
         }
 
@@ -1060,7 +1060,7 @@ private struct NotificationsPopoverView: View {
                         ForEach(notificationStore.notifications) { notification in
                             NotificationPopoverRow(
                                 notification: notification,
-                                tabTitle: tabTitle(for: notification.workspaceId),
+                                tabTitle: tabTitle(for: notification.tabId),
                                 onOpen: { open(notification) },
                                 onClear: { notificationStore.remove(id: notification.id) }
                             )
@@ -1074,8 +1074,8 @@ private struct NotificationsPopoverView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private func tabTitle(for workspaceId: UUID) -> String? {
-        AppDelegate.shared?.tabTitle(for: workspaceId)
+    private func tabTitle(for tabId: UUID) -> String? {
+        AppDelegate.shared?.tabTitle(for: tabId)
     }
 
     private var jumpToUnreadShortcut: StoredShortcut {
@@ -1109,7 +1109,7 @@ private struct NotificationsPopoverView: View {
         // Ensure window focus + tab selection happens on the main thread.
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.openNotification(
-                workspaceId: notification.workspaceId,
+                tabId: notification.tabId,
                 surfaceId: notification.surfaceId,
                 notificationId: notification.id
             )

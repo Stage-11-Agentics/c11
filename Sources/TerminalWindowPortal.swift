@@ -498,7 +498,7 @@ final class WindowTerminalHostView: NSView {
         hitView: NSView?
     ) {
         let hasRelevantTypes = DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
-            || DragOverlayRoutingPolicy.hasSidebarWorkspaceReorder(pasteboardTypes)
+            || DragOverlayRoutingPolicy.hasSidebarTabReorder(pasteboardTypes)
         guard passThrough || hasRelevantTypes else { return }
 
         let targetClass = hitView.map { NSStringFromClass(type(of: $0)) } ?? "nil"

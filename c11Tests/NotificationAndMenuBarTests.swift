@@ -214,12 +214,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
     func testLegacyCodexNotifyMismatchDoesNotMutateAttention() async throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let store = TerminalNotificationStore.shared
         let controller = TerminalController.shared
-        let originalWorkspaceManager = appDelegate.workspaceManager
+        let originalTabManager = appDelegate.tabManager
         let originalNotificationStore = appDelegate.notificationStore
-        let originalControllerWorkspaceManager = controller.tabManager
+        let originalControllerTabManager = controller.tabManager
         let originalNotifications = store.notifications
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
         var waitingEdges: [Bool] = []
@@ -227,7 +227,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
         store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
-        appDelegate.workspaceManager = manager
+        appDelegate.tabManager = manager
         appDelegate.notificationStore = store
         controller.tabManager = manager
         AppFocusState.overrideIsFocused = false
@@ -236,9 +236,9 @@ final class NotificationAndMenuBarTests: XCTestCase {
             store.resetWaitingEdgeHandlerForTesting()
             store.resetNotificationDeliveryHandlerForTesting()
             store.replaceNotificationsForTesting(originalNotifications)
-            appDelegate.workspaceManager = originalWorkspaceManager
+            appDelegate.tabManager = originalTabManager
             appDelegate.notificationStore = originalNotificationStore
-            controller.tabManager = originalControllerWorkspaceManager
+            controller.tabManager = originalControllerTabManager
             AppFocusState.overrideIsFocused = originalAppFocusOverride
         }
 
@@ -277,7 +277,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertTrue(waitUntil {
             SurfaceMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
@@ -289,12 +289,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
     func testLegacyCodexNotifyMatchKeepsCurrentCompletionBehavior() async throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let store = TerminalNotificationStore.shared
         let controller = TerminalController.shared
-        let originalWorkspaceManager = appDelegate.workspaceManager
+        let originalTabManager = appDelegate.tabManager
         let originalNotificationStore = appDelegate.notificationStore
-        let originalControllerWorkspaceManager = controller.tabManager
+        let originalControllerTabManager = controller.tabManager
         let originalNotifications = store.notifications
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
         var waitingEdges: [Bool] = []
@@ -302,7 +302,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
         store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
-        appDelegate.workspaceManager = manager
+        appDelegate.tabManager = manager
         appDelegate.notificationStore = store
         controller.tabManager = manager
         AppFocusState.overrideIsFocused = false
@@ -311,9 +311,9 @@ final class NotificationAndMenuBarTests: XCTestCase {
             store.resetWaitingEdgeHandlerForTesting()
             store.resetNotificationDeliveryHandlerForTesting()
             store.replaceNotificationsForTesting(originalNotifications)
-            appDelegate.workspaceManager = originalWorkspaceManager
+            appDelegate.tabManager = originalTabManager
             appDelegate.notificationStore = originalNotificationStore
-            controller.tabManager = originalControllerWorkspaceManager
+            controller.tabManager = originalControllerTabManager
             AppFocusState.overrideIsFocused = originalAppFocusOverride
         }
 
@@ -351,7 +351,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertEqual(waitingEdges, [true])
         XCTAssertTrue(waitUntil {
             SurfaceMetadataStore.shared.getMetadata(
@@ -363,12 +363,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
     func testLegacyCodexNotifyWithoutRuntimeCaptureFallsBackToCurrentBehavior() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let store = TerminalNotificationStore.shared
         let controller = TerminalController.shared
-        let originalWorkspaceManager = appDelegate.workspaceManager
+        let originalTabManager = appDelegate.tabManager
         let originalNotificationStore = appDelegate.notificationStore
-        let originalControllerWorkspaceManager = controller.tabManager
+        let originalControllerTabManager = controller.tabManager
         let originalNotifications = store.notifications
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
         var waitingEdges: [Bool] = []
@@ -376,7 +376,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
         store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
-        appDelegate.workspaceManager = manager
+        appDelegate.tabManager = manager
         appDelegate.notificationStore = store
         controller.tabManager = manager
         AppFocusState.overrideIsFocused = false
@@ -385,9 +385,9 @@ final class NotificationAndMenuBarTests: XCTestCase {
             store.resetWaitingEdgeHandlerForTesting()
             store.resetNotificationDeliveryHandlerForTesting()
             store.replaceNotificationsForTesting(originalNotifications)
-            appDelegate.workspaceManager = originalWorkspaceManager
+            appDelegate.tabManager = originalTabManager
             appDelegate.notificationStore = originalNotificationStore
-            controller.tabManager = originalControllerWorkspaceManager
+            controller.tabManager = originalControllerTabManager
             AppFocusState.overrideIsFocused = originalAppFocusOverride
         }
 
@@ -407,7 +407,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertEqual(waitingEdges, [true])
     }
 
@@ -741,7 +741,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         let surfaceB = UUID()
         let notificationAUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            tabId: tabA,
             surfaceId: surfaceA,
             title: "A unread",
             subtitle: "",
@@ -751,7 +751,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationARead = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            tabId: tabA,
             surfaceId: surfaceB,
             title: "A read",
             subtitle: "",
@@ -761,7 +761,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationBUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabB,
+            tabId: tabB,
             surfaceId: nil,
             title: "B unread",
             subtitle: "",
@@ -778,17 +778,17 @@ final class NotificationAndMenuBarTests: XCTestCase {
         ])
 
         XCTAssertEqual(store.unreadCount, 2)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabA), 1)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabB), 1)
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceA))
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceB))
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabB, surfaceId: nil))
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabA)?.id, notificationAUnread.id)
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabB)?.id, notificationBUnread.id)
+        XCTAssertEqual(store.unreadCount(forTabId: tabA), 1)
+        XCTAssertEqual(store.unreadCount(forTabId: tabB), 1)
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: tabA, surfaceId: surfaceA))
+        XCTAssertFalse(store.hasUnreadNotification(forTabId: tabA, surfaceId: surfaceB))
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: tabB, surfaceId: nil))
+        XCTAssertEqual(store.latestNotification(forTabId: tabA)?.id, notificationAUnread.id)
+        XCTAssertEqual(store.latestNotification(forTabId: tabB)?.id, notificationBUnread.id)
     }
 
     func testUnreadNotificationCreationBoundaryUsesExactEligibleSurfaceSignal() {
-        let workspace = UUID()
+        let tab = UUID()
         let targetSurface = UUID()
         let otherSurface = UUID()
         let targetCreatedAt = Date(timeIntervalSince1970: 1_700_000_123)
@@ -796,7 +796,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         store.replaceNotificationsForTesting([
             TerminalNotification(
                 id: UUID(),
-                workspaceId: workspace,
+                tabId: tab,
                 surfaceId: otherSurface,
                 title: "Other",
                 subtitle: "",
@@ -806,7 +806,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ),
             TerminalNotification(
                 id: UUID(),
-                workspaceId: workspace,
+                tabId: tab,
                 surfaceId: targetSurface,
                 title: "Target",
                 subtitle: "",
@@ -818,26 +818,26 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
         XCTAssertEqual(
             store.unreadNotificationCreatedAt(
-                forWorkspaceId: workspace,
+                forTabId: tab,
                 surfaceId: targetSurface
             ),
             targetCreatedAt
         )
         XCTAssertNil(
             store.unreadNotificationCreatedAt(
-                forWorkspaceId: workspace,
+                forTabId: tab,
                 surfaceId: UUID()
             )
         )
     }
 
     func testNotificationIndexesUpdateAfterReadAndClearMutations() {
-        let workspace = UUID()
+        let tab = UUID()
         let surfaceUnread = UUID()
         let surfaceRead = UUID()
         let unreadNotification = TerminalNotification(
             id: UUID(),
-            workspaceId: workspace,
+            tabId: tab,
             surfaceId: surfaceUnread,
             title: "Unread",
             subtitle: "",
@@ -847,7 +847,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let readNotification = TerminalNotification(
             id: UUID(),
-            workspaceId: workspace,
+            tabId: tab,
             surfaceId: surfaceRead,
             title: "Read",
             subtitle: "",
@@ -858,17 +858,17 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
         let store = TerminalNotificationStore.shared
         store.replaceNotificationsForTesting([unreadNotification, readNotification])
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspace), 1)
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace, surfaceId: surfaceUnread))
+        XCTAssertEqual(store.unreadCount(forTabId: tab), 1)
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: tab, surfaceId: surfaceUnread))
 
-        store.markRead(forWorkspaceId: workspace, surfaceId: surfaceUnread)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspace), 0)
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace, surfaceId: surfaceUnread))
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: workspace)?.id, unreadNotification.id)
+        store.markRead(forTabId: tab, surfaceId: surfaceUnread)
+        XCTAssertEqual(store.unreadCount(forTabId: tab), 0)
+        XCTAssertFalse(store.hasUnreadNotification(forTabId: tab, surfaceId: surfaceUnread))
+        XCTAssertEqual(store.latestNotification(forTabId: tab)?.id, unreadNotification.id)
 
-        store.clearNotifications(forWorkspaceId: workspace)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspace), 0)
-        XCTAssertNil(store.latestNotification(forWorkspaceId: workspace))
+        store.clearNotifications(forTabId: tab)
+        XCTAssertEqual(store.unreadCount(forTabId: tab), 0)
+        XCTAssertNil(store.latestNotification(forTabId: tab))
     }
 }
 
@@ -889,7 +889,7 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
         let notifications = (0..<8).map { index in
             TerminalNotification(
                 id: UUID(),
-                workspaceId: UUID(),
+                tabId: UUID(),
                 surfaceId: nil,
                 title: "N\(index)",
                 subtitle: "",
@@ -944,7 +944,7 @@ final class MenuBarNotificationLineFormatterTests: XCTestCase {
     func testPlainTitleContainsUnreadDotBodyAndTab() {
         let notification = TerminalNotification(
             id: UUID(),
-            workspaceId: UUID(),
+            tabId: UUID(),
             surfaceId: nil,
             title: "Build finished",
             subtitle: "",
@@ -962,7 +962,7 @@ final class MenuBarNotificationLineFormatterTests: XCTestCase {
     func testPlainTitleFallsBackToSubtitleWhenBodyEmpty() {
         let notification = TerminalNotification(
             id: UUID(),
-            workspaceId: UUID(),
+            tabId: UUID(),
             surfaceId: nil,
             title: "Deploy",
             subtitle: "staging",
@@ -979,7 +979,7 @@ final class MenuBarNotificationLineFormatterTests: XCTestCase {
     func testMenuTitleWrapsAndTruncatesToThreeLines() {
         let notification = TerminalNotification(
             id: UUID(),
-            workspaceId: UUID(),
+            tabId: UUID(),
             surfaceId: nil,
             title: "Extremely long notification title for wrapping behavior validation",
             subtitle: "",
@@ -1002,7 +1002,7 @@ final class MenuBarNotificationLineFormatterTests: XCTestCase {
     func testMenuTitlePreservesShortTextWithoutEllipsis() {
         let notification = TerminalNotification(
             id: UUID(),
-            workspaceId: UUID(),
+            tabId: UUID(),
             surfaceId: nil,
             title: "Done",
             subtitle: "",

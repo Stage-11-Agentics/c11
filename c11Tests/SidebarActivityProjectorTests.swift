@@ -347,7 +347,7 @@ final class WorkspacePulseDividerColorResolverTests: XCTestCase {
 
     func testUsesWorkspaceDisplayColorWhenSet() {
         let customHex = "#1565C0"
-        let expected = WorkspaceColorSettings.displayNSColor(
+        let expected = WorkspaceTabColorSettings.displayNSColor(
             hex: customHex,
             colorScheme: .dark
         )

@@ -554,7 +554,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
                 SessionWindowSnapshot(
                     frame: nil,
                     display: nil,
-                    workspaceManager: SessionWorkspaceManagerSnapshot(
+                    tabManager: SessionTabManagerSnapshot(
                         selectedWorkspaceIndex: 0,
                         workspaces: [workspace]
                     ),

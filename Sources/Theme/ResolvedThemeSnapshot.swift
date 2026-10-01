@@ -270,7 +270,7 @@ public final class ResolvedThemeSnapshot {
 
     private func resolveWorkspaceColor(context: ThemeContext, warningKey: String) -> NSColor? {
         if let workspaceHex = context.workspaceColor {
-            let workspaceColor = WorkspaceColorSettings.displayNSColor(
+            let workspaceColor = WorkspaceTabColorSettings.displayNSColor(
                 hex: workspaceHex,
                 colorScheme: context.colorScheme.swiftUIColorScheme,
                 forceBright: context.forceBright

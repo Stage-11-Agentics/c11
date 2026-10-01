@@ -41,15 +41,15 @@ import Bonsplit
 @MainActor
 final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
 
-    private var workspaceManager: WorkspaceManager!
+    private var tabManager: TabManager!
 
     override func setUp() {
         super.setUp()
-        workspaceManager = WorkspaceManager()
+        tabManager = TabManager()
     }
 
     override func tearDown() {
-        workspaceManager = nil
+        tabManager = nil
         super.tearDown()
     }
 
@@ -87,7 +87,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
 
         // Step 2 — capture.
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager,
+            tabManager: tabManager,
             c11Version: "acceptance+0"
         )
         let captured = try XCTUnwrap(
@@ -219,7 +219,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: seedResult.workspaceRef))
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager,
+            tabManager: tabManager,
             c11Version: "acceptance+0"
         )
         let captured = try XCTUnwrap(source.capture(
@@ -307,7 +307,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         let workspace = try XCTUnwrap(resolveWorkspace(from: seedResult.workspaceRef))
 
         let source = LiveWorkspaceSnapshotSource(
-            workspaceManager: workspaceManager,
+            tabManager: tabManager,
             c11Version: "acceptance+0"
         )
         let captured = try XCTUnwrap(source.capture(
@@ -406,7 +406,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
 
     private func makeDependencies() -> WorkspaceLayoutExecutorDependencies {
         WorkspaceLayoutExecutorDependencies(
-            workspaceManager: workspaceManager,
+            tabManager: tabManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -415,7 +415,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
 
     private func resolveWorkspace(from ref: String) -> Workspace? {
         guard let uuid = parseUUIDSuffix(ref) else { return nil }
-        return workspaceManager.workspaces.first { $0.id == uuid }
+        return tabManager.tabs.first { $0.id == uuid }
     }
 
     private func parseUUIDSuffix(_ ref: String?) -> UUID? {

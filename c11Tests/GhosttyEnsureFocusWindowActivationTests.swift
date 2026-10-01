@@ -10,15 +10,15 @@ import AppKit
 @MainActor
 final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
     func testAllowsActivationForActiveManager() {
-        let activeManager = WorkspaceManager()
-        let otherManager = WorkspaceManager()
+        let activeManager = TabManager()
+        let otherManager = TabManager()
         let targetWindow = NSWindow()
         let otherWindow = NSWindow()
 
         XCTAssertTrue(
             shouldAllowEnsureFocusWindowActivation(
-                activeWorkspaceManager: activeManager,
-                targetWorkspaceManager: activeManager,
+                activeTabManager: activeManager,
+                targetTabManager: activeManager,
                 keyWindow: targetWindow,
                 mainWindow: targetWindow,
                 targetWindow: targetWindow
@@ -26,8 +26,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeWorkspaceManager: activeManager,
-                targetWorkspaceManager: otherManager,
+                activeTabManager: activeManager,
+                targetTabManager: otherManager,
                 keyWindow: otherWindow,
                 mainWindow: otherWindow,
                 targetWindow: targetWindow
@@ -36,13 +36,13 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
     }
 
     func testAllowsActivationWhenAppHasNoKeyAndNoMainWindow() {
-        let targetManager = WorkspaceManager()
+        let targetManager = TabManager()
         let targetWindow = NSWindow()
 
         XCTAssertTrue(
             shouldAllowEnsureFocusWindowActivation(
-                activeWorkspaceManager: nil,
-                targetWorkspaceManager: targetManager,
+                activeTabManager: nil,
+                targetTabManager: targetManager,
                 keyWindow: nil,
                 mainWindow: nil,
                 targetWindow: targetWindow
@@ -50,8 +50,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeWorkspaceManager: nil,
-                targetWorkspaceManager: targetManager,
+                activeTabManager: nil,
+                targetTabManager: targetManager,
                 keyWindow: NSWindow(),
                 mainWindow: nil,
                 targetWindow: targetWindow
@@ -59,8 +59,8 @@ final class GhosttyEnsureFocusWindowActivationTests: XCTestCase {
         )
         XCTAssertFalse(
             shouldAllowEnsureFocusWindowActivation(
-                activeWorkspaceManager: nil,
-                targetWorkspaceManager: targetManager,
+                activeTabManager: nil,
+                targetTabManager: targetManager,
                 keyWindow: nil,
                 mainWindow: NSWindow(),
                 targetWindow: targetWindow

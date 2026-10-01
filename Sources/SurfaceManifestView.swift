@@ -46,8 +46,8 @@ struct SurfaceManifestSnapshot {
     static func capture(workspaceId: UUID, surfaceId: UUID) -> SurfaceManifestSnapshot {
         let result = SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
         let workspace = AppDelegate.shared?
-            .workspaceManagerFor(workspaceId: workspaceId)?
-            .workspaces
+            .tabManagerFor(tabId: workspaceId)?
+            .tabs
             .first(where: { $0.id == workspaceId })
         let activity = workspace?.surfaceActivityDetailsSnapshot(panelId: surfaceId)
             ?? SurfaceActivityDetailsSnapshot(

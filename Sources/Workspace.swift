@@ -5438,7 +5438,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Callback used by TabManager to capture recently closed browser panels for Cmd+Shift+T restore.
     var onClosedBrowserPanel: ((ClosedBrowserPanelRestoreSnapshot) -> Void)?
-    weak var owningWorkspaceManager: WorkspaceManager?
+    weak var owningTabManager: TabManager?
 
     /// Workspace-scoped presenter for pane-anchored interactions (close-confirm,
     /// rename, custom-color, socket-triggered agent consent). Per-panel FIFO
@@ -7072,7 +7072,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard panels[panelId] != nil else { return }
         let next: String?
         if let raw = color?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            guard let normalized = WorkspaceColorSettings.normalizedHex(raw) else { return }
+            guard let normalized = WorkspaceTabColorSettings.normalizedHex(raw) else { return }
             next = normalized
         } else {
             next = nil
@@ -7226,7 +7226,7 @@ final class Workspace: Identifiable, ObservableObject {
     func setCustomColor(_ hex: String?) {
         let next: String?
         if let hex {
-            next = WorkspaceColorSettings.normalizedHex(hex)
+            next = WorkspaceTabColorSettings.normalizedHex(hex)
         } else {
             next = nil
         }
@@ -10174,7 +10174,7 @@ final class Workspace: Identifiable, ObservableObject {
             return false
         }
 
-        if let manager = app.workspaceManagerFor(tabId: id),
+        if let manager = app.tabManagerFor(tabId: id),
            let windowId = app.windowId(for: manager),
            let window = app.mainWindow(for: windowId),
            app.isCommandPaletteVisible(for: window) {
@@ -10316,7 +10316,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// here in exchange for not adding a defaults observer in slice 4. A
     /// follow-up can refresh this on UserDefaults change if needed.
     static func bonsplitTabColorPalette() -> [BonsplitTabColorMenuItem] {
-        WorkspaceColorSettings.palette().map { entry in
+        WorkspaceTabColorSettings.palette().map { entry in
             BonsplitTabColorMenuItem(
                 id: entry.id,
                 label: entry.name,
@@ -10479,8 +10479,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// the panel is the focused panel, and the focused window owns the app.
     /// Used to degrade `--persistent` to a one-shot pulse in that case.
     private func isFocusedTargetForPersistentFlash(panelId: UUID) -> Bool {
-        guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
-        guard workspaceManager.selectedWorkspaceId == self.id else { return false }
+        guard let tabManager = AppDelegate.shared?.tabManager else { return false }
+        guard tabManager.selectedTabId == self.id else { return false }
         guard self.focusedPanelId == panelId else { return false }
         guard NSApp.isActive else { return false }
         return true
@@ -11347,7 +11347,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let panelId = panelIdFromSurfaceId(tabId),
               let app = AppDelegate.shared else { return }
 
-        let currentWindowId = app.workspaceManagerFor(tabId: id).flatMap { app.windowId(for: $0) }
+        let currentWindowId = app.tabManagerFor(tabId: id).flatMap { app.windowId(for: $0) }
         let workspaceTargets = app.workspaceMoveTargets(
             excludingWorkspaceId: id,
             referenceWindowId: currentWindowId
@@ -11380,7 +11380,7 @@ final class Workspace: Identifiable, ObservableObject {
         let moved: Bool
         switch destination {
         case .newWorkspaceInCurrentWindow:
-            guard let manager = app.workspaceManagerFor(tabId: id) else { return }
+            guard let manager = app.tabManagerFor(tabId: id) else { return }
             let workspace = manager.addWorkspace(select: true)
             moved = app.moveSurface(
                 panelId: panelId,
@@ -11391,8 +11391,8 @@ final class Workspace: Identifiable, ObservableObject {
 
         case .selectedWorkspaceInNewWindow:
             let newWindowId = app.createMainWindow()
-            guard let destinationManager = app.workspaceManagerFor(windowId: newWindowId),
-                  let destinationWorkspaceId = destinationManager.selectedWorkspaceId else {
+            guard let destinationManager = app.tabManagerFor(windowId: newWindowId),
+                  let destinationWorkspaceId = destinationManager.selectedTabId else {
                 return
             }
             moved = app.moveSurface(
@@ -11485,11 +11485,11 @@ final class Workspace: Identifiable, ObservableObject {
 extension Workspace: BonsplitDelegate {
     @MainActor
     private func shouldCloseWorkspaceOnLastSurface(for tabId: TabID) -> Bool {
-        let manager = owningWorkspaceManager ?? AppDelegate.shared?.workspaceManagerFor(tabId: id) ?? AppDelegate.shared?.workspaceManager
+        let manager = owningTabManager ?? AppDelegate.shared?.tabManagerFor(tabId: id) ?? AppDelegate.shared?.tabManager
         guard panels.count <= 1,
               panelIdFromSurfaceId(tabId) != nil,
               let manager,
-              manager.workspaces.contains(where: { $0.id == id }) else {
+              manager.tabs.contains(where: { $0.id == id }) else {
             return false
         }
         return true
@@ -11706,8 +11706,8 @@ extension Workspace: BonsplitDelegate {
 
         // C11-228: a tab selected inside a hidden workspace must stay throttled;
         // its view may never update (a new panel starts `.active`).
-        if let owningWorkspaceManager {
-            applyPanelVisibility(workspaceVisible: owningWorkspaceManager.selectedWorkspaceId == id)
+        if let owningTabManager {
+            applyPanelVisibility(workspaceVisible: owningTabManager.selectedTabId == id)
         }
 
         // C11-243: tab switch / pane focus changes what the operator is seeing.
@@ -12080,7 +12080,7 @@ extension Workspace: BonsplitDelegate {
 
         if explicitUserClose && shouldCloseWorkspaceOnLastSurface(for: tab.id) {
             clearStagedClosedBrowserRestoreSnapshot(for: tab.id)
-            owningWorkspaceManager?.closeWorkspaceWithConfirmation(self)
+            owningTabManager?.closeWorkspaceWithConfirmation(self)
             return false
         }
 
@@ -13499,7 +13499,7 @@ extension Workspace: BonsplitDelegate {
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
         let raw = input.stringValue
-        guard let normalized = WorkspaceColorSettings.addCustomColor(raw) else {
+        guard let normalized = WorkspaceTabColorSettings.addCustomColor(raw) else {
             // Reuse the existing invalid-color path; mirror messaging used by
             // the workspace color flow so users see a consistent explanation.
             let invalid = NSAlert()

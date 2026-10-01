@@ -153,7 +153,7 @@ final class TerminalPanel: Panel, ObservableObject {
     ) {
         let surface = TerminalSurface(
             id: id,
-            workspaceId: workspaceId,
+            tabId: workspaceId,
             context: context,
             configTemplate: configTemplate,
             workingDirectory: workingDirectory,

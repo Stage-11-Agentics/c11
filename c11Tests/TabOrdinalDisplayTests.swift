@@ -75,7 +75,7 @@ final class TabOrdinalDisplayTests: XCTestCase {
     // MARK: - Workspace wiring
 
     func testNewWorkspaceTabCarriesItsSurfaceOrdinal() {
-        let manager = WorkspaceManager()
+        let manager = TabManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
 
         let tabIds = workspace.bonsplitController.allTabIds

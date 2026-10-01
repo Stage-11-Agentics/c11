@@ -35,10 +35,10 @@ struct TerminalPanelView: View {
 
     private var owningWorkspace: Workspace? {
         guard let app = AppDelegate.shared,
-              let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId) else {
+              let manager = app.tabManagerFor(tabId: panel.workspaceId) else {
             return nil
         }
-        return manager.workspaces.first(where: { $0.id == panel.workspaceId })
+        return manager.tabs.first(where: { $0.id == panel.workspaceId })
     }
 
     private var portalWorkspaceFrameStyle: PortalWorkspaceFrameStyle? {

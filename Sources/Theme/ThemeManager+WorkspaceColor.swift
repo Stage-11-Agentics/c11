@@ -17,7 +17,7 @@ extension ThemeManager {
     ) -> NSColor? {
         guard let hex else { return nil }
         let swiftUIScheme: ColorScheme = colorScheme == .dark ? .dark : .light
-        return WorkspaceColorSettings.displayNSColor(
+        return WorkspaceTabColorSettings.displayNSColor(
             hex: hex,
             colorScheme: swiftUIScheme,
             forceBright: forceBright

@@ -815,8 +815,8 @@ final class AgentModelDetector: @unchecked Sendable {
     private func refreshUI(_ workspaceId: UUID, _ surfaceId: UUID) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
-                      let workspace = manager.workspaces.first(where: { $0.id == workspaceId }) else { return }
+                guard let manager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                      let workspace = manager.tabs.first(where: { $0.id == workspaceId }) else { return }
                 workspace.syncSurfaceTabDetailForPanel(surfaceId)
             }
         }

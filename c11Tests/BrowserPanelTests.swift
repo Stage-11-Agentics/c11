@@ -395,7 +395,7 @@ final class WindowBrowserHostViewTests: XCTestCase {
     func testDragHoverEventsPassThroughForSidebarReorderWithoutMouseButtonState() {
         XCTAssertTrue(
             WindowBrowserHostView.shouldPassThroughToDragTargets(
-                pasteboardTypes: [DragOverlayRoutingPolicy.sidebarTabReorderType],
+                pasteboardTypes: [DragOverlayRoutingPolicy.sidebarWorkspaceReorderType],
                 eventType: .cursorUpdate
             )
         )
@@ -1747,9 +1747,9 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             panelId: UUID(),
             paneId: paneId
         )
-        let tabId = UUID()
+        let bonsplitTabId = UUID()
         let transfer = BrowserPaneDragTransfer(
-            tabId: tabId,
+            tabId: bonsplitTabId,
             sourcePaneId: UUID(),
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
@@ -1757,7 +1757,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         XCTAssertEqual(
             BrowserPaneDropRouting.action(for: transfer, target: target, zone: .right),
             .move(
-                tabId: tabId,
+                tabId: bonsplitTabId,
                 targetWorkspaceId: target.workspaceId,
                 targetPane: paneId,
                 splitTarget: BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: false)
@@ -1766,11 +1766,11 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
     }
 
     func testDecodeTransferPayloadReadsTabAndSourcePane() {
-        let tabId = UUID()
+        let bonsplitTabId = UUID()
         let sourcePaneId = UUID()
         let payload = try! JSONSerialization.data(
             withJSONObject: [
-                "tab": ["id": tabId.uuidString],
+                "tab": ["id": bonsplitTabId.uuidString],
                 "sourcePaneId": sourcePaneId.uuidString,
                 "sourceProcessId": ProcessInfo.processInfo.processIdentifier,
             ]
@@ -1778,7 +1778,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
 
         let transfer = BrowserPaneDragTransfer.decode(from: payload)
 
-        XCTAssertEqual(transfer?.tabId, tabId)
+        XCTAssertEqual(transfer?.tabId, bonsplitTabId)
         XCTAssertEqual(transfer?.sourcePaneId, sourcePaneId)
         XCTAssertTrue(transfer?.isFromCurrentProcess == true)
     }

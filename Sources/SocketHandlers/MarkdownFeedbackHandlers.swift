@@ -111,7 +111,7 @@ extension TerminalController {
     }
 
     private func v2MarkdownOpen(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let rawPath = v2String(params, "path") else {
@@ -145,7 +145,7 @@ extension TerminalController {
             // windows so `markdown.open --pane P` works standalone (spec: --pane
             // uniquely identifies). This takes precedence over workspace_id/window_id
             // (which may be injected from env vars by the CLI).
-            var resolvedTabManager: TabManager = tabManager
+            var resolvedWorkspaceManager: WorkspaceManager = workspaceManager
             var resolvedWorkspace: Workspace?
             if v2HasNonNullParam(params, "pane_id") {
                 guard let paneUUID = v2UUID(params, "pane_id") else {
@@ -154,15 +154,15 @@ extension TerminalController {
                 }
                 if let located = AppDelegate.shared?.locatePane(paneId: paneUUID) {
                     resolvedWorkspace = located.workspace
-                    resolvedTabManager = located.tabManager
+                    resolvedWorkspaceManager = located.workspaceManager
                 }
             }
-            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, tabManager: resolvedTabManager) else {
+            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, workspaceManager: resolvedWorkspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: resolvedTabManager)
-            v2MaybeSelectWorkspace(resolvedTabManager, workspace: ws)
+            v2MaybeFocusWindow(for: resolvedWorkspaceManager)
+            v2MaybeSelectWorkspace(resolvedWorkspaceManager, workspace: ws)
 
             // M6 — if pane_id is supplied, open as a tab inside that pane (no split).
             if v2HasNonNullParam(params, "pane_id") {
@@ -186,7 +186,7 @@ extension TerminalController {
                     return
                 }
 
-                let windowId = v2ResolveWindowId(tabManager: resolvedTabManager)
+                let windowId = v2ResolveWindowId(workspaceManager: resolvedWorkspaceManager)
                 result = .ok([
                     "window_id": v2OrNull(windowId?.uuidString),
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -228,7 +228,7 @@ extension TerminalController {
             }
 
             let targetPaneUUID = ws.paneId(forPanelId: markdownPanelId)?.id
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),

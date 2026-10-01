@@ -129,7 +129,7 @@ extension NSApplication {
 
         return appDelegate.scriptableMainWindows()
             .flatMap { state in
-                state.tabManager.tabs.flatMap { workspace in
+                state.workspaceManager.workspaces.flatMap { workspace in
                     workspace.scriptingTerminalPanels().map {
                         ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
                     }
@@ -146,7 +146,7 @@ extension NSApplication {
         }
 
         for state in appDelegate.scriptableMainWindows() {
-            for workspace in state.tabManager.tabs where workspace.terminalPanel(for: terminalId) != nil {
+            for workspace in state.workspaceManager.workspaces where workspace.terminalPanel(for: terminalId) != nil {
                 return ScriptTerminal(workspaceId: workspace.id, terminalId: terminalId)
             }
         }
@@ -188,7 +188,7 @@ extension NSApplication {
     }
 
     @objc(handleNewTabScriptCommand:)
-    func handleNewTabScriptCommand(_ command: NSScriptCommand) -> ScriptTab? {
+    func handleNewTabScriptCommand(_ command: NSScriptCommand) -> ScriptWorkspace? {
         guard validateScript(command: command) else { return nil }
 
         guard let appDelegate = AppDelegate.shared else {
@@ -203,12 +203,12 @@ extension NSApplication {
                 command.scriptErrorString = AppleScriptStrings.failedToCreateWorkspace
                 return nil
             }
-            return ScriptTab(windowId: targetWindow.windowId, tabId: workspaceId)
+            return ScriptWorkspace(windowId: targetWindow.windowId, tabId: workspaceId)
         }
 
         if let frontWindow = scriptWindows.first,
            let workspaceId = appDelegate.addWorkspace(windowId: frontWindow.windowId, bringToFront: false) {
-            return ScriptTab(windowId: frontWindow.windowId, tabId: workspaceId)
+            return ScriptWorkspace(windowId: frontWindow.windowId, tabId: workspaceId)
         }
 
         let windowId = appDelegate.createMainWindow()
@@ -253,25 +253,25 @@ final class ScriptWindow: NSObject {
             return windowTitle
         }
 
-        return state.tabManager.selectedWorkspace?.title ?? ""
+        return state.workspaceManager.selectedWorkspace?.title ?? ""
     }
 
     @objc(tabs)
-    var tabs: [ScriptTab] {
+    var tabs: [ScriptWorkspace] {
         guard NSApp.isAppleScriptEnabled,
               let state else {
             return []
         }
-        return state.tabManager.tabs.map { ScriptTab(windowId: windowId, tabId: $0.id) }
+        return state.workspaceManager.workspaces.map { ScriptWorkspace(windowId: windowId, tabId: $0.id) }
     }
 
     @objc(selectedTab)
-    var selectedTab: ScriptTab? {
+    var selectedTab: ScriptWorkspace? {
         guard NSApp.isAppleScriptEnabled,
-              let selectedId = state?.tabManager.selectedTabId else {
+              let selectedId = state?.workspaceManager.selectedWorkspaceId else {
             return nil
         }
-        return ScriptTab(windowId: windowId, tabId: selectedId)
+        return ScriptWorkspace(windowId: windowId, tabId: selectedId)
     }
 
     @objc(terminals)
@@ -280,7 +280,7 @@ final class ScriptWindow: NSObject {
               let state else {
             return []
         }
-        return state.tabManager.tabs.flatMap { workspace in
+        return state.workspaceManager.workspaces.flatMap { workspace in
             workspace.scriptingTerminalPanels().map {
                 ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
             }
@@ -288,14 +288,14 @@ final class ScriptWindow: NSObject {
     }
 
     @objc(valueInTabsWithUniqueID:)
-    func valueInTabs(uniqueID: String) -> ScriptTab? {
+    func valueInTabs(uniqueID: String) -> ScriptWorkspace? {
         guard NSApp.isAppleScriptEnabled,
               let tabId = UUID(uuidString: uniqueID),
               let state,
-              state.tabManager.tabs.contains(where: { $0.id == tabId }) else {
+              state.workspaceManager.workspaces.contains(where: { $0.id == tabId }) else {
             return nil
         }
-        return ScriptTab(windowId: windowId, tabId: tabId)
+        return ScriptWorkspace(windowId: windowId, tabId: tabId)
     }
 
     @objc(valueInTerminalsWithUniqueID:)
@@ -306,7 +306,7 @@ final class ScriptWindow: NSObject {
             return nil
         }
 
-        for workspace in state.tabManager.tabs where workspace.terminalPanel(for: terminalId) != nil {
+        for workspace in state.workspaceManager.workspaces where workspace.terminalPanel(for: terminalId) != nil {
             return ScriptTerminal(workspaceId: workspace.id, terminalId: terminalId)
         }
 
@@ -358,7 +358,7 @@ final class ScriptWindow: NSObject {
 
 @MainActor
 @objc(CmuxScriptTab)
-final class ScriptTab: NSObject {
+final class ScriptWorkspace: NSObject {
     let windowId: UUID
     let tabId: UUID
 
@@ -372,7 +372,7 @@ final class ScriptTab: NSObject {
     }
 
     private var workspace: Workspace? {
-        state?.tabManager.tabs.first(where: { $0.id == tabId })
+        state?.workspaceManager.workspaces.first(where: { $0.id == tabId })
     }
 
     private var window: ScriptWindow {
@@ -395,7 +395,7 @@ final class ScriptTab: NSObject {
     var index: Int {
         guard NSApp.isAppleScriptEnabled,
               let state,
-              let idx = state.tabManager.tabs.firstIndex(where: { $0.id == tabId }) else {
+              let idx = state.workspaceManager.workspaces.firstIndex(where: { $0.id == tabId }) else {
             return 0
         }
         return idx + 1
@@ -404,7 +404,7 @@ final class ScriptTab: NSObject {
     @objc(selected)
     var selected: Bool {
         guard NSApp.isAppleScriptEnabled else { return false }
-        return state?.tabManager.selectedTabId == tabId
+        return state?.workspaceManager.selectedWorkspaceId == tabId
     }
 
     @objc(focusedTerminal)
@@ -449,7 +449,7 @@ final class ScriptTab: NSObject {
             return nil
         }
 
-        state.tabManager.selectWorkspace(workspace)
+        state.workspaceManager.selectWorkspace(workspace)
         return nil
     }
 
@@ -464,8 +464,8 @@ final class ScriptTab: NSObject {
             return nil
         }
 
-        if state.tabManager.tabs.count > 1 {
-            state.tabManager.closeWorkspace(workspace)
+        if state.workspaceManager.workspaces.count > 1 {
+            state.workspaceManager.closeWorkspace(workspace)
             return nil
         }
 
@@ -512,7 +512,7 @@ final class ScriptTerminal: NSObject {
     }
 
     private var workspace: Workspace? {
-        state?.tabManager.tabs.first(where: { $0.id == workspaceId })
+        state?.workspaceManager.workspaces.first(where: { $0.id == workspaceId })
     }
 
     private var terminal: TerminalPanel? {
@@ -570,7 +570,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        guard let newPanelId = state.tabManager.newSplit(tabId: workspaceId, surfaceId: terminalId, direction: direction),
+        guard let newPanelId = state.workspaceManager.newSplit(workspaceId: workspaceId, surfaceId: terminalId, direction: direction),
               workspace.terminalPanel(for: newPanelId) != nil else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = AppleScriptStrings.failedToCreateSplit
@@ -595,7 +595,7 @@ final class ScriptTerminal: NSObject {
         if let app = AppDelegate.shared {
             _ = app.focusScriptableMainWindow(windowId: state.windowId, bringToFront: true)
         }
-        state.tabManager.selectWorkspace(workspace)
+        state.workspaceManager.selectWorkspace(workspace)
         workspace.focusPanel(terminalId)
         return nil
     }
@@ -613,8 +613,8 @@ final class ScriptTerminal: NSObject {
         }
 
         if workspace.panels.count == 1 {
-            if state.tabManager.tabs.count > 1 {
-                state.tabManager.closeWorkspace(workspace)
+            if state.workspaceManager.workspaces.count > 1 {
+                state.workspaceManager.closeWorkspace(workspace)
                 return nil
             }
 
@@ -635,7 +635,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: workspaceId, surfaceId: terminalId)
+        AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspaceId, surfaceId: terminalId)
         return nil
     }
 

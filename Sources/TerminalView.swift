@@ -21,16 +21,16 @@ extension SwiftTerm.Color {
 }
 
 struct TerminalContainerView: View {
-    @ObservedObject var tab: Workspace
+    @ObservedObject var workspace: Workspace
     let config: GhosttyConfig
 
-    init(tab: Workspace, config: GhosttyConfig = GhosttyConfig.load()) {
-        self.tab = tab
+    init(workspace: Workspace, config: GhosttyConfig = GhosttyConfig.load()) {
+        self.workspace = workspace
         self.config = config
     }
 
     var body: some View {
-        SwiftTermView(tab: tab, config: config)
+        SwiftTermView(workspace: workspace, config: config)
             .background(Color(config.backgroundColor))
     }
 }
@@ -134,7 +134,7 @@ class FocusableTerminalView: NSView {
 }
 
 struct SwiftTermView: NSViewRepresentable {
-    @ObservedObject var tab: Workspace
+    @ObservedObject var workspace: Workspace
     let config: GhosttyConfig
 
     func makeNSView(context: Context) -> FocusableTerminalView {
@@ -215,7 +215,7 @@ struct SwiftTermView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(tab: tab)
+        Coordinator(workspace: workspace)
     }
 
     private func applyPalette(to terminalView: LocalProcessTerminalView, config: GhosttyConfig) {
@@ -257,12 +257,12 @@ struct SwiftTermView: NSViewRepresentable {
     }
 
     class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        var tab: Workspace
+        var workspace: Workspace
         weak var terminalView: LocalProcessTerminalView?
         weak var containerView: FocusableTerminalView?
 
-        init(tab: Workspace) {
-            self.tab = tab
+        init(workspace: Workspace) {
+            self.workspace = workspace
         }
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
@@ -272,7 +272,7 @@ struct SwiftTermView: NSViewRepresentable {
         func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
             DispatchQueue.main.async {
                 if !title.isEmpty {
-                    self.tab.applyProcessTitle(title)
+                    self.workspace.applyProcessTitle(title)
                 }
             }
         }
@@ -280,7 +280,7 @@ struct SwiftTermView: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
             if let dir = directory {
                 DispatchQueue.main.async {
-                    self.tab.currentDirectory = dir
+                    self.workspace.currentDirectory = dir
                 }
             }
         }

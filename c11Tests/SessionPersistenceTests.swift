@@ -131,13 +131,13 @@ final class SessionPersistenceTests: XCTestCase {
 
         let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].customColor = "#C0392B"
+        snapshot.windows[0].workspaceManager.workspaces[0].customColor = "#C0392B"
 
         XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
 
         let loaded = SessionPersistenceStore.load(fileURL: snapshotURL)
         XCTAssertEqual(
-            loaded?.windows.first?.tabManager.workspaces.first?.customColor,
+            loaded?.windows.first?.workspaceManager.workspaces.first?.customColor,
             "#C0392B"
         )
     }
@@ -340,7 +340,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testWorkspaceCustomColorDecodeSupportsMissingLegacyField() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].customColor = nil
+        snapshot.windows[0].workspaceManager.workspaces[0].customColor = nil
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(snapshot)
@@ -348,7 +348,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(json.contains("\"customColor\""))
 
         let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: data)
-        XCTAssertNil(decoded.windows.first?.tabManager.workspaces.first?.customColor)
+        XCTAssertNil(decoded.windows.first?.workspaceManager.workspaces.first?.customColor)
     }
 
     func testLoadRejectsSchemaVersionMismatch() {
@@ -576,7 +576,7 @@ final class SessionPersistenceTests: XCTestCase {
             AppSessionSnapshot.self,
             from: Data(contentsOf: fixture)
         )
-        let workspace = try XCTUnwrap(decoded.windows.first?.tabManager.workspaces.first)
+        let workspace = try XCTUnwrap(decoded.windows.first?.workspaceManager.workspaces.first)
         let browser = try XCTUnwrap(workspace.panels.first?.browser)
         XCTAssertEqual(decoded.version, 1)
         XCTAssertNil(workspace.activeAgentSurfaceId)
@@ -586,14 +586,14 @@ final class SessionPersistenceTests: XCTestCase {
     func testSessionActiveAgentContextRoundTripsButIsOptional() throws {
         let activeID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB"))
         var snapshot = makeSnapshot(version: 1)
-        snapshot.windows[0].tabManager.workspaces[0].activeAgentSurfaceId = activeID
+        snapshot.windows[0].workspaceManager.workspaces[0].activeAgentSurfaceId = activeID
 
         let decoded = try JSONDecoder().decode(
             AppSessionSnapshot.self,
             from: JSONEncoder().encode(snapshot)
         )
         XCTAssertEqual(
-            decoded.windows[0].tabManager.workspaces[0].activeAgentSurfaceId,
+            decoded.windows[0].workspaceManager.workspaces[0].activeAgentSurfaceId,
             activeID
         )
     }
@@ -1085,7 +1085,7 @@ final class SessionPersistenceTests: XCTestCase {
                 frame: SessionRectSnapshot(x: 0, y: 0, width: 1_600, height: 1_000),
                 visibleFrame: SessionRectSnapshot(x: 0, y: 0, width: 1_600, height: 1_000)
             ),
-            tabManager: SessionTabManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
             sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 220)
         )
         let fallbackFrame = SessionRectSnapshot(x: 40, y: 30, width: 700, height: 500)
@@ -1241,12 +1241,12 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testWorkspaceRootRoundTripsAndOlderSnapshotDefaultsToNoRoot() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].rootDirectory = "/tmp/project-root"
+        snapshot.windows[0].workspaceManager.workspaces[0].rootDirectory = "/tmp/project-root"
 
         let encoded = try JSONEncoder().encode(snapshot)
         let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
         XCTAssertEqual(
-            decoded.windows[0].tabManager.workspaces[0].rootDirectory,
+            decoded.windows[0].workspaceManager.workspaces[0].rootDirectory,
             "/tmp/project-root"
         )
 
@@ -1255,17 +1255,17 @@ final class SessionPersistenceTests: XCTestCase {
         )
         var windows = try XCTUnwrap(json["windows"] as? [[String: Any]])
         var window = windows[0]
-        var tabManager = try XCTUnwrap(window["tabManager"] as? [String: Any])
-        var workspaces = try XCTUnwrap(tabManager["workspaces"] as? [[String: Any]])
+        var workspaceManager = try XCTUnwrap(window["tabManager"] as? [String: Any])
+        var workspaces = try XCTUnwrap(workspaceManager["workspaces"] as? [[String: Any]])
         workspaces[0].removeValue(forKey: "rootDirectory")
-        tabManager["workspaces"] = workspaces
-        window["tabManager"] = tabManager
+        workspaceManager["workspaces"] = workspaces
+        window["tabManager"] = workspaceManager
         windows[0] = window
         json["windows"] = windows
 
         let legacyData = try JSONSerialization.data(withJSONObject: json)
         let legacyDecoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: legacyData)
-        XCTAssertNil(legacyDecoded.windows[0].tabManager.workspaces[0].rootDirectory)
+        XCTAssertNil(legacyDecoded.windows[0].workspaceManager.workspaces[0].rootDirectory)
     }
 
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
@@ -1285,7 +1285,7 @@ final class SessionPersistenceTests: XCTestCase {
             gitBranch: nil
         )
 
-        let tabManager = SessionTabManagerSnapshot(
+        let workspaceManager = SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: 0,
             workspaces: [workspace]
         )
@@ -1297,7 +1297,7 @@ final class SessionPersistenceTests: XCTestCase {
                 frame: SessionRectSnapshot(x: 0, y: 0, width: 1920, height: 1200),
                 visibleFrame: SessionRectSnapshot(x: 0, y: 25, width: 1920, height: 1175)
             ),
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240)
         )
 

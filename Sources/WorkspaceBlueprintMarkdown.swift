@@ -342,8 +342,8 @@ enum WorkspaceBlueprintMarkdown {
             return
         }
         if keys.contains("tabs") {
-            for tab in node.lookup("tabs")?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: tab, reserved: &reserved)
+            for tabNode in node.lookup("tabs")?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: tabNode, reserved: &reserved)
             }
             return
         }
@@ -393,12 +393,12 @@ enum WorkspaceBlueprintMarkdown {
 
         // Multi-tab pane: has `tabs:` list.
         if keys.contains("tabs") {
-            let tabs = node.lookup("tabs")?.asList ?? []
+            let tabNodes = node.lookup("tabs")?.asList ?? []
             var ids: [String] = []
-            for tab in tabs {
-                let id = surfaceID(from: tab, generator: &idGen)
+            for tabNode in tabNodes {
+                let id = surfaceID(from: tabNode, generator: &idGen)
                 ids.append(id)
-                surfaces.append(try buildSurfaceSpec(id: id, from: tab))
+                surfaces.append(try buildSurfaceSpec(id: id, from: tabNode))
             }
             let selectedIndex: Int? = node.lookup("selected")?.asScalar.flatMap { Int($0) }
             return .pane(LayoutTreeSpec.PaneSpec(

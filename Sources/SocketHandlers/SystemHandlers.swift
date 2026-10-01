@@ -294,7 +294,7 @@ extension TerminalController {
     }
 
     private func v2Identify(params: [String: Any]) -> [String: Any] {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return [
                 "socket_path": socketPath,
                 "focused": NSNull(),
@@ -304,9 +304,9 @@ extension TerminalController {
 
         var focused: [String: Any] = [:]
         v2MainSync {
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
-            if let wsId = tabManager.selectedTabId,
-               let ws = tabManager.tabs.first(where: { $0.id == wsId }) {
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            if let wsId = workspaceManager.selectedWorkspaceId,
+               let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
                 let paneUUID = ws.bonsplitController.focusedPaneId?.id
                 let surfaceUUID = ws.focusedPanelId
                 focused = [
@@ -338,9 +338,9 @@ extension TerminalController {
            let wsId = v2UUIDAny(callerObj["workspace_id"]) {
             let surfaceId = v2UUIDAny(callerObj["surface_id"]) ?? v2UUIDAny(callerObj["tab_id"])
             v2MainSync {
-                let callerTabManager = AppDelegate.shared?.tabManagerFor(tabId: wsId) ?? tabManager
-                if let ws = callerTabManager.tabs.first(where: { $0.id == wsId }) {
-                    let callerWindowId = v2ResolveWindowId(tabManager: callerTabManager)
+                let callerWorkspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
+                if let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
+                    let callerWindowId = v2ResolveWindowId(workspaceManager: callerWorkspaceManager)
                     var payload: [String: Any] = [
                         "window_id": v2OrNull(callerWindowId?.uuidString),
                         "window_ref": v2Ref(kind: .window, uuid: callerWindowId),
@@ -483,17 +483,17 @@ extension TerminalController {
             let callerScopeWorkspaceId: UUID? = callerWorkspaceId ?? focusedWorkspaceId
 
             for (windowIndex, summary) in summaries.enumerated() {
-                guard let manager = app.tabManagerFor(windowId: summary.windowId) else { continue }
+                guard let manager = app.workspaceManagerFor(windowId: summary.windowId) else { continue }
 
                 if let workspaceFilter {
-                    guard let workspaceIndex = manager.tabs.firstIndex(where: { $0.id == workspaceFilter }) else {
+                    guard let workspaceIndex = manager.workspaces.firstIndex(where: { $0.id == workspaceFilter }) else {
                         continue
                     }
-                    let workspace = manager.tabs[workspaceIndex]
+                    let workspace = manager.workspaces[workspaceIndex]
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedTabId
+                        selected: workspace.id == manager.selectedWorkspaceId
                     )
                     windowNodes = [
                         v2TreeWindowNode(
@@ -508,11 +508,11 @@ extension TerminalController {
 
                 switch scope {
                 case "all":
-                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                    let workspaceNodesForWindow = manager.workspaces.enumerated().map { workspaceIndex, workspace in
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedTabId
+                            selected: workspace.id == manager.selectedWorkspaceId
                         )
                     }
                     windowNodes.append(
@@ -525,11 +525,11 @@ extension TerminalController {
 
                 case "window":
                     if summary.windowId != defaultWindowId { continue }
-                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                    let workspaceNodesForWindow = manager.workspaces.enumerated().map { workspaceIndex, workspace in
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedTabId
+                            selected: workspace.id == manager.selectedWorkspaceId
                         )
                     }
                     windowNodes.append(
@@ -542,16 +542,16 @@ extension TerminalController {
 
                 case "workspace":
                     // Find the caller's current workspace; only include the window that owns it.
-                    let target: UUID? = callerScopeWorkspaceId ?? manager.selectedTabId
+                    let target: UUID? = callerScopeWorkspaceId ?? manager.selectedWorkspaceId
                     guard let targetId = target,
-                          let workspaceIndex = manager.tabs.firstIndex(where: { $0.id == targetId }) else {
+                          let workspaceIndex = manager.workspaces.firstIndex(where: { $0.id == targetId }) else {
                         continue
                     }
-                    let workspace = manager.tabs[workspaceIndex]
+                    let workspace = manager.workspaces[workspaceIndex]
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedTabId
+                        selected: workspace.id == manager.selectedWorkspaceId
                     )
                     windowNodes = [
                         v2TreeWindowNode(

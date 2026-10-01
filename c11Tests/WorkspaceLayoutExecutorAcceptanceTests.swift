@@ -37,7 +37,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     // MARK: - Setup
 
-    private var tabManager: TabManager!
+    private var workspaceManager: WorkspaceManager!
 
     override func setUp() {
         super.setUp()
@@ -45,11 +45,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         // TabManager reaches Ghostty setup that reads NSApp. Create AppKit's
         // process singleton without launching or hosting the c11 application.
         _ = NSApplication.shared
-        tabManager = TabManager()
+        workspaceManager = WorkspaceManager()
     }
 
     override func tearDown() {
-        tabManager = nil
+        workspaceManager = nil
         super.tearDown()
     }
 
@@ -107,7 +107,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         var applied: [(browser: UUID, agent: UUID)] = []
         let deps = WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" },
@@ -143,7 +143,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         var mutationCount = 0
         let deps = WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" },
@@ -192,7 +192,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             seedPlan,
             options: ApplyOptions(select: false),
             dependencies: WorkspaceLayoutExecutorDependencies(
-                tabManager: tabManager,
+                workspaceManager: workspaceManager,
                 workspaceRefMinter: { "workspace:\($0.uuidString)" },
                 surfaceRefMinter: { "surface:\($0.uuidString)" },
                 paneRefMinter: { "pane:\($0.uuidString)" }
@@ -267,7 +267,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         ])
 
         let snapshot = try XCTUnwrap(LiveWorkspaceSnapshotSource(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             c11Version: "companion-test+0"
         ).captureResult(
             workspaceId: workspace.id,
@@ -279,7 +279,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         XCTAssertNil(snapshot.snapshot.plan.surfaces[0].linkedAgentSurfacePlanId)
 
         let blueprint = try XCTUnwrap(WorkspaceBlueprintExporter(
-            tabManager: tabManager
+            workspaceManager: workspaceManager
         ).exportWithDiagnostics(
             workspaceId: workspace.id,
             name: "Orphan capture",
@@ -321,7 +321,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             ]
         )
         let deps = WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -375,7 +375,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             ]
         )
         let deps = WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -443,8 +443,8 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// order (apply first, close second): at the moment of close, tab
     /// count is 2, so the guard passes.
     func testInPlaceRestoreReplacesSingleWorkspaceWithoutDuplicating() throws {
-        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
-        XCTAssertEqual(tabManager.tabs.count, 1, "test seeded with exactly one workspace")
+        let existing = try XCTUnwrap(workspaceManager.selectedWorkspace)
+        XCTAssertEqual(workspaceManager.workspaces.count, 1, "test seeded with exactly one workspace")
         let existingId = existing.id
 
         let plan = makeTrivialInPlacePlan(title: "replacement-1")
@@ -461,12 +461,12 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             "no invalid_params failure: \(result.failures)"
         )
         XCTAssertEqual(
-            tabManager.tabs.count,
+            workspaceManager.workspaces.count,
             1,
             "exactly one workspace after in-place restore (single-workspace regression)"
         )
         XCTAssertFalse(
-            tabManager.tabs.contains(where: { $0.id == existingId }),
+            workspaceManager.workspaces.contains(where: { $0.id == existingId }),
             "original workspace closed"
         )
         let newId = parseUUIDSuffix(result.workspaceRef)
@@ -480,9 +480,9 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// Multi-workspace case: target is replaced, sibling is untouched,
     /// and the overall tab count is stable.
     func testInPlaceRestoreReplacesTargetAndLeavesSiblingIntact() throws {
-        let target = try XCTUnwrap(tabManager.selectedWorkspace)
-        let sibling = tabManager.addWorkspace()
-        XCTAssertEqual(tabManager.tabs.count, 2)
+        let target = try XCTUnwrap(workspaceManager.selectedWorkspace)
+        let sibling = workspaceManager.addWorkspace()
+        XCTAssertEqual(workspaceManager.workspaces.count, 2)
         let targetId = target.id
         let siblingId = sibling.id
 
@@ -495,13 +495,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
 
         XCTAssertFalse(result.workspaceRef.isEmpty)
-        XCTAssertEqual(tabManager.tabs.count, 2, "tab count stable: sibling plus replacement")
+        XCTAssertEqual(workspaceManager.workspaces.count, 2, "tab count stable: sibling plus replacement")
         XCTAssertFalse(
-            tabManager.tabs.contains(where: { $0.id == targetId }),
+            workspaceManager.workspaces.contains(where: { $0.id == targetId }),
             "target workspace closed"
         )
         XCTAssertTrue(
-            tabManager.tabs.contains(where: { $0.id == siblingId }),
+            workspaceManager.workspaces.contains(where: { $0.id == siblingId }),
             "sibling workspace intact"
         )
     }
@@ -509,7 +509,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A missing target UUID surfaces `invalid_params` without touching
     /// any existing workspace (non-destructive failure).
     func testInPlaceRestoreMissingTargetReturnsInvalidParams() throws {
-        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
+        let existing = try XCTUnwrap(workspaceManager.selectedWorkspace)
         let existingId = existing.id
         let bogusId = UUID()
         XCTAssertNotEqual(bogusId, existingId)
@@ -527,9 +527,9 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             result.failures.contains(where: { $0.code == "invalid_params" }),
             "invalid_params failure recorded: \(result.failures)"
         )
-        XCTAssertEqual(tabManager.tabs.count, 1, "no workspace created or closed on failure")
+        XCTAssertEqual(workspaceManager.workspaces.count, 1, "no workspace created or closed on failure")
         XCTAssertTrue(
-            tabManager.tabs.contains(where: { $0.id == existingId }),
+            workspaceManager.workspaces.contains(where: { $0.id == existingId }),
             "existing workspace untouched"
         )
     }
@@ -537,7 +537,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A plan with an unsupported version short-circuits in `validate`
     /// before touching any workspace. The target stays intact.
     func testInPlaceRestoreValidationFailureLeavesTargetIntact() throws {
-        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
+        let existing = try XCTUnwrap(workspaceManager.selectedWorkspace)
         let existingId = existing.id
 
         let plan = WorkspaceApplyPlan(
@@ -555,9 +555,9 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
         XCTAssertEqual(result.workspaceRef, "")
         XCTAssertFalse(result.failures.isEmpty, "validation failure recorded")
-        XCTAssertEqual(tabManager.tabs.count, 1, "no workspace created or closed on failure")
+        XCTAssertEqual(workspaceManager.workspaces.count, 1, "no workspace created or closed on failure")
         XCTAssertTrue(
-            tabManager.tabs.contains(where: { $0.id == existingId }),
+            workspaceManager.workspaces.contains(where: { $0.id == existingId }),
             "target untouched on validation failure"
         )
     }
@@ -573,7 +573,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     private func makeInPlaceDeps() -> WorkspaceLayoutExecutorDependencies {
         WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -589,7 +589,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     ) throws -> ApplyResult {
         let plan = try loadFixture(named: name)
         let deps = WorkspaceLayoutExecutorDependencies(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             workspaceRefMinter: { "workspace:\($0.uuidString)" },
             surfaceRefMinter: { "surface:\($0.uuidString)" },
             paneRefMinter: { "pane:\($0.uuidString)" }
@@ -682,7 +682,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     private func resolveWorkspace(from ref: String) -> Workspace? {
         guard let uuid = parseUUIDSuffix(ref) else { return nil }
-        return tabManager.tabs.first { $0.id == uuid }
+        return workspaceManager.workspaces.first { $0.id == uuid }
     }
 
     private func parseUUIDSuffix(_ ref: String?) -> UUID? {
@@ -772,11 +772,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         // `TabID` wrapper. Parse the string back to UUID and wrap before
         // looking up — same conversion `WorkspacePlanCapture.panelID(forTabIDString:)`
         // does at the v2 socket boundary.
-        let livePlanIds: [String] = livePane.tabs.map { tab in
-            guard let tabUUID = UUID(uuidString: tab.id),
+        let livePlanIds: [String] = livePane.tabs.map { bonsplitTab in
+            guard let tabUUID = UUID(uuidString: bonsplitTab.id),
                   let panelId = workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID)),
                   let planId = panelUUIDToPlanId[panelId] else {
-                return "unknown(\(tab.id))"
+                return "unknown(\(bonsplitTab.id))"
             }
             return planId
         }
@@ -790,7 +790,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         if expectedSelectedIndex >= 0, expectedSelectedIndex < planPane.surfaceIds.count {
             let expectedSurfaceId = planPane.surfaceIds[expectedSelectedIndex]
             guard let expectedPanelId = planSurfaceIdToPanelUUID[expectedSurfaceId],
-                  let expectedTabId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
+                  let expectedBonsplitTabId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
                 XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
                 return
             }
@@ -800,7 +800,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             // the same value space.
             XCTAssertEqual(
                 livePane.selectedTabId,
-                expectedTabId.uuid.uuidString,
+                expectedBonsplitTabId.uuid.uuidString,
                 "[\(fixtureName) @ \(path)] selectedTabId mismatch (expected surface \(expectedSurfaceId))"
             )
         }

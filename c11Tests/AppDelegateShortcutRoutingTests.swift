@@ -60,15 +60,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
         }
 
-        let firstCount = firstManager.tabs.count
-        let secondCount = secondManager.tabs.count
+        let firstCount = firstManager.workspaces.count
+        let secondCount = secondManager.workspaces.count
 
         XCTAssertTrue(appDelegate.focusMainWindow(windowId: firstWindowId))
 
@@ -94,8 +94,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.tabs.count, firstCount, "Cmd+N should not add workspace to stale active window")
-        XCTAssertEqual(secondManager.tabs.count, secondCount + 1, "Cmd+N should add workspace to the event's window")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N should not add workspace to stale active window")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Cmd+N should add workspace to the event's window")
     }
 
     func testAddWorkspaceInPreferredMainWindowIgnoresStaleTabManagerPointer() {
@@ -112,27 +112,27 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
         }
 
-        let firstCount = firstManager.tabs.count
-        let secondCount = secondManager.tabs.count
+        let firstCount = firstManager.workspaces.count
+        let secondCount = secondManager.workspaces.count
 
         secondWindow.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
         // Force a stale app-level pointer to a different manager.
-        appDelegate.tabManager = firstManager
-        XCTAssertTrue(appDelegate.tabManager === firstManager)
+        appDelegate.workspaceManager = firstManager
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager)
 
         _ = appDelegate.addWorkspaceInPreferredMainWindow()
 
-        XCTAssertEqual(firstManager.tabs.count, firstCount, "Stale pointer must not receive menu-driven workspace creation")
-        XCTAssertEqual(secondManager.tabs.count, secondCount + 1, "Workspace creation should target key/main window context")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Stale pointer must not receive menu-driven workspace creation")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Workspace creation should target key/main window context")
     }
 
     func testCmdNResolvesEventWindowWhenObjectKeyLookupIsMismatched() {
@@ -149,8 +149,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
@@ -166,10 +166,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
 
         // Ensure stale active-manager pointer does not mask routing errors.
-        appDelegate.tabManager = firstManager
+        appDelegate.workspaceManager = firstManager
 
-        let firstCount = firstManager.tabs.count
-        let secondCount = secondManager.tabs.count
+        let firstCount = firstManager.workspaces.count
+        let secondCount = secondManager.workspaces.count
 
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
@@ -193,8 +193,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.tabs.count, firstCount, "Cmd+N should not route to another window when object-key lookup misses")
-        XCTAssertEqual(secondManager.tabs.count, secondCount + 1, "Cmd+N should still route by event window metadata when object-key lookup misses")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N should not route to another window when object-key lookup misses")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Cmd+N should still route by event window metadata when object-key lookup misses")
     }
 
     func testAddWorkspaceInPreferredMainWindowUsesKeyWindowWhenObjectKeyLookupIsMismatched() {
@@ -211,8 +211,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
@@ -228,15 +228,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
 
         // Stale pointer should not receive the new workspace.
-        appDelegate.tabManager = firstManager
+        appDelegate.workspaceManager = firstManager
 
-        let firstCount = firstManager.tabs.count
-        let secondCount = secondManager.tabs.count
+        let firstCount = firstManager.workspaces.count
+        let secondCount = secondManager.workspaces.count
 
         _ = appDelegate.addWorkspaceInPreferredMainWindow()
 
-        XCTAssertEqual(firstManager.tabs.count, firstCount, "Menu-driven add workspace should not route to stale window")
-        XCTAssertEqual(secondManager.tabs.count, secondCount + 1, "Menu-driven add workspace should still route to key window context when object-key lookup misses")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Menu-driven add workspace should not route to stale window")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Menu-driven add workspace should still route to key window context when object-key lookup misses")
     }
 
     func testAddWorkspaceInPreferredMainWindowPrunesOrphanedContextWithoutLiveWindow() {
@@ -246,7 +246,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
 
         let orphanWindowId = UUID()
-        let orphanManager = TabManager()
+        let orphanManager = WorkspaceManager()
         let orphanSidebarState = SidebarState()
         let orphanSidebarSelectionState = SidebarSelectionState()
 
@@ -261,7 +261,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             appDelegate.registerMainWindow(
                 orphanWindow!,
                 windowId: orphanWindowId,
-                tabManager: orphanManager,
+                workspaceManager: orphanManager,
                 sidebarState: orphanSidebarState,
                 sidebarSelectionState: orphanSidebarSelectionState
             )
@@ -272,13 +272,13 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertNil(appDelegate.mainWindow(for: orphanWindowId), "Test precondition: orphaned context should not have a live window")
 
-        let orphanCount = orphanManager.tabs.count
+        let orphanCount = orphanManager.workspaces.count
         XCTAssertNil(
             appDelegate.addWorkspaceInPreferredMainWindow(),
             "Workspace creation should refuse orphaned contexts with no live window"
         )
-        XCTAssertEqual(orphanManager.tabs.count, orphanCount, "Orphaned manager must not receive a new workspace")
-        XCTAssertNil(appDelegate.tabManagerFor(windowId: orphanWindowId), "Orphaned context should be pruned after failed resolution")
+        XCTAssertEqual(orphanManager.workspaces.count, orphanCount, "Orphaned manager must not receive a new workspace")
+        XCTAssertNil(appDelegate.workspaceManagerFor(windowId: orphanWindowId), "Orphaned context should be pruned after failed resolution")
     }
 
     func testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow() {
@@ -289,7 +289,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         let existingWindowIds = mainWindowIds()
         let orphanWindowId = UUID()
-        let orphanManager = TabManager()
+        let orphanManager = WorkspaceManager()
         let orphanSidebarState = SidebarState()
         let orphanSidebarSelectionState = SidebarSelectionState()
 
@@ -304,7 +304,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             appDelegate.registerMainWindow(
                 orphanWindow!,
                 windowId: orphanWindowId,
-                tabManager: orphanManager,
+                workspaceManager: orphanManager,
                 sidebarState: orphanSidebarState,
                 sidebarSelectionState: orphanSidebarSelectionState
             )
@@ -315,7 +315,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertNil(appDelegate.mainWindow(for: orphanWindowId), "Test precondition: orphaned context should not have a live window")
 
-        let orphanCount = orphanManager.tabs.count
+        let orphanCount = orphanManager.workspaces.count
         let remappedCmdT = StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
 
         withTemporaryShortcut(action: .newTab, shortcut: remappedCmdT) {
@@ -337,8 +337,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         }
 
-        XCTAssertEqual(orphanManager.tabs.count, orphanCount, "Orphaned manager must not receive a new workspace from remapped Cmd+T")
-        XCTAssertNil(appDelegate.tabManagerFor(windowId: orphanWindowId), "Remapped Cmd+T should prune the orphaned context after failed resolution")
+        XCTAssertEqual(orphanManager.workspaces.count, orphanCount, "Orphaned manager must not receive a new workspace from remapped Cmd+T")
+        XCTAssertNil(appDelegate.workspaceManagerFor(windowId: orphanWindowId), "Remapped Cmd+T should prune the orphaned context after failed resolution")
 
         let createdWindowIds = mainWindowIds().subtracting(existingWindowIds)
         for windowId in createdWindowIds {
@@ -360,8 +360,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
@@ -370,18 +370,18 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         _ = firstManager.addTab(select: true)
         _ = secondManager.addTab(select: true)
 
-        guard let firstSelectedBefore = firstManager.selectedTabId,
-              let secondSelectedBefore = secondManager.selectedTabId else {
+        guard let firstSelectedBefore = firstManager.selectedWorkspaceId,
+              let secondSelectedBefore = secondManager.selectedWorkspaceId else {
             XCTFail("Expected selected tabs in both windows")
             return
         }
-        guard let secondFirstTabId = secondManager.tabs.first?.id else {
+        guard let secondFirstWorkspaceId = secondManager.workspaces.first?.id else {
             XCTFail("Expected at least one tab in second window")
             return
         }
 
-        appDelegate.tabManager = firstManager
-        XCTAssertTrue(appDelegate.tabManager === firstManager)
+        appDelegate.workspaceManager = firstManager
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager)
 
         guard let event = makeKeyDownEvent(
             key: "1",
@@ -399,10 +399,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Cmd+1 must not select a tab in stale active window")
-        XCTAssertNotEqual(secondManager.selectedTabId, secondSelectedBefore, "Cmd+1 should change tab selection in event window")
-        XCTAssertEqual(secondManager.selectedTabId, secondFirstTabId, "Cmd+1 should select first tab in the event window")
-        XCTAssertTrue(appDelegate.tabManager === secondManager, "Shortcut routing should retarget active manager to event window")
+        XCTAssertEqual(firstManager.selectedWorkspaceId, firstSelectedBefore, "Cmd+1 must not select a tab in stale active window")
+        XCTAssertNotEqual(secondManager.selectedWorkspaceId, secondSelectedBefore, "Cmd+1 should change tab selection in event window")
+        XCTAssertEqual(secondManager.selectedWorkspaceId, secondFirstWorkspaceId, "Cmd+1 should select first tab in the event window")
+        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Shortcut routing should retarget active manager to event window")
     }
 
     func testCmdTRoutesToEventWindowWhenActiveManagerIsStale() {
@@ -419,8 +419,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId),
               let firstWorkspace = firstManager.selectedWorkspace,
               let secondWorkspace = secondManager.selectedWorkspace else {
@@ -431,8 +431,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let firstSurfaceCount = firstWorkspace.panels.count
         let secondSurfaceCount = secondWorkspace.panels.count
 
-        appDelegate.tabManager = firstManager
-        XCTAssertTrue(appDelegate.tabManager === firstManager)
+        appDelegate.workspaceManager = firstManager
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager)
 
         guard let event = makeKeyDownEvent(
             key: "t",
@@ -453,7 +453,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertEqual(firstWorkspace.panels.count, firstSurfaceCount, "Cmd+T must not create a surface in stale active window")
         XCTAssertEqual(secondWorkspace.panels.count, secondSurfaceCount + 1, "Cmd+T should create a surface in the event window")
-        XCTAssertTrue(appDelegate.tabManager === secondManager, "Shortcut routing should retarget active manager to event window")
+        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Shortcut routing should retarget active manager to event window")
     }
 
     func testCmdDRoutesSplitToEventWindowWhenKeyWindowIsDifferent() {
@@ -470,8 +470,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let firstWindow = window(withId: firstWindowId),
               let secondWindow = window(withId: secondWindowId),
               let firstWorkspace = firstManager.selectedWorkspace,
@@ -486,8 +486,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let firstSurfaceCount = firstWorkspace.panels.count
         let secondSurfaceCount = secondWorkspace.panels.count
 
-        appDelegate.tabManager = firstManager
-        XCTAssertTrue(appDelegate.tabManager === firstManager)
+        appDelegate.workspaceManager = firstManager
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager)
 
         guard let event = makeKeyDownEvent(
             key: "d",
@@ -508,7 +508,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertEqual(firstWorkspace.panels.count, firstSurfaceCount, "Cmd+D must not create a split in the stale key window")
         XCTAssertEqual(secondWorkspace.panels.count, secondSurfaceCount + 1, "Cmd+D should create a split in the event window")
-        XCTAssertTrue(appDelegate.tabManager === secondManager, "Split shortcut routing should keep the event window active")
+        XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Split shortcut routing should keep the event window active")
     }
 
     func testPerformSplitShortcutSplitsFocusedTerminalSurfaceWhenSelectedWorkspaceIsStale() {
@@ -521,7 +521,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         defer { closeWindow(withId: windowId) }
 
         guard let window = window(withId: windowId),
-              let manager = appDelegate.tabManagerFor(windowId: windowId),
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId),
               let workspace = manager.selectedWorkspace,
               let leftPanelId = workspace.focusedPanelId,
               let leftPanel = workspace.terminalPanel(for: leftPanelId) else {
@@ -564,7 +564,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         leftPanel.hostedView.clearSuppressReparentFocus()
         XCTAssertTrue(window.firstResponder === leftSurfaceView, "Expected left Ghostty surface to stay first responder")
         XCTAssertEqual(workspace.focusedPanelId, rightPanel.id, "Expected selected pane to stay stale after first-responder change")
-        XCTAssertEqual(leftSurfaceView.tabId, workspace.id, "Expected focused Ghostty view to keep its workspace ID")
+        XCTAssertEqual(leftSurfaceView.workspaceId, workspace.id, "Expected focused Ghostty view to keep its workspace ID")
         XCTAssertEqual(leftSurfaceView.terminalSurface?.id, leftPanel.id, "Expected focused Ghostty view to keep its surface ID")
 
         XCTAssertTrue(
@@ -686,13 +686,13 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         defer { closeWindow(withId: windowId) }
 
         guard let targetWindow = window(withId: windowId),
-              let manager = appDelegate.tabManagerFor(windowId: windowId) else {
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId) else {
             XCTFail("Expected test window and manager")
             return
         }
 
-        XCTAssertEqual(manager.tabs.count, 1)
-        XCTAssertEqual(manager.tabs[0].panels.count, 1)
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertEqual(manager.workspaces[0].panels.count, 1)
 
         guard let event = makeKeyDownEvent(
             key: "w",
@@ -739,7 +739,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         defer { closeWindow(withId: windowId) }
 
         guard let targetWindow = window(withId: windowId),
-              let manager = appDelegate.tabManagerFor(windowId: windowId),
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId),
               let workspace = manager.selectedWorkspace,
               let initialPanelId = workspace.focusedPanelId else {
             XCTFail("Expected test window, manager, workspace, and focused panel")
@@ -768,8 +768,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             self.window(withId: windowId),
             "Cmd+W should keep the window open when the keep-workspace-open preference is enabled"
         )
-        XCTAssertEqual(manager.tabs.count, 1)
-        XCTAssertEqual(manager.selectedTabId, workspace.id)
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
         XCTAssertNil(workspace.panels[initialPanelId])
         XCTAssertEqual(workspace.panels.count, 1)
         XCTAssertNotEqual(workspace.focusedPanelId, initialPanelId)
@@ -786,12 +786,12 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertNotNil(window(withId: windowId), "Expected test window")
 
-        guard let manager = appDelegate.tabManagerFor(windowId: windowId) else {
+        guard let manager = appDelegate.workspaceManagerFor(windowId: windowId) else {
             XCTFail("Expected test manager")
             return
         }
 
-        let mainWorkspaceCount = manager.tabs.count
+        let mainWorkspaceCount = manager.workspaces.count
         let auxiliaryWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -830,7 +830,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertFalse(auxiliaryWindow.isVisible, "Cmd+W should close the auxiliary window")
         XCTAssertNotNil(self.window(withId: windowId), "Cmd+W in auxiliary window should not close the main window")
-        XCTAssertEqual(manager.tabs.count, mainWorkspaceCount, "Cmd+W in auxiliary window should not close a terminal panel")
+        XCTAssertEqual(manager.workspaces.count, mainWorkspaceCount, "Cmd+W in auxiliary window should not close a terminal panel")
         XCTAssertNotEqual(NSApp.keyWindow?.identifier?.rawValue, "cmux.about", "Closed auxiliary window should not remain key")
     }
 
@@ -1513,7 +1513,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         defer { closeWindow(withId: windowId) }
 
         guard let window = window(withId: windowId),
-              let manager = appDelegate.tabManagerFor(windowId: windowId),
+              let manager = appDelegate.workspaceManagerFor(windowId: windowId),
               let workspace = manager.selectedWorkspace else {
             XCTFail("Expected test window and workspace")
             return
@@ -2797,8 +2797,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
@@ -2806,8 +2806,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         _ = firstManager.addTab(select: true)
         _ = secondManager.addTab(select: true)
-        guard let firstSelectedBefore = firstManager.selectedTabId,
-              let secondSelectedBefore = secondManager.selectedTabId else {
+        guard let firstSelectedBefore = firstManager.selectedWorkspaceId,
+              let secondSelectedBefore = secondManager.selectedWorkspaceId else {
             XCTFail("Expected selected tabs in both windows")
             return
         }
@@ -2817,7 +2817,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         // Force stale app-level manager to first window while keyboard event
         // references no known window.
-        appDelegate.tabManager = firstManager
+        appDelegate.workspaceManager = firstManager
 
         guard let event = makeKeyDownEvent(
             key: "1",
@@ -2835,9 +2835,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.selectedTabId, firstSelectedBefore, "Unresolved event window must not route Cmd+1 into stale manager")
-        XCTAssertEqual(secondManager.selectedTabId, secondSelectedBefore, "Unresolved event window must not route Cmd+1 into key/main fallback manager")
-        XCTAssertTrue(appDelegate.tabManager === firstManager, "Unresolved event window should not retarget active manager")
+        XCTAssertEqual(firstManager.selectedWorkspaceId, firstSelectedBefore, "Unresolved event window must not route Cmd+1 into stale manager")
+        XCTAssertEqual(secondManager.selectedWorkspaceId, secondSelectedBefore, "Unresolved event window must not route Cmd+1 into key/main fallback manager")
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager, "Unresolved event window should not retarget active manager")
     }
 
     func testCmdNDoesNotFallbackToOtherWindowWhenEventWindowContextIsMissing() {
@@ -2854,8 +2854,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             closeWindow(withId: secondWindowId)
         }
 
-        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
-              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+        guard let firstManager = appDelegate.workspaceManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
               let secondWindow = window(withId: secondWindowId) else {
             XCTFail("Expected both window contexts to exist")
             return
@@ -2864,9 +2864,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         secondWindow.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
-        let firstCount = firstManager.tabs.count
-        let secondCount = secondManager.tabs.count
-        appDelegate.tabManager = firstManager
+        let firstCount = firstManager.workspaces.count
+        let secondCount = secondManager.workspaces.count
+        appDelegate.workspaceManager = firstManager
 
         guard let event = makeKeyDownEvent(
             key: "n",
@@ -2884,9 +2884,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(firstManager.tabs.count, firstCount, "Unresolved event window must not create workspace in stale manager")
-        XCTAssertEqual(secondManager.tabs.count, secondCount, "Unresolved event window must not create workspace in fallback window")
-        XCTAssertTrue(appDelegate.tabManager === firstManager, "Unresolved event window should not retarget active manager")
+        XCTAssertEqual(firstManager.workspaces.count, firstCount, "Unresolved event window must not create workspace in stale manager")
+        XCTAssertEqual(secondManager.workspaces.count, secondCount, "Unresolved event window must not create workspace in fallback window")
+        XCTAssertTrue(appDelegate.workspaceManager === firstManager, "Unresolved event window should not retarget active manager")
     }
 
     func testCmdShiftMReturnsFalseWhenNoFocusedTerminalCanHandle() {
@@ -2896,7 +2896,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
 
         // Force unresolved shortcut routing context and no active manager.
-        appDelegate.tabManager = nil
+        appDelegate.workspaceManager = nil
 
         guard let event = makeKeyDownEvent(
             key: "m",

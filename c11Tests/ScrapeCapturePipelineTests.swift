@@ -565,7 +565,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         )
         let window = SessionWindowSnapshot(
             frame: nil, display: nil,
-            tabManager: SessionTabManagerSnapshot(selectedWorkspaceIndex: 0, workspaces: [workspace]),
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: 0, workspaces: [workspace]),
             sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240)
         )
         return AppSessionSnapshot(version: SessionSnapshotSchema.currentVersion,

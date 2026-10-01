@@ -593,11 +593,19 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
             self[r] = bound_names(src[a0:b0])
             return self[r]
     by_region = _Lazy()
+    protected = set()  # (region, name): parameters of `keep` callees keep their name through the body
+    if callees:
+        for (a, b), r in zip(lx.idents, reg):
+            if src[a:b] in renames and not is_call_label(src, a, b) and is_func_decl_param(src, a, b):
+                if callees.get(callee_name(src, a) or "") == "keep":
+                    protected.add((r, src[a:b]))
     out, last, count = [], 0, 0
     for (a, b), r in zip(lx.idents, reg):
         tok = src[a:b]
         lst = renames.get(tok)
         if not lst:
+            continue
+        if (r, tok) in protected and not (a >= 1 and src[a - 1] == "."):
             continue
         new, fallback, flags = None, None, set()
         for cand, globs, fb, fl in lst:

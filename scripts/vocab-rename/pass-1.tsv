@@ -4,6 +4,7 @@
 @delete	Sources/TabManager.swift	var selectedTab: Workspace? { selectedWorkspace }
 @fix	Sources/SessionPersistence.swift	    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n}\n	    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n\n    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.\n    enum CodingKeys: String, CodingKey {\n        case frame\n        case display\n        case workspaceManager = "tabManager"\n        case sidebar\n    }\n}\n
 @fix	Sources/AppDelegate.swift	target.workspace.panel(for: target.workspaceId)	target.workspace.panel(for: target.tabId)
+@fix	Sources/WorkspaceContentView.swift	.filter { $0.tabId == workspace.id && !$0.isRead }	.filter { $0.workspaceId == workspace.id && !$0.isRead }
 @receiver	GhosttyNotificationKey.
 @callee	BrowserPaneDragTransfer	keep
 @callee	DebugStressTerminalLoadTarget	keep

@@ -108,6 +108,9 @@
 		66EC03DE4291B1518FAA0DB9 /* DebugHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBF9629DC09C0F27A0A7F64 /* DebugHandlers.swift */; };
 		69DA05D60B975E4924059EE8 /* LegacyPrefsMigrationGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7016CF1A1B2C3D4E5F60718 /* LegacyPrefsMigrationGateTests.swift */; };
 		C11B0001A1B2C3D4E5F60711 /* TabLayoutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11B0002A1B2C3D4E5F60711 /* TabLayoutSettings.swift */; };
+		C11C245A01B2C3D4E5F60702 /* TabRailTipPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C245A01B2C3D4E5F60701 /* TabRailTipPolicy.swift */; };
+		C11C245B01B2C3D4E5F60702 /* TabRailTipCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C245B01B2C3D4E5F60701 /* TabRailTipCenter.swift */; };
+		C11C245C01B2C3D4E5F60702 /* TabRailTipPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C245C01B2C3D4E5F60701 /* TabRailTipPolicyTests.swift */; };
 		C11B0001A1B2C3D4E5F60712 /* TabLayoutSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11B0002A1B2C3D4E5F60712 /* TabLayoutSettingsTests.swift */; };
 		C11B0001A1B2C3D4E5F60701 /* TabSheetDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11B0002A1B2C3D4E5F60701 /* TabSheetDetail.swift */; };
 		C11B0001A1B2C3D4E5F60702 /* TabSheetDetailBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11B0002A1B2C3D4E5F60702 /* TabSheetDetailBuilderTests.swift */; };
@@ -585,6 +588,9 @@
 		4086104E408313BEAFE9EC11 /* AgentPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentPickerView.swift; sourceTree = "<group>"; };
 		42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabManagerUnitTests.swift; sourceTree = "<group>"; };
 		C11B0002A1B2C3D4E5F60711 /* TabLayoutSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabLayoutSettings.swift; sourceTree = "<group>"; };
+		C11C245A01B2C3D4E5F60701 /* TabRailTipPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabRailTipPolicy.swift; sourceTree = "<group>"; };
+		C11C245B01B2C3D4E5F60701 /* TabRailTipCenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabRailTipCenter.swift; sourceTree = "<group>"; };
+		C11C245C01B2C3D4E5F60701 /* TabRailTipPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabRailTipPolicyTests.swift; sourceTree = "<group>"; };
 		C11B0002A1B2C3D4E5F60712 /* TabLayoutSettingsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabLayoutSettingsTests.swift; sourceTree = "<group>"; };
 		C11B0002A1B2C3D4E5F60701 /* TabSheetDetail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabSheetDetail.swift; sourceTree = "<group>"; };
 		C11B0002A1B2C3D4E5F60702 /* TabSheetDetailBuilderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabSheetDetailBuilderTests.swift; sourceTree = "<group>"; };
@@ -1317,6 +1323,8 @@
 				490D9000BC1B0741D6E2CF06 /* SidebarStalenessSettings.swift */,
 				C11B0002A1B2C3D4E5F60701 /* TabSheetDetail.swift */,
 				C11B0002A1B2C3D4E5F60711 /* TabLayoutSettings.swift */,
+				C11C245A01B2C3D4E5F60701 /* TabRailTipPolicy.swift */,
+				C11C245B01B2C3D4E5F60701 /* TabRailTipCenter.swift */,
 				D8F4243F7A7CB36FB59072E8 /* SidebarDecayClock.swift */,
 				794F848890115B4BEF8AA94B /* SurfaceLivenessDeriver.swift */,
 				A025E12149FF4103C2397072 /* SocketSurfaceRefValidator.swift */,
@@ -1543,6 +1551,7 @@
 				945F336B8415FE35950216B4 /* HangPrecursorTrackerTests.swift */,
 				A1C1196000000000000004AA /* ExpiringValueCacheTests.swift */,
 				4B2DBF12A2F90CBDE7F6A289 /* PaneSizePolicyTests.swift */,
+				C11C245C01B2C3D4E5F60701 /* TabRailTipPolicyTests.swift */,
 				FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */,
 				A2CADD0C9B7E43A29D723366 /* SurfaceTypeAvailabilityTests.swift */,
 				FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */,
@@ -1902,6 +1911,7 @@
 				399EC8FAEFA042ADC50DA60F /* HangPrecursorTrackerTests.swift in Sources */,
 				A1C1196000000000000003AA /* ExpiringValueCacheTests.swift in Sources */,
 				756290E56A4FC7D6546C1D46 /* PaneSizePolicyTests.swift in Sources */,
+				C11C245C01B2C3D4E5F60702 /* TabRailTipPolicyTests.swift in Sources */,
 				ACB000000000000000000102 /* BrowserCompanionPolicyTests.swift in Sources */,
 				FE01AA00000000000000B001 /* SendKeyVocabularyTests.swift in Sources */,
 				849745EAE2900598F862D0F9 /* SurfaceTypeAvailabilityTests.swift in Sources */,
@@ -2149,6 +2159,8 @@
 				6A0C33F6E77CC3ACF487BAF9 /* SidebarStalenessSettings.swift in Sources */,
 				C11B0001A1B2C3D4E5F60701 /* TabSheetDetail.swift in Sources */,
 				C11B0001A1B2C3D4E5F60711 /* TabLayoutSettings.swift in Sources */,
+				C11C245A01B2C3D4E5F60702 /* TabRailTipPolicy.swift in Sources */,
+				C11C245B01B2C3D4E5F60702 /* TabRailTipCenter.swift in Sources */,
 				8CAB6EE26E1CF4530AB6A400 /* SidebarDecayClock.swift in Sources */,
 				442C70C79A00A668A6B29640 /* SurfaceLivenessDeriver.swift in Sources */,
 				81D13A7720F86B5F0EF02A37 /* SidebarActivityProjector.swift in Sources */,

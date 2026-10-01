@@ -467,7 +467,9 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
             continue  # enum case declaration: keep, its `.case` uses are kept too
         if "noimplicit" in flags and is_implicit_member(src, a):
             continue  # leading-dot implicit member (an enum case), not a property
-        if keeps:
+        member = a >= 1 and src[a - 1] == "." and not is_implicit_member(src, a)
+        mgr_member = member and RECV_MGR.search(src[max(0, a - 80):a - 1] + ".") is not None
+        if keeps and not mgr_member:
             skip = False
             for names, rx in keeps:
                 if tok in names:
@@ -481,7 +483,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
             if skip:
                 continue
         present = by_region[r]
-        if new in present and not is_call_label(src, a, b):
+        if new in present and not member and not is_call_label(src, a, b):
             if fallback and fallback not in present:
                 new = fallback
             else:

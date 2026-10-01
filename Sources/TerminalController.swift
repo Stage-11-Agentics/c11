@@ -7421,7 +7421,7 @@ class TerminalController {
 	                return
 	            }
 	
-	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, tab: tab),
+	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, workspace: tab),
 	                  let bonsplitTabId = tab.surfaceIdFromPanelId(panelId) else {
 	                result = "ERROR: Surface not found"
 	                return

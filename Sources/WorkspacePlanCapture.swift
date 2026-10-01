@@ -101,8 +101,8 @@ enum WorkspacePlanCapture {
         mutating func reservePlanIDs(in node: ExternalTreeNode) {
             switch node {
             case .pane(let pane):
-                for tab in pane.tabs {
-                    guard let panelID = panelID(forTabIDString: tab.id),
+                for bonsplitTab in pane.tabs {
+                    guard let panelID = panelID(forTabIDString: bonsplitTab.id),
                           workspace.panels[panelID] != nil,
                           planIDByPanelID[panelID] == nil else { continue }
                     planIDByPanelID[panelID] = mintId()
@@ -143,8 +143,8 @@ enum WorkspacePlanCapture {
 
             var ids: [String] = []
             var selectedIndex: Int? = nil
-            for tab in pane.tabs {
-                guard let panelId = panelID(forTabIDString: tab.id),
+            for bonsplitTab in pane.tabs {
+                guard let panelId = panelID(forTabIDString: bonsplitTab.id),
                       let panel = workspace.panels[panelId],
                       let planId = planIDByPanelID[panelId] else { continue }
                 ids.append(planId)
@@ -203,7 +203,7 @@ enum WorkspacePlanCapture {
                 )
                 surfaces.append(surface)
 
-                if let selectedTabId = pane.selectedTabId, selectedTabId == tab.id {
+                if let selectedBonsplitTabId = pane.selectedTabId, selectedBonsplitTabId == bonsplitTab.id {
                     selectedIndex = ids.count - 1
                 }
             }
@@ -312,7 +312,7 @@ enum WorkspacePlanCapture {
 
         private func panelID(forTabIDString tabIDString: String) -> UUID? {
             guard let tabUUID = UUID(uuidString: tabIDString) else { return nil }
-            return workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID))
+            return workspace.tabIdFromBonsplitTabId(TabID(uuid: tabUUID))
         }
     }
 }

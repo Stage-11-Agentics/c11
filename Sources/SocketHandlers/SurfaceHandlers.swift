@@ -86,7 +86,7 @@ extension TerminalController {
                 let bonsplitTabs = ws.bonsplitController.tabs(inPane: paneId)
                 let selected = ws.bonsplitController.selectedTab(inPane: paneId)
                 for (idx, bonsplitTab) in bonsplitTabs.enumerated() {
-                    guard let panelId = ws.panelIdFromSurfaceId(bonsplitTab.id) else { continue }
+                    guard let panelId = ws.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
                     paneByPanelId[panelId] = paneId.id
                     indexInPaneByPanelId[panelId] = idx
                     selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selected?.id)
@@ -526,7 +526,7 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            guard let bonsplitTabId = ws.surfaceIdFromPanelId(surfaceId) else {
+            guard let bonsplitTabId = ws.bonsplitTabIdFromTabId(surfaceId) else {
                 result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }

@@ -852,8 +852,8 @@ enum WorkspaceLayoutExecutor {
                selectedIndex < paneSpec.surfaceIds.count {
                 let selectedSurfaceId = paneSpec.surfaceIds[selectedIndex]
                 if let selectedPanelId = planSurfaceIdToPanelId[selectedSurfaceId],
-                   let selectedTabId = workspace.surfaceIdFromPanelId(selectedPanelId) {
-                    workspace.bonsplitController.selectTab(selectedTabId)
+                   let selectedBonsplitTabId = workspace.bonsplitTabIdFromTabId(selectedPanelId) {
+                    workspace.bonsplitController.selectTab(selectedBonsplitTabId)
                 }
             }
         }

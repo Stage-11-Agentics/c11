@@ -55,9 +55,9 @@ extension TerminalController {
             let focusedPaneId = ws.bonsplitController.focusedPaneId
             let panes: [[String: Any]] = ws.bonsplitController.allPaneIds.enumerated().map { index, paneId in
                 let bonsplitTabs = ws.bonsplitController.tabs(inPane: paneId)
-                let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { ws.panelIdFromSurfaceId($0.id) }
+                let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { ws.tabIdFromBonsplitTabId($0.id) }
                 let selectedBonsplitTab = ws.bonsplitController.selectedTab(inPane: paneId)
-                let selectedSurfaceUUID = selectedBonsplitTab.flatMap { ws.panelIdFromSurfaceId($0.id) }
+                let selectedSurfaceUUID = selectedBonsplitTab.flatMap { ws.tabIdFromBonsplitTabId($0.id) }
                 return [
                     "id": paneId.id.uuidString,
                     "ref": v2Ref(kind: .pane, uuid: paneId.id),
@@ -142,7 +142,7 @@ extension TerminalController {
             let bonsplitTabs = ws.bonsplitController.tabs(inPane: paneId)
 
             let surfaces: [[String: Any]] = bonsplitTabs.enumerated().map { index, bonsplitTab in
-                let panelId = ws.panelIdFromSurfaceId(bonsplitTab.id)
+                let panelId = ws.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let panel = panelId.flatMap { ws.panels[$0] }
                 return [
                     "id": v2OrNull(panelId?.uuidString),
@@ -461,8 +461,8 @@ extension TerminalController {
 
             guard let selectedSourceTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
                   let selectedTargetTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
-                  let sourceSurfaceId = workspace.panelIdFromSurfaceId(selectedSourceTab.id),
-                  let targetSurfaceId = workspace.panelIdFromSurfaceId(selectedTargetTab.id) else {
+                  let sourceSurfaceId = workspace.tabIdFromBonsplitTabId(selectedSourceTab.id),
+                  let targetSurfaceId = workspace.tabIdFromBonsplitTabId(selectedTargetTab.id) else {
                 result = .err(code: "invalid_state", message: "Both areas must have a selected tab", data: nil)
                 return
             }
@@ -548,7 +548,7 @@ extension TerminalController {
                 if let explicitSurface = v2UUID(params, "surface_id") { return explicitSurface }
                 if let sourcePane,
                    let selected = sourceWorkspace.bonsplitController.selectedTab(inPane: sourcePane) {
-                    return sourceWorkspace.panelIdFromSurfaceId(selected.id)
+                    return sourceWorkspace.tabIdFromBonsplitTabId(selected.id)
                 }
                 return sourceWorkspace.focusedPanelId
             }()
@@ -619,7 +619,7 @@ extension TerminalController {
         if surfaceId == nil, let sourcePaneUUID = v2UUID(params, "pane_id") {
             guard let sourceLocated = v2LocatePane(sourcePaneUUID),
                   let selected = sourceLocated.workspace.bonsplitController.selectedTab(inPane: sourceLocated.paneId),
-                  let selectedSurface = sourceLocated.workspace.panelIdFromSurfaceId(selected.id) else {
+                  let selectedSurface = sourceLocated.workspace.tabIdFromBonsplitTabId(selected.id) else {
                 return .err(code: "not_found", message: "Unable to resolve selected tab in source area", data: [
                     "pane_id": sourcePaneUUID.uuidString
                 ])
@@ -661,7 +661,7 @@ extension TerminalController {
             }
 
             ws.bonsplitController.focusPane(target)
-            let selectedSurfaceId = ws.bonsplitController.selectedTab(inPane: target).flatMap { ws.panelIdFromSurfaceId($0.id) }
+            let selectedSurfaceId = ws.bonsplitController.selectedTab(inPane: target).flatMap { ws.tabIdFromBonsplitTabId($0.id) }
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),

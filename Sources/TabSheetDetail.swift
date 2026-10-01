@@ -402,12 +402,12 @@ extension Workspace {
         guard bonsplitController.hasVisibleTabDetail,
               let paneId = paneId(forPanelId: panelId),
               bonsplitController.isTabDetailVisible(inPane: paneId),
-              let tabId = surfaceIdFromPanelId(panelId),
-              let existing = bonsplitController.tab(tabId),
+              let bonsplitTabId = bonsplitTabIdFromTabId(panelId),
+              let existing = bonsplitController.tab(bonsplitTabId),
               let detail = tabSheetDetail(panelId: panelId) else { return }
         guard TabSheetDetailBuilder.ignoringClocks(existing.detail)
                 != TabSheetDetailBuilder.ignoringClocks(detail) else { return }
-        bonsplitController.updateTab(tabId, detail: .some(detail))
+        bonsplitController.updateTab(bonsplitTabId, detail: .some(detail))
     }
 
     /// Notes a change of the surface's base state (working, idle, waiting,
@@ -443,15 +443,15 @@ extension Workspace {
     /// The tab's current detail with its title replaced, for the same
     /// `updateTab` call that changes the tab's title. nil when the tab has no
     /// detail yet (opening a sheet supplies it).
-    func tabDetailReplacingTitle(tabId: TabID, with title: String) -> BonsplitTabDetail?? {
-        guard var detail = bonsplitController.tab(tabId)?.detail else { return nil }
+    func tabDetailReplacingTitle(bonsplitTabId: TabID, with title: String) -> BonsplitTabDetail?? {
+        guard var detail = bonsplitController.tab(bonsplitTabId)?.detail else { return nil }
         detail.title = TabSheetDetailBuilder.collapsedWhitespace(title)
         return .some(detail)
     }
 
     func installTabSheetDetailProviders() {
-        bonsplitController.tabDetailProvider = { [weak self] tabId in
-            guard let self, let panelId = self.panelIdFromSurfaceId(tabId) else { return nil }
+        bonsplitController.tabDetailProvider = { [weak self] bonsplitTabId in
+            guard let self, let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId) else { return nil }
             return self.tabSheetDetail(panelId: panelId)
         }
         bonsplitController.sheetClockOrderProvider = {

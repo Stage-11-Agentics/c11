@@ -82,7 +82,7 @@ final class TabOrdinalDisplayTests: XCTestCase {
         XCTAssertFalse(bonsplitTabIds.isEmpty, "A new workspace has an initial terminal tab")
 
         for bonsplitTabId in bonsplitTabIds {
-            guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTabId) else {
+            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) else {
                 XCTFail("Tab \(bonsplitTabId) has no panel mapping")
                 continue
             }

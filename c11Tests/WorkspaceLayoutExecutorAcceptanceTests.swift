@@ -774,7 +774,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         // does at the v2 socket boundary.
         let livePlanIds: [String] = livePane.tabs.map { bonsplitTab in
             guard let tabUUID = UUID(uuidString: bonsplitTab.id),
-                  let panelId = workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID)),
+                  let panelId = workspace.tabIdFromBonsplitTabId(TabID(uuid: tabUUID)),
                   let planId = panelUUIDToPlanId[panelId] else {
                 return "unknown(\(bonsplitTab.id))"
             }
@@ -790,7 +790,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         if expectedSelectedIndex >= 0, expectedSelectedIndex < planPane.surfaceIds.count {
             let expectedSurfaceId = planPane.surfaceIds[expectedSelectedIndex]
             guard let expectedPanelId = planSurfaceIdToPanelUUID[expectedSurfaceId],
-                  let expectedBonsplitTabId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
+                  let expectedBonsplitTabId = workspace.bonsplitTabIdFromTabId(expectedPanelId) else {
                 XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
                 return
             }

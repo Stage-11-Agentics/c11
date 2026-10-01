@@ -70,19 +70,19 @@ struct WorkspaceContentView: View {
             workspace.bonsplitController.onFileDrop = { [weak workspace] urls, paneId in
                 guard let workspace else { return false }
                 // Find the focused panel in this pane and drop the files into it.
-                guard let tabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id,
-                      let panelId = workspace.panelIdFromSurfaceId(tabId),
+                guard let bonsplitTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id,
+                      let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId),
                       let panel = workspace.panels[panelId] as? TerminalPanel else { return false }
                 return panel.hostedView.handleDroppedURLs(urls)
             }
         }()
 
-        let bonsplitView = BonsplitView(controller: workspace.bonsplitController) { tab, paneId in
+        let bonsplitView = BonsplitView(controller: workspace.bonsplitController) { bonsplitTab, paneId in
             // Content for each tab in bonsplit
-            let _ = Self.debugPanelLookup(tab: tab, workspace: workspace)
-            if let panel = workspace.panel(for: tab.id) {
+            let _ = Self.debugPanelLookup(bonsplitTab: bonsplitTab, workspace: workspace)
+            if let panel = workspace.panel(for: bonsplitTab.id) {
                 let isFocused = isWorkspaceInputActive && workspace.focusedPanelId == panel.id
-                let isSelectedInPane = workspace.bonsplitController.selectedTab(inPane: paneId)?.id == tab.id
+                let isSelectedInPane = workspace.bonsplitController.selectedTab(inPane: paneId)?.id == bonsplitTab.id
                 let isVisibleInUI = Self.panelVisibleInUI(
                     isWorkspaceVisible: isWorkspaceVisible,
                     isSelectedInPane: isSelectedInPane,
@@ -262,8 +262,8 @@ struct WorkspaceContentView: View {
         let manualUnread = workspace.manualUnreadPanelIds
 
         for paneId in workspace.bonsplitController.allPaneIds {
-            for tab in workspace.bonsplitController.tabs(inPane: paneId) {
-                let panelId = workspace.panelIdFromSurfaceId(tab.id)
+            for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
+                let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
                 let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
                 let expectedActivity = panelId.flatMap {
@@ -289,13 +289,13 @@ struct WorkspaceContentView: View {
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 
-                if tab.showsNotificationBadge != shouldShow ||
-                    tab.activityState != expectedActivity ||
-                    tab.activityPresentation != expectedPresentation ||
-                    tab.isPinned != expectedPinned ||
-                    (expectedKind != nil && tab.kind != expectedKind) {
+                if bonsplitTab.showsNotificationBadge != shouldShow ||
+                    bonsplitTab.activityState != expectedActivity ||
+                    bonsplitTab.activityPresentation != expectedPresentation ||
+                    bonsplitTab.isPinned != expectedPinned ||
+                    (expectedKind != nil && bonsplitTab.kind != expectedKind) {
                     workspace.bonsplitController.updateTab(
-                        tab.id,
+                        bonsplitTab.id,
                         kind: kindUpdate,
                         showsNotificationBadge: shouldShow,
                         isPinned: expectedPinned,
@@ -410,11 +410,11 @@ struct WorkspaceContentView: View {
 
 extension WorkspaceContentView {
     #if DEBUG
-    static func debugPanelLookup(tab: Bonsplit.Tab, workspace: Workspace) {
-        let found = workspace.panel(for: tab.id) != nil
+    static func debugPanelLookup(bonsplitTab: Bonsplit.Tab, workspace: Workspace) {
+        let found = workspace.panel(for: bonsplitTab.id) != nil
         if !found {
             let ts = ISO8601DateFormatter().string(from: Date())
-            let line = "[\(ts)] PANEL NOT FOUND for tabId=\(tab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
+            let line = "[\(ts)] PANEL NOT FOUND for tabId=\(bonsplitTab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
             let logPath = "/tmp/cmux-panel-debug.log"
             if let handle = FileHandle(forWritingAtPath: logPath) {
                 handle.seekToEndOfFile()
@@ -426,8 +426,8 @@ extension WorkspaceContentView {
         }
     }
     #else
-    static func debugPanelLookup(tab: Bonsplit.Tab, workspace: Workspace) {
-        _ = tab
+    static func debugPanelLookup(bonsplitTab: Bonsplit.Tab, workspace: Workspace) {
+        _ = bonsplitTab
         _ = workspace
     }
     #endif

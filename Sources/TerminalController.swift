@@ -2231,7 +2231,7 @@ class TerminalController {
             let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
             let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId)
             for (tabIndex, bonsplitTab) in bonsplitTabs.enumerated() {
-                guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTab.id) else { continue }
+                guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
                 paneByPanelId[panelId] = paneId.id
                 indexInPaneByPanelId[panelId] = tabIndex
                 selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedBonsplitTab?.id)
@@ -2317,9 +2317,9 @@ class TerminalController {
         let focusedPaneId = workspace.bonsplitController.focusedPaneId
         let panes: [[String: Any]] = paneIds.enumerated().map { paneIndex, paneId in
             let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
-            let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { workspace.panelIdFromSurfaceId($0.id) }
+            let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { workspace.tabIdFromBonsplitTabId($0.id) }
             let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId)
-            let selectedSurfaceUUID = selectedBonsplitTab.flatMap { workspace.panelIdFromSurfaceId($0.id) }
+            let selectedSurfaceUUID = selectedBonsplitTab.flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
 
             // M8 layout sub-object.
             let path = splitPathByPaneId[paneId.id] ?? []
@@ -2592,7 +2592,7 @@ class TerminalController {
             if let ws = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }) {
                 for paneId in ws.bonsplitController.allPaneIds
                 where ws.bonsplitController.tabs(inPane: paneId)
-                    .contains(where: { ws.panelIdFromSurfaceId($0.id) == surfaceId }) {
+                    .contains(where: { ws.tabIdFromBonsplitTabId($0.id) == surfaceId }) {
                     paneRef = v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
                     break
                 }
@@ -5633,7 +5633,7 @@ class TerminalController {
 
             if let uuid = UUID(uuidString: trimmed),
                workspace.panels[uuid] != nil {
-                guard workspace.surfaceIdFromPanelId(uuid) != nil else { return }
+                guard workspace.bonsplitTabIdFromTabId(uuid) != nil else { return }
                 workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: uuid)
                 success = true
                 return
@@ -5642,7 +5642,7 @@ class TerminalController {
             if let index = Int(trimmed), index >= 0 {
                 let panels = orderedPanels(in: workspace)
                 guard index < panels.count else { return }
-                guard workspace.surfaceIdFromPanelId(panels[index].id) != nil else { return }
+                guard workspace.bonsplitTabIdFromTabId(panels[index].id) != nil else { return }
                 workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: panels[index].id)
                 success = true
             }
@@ -6176,7 +6176,7 @@ class TerminalController {
 	                    )
 	                }
 
-	                guard let panelId = workspace.panelIdFromSurfaceId(selectedBonsplitTab.id),
+	                guard let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
 	                      let panel = workspace.panels[panelId] else {
 	                    return LayoutDebugSelectedPanel(
 	                        paneId: paneIdStr,
@@ -6397,7 +6397,7 @@ class TerminalController {
         var seen = Set<UUID>()
 
         for bonsplitTabId in orderedBonsplitTabIds {
-            guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTabId),
+            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId),
                   let panel = workspace.panels[panelId] else { continue }
             result.append(panel)
             seen.insert(panelId)
@@ -6978,7 +6978,7 @@ class TerminalController {
     private func sendableWorkspaceTerminalPanel(in workspace: Workspace) -> TerminalPanel? {
         func selectedTerminalPanel(in paneId: PaneID) -> TerminalPanel? {
             guard let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId),
-                  let panelId = workspace.panelIdFromSurfaceId(selectedBonsplitTab.id),
+                  let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
                   let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
                 return nil
             }
@@ -6986,7 +6986,7 @@ class TerminalController {
         }
 
         func isSelectedTerminalPanel(_ terminalPanel: TerminalPanel) -> Bool {
-            guard let surfaceId = workspace.surfaceIdFromPanelId(terminalPanel.id) else {
+            guard let surfaceId = workspace.bonsplitTabIdFromTabId(terminalPanel.id) else {
                 return false
             }
             return workspace.bonsplitController.allPaneIds.contains { paneId in
@@ -7382,7 +7382,7 @@ class TerminalController {
 
             let lines = bonsplitTabs.enumerated().map { index, bonsplitTab in
                 let selected = bonsplitTab.id == selectedBonsplitTab?.id ? "*" : " "
-                let panelId = workspace.panelIdFromSurfaceId(bonsplitTab.id)
+                let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let panelIdStr = panelId?.uuidString ?? "unknown"
                 return "\(selected) \(index): \(bonsplitTab.title) [panel:\(panelIdStr)]"
             }
@@ -7436,7 +7436,7 @@ class TerminalController {
             // first responder into the terminal view to ensure typing routes correctly.
             if let panelUUID = UUID(uuidString: workspaceArg),
                workspace.panels[panelUUID] != nil,
-               workspace.surfaceIdFromPanelId(panelUUID) != nil {
+               workspace.bonsplitTabIdFromTabId(panelUUID) != nil {
                 workspaceManager.focusSurface(workspaceId: workspace.id, surfaceId: panelUUID)
                 result = "OK"
             }
@@ -7469,7 +7469,7 @@ class TerminalController {
 	            }
 	
 	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, workspace: workspace),
-	                  let bonsplitTabId = workspace.surfaceIdFromPanelId(panelId) else {
+	                  let bonsplitTabId = workspace.bonsplitTabIdFromTabId(panelId) else {
 	                result = "ERROR: Surface not found"
 	                return
 	            }

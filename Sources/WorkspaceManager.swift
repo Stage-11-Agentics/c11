@@ -2869,7 +2869,7 @@ class WorkspaceManager: ObservableObject {
         var targetPanelIds: [UUID] = []
         var targetTitles: [String] = []
         for bonsplitTab in tabsInPane where bonsplitTab.id != selectedBonsplitTabId {
-            guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTab.id) else { continue }
+            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
             if workspace.isPanelPinned(panelId) {
                 continue
             }
@@ -3054,8 +3054,8 @@ class WorkspaceManager: ObservableObject {
         // The last-surface shortcut preference only affects Cmd+W. The tab close button
         // continues to use Workspace's explicit-close path when it closes the last surface.
         if closesWorkspaceOnLastSurfaceShortcut,
-           let surfaceId = workspace.surfaceIdFromPanelId(panelId) {
-            workspace.markExplicitClose(surfaceId: surfaceId)
+           let surfaceId = workspace.bonsplitTabIdFromTabId(panelId) {
+            workspace.markExplicitClose(bonsplitTabId: surfaceId)
         }
         let closed = workspace.closePanel(panelId)
 #if DEBUG
@@ -4053,7 +4053,7 @@ class WorkspaceManager: ObservableObject {
         // Guard against stale close callbacks (e.g. child-exit can trigger multiple actions).
         // A stale callback must never affect unrelated panels/workspaces.
         guard workspace.panels[surfaceId] != nil,
-              workspace.surfaceIdFromPanelId(surfaceId) != nil else { return false }
+              workspace.bonsplitTabIdFromTabId(surfaceId) != nil else { return false }
         workspace.closePanel(surfaceId)
         AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspaceId, surfaceId: surfaceId)
         return true
@@ -4297,7 +4297,7 @@ class WorkspaceManager: ObservableObject {
            let fallbackAnchorPaneId = snapshot.fallbackAnchorPaneId,
            let anchorPane = workspace.bonsplitController.allPaneIds.first(where: { $0.id == fallbackAnchorPaneId }),
            let anchorTab = workspace.bonsplitController.selectedTab(inPane: anchorPane) ?? workspace.bonsplitController.tabs(inPane: anchorPane).first,
-           let anchorPanelId = workspace.panelIdFromSurfaceId(anchorTab.id),
+           let anchorPanelId = workspace.tabIdFromBonsplitTabId(anchorTab.id),
            let browserPanelId = workspace.newBrowserSplit(
                from: anchorPanelId,
                orientation: orientation,
@@ -4940,12 +4940,12 @@ class WorkspaceManager: ObservableObject {
                     let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
                     let selected = workspace.bonsplitController.selectedTab(inPane: paneId)
                     let selectedId = selected.map { String(describing: $0.id) } ?? "nil"
-                    let selectedPanelId = selected.flatMap { workspace.panelIdFromSurfaceId($0.id) }
+                    let selectedPanelId = selected.flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
                     let selectedPanelLive: String = {
                         guard let selected else { return "0" }
                         return workspace.panel(for: selected.id) != nil ? "1" : "0"
                     }()
-                    let mappedCount = bonsplitTabs.filter { workspace.panelIdFromSurfaceId($0.id) != nil }.count
+                    let mappedCount = bonsplitTabs.filter { workspace.tabIdFromBonsplitTabId($0.id) != nil }.count
                     let selectedPanel = selectedPanelId?.uuidString.prefix(8) ?? "nil"
                     return "pane=\(paneId.id.uuidString.prefix(8)):tabs=\(bonsplitTabs.count):mapped=\(mappedCount):selected=\(selectedId.prefix(8)):selectedPanel=\(selectedPanel):selectedLive=\(selectedPanelLive)"
                 }.joined(separator: ";")

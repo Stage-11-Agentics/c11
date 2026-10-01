@@ -5240,7 +5240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let bonsplitTabId = TabID(uuid: tabId)
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
-                if let panelId = workspace.panelIdFromSurfaceId(bonsplitTabId) {
+                if let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) {
                     return (context.windowId, workspace.id, panelId, context.workspaceManager)
                 }
             }
@@ -5362,7 +5362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if destinationWorkspace.id == sourceWorkspace.id {
             if let splitTarget {
-                guard let sourceTabId = sourceWorkspace.surfaceIdFromPanelId(panelId),
+                guard let sourceTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
                       sourceWorkspace.bonsplitController.splitPane(
                         resolvedTargetPane,
                         orientation: splitTarget.orientation,
@@ -5455,7 +5455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
             let splitStart = ProcessInfo.processInfo.systemUptime
 #endif
-            guard let movedTabId = destinationWorkspace.surfaceIdFromPanelId(panelId),
+            guard let movedTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
                   destinationWorkspace.bonsplitController.splitPane(
                     resolvedTargetPane,
                     orientation: splitTarget.orientation,
@@ -8761,11 +8761,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for (workspaceIndex, workspace) in workspaces.enumerated() {
             for paneId in workspace.bonsplitController.allPaneIds {
                 for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
-                    guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTab.id),
+                    guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id),
                           workspace.panel(for: bonsplitTab.id) is TerminalPanel else {
                         continue
                     }
-                    if workspace.preloadTerminalPanelForDebugStress(tabId: bonsplitTab.id, inPane: paneId) != nil {
+                    if workspace.preloadTerminalPanelForDebugStress(bonsplitTabId: bonsplitTab.id, inPane: paneId) != nil {
                         queuedTargets.append(
                             DebugStressTerminalLoadTarget(
                                 workspace: workspace,
@@ -9397,11 +9397,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let trackedPaneId else { return }
 
         let titles: [String] = workspace.bonsplitController.tabs(inPane: trackedPaneId).compactMap { bonsplitTab in
-            guard let panelId = workspace.panelIdFromSurfaceId(bonsplitTab.id) else { return nil }
+            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { return nil }
             return workspace.panelTitle(panelId: panelId)
         }
         let selectedTitle = workspace.bonsplitController.selectedTab(inPane: trackedPaneId)
-            .flatMap { workspace.panelIdFromSurfaceId($0.id) }
+            .flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
             .flatMap { workspace.panelTitle(panelId: $0) } ?? ""
 
         writeBonsplitTabDragUITestData([
@@ -9590,7 +9590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var terminalPane: PaneID?
         for paneId in paneIds {
             guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId),
-                  let panelId = workspace.panelIdFromSurfaceId(selected.id) else { continue }
+                  let panelId = workspace.tabIdFromBonsplitTabId(selected.id) else { continue }
             if panelId == browserPanelId {
                 browserPane = paneId
             } else if terminalPane == nil {

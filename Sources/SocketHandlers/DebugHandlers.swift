@@ -220,9 +220,9 @@ extension TerminalController {
                     var selectedInPaneByPanelId: [UUID: Bool] = [:]
                     for paneId in workspace.bonsplitController.allPaneIds {
                         let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
-                        for tab in workspace.bonsplitController.tabs(inPane: paneId) {
-                            guard let panelId = workspace.panelIdFromSurfaceId(tab.id) else { continue }
-                            selectedInPaneByPanelId[panelId] = (tab.id == selectedTab?.id)
+                        for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
+                            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
+                            selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedTab?.id)
                         }
                     }
 
@@ -240,7 +240,7 @@ extension TerminalController {
                             paneIndex: workspace.paneId(forPanelId: terminalPanel.id).flatMap { paneIndexById[$0.id] },
                             surfaceIndex: surfaceIndex,
                             selectedInPane: selectedInPaneByPanelId[terminalPanel.id],
-                            bonsplitTabId: workspace.surfaceIdFromPanelId(terminalPanel.id)
+                            bonsplitTabId: workspace.bonsplitTabIdFromTabId(terminalPanel.id)
                         )
                     }
                 }
@@ -974,8 +974,8 @@ extension TerminalController {
         v2MainSync {
             if clear {
                 workspace.bonsplitController.setLinkedHover(tabId: nil, fromSheet: fromSheet)
-            } else if let tabId = workspace.surfaceIdFromPanelId(surfaceId) {
-                workspace.bonsplitController.setLinkedHover(tabId: tabId, fromSheet: fromSheet)
+            } else if let bonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId) {
+                workspace.bonsplitController.setLinkedHover(tabId: bonsplitTabId, fromSheet: fromSheet)
             }
         }
         return .ok(["clear": clear, "from_sheet": fromSheet])

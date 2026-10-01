@@ -1716,7 +1716,7 @@ struct BrowserPaneDropContext: Equatable {
 }
 
 struct BrowserPaneDragTransfer: Equatable {
-    let tabId: UUID
+    let bonsplitTabId: UUID
     let sourcePaneId: UUID
     let sourceProcessId: Int32
 
@@ -1736,9 +1736,9 @@ struct BrowserPaneDragTransfer: Equatable {
 
     static func decode(from data: Data) -> BrowserPaneDragTransfer? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tab = json["tab"] as? [String: Any],
-              let tabIdRaw = tab["id"] as? String,
-              let tabId = UUID(uuidString: tabIdRaw),
+              let bonsplitTab = json["tab"] as? [String: Any],
+              let tabIdRaw = bonsplitTab["id"] as? String,
+              let bonsplitTabId = UUID(uuidString: tabIdRaw),
               let sourcePaneIdRaw = json["sourcePaneId"] as? String,
               let sourcePaneId = UUID(uuidString: sourcePaneIdRaw) else {
             return nil
@@ -1746,7 +1746,7 @@ struct BrowserPaneDragTransfer: Equatable {
 
         let sourceProcessId = (json["sourceProcessId"] as? NSNumber)?.int32Value ?? -1
         return BrowserPaneDragTransfer(
-            tabId: tabId,
+            bonsplitTabId: bonsplitTabId,
             sourcePaneId: sourcePaneId,
             sourceProcessId: sourceProcessId
         )
@@ -1761,7 +1761,7 @@ struct BrowserPaneSplitTarget: Equatable {
 enum BrowserPaneDropAction: Equatable {
     case noOp
     case move(
-        tabId: UUID,
+        bonsplitTabId: UUID,
         targetWorkspaceId: UUID,
         targetPane: PaneID,
         splitTarget: BrowserPaneSplitTarget?
@@ -1859,7 +1859,7 @@ enum BrowserPaneDropRouting {
         }
 
         return .move(
-            tabId: transfer.tabId,
+            bonsplitTabId: transfer.bonsplitTabId,
             targetWorkspaceId: target.workspaceId,
             targetPane: target.paneId,
             splitTarget: splitTarget
@@ -1978,13 +1978,13 @@ final class BrowserPaneDropTargetView: NSView {
 #if DEBUG
             dlog(
                 "browser.paneDrop.perform allowed=1 panel=\(dropContext.panelId.uuidString.prefix(5)) " +
-                "tab=\(transfer.tabId.uuidString.prefix(5)) action=noop"
+                "tab=\(transfer.bonsplitTabId.uuidString.prefix(5)) action=noop"
             )
 #endif
             return true
-        case .move(let tabId, let workspaceId, let targetPane, let splitTarget):
+        case .move(let bonsplitTabId, let workspaceId, let targetPane, let splitTarget):
             let moved = AppDelegate.shared?.moveBonsplitTab(
-                tabId: tabId,
+                tabId: bonsplitTabId,
                 toWorkspace: workspaceId,
                 targetPane: targetPane,
                 splitTarget: splitTarget.map { ($0.orientation, $0.insertFirst) },
@@ -1997,7 +1997,7 @@ final class BrowserPaneDropTargetView: NSView {
             } ?? "none"
             dlog(
                 "browser.paneDrop.perform panel=\(dropContext.panelId.uuidString.prefix(5)) " +
-                "tab=\(tabId.uuidString.prefix(5)) zone=\(zone) pane=\(targetPane.id.uuidString.prefix(5)) " +
+                "tab=\(bonsplitTabId.uuidString.prefix(5)) zone=\(zone) pane=\(targetPane.id.uuidString.prefix(5)) " +
                 "split=\(splitLabel) moved=\(moved ? 1 : 0)"
             )
 #endif
@@ -2024,7 +2024,7 @@ final class BrowserPaneDropTargetView: NSView {
 #if DEBUG
         dlog(
             "browser.paneDrop.\(phase) panel=\(dropContext.panelId.uuidString.prefix(5)) " +
-            "tab=\(transfer.tabId.uuidString.prefix(5)) zone=\(zone)"
+            "tab=\(transfer.bonsplitTabId.uuidString.prefix(5)) zone=\(zone)"
         )
 #endif
         return .move

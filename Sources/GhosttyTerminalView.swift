@@ -8704,7 +8704,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
 
         guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
-              let bonsplitTabIdForSurface = workspace.surfaceIdFromPanelId(surfaceId),
+              let bonsplitTabIdForSurface = workspace.bonsplitTabIdFromTabId(surfaceId),
               let paneId = workspace.bonsplitController.allPaneIds.first(where: { paneId in
                   workspace.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == bonsplitTabIdForSurface })
               }) else {
@@ -8786,7 +8786,7 @@ final class GhosttySurfaceScrollView: NSView {
               let workspaceManager = delegate.workspaceManagerFor(workspaceId: workspaceId) ?? delegate.workspaceManager,
               workspaceManager.selectedWorkspaceId == workspaceId,
               let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }),
-              let bonsplitTabIdForSurface = workspace.surfaceIdFromPanelId(surfaceId),
+              let bonsplitTabIdForSurface = workspace.bonsplitTabIdFromTabId(surfaceId),
               let paneId = workspace.bonsplitController.allPaneIds.first(where: { paneId in
                   workspace.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == bonsplitTabIdForSurface })
               }) else {

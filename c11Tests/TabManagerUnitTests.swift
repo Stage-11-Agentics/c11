@@ -462,12 +462,12 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertEqual(manager.selectedWorkspaceId, secondWorkspace.id)
         XCTAssertEqual(secondWorkspace.panels.count, 1)
 
-        guard let secondSurfaceId = secondWorkspace.surfaceIdFromPanelId(secondPanelId) else {
+        guard let secondSurfaceId = secondWorkspace.bonsplitTabIdFromTabId(secondPanelId) else {
             XCTFail("Expected bonsplit surface ID for focused panel")
             return
         }
 
-        secondWorkspace.markExplicitClose(surfaceId: secondSurfaceId)
+        secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
         XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
@@ -500,12 +500,12 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
             return
         }
 
-        guard let secondSurfaceId = secondWorkspace.surfaceIdFromPanelId(secondPanelId) else {
+        guard let secondSurfaceId = secondWorkspace.bonsplitTabIdFromTabId(secondPanelId) else {
             XCTFail("Expected bonsplit surface ID for focused panel")
             return
         }
 
-        secondWorkspace.markExplicitClose(surfaceId: secondSurfaceId)
+        secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
         XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
@@ -708,7 +708,7 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
         }
 
         XCTAssertEqual(
-            workspace.panelIdFromSurfaceId(lastSurfaceId),
+            workspace.tabIdFromBonsplitTabId(lastSurfaceId),
             browserPanelId,
             "Expected Cmd+Shift+B/Cmd+L open path to append browser surface at end"
         )
@@ -804,7 +804,7 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
             return
         }
         XCTAssertEqual(
-            workspace.panelIdFromSurfaceId(lastSurfaceId),
+            workspace.tabIdFromBonsplitTabId(lastSurfaceId),
             browserPanelId,
             "Expected browser surface to be appended at end in the reused top-right pane"
         )

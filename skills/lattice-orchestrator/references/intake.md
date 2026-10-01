@@ -40,6 +40,7 @@ lattice link <id> depends_on <other-id> --actor "agent:orchestrator-intake"
 - Dependencies conservative: link only when a ticket needs the other's code or runtime artifact. Loose dependencies kill parallelism.
 - Preserve the BUILDPLAN's checkpoint-shaped order in the dependency structure; default ticket size half-day to a day.
 - **Fidelity:** verbose (full description, acceptance criteria by ID, "Plan: filled in by delegator's plan phase", depends-on) or minimal (one line + BUILDPLAN anchor). Either way the ticket must reference its SPEC criteria IDs — the Result Validator maps audit rows through them.
+- A shared pattern several tickets will use (a UI stack, a helper layer) has one named owner ticket; the others consume it and build no parallel module. Without an owner, parallel builders each write their own.
 - Unavoidable shared-file edits (from the BUILDPLAN) flagged in the affected tickets so dispatch serializes them; shared enumerations and replaced objects (Contract checks) name their canonical source and landing order in each writer's ticket.
 
 ## External work and delivery receipts (pilot convention)

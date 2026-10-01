@@ -67,7 +67,7 @@ Set at Phase 0 (the project `CLAUDE.md` may declare a default; otherwise Moderat
 - **Moderate** *(default)* — decide-and-log routine calls; surface non-trivial architectural choices, scope expansions, and mild irreversibility for approval.
 - **Minimal** — surface at every phase transition; the operator is driving.
 
-Every autonomous decision lands in run-state's append-only decision log, tagged with the autonomy level that authorized it.
+Every autonomous decision lands in run-state's append-only decision log, tagged with the autonomy level that authorized it. An operator ruling that changes a contract criterion is amended into the contract when it is made: the terminal audit judges the text, not the decision log.
 
 ## Layout (inside c11)
 

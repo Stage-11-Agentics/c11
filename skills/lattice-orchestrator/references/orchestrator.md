@@ -36,8 +36,8 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
     `MODE standby` and name the mutation not started. The parent verifies the fields;
     surface creation and an idle TUI prove only liveness.
 
-15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang.
-16. **Questions go to the parent's surface.** Every question, decision request and receipt is sent with `c11 send` + `send-key enter` to the named parent surface, and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read.
+15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang. The same holds for any heavy local command a project has (a pre-PR gate, a whole-tree lint or typecheck): one machine-wide lock, named in every boot prompt, because builders on one machine start them at the same moments.
+16. **Questions go to the parent's surface.** Every question, decision request and receipt is sent with `c11 send` + `send-key enter` to the named parent surface, and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read; "idle until you answer" on its own screen is this failure, however clearly the brief said otherwise.
 17. **The CI window (shared runner).** A branch push without a PR costs no CI; opening or updating a PR starts a gate run. When the gate shares one runner and its wall budget is tight, children push freely but open or update a PR only when the Orchestrator grants the window by name. With headroom, the window is off and runs overlap.
 18. **Shared enumerations are edited at their canonical source.** A child adding a value to a shared allow-list or replacing a shared object uses the canonical list and landing order its ticket names, never a copy from the last migration it saw.
 
@@ -63,7 +63,7 @@ Base is `<remote>/main` — or the parent's branch for press-ahead children. The
 
 ## The dispatch loop
 
-Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) landing-train pass if auto-merge is enabled; (5) auto-close finished surfaces (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge; also kill any process whose cwd is a merged ticket's worktree, since an orphaned test worker outlives its delegator); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
+Tick body: (1) refresh — run-state, Lattice board, `c11 tree`, rewrite agents.md active table; (2) surface escalations — re-banner **every tick** while `needs_human`/`blocked` stands (a banner that scrolled away 30 minutes ago is the same as silence); (3) press-ahead audit over unspawned tickets; (4) landing-train pass if auto-merge is enabled; (5) auto-close finished surfaces, meaning every PR of that builder is merged (`c11 close-surface` — it reaps children; `/quit` does not, and orphaned review subprocesses can keep spawning panes after merge; also kill any process whose cwd is a merged ticket's worktree, since an orphaned test worker outlives its delegator); (6) spawn next available delegators, routed to the lightest-loaded delegate pane; (7) `ScheduleWakeup` — one pending wake at a time.
 
 **Cadence:** active dispatch 270s (inside the 5-minute prompt-cache window); quiescent 1200–1800s; never 300s (pays the cache miss without amortizing it). End the loop explicitly at run completion; silence after closeout is correct.
 
@@ -107,6 +107,7 @@ Every template begins with Standard Clause 1 (worktree assertion), the Clause-2 
 - **Base is `<remote>/main`, never bare `main`.** Post-merge they differ; bare `main` produces an empty diff that reads as a clean review.
 - **A fired review is not a finished review — the gate FAILS OPEN.** The review runner can die without a trace the task ever sees (600s timeout, `claude -p` session-limit exit, the firing session killed): `.lattice/review_state/<task>.json` then says `running` forever, and the completion policy passes on ANY lifetime `review`-role evidence — including a FAIL artifact from a previous rework cycle. (2026-07-11, acetate 0.4.0 sweep: one review dead 223 min while reporting `running`, caught only by a merge agent's voluntary cold re-review; one rework merged with only its pre-rework FAIL attached; a third recovered only because the delegator reviewed inline after a 600s timeout.) So: after every review invocation, before advancing, confirm a NEW `--role review` artifact exists that **postdates this cycle's `→ review` transition**, **names the reviewed commit** (== branch HEAD), and **carries a PASS verdict**. At merge time, re-run the same check — a rework cycle invalidates all earlier review evidence. Diagnosis kit: `lattice show <ID> --json` (artifact list + event times), `lattice review-status <ID>`, `ps -p <started_by_pid>` (state `running` + dead pid = dead review), `.lattice/review_state/failures.jsonl` (where timeouts and session-limit exits land — a `session limit` stderr means every subsequent spawn will die too until the limit resets; go straight to own-reviewer). Dead review → own-reviewer fallback (above). Never wait on a `running` claim past ~12 min, never advance on stale evidence.
 - **Review cycles must converge — the cycle limit is a circuit breaker, not a pacing suggestion (HARD).** Cap fix→re-review cycles at 2 per ticket, 3 absolute. At the cap, stop and escalate to the operator even when every finding is concrete and no single finding needs a human decision — "each finding is individually actionable" is exactly how a divergent loop disguises itself. Watch the finding *class* across cycles: prior Majors confirmed fixed but new Majors appearing in newly-added mechanism means the spec, not the code, is the problem — usually absolute acceptance language ("fail closed under any crash," "correct under any reordering") applied across a process/socket/filesystem boundary, which licenses infinite legitimate descent; that is a scope defect only the operator can resolve, never something to force past. Plan reviews should flag absolute acceptance language as a scope hazard before impl begins. Companion tripwire: cumulative diff exceeding ~3× the plan's size estimate escalates on its own, regardless of review verdicts. (2026-07-31, C11-188: eight cycles, eight FAILs, ~10k lines for what was a callback-guard bug; the orchestrator overrode its own 3-cycle guard three times with "no human decision required," and the run ended in a full revert. Full story: `docs/aar-c11-188-attention-loop.md`.)
+- **A green gate proves the tests pass, not that they still detect.** For a change to the test harness, the gate or a sweep, the review demonstrates each claim: a two-file probe for state crossing files, a planted failure (mutation) for each guard, then reverts. Green CI on such a change is not evidence until that review passes.
 - **Amendment blocks.** Never proceed to impl with untriaged plan-review findings — the impl agent stalls (correctly) on stale guidance. Triage each finding (obvious / evolutionary / complex → `needs_human`) and append to the plan file: `## N. Plan-Review Cycle K Resolutions (AUTHORITATIVE — overrides earlier text on conflict)` with per-finding concern / resolution / section affected. Impl prompts state that the latest Resolutions block is binding. Re-review only when findings were architectural or numerous.
 
 ## Verified state, not reported state
@@ -167,7 +168,15 @@ mergeability recompute (~5–15s Forgejo, 10–25s GitHub), and then enters the 
 foreign load: when PR CI shares one runner and the budget is tight, grant the CI window
 (Clause 17) to one PR at a time; with headroom, let runs overlap. When `main` itself fails the gate, reruns cannot clear it; fix
 `main` first. Measure before hypothesizing a lever: instrument the phases (setup, queue
-or pool wait, shard skew) and probe one variable at a time on a quiet runner.
+or pool wait, shard skew) and probe one variable at a time on a quiet runner. When the
+CI runner is also the measurement machine, measurement takes a lock: short windows with
+gaps between them so CI gets clean slots, and load-independence proved in process, never
+with a machine-wide load generator.
+
+**Clean text is not independence.** Landing a green head without re-merging a moved
+`main` is safe only when what moved cannot reach the PR's behaviour (docs that no test
+reads, checked by a grep of the tests). Files interact through shared processes,
+registries and databases with no overlapping lines, so otherwise merge and gate again.
 
 Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
 
@@ -191,6 +200,12 @@ One-shot recovery agents for cross-cutting batch work (a Merge Captain, a Diagno
 **Reproduce before attributing.** Before naming the cause of a red check (a ticket's regression, a harness race, load), read the failing request's status and body and reproduce with the smallest set: the failing file alone, then with each co-tenant of its process. A failure that tracks one branch can still be shared state that branch merely exposed. **Diagnostic Captain:** the second time a failure repeats unexplained, spawn a read-only captain to reproduce and bisect it, rather than guessing again.
 
 **Degraded mode (Orchestrator-as-captain):** direct merging from the Orchestrator session is the last resort when captain dispatch itself is blocked (e.g., a PTY wedge) — fix the underlying problem first, and log every direct merge in agents.md.
+
+## Checkpoints and re-proofs
+
+- **A checkpoint walks the public entry path.** Checkpoints driven through admin APIs and seeded personas never touch registration and sign-in, so a broken front door ships past all of them. Every deploy's smoke walks the path a new participant takes, end to end.
+- **Scope a re-proof by what changed, not by how many merges.** Diff the proven build against the final one by path class (engine, writes and validation, pages, docs). A GET-only crawl proves reads and links, never a POST path or server-side validation.
+- **Record a human checkpoint from the system's records.** When the operator says they walked something, confirm each step from logs or audit rows before marking it done; what is not in the record did not happen.
 
 ## Escalation format
 

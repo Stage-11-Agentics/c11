@@ -30,12 +30,32 @@ host. The boot path only reads that directory.
 EOF
 }
 
+# A live run id must fail before anything deletes its VM, its tart process, or its staged app.
+refuse_existing_clone() {
+  local run_id="$1" state
+  state="$(
+    sandbox_on_host <<EOF
+set -eu
+setopt pipefail
+$(sandbox_host_prelude)
+run_id=$(printf '%q' "$run_id")
+vm="c11-sb-\$run_id"
+refuse_protected "\$vm"
+vm_field "\$vm" || true
+EOF
+  )" || sandbox_die "could not read VM state for ${run_id}"
+  if [[ -n "$state" ]]; then
+    sandbox_die "c11-sb-${run_id} already exists (${state}). Run sandbox-down.sh ${run_id} first."
+  fi
+}
+
 # local-app: copy a bundle from this machine into the host staging directory.
 stage_local_app() {
   local app="$1" rel="$2"
   [[ -d "$app" ]] || sandbox_die "app not found: $app"
   [[ "$app" == *.app ]] || sandbox_die "expected a .app bundle: $app"
   [[ -f "$app/Contents/Info.plist" ]] || sandbox_die "not an app bundle: $app"
+  refuse_existing_clone "$run_id"
   app="$(cd "$(dirname "$app")" && pwd)/$(basename "$app")"
   local app_base ssh_host
   app_base="$(basename "$app")"
@@ -171,7 +191,12 @@ acquire_lock() {
       return 0
     fi
     oldpid="\$(cat "\$lock/pid" 2>/dev/null || true)"
-    if [[ -z "\$oldpid" ]] || ! kill -0 "\$oldpid" 2>/dev/null; then
+    # Empty means the owner is between mkdir and the pid write. Do not steal it.
+    if [[ -z "\$oldpid" ]]; then
+      sleep 1
+      continue
+    fi
+    if ! kill -0 "\$oldpid" 2>/dev/null; then
       rm -rf "\$lock"
       continue
     fi
@@ -202,7 +227,11 @@ trap 'failed=1; exit 1' INT HUP TERM
 trap cleanup EXIT
 acquire_lock
 existing="\$(vm_field "\$vm" || true)"
-[[ -z "\$existing" ]] || die "\$vm already exists (\$existing). Run sandbox-down.sh \$run_id first."
+if [[ -n "\$existing" ]]; then
+  # This VM is already live. failed=0 keeps cleanup from stopping it or removing its app.
+  failed=0
+  die "\$vm already exists (\$existing). Run sandbox-down.sh \$run_id first."
+fi
 n="\$(running_count)"
 if (( n >= 2 )); then
   die "two guests are already running. macOS allows two. Refusing to start a third."

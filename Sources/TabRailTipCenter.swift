@@ -6,11 +6,11 @@ import Bonsplit
 /// and whether the tab sheet is open. This type decides when the tip is on
 /// screen and owns the popover. The policy decides when a new offer may start.
 ///
-/// The popover is not modal. The first time it opens during an offer, if
-/// the terminal window was key just before, that window is made key once.
-/// Later refreshes do not take the keyboard back. Clicking outside ends
-/// this offer and does not dismiss the tip. Undo restores Tabs and does
-/// the same.
+/// The popover is not modal. Each time it opens, if the terminal window
+/// was key just before, that window is made key again. A refresh of an
+/// already-shown tip does not take the keyboard back. Clicking outside
+/// ends this offer and does not dismiss the tip. Undo restores Tabs and
+/// does the same.
 @MainActor
 final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     static let shared = TabRailTipCenter()
@@ -38,8 +38,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     private var hosting: NSHostingController<TabRailTipView>?
     private var shownAnchor: NSView?
     private var refreshQueued = false
-    /// True after this offer has given key back once.
-    private var restoredKey = false
     /// Readable from `deinit`, which may not be on the main actor.
     nonisolated(unsafe) private var escapeMonitor: Any?
 
@@ -160,7 +158,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
-        clearKeyRestore()
         hidePopover()
         TabLayoutSettings.setMode(.tabs)
     }
@@ -187,7 +184,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
-        clearKeyRestore()
         hidePopover()
     }
 
@@ -335,7 +331,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
-        clearKeyRestore()
         hidePopover()
     }
 
@@ -357,7 +352,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         guard popover.isShown else { return }
         installEscapeMonitor()
         guard wasKey else { return }
-        claimKeyOnce(anchor.window)
+        anchor.window?.makeKey()
     }
 
     private func hidePopover() {
@@ -376,18 +371,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         if popover.isShown, programmaticCloseGeneration == generation {
             programmaticCloseGeneration = nil
         }
-    }
-
-    /// Once per offer, and only when the terminal window was key immediately
-    /// before the popover opened. A later refresh must not call `makeKey`.
-    private func claimKeyOnce(_ window: NSWindow?) {
-        guard !restoredKey, let window else { return }
-        window.makeKey()
-        restoredKey = true
-    }
-
-    private func clearKeyRestore() {
-        restoredKey = false
     }
 
     private func ensurePopover() -> NSPopover {

@@ -749,7 +749,7 @@ extension TerminalController {
 
     private func v2DebugIsTerminalFocused(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
         }
         let resp = isTerminalFocused(surfaceId)
         if resp.hasPrefix("ERROR") {
@@ -838,7 +838,7 @@ extension TerminalController {
 
     private func v2DebugFlashCount(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
         }
         let resp = flashCount(surfaceId)
         guard resp.hasPrefix("OK ") else { return .err(code: "internal_error", message: resp, data: nil) }
@@ -853,7 +853,7 @@ extension TerminalController {
 
     private func v2DebugPanelSnapshot(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
         }
         let label = v2String(params, "label") ?? ""
         let args = label.isEmpty ? surfaceId : "\(surfaceId) \(label)"
@@ -875,7 +875,7 @@ extension TerminalController {
 
     private func v2DebugPanelSnapshotReset(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing tab_id", data: nil)
         }
         let resp = panelSnapshotReset(surfaceId)
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
@@ -886,7 +886,7 @@ extension TerminalController {
     /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
     private func v2DebugTabSheetDetail(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "surface not found", data: nil)
+            return .err(code: "not_found", message: "tab not found", data: nil)
         }
         var payload: [String: Any]?
         v2MainSync {
@@ -903,7 +903,7 @@ extension TerminalController {
             ]
         }
         guard let payload else {
-            return .err(code: "not_found", message: "no detail for surface", data: nil)
+            return .err(code: "not_found", message: "no detail for tab", data: nil)
         }
         return .ok(payload)
     }
@@ -912,7 +912,7 @@ extension TerminalController {
     /// `surface_id` (or the focused surface), without a click.
     private func v2DebugTabSheetOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "surface not found", data: nil)
+            return .err(code: "not_found", message: "tab not found", data: nil)
         }
         let open = v2Bool(params, "open") ?? true
         var paneFound = false
@@ -922,7 +922,7 @@ extension TerminalController {
             workspace.bonsplitController.setTabSheetOpen(open, inPane: paneId)
         }
         guard paneFound else {
-            return .err(code: "not_found", message: "pane not found", data: nil)
+            return .err(code: "not_found", message: "area not found", data: nil)
         }
         return .ok(["open": open, "surface_id": surfaceId.uuidString])
     }
@@ -934,7 +934,7 @@ extension TerminalController {
     /// Test seam: opens (default) or closes the rail of the pane hosting `surface_id`.
     private func v2DebugTabRailOpen(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "surface not found", data: nil)
+            return .err(code: "not_found", message: "tab not found", data: nil)
         }
         let open = v2Bool(params, "open") ?? true
         var found = false
@@ -943,13 +943,13 @@ extension TerminalController {
             found = true
             workspace.bonsplitController.setRailOpen(open, inPane: paneId)
         }
-        return found ? .ok(["open": open]) : .err(code: "not_found", message: "pane not found", data: nil)
+        return found ? .ok(["open": open]) : .err(code: "not_found", message: "area not found", data: nil)
     }
 
     /// Test seam: scrolls the tab strip of the pane hosting `surface_id` to `offset`.
     private func v2DebugTabStripScroll(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "surface not found", data: nil)
+            return .err(code: "not_found", message: "tab not found", data: nil)
         }
         let offset = CGFloat(debugDouble(params, "offset") ?? 0)
         var found = false
@@ -958,14 +958,14 @@ extension TerminalController {
             found = true
             workspace.bonsplitController.setTabStripScrollOffset(offset, inPane: paneId)
         }
-        return found ? .ok(["offset": Double(offset)]) : .err(code: "not_found", message: "pane not found", data: nil)
+        return found ? .ok(["offset": Double(offset)]) : .err(code: "not_found", message: "area not found", data: nil)
     }
 
     /// Test seam: lights the tab of `surface_id` (and its sheet row) as linked
     /// hover would; `clear: true` clears. `from_sheet` picks the origin.
     private func v2DebugTabSheetHover(params: [String: Any]) -> V2CallResult {
         guard let (workspace, surfaceId) = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "surface not found", data: nil)
+            return .err(code: "not_found", message: "tab not found", data: nil)
         }
         let clear = v2Bool(params, "clear") ?? false
         let fromSheet = v2Bool(params, "from_sheet") ?? true

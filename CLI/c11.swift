@@ -7927,10 +7927,10 @@ struct CMUXCLI {
 
             switch tabVerb {
             case "list":
-                let payload = try client.sendV2(method: "browser.tab.list", params: ["tab_id": sid])
+                let payload = try client.sendV2(method: "browser.tab.list", params: ["surface_id": sid])
                 output(payload, fallback: "OK")
             case "new":
-                var params: [String: Any] = ["tab_id": sid]
+                var params: [String: Any] = ["surface_id": sid]
                 let url = tabArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
                 if !url.isEmpty {
                     params["url"] = url
@@ -7939,7 +7939,8 @@ struct CMUXCLI {
                 output(payload, fallback: "OK")
             case "switch", "close":
                 let method = (tabVerb == "switch") ? "browser.tab.switch" : "browser.tab.close"
-                var params: [String: Any] = ["tab_id": sid]
+                // `surface_id` is the browsing context here; `tab_id` would mean the tab to act on.
+                var params: [String: Any] = ["surface_id": sid]
                 let target = tabArgs.first
                 if let target {
                     if let index = Int(target) {
@@ -9618,7 +9619,7 @@ struct CMUXCLI {
             Usage: c11 set-status <key> <value> [flags]
 
             Set a sidebar status entry for a workspace. Status entries appear as
-            pills in the sidebar tab row. Use a unique key so different tools
+            pills in the sidebar workspace row. Use a unique key so different tools
             (e.g. "claude_code", "build") can manage their own entries.
 
             Flags:
@@ -11204,7 +11205,7 @@ struct CMUXCLI {
             print(jsonString(response))
         } else {
             let applied = response["custom_color"] as? String ?? hex
-            print("OK surface_color=\(applied)")
+            print("OK tab_color=\(applied)")
         }
     }
 
@@ -11647,16 +11648,22 @@ struct CMUXCLI {
     static func canonicalizeFlags(_ args: [String], command: String) -> [String] {
         // Pass-through commands forward their arguments to another program.
         if command == "claude-teams" || command == "__tmux-compat" { return args }
+        // These commands read their target from `--panel`; `--tab` / `--surface` land there too.
+        let readsPanelFlag = ["focus-tab", "send-tab", "send-key-tab", "area-confirm"].contains(command)
+        func internalName(_ name: String) -> String? {
+            if readsPanelFlag, name == "--tab" || name == "--surface" { return "--panel" }
+            return flagAliasesToInternal[name]
+        }
         var out: [String] = []
         out.reserveCapacity(args.count)
         var pastTerminator = false
         for arg in args {
             if pastTerminator { out.append(arg); continue }
             if arg == "--" { pastTerminator = true; out.append(arg); continue }
-            if let mapped = flagAliasesToInternal[arg] { out.append(mapped); continue }
+            if let mapped = internalName(arg) { out.append(mapped); continue }
             if let eq = arg.firstIndex(of: "="), arg.hasPrefix("--") {
                 let name = String(arg[..<eq])
-                if let mapped = flagAliasesToInternal[name] {
+                if let mapped = internalName(name) {
                     out.append(mapped + arg[eq...])
                     continue
                 }

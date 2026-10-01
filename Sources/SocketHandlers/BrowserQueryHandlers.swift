@@ -58,10 +58,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Surface not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -94,10 +94,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Surface not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -123,10 +123,10 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Surface not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
@@ -167,7 +167,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
         var focused = false
@@ -1263,7 +1263,7 @@ extension TerminalController {
                 ?? ws.bonsplitController.focusedPaneId?.id
             guard let paneUUID,
                   let pane = ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID }) else {
-                result = .err(code: "not_found", message: "Target pane not found", data: nil)
+                result = .err(code: "not_found", message: "Target area not found", data: nil)
                 return
             }
 
@@ -1365,7 +1365,7 @@ extension TerminalController {
             }
 
             if ws.panels.count <= 1 {
-                result = .err(code: "invalid_state", message: "Cannot close the last surface", data: nil)
+                result = .err(code: "invalid_state", message: "Cannot close the last tab", data: nil)
                 return
             }
 

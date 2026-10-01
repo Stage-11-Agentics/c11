@@ -501,7 +501,7 @@ class TerminalController {
 
     private nonisolated static func socketCommandAllowsInAppFocusMutations(commandKey: String, isV2: Bool) -> Bool {
         if isV2 {
-            return focusIntentV2Methods.contains(commandKey)
+            return focusIntentV2Methods.contains(LegacyWireAliases.canonicalMethod(commandKey))
         }
         return focusIntentV1Commands.contains(commandKey)
     }
@@ -2798,7 +2798,7 @@ class TerminalController {
         if anyResolves { return nil }
         return .err(
             code: "not_found",
-            message: "surface ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused surface",
+            message: "tab ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused surface",
             data: nil
         )
     }
@@ -3178,14 +3178,14 @@ class TerminalController {
         case .empty:
             return .err(.err(
                 code: SocketSurfaceRefValidator.emptyRefCode,
-                message: "surface ref 'surface_id' was provided but empty — pass a concrete id (no focused-surface fallback)",
+                message: "tab ref 'tab_id' was provided but empty — pass a concrete id (no focused-tab fallback)",
                 data: nil
             ))
         case .present(let handle):
             guard let uuid = v2UUID(params, "surface_id") else {
                 return .err(.err(
                     code: "not_found",
-                    message: "Unknown surface: \(handle)",
+                    message: "Unknown tab: \(handle)",
                     data: ["surface_id": handle]
                 ))
             }
@@ -3196,7 +3196,7 @@ class TerminalController {
             resolvedSurfaceId = ws.focusedPanelId
         }
         guard let surfaceId = resolvedSurfaceId else {
-            return .err(.err(code: "not_found", message: "No focused surface", data: nil))
+            return .err(.err(code: "not_found", message: "No focused tab", data: nil))
         }
 
         // An explicit surface ref is a global handle. A caller inside workspace 1
@@ -3211,7 +3211,7 @@ class TerminalController {
         }
 
         guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
-            return .err(.err(code: "invalid_params", message: "Surface is not a terminal", data: ["surface_id": surfaceId.uuidString]))
+            return .err(.err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
         let windowId = v2ResolveWindowId(tabManager: tabManager)
         let envelope: [String: Any] = [
@@ -3865,7 +3865,7 @@ class TerminalController {
         guard let surfaceId = v2UUID(params, "surface_id") else {
             return .failure(.err(
                 code: "missing_surface",
-                message: "surface_id required (no focused-fallback for conversation commands)",
+                message: "tab_id required (no focused-fallback for conversation commands)",
                 data: nil
             ))
         }
@@ -3882,14 +3882,14 @@ class TerminalController {
         guard let rawSurfaceId = v2String(params, "surface_id"), !rawSurfaceId.isEmpty else {
             return .failure(.err(
                 code: "missing_surface",
-                message: "surface_id required for runtime capture",
+                message: "tab_id required for runtime capture",
                 data: nil
             ))
         }
         guard let surfaceId = UUID(uuidString: rawSurfaceId) else {
             return .failure(.err(
                 code: "invalid_surface",
-                message: "runtime capture surface_id must be a UUID",
+                message: "runtime capture tab_id must be a UUID",
                 data: nil
             ))
         }
@@ -3899,21 +3899,21 @@ class TerminalController {
               let panel = workspace.panels[surfaceId] else {
             return .failure(.err(
                 code: "stale_surface",
-                message: "surface_id is not present in this c11 instance",
+                message: "tab_id is not present in this c11 instance",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
         guard let terminalPanel = panel as? TerminalPanel else {
             return .failure(.err(
                 code: "surface_not_terminal",
-                message: "runtime capture requires a terminal surface",
+                message: "runtime capture requires a terminal tab",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
         guard terminalPanel.surface.surface != nil else {
             return .failure(.err(
                 code: "surface_not_live",
-                message: "terminal surface is not live",
+                message: "terminal tab is not live",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
@@ -4380,7 +4380,7 @@ class TerminalController {
 
     func helpText() -> String {
         var text = """
-        Hierarchy: Workspace (sidebar tab) > Pane (split region) > Surface (nested tab) > Panel (terminal/browser)
+        Hierarchy: Workspace (sidebar entry) > Area (split region) > Tab (terminal/browser/markdown). A tab is also called a panel or surface in this protocol.
 
         Available commands:
           ping                        - Check if server is running
@@ -4390,7 +4390,7 @@ class TerminalController {
           current_workspace           - Get current workspace ID
           close_workspace <id>        - Close workspace by ID
 
-        Split & surface commands:
+        Split & tab commands:
           new_split <direction> [panel]   - Split panel (left/right/up/down)
           drag_surface_to_split <id|idx> <direction> - Move surface into a new split (drag-to-edge)
           new_pane [--type=terminal|browser] [--direction=left|right|up|down] [--url=...]
@@ -4421,7 +4421,7 @@ class TerminalController {
           notify_surface <id|idx> <payload>  - Notify a specific surface
           notify_target <workspace_id> <surface_id> <payload> - Notify by workspace+surface
           list_notifications              - List all notifications
-          clear_notifications [--tab=X]    - Clear notifications (all or per-tab)
+          clear_notifications [--tab=X]    - Clear notifications (all or per-workspace; --tab=X is a workspace id)
           set_app_focus <active|inactive|clear> - Override app focus state
           simulate_app_active             - Trigger app active handler
           set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X] - Set a status entry

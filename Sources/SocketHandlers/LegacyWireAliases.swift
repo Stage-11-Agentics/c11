@@ -143,7 +143,7 @@ enum LegacyWireAliases {
         var out = params
         for (target, sources) in paramSources where out[target] == nil {
             for source in sources {
-                if let value = params[source], !(value is NSNull) {
+                if let value = params[source] {
                     out[target] = value
                     break
                 }

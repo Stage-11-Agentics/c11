@@ -99,7 +99,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
         let title = (params["title"] as? String) ?? "Notification"
@@ -113,7 +113,7 @@ extension TerminalController {
                 return
             }
             guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
@@ -140,7 +140,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
 
         let title = (params["title"] as? String) ?? "Notification"
@@ -154,7 +154,7 @@ extension TerminalController {
                 return
             }
             guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {

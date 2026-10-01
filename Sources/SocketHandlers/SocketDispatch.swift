@@ -1077,7 +1077,7 @@ extension TerminalController {
             guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
                 return .err(
                     code: "invalid_params",
-                    message: "caller_surface_id must be a UUID",
+                    message: "caller_tab_id must be a UUID",
                     data: nil
                 )
             }
@@ -1085,7 +1085,7 @@ extension TerminalController {
         } else if params["caller_surface_id"] != nil {
             return .err(
                 code: "invalid_params",
-                message: "caller_surface_id must be a UUID",
+                message: "caller_tab_id must be a UUID",
                 data: nil
             )
         } else {
@@ -1096,7 +1096,7 @@ extension TerminalController {
            launchCallerSurfaceId == nil {
             return .err(
                 code: "missing_caller_surface",
-                message: "agent-raised flags require caller_surface_id",
+                message: "agent-raised flags require caller_tab_id",
                 data: nil
             )
         }
@@ -1137,7 +1137,7 @@ extension TerminalController {
                 if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
                     return .failure(.err(
                         code: "invalid_params",
-                        message: "new_workspace is mutually exclusive with pane_id/workspace_id",
+                        message: "new_workspace is mutually exclusive with area_id/workspace_id",
                         data: nil
                     ))
                 }
@@ -1275,7 +1275,7 @@ extension TerminalController {
                ) == nil {
                 result = .err(
                     code: "caller_surface_not_found",
-                    message: "Calling surface not found",
+                    message: "Calling tab not found",
                     data: nil
                 )
                 return result
@@ -1304,7 +1304,7 @@ extension TerminalController {
                     autoWelcomeIfNeeded: false
                 )
                 guard let initialPanel = created.focusedTerminalPanel else {
-                    result = .err(code: "internal_error", message: "New workspace has no terminal surface", data: nil)
+                    result = .err(code: "internal_error", message: "New workspace has no terminal tab", data: nil)
                     return result
                 }
                 ws = created
@@ -1326,7 +1326,7 @@ extension TerminalController {
                     return target.bonsplitController.focusedPaneId
                 }()
                 guard let paneId else {
-                    result = .err(code: "not_found", message: "Pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area not found", data: nil)
                     return result
                 }
                 guard let created = target.newTerminalSurface(
@@ -1335,7 +1335,7 @@ extension TerminalController {
                     workingDirectory: cwdResolution.path,
                     startupEnvironment: plan.env
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
                     return result
                 }
                 ws = target

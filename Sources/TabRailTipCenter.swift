@@ -28,18 +28,17 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// the operator leaving the tip.
     private var reanchoring = false
     private weak var anchorBeforeSwitch: NSView?
-    /// Set just before a close this type asked for. Cleared by `popoverDidClose`,
-    /// or on the next turn if that callback never runs, so a later user close
-    /// is not swallowed.
-    private var programmaticCloseID: UUID?
+    /// Bumps each time the popover is shown. A programmatic close records the
+    /// generation it closed. A late `popoverDidClose` for that generation is
+    /// not the operator leaving a newer show.
+    private var showGeneration = 0
+    private var programmaticCloseGeneration: Int?
     private var userClose = false
     private var popover: NSPopover?
     private var hosting: NSHostingController<TabRailTipView>?
     private var shownAnchor: NSView?
     private var refreshQueued = false
-    /// The terminal window that was key when this offer's popover first opened.
-    /// Weak so a closed window does not stay alive. Key is restored at most once.
-    private weak var keyWindow: NSWindow?
+    /// True after this offer has given key back once.
     private var restoredKey = false
     /// Readable from `deinit`, which may not be on the main actor.
     nonisolated(unsafe) private var escapeMonitor: Any?
@@ -73,16 +72,31 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didResignKeyNotification, object: nil)
-        center.addObserver(self, selector: #selector(defaultsChanged(_:)), name: UserDefaults.didChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(calendarDayChanged(_:)), name: .NSCalendarDayChanged, object: nil)
+        // `defaults write` is another process, so didChangeNotification never
+        // arrives. KVO on these keys does, as it does for tabLayoutMode.
+        for key in Self.observedTipKeys {
+            UserDefaults.standard.addObserver(self, forKeyPath: key, options: [.new], context: nil)
+        }
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        for key in Self.observedTipKeys {
+            UserDefaults.standard.removeObserver(self, forKeyPath: key)
+        }
         if let escapeMonitor {
             NSEvent.removeMonitor(escapeMonitor)
         }
     }
+
+    /// Keys a `defaults write` from outside this process must be able to change
+    /// while the app is open. Not `overflowDays`: that one is recorded here.
+    nonisolated private static let observedTipKeys = [
+        TabRailTipPolicy.forceOfferKey,
+        TabRailTipPolicy.dismissedKey,
+        TabRailTipPolicy.lastOfferedKey,
+    ]
 
     // MARK: Signals from a workspace
 
@@ -196,9 +210,15 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         guard let closed = notification.object as? NSPopover, closed === popover else { return }
+        if let pending = programmaticCloseGeneration, pending != showGeneration {
+            // This close is for a show we already replaced. The new show's
+            // monitor stays.
+            programmaticCloseGeneration = nil
+            return
+        }
         removeEscapeMonitor()
-        if programmaticCloseID != nil {
-            programmaticCloseID = nil
+        if programmaticCloseGeneration != nil {
+            programmaticCloseGeneration = nil
             return
         }
         if userClose {
@@ -219,9 +239,13 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         scheduleRefresh()
     }
 
-    /// A `defaults write` of `forceOffer` (or a reset of the tip keys) must
-    /// start or stop an offer without waiting for the next tab event.
-    @objc nonisolated private func defaultsChanged(_ notification: Notification) {
+    nonisolated override func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        guard let keyPath, Self.observedTipKeys.contains(keyPath) else { return }
         scheduleRefresh()
     }
 
@@ -351,6 +375,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         if popover.isShown {
             closeProgrammatically(popover)
         }
+        showGeneration += 1
         shownAnchor = anchor
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
         resizePopover()
@@ -366,20 +391,15 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         shownAnchor = nil
     }
 
-    /// Marks the close that follows as ours. If `didClose` never runs, the
-    /// token is dropped so the next close is not treated as programmatic.
+    /// Records the show generation being closed. `popoverDidClose` for that
+    /// generation is ours, including when it arrives after a newer show.
+    /// A close that does not happen clears the mark immediately.
     private func closeProgrammatically(_ popover: NSPopover) {
-        let token = UUID()
-        programmaticCloseID = token
+        let generation = showGeneration
+        programmaticCloseGeneration = generation
         popover.performClose(nil)
-        guard programmaticCloseID == token else { return }
-        if popover.isShown {
-            programmaticCloseID = nil
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.programmaticCloseID == token else { return }
-            self.programmaticCloseID = nil
+        if popover.isShown, programmaticCloseGeneration == generation {
+            programmaticCloseGeneration = nil
         }
     }
 
@@ -387,14 +407,12 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// before the popover opened. A later refresh must not call `makeKey`.
     private func claimKeyOnce(_ window: NSWindow?) {
         guard !restoredKey, let window else { return }
-        keyWindow = window
         window.makeKey()
         restoredKey = true
     }
 
     private func clearKeyRestore() {
         restoredKey = false
-        keyWindow = nil
     }
 
     private func ensurePopover() -> NSPopover {
@@ -445,6 +463,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     private func closeFromUser() {
         userClose = true
+        programmaticCloseGeneration = nil
         reanchoring = false
         anchorBeforeSwitch = nil
         guard let popover, popover.isShown else {
@@ -511,10 +530,14 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// Starts this area's own 2s timer. A blip in another area cannot credit it.
     private func armSustain(_ slot: Slot, now: Date = Date()) {
         refreshCalendar()
-        if policy.hasRecordedOverflow(on: now) { return }
-        guard slot.sustainItem == nil else { return }
+        // Remember when this overflow started even if today is already
+        // recorded. Otherwise a strip that stays overflowing past midnight
+        // has no start time and the new day is skipped. The timer is the
+        // only thing today's mark suppresses.
         let since = now
         slot.overflowSince = since
+        if policy.hasRecordedOverflow(on: now) { return }
+        guard slot.sustainItem == nil else { return }
         let item = DispatchWorkItem { [weak self, weak slot] in
             MainActor.assumeIsolated {
                 guard let self, let slot else { return }

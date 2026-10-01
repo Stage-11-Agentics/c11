@@ -3988,7 +3988,7 @@ class WorkspaceManager: ObservableObject {
     }
 
     /// Equalize splits - not directly supported by bonsplit
-    func equalizeSplits(tabId: UUID) -> Bool {
+    func equalizeSplits(workspaceId tabId: UUID) -> Bool {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return false }
 
         var foundSplit = false

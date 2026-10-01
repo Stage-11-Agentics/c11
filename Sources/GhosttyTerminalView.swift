@@ -8777,7 +8777,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    private func matchesCurrentTerminalFocusTarget(tabId: UUID, surfaceId: UUID) -> Bool {
+    private func matchesCurrentTerminalFocusTarget(workspaceId tabId: UUID, surfaceId: UUID) -> Bool {
         guard let delegate = AppDelegate.shared,
               let workspaceManager = delegate.workspaceManagerFor(workspaceId: tabId) ?? delegate.workspaceManager,
               workspaceManager.selectedWorkspaceId == tabId,

@@ -1746,7 +1746,7 @@ struct BrowserPaneDragTransfer: Equatable {
 
         let sourceProcessId = (json["sourceProcessId"] as? NSNumber)?.int32Value ?? -1
         return BrowserPaneDragTransfer(
-            workspaceId: tabId,
+            tabId: tabId,
             sourcePaneId: sourcePaneId,
             sourceProcessId: sourceProcessId
         )
@@ -1859,7 +1859,7 @@ enum BrowserPaneDropRouting {
         }
 
         return .move(
-            workspaceId: transfer.tabId,
+            tabId: transfer.tabId,
             targetWorkspaceId: target.workspaceId,
             targetPane: target.paneId,
             splitTarget: splitTarget

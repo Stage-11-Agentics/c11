@@ -526,6 +526,14 @@ struct SessionWindowSnapshot: Codable, Sendable {
     var display: SessionDisplaySnapshot?
     var workspaceManager: SessionWorkspaceManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+
+    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.
+    enum CodingKeys: String, CodingKey {
+        case frame
+        case display
+        case workspaceManager = "tabManager"
+        case sidebar
+    }
 }
 
 struct AppSessionSnapshot: Codable, Sendable {

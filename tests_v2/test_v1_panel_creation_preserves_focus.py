@@ -122,7 +122,7 @@ def main() -> int:
 
             target_directory = f"/tmp/cmux-v1-report-pwd-{int(time.time() * 1000)}"
             _send_v1(
-                f"report_pwd {target_directory} --tab={created_workspace} --tab={baseline_focused_surface}"
+                f"report_pwd {target_directory} --tab={created_workspace} --panel={baseline_focused_surface}"
             )
             deadline = time.time() + 5.0
             sidebar_state = ""

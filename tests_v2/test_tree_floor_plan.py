@@ -45,10 +45,9 @@ def _must(cond: bool, msg: str) -> None:
 
 def _has_floor_plan(text: str) -> bool:
     """Return True iff the output contains a floor plan (box drawing rows)."""
-    for line in text.splitlines():
-        if any(ch in BOX_CHARS for ch in line):
-            return True
-    return False
+    # Tree hierarchy lines also use box characters (├── └──); only grid rows made of
+    # box characters and spaces alone are floor plan.
+    return bool(_floor_plan_rows(text))
 
 
 def _floor_plan_rows(text: str) -> List[str]:

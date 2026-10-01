@@ -4,7 +4,7 @@
 C11-4 commit 2 routes a small allowlist of v1 telemetry commands
 (`report_pwd`, `report_shell_state`, `report_git_branch`, `clear_git_branch`,
 `ports_kick`, `agent_kick`) through a nonisolated socket worker variant when
-the args carry explicit `--tab=<uuid> --tab=<uuid>` selectors. The fast
+the args carry explicit `--tab=<uuid> --panel=<uuid>` selectors. The fast
 path parses off-main and enqueues the UI mutation via DispatchQueue.main.async,
 so a flood of telemetry from a busy shell shouldn't sit behind main-actor
 hold time at the dispatcher seam.
@@ -128,7 +128,7 @@ def _flood(sock: socket.socket, workspace_id: str, panel_id: str, n: int) -> flo
     start = time.perf_counter()
     for i in range(n):
         directory = f"/tmp/c11-4-flood/{i}"
-        payload = f'report_pwd {directory} --tab={workspace_id} --tab={panel_id}'
+        payload = f'report_pwd {directory} --tab={workspace_id} --panel={panel_id}'
         sock.sendall((payload + "\n").encode("utf-8"))
         # Drain one response line per request so the kernel buffer doesn't
         # backpressure us into looking artificially fast.

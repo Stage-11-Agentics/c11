@@ -119,7 +119,7 @@ def test_send_workspace_relative(c: cmux, cli: str) -> None:
     # Send a harmless empty echo via env var to verify workspace routing
     output = _run_cli(
         cli, ["send", " "],
-        env_overrides={"CMUX_WORKSPACE_ID": ws["id"]}
+        env_overrides={"CMUX_WORKSPACE_ID": ws["id"], "C11_TAB_ID": str(surface_list[0]["id"])}
     )
     _must(output.startswith("OK") and "tab:" in output,
           f"Expected OK from send, got: {output}")
@@ -135,7 +135,9 @@ def test_send_with_explicit_workspace(c: cmux, cli: str) -> None:
     ws_ref = workspaces[0].get("ref", workspaces[0]["id"])
 
     # Send a space character (harmless) with explicit workspace
-    output = _run_cli(cli, ["send", "--workspace", ws_ref, " "])
+    surface_list = c._call("tab.list", {"workspace_id": ws_ref}).get("tabs", [])
+    _must(len(surface_list) >= 1, "Need at least 1 surface in workspace")
+    output = _run_cli(cli, ["send", "--workspace", ws_ref, "--tab", str(surface_list[0]["id"]), " "])
     _must(output.startswith("OK") and "tab:" in output,
           f"Expected OK from send, got: {output}")
 

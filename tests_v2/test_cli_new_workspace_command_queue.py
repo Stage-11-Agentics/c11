@@ -72,7 +72,7 @@ def main() -> int:
 
             output = (proc.stdout or "").strip()
             _must(output.startswith("OK "), f"Expected OK response, got: {output!r}")
-            _must("Surface not ready" not in combined and "Tab not ready" not in combined, f"Unexpected surface readiness error: {combined}")
+            _must("Tab not ready" not in combined, f"Unexpected surface readiness error: {combined}")
             created_ws_id = output[3:].strip()
             _must(bool(created_ws_id), f"Missing workspace id in output: {output!r}")
 

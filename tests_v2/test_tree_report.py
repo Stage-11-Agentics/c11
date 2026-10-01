@@ -51,9 +51,9 @@ def test_report_structure(c: cmux, cli: str) -> None:
     _must("_Generated " in md, "report must carry a `_Generated ...` line")
     for token in ("window", "workspace", "tab"):
         _must(token in md or (token == "tab" and "surface" in md), f"generated line should mention {token!r}")
-    _must("**Area**" in md or "**Pane**" in md, "report must list areas")
+    _must("**Area**" in md, "report must list areas")
     _must("## Summary" in md, "report must end with a Summary section")
-    _must("| Window | Workspace | Areas | Tabs |" in md or "| Window | Workspace | Panes | Surfaces |" in md, "report must contain the summary table header")
+    _must("| Window | Workspace | Areas | Tabs |" in md, "report must contain the summary table header")
     print("PASS: test_report_structure")
 
 

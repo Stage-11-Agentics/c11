@@ -74,7 +74,7 @@ def _read_any_terminal_text(client: cmux, workspace_id: str, timeout: float = 8.
                 return client.read_terminal_text(surface_id)
             except cmuxError as exc:
                 text = str(exc).lower()
-                if "terminal tab not found" in text or "terminal surface not found" in text:
+                if "terminal surface not found" in text:
                     last_exc = exc
                     continue
                 raise

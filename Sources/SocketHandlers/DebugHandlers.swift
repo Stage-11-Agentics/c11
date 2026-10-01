@@ -881,7 +881,7 @@ extension TerminalController {
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
     }
 
-    /// The detail the tab sheet would show for a surface, as JSON: agent tag,
+    /// The detail the tab sheet would show for a surface, as JSON: agent tag, type,
     /// status, clocks (ISO 8601) and the text clocks (`turn`, `tools`, `tokens`).
     /// Read-only; opens nothing. For validating the sheet's inputs without a screenshot.
     private func v2DebugTabSheetDetail(params: [String: Any]) -> V2CallResult {
@@ -896,6 +896,7 @@ extension TerminalController {
                 "surface_id": surfaceId.uuidString,
                 "title": v2OrNull(detail.title),
                 "agent_label": v2OrNull(detail.agentLabel),
+                "type_label": v2OrNull(detail.typeLabel),
                 "subtitle": v2OrNull(detail.subtitle),
                 "status": v2OrNull(detail.status?.kind.rawValue),
                 "clocks": detail.clocks.mapValues { iso.string(from: $0) },

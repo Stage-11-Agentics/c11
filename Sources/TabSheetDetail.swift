@@ -1,7 +1,7 @@
 import Foundation
 import Bonsplit
 
-/// Assembles the tab sheet's per-tab detail (agent, subtitle, status, clocks)
+/// Assembles the tab sheet's per-tab detail (type, subtitle, status, clocks)
 /// from already-resolved inputs. Pure: no stores, no AppKit. `Workspace` gathers
 /// the inputs; bonsplit only renders the result.
 enum TabSheetDetailBuilder {
@@ -80,6 +80,7 @@ enum TabSheetDetailBuilder {
                 model: input.model,
                 modelLabel: input.modelLabel
             ),
+            typeLabel: typeLabel(input.panelType),
             subtitle: subtitle(input),
             status: status(
                 activity: input.activity,
@@ -104,6 +105,18 @@ enum TabSheetDetailBuilder {
             ?? AgentChipResolver.shortenModel(model?.trimmingCharacters(in: .whitespacesAndNewlines))
         guard let shortModel, !shortModel.isEmpty else { return harness }
         return "\(harness) · \(shortModel)"
+    }
+
+    /// The tab's kind for the sheet's Type column, shown when it hosts no agent.
+    static func typeLabel(_ panelType: PanelType) -> String {
+        switch panelType {
+        case .terminal:
+            return String(localized: "tabSheet.type.terminal", defaultValue: "Terminal")
+        case .browser:
+            return String(localized: "tabSheet.type.browser", defaultValue: "Browser")
+        case .markdown:
+            return String(localized: "tabSheet.type.markdown", defaultValue: "Markdown")
+        }
     }
 
     /// The description flattened to one line; else the kind's own locator: cwd

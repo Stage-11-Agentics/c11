@@ -8739,7 +8739,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             var startedThisPass = 0
 
             for target in pendingTargets {
-                guard let terminalPanel = target.workspace.panel(for: target.workspaceId) as? TerminalPanel else {
+                guard let terminalPanel = target.workspace.panel(for: target.tabId) as? TerminalPanel else {
                     nextPending.append(target)
                     continue
                 }

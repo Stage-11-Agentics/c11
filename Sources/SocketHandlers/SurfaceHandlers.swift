@@ -37,7 +37,7 @@ extension TerminalController {
         case "tab.create":
             return v2Result(id: id, self.v2SurfaceCreate(params: params))
         case "tab.close":
-            return v2Result(id: id, self.v2SurfaceClose(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2SurfaceClose(params: params))
         case "tab.move":
             return v2Result(id: id, self.v2SurfaceMove(params: params))
         case "tab.reorder":
@@ -1063,6 +1063,10 @@ extension TerminalController {
             // C11-26: refresh ref handles before resolution; see
             // resolveSurfaceSendTargets for the full rationale.
             v2RefreshKnownRefs()
+            if let rejection = v2RejectUnresolvedTargetRefs(params) {
+                result = rejection
+                return
+            }
 
             guard let tabManager = v2ResolveTabManager(params: params) else {
                 result = .err(code: "unavailable", message: "TabManager not available", data: nil)

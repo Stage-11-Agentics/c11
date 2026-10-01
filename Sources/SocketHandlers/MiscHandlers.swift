@@ -15,7 +15,7 @@ extension TerminalController {
         case "settings.open":
             return v2Result(id: id, self.v2SettingsOpen(params: params))
         case "tab.action":
-            return v2Result(id: id, self.v2TabAction(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2TabAction(params: params))
         case "session.save":
             return v2Result(id: id, self.v2SessionSave(params: params))
         case "mailbox.resolve":

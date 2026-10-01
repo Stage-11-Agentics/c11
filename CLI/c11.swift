@@ -2044,6 +2044,7 @@ struct CMUXCLI {
             print(response)
 
         case "close-window":
+            try rejectEmptyTargetFlags(commandArgs)
             guard let target = optionValue(commandArgs, name: "--window") else {
                 throw CLIError(message: "close-window requires --window")
             }
@@ -2075,9 +2076,11 @@ struct CMUXCLI {
             try runReorderWorkspace(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
         case "workspace-action":
+            try rejectEmptyTargetFlags(commandArgs)
             try runWorkspaceAction(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
 
         case "tab-action":
+            try rejectEmptyTargetFlags(commandArgs)
             try runTabAction(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
 
         case "rename-tab":
@@ -2621,6 +2624,7 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "close-tab":
+            try rejectEmptyTargetFlags(commandArgs)
             let csWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = csWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (csWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
@@ -2815,6 +2819,7 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "close-workspace":
+            try rejectEmptyTargetFlags(commandArgs)
             guard let workspaceRaw = optionValue(commandArgs, name: "--workspace") else {
                 throw CLIError(message: "close-workspace requires --workspace")
             }
@@ -8759,7 +8764,7 @@ struct CMUXCLI {
               pin | unpin
               rename | clear-name
               move-up | move-down | move-top
-              close-others | close-above | close-below
+              close-above | close-below
               mark-read | mark-unread
 
             Flags:
@@ -8770,7 +8775,7 @@ struct CMUXCLI {
             Example:
               c11 workspace-action --workspace workspace:2 --action pin
               c11 workspace-action --action rename --title "infra"
-              c11 workspace-action close-others
+              c11 workspace-action close-below
             """
         case "tab-action":
             return """
@@ -11856,6 +11861,19 @@ struct CMUXCLI {
         let spellings = Self.flagSpellings(name)
         guard let index = args.firstIndex(where: { spellings.contains($0) }), index + 1 < args.count else { return nil }
         return args[index + 1]
+    }
+
+    /// Destructive commands refuse an explicitly empty target flag (almost
+    /// always an unset shell variable) instead of letting it fall back to the
+    /// focused target.
+    private func rejectEmptyTargetFlags(_ args: [String]) throws {
+        // Alias groups cover the hidden spellings (--pane, --surface, --panel).
+        for name in ["--window", "--workspace", "--area", "--tab"] {
+            if let value = optionValue(args, name: name),
+               value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw CLIError(message: "\(name) received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
+            }
+        }
     }
 
     private func hasFlag(_ args: [String], name: String) -> Bool {
@@ -16446,6 +16464,7 @@ struct CMUXCLI {
             }
 
         case "clear-history":
+            try rejectEmptyTargetFlags(commandArgs)
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
             let surfaceArg = optionValue(commandArgs, name: "--surface")
             var params: [String: Any] = [:]

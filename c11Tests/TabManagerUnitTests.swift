@@ -249,6 +249,57 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         XCTAssertEqual(manager.selectedTabId, foreground.id)
     }
 
+    func testClosingLoneIdleTerminalWorkspaceDoesNotPrompt() {
+        let manager = TabManager()
+        let second = manager.addWorkspace()
+
+        var promptCount = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            promptCount += 1
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(second)
+
+        XCTAssertEqual(promptCount, 0)
+        XCTAssertFalse(manager.tabs.contains(where: { $0.id == second.id }))
+    }
+
+    func testClosingPinnedWorkspacePromptsEvenWhenIdle() {
+        let manager = TabManager()
+        let second = manager.addWorkspace()
+        manager.setPinned(second, pinned: true)
+
+        var promptCount = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            promptCount += 1
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(second)
+
+        XCTAssertEqual(promptCount, 1)
+        XCTAssertTrue(manager.tabs.contains(where: { $0.id == second.id }), "Cancelling keeps the workspace")
+    }
+
+    func testClosingWorkspaceWithSeveralSurfacesPromptsEvenWhenIdle() throws {
+        let manager = TabManager()
+        let second = manager.addWorkspace()
+        let firstPanelId = try XCTUnwrap(second.focusedPanelId)
+        XCTAssertNotNil(second.newTerminalSplit(from: firstPanelId, orientation: .horizontal))
+
+        var promptCount = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            promptCount += 1
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(second)
+
+        XCTAssertEqual(promptCount, 1)
+        XCTAssertTrue(manager.tabs.contains(where: { $0.id == second.id }), "Cancelling keeps the workspace")
+    }
+
     func testCloseCurrentWorkspaceWithConfirmationUsesSidebarMultiSelection() {
         let manager = TabManager()
         let second = manager.addWorkspace()

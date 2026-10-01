@@ -21,7 +21,7 @@ extension TerminalController {
         case "workspace.current":
             return v2Result(id: id, self.v2WorkspaceCurrent(params: params))
         case "workspace.close":
-            return v2Result(id: id, self.v2WorkspaceClose(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WorkspaceClose(params: params))
         case "workspace.move_to_window":
             return v2Result(id: id, self.v2WorkspaceMoveToWindow(params: params))
         case "workspace.reorder":
@@ -33,7 +33,7 @@ extension TerminalController {
         case "workspace.get_root":
             return v2Result(id: id, self.v2WorkspaceGetRoot(params: params))
         case "workspace.action":
-            return v2Result(id: id, self.v2WorkspaceAction(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WorkspaceAction(params: params))
         case "workspace.next":
             return v2Result(id: id, self.v2WorkspaceNext(params: params))
         case "workspace.previous":
@@ -1441,7 +1441,7 @@ extension TerminalController {
         let supportedActions = [
             "pin", "unpin", "rename", "clear_name",
             "move_up", "move_down", "move_top",
-            "close_others", "close_above", "close_below",
+            "close_above", "close_below",
             "mark_read", "mark_unread"
         ]
 
@@ -1531,11 +1531,6 @@ extension TerminalController {
             case "move_top":
                 tabManager.moveTabToTop(workspace.id)
                 finish(["index": v2OrNull(tabManager.tabs.firstIndex(where: { $0.id == workspace.id }))])
-
-            case "close_others":
-                let candidates = tabManager.tabs.filter { $0.id != workspace.id && !$0.isPinned }
-                let closed = closeWorkspaces(candidates)
-                finish(["closed": closed])
 
             case "close_above":
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == workspace.id }) else {

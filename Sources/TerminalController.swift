@@ -2710,6 +2710,44 @@ class TerminalController {
         return v2ResolveHandleRef(s)
     }
 
+    /// Destructive verbs (the closes, the close actions, clear-history) never
+    /// fall back to the focused target for a ref the caller named: an empty
+    /// ref, or one that no longer resolves to a live window, workspace, pane or
+    /// surface, is an error. Only an absent ref may take the documented default.
+    func v2RejectUnresolvedTargetRefs(_ params: [String: Any]) -> V2CallResult? {
+        let keys = ["window_id", "workspace_id", "pane_id", "surface_id", "tab_id", "panel_id"]
+        for key in keys {
+            switch SocketSurfaceRefValidator.classify(params[key]) {
+            case .absent:
+                continue
+            case .empty:
+                return .err(
+                    code: SocketSurfaceRefValidator.emptyRefCode,
+                    message: "\(LegacyWireAliases.displayKey(key)) was provided but empty; destructive commands need a concrete ref and never fall back to the focused target",
+                    data: ["key": key]
+                )
+            case .present(let handle):
+                let isLive: Bool = v2MainSync {
+                    guard let uuid = v2UUID(params, key), let app = AppDelegate.shared else { return false }
+                    switch key {
+                    case "window_id": return app.tabManagerFor(windowId: uuid) != nil
+                    case "workspace_id": return app.tabManagerFor(tabId: uuid) != nil
+                    case "pane_id": return v2LocatePane(uuid) != nil
+                    default: return app.locateSurface(surfaceId: uuid) != nil
+                    }
+                }
+                if !isLive {
+                    return .err(
+                        code: "not_found",
+                        message: "Unknown \(LegacyWireAliases.displayKey(key)): \(handle); destructive commands never fall back to the focused target",
+                        data: [key: handle]
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
     func v2UUIDAny(_ raw: Any?) -> UUID? {
         guard let s = raw as? String else { return nil }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)

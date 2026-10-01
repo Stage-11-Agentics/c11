@@ -822,19 +822,6 @@ class TabManager: ObservableObject {
         return workspace.workspaceCloseInteractionRuntime.hasActive
     }
 
-    /// Accept the active workspace-close interaction in the selected
-    /// workspace. Used by the Cmd+D dispatcher: Cmd+D on a destructive
-    /// confirm should accept (matches the pane-interaction path).
-    @MainActor
-    @discardableResult
-    func acceptActiveWorkspaceCloseInteractionInKeyWorkspace() -> Bool {
-        guard let selectedTabId,
-              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
-            return false
-        }
-        return workspace.workspaceCloseInteractionRuntime.accept()
-    }
-
     /// Cancel the active workspace-close interaction in the selected
     /// workspace. Used as an Esc fallback when the overlay host did not
     /// receive keyDown directly (WKWebView responder edge cases).
@@ -857,7 +844,7 @@ class TabManager: ObservableObject {
     /// caller should also return true from its key-equivalent handler.
     @MainActor
     @discardableResult
-    func acceptActivePaneInteractionInKeyWorkspace() -> Bool {
+    func acceptActivePaneInteractionInKeyWorkspace(includingDestructiveConfirms: Bool) -> Bool {
         guard let selectedTabId,
               let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
             return false
@@ -865,16 +852,18 @@ class TabManager: ObservableObject {
         let runtime = workspace.paneInteractionRuntime
         // Prefer the focused panel — Cmd+D naturally targets "the dialog the user is
         // looking at," which is the one anchored on the currently focused panel.
-        if let focusedPanelId = workspace.focusedPanelId,
-           runtime.hasActive(panelId: focusedPanelId) {
-            return runtime.acceptActive(panelId: focusedPanelId)
-        }
-        // Otherwise accept any active interaction — there's only ever one per panel,
+        // Otherwise take any active interaction — there's only ever one per panel,
         // and multiple-panel-with-active-interaction is rare.
-        if let anyPanelId = runtime.activePanelIds.first {
-            return runtime.acceptActive(panelId: anyPanelId)
-        }
-        return false
+        let targetPanelId: UUID? = {
+            if let focusedPanelId = workspace.focusedPanelId,
+               runtime.hasActive(panelId: focusedPanelId) {
+                return focusedPanelId
+            }
+            return runtime.activePanelIds.first
+        }()
+        guard let targetPanelId else { return false }
+        if !includingDestructiveConfirms, runtime.hasActiveDestructiveConfirm(panelId: targetPanelId) { return false }
+        return runtime.acceptActive(panelId: targetPanelId)
     }
 
     @MainActor
@@ -2837,22 +2826,15 @@ class TabManager: ObservableObject {
         }
         _ = acceptCmdD
 
+        // Cancel is the first button, so Return and Escape both keep things
+        // open; closing takes a click.
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
-
-        if let closeButton = alert.buttons.first {
-            closeButton.keyEquivalent = "\r"
-            closeButton.keyEquivalentModifierMask = []
-            alert.window.defaultButtonCell = closeButton.cell as? NSButtonCell
-            alert.window.initialFirstResponder = closeButton
-        }
-        if let cancelButton = alert.buttons.dropFirst().first {
-            cancelButton.keyEquivalent = "\u{1b}"
-        }
+        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
+            .hasDestructiveAction = true
 
         // C11-196: `NSApp.activationPolicy()` is a synchronous LaunchServices XPC
         // round trip; read the policy c11 itself set instead.
@@ -2860,7 +2842,7 @@ class TabManager: ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
         }
 
-        return alert.runModal() == .alertFirstButtonReturn
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     private struct CloseOtherTabsInFocusedPanePlan {
@@ -3023,7 +3005,11 @@ class TabManager: ObservableObject {
         if tabs.count <= 1 {
             // Last workspace in this window: close the window (Cmd+Shift+W behavior).
             if let window {
-                window.performClose(nil)
+                if let app = AppDelegate.shared {
+                    app.closeMainWindowWithoutPrompt(window)
+                } else {
+                    window.performClose(nil)
+                }
             } else {
                 AppDelegate.shared?.closeMainWindowContainingTabId(workspace.id)
             }
@@ -3213,7 +3199,7 @@ class TabManager: ObservableObject {
             return true
         }
 #endif
-        return workspace.needsConfirmClose()
+        return workspace.needsConfirmCloseWorkspace()
     }
 
     func titleForTab(_ tabId: UUID) -> String? {

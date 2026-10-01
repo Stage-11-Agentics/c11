@@ -281,7 +281,7 @@ c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one t
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
 
-**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
+**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still targets that workspace's focused area — you named a target, just a coarser one.
 

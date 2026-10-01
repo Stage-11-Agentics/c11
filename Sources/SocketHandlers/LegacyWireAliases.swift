@@ -30,6 +30,16 @@ enum LegacyWireAliases {
         return method
     }
 
+    /// The canonical spelling of a handler-side param key, for error text
+    /// (`surface_id`/`panel_id` -> `tab_id`, `pane_id` -> `area_id`).
+    nonisolated static func displayKey(_ key: String) -> String {
+        switch key {
+        case "surface_id", "panel_id": return "tab_id"
+        case "pane_id": return "area_id"
+        default: return key
+        }
+    }
+
     // MARK: - Handles
 
     /// `surface:N` -> `tab:N`, `pane:N` -> `area:N` (case-insensitive, trimmed).

@@ -3149,7 +3149,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
     private func closeWindow(withId windowId: UUID) {
         guard let window = window(withId: windowId) else { return }
-        window.performClose(nil)
+        // close(), not performClose(): teardown must not raise the close prompt.
+        window.close()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
     }
 

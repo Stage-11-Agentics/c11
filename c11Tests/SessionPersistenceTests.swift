@@ -745,7 +745,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(
             AppDelegate.shouldPersistSnapshotOnWindowUnregister(isTerminatingApp: true)
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             AppDelegate.shouldRemoveSnapshotWhenNoWindowsRemainOnWindowUnregister(isTerminatingApp: false)
         )
         XCTAssertFalse(

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Heuristic TUI / agent detector (c11 Module 1).
@@ -147,7 +148,11 @@ final class AgentDetector: @unchecked Sendable {
                 // TTY exists but no foreground process — skip (no-op).
                 continue
             }
-            let classification = Self.classify(comm: info.comm, args: info.args)
+            let classification = Self.classify(ProcessFacts(
+                comm: info.comm,
+                args: info.args,
+                executablePath: info.executablePath
+            ))
             let detectionChanged = detectedTerminalTypes[key] != classification
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
@@ -181,6 +186,23 @@ final class AgentDetector: @unchecked Sendable {
 
     // MARK: - ps parsing
 
+    /// Identity the classifier can see without a live process.
+    ///
+    /// `comm` is the `ps` column, which keeps at most 16 characters of
+    /// argv[0]. `args` is the argv line. `executablePath` is `proc_pidpath`
+    /// for a foreground pid from a scan; tests set it directly.
+    struct ProcessFacts: Equatable {
+        var comm: String
+        var args: String
+        var executablePath: String?
+
+        init(comm: String, args: String, executablePath: String? = nil) {
+            self.comm = comm
+            self.args = args
+            self.executablePath = executablePath
+        }
+    }
+
     struct ProcInfo {
         let pid: Int
         let ppid: Int
@@ -188,7 +210,11 @@ final class AgentDetector: @unchecked Sendable {
         let tpgid: Int
         let comm: String
         let args: String
+        var executablePath: String? = nil
     }
+
+    /// `PROC_PIDPATHINFO_MAXSIZE` (4 * MAXPATHLEN). The macro is not imported.
+    private static let pidPathCapacity = 4 * Int(MAXPATHLEN)
 
     /// Run `ps -t tty1,tty2,... -o pid=,ppid=,tty=,tpgid=,comm=,args=` and
     /// pick the foreground process per TTY (the one whose pid == tpgid).
@@ -214,12 +240,24 @@ final class AgentDetector: @unchecked Sendable {
 
         var foreground: [String: ProcInfo] = [:]
         for line in output.split(separator: "\n") {
-            guard let info = parsePSLine(String(line)) else { continue }
+            guard var info = parsePSLine(String(line)) else { continue }
             // Foreground process: pid == tpgid.
             guard info.pid == info.tpgid else { continue }
+            // One syscall per foreground pid. `ps` has already clipped comm;
+            // this is the untruncated executable path.
+            info.executablePath = executablePath(for: Int32(info.pid))
             foreground[info.tty] = info
         }
         return foreground
+    }
+
+    /// Full executable path from `proc_pidpath`, or nil if `pid` is gone.
+    /// Internal so a test can call it for this process.
+    static func executablePath(for pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: pidPathCapacity)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
     }
 
     static func parsePSLine(_ line: String) -> ProcInfo? {
@@ -233,25 +271,30 @@ final class AgentDetector: @unchecked Sendable {
               let tpgid = Int(parts[3]) else { return nil }
         let tty = parts[2]
         let comm = parts[4]
-        // Reconstruct args as everything after the 5th whitespace-split token
-        // by finding the 5th space/tab boundary. Keeps the original spacing.
+        // Everything after the 5th column is argv. A padding run is one
+        // column. Counting every space shifts the boundary: on a `ttysNNN`
+        // line (two-space pad, the shape `ps -t` prints) it lands on `comm`,
+        // so argv0 is the 16-character clip; the wider `??` pad lands on `tpgid`.
+        var index = trimmed.startIndex
         var splits = 0
-        var argsStart = trimmed.startIndex
-        for idx in trimmed.indices {
-            if trimmed[idx].isWhitespace {
-                // Eat runs of whitespace.
-                var cursor = idx
-                while cursor < trimmed.endIndex, trimmed[cursor].isWhitespace {
-                    cursor = trimmed.index(after: cursor)
+        var argsStart = trimmed.endIndex
+        while index < trimmed.endIndex {
+            if trimmed[index].isWhitespace {
+                while index < trimmed.endIndex, trimmed[index].isWhitespace {
+                    index = trimmed.index(after: index)
                 }
                 splits += 1
                 if splits == 5 {
-                    argsStart = cursor
+                    argsStart = index
                     break
                 }
+            } else {
+                index = trimmed.index(after: index)
             }
         }
-        let args = splits >= 5 ? String(trimmed[argsStart...]) : parts[5...].joined(separator: " ")
+        let args = splits >= 5
+            ? String(trimmed[argsStart...])
+            : parts[5...].joined(separator: " ")
         return ProcInfo(pid: pid, ppid: ppid, tty: tty, tpgid: tpgid, comm: comm, args: args)
     }
 
@@ -262,47 +305,48 @@ final class AgentDetector: @unchecked Sendable {
     /// Classify a foreground process into a canonical `terminal_type` value.
     /// Exposed as `static` so tests can exercise the table without a live scan.
     static func classify(comm: String, args: String) -> String {
-        let c = comm.lowercased()
-        let a = args.lowercased()
-        let commBase = String(c.split(separator: "/").last ?? Substring(c))
+        classify(ProcessFacts(comm: comm, args: args))
+    }
 
-        // Exact comm match against any agent manifest's declared binaries.
-        // Accept a full path as well: `ps` usually reports the bare executable,
-        // but that representation is not stable across launch mechanisms.
-        for manifest in AgentRegistry.shared.all
-        where manifest.detectComms.contains(c) || manifest.detectComms.contains(commBase) {
-            return manifest.kind
+    static func classify(_ facts: ProcessFacts) -> String {
+        let comm = facts.comm.lowercased()
+        let args = facts.args.lowercased()
+        // `ps` comm is argv[0] clipped to 16 characters, so a long path loses
+        // its basename (`/private/tmp/claude-501/.../claude` becomes
+        // `/private/tmp/cla`). The basename has to come from the full argv0
+        // or from `proc_pidpath`. Later argv tokens are user input and are
+        // not agent names, except on the interpreter rail below.
+        var names: [String] = [comm, basename(comm)]
+        if let executablePath = facts.executablePath?.lowercased(), !executablePath.isEmpty {
+            names.append(basename(executablePath))
+        }
+        if let argv0 = args.split(whereSeparator: \.isWhitespace).first {
+            names.append(basename(String(argv0)))
         }
 
-        // Darwin truncates a long `comm` column (for example
-        // `/Users/atin/.local/bin/claude` becomes `/Users/atin/.loc`), while
-        // `args` still begins with the complete argv[0]. Match only that first
-        // token's basename: later arguments are arbitrary user input and must
-        // never classify a process as an agent.
-        if let argv0 = a.split(whereSeparator: \.isWhitespace).first {
-            let argv0Base = String(argv0.split(separator: "/").last ?? argv0)
-            for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(argv0Base) {
+        for name in names {
+            for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(name) {
                 return manifest.kind
             }
         }
 
-        // Interpreter-wrapped CLIs: comm is the runtime and the agent identity
-        // lives in the args. Covers JS/TS runtimes (node/bun/deno) and Python
-        // (a pipx/venv shebang execs the interpreter, so `kimi` shows up as
-        // comm=`python` with the script path in argv). Two invocation shapes:
+        // Interpreter-wrapped CLIs: the runtime is `node`/`bun`/`deno`/`python*`
+        // and the agent identity lives in the args. A long runtime path is
+        // clipped in `comm`, so the runtime name is taken from the same
+        // untruncated basenames as above. Two invocation shapes:
         //  - module path (`node …/@anthropic-ai/claude-code/cli.js`) → match a
         //    distinctive args substring.
         //  - shim/symlink (`bun /Users/x/.bun/bin/omp`, `python …/bin/kimi`)
         //    → the module path isn't in argv, but the invoked script's basename
         //    is the agent's binary name. (Matching only the *last* path
         //    component avoids false positives from mid-path directory names.)
-        if c == "node" || c == "bun" || c == "deno" || c.hasPrefix("python") {
+        if names.contains(where: isRuntime) {
             for manifest in AgentRegistry.shared.all
-            where manifest.detectNodeArgsSubstrings.contains(where: { a.contains($0) }) {
+            where manifest.detectNodeArgsSubstrings.contains(where: { args.contains($0) }) {
                 return manifest.kind
             }
-            for token in a.split(separator: " ") {
-                let base = String(token.split(separator: "/").last ?? token)
+            for token in args.split(separator: " ") {
+                let base = basename(String(token))
                 for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(base) {
                     return manifest.kind
                 }
@@ -311,11 +355,21 @@ final class AgentDetector: @unchecked Sendable {
 
         // Canonical shells → "shell".
         // `comm` from Darwin's ps may be `-zsh` for login shells.
-        let strippedShell = commBase.hasPrefix("-") ? String(commBase.dropFirst()) : commBase
-        if canonicalShells.contains(strippedShell) {
-            return "shell"
+        for name in names {
+            let stripped = name.hasPrefix("-") ? String(name.dropFirst()) : name
+            if canonicalShells.contains(stripped) {
+                return "shell"
+            }
         }
 
         return "unknown"
+    }
+
+    private static func basename(_ path: String) -> String {
+        String(path.split(separator: "/").last ?? Substring(path))
+    }
+
+    private static func isRuntime(_ name: String) -> Bool {
+        name == "node" || name == "bun" || name == "deno" || name.hasPrefix("python")
     }
 }

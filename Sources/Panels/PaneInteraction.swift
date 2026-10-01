@@ -259,7 +259,7 @@ public final class PaneInteractionRuntime: ObservableObject {
 #endif
         if active[panelId] == nil {
             active[panelId] = interaction
-            if case .confirm = interaction { confirmSelection[panelId] = .confirm }
+            if case .confirm(let c) = interaction { confirmSelection[panelId] = Self.initialSelection(for: c) }
             if case .textInput = interaction { textInputSelection[panelId] = .field }
         } else {
             var queue = queues[panelId, default: []]
@@ -370,8 +370,8 @@ public final class PaneInteractionRuntime: ObservableObject {
             active[panelId] = next
             queues[panelId] = queue
             switch next {
-            case .confirm:
-                confirmSelection[panelId] = .confirm
+            case .confirm(let c):
+                confirmSelection[panelId] = Self.initialSelection(for: c)
                 textInputSelection[panelId] = nil
             case .textInput:
                 confirmSelection[panelId] = nil
@@ -389,7 +389,7 @@ public final class PaneInteractionRuntime: ObservableObject {
     /// active interaction isn't a `.confirm` variant.
     public func moveConfirmSelection(panelId: UUID, direction: ConfirmMoveDirection) {
         guard case .confirm? = active[panelId] else { return }
-        let current = confirmSelection[panelId] ?? .confirm
+        let current = confirmSelection[panelId] ?? .cancel
         let next: ConfirmSelectionField
         switch direction {
         case .left: next = .cancel
@@ -520,12 +520,22 @@ public final class PaneInteractionRuntime: ObservableObject {
     /// highlighted. Used by Return key routing.
     public func acceptSelectedConfirm(panelId: UUID) {
         guard case .confirm(let c)? = active[panelId] else { return }
-        let selection = confirmSelection[panelId] ?? .confirm
+        let selection = confirmSelection[panelId] ?? .cancel
         let result: ConfirmResult = (selection == .cancel) ? .cancelled : .confirmed
         resolveConfirm(panelId: panelId, result: result, ifInteractionId: c.id)
     }
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
+    /// A destructive card starts on Cancel so a reflexive Return keeps things
+    /// open; a standard question starts on its confirm button.
+    static func initialSelection(for content: ConfirmContent) -> ConfirmSelectionField {
+        content.role == .destructive ? .cancel : .confirm
+    }
+
+    public func hasActiveDestructiveConfirm(panelId: UUID) -> Bool {
+        if case .confirm(let c)? = active[panelId], c.role == .destructive { return true }
+        return false
+    }
     public var hasAnyActive: Bool { !active.isEmpty }
     public var activePanelIds: Set<UUID> { Set(active.keys) }
 

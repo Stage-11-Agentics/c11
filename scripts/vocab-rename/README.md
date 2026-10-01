@@ -64,6 +64,14 @@ Gates, after each pass (all must report zero):
 
     python3 scripts/vocab-rename/rename.py check-evidence scripts/vocab-rename/evidence-2a.tsv <base> WORKTREE scripts/vocab-rename/pass-2a.tsv
     python3 scripts/vocab-rename/rename.py check-domains
+    python3 scripts/vocab-rename/rename.py check-literals
+
+`check-literals` finds string literals (Sources, CLI, c11Tests, c11UITests) that still contain, as a whole identifier,
+the old spelling of anything a pass table or evidence log renamed (camel/Pascal-case names of 6+ characters). A name
+that is looked up at runtime must follow the rename (reflection such as `String(describing: type(of:))`,
+`NSClassFromString`, accessibility ids read by UI tests, debug-menu titles naming a type). Deliberate wire, persisted
+and settings keys, localization and command ids, log text and message text stay, and are recorded in
+`literals-reviewed.tsv` (file, name, class, reason); an unlisted hit fails the run.
 
 `check-evidence` diffs the pass against its base and requires every changed identifier token to be in the log
 with a class, then re-derives each class from the tree (a type declaration, a member declaration on a tab

@@ -670,5 +670,56 @@ class PaneDomainGate(unittest.TestCase):
         self.assertEqual(self.leak("let area = AreaSpec(surfaceIds: [])", "E")[0], 0)
 
 
+class LiteralSweep(unittest.TestCase):
+    """check-literals: a string literal that still names a renamed identifier is a hit unless it was reviewed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="vr-literals-")
+        cls.tables = os.path.join(cls.root, "tables")
+        os.makedirs(cls.tables)
+        open(os.path.join(cls.tables, "pass-9.tsv"), "w").write(
+            "BrowserPaneDropTargetView\tBrowserAreaDropTargetView\t!c11UITests/**\t\tev:T\n"
+            "paneMetadataStoreRevision\tareaMetadataStoreRevision\t!c11UITests/**\t\tev:M\n"
+            "surface\ttab\t!c11UITests/**\t\t\n")
+        os.makedirs(os.path.join(cls.root, "Sources"))
+        os.makedirs(os.path.join(cls.root, "c11Tests"))
+        open(os.path.join(cls.root, "Sources", "A.swift"), "w").write(
+            'let reflected = String(describing: type(of: v)).contains("BrowserPaneDropTargetView")\n'
+            'let prose = "BrowserPaneDropTargetViewSpace is a different name"\n'
+            '// "BrowserPaneDropTargetView" in a comment is not a literal\n'
+            'let interp = "x \\(BrowserAreaDropTargetView.self) y"\n'
+            'let key = "paneMetadataStoreRevision"\n'
+            'let word = "surface"\n')
+        open(os.path.join(cls.root, "c11Tests", "B.swift"), "w").write('let q = "a BrowserPaneDropTargetView b"\n')
+
+    def run_check(self, allow=None):
+        cmd = [sys.executable, os.path.join(HERE, "rename.py"), "check-literals", "--root", self.root, "--tables", self.tables,
+               "--allow", allow or os.devnull]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def test_reflected_type_name_is_a_hit_and_look_alikes_are_not(self):
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("LITERAL Sources/A.swift:1 BrowserPaneDropTargetView", r.stdout)
+        self.assertIn("LITERAL c11Tests/B.swift:1 BrowserPaneDropTargetView", r.stdout)
+        self.assertIn("A.swift:5 paneMetadataStoreRevision", r.stdout)
+        self.assertNotIn("A.swift:2", r.stdout)   # a longer identifier
+        self.assertNotIn("A.swift:3", r.stdout)   # a comment
+        self.assertNotIn("A.swift:4", r.stdout)   # the interpolation is code, not literal text
+        self.assertNotIn("A.swift:6", r.stdout)   # a plain word is too common to judge by spelling
+
+    def test_reviewed_hits_pass_and_new_ones_fail(self):
+        allow = os.path.join(self.root, "allow.tsv")
+        open(allow, "w").write("Sources/A.swift\tBrowserPaneDropTargetView\tlog\tr\n"
+                               "Sources/A.swift\tpaneMetadataStoreRevision\twire\tr\n"
+                               "c11Tests/B.swift\tBrowserPaneDropTargetView\tmsg\tr\n")
+        ok = self.run_check(allow)
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        self.assertIn("0 unreviewed", ok.stdout)
+        open(allow, "w").write("Sources/A.swift\tBrowserPaneDropTargetView\tlog\tr\n")
+        self.assertEqual(self.run_check(allow).returncode, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

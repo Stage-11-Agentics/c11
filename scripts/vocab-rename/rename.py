@@ -7,6 +7,7 @@ Applies a TSV symbol table of whole-identifier renames to Swift sources.
   rename.py check-leaf <table.tsv> [--root DIR]   # zero hits required after pass 1
   rename.py check-domains [--root DIR]            # table-independent gate: Ghostty / Bonsplit leaf / c11 names
   rename.py check-evidence <log.tsv> <base> <head> # every renamed token must be in the pass's evidence log
+  rename.py check-literals [--allow F]            # string literals that still name a renamed identifier
 
 Table format (one entry per line, `#` comments and blank lines ignored):
 
@@ -65,6 +66,7 @@ Rules:
     name is also an `old` name (without disjoint globs) is rejected.
   * Never edits vendor/ or ghostty/.
 """
+import collections
 import fnmatch
 import glob
 import os
@@ -190,6 +192,7 @@ class Lexer:
         self.idents = []  # (start, end)
         self.events = []  # (pos, "{" | "}" | ";") in code regions
         self.parens = []  # (pos, "(" | ")") in code regions
+        self.strings = []  # (start, end) of the literal text of every string literal, interpolations excluded
 
     def scan(self, i, in_interp):
         s, n = self.s, self.n
@@ -273,19 +276,25 @@ class Lexer:
         i = quote_at + (3 if multi else 1)
         closer = ('"""' if multi else '"') + "#" * hashes
         esc = "\\" + "#" * hashes
+        seg = i
         while i < n:
             if s.startswith(esc, i):
                 k = i + len(esc)
                 if k < n and s[k] == "(":
+                    self.strings.append((seg, i))
                     i = self.scan(k + 1, True)
+                    seg = i
                 else:
                     i = k + 1
                 continue
             if s.startswith(closer, i):
+                self.strings.append((seg, i))
                 return i + len(closer)
             if not multi and s[i] == "\n":
+                self.strings.append((seg, i))
                 return i  # unterminated; bail to keep lexing sane
             i += 1
+        self.strings.append((seg, n))
         return n
 
 
@@ -1640,6 +1649,70 @@ def check_domains_main(argv):
     return 1 if report else 0
 
 
+def literal_old_names(tables_dir):
+    """Old spellings the pass tables and evidence logs renamed: camel/Pascal-case identifiers of 6+ characters
+    (a plain word such as `surface` or `pane` is too common in prose to judge by spelling)."""
+    old = {}
+    for path in sorted(glob.glob(os.path.join(tables_dir, "pass-*.tsv"))):
+        tag = os.path.basename(path)[5:-4]
+        renames, paths, deletes, keeps, callees, taints, fixes, receivers, region_renames = load_table(path)
+        for o, lst in renames.items():
+            if lst and lst[0][0] != o:
+                old.setdefault(o, f"pass {tag}")
+        for g, rx, mp, rr, ex, opts in taints:
+            for o, n in mp.items():
+                if n != "@keep" and n != o:
+                    old.setdefault(o, f"pass {tag}")
+    for path in sorted(glob.glob(os.path.join(tables_dir, "evidence-*.tsv"))):
+        tag = os.path.basename(path)[9:-4]
+        for line in open(path, encoding="utf-8"):
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) > 4 and cols[2] and cols[2] != cols[3].split()[-1]:
+                old.setdefault(cols[2], f"pass {tag}")
+    return {o: w for o, w in old.items() if re.fullmatch(r"[A-Za-z_]\w{5,}", o) and re.search(r"[a-z][A-Z]|^[A-Z][a-z]+[A-Z]", o)}
+
+
+def check_literals_main(argv):
+    """rename.py check-literals [--root DIR] [--allow FILE]
+
+    Every string literal in Sources/, CLI/ and c11Tests/ that contains, as a whole identifier, a name a pass table
+    renamed (including the merged passes) is a hit: a runtime-name use (reflection, NSClassFromString, selectors,
+    accessibility ids, debug titles) must follow the rename, a wire or persisted key stays. Reviewed hits live in
+    the allow file (TSV: file glob, old name, class, reason); anything else fails the run."""
+    root = argv[argv.index("--root") + 1] if "--root" in argv else os.getcwd()
+    allow_path = argv[argv.index("--allow") + 1] if "--allow" in argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "literals-reviewed.tsv")
+    tables = argv[argv.index("--tables") + 1] if "--tables" in argv else os.path.dirname(os.path.abspath(__file__))
+    old = literal_old_names(tables)
+    allow = []
+    if os.path.exists(allow_path):
+        for line in open(allow_path, encoding="utf-8"):
+            if line.strip() and not line.startswith("#"):
+                cols = line.rstrip("\n").split("\t")
+                if len(cols) >= 3:
+                    allow.append((cols[0], cols[1], cols[2]))
+    rx = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(sorted(map(re.escape, old), key=len, reverse=True)) + r")(?![A-Za-z0-9_])")
+    hits, reviewed = [], collections.Counter()
+    for full in sorted(swift_files(root)):
+        rel = os.path.relpath(full, root)  # c11UITests too: they look elements up by the app's accessibility ids
+        src = open(full, encoding="utf-8").read()
+        lx = Lexer(src)
+        lx.scan(0, False)
+        for a, b in lx.strings:
+            text = src[a:b]
+            for m in rx.finditer(text):
+                name = m.group(1)
+                line = src.count("\n", 0, a + m.start()) + 1
+                cls = next((c for g, n, c in allow if n == name and fnmatch.fnmatch(rel, g)), None)
+                if cls:
+                    reviewed[cls] += 1
+                else:
+                    hits.append((rel, line, name, old[name], text.strip()[:100]))
+    for rel, line, name, tag, text in hits:
+        print(f"LITERAL {rel}:{line} {name} ({tag}) in \"{text}\"")
+    print(f"literal hits: {len(hits)} unreviewed; reviewed: " + (", ".join(f"{k}={v}" for k, v in sorted(reviewed.items())) or "none"))
+    return 1 if hits else 0
+
+
 def _tokens(line):
     return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", line)
 
@@ -1888,6 +1961,8 @@ def check_main(argv):
 def main(argv):
     if len(argv) >= 5 and argv[1] == "check-evidence":
         return check_evidence_main(argv)
+    if len(argv) >= 2 and argv[1] == "check-literals":
+        return check_literals_main(argv)
     if len(argv) >= 2 and argv[1] == "check-domains":
         return check_domains_main(argv)
     if len(argv) >= 3 and argv[1] == "check-leaf":

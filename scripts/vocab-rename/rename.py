@@ -15,8 +15,8 @@ Table format (one entry per line, `#` comments and blank lines ignored):
                                         hazard), `fallback` is used there instead;
                                         with no usable fallback the token is left
                                         alone and reported as COLLISION. Flag
-                                        `noimplicit` skips leading-dot implicit
-                                        members (`.tabs` enum cases).
+                                        `noimplicit` skips enum case declarations and
+                                        leading-dot implicit members (`.tabs`).
   @path<TAB>old<TAB>new                 file or directory rename (git mv, then
                                         project.pbxproj path edits)
   @keep<TAB>glob<TAB>regex<TAB>name,name  in files matching glob, members whose source
@@ -394,6 +394,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
     keeps = [(set(n.split(',')), re.compile(rx)) for g, rx, n in (keep_rules or []) if fnmatch.fnmatch(rel, g)]
     kept_cache = {}
     pin_enum = {}   # token start -> old name, for implicit-raw String enum cases
+    case_decl = set()  # token starts of enum case declarations
     hazard_pos = {}  # token start -> description, Codable property/case
     bodies = type_bodies(src, lx)
     for (kind, name, header, op, cl), inside in zip(bodies, own_depth_idents(src, lx, bodies)):
@@ -401,6 +402,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         is_codable = re.search(r"\b(Codable|Encodable|Decodable)\b", h) is not None
         raw_string = kind == "enum" and re.search(r":\s*(?:[\w.,\s]*?\b)?String\b", h) is not None
         props, cases = declared_names(src, inside)
+        case_decl.update(a for a, _ in cases)
         has_ck = any(src[a:b] == "CodingKeys" for a, b in inside)
         if raw_string:
             for a, b in cases:
@@ -431,6 +433,8 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         pre = src[max(0, a - 20):a]
         if pre.endswith(VENDOR_RECEIVERS):
             continue
+        if "noimplicit" in flags and a in case_decl:
+            continue  # enum case declaration: keep, its `.case` uses are kept too
         if "noimplicit" in flags and a >= 1 and src[a - 1] == "." and (a < 2 or not (src[a - 2].isalnum() or src[a - 2] in "_)]}?!>\\")):
             continue  # leading-dot implicit member (an enum case), not a property
         if keeps:

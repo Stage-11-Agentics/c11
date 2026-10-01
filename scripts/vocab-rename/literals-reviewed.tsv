@@ -205,12 +205,12 @@ Sources/c11App.swift	sidebarActiveTabIndicatorStyle	log	debug/diagnostic log tex
 Sources/c11App.swift	togglePaneZoom	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
 c11Tests/AppDelegateShortcutRoutingTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/BrowserConfigTests.swift	BrowserPanel	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-c11Tests/BrowserPanelTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/BrowserTabTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/MainThreadHangDetectorTests.swift	VerticalTabsSidebar	fixture	test fixture: the type of that name still exists
 c11Tests/SessionPersistenceTests.swift	panelIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/SessionPersistenceTests.swift	tabIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/SessionPersistenceTests.swift	tabManager	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
-c11Tests/TabManagerUnitTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceManagerUnitTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/WorkspaceApplyPlanCodableTests.swift	paneMetadata	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/WorkspaceApplyPlanCodableTests.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/WorkspaceApplyPlanCodableTests.swift	surfaceIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
@@ -266,6 +266,6 @@ Sources/SocketHandlers/BrowserHandlers.swift	tabIndex	wire	JavaScript source eva
 Sources/TerminalController.swift	EmptyPanelView	msg	help text of a legacy v1 command: leave
 Sources/WorkspaceManager.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
 c11Tests/AppDelegateShortcutRoutingTests.swift	selectedTabId	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
-c11Tests/PaneMetadataPersistenceTests.swift	panelIds	wire	JSON fixture of an on-disk file: leave
+c11Tests/AreaMetadataPersistenceTests.swift	panelIds	wire	JSON fixture of an on-disk file: leave
 c11Tests/WorkspaceBlueprintFileCodableTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
 c11Tests/WorkspaceSnapshotCaptureTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave

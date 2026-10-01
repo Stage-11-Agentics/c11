@@ -30,7 +30,7 @@ private func makeTemporaryBrowserPanelProfile(named prefix: String) throws -> Br
     )
 }
 
-final class BrowserPanelChromeBackgroundColorTests: XCTestCase {
+final class BrowserTabChromeBackgroundColorTests: XCTestCase {
     func testLightModeUsesThemeBackgroundColor() {
         assertResolvedColorMatchesTheme(for: .light)
     }
@@ -65,7 +65,7 @@ final class BrowserPanelChromeBackgroundColorTests: XCTestCase {
 }
 
 
-final class BrowserPanelOmnibarPillBackgroundColorTests: XCTestCase {
+final class BrowserTabOmnibarPillBackgroundColorTests: XCTestCase {
     func testLightModeSlightlyDarkensThemeBackground() {
         assertResolvedColorMatchesExpectedBlend(for: .light, darkenMix: 0.04)
     }
@@ -105,7 +105,7 @@ final class BrowserPanelOmnibarPillBackgroundColorTests: XCTestCase {
 
 
 @MainActor
-final class BrowserPanelProfileIsolationTests: XCTestCase {
+final class BrowserTabProfileIsolationTests: XCTestCase {
     func testStaleDidFinishDoesNotRecordVisitIntoSwitchedProfileHistory() throws {
         let alternateProfile = try makeTemporaryBrowserPanelProfile(named: "Switched")
         let defaultStore = BrowserHistoryStore.shared
@@ -152,7 +152,7 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
 
 
 @MainActor
-final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
+final class BrowserTabAddressBarFocusRequestTests: XCTestCase {
     func testRequestPersistsUntilAcknowledged() {
         let panel = BrowserTab(workspaceId: UUID())
         XCTAssertNil(panel.pendingAddressBarFocusRequestId)
@@ -916,7 +916,7 @@ final class WindowBrowserHostViewTests: XCTestCase {
 
 
 @MainActor
-final class BrowserPanelHostContainerViewTests: XCTestCase {
+final class BrowserTabHostContainerViewTests: XCTestCase {
     private final class PrimaryPageProbeView: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? {
             bounds.contains(point) ? self : nil
@@ -974,7 +974,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         return event
     }
 
-    func testBrowserPanelHostPrefersNativeHostedInspectorSiblingDividerHit() {
+    func testBrowserTabHostPrefersNativeHostedInspectorSiblingDividerHit() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1020,7 +1020,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostClaimsCollapsedHostedInspectorSiblingDividerAtLeadingEdge() {
+    func testBrowserTabHostClaimsCollapsedHostedInspectorSiblingDividerAtLeadingEdge() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1072,7 +1072,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         XCTAssertGreaterThan(inspectorContainer.frame.minX, 0)
     }
 
-    func testBrowserPanelHostClaimsHostedInspectorDividerAcrossFullHeight() {
+    func testBrowserTabHostClaimsHostedInspectorDividerAcrossFullHeight() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1111,7 +1111,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostFallsBackToManualHostedInspectorDragWhenNativeDividerHitIsUnavailable() {
+    func testBrowserTabHostFallsBackToManualHostedInspectorDragWhenNativeDividerHitIsUnavailable() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1162,7 +1162,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         XCTAssertGreaterThan(inspectorContainer.frame.minX, 92)
     }
 
-    func testBrowserPanelHostKeepsInspectorResizableAfterShrinkingToMinimumWidth() {
+    func testBrowserTabHostKeepsInspectorResizableAfterShrinkingToMinimumWidth() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1218,7 +1218,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostPromotesVisibleRightDockedInspectorIntoManagedSideDock() {
+    func testBrowserTabHostPromotesVisibleRightDockedInspectorIntoManagedSideDock() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1269,7 +1269,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostAllowsRightDockedInspectorToExpandLeftAfterPromotion() {
+    func testBrowserTabHostAllowsRightDockedInspectorToExpandLeftAfterPromotion() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1329,7 +1329,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostKeepsAutomaticRightDockedWidthAboveMinimumWhileShrinking() {
+    func testBrowserTabHostKeepsAutomaticRightDockedWidthAboveMinimumWhileShrinking() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1378,7 +1378,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostRequestsBottomDockWhenSideDockLeavesTooLittlePageWidth() {
+    func testBrowserTabHostRequestsBottomDockWhenSideDockLeavesTooLittlePageWidth() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1423,7 +1423,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelManagedSideDockDoesNotAutoresizeDraggedFrames() {
+    func testBrowserTabManagedSideDockDoesNotAutoresizeDraggedFrames() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1502,7 +1502,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         )
     }
 
-    func testBrowserPanelHostFallsBackToManualHostedInspectorDragForLeftDockedInspector() {
+    func testBrowserTabHostFallsBackToManualHostedInspectorDragForLeftDockedInspector() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1555,7 +1555,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
         XCTAssertGreaterThan(pageView.frame.minX, 92)
     }
 
-    func testBrowserPanelHostReappliesStoredHostedInspectorWidthAfterLayoutReset() {
+    func testBrowserTabHostReappliesStoredHostedInspectorWidthAfterLayoutReset() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
             styleMask: [.titled, .closable],
@@ -1665,7 +1665,7 @@ final class BrowserPanelHostContainerViewTests: XCTestCase {
 
 
 @MainActor
-final class BrowserPaneDropRoutingTests: XCTestCase {
+final class BrowserAreaDropRoutingTests: XCTestCase {
     func testVerticalZonesFollowAppKitCoordinates() {
         let size = CGSize(width: 240, height: 180)
 
@@ -1765,7 +1765,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         )
     }
 
-    func testDecodeTransferPayloadReadsTabAndSourcePane() {
+    func testDecodeTransferPayloadReadsTabAndSourceArea() {
         let bonsplitTabId = UUID()
         let sourcePaneId = UUID()
         let payload = try! JSONSerialization.data(

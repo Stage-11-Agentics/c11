@@ -73,7 +73,7 @@ final class MailboxLayoutTests: XCTestCase {
         )
     }
 
-    func testInboxAllowsSpacesInSurfaceNames() throws {
+    func testInboxAllowsSpacesInTabNames() throws {
         let ws = stubWorkspace()
         // Alignment doc §3: surface names may contain spaces. Comma is reserved
         // as a metadata list separator but no layout rule forbids it in names.
@@ -85,7 +85,7 @@ final class MailboxLayoutTests: XCTestCase {
         XCTAssertEqual(url.lastPathComponent, "build watcher")
     }
 
-    func testInboxAllowsUnicodeSurfaceNames() throws {
+    func testInboxAllowsUnicodeTabNames() throws {
         let ws = stubWorkspace()
         let url = try MailboxLayout.inboxURL(
             state: stateURL,

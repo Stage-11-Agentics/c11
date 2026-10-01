@@ -1030,7 +1030,7 @@ final class FileDropOverlayViewTests: XCTestCase {
 
 
 @MainActor
-final class MarkdownPanelPointerObserverViewTests: XCTestCase {
+final class MarkdownTabPointerObserverViewTests: XCTestCase {
     private func makeWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),

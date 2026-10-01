@@ -7,7 +7,7 @@ import XCTest
 #endif
 
 @MainActor
-final class MarkdownPanelFontScaleTests: XCTestCase {
+final class MarkdownTabFontScaleTests: XCTestCase {
     private let lastUsedDefaultsKey = "markdown.fontScale.lastUsed"
     private var savedLastUsed: Any?
 
@@ -66,7 +66,7 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
         XCTAssertEqual(panel.fontScale, MarkdownTab.fontScaleRange.upperBound)
     }
 
-    func testNewPanelsInheritLastUsedScale() {
+    func testNewTabsInheritLastUsedScale() {
         let first = MarkdownTab(workspaceId: UUID())
         first.zoomIn()
         first.zoomIn()

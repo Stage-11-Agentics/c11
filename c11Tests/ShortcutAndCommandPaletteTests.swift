@@ -766,9 +766,9 @@ final class ShortcutHintHorizontalPlannerTests: XCTestCase {
 }
 
 
-final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
+final class LastTabCloseShortcutSettingsTests: XCTestCase {
     func testDefaultClosesWorkspace() {
-        let suiteName = "LastSurfaceCloseShortcutSettingsTests.Default.\(UUID().uuidString)"
+        let suiteName = "LastTabCloseShortcutSettingsTests.Default.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -779,7 +779,7 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
     }
 
     func testStoredTrueClosesWorkspace() {
-        let suiteName = "LastSurfaceCloseShortcutSettingsTests.Enabled.\(UUID().uuidString)"
+        let suiteName = "LastTabCloseShortcutSettingsTests.Enabled.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -791,7 +791,7 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
     }
 
     func testStoredFalseKeepsWorkspaceOpen() {
-        let suiteName = "LastSurfaceCloseShortcutSettingsTests.Disabled.\(UUID().uuidString)"
+        let suiteName = "LastTabCloseShortcutSettingsTests.Disabled.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return

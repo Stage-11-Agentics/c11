@@ -9,7 +9,7 @@ import CoreGraphics
 
 /// Unit tests for `PaneSizePolicy` — the pure size-aware split decision core.
 /// Host-free: runs in the fast `c11LogicTests` target.
-final class PaneSizePolicyTests: XCTestCase {
+final class AreaSizePolicyTests: XCTestCase {
 
     // A realistic cell size (≈13pt monospaced) so cols×rows → points is concrete.
     private let cell = CGSize(width: 8.0, height: 17.0)
@@ -137,7 +137,7 @@ final class PaneSizePolicyTests: XCTestCase {
 
     // MARK: The motivating repros
 
-    func test584x173AgentPaneIsRefused() {
+    func test584x173AgentAreaIsRefused() {
         // The observed unusable pane: ≈584×173pt holding a coding agent.
         let frame = CGSize(width: 584, height: 173)
         let min = AreaSizePolicy.points(AreaSizePolicy.agentMin, cellSize: cell)  // 640×340

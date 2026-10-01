@@ -50,7 +50,7 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
         try roundTrip(file)
     }
 
-    func testBlueprintFileRoundTripsMultiSurfacePlan() throws {
+    func testBlueprintFileRoundTripsMultiTabPlan() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "Multi Surface"),

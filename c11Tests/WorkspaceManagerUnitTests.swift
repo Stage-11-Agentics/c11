@@ -24,7 +24,7 @@ func drainMainQueue() {
 }
 
 @MainActor
-final class TabManagerChildExitCloseTests: XCTestCase {
+final class WorkspaceManagerChildExitCloseTests: XCTestCase {
     func testChildExitOnLastPanelClosesSelectedWorkspaceAndKeepsIndexStable() {
         let manager = WorkspaceManager()
         let first = manager.workspaces[0]
@@ -97,7 +97,7 @@ final class TabManagerChildExitCloseTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerWorkspaceOwnershipTests: XCTestCase {
+final class WorkspaceManagerWorkspaceOwnershipTests: XCTestCase {
     func testCloseWorkspaceIgnoresWorkspaceNotOwnedByManager() {
         let manager = WorkspaceManager()
         _ = manager.addWorkspace()
@@ -119,7 +119,7 @@ final class TabManagerWorkspaceOwnershipTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
+final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
     func testCloseWorkspacesWithConfirmationPromptsOnceAndClosesAcceptedWorkspaces() {
         let manager = WorkspaceManager()
         let second = manager.addWorkspace()
@@ -339,7 +339,7 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerCloseCurrentPanelTests: XCTestCase {
+final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
     func testRuntimeCloseSkipsConfirmationWhenShellReportsPromptIdle() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
@@ -448,7 +448,7 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertNotEqual(workspace.focusedPanelId, initialPanelId)
     }
 
-    func testClosePanelButtonClosesWorkspaceWhenItOwnsTheLastSurface() {
+    func testCloseTabButtonClosesWorkspaceWhenItOwnsTheLastTab() {
         let manager = WorkspaceManager()
         let firstWorkspace = manager.workspaces[0]
         let secondWorkspace = manager.addWorkspace()
@@ -478,7 +478,7 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertTrue(secondWorkspace.panels.isEmpty)
     }
 
-    func testClosePanelButtonStillClosesWorkspaceWhenKeepWorkspaceOpenPreferenceIsEnabled() {
+    func testCloseTabButtonStillClosesWorkspaceWhenKeepWorkspaceOpenPreferenceIsEnabled() {
         let defaults = UserDefaults.standard
         let originalSetting = defaults.object(forKey: lastSurfaceCloseShortcutDefaultsKey)
         defaults.set(false, forKey: lastSurfaceCloseShortcutDefaultsKey)
@@ -516,7 +516,7 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertTrue(secondWorkspace.panels.isEmpty)
     }
 
-    func testGenericClosePanelKeepsWorkspaceOpenWithoutExplicitCloseMarker() {
+    func testGenericCloseTabKeepsWorkspaceOpenWithoutExplicitCloseMarker() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let initialPanelId = workspace.focusedPanelId else {
@@ -594,7 +594,7 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerNotificationFocusTests: XCTestCase {
+final class WorkspaceManagerNotificationFocusTests: XCTestCase {
     func testFocusTabFromNotificationClearsSplitZoomBeforeFocusingTargetPanel() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
@@ -632,7 +632,7 @@ final class TabManagerNotificationFocusTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerPendingUnfocusPolicyTests: XCTestCase {
+final class WorkspaceManagerPendingUnfocusPolicyTests: XCTestCase {
     func testDoesNotUnfocusWhenPendingTabIsCurrentlySelected() {
         let workspaceId = UUID()
 
@@ -662,7 +662,7 @@ final class TabManagerPendingUnfocusPolicyTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerSurfaceCreationTests: XCTestCase {
+final class WorkspaceManagerSurfaceCreationTests: XCTestCase {
     func testNewSurfaceFocusesCreatedSurface() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace else {
@@ -813,7 +813,7 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerEqualizeSplitsTests: XCTestCase {
+final class WorkspaceManagerEqualizeSplitsTests: XCTestCase {
     func testEqualizeSplitsSetsEverySplitDividerToHalf() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
@@ -860,7 +860,7 @@ final class TabManagerEqualizeSplitsTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerWorkspaceConfigInheritanceSourceTests: XCTestCase {
+final class WorkspaceManagerWorkspaceConfigInheritanceSourceTests: XCTestCase {
     func testUsesFocusedTerminalWhenTerminalIsFocused() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
@@ -918,7 +918,7 @@ final class TabManagerWorkspaceConfigInheritanceSourceTests: XCTestCase {
 
 
 @MainActor
-final class TabManagerReopenClosedBrowserFocusTests: XCTestCase {
+final class WorkspaceManagerReopenClosedBrowserFocusTests: XCTestCase {
     func testReopenFromDifferentWorkspaceFocusesReopenedBrowser() {
         let manager = WorkspaceManager()
         guard let workspace1 = manager.selectedWorkspace,
@@ -1087,7 +1087,7 @@ final class TabManagerReopenClosedBrowserFocusTests: XCTestCase {
 }
 
 @MainActor
-final class TabManagerPaneInteractionScopeTests: XCTestCase {
+final class WorkspaceManagerAreaInteractionScopeTests: XCTestCase {
     /// Regression test for synthesis-critical §1.4 / synthesis-standard §1.4:
     /// `hasActivePaneInteraction` used to return true if ANY workspace had a
     /// live pane interaction. Combined with Cmd+D being selected-workspace-

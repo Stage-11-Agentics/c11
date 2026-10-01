@@ -233,10 +233,10 @@ jobs:
             -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
             -skip-testing:c11Tests/GhosttyConfigTests \
             -skip-testing:c11Tests/NotificationBurstCoalescerTests \
-            -skip-testing:c11Tests/TabManagerReopenClosedBrowserFocusTests \
+            -skip-testing:c11Tests/WorkspaceManagerReopenClosedBrowserFocusTests \
             -skip-testing:c11Tests/TerminalNotificationDirectInteractionTests \
             -skip-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests \
-            -skip-testing:c11Tests/BrowserPanelHostContainerViewTests \
+            -skip-testing:c11Tests/BrowserTabHostContainerViewTests \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \

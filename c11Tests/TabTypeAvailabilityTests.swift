@@ -9,10 +9,10 @@ import XCTest
 /// Host-free unit tests for `SurfaceTypeAvailability` — the pure gate that both
 /// the UI spawn affordances and the socket/CLI creation handlers consult to
 /// decide whether a browser or markdown surface may be created.
-final class SurfaceTypeAvailabilityTests: XCTestCase {
+final class TabTypeAvailabilityTests: XCTestCase {
 
     private func freshDefaults() -> UserDefaults {
-        UserDefaults(suiteName: "SurfaceTypeAvailabilityTests.\(UUID().uuidString)")!
+        UserDefaults(suiteName: "TabTypeAvailabilityTests.\(UUID().uuidString)")!
     }
 
     // MARK: - Terminal is never gated

@@ -811,7 +811,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
 
 @MainActor
 final class WorkspaceTeardownTests: XCTestCase {
-    func testTeardownAllPanelsClearsPanelMetadataCaches() {
+    func testTeardownAllTabsClearsTabMetadataCaches() {
         let workspace = Workspace()
         guard let initialPanelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel in new workspace")
@@ -1349,7 +1349,7 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
         )
     }
 
-    func testPreferredTerminalPanelWinsWhenProvided() {
+    func testPreferredTerminalTabWinsWhenProvided() {
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let terminalPanelId = workspace.focusedPanelId else {
@@ -1399,7 +1399,7 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
         }
     }
 
-    func testNewBrowserSurfacePrefersSelectedBrowserProfileInTargetPane() throws {
+    func testNewBrowserTabPrefersSelectedBrowserProfileInTargetArea() throws {
         let workspace = Workspace()
         let profileA = try makeTemporaryBrowserProfile(named: "Alpha")
         let profileB = try makeTemporaryBrowserProfile(named: "Beta")
@@ -1444,7 +1444,7 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
         )
     }
 
-    func testNewBrowserSurfaceFailureDoesNotMutatePreferredProfile() throws {
+    func testNewBrowserTabFailureDoesNotMutatePreferredProfile() throws {
         let workspace = Workspace()
         let preferredProfile = try makeTemporaryBrowserProfile(named: "Preferred")
         let unexpectedProfile = try makeTemporaryBrowserProfile(named: "Unexpected")
@@ -1564,7 +1564,7 @@ final class WorkspaceAgentPresentationTests: XCTestCase {
 
 
 @MainActor
-final class WorkspacePanelGitBranchTests: XCTestCase {
+final class WorkspaceTabGitBranchTests: XCTestCase {
     private func drainMainQueue() {
         let expectation = expectation(description: "drain main queue")
         DispatchQueue.main.async {
@@ -1625,7 +1625,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
-    func testDetachLastSurfaceLeavesWorkspaceTemporarilyEmptyForMoveFlow() {
+    func testDetachLastTabLeavesWorkspaceTemporarilyEmptyForMoveFlow() {
         let workspace = Workspace()
         guard let panelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: panelId) else {
@@ -1666,7 +1666,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(workspace.panels.count, 1)
     }
 
-    func testDetachSurfaceWithRemainingPanelsSkipsDelayedFocusReconcile() {
+    func testDetachTabWithRemainingTabsSkipsDelayedFocusReconcile() {
         let workspace = Workspace()
         guard let originalPanelId = workspace.focusedPanelId,
               let movedPanel = workspace.newTerminalSplit(from: originalPanelId, orientation: .horizontal) else {
@@ -1700,7 +1700,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
 #endif
     }
 
-    func testDetachAttachAcrossWorkspacesPreservesNonCustomPanelTitle() {
+    func testDetachAttachAcrossWorkspacesPreservesNonCustomTabTitle() {
         let source = Workspace()
         guard let panelId = source.focusedPanelId else {
             XCTFail("Expected source focused panel")
@@ -1745,7 +1745,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertFalse(attachedBonsplitTab.hasCustomTitle)
     }
 
-    func testDetachAttachAndRollbackPreserveSurfaceActivityResolverInputs() throws {
+    func testDetachAttachAndRollbackPreserveTabActivityResolverInputs() throws {
         let source = Workspace()
         guard let panelId = source.focusedPanelId,
               let sourcePane = source.paneId(forPanelId: panelId),
@@ -1823,7 +1823,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(source.bonsplitController.tab(rollbackBonsplitTabId)?.activityState, .idle)
     }
 
-    func testRemovingTerminalTypeMetadataClearsAgentSurfaceActivityState() throws {
+    func testRemovingTerminalTypeMetadataClearsAgentTabActivityState() throws {
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
@@ -2119,7 +2119,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
-    func testNewTerminalSurfaceWithFocusFalsePreservesFocusedPanel() {
+    func testNewTerminalTabWithFocusFalsePreservesFocusedTab() {
         let workspace = Workspace()
         guard let originalFocusedPanelId = workspace.focusedPanelId,
               let originalPaneId = workspace.paneId(forPanelId: originalFocusedPanelId) else {
@@ -2149,7 +2149,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
-    func testNewBrowserSurfaceWithFocusFalsePreservesFocusedPanel() {
+    func testNewBrowserTabWithFocusFalsePreservesFocusedTab() {
         let workspace = Workspace()
         guard let originalFocusedPanelId = workspace.focusedPanelId,
               let originalPaneId = workspace.paneId(forPanelId: originalFocusedPanelId) else {
@@ -2240,7 +2240,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
-    func testClosingFocusedSplitRestoresBranchForRemainingFocusedPanel() {
+    func testClosingFocusedSplitRestoresBranchForRemainingFocusedTab() {
         let workspace = Workspace()
         guard let firstPanelId = workspace.focusedPanelId else {
             XCTFail("Expected initial focused panel")
@@ -2284,7 +2284,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
     }
 
     @MainActor
-    func testSidebarPullRequestsTrackFocusedPanelOnly() {
+    func testSidebarPullRequestsTrackFocusedTabOnly() {
         let workspace = Workspace()
         guard let firstPanelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: firstPanelId),
@@ -2349,7 +2349,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(branches.map(\.isDirty), [true, false, false])
     }
 
-    func testSidebarDerivedCollectionsMatchWhenUsingPrecomputedPanelOrder() {
+    func testSidebarDerivedCollectionsMatchWhenUsingPrecomputedTabOrder() {
         let workspace = Workspace()
         guard let leftFirstPanelId = workspace.focusedPanelId,
               let leftPaneId = workspace.paneId(forPanelId: leftFirstPanelId),
@@ -2661,7 +2661,7 @@ final class WorkspacePulseCensusTests: XCTestCase {
 }
 
 @MainActor
-final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
+final class TabMetadataStoreTargetedReadTests: XCTestCase {
     private let workspaceId = UUID()
 
     /// The targeted reads exist to keep the sidebar off the whole-source-map
@@ -2719,7 +2719,7 @@ final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
         XCTAssertNil(subset.sources[MetadataKey.terminalType])
     }
 
-    func testTargetedReadsOnUnknownSurfaceAreEmpty() {
+    func testTargetedReadsOnUnknownTabAreEmpty() {
         let store = TabMetadataStore.shared
         let missing = UUID()
         XCTAssertNil(store.metadataValue(workspaceId: workspaceId, surfaceId: missing, key: MetadataKey.terminalType))
@@ -2781,7 +2781,7 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
 
 @MainActor
 final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
-    func testSnapshotAndRestorePreserveCreationAcrossPanelKinds() throws {
+    func testSnapshotAndRestorePreserveCreationAcrossTabKinds() throws {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
@@ -2957,8 +2957,8 @@ final class WorkspaceCustomColorDidChangeTests: XCTestCase {
 // MARK: - C11-10 surface tab color (panel-scoped custom color)
 
 @MainActor
-final class WorkspacePanelCustomColorTests: XCTestCase {
-    func testSetPanelCustomColorNormalizesValidHex() {
+final class WorkspaceTabCustomColorTests: XCTestCase {
+    func testSetTabCustomColorNormalizesValidHex() {
         let workspace = Workspace()
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel in new workspace")
@@ -2972,7 +2972,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
         XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#AABBCC")
     }
 
-    func testSetPanelCustomColorRejectsInvalidHexLeavesPriorValue() {
+    func testSetTabCustomColorRejectsInvalidHexLeavesPriorValue() {
         let workspace = Workspace()
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel in new workspace")
@@ -2992,7 +2992,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
         XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#123456")
     }
 
-    func testSetPanelCustomColorClearsViaNilOrEmpty() {
+    func testSetTabCustomColorClearsViaNilOrEmpty() {
         let workspace = Workspace()
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel in new workspace")
@@ -3011,7 +3011,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
         XCTAssertNil(workspace.tabCustomColor(panelId: panelId))
     }
 
-    func testSetPanelCustomColorIgnoresUnknownPanelId() {
+    func testSetTabCustomColorIgnoresUnknownTabId() {
         let workspace = Workspace()
         let unknownPanelId = UUID()
 
@@ -3020,7 +3020,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
         XCTAssertTrue(workspace.tabCustomColors.isEmpty)
     }
 
-    func testTeardownClearsPanelCustomColors() {
+    func testTeardownClearsTabCustomColors() {
         let workspace = Workspace()
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel in new workspace")
@@ -3061,7 +3061,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
         )
     }
 
-    func testDetachAttachAcrossWorkspacesPreservesPanelCustomColor() {
+    func testDetachAttachAcrossWorkspacesPreservesTabCustomColor() {
         let source = Workspace()
         guard let panelId = source.focusedPanelId else {
             XCTFail("Expected source focused panel")

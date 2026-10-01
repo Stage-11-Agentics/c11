@@ -14,7 +14,7 @@ import AppKit
 /// invariants rather than SwiftUI-internal pixel math. Tests assert *height
 /// deltas* between states rather than absolute sizes so they stay robust as
 /// SwiftUI's internal layout rounding evolves across OS versions.
-final class SurfaceTitleBarRenderTests: XCTestCase {
+final class TabTitleBarRenderTests: XCTestCase {
 
     private static let testWidth: CGFloat = 400
 

@@ -86,7 +86,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     // MARK: - Agent companion persistence/remapping
 
-    func testBrowserBeforeAgentLinkResolvesAfterAllSurfacesMaterialize() throws {
+    func testBrowserBeforeAgentLinkResolvesAfterAllTabsMaterialize() throws {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "browser before agent"),

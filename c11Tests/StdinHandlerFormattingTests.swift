@@ -217,7 +217,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         XCTAssertEqual(captured.recipient, "watcher")
     }
 
-    func testDeliverReportsClosedWhenSurfaceNotFound() async throws {
+    func testDeliverReportsClosedWhenTabNotFound() async throws {
         let envelope = try MailboxEnvelope.build(
             from: "builder",
             to: "watcher",

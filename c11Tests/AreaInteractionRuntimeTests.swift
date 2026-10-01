@@ -7,7 +7,7 @@ import XCTest
 #endif
 
 @MainActor
-final class PaneInteractionRuntimeTests: XCTestCase {
+final class AreaInteractionRuntimeTests: XCTestCase {
 
     // MARK: - Presentation + queueing
 

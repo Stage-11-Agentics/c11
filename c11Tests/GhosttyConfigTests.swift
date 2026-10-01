@@ -1199,8 +1199,8 @@ final class GhosttyTerminalStartupEnvironmentTests: XCTestCase {
 }
 
 @MainActor
-final class BrowserPanelRemoteStoreTests: XCTestCase {
-    func testRemoteWorkspacePanelsShareWorkspaceScopedWebsiteDataStore() {
+final class BrowserTabRemoteStoreTests: XCTestCase {
+    func testRemoteWorkspaceTabsShareWorkspaceScopedWebsiteDataStore() {
         let localTab = BrowserTab(workspaceId: UUID(), isRemoteWorkspace: false)
         let remoteWorkspaceId = UUID()
         let firstRemoteTab = BrowserTab(
@@ -1340,7 +1340,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
         XCTAssertFalse(remainingRemoteBrowser.webView.configuration.websiteDataStore === attachedBrowser.webView.configuration.websiteDataStore)
     }
 
-    func testNewTerminalSurfaceStaysRemoteWhileBrowserPanelsKeepWorkspaceRemote() throws {
+    func testNewTerminalTabStaysRemoteWhileBrowserPanelsKeepWorkspaceRemote() throws {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let initialTerminalId = try XCTUnwrap(workspace.focusedPanelId)

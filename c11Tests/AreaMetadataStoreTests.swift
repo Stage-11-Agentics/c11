@@ -11,7 +11,7 @@ import XCTest
 /// revision counter, and persistence round-trip via `PersistedJSONValue`.
 /// OSC/heuristic-specific tests are omitted; those sources don't apply to
 /// panes in v1, but the precedence chain is still exercised end-to-end.
-final class PaneMetadataStoreTests: XCTestCase {
+final class AreaMetadataStoreTests: XCTestCase {
     private func makeStoreAndPane() -> (AreaMetadataStore, UUID, UUID) {
         // Shared singleton with fresh UUIDs so parallel tests don't collide.
         return (AreaMetadataStore.shared, UUID(), UUID())
@@ -342,7 +342,7 @@ final class PaneMetadataStoreTests: XCTestCase {
 
     // MARK: - pane / workspace lifecycle
 
-    func testRemovePaneDropsMetadata() throws {
+    func testRemoveAreaDropsMetadata() throws {
         let (store, wsId, paneId) = makeStoreAndPane()
         _ = try store.setMetadata(
             workspaceId: wsId,
@@ -358,7 +358,7 @@ final class PaneMetadataStoreTests: XCTestCase {
         XCTAssertTrue(snap.metadata.isEmpty)
     }
 
-    func testPruneWorkspaceKeepsValidPanes() throws {
+    func testPruneWorkspaceKeepsValidAreas() throws {
         let store = AreaMetadataStore.shared
         let wsId = UUID()
         let keep = UUID()

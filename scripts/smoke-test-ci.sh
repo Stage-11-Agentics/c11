@@ -96,9 +96,9 @@ fi
 
 # --- Wait until a focused terminal is attached ---
 # send waits at most 2s for the ghostty surface. On the virtual-display runner
-# that attach can take ~3s, which blows the 5s recv timeout. Poll until
-# debug.terminals reports runtime_surface_ready and surface_focused — the same
-# predicate send uses — with a 20s deadline.
+# that attach can take ~3s, which blows the 5s recv timeout. v1 send targets
+# the selected workspace's focused terminal, so poll debug.terminals until one
+# entry is runtime_surface_ready, surface_focused, and workspace_selected.
 echo "Waiting for a focused, attached terminal (up to 20s)..."
 if ! python3 - "$SOCKET_PATH" "$APP_PID" <<'PY'
 import json, os, socket, sys, time
@@ -162,18 +162,20 @@ while True:
             summary = "error %s: %s" % (err.get("code"), err.get("message"))
         else:
             terminals = (msg.get("result") or {}).get("terminals") or []
-            focused_attached = 0
+            selected_focused_attached = 0
             for terminal in terminals:
+                # v1 send uses the selected workspace's focused terminal.
                 if (
                     terminal.get("runtime_surface_ready") is True
                     and terminal.get("surface_focused") is True
+                    and terminal.get("workspace_selected") is True
                 ):
-                    focused_attached += 1
-            summary = "terminals=%d focused_attached=%d" % (
+                    selected_focused_attached += 1
+            summary = "terminals=%d selected_focused_attached=%d" % (
                 len(terminals),
-                focused_attached,
+                selected_focused_attached,
             )
-            ready = focused_attached > 0
+            ready = selected_focused_attached > 0
     except socket.timeout:
         summary = "timed out"
     except Exception as exc:
@@ -226,17 +228,19 @@ PY
 }
 SEND_RESPONSE=$(send_time)
 echo "Send response: $SEND_RESPONSE"
-case "$SEND_RESPONSE" in
-  TIMEOUT|ERROR*)
-    echo "Send timed out or returned an error; retried"
-    SEND_RESPONSE=$(send_time)
-    echo "Send response after retry: $SEND_RESPONSE"
-    if [ "$SEND_RESPONSE" = "TIMEOUT" ]; then
-      echo "ERROR: send timed out after retry"
-      exit 1
-    fi
-    ;;
-esac
+if [ "$SEND_RESPONSE" != "OK" ]; then
+  echo "Send timed out or returned an error; retried"
+  SEND_RESPONSE=$(send_time)
+  echo "Send response after retry: $SEND_RESPONSE"
+  if [ "$SEND_RESPONSE" != "OK" ]; then
+    echo "ERROR: send failed after retry: $SEND_RESPONSE"
+    echo "--- stdout/stderr ---"
+    cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -50 || true
+    echo "--- debug log ---"
+    tail -50 /tmp/c11-debug.log 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 # --- Wait and verify stability ---
 echo "Waiting ${STABILITY_WAIT}s to verify stability..."

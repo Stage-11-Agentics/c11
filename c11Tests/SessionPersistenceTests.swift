@@ -1325,7 +1325,7 @@ final class SessionPersistenceTests: XCTestCase {
             isPinned: true,
             currentDirectory: "/tmp",
             focusedPanelId: nil,
-            layout: .pane(SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
             panels: [],
             statusEntries: [],
             logEntries: [],

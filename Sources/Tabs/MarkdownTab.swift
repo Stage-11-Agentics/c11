@@ -205,7 +205,7 @@ final class MarkdownTab: TabContent, ObservableObject {
     }
 
     func triggerFlash() {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
         focusFlashToken += 1
     }
 

@@ -77,13 +77,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
-        XCTAssertTrue(NotificationPaneFlashSettings.isEnabled(defaults: defaults))
+        XCTAssertTrue(NotificationAreaFlashSettings.isEnabled(defaults: defaults))
 
-        defaults.set(false, forKey: NotificationPaneFlashSettings.enabledKey)
-        XCTAssertFalse(NotificationPaneFlashSettings.isEnabled(defaults: defaults))
+        defaults.set(false, forKey: NotificationAreaFlashSettings.enabledKey)
+        XCTAssertFalse(NotificationAreaFlashSettings.isEnabled(defaults: defaults))
 
-        defaults.set(true, forKey: NotificationPaneFlashSettings.enabledKey)
-        XCTAssertTrue(NotificationPaneFlashSettings.isEnabled(defaults: defaults))
+        defaults.set(true, forKey: NotificationAreaFlashSettings.enabledKey)
+        XCTAssertTrue(NotificationAreaFlashSettings.isEnabled(defaults: defaults))
     }
 
     func testMenuBarExtraPreferenceDefaultsToHidden() {

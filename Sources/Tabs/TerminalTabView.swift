@@ -5,10 +5,10 @@ import AppKit
 /// View for rendering a terminal panel
 struct TerminalTabView: View {
     @ObservedObject var panel: TerminalTab
-    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
     @ObservedObject private var themeManager = ThemeManager.shared
-    @AppStorage(NotificationPaneRingSettings.enabledKey)
-    private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
+    @AppStorage(NotificationAreaRingSettings.enabledKey)
+    private var notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
     @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
     private var workspaceFrameEnabled = true
     @Environment(\.colorScheme) private var colorScheme

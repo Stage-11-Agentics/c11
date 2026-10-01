@@ -277,7 +277,7 @@ struct BrowserTabView: View {
     @ObservedObject var panel: BrowserTab
     @ObservedObject private var browserProfileStore = BrowserProfileStore.shared
     @ObservedObject private var themeManager = ThemeManager.shared
-    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
     let paneId: PaneID
     let isFocused: Bool
     let isVisibleInUI: Bool
@@ -524,7 +524,7 @@ struct BrowserTabView: View {
         // layering reason that BrowserSearchOverlay above does.
         if !panel.shouldRenderWebView,
            let interaction = paneInteractionRuntime.active[panel.id] {
-            PaneInteractionCardView(
+            AreaInteractionCardView(
                 panelId: panel.id,
                 interaction: interaction,
                 runtime: paneInteractionRuntime
@@ -4478,7 +4478,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let workspaceFrameStyle: PortalWorkspaceFrameStyle?
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
-    let paneInteractionRuntime: PaneInteractionRuntime
+    let paneInteractionRuntime: AreaInteractionRuntime
     let paneTopChromeHeight: CGFloat
 
     final class Coordinator {
@@ -6213,9 +6213,9 @@ struct WebViewRepresentable: NSViewRepresentable {
         let generation = coordinator.attachGeneration
         let activePaneDropContext = coordinator.desiredPortalVisibleInUI ? paneDropContext : nil
         let activeSearchOverlay = coordinator.desiredPortalVisibleInUI ? searchOverlay : nil
-        let activePaneInteraction: BrowserPortalPaneInteractionConfiguration? =
+        let activeAreaInteraction: BrowserPortalAreaInteractionConfiguration? =
             coordinator.desiredPortalVisibleInUI
-                ? BrowserPortalPaneInteractionConfiguration(
+                ? BrowserPortalAreaInteractionConfiguration(
                     panelId: panel.id,
                     runtime: paneInteractionRuntime
                 )
@@ -6290,7 +6290,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
             BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             coordinator.lastPortalHostId = ObjectIdentifier(host)
             coordinator.lastSynchronizedHostGeometryRevision = host.geometryRevision
@@ -6323,7 +6323,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 )
                 BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
                 BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-                BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+                BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
                 BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
                 coordinator.lastPortalHostId = hostId
             }
@@ -6364,7 +6364,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 height: coordinator.desiredPortalVisibleInUI ? paneTopChromeHeight : 0
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             if !shouldBindNow,
                coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
@@ -6396,7 +6396,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 context: activePaneDropContext
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
-            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activeAreaInteraction)
             BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
         }
 
@@ -6573,14 +6573,14 @@ struct WebViewRepresentable: NSViewRepresentable {
         coordinator.lastSynchronizedHostGeometryRevision = 0
     }
 
-    private func currentPaneDropContext() -> BrowserPaneDropContext? {
+    private func currentPaneDropContext() -> BrowserAreaDropContext? {
         guard let app = AppDelegate.shared,
               let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId),
               let workspace = manager.workspaces.first(where: { $0.id == panel.workspaceId }),
               let paneId = workspace.paneId(forPanelId: panel.id) else {
             return nil
         }
-        return BrowserPaneDropContext(
+        return BrowserAreaDropContext(
             workspaceId: panel.workspaceId,
             panelId: panel.id,
             paneId: paneId

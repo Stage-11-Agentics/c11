@@ -7038,7 +7038,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
-    private var paneInteractionOverlay: PaneInteractionOverlayHost?
+    private var paneInteractionOverlay: AreaInteractionOverlayHost?
     private var observers: [NSObjectProtocol] = []
     private var windowObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
@@ -7979,9 +7979,9 @@ final class GhosttySurfaceScrollView: NSView {
     /// The overlay observes runtime.$active itself and shows/hides automatically; we only
     /// ever create it, never tear it down — a panel's runtime and id are stable for the
     /// lifetime of its scroll view.
-    func attachPaneInteraction(runtime: PaneInteractionRuntime, panelId: UUID) {
+    func attachPaneInteraction(runtime: AreaInteractionRuntime, panelId: UUID) {
         if paneInteractionOverlay != nil { return }
-        let overlay = PaneInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        let overlay = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
         overlay.frame = bounds
         overlay.autoresizingMask = [.width, .height]
         // Always position above everything else (search overlay included) — it's modal.
@@ -9889,7 +9889,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
     /// Workspace-scoped runtime for the pane-interaction overlay (close-confirm,
     /// rename, socket-triggered consent). `nil` is permitted — when nil, no overlay is
     /// attached, which is the expected state for preview/test-only contexts.
-    var paneInteractionRuntime: PaneInteractionRuntime? = nil
+    var paneInteractionRuntime: AreaInteractionRuntime? = nil
     var paneInteractionPanelId: UUID? = nil
 
     private final class HostContainerView: NSView {

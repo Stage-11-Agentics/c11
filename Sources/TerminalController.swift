@@ -3111,7 +3111,7 @@ class TerminalController {
             return .split(direction: requested, requested: requested, warning: nil)
         }
         let decision = eval.decision
-        let warning = PaneSizePolicy.warningText(for: decision, kindLabel: eval.kindLabel)
+        let warning = AreaSizePolicy.warningText(for: decision, kindLabel: eval.kindLabel)
         switch decision.outcome {
         case .proceed(let axis):
             let applied = (axis == requestedAxis) ? requested : flippedSplitDirection(requested)
@@ -3120,7 +3120,7 @@ class TerminalController {
             return .tab(paneId: eval.targetPaneId, warning: warning)
         case .refuse:
             let paneRef = v2EnsureHandleRef(kind: .pane, uuid: eval.targetPaneId.id)
-            let msg = PaneSizePolicy.refusalMessage(for: decision, kindLabel: eval.kindLabel, paneRefLabel: paneRef)
+            let msg = AreaSizePolicy.refusalMessage(for: decision, kindLabel: eval.kindLabel, paneRefLabel: paneRef)
             let data: [String: Any] = [
                 "pane_ref": paneRef,
                 "requested_direction": splitDirectionString(requested),
@@ -3775,7 +3775,7 @@ class TerminalController {
 
 
 
-    enum V2PaneResizeDirection: String {
+    enum V2AreaResizeDirection: String {
         case left
         case right
         case up
@@ -3792,7 +3792,7 @@ class TerminalController {
 
         /// A split controls the target pane's right/bottom edge when target is first child,
         /// and left/top edge when target is second child.
-        var requiresPaneInFirstChild: Bool {
+        var requiresAreaInFirstChild: Bool {
             switch self {
             case .right, .down:
                 return true
@@ -3803,19 +3803,19 @@ class TerminalController {
 
         /// Positive value moves divider toward second child (right/down).
         var dividerDeltaSign: CGFloat {
-            requiresPaneInFirstChild ? 1 : -1
+            requiresAreaInFirstChild ? 1 : -1
         }
     }
 
-    struct V2PaneResizeCandidate {
+    struct V2AreaResizeCandidate {
         let splitId: UUID
         let orientation: String
-        let paneInFirstChild: Bool
+        let areaInFirstChild: Bool
         let dividerPosition: CGFloat
         let axisPixels: CGFloat
     }
 
-    struct V2PaneResizeTrace {
+    struct V2AreaResizeTrace {
         let containsTarget: Bool
         let bounds: CGRect
     }

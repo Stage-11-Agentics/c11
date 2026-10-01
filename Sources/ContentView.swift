@@ -8586,7 +8586,7 @@ struct WorkspaceSidebar: View {
                                     var documentCount = 0
                                     for tabId in ws.sidebarOrderedTabIds() {
                                         let terminalKind = ws.surfaceActivityTerminalKind(panelId: tabId)
-                                        guard PaneSizePolicy.isAgentKind(terminalKind) else {
+                                        guard AreaSizePolicy.isAgentKind(terminalKind) else {
                                             switch ws.panels[tabId]?.panelType {
                                             case .terminal: terminalCount += 1
                                             case .browser: browserCount += 1
@@ -13765,7 +13765,7 @@ private struct WorkspaceRowView: View, Equatable {
         }.first(where: { $0.focusedPanelId != nil })
         let anchorIsSelected = anchorWorkspace.map { $0.id == workspaceManager.selectedWorkspaceId } ?? false
 
-        if PaneInteractionFeatureFlag.isEnabled,
+        if AreaInteractionFeatureFlag.isEnabled,
            anchorIsSelected,
            let workspace = anchorWorkspace,
            let panelId = workspace.focusedPanelId {
@@ -13876,7 +13876,7 @@ private struct WorkspaceRowView: View, Equatable {
         // invisible prompt, so when `tab` isn't the selected workspace, fall
         // back to the NSAlert path.
         let isSelectedWorkspace = workspaceManager.selectedWorkspaceId == workspace.id
-        if PaneInteractionFeatureFlag.isEnabled, isSelectedWorkspace, let panelId = self.workspace.focusedPanelId {
+        if AreaInteractionFeatureFlag.isEnabled, isSelectedWorkspace, let panelId = self.workspace.focusedPanelId {
             let workspaceId = self.workspace.id
             let manager = workspaceManager
             let workspace = self.workspace

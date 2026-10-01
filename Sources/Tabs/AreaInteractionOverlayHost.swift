@@ -18,11 +18,11 @@ import SwiftUI
 /// - Subscribes to the provided `PaneInteractionRuntime.$active` stream and shows /
 ///   hides / rebuilds the root view automatically for a given `panelId`.
 @MainActor
-final class PaneInteractionOverlayHost: NSView {
+final class AreaInteractionOverlayHost: NSView {
 
     let panelId: UUID
-    let runtime: PaneInteractionRuntime
-    private var hostingView: NSHostingView<PaneInteractionCardView>?
+    let runtime: AreaInteractionRuntime
+    private var hostingView: NSHostingView<AreaInteractionCardView>?
     private var cancellable: AnyCancellable?
     private var textInputSelectionCancellable: AnyCancellable?
     /// Responder to restore when the overlay hides. Captured on show so the
@@ -33,7 +33,7 @@ final class PaneInteractionOverlayHost: NSView {
     /// so we don't repeatedly call `makeFirstResponder` on the same target.
     private var lastTextInputSelection: TextInputSelectionField?
 
-    init(panelId: UUID, runtime: PaneInteractionRuntime) {
+    init(panelId: UUID, runtime: AreaInteractionRuntime) {
         self.panelId = panelId
         self.runtime = runtime
         super.init(frame: .zero)
@@ -110,9 +110,9 @@ final class PaneInteractionOverlayHost: NSView {
 
     // MARK: - Content
 
-    private func apply(interaction: PaneInteraction?) {
+    private func apply(interaction: AreaInteraction?) {
         if let interaction {
-            let rootView = PaneInteractionCardView(
+            let rootView = AreaInteractionCardView(
                 panelId: panelId,
                 interaction: interaction,
                 runtime: runtime

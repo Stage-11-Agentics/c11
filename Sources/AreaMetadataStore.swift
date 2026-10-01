@@ -19,8 +19,8 @@ import Bonsplit
 /// In-memory only in Phase 1. Phase 3 wires persistence through the existing
 /// `PersistedJSONValue` / `PersistedMetadataSource` rails introduced for
 /// surfaces by Tier 1 Phase 2.
-final class PaneMetadataStore: @unchecked Sendable {
-    static let shared = PaneMetadataStore()
+final class AreaMetadataStore: @unchecked Sendable {
+    static let shared = AreaMetadataStore()
 
     // MARK: - Constants
 
@@ -52,7 +52,7 @@ final class PaneMetadataStore: @unchecked Sendable {
     /// on every mutation that changes state, never on idempotent writes or
     /// rejected lower-precedence writes. Read by the autosave fingerprint so
     /// metadata-only mutations between 8 s ticks still trigger a write.
-    private var paneMetadataStoreRevision: UInt64 = 0
+    private var areaMetadataStoreRevision: UInt64 = 0
 
     // MARK: - Public API
 
@@ -87,7 +87,7 @@ final class PaneMetadataStore: @unchecked Sendable {
     /// `SurfaceMetadataStore.currentRevision()` so the autosave fingerprint
     /// can fold pane-metadata churn into the same tick decision.
     func currentRevision() -> UInt64 {
-        return queue.sync { paneMetadataStoreRevision }
+        return queue.sync { areaMetadataStoreRevision }
     }
 
     func getSource(workspaceId: UUID, paneId: UUID, key: String) -> MetadataSource? {
@@ -117,7 +117,7 @@ final class PaneMetadataStore: @unchecked Sendable {
                 result.metadata = [:]
                 result.sources = [:]
                 if !existing.isEmpty || !existingSrc.isEmpty {
-                    paneMetadataStoreRevision &+= 1
+                    areaMetadataStoreRevision &+= 1
                 }
                 return result
             }
@@ -144,7 +144,7 @@ final class PaneMetadataStore: @unchecked Sendable {
             sources[workspaceId, default: [:]][paneId] = sblob
             result.metadata = blob
             result.sources = sblob.mapValues { $0.toJSON() }
-            if removedAny { paneMetadataStoreRevision &+= 1 }
+            if removedAny { areaMetadataStoreRevision &+= 1 }
             return result
         }
     }
@@ -162,12 +162,12 @@ final class PaneMetadataStore: @unchecked Sendable {
         queue.sync {
             metadata[workspaceId, default: [:]][paneId] = values
             self.sources[workspaceId, default: [:]][paneId] = sources
-            paneMetadataStoreRevision &+= 1
+            areaMetadataStoreRevision &+= 1
         }
     }
 
     /// Drop a single pane's metadata. Called when a pane closes for good.
-    func removePane(workspaceId: UUID, paneId: UUID) {
+    func removeArea(workspaceId: UUID, paneId: UUID) {
         queue.async { [self] in
             metadata[workspaceId]?.removeValue(forKey: paneId)
             sources[workspaceId]?.removeValue(forKey: paneId)
@@ -225,13 +225,13 @@ final class PaneMetadataStore: @unchecked Sendable {
             sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
-               encoded.count > PaneMetadataStore.payloadCapBytes {
+               encoded.count > AreaMetadataStore.payloadCapBytes {
                 return false
             }
 
             metadata[workspaceId, default: [:]][paneId] = blob
             sources[workspaceId, default: [:]][paneId] = sblob
-            paneMetadataStoreRevision &+= 1
+            areaMetadataStoreRevision &+= 1
             return true
         }
     }
@@ -312,7 +312,7 @@ final class PaneMetadataStore: @unchecked Sendable {
         guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
             throw WriteError.encodeFailed
         }
-        if encoded.count > PaneMetadataStore.payloadCapBytes {
+        if encoded.count > AreaMetadataStore.payloadCapBytes {
             throw WriteError.payloadTooLarge
         }
 
@@ -321,7 +321,7 @@ final class PaneMetadataStore: @unchecked Sendable {
 
         result.metadata = blob
         result.sources = sblob.mapValues { $0.toJSON() }
-        if mutated { paneMetadataStoreRevision &+= 1 }
+        if mutated { areaMetadataStoreRevision &+= 1 }
         return result
     }
 

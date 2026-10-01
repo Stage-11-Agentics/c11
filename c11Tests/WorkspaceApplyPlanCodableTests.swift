@@ -334,7 +334,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         layout: LayoutTreeSpec? = nil
     ) -> WorkspaceApplyPlan {
         let resolvedTabs = surfaces ?? [TabSpec(id: "a", kind: .terminal)]
-        let resolvedLayout = layout ?? .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"]))
+        let resolvedLayout = layout ?? .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"]))
         return WorkspaceApplyPlan(
             version: version,
             workspace: WorkspaceSpec(),
@@ -357,7 +357,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"])),
             surfaces: [
                 TabSpec(id: "a", kind: .terminal),
                 TabSpec(id: "a", kind: .terminal)
@@ -374,8 +374,8 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.5,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"])),
-                second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"]))
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"])),
+                second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"]))
             )),
             surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
@@ -387,7 +387,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a", "a"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a", "a"])),
             surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
@@ -398,7 +398,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["ghost"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["ghost"])),
             surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
@@ -409,7 +409,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"], selectedIndex: 5)),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["a"], selectedIndex: 5)),
             surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)

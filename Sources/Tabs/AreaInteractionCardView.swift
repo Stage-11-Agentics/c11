@@ -7,10 +7,10 @@ import SwiftUI
 ///
 /// Scrim covers only the panel's bounds. The card grabs first responder via an internal
 /// `@FocusState` anchor so Return/Escape/Tab/Cmd+D route through `onKeyPress`.
-struct PaneInteractionCardView: View {
+struct AreaInteractionCardView: View {
     let panelId: UUID
-    let interaction: PaneInteraction
-    @ObservedObject var runtime: PaneInteractionRuntime
+    let interaction: AreaInteraction
+    @ObservedObject var runtime: AreaInteractionRuntime
 
     var body: some View {
         ZStack {
@@ -44,7 +44,7 @@ struct PaneInteractionCardView: View {
 private struct ConfirmCard: View {
     let panelId: UUID
     let content: ConfirmContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    @ObservedObject var runtime: AreaInteractionRuntime
     @State private var pulse: Bool = false
 
     private var selected: ConfirmSelectionField {
@@ -236,7 +236,7 @@ private struct ConfirmCard: View {
 private struct TextInputCard: View {
     let panelId: UUID
     let content: TextInputContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    @ObservedObject var runtime: AreaInteractionRuntime
 
     @State private var value: String = ""
     @State private var errorText: String?

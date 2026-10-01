@@ -129,7 +129,7 @@ enum WorkspacePlanCapture {
             }
         }
 
-        private mutating func walkPane(_ pane: ExternalPaneNode) -> LayoutTreeSpec.PaneSpec {
+        private mutating func walkPane(_ pane: ExternalPaneNode) -> LayoutTreeSpec.AreaSpec {
             // Resolve the live bonsplit PaneID for this node so we can read
             // pane metadata. `treeSnapshot` pane ids are string forms of a
             // UUID; we match by uuidString against `allPaneIds`.
@@ -207,7 +207,7 @@ enum WorkspacePlanCapture {
                     selectedIndex = ids.count - 1
                 }
             }
-            return LayoutTreeSpec.PaneSpec(
+            return LayoutTreeSpec.AreaSpec(
                 surfaceIds: ids,
                 selectedIndex: selectedIndex
             )
@@ -291,7 +291,7 @@ enum WorkspacePlanCapture {
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {
             guard let paneID else { return [:] }
-            let snapshot = PaneMetadataStore.shared.getMetadata(
+            let snapshot = AreaMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 paneId: paneID.id
             )

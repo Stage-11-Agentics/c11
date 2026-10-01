@@ -38,7 +38,7 @@
 		20A2EC594F0DF1560BB0E28E /* ClaudeCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1299AE998DF9F78A383294 /* ClaudeCode.swift */; };
 		20F7EACAFF3B4C7AFBE0D063 /* WorkspaceLayoutExecutorAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8004BF1A1B2C3D4E5F60718 /* WorkspaceLayoutExecutorAcceptanceTests.swift */; };
 		24E7BF80A6D38962748D9509 /* OmpScraper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B94CA7E57E1FD8FFF1217B /* OmpScraper.swift */; };
-		27AE9B7E020D938C6013B312 /* PaneSizePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */; };
+		27AE9B7E020D938C6013B312 /* AreaSizePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */; };
 		2A1AAF5C5915A2960E874202 /* PaneMetadataPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */; };
 		2BA0A65D723C9E1F886F326D /* AgentRestartRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8009BF1A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift */; };
 		2DA1EDD8DD3ADF87D7BDF414 /* ConversationScraperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CC7DA94810490BDE375738E /* ConversationScraperTests.swift */; };
@@ -247,11 +247,11 @@
 		A500DA01 /* QALaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A500DA02 /* QALaunchPolicy.swift */; };
 		A58689DE /* MermaidRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C229 /* MermaidRenderer.swift */; };
 		A58689DF /* FencedCodeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C22A /* FencedCodeRenderer.swift */; };
-		A5C101A0 /* PaneInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B0 /* PaneInteraction.swift */; };
-		A5C101A1 /* PaneInteractionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B1 /* PaneInteractionCardView.swift */; };
-		A5C101A2 /* PaneInteractionOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B2 /* PaneInteractionOverlayHost.swift */; };
-		A5C101A3 /* PaneInteractionOverlayHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B3 /* PaneInteractionOverlayHostView.swift */; };
-		A5C101A4 /* PaneCloseOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B4 /* PaneCloseOverlayController.swift */; };
+		A5C101A0 /* AreaInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B0 /* AreaInteraction.swift */; };
+		A5C101A1 /* AreaInteractionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B1 /* AreaInteractionCardView.swift */; };
+		A5C101A2 /* AreaInteractionOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B2 /* AreaInteractionOverlayHost.swift */; };
+		A5C101A3 /* AreaInteractionOverlayHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B3 /* AreaInteractionOverlayHostView.swift */; };
+		A5C101A4 /* AreaCloseOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B4 /* AreaCloseOverlayController.swift */; };
 		A5C101A5 /* WorkspaceCloseInteractionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B5 /* WorkspaceCloseInteractionRuntime.swift */; };
 		A5C101A6 /* WorkspaceCloseOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B6 /* WorkspaceCloseOverlayHost.swift */; };
 		A5C101A7 /* WorkspaceCloseCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B7 /* WorkspaceCloseCardView.swift */; };
@@ -390,7 +390,7 @@
 		D533F2133EFFE99386F805B0 /* StatusEntryPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */; };
 		D7001BF0A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7001BF1A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift */; };
 		D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */; };
-		D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */; };
+		D7010BF0A1B2C3D4E5F60718 /* AreaMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */; };
 		D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
 		D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
 		D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */; };
@@ -557,7 +557,7 @@
 		C1124300000000000000A003 /* SurfaceSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SurfaceSeenClockTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B013 /* TabActivitySignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabActivitySignalsTests.swift; sourceTree = "<group>"; };
-		0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneSizePolicy.swift; sourceTree = "<group>"; };
+		0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AreaSizePolicy.swift; sourceTree = "<group>"; };
 		00B9399C201ED734873E67B9 /* EventEmitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EventEmitter.swift; path = Events/EventEmitter.swift; sourceTree = "<group>"; };
 		01822B693A5DD01EFE28F75F /* SnapshotHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotHandlers.swift; sourceTree = "<group>"; };
 		02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAndGhosttyTests.swift; sourceTree = "<group>"; };
@@ -725,11 +725,11 @@
 		A500DA02 /* QALaunchPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QALaunchPolicy.swift; sourceTree = "<group>"; };
 		A537C229 /* MermaidRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/MermaidRenderer.swift; sourceTree = "<group>"; };
 		A537C22A /* FencedCodeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/FencedCodeRenderer.swift; sourceTree = "<group>"; };
-		A5C101B0 /* PaneInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/PaneInteraction.swift; sourceTree = "<group>"; };
-		A5C101B1 /* PaneInteractionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/PaneInteractionCardView.swift; sourceTree = "<group>"; };
-		A5C101B2 /* PaneInteractionOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/PaneInteractionOverlayHost.swift; sourceTree = "<group>"; };
-		A5C101B3 /* PaneInteractionOverlayHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/PaneInteractionOverlayHostView.swift; sourceTree = "<group>"; };
-		A5C101B4 /* PaneCloseOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/PaneCloseOverlayController.swift; sourceTree = "<group>"; };
+		A5C101B0 /* AreaInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/AreaInteraction.swift; sourceTree = "<group>"; };
+		A5C101B1 /* AreaInteractionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/AreaInteractionCardView.swift; sourceTree = "<group>"; };
+		A5C101B2 /* AreaInteractionOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/AreaInteractionOverlayHost.swift; sourceTree = "<group>"; };
+		A5C101B3 /* AreaInteractionOverlayHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/AreaInteractionOverlayHostView.swift; sourceTree = "<group>"; };
+		A5C101B4 /* AreaCloseOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/AreaCloseOverlayController.swift; sourceTree = "<group>"; };
 		A5C101B5 /* WorkspaceCloseInteractionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/WorkspaceCloseInteractionRuntime.swift; sourceTree = "<group>"; };
 		A5C101B6 /* WorkspaceCloseOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/WorkspaceCloseOverlayHost.swift; sourceTree = "<group>"; };
 		A5C101B7 /* WorkspaceCloseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tabs/WorkspaceCloseCardView.swift; sourceTree = "<group>"; };
@@ -873,7 +873,7 @@
 		D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistenceUncoercibleTests.swift; sourceTree = "<group>"; };
 		D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataStoreRevisionCounterTests.swift; sourceTree = "<group>"; };
 		D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusEntryPersistenceTests.swift; sourceTree = "<group>"; };
-		D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStore.swift; sourceTree = "<group>"; };
+		D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaMetadataStore.swift; sourceTree = "<group>"; };
 		D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStoreTests.swift; sourceTree = "<group>"; };
 		D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataPersistenceTests.swift; sourceTree = "<group>"; };
 		D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultGridSettingsTests.swift; sourceTree = "<group>"; };
@@ -1163,7 +1163,7 @@
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
-				D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */,
+				D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* TabManifestView.swift */,
 				D7C24004A1B2C3D4E5F60718 /* TabManifestViewerWindowController.swift */,
 				D7C11251A1B2C3D4E5F60718 /* SurfaceLifecycle.swift */,
@@ -1237,11 +1237,11 @@
 				A5001414 /* BrowserTabView.swift */,
 				A5007421 /* BrowserPopupWindowController.swift */,
 				A5001418 /* MarkdownTab.swift */,
-				A5C101B0 /* PaneInteraction.swift */,
-				A5C101B1 /* PaneInteractionCardView.swift */,
-				A5C101B2 /* PaneInteractionOverlayHost.swift */,
-				A5C101B3 /* PaneInteractionOverlayHostView.swift */,
-				A5C101B4 /* PaneCloseOverlayController.swift */,
+				A5C101B0 /* AreaInteraction.swift */,
+				A5C101B1 /* AreaInteractionCardView.swift */,
+				A5C101B2 /* AreaInteractionOverlayHost.swift */,
+				A5C101B3 /* AreaInteractionOverlayHostView.swift */,
+				A5C101B4 /* AreaCloseOverlayController.swift */,
 				A5C101B5 /* WorkspaceCloseInteractionRuntime.swift */,
 				A5C101B6 /* WorkspaceCloseOverlayHost.swift */,
 				A5C101B7 /* WorkspaceCloseCardView.swift */,
@@ -1306,7 +1306,7 @@
 				A1C1196000000000000002AA /* ExpiringValueCache.swift */,
 				51C0D2C1212976BCF837B620 /* HangBacktrace.c */,
 				BE61F2503F50546EC21A9868 /* HangBacktrace.h */,
-				0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */,
+				0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */,
 				ACB000000000000000000001 /* AgentCompanionContext.swift */,
 				8FF3E8B8443DEA778BA817BB /* TabTypeAvailability.swift */,
 				C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */,
@@ -1983,7 +1983,7 @@
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
-				D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */,
+				D7010BF0A1B2C3D4E5F60718 /* AreaMetadataStore.swift in Sources */,
 				D7C24001A1B2C3D4E5F60718 /* TabManifestView.swift in Sources */,
 				D7C24003A1B2C3D4E5F60718 /* TabManifestViewerWindowController.swift in Sources */,
 				D7C11250A1B2C3D4E5F60718 /* SurfaceLifecycle.swift in Sources */,
@@ -2057,11 +2057,11 @@
 				A5001404 /* BrowserTabView.swift in Sources */,
 				A5007420 /* BrowserPopupWindowController.swift in Sources */,
 				A5001420 /* MarkdownTab.swift in Sources */,
-				A5C101A0 /* PaneInteraction.swift in Sources */,
-				A5C101A1 /* PaneInteractionCardView.swift in Sources */,
-				A5C101A2 /* PaneInteractionOverlayHost.swift in Sources */,
-				A5C101A3 /* PaneInteractionOverlayHostView.swift in Sources */,
-				A5C101A4 /* PaneCloseOverlayController.swift in Sources */,
+				A5C101A0 /* AreaInteraction.swift in Sources */,
+				A5C101A1 /* AreaInteractionCardView.swift in Sources */,
+				A5C101A2 /* AreaInteractionOverlayHost.swift in Sources */,
+				A5C101A3 /* AreaInteractionOverlayHostView.swift in Sources */,
+				A5C101A4 /* AreaCloseOverlayController.swift in Sources */,
 				A5C101A5 /* WorkspaceCloseInteractionRuntime.swift in Sources */,
 				A5C101A6 /* WorkspaceCloseOverlayHost.swift in Sources */,
 				A5C101A7 /* WorkspaceCloseCardView.swift in Sources */,
@@ -2125,7 +2125,7 @@
 				491D3AF1D24AAEEE25816E7C /* HangPrecursorTracker.swift in Sources */,
 				A1C1196000000000000001AA /* ExpiringValueCache.swift in Sources */,
 				5535B0220F7520ADFB17EC99 /* HangBacktrace.c in Sources */,
-				27AE9B7E020D938C6013B312 /* PaneSizePolicy.swift in Sources */,
+				27AE9B7E020D938C6013B312 /* AreaSizePolicy.swift in Sources */,
 				ACB000000000000000000101 /* AgentCompanionContext.swift in Sources */,
 				B56F0F5D50E43946F0510B03 /* TabTypeAvailability.swift in Sources */,
 				F3561BE21E032B0AB6FC9DFE /* AgentManifest.swift in Sources */,

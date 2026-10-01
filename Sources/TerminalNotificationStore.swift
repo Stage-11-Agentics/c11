@@ -531,12 +531,12 @@ enum NotificationSoundSettings {
     }
 }
 
-enum NotificationPaneRingSettings {
+enum NotificationAreaRingSettings {
     static let enabledKey = "notificationPaneRingEnabled"
     static let defaultEnabled = true
 }
 
-enum NotificationPaneFlashSettings {
+enum NotificationAreaFlashSettings {
     static let enabledKey = "notificationPaneFlashEnabled"
     static let defaultEnabled = true
 

@@ -560,7 +560,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let workspace = SessionWorkspaceSnapshot(
             id: UUID(), processTitle: "Terminal", customTitle: nil, customColor: nil,
             isPinned: false, currentDirectory: "/tmp", focusedPanelId: nil,
-            layout: .pane(SessionPaneLayoutSnapshot(panelIds: panels.map(\.id), selectedPanelId: nil)),
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: panels.map(\.id), selectedPanelId: nil)),
             panels: panels, statusEntries: [], logEntries: [], progress: nil, gitBranch: nil
         )
         let window = SessionWindowSnapshot(

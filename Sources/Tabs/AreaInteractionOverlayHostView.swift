@@ -14,9 +14,9 @@ import SwiftUI
 /// frame; `PaneCloseOverlayController` mounts an AppKit overlay (the existing
 /// `PaneInteractionOverlayHost`) at the matching frame in the window's
 /// themeFrame, which is above the portal layer.
-struct PaneInteractionOverlayHostView: View {
+struct AreaInteractionOverlayHostView: View {
     let paneId: PaneID
-    let controller: PaneCloseOverlayController
+    let controller: AreaCloseOverlayController
 
     var body: some View {
         AnchorRepresentable(
@@ -29,7 +29,7 @@ struct PaneInteractionOverlayHostView: View {
 
     private struct AnchorRepresentable: NSViewRepresentable {
         let paneIdentity: UUID
-        let controller: PaneCloseOverlayController
+        let controller: AreaCloseOverlayController
 
         func makeNSView(context: Context) -> AnchorView {
             let v = AnchorView()
@@ -60,7 +60,7 @@ struct PaneInteractionOverlayHostView: View {
 
     final class AnchorView: NSView {
         var paneIdentity: UUID?
-        weak var controller: PaneCloseOverlayController?
+        weak var controller: AreaCloseOverlayController?
 
         override var isOpaque: Bool { false }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }

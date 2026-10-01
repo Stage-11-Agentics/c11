@@ -2105,7 +2105,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
         let coordinator = representable.makeCoordinator()
@@ -2149,7 +2149,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
         let coordinator = representable.makeCoordinator()
@@ -2212,7 +2212,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
 
@@ -2297,7 +2297,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
 

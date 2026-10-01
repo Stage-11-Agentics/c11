@@ -299,8 +299,8 @@ extension TerminalController {
     private func v2PaneResizeCollectCandidates(
         node: ExternalTreeNode,
         targetPaneId: String,
-        candidates: inout [V2PaneResizeCandidate]
-    ) -> V2PaneResizeTrace {
+        candidates: inout [V2AreaResizeCandidate]
+    ) -> V2AreaResizeTrace {
         switch node {
         case .pane(let pane):
             let bounds = CGRect(
@@ -309,7 +309,7 @@ extension TerminalController {
                 width: pane.frame.width,
                 height: pane.frame.height
             )
-            return V2PaneResizeTrace(containsTarget: pane.id == targetPaneId, bounds: bounds)
+            return V2AreaResizeTrace(containsTarget: pane.id == targetPaneId, bounds: bounds)
 
         case .split(let split):
             let first = v2PaneResizeCollectCandidates(
@@ -332,16 +332,16 @@ extension TerminalController {
                 let axisPixels: CGFloat = orientation == "horizontal"
                     ? combinedBounds.width
                     : combinedBounds.height
-                candidates.append(V2PaneResizeCandidate(
+                candidates.append(V2AreaResizeCandidate(
                     splitId: splitUUID,
                     orientation: orientation,
-                    paneInFirstChild: first.containsTarget,
+                    areaInFirstChild: first.containsTarget,
                     dividerPosition: CGFloat(split.dividerPosition),
                     axisPixels: max(axisPixels, 1)
                 ))
             }
 
-            return V2PaneResizeTrace(containsTarget: containsTarget, bounds: combinedBounds)
+            return V2AreaResizeTrace(containsTarget: containsTarget, bounds: combinedBounds)
         }
     }
 
@@ -352,7 +352,7 @@ extension TerminalController {
 
         let directionRaw = (v2String(params, "direction") ?? "").lowercased()
         let amount = v2Int(params, "amount") ?? 1
-        guard let direction = V2PaneResizeDirection(rawValue: directionRaw), amount > 0 else {
+        guard let direction = V2AreaResizeDirection(rawValue: directionRaw), amount > 0 else {
             return .err(code: "invalid_params", message: "direction must be one of left|right|up|down and amount must be > 0", data: nil)
         }
 
@@ -374,7 +374,7 @@ extension TerminalController {
             }
 
             let tree = ws.bonsplitController.treeSnapshot()
-            var candidates: [V2PaneResizeCandidate] = []
+            var candidates: [V2AreaResizeCandidate] = []
             let trace = v2PaneResizeCollectCandidates(
                 node: tree,
                 targetPaneId: paneUUID.uuidString,
@@ -395,7 +395,7 @@ extension TerminalController {
                 return
             }
 
-            guard let candidate = orientationMatches.first(where: { $0.paneInFirstChild == direction.requiresPaneInFirstChild }) else {
+            guard let candidate = orientationMatches.first(where: { $0.areaInFirstChild == direction.requiresAreaInFirstChild }) else {
                 result = .err(
                     code: "invalid_state",
                     message: "Area has no adjacent border in direction \(direction.rawValue)",
@@ -722,7 +722,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try PaneMetadataStore.shared.setMetadata(
+            let result = try AreaMetadataStore.shared.setMetadata(
                 workspaceId: resolved.workspaceId,
                 paneId: resolved.paneId,
                 partial: metadataObj,
@@ -759,7 +759,7 @@ extension TerminalController {
             return .err(code: "pane_not_found", message: "Area not found", data: nil)
         }
 
-        let (fullMetadata, fullSources) = PaneMetadataStore.shared.getMetadata(
+        let (fullMetadata, fullSources) = AreaMetadataStore.shared.getMetadata(
             workspaceId: resolved.workspaceId,
             paneId: resolved.paneId
         )
@@ -834,7 +834,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try PaneMetadataStore.shared.clearMetadata(
+            let result = try AreaMetadataStore.shared.clearMetadata(
                 workspaceId: resolved.workspaceId,
                 paneId: resolved.paneId,
                 keys: keys,
@@ -865,7 +865,7 @@ extension TerminalController {
     ) {
         guard let paneUUID, let title, !title.isEmpty else { return }
         do {
-            _ = try PaneMetadataStore.shared.setMetadata(
+            _ = try AreaMetadataStore.shared.setMetadata(
                 workspaceId: workspaceId,
                 paneId: paneUUID,
                 partial: [MetadataKey.title: title],

@@ -45,8 +45,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.5,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
-                second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
+                second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
                 TabSpec(id: "s1", kind: .terminal),
@@ -97,7 +97,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
             surfaces: [
                 TabSpec(id: "s1", kind: .markdown, filePath: fixturePath)
             ]
@@ -134,12 +134,12 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.6,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
                 second: .split(LayoutTreeSpec.SplitSpec(
                     orientation: .vertical,
                     dividerPosition: 0.5,
-                    first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"])),
-                    second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s3"]))
+                    first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"])),
+                    second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s3"]))
                 ))
             )),
             surfaces: [
@@ -177,8 +177,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             layout: .split(LayoutTreeSpec.SplitSpec(
                 orientation: .horizontal,
                 dividerPosition: 0.5,
-                first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
-                second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
+                first: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s1"])),
+                second: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
                 TabSpec(id: "s1", kind: .browser),

@@ -27,13 +27,13 @@ final class TabLayoutSettingsTests: XCTestCase {
     }
 
     func testRailOpenSurvivesTheSnapshotAndOldSnapshotsDecodeClosed() throws {
-        var pane = SessionPaneLayoutSnapshot(panelIds: [UUID()], selectedPanelId: nil)
-        pane.railOpen = true
-        let data = try JSONEncoder().encode(pane)
-        XCTAssertEqual(try JSONDecoder().decode(SessionPaneLayoutSnapshot.self, from: data).railOpen, true)
+        var area = SessionAreaLayoutSnapshot(panelIds: [UUID()], selectedPanelId: nil)
+        area.railOpen = true
+        let data = try JSONEncoder().encode(area)
+        XCTAssertEqual(try JSONDecoder().decode(SessionAreaLayoutSnapshot.self, from: data).railOpen, true)
 
         // A snapshot written before the rail existed has no key: closed.
-        let legacy = try JSONEncoder().encode(SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil))
-        XCTAssertNil(try JSONDecoder().decode(SessionPaneLayoutSnapshot.self, from: legacy).railOpen)
+        let legacy = try JSONEncoder().encode(SessionAreaLayoutSnapshot(panelIds: [], selectedPanelId: nil))
+        XCTAssertNil(try JSONDecoder().decode(SessionAreaLayoutSnapshot.self, from: legacy).railOpen)
     }
 }

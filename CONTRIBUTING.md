@@ -88,7 +88,7 @@ We don't merge UI changes without a video. Prose can't catch typing-latency regr
 c11 ships in English plus six translations (ja, uk, ko, zh-Hans, zh-Hant, ru). All strings live in `Resources/Localizable.xcstrings`.
 
 - **Write English only.** Use `String(localized: "key.name", defaultValue: "English text")` at every user-facing call site. Don't hand-author the non-English values in product code.
-- **Translations come after.** If your PR adds new English strings, have your agent run the translation pass — delegate it to a sub-agent in a fresh c11 surface to sync `Localizable.xcstrings` across the six locales before merge.
+- **Translations come after.** If your PR adds new English strings, have your agent run the translation pass — delegate it to a sub-agent in a fresh c11 tab to sync `Localizable.xcstrings` across the six locales before merge.
 
 ### Code quality guardrails
 
@@ -96,7 +96,7 @@ A few areas carry strict rules. If you're editing near any of these, read the fu
 
 - **Typing-latency-sensitive paths** (`WindowTerminalHostView.hitTest()`, `TabItemView`, `TerminalSurface.forceRefresh()`). Extra allocations or main-thread work here is visible as typing lag.
 - **Socket command threading.** Telemetry hot paths (`report_*`, status / progress updates) must not hop `DispatchQueue.main.sync`. Default new socket commands to off-main unless you have a concrete reason otherwise.
-- **Socket focus policy.** Socket commands don't steal app focus — only explicit focus-intent commands (`window.focus`, `surface.focus`, etc.) may change selection.
+- **Socket focus policy.** Socket commands don't steal app focus — only explicit focus-intent commands (`window.focus`, `tab.focus`, etc.) may change selection.
 - **Test quality.** Tests verify observable runtime behavior. Tests that grep source text, read `Info.plist`, or assert on AST shape get rejected. If a behavior isn't exercisable yet, add a seam first and test through it.
 
 ## Working on the ghostty submodule
@@ -145,5 +145,5 @@ By contributing, you agree that your changes are licensed under the project's GN
 - [`PHILOSOPHY.md`](PHILOSOPHY.md) — why c11 is shaped the way it is
 - [`CLAUDE.md`](CLAUDE.md) — operational notes, latency-sensitive paths, testing policy
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — architecture tour, where things live in `Sources/`
-- [`docs/socket-api-reference.md`](docs/socket-api-reference.md) — the socket API every c11 surface speaks
+- [`docs/socket-api-reference.md`](docs/socket-api-reference.md) — the socket API every c11 tab speaks
 - [`skills/c11/SKILL.md`](skills/c11/SKILL.md) — the agent-facing guide to driving c11 (useful for humans too)

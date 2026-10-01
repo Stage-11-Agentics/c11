@@ -1,39 +1,39 @@
 # Session Management
 
-c11 uses isolated browser contexts per surface. Treat each browser surface as its own session.
+c11 uses isolated browser contexts per tab. Treat each browser tab as its own session.
 
 **Related**: [authentication.md](authentication.md), [SKILL.md](../SKILL.md)
 
 ## Contents
 
-- [Surface-Based Sessions](#surface-based-sessions)
+- [Tab-Based Sessions](#tab-based-sessions)
 - [Isolation Properties](#isolation-properties)
 - [State Persistence](#state-persistence)
 - [Common Patterns](#common-patterns)
 - [Cleanup](#cleanup)
 - [Best Practices](#best-practices)
 
-## Surface-Based Sessions
+## Tab-Based Sessions
 
 ```bash
 # session A
 c11 browser open https://app.example.com/login --json
-# -> surface:7
+# -> tab:7
 
 # session B
 c11 browser open https://example.com --json
-# -> surface:8
+# -> tab:8
 
-c11 browser surface:7 get url
-c11 browser surface:8 get url
+c11 browser tab:7 get url
+c11 browser tab:8 get url
 ```
 
 ## Isolation Properties
 
-Each surface has independent:
+Each tab has independent:
 - cookies
 - localStorage/sessionStorage
-- tab list and active tab
+- page-level tab list (`tab list`) and active page tab
 - navigation history
 
 ## State Persistence
@@ -41,29 +41,29 @@ Each surface has independent:
 ### Save State
 
 ```bash
-c11 browser surface:7 state save /tmp/auth-state.json
+c11 browser tab:7 state save /tmp/auth-state.json
 ```
 
 ### Load State
 
 ```bash
-c11 browser surface:8 state load /tmp/auth-state.json
-c11 browser surface:8 goto https://app.example.com/dashboard
+c11 browser tab:8 state load /tmp/auth-state.json
+c11 browser tab:8 goto https://app.example.com/dashboard
 ```
 
 ## Common Patterns
 
-### Reuse Auth Across New Surface
+### Reuse Auth Across New Tab
 
 ```bash
 c11 browser open https://app.example.com/login --json
-# login on surface:7 ...
-c11 browser surface:7 state save /tmp/auth.json
+# login on tab:7 ...
+c11 browser tab:7 state save /tmp/auth.json
 
 c11 browser open https://app.example.com --json
-# assume surface:8
-c11 browser surface:8 state load /tmp/auth.json
-c11 browser surface:8 goto https://app.example.com/dashboard
+# assume tab:8
+c11 browser tab:8 state load /tmp/auth.json
+c11 browser tab:8 goto https://app.example.com/dashboard
 ```
 
 ### Parallel Multi-Site Tasks
@@ -73,22 +73,22 @@ c11 browser open https://site-a.example --json
 c11 browser open https://site-b.example --json
 c11 browser open https://site-c.example --json
 
-c11 browser surface:11 get text body > /tmp/a.txt
-c11 browser surface:12 get text body > /tmp/b.txt
-c11 browser surface:13 get text body > /tmp/c.txt
+c11 browser tab:11 get text body > /tmp/a.txt
+c11 browser tab:12 get text body > /tmp/b.txt
+c11 browser tab:13 get text body > /tmp/c.txt
 ```
 
 ## Cleanup
 
 ```bash
-c11 close-surface --surface surface:7
-c11 close-surface --surface surface:8
+c11 close-tab --tab tab:7
+c11 close-tab --tab tab:8
 rm -f /tmp/auth-state.json
 ```
 
 ## Best Practices
 
-1. Name/log surfaces in your script output so actions stay attributable.
-2. Keep one task per surface to avoid ref churn.
+1. Name/log tabs in your script output so actions stay attributable.
+2. Keep one task per tab to avoid ref churn.
 3. Save state after successful auth milestones.
-4. Re-snapshot after switching tabs/pages inside a surface.
+4. Re-snapshot after switching tabs/pages inside a tab.

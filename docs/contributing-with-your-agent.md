@@ -19,11 +19,11 @@ Before your agent touches c11 source, make sure it's read these. Terse, accurate
 |---|---|---|
 | [`CLAUDE.md`](../CLAUDE.md) | Operational guardrails for agents working in this repo | Threading policy, focus-steal policy, latency-sensitive paths, test quality rules, submodule etiquette |
 | [`PHILOSOPHY.md`](../PHILOSOPHY.md) | Why c11 is shaped the way it is | Keeps the agent from proposing features that violate "host and primitive, not intelligence layer" |
-| [`skills/c11/SKILL.md`](../skills/c11/SKILL.md) | How to drive c11 from outside the process | Lets your agent use c11 itself while working — split panes, open a browser to validate, report status |
+| [`skills/c11/SKILL.md`](../skills/c11/SKILL.md) | How to drive c11 from outside the process | Lets your agent use c11 itself while working — split areas, open a browser to validate, report status |
 | [`skills/c11-hotload/SKILL.md`](../skills/c11-hotload/SKILL.md) | Build / reload loop | Keeps the agent from launching untagged debug builds that collide with your running session |
 | [`skills/release/SKILL.md`](../skills/release/SKILL.md) | Release flow | Only load if the agent is touching release machinery |
 | [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | Architecture tour | One-screen map of `Sources/` before the agent starts grepping blindly |
-| [`docs/socket-api-reference.md`](socket-api-reference.md) | The socket API every c11 surface speaks | Essential for CLI, browser, or metadata changes |
+| [`docs/socket-api-reference.md`](socket-api-reference.md) | The socket API every c11 client speaks | Essential for CLI, browser, or metadata changes |
 
 ### Pointing different agents at these files
 
@@ -48,7 +48,7 @@ Patterns we've seen cause PR rework:
 
 - **Missing the tag rule.** The agent runs `xcodebuild` or `open` on an untagged `c11 DEV.app` and hijacks the operator's running socket. Fix: always use `./scripts/reload.sh --tag <branch-slug>`. See [`skills/c11-hotload/SKILL.md`](../skills/c11-hotload/SKILL.md).
 - **Adding main-thread work to a typing path.** `WindowTerminalHostView.hitTest()`, `TabItemView.body`, and `TerminalSurface.forceRefresh()` are called every keystroke. New allocations, `@ObservedObject` bindings, or `DispatchQueue.main.sync` in these spots cause visible typing lag.
-- **Agent-side hook feature requests.** Proposals that require c11 to "ask the agent to write a file" or "call back to Claude" violate the "observe from outside — never hook into agents" principle in [`PHILOSOPHY.md`](../PHILOSOPHY.md). c11 stays agent-agnostic; reach for external observation (`c11 tree`, pane scrollback) plus a small local model instead.
+- **Agent-side hook feature requests.** Proposals that require c11 to "ask the agent to write a file" or "call back to Claude" violate the "observe from outside — never hook into agents" principle in [`PHILOSOPHY.md`](../PHILOSOPHY.md). c11 stays agent-agnostic; reach for external observation (`c11 tree`, tab scrollback) plus a small local model instead.
 - **Tests that read source text.** Tests that grep source files or assert on `Info.plist` shape get rejected. Verify observable runtime behavior through real executable paths.
 - **Submodule commits on detached HEAD.** Your agent commits in `ghostty/` without pushing the submodule commit to `manaflow/main` first. The commit is orphaned; the parent pointer references a SHA nobody else can fetch. Push the submodule first, then bump the parent pointer.
 

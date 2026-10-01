@@ -9,7 +9,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
   One final branch's two-dot diff changed meaning after another PR merged; rebasing,
   fresh exact-head review, and a fresh gate caught it before merge. Source of the
   landing-train convention.
-- **Launch is not acknowledgement:** a reviewer surface existed but never established
+- **Launch is not acknowledgement:** a reviewer tab existed but never established
   that it had the intended cwd/head. The run recovered by replacing it, but paid the
   latency and ambiguity. Source of the positive launch receipt.
 - **External defects still need durable state:** 22 evaluator defects across six
@@ -57,7 +57,7 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
 
 ## C11-27 (2026-05-16)
 
-- **Backend leak → stray workspaces:** five plan-review iterations spawned ten stray `plan-review-*`/`merge-*` c11 workspaces before the operator caught it; the review CLI also renamed the invoking surface's tab (`review-<random>`). Source of the force-headless rule and the restore-title-after-review habit.
+- **Backend leak → stray workspaces:** five plan-review iterations spawned ten stray `plan-review-*`/`merge-*` c11 workspaces before the operator caught it; the review CLI also renamed the invoking tab (`review-<random>`). Source of the force-headless rule and the restore-title-after-review habit.
 
 ## TT-43 / TT-59 run
 

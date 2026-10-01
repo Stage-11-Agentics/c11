@@ -8,7 +8,7 @@ This doc is the checklist. Grok Build is the worked example; replace `grok` / `G
 
 c11 is collapsing the per-agent switches into a single manifest. `Sources/AgentManifest.swift` holds one `AgentManifest` per agent in `AgentRegistry.shared`, and subsystems read the registry instead of their own switch. Current state:
 
-**Already registry-driven — a manifest entry is all these need:** process detection (`AgentDetector`), sidebar chip icon + SF symbol (`AgentChip`), restart/resume command (`AgentRestartRegistry.phase1`), canonical terminal-type set (`MetadataKey`), coding-agent pane sizing (`PaneSizePolicy`), and the factory command + initial prompt (`AgentType.factoryCommand` / `factoryInitialPrompt`).
+**Already registry-driven — a manifest entry is all these need:** process detection (`AgentDetector`), sidebar chip icon + SF symbol (`AgentChip`), restart/resume command (`AgentRestartRegistry.phase1`), canonical terminal-type set (`MetadataKey`), coding-agent area sizing (`PaneSizePolicy`), and the factory command + initial prompt (`AgentType.factoryCommand` / `factoryInitialPrompt`).
 
 **The minimal add today is two files:**
 1. **`Sources/AgentManifest.swift`** — add an `AgentManifest` to `AgentRegistry.shared` (kind, displayName, factory command, detect comms / node-args, icon + SF symbol, `ResumeSpec`, canonical + strategy flags). `AgentManifestTests` fails unless the registry covers exactly `AgentType.allCases`.
@@ -64,7 +64,7 @@ All paths are relative to `code/c11/`. Order doesn't matter — the changes are 
 
 9. **`skills/c11/SKILL.md`** — extend the "Common types" list and the per-TUI prompt-delivery one-liner under "Launching sub-agents."
 
-10. **`skills/c11/references/api.md`** — extend the `CMUX_AGENT_TYPE` env-var description and the `--type` accepted-values bullet.
+10. **`skills/c11/references/api.md`** — extend the `C11_AGENT_TYPE` env-var description and the `--type` accepted-values bullet.
 
 11. **`skills/c11/references/metadata.md`** — extend the `terminal_type` canonical values list.
 
@@ -95,7 +95,7 @@ The clean local path is to build, launch a *tagged* DEV build, and exercise the 
 ./scripts/launch-tagged-automation.sh <slug>
 ```
 
-In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh pane. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
+In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh tab. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
 
 Do not `open` an untagged `c11 DEV.app` from DerivedData while prod c11 is running — they fight for sockets. See `CLAUDE.md` → "Testing policy" for the why.
 

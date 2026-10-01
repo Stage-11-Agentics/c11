@@ -127,7 +127,7 @@ def _write_report(cases: list[dict]) -> None:
   <style>
     :root {{
       --bg: #0b0f14;
-      --panel: #111826;
+      --tab: #111826;
       --border: rgba(255,255,255,0.08);
       --text: rgba(255,255,255,0.92);
       --muted: rgba(255,255,255,0.68);

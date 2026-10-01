@@ -4,7 +4,7 @@ surface/workspace vars must be REJECTED, not resolved to the operator-focused
 surface client-side.
 
 Before C11-165 the CLI called `system.identify` and sent the globally-focused
-surface_id as a concrete ref, bypassing the server guard — the exact P0.2 stomp
+tab_id as a concrete ref, bypassing the server guard — the exact P0.2 stomp
 for a cron/launchd/detached caller. Each write sugar now passes
 `allowFocused:false`, so a ref-less external call sends no surface/tab ref and
 the server rejects (missing_ref).
@@ -54,7 +54,7 @@ def main() -> int:
     for args in cases:
         proc = _run_scrubbed(cli, sock, args)
         out = (proc.stdout + proc.stderr).lower()
-        rejected = proc.returncode != 0 and ("missing_ref" in out or "no surface" in out
+        rejected = proc.returncode != 0 and ("missing_ref" in out or "no tab" in out or "no surface" in out
                                              or "missing" in out or "empty_ref" in out)
         if not rejected:
             failures.append(f"{args[0]}: expected rejection, got rc={proc.returncode} out={out[:160]!r}")

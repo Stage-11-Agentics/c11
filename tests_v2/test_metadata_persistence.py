@@ -3,7 +3,7 @@
 
 Sets varied metadata on a surface, forces a full save-to-disk and
 reload-from-disk round-trip via the DEBUG-only `debug.session.save_and_load`
-socket command, then reads the metadata back via `surface.get_metadata`
+socket command, then reads the metadata back via `tab.get_metadata`
 and asserts every typed value plus every source record survives.
 
 All metadata + sources round-trip. Sources preserve `.explicit`
@@ -32,9 +32,9 @@ def _must(cond: bool, msg: str) -> None:
 
 def _fresh_surface(c) -> tuple[str, str]:
     workspace_id = c.new_workspace()
-    current = c._call("surface.current", {"workspace_id": workspace_id}) or {}
-    surface_id = str(current.get("surface_id") or "")
-    _must(bool(surface_id), f"surface.current returned no surface_id: {current}")
+    current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
+    surface_id = str(current.get("tab_id") or "")
+    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
     return workspace_id, surface_id
 
 
@@ -49,9 +49,9 @@ def _run_main_variant(c) -> None:
             "tags": {"team": "platform", "count": 3, "flags": ["a", "b"]},
         }
         set_res = c._call(
-            "surface.set_metadata",
+            "tab.set_metadata",
             {
-                "surface_id": surface_id,
+                "tab_id": surface_id,
                 "mode": "merge",
                 "source": "explicit",
                 "metadata": metadata_in,
@@ -66,8 +66,8 @@ def _run_main_variant(c) -> None:
         _must(rt_res is not None, "debug.session.save_and_load returned no result")
 
         got = c._call(
-            "surface.get_metadata",
-            {"surface_id": surface_id, "include_sources": True},
+            "tab.get_metadata",
+            {"tab_id": surface_id, "include_sources": True},
         ) or {}
         md = got.get("metadata") or {}
         sources = got.get("metadata_sources") or {}

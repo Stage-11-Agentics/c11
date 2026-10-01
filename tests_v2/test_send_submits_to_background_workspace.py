@@ -34,7 +34,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _screen(c: cmux, ws: str, surface: str) -> str:
-    payload = c._call("surface.read_text", {"workspace_id": ws, "surface_id": surface}) or {}
+    payload = c._call("tab.read_text", {"workspace_id": ws, "tab_id": surface}) or {}
     return str(payload.get("text") or "")
 
 
@@ -53,10 +53,10 @@ def _new_shell_workspace(c: cmux) -> tuple[str, str]:
     ws = str((c._call("workspace.create") or {}).get("workspace_id") or "")
     _must(bool(ws), "workspace.create returned no workspace_id")
     time.sleep(0.4)
-    surfaces = (c._call("surface.list", {"workspace_id": ws}) or {}).get("surfaces") or []
+    surfaces = (c._call("tab.list", {"workspace_id": ws}) or {}).get("tabs") or []
     _must(bool(surfaces), f"No surfaces in workspace {ws}")
     surface = str(surfaces[0].get("id") or "")
-    _must(bool(surface), "surface.list returned surface without id")
+    _must(bool(surface), "tab.list returned surface without id")
     return ws, surface
 
 
@@ -73,8 +73,8 @@ def test_send_submits_into_a_background_workspace(c: cmux) -> None:
         # Put the *other* workspace on screen so the target is portal-detached.
         _select(c, other_ws)
 
-        c._call("surface.send_text", {
-            "workspace_id": target_ws, "surface_id": target_surface,
+        c._call("tab.send_text", {
+            "workspace_id": target_ws, "tab_id": target_surface,
             "text": "expr 41000 + 1", "submit": True,
         })
         # 41001 never appears in the typed source: seeing it proves a Return landed.
@@ -104,8 +104,8 @@ def test_multiline_payload_does_not_submit_line_by_line(c: cmux) -> None:
     other_ws, _ = _new_shell_workspace(c)
     try:
         _select(c, other_ws)  # target is in the background, as agents are
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "expr 20000 + 1\nexpr 30000 + 1", "submit": False,
         })
         # Both lines must sit in the composer, unexecuted.
@@ -118,7 +118,7 @@ def test_multiline_payload_does_not_submit_line_by_line(c: cmux) -> None:
         )
 
         # One explicit Return submits the payload the caller actually sent.
-        c._call("surface.send_key", {"workspace_id": ws, "surface_id": surface, "key": "enter"})
+        c._call("tab.send_key", {"workspace_id": ws, "tab_id": surface, "key": "enter"})
         screen = _wait_for(c, ws, surface, "30001")
         _must("20001" in screen, f"First line of the payload was lost:\n{screen}")
         print("PASS: multi-line payload stayed whole; one Return submitted it")
@@ -135,15 +135,15 @@ def test_send_key_space_writes_a_space(c: cmux) -> None:
     zero bytes in Ghostty's legacy encoder."""
     ws, surface = _new_shell_workspace(c)
     try:
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "echo SPACE", "submit": False,
         })
         _wait_for(c, ws, surface, "echo SPACE")
-        c._call("surface.send_key", {"workspace_id": ws, "surface_id": surface, "key": "space"})
+        c._call("tab.send_key", {"workspace_id": ws, "tab_id": surface, "key": "space"})
         time.sleep(0.4)
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "KEY_OK", "submit": True,
         })
         # "echo SPACE KEY_OK" prints "SPACE KEY_OK"; without the space the shell
@@ -169,21 +169,21 @@ def test_control_byte_send_still_reaches_the_pty(c: cmux) -> None:
     try:
         # `expr` again as the probe: 66001 is printed only if the sleep ran to
         # completion, and it never appears in the typed source.
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "sleep 45; expr 66000 + 1", "submit": True,
         })
         time.sleep(1.5)
         # Ctrl-C as a raw byte in the payload, the way an agent unsticks a peer.
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "\x03", "submit": False,
         })
         time.sleep(1.0)
         # If the interrupt landed, the shell is back at a prompt and this runs
         # immediately — 45s before the sleep could have finished on its own.
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "expr 55000 + 1", "submit": True,
         })
         screen = _wait_for(c, ws, surface, "55001", timeout_s=10.0)
@@ -207,8 +207,8 @@ def test_unresolvable_surface_ref_errors_instead_of_hitting_the_focused_pane(c: 
         _select(c, ws)
         errored = False
         try:
-            c._call("surface.send_text", {
-                "workspace_id": ws, "surface_id": "surface:99999",
+            c._call("tab.send_text", {
+                "workspace_id": ws, "tab_id": "tab:99999",
                 "text": "echo STALE_REF_MISROUTE", "submit": True,
             })
         except Exception:
@@ -224,13 +224,13 @@ def test_unresolvable_surface_ref_errors_instead_of_hitting_the_focused_pane(c: 
         # Same for an empty ref.
         errored = False
         try:
-            c._call("surface.send_text", {
-                "workspace_id": ws, "surface_id": "",
+            c._call("tab.send_text", {
+                "workspace_id": ws, "tab_id": "",
                 "text": "echo EMPTY_REF_MISROUTE", "submit": True,
             })
         except Exception:
             errored = True
-        _must(errored, "send_text with an empty surface_id should error, not fall back")
+        _must(errored, "send_text with an empty tab_id should error, not fall back")
         time.sleep(1.0)
         screen = _screen(c, ws, surface)
         _must(

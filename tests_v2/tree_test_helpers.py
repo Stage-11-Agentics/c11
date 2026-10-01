@@ -85,7 +85,7 @@ def all_panes(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for win in payload.get("windows", []):
         for ws in win.get("workspaces", []):
-            out.extend(ws.get("panes", []))
+            out.extend(ws.get("areas", []))
     return out
 
 
@@ -130,7 +130,7 @@ def percent_area(pane: Dict[str, Any]) -> float:
 # Pane line badge regex per spec:
 #   pane <ref> size=W%×H% px=W×H split=<chain>
 PANE_LINE_BADGES_RE = re.compile(
-    r"pane\s+\S+\s+size=\d+%×\d+%\s+px=\d+×\d+\s+split=(?:none|(?:[HV]:(?:left|right|top|bottom))(?:,[HV]:(?:left|right|top|bottom))*)"
+    r"(?:area|pane)\s+\S+\s+size=\d+%×\d+%\s+px=\d+×\d+\s+split=(?:none|(?:[HV]:(?:left|right|top|bottom))(?:,[HV]:(?:left|right|top|bottom))*)"
 )
 
 
@@ -140,6 +140,6 @@ def pane_lines(text: str) -> List[str]:
     for line in text.splitlines():
         # Tree pane lines are prefixed with box-drawing branches like "├── pane ..."
         # and may sit under a workspace branch. Match by the literal " pane " token.
-        if " pane " in line and re.search(r" pane\s+\S+", line):
+        if re.search(r" (?:area|pane)\s+\S+", line):
             out.append(line)
     return out

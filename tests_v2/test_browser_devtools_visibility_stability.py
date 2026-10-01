@@ -34,11 +34,11 @@ def _wait_until(pred, timeout_s: float, label: str) -> None:
 
 
 def _surface_row(c: cmux, workspace_id: str, surface_id: str) -> dict:
-    payload = c._call("surface.list", {"workspace_id": workspace_id}) or {}
-    for row in payload.get("surfaces") or []:
+    payload = c._call("tab.list", {"workspace_id": workspace_id}) or {}
+    for row in payload.get("tabs") or []:
         if str(row.get("id") or "") == surface_id:
             return row
-    raise cmuxError(f"surface.list missing surface {surface_id} in workspace {workspace_id}: {payload}")
+    raise cmuxError(f"tab.list missing surface {surface_id} in workspace {workspace_id}: {payload}")
 
 
 def _devtools_visible(c: cmux, workspace_id: str, surface_id: str) -> bool:
@@ -72,7 +72,7 @@ def main() -> int:
             _wait_until(
                 lambda: _surface_row(c, workspace_id, surface_id).get("type") == "browser",
                 timeout_s=5.0,
-                label="browser surface in surface.list",
+                label="browser surface in tab.list",
             )
             _focus_browser_webview(c, surface_id, timeout_s=3.0)
 

@@ -27,9 +27,9 @@ def _must(cond: bool, msg: str) -> None:
 
 def _set_title(c, surface_id: str, title: str) -> None:
     res = c._call(
-        "surface.set_metadata",
+        "tab.set_metadata",
         {
-            "surface_id": surface_id,
+            "tab_id": surface_id,
             "mode": "merge",
             "source": "explicit",
             "metadata": {"title": title},
@@ -42,7 +42,7 @@ def _set_title(c, surface_id: str, title: str) -> None:
 
 
 def _sidebar(c, surface_id: str) -> str:
-    state = c._call("surface.get_titlebar_state", {"surface_id": surface_id}) or {}
+    state = c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
     return str(state.get("sidebar_label") or "")
 
 
@@ -51,9 +51,9 @@ def _fresh_surface(c) -> tuple[str, str]:
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     c._call("workspace.select", {"workspace_id": ws_id})
-    current = c._call("surface.current", {"workspace_id": ws_id}) or {}
-    surface_id = str(current.get("surface_id") or "")
-    _must(bool(surface_id), f"surface.current returned no surface_id: {current}")
+    current = c._call("tab.current", {"workspace_id": ws_id}) or {}
+    surface_id = str(current.get("tab_id") or "")
+    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
     return ws_id, surface_id
 
 
@@ -62,7 +62,7 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "surface.set_metadata" in methods and "surface.get_titlebar_state" in methods,
+            "tab.set_metadata" in methods and "tab.get_titlebar_state" in methods,
             f"Required M2/M7 methods missing. methods={sorted(methods)[:60]}",
         )
 

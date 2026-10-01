@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v2 regression: pane.confirm socket command.
+"""v2 regression: area.confirm socket command.
 
 Covers the error paths plus a timeout-driven round trip against a valid panel.
 The happy-path "overlay appears → user accepts → ok" case requires UI input,
@@ -38,20 +38,20 @@ def main() -> int:
     with cmux(SOCKET_PATH) as c:
         ident = c.identify()
         caller = ident.get("caller") or {}
-        panel_id = caller.get("surface_id")
-        _must(bool(panel_id), f"identify should return caller.surface_id: {caller}")
+        panel_id = caller.get("tab_id")
+        _must(bool(panel_id), f"identify should return caller.tab_id: {caller}")
 
         # 1) Missing panel_id → invalid_params
-        _expect_error(c, "pane.confirm", {"title": "Test"},
+        _expect_error(c, "area.confirm", {"title": "Test"},
                       code="invalid_params", where="missing panel_id")
 
         # 2) Missing title → invalid_params
-        _expect_error(c, "pane.confirm", {"panel_id": str(panel_id)},
+        _expect_error(c, "area.confirm", {"panel_id": str(panel_id)},
                       code="invalid_params", where="missing title")
 
         # 3) Unknown panel UUID → unknown_panel
         _expect_error(c,
-                      "pane.confirm",
+                      "area.confirm",
                       {"panel_id": "00000000-0000-0000-0000-000000000000", "title": "Test"},
                       code="unknown_panel",
                       where="unknown panel")
@@ -62,20 +62,20 @@ def main() -> int:
         # remains fast even with many iterations.
         started = time.time()
         res = c._call(
-            "pane.confirm",
+            "area.confirm",
             {
                 "panel_id": str(panel_id),
-                "title": "pane.confirm test",
+                "title": "area.confirm test",
                 "message": "This should auto-dismiss.",
                 "timeout": 0.5,
             },
         )
         elapsed = time.time() - started
-        _must(isinstance(res, dict), f"pane.confirm should return dict: {res}")
+        _must(isinstance(res, dict), f"area.confirm should return dict: {res}")
         _must(res.get("result") == "dismissed",
-              f"pane.confirm with short timeout should return dismissed, got: {res}")
-        _must(elapsed >= 0.45, f"pane.confirm returned before timeout fired: {elapsed}s")
-        _must(elapsed < 5.0, f"pane.confirm took too long: {elapsed}s")
+              f"area.confirm with short timeout should return dismissed, got: {res}")
+        _must(elapsed >= 0.45, f"area.confirm returned before timeout fired: {elapsed}s")
+        _must(elapsed < 5.0, f"area.confirm took too long: {elapsed}s")
 
     print("OK")
     return 0

@@ -4,7 +4,7 @@
 The C11-156 reproduction shape: many concurrent hook/telemetry writes plus a
 blocking-genre command, while a cheap liveness probe must keep returning under
 an absolute deadline. If a future change puts a blocking handler
-(pane.confirm / feedback.submit) back on the main-actor policy, or reintroduces
+(area.confirm / feedback.submit) back on the main-actor policy, or reintroduces
 main-thread sync work on the telemetry path, the probe deadline blows and this
 test fails.
 

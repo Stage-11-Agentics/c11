@@ -33,8 +33,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: list[str]) -> str:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     cmd = [cli, "--socket", SOCKET_PATH] + args
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)

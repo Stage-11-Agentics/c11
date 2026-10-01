@@ -84,8 +84,8 @@ def main() -> int:
         right_surface_id = client.new_split("right")
         time.sleep(0.2)
 
-        payload = client._call("surface.list", {"workspace_id": workspace_id}) or {}
-        rows = payload.get("surfaces") or []
+        payload = client._call("tab.list", {"workspace_id": workspace_id}) or {}
+        rows = payload.get("tabs") or []
         if len(rows) < 2:
             raise cmuxError(f"expected at least two surfaces after split: {payload}")
 

@@ -142,11 +142,11 @@ def main() -> int:
         _must(not missing, f"Missing expected browser methods in capabilities: {missing}")
 
         opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
-        sid = str(opened.get("surface_id") or "")
-        _must(bool(sid), f"browser.open_split returned no surface_id: {opened}")
+        sid = str(opened.get("tab_id") or "")
+        _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
 
         for method, extra in WKWEBVIEW_NOT_SUPPORTED.items():
-            payload = {"surface_id": sid}
+            payload = {"tab_id": sid}
             payload.update(extra)
             _expect_not_supported(c, method, payload)
 

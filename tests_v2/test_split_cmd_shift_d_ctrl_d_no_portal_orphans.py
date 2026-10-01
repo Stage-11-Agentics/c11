@@ -87,7 +87,7 @@ def _panel_for_pane(layout_payload: dict, pane: dict) -> str:
     selected = _selected_panel_by_pane(layout_payload)
     panel_id = str(selected.get(pane_id) or "")
     if not panel_id:
-        raise cmuxError(f"missing selected panel for pane: pane_id={pane_id} selected={selected}")
+        raise cmuxError(f"missing selected panel for pane: area_id={pane_id} selected={selected}")
     return panel_id
 
 

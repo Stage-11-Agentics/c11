@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C11-26 regression: surface.send_text never blocks the main queue.
+"""C11-26 regression: tab.send_text never blocks the main queue.
 
 Why this test exists
 --------------------
@@ -12,7 +12,7 @@ the outer block, the timeout block could never be popped — the wait was
 unbounded. Sample evidence: 7120/7120 of a 10-second window stuck in the same
 stack.
 
-C11-26 routes `surface.send_text` (and the rest of the v2MainSync-wrapping
+C11-26 routes `tab.send_text` (and the rest of the v2MainSync-wrapping
 surface.* family) onto the socket worker thread via
 `SocketCommandExecutionPolicy.socketWorker`. On the worker thread, the new
 `waitForTerminalSurfaceOffMain` helper blocks on a DispatchSemaphore while
@@ -22,11 +22,11 @@ helper avoids repointing its many @MainActor callers). The wait is bounded.
 
 What this test asserts
 ----------------------
-- `surface.send_text` returns within a generous wall-clock budget even while
+- `tab.send_text` returns within a generous wall-clock budget even while
   the main actor is being kept busy by other socket calls. Pre-fix, this could
   hang indefinitely; post-fix, the worker-side semaphore wait completes within
   the handler's 2.0 s internal timeout plus normal scheduling overhead.
-- 20 parallel `surface.send_text` calls all complete within the wall-clock
+- 20 parallel `tab.send_text` calls all complete within the wall-clock
   budget, exercising the off-main routing under concurrent load.
 
 What this test does NOT do
@@ -93,7 +93,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _seed_workspace_and_surface(c: cmux) -> Tuple[str, str]:
-    """Create a workspace and return (workspace_id, surface_id) for its first surface."""
+    """Create a workspace and return (workspace_id, tab_id) for its first surface."""
     created = c._call("workspace.create", {}) or {}
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
@@ -110,18 +110,18 @@ def _seed_workspace_and_surface(c: cmux) -> Tuple[str, str]:
         time.sleep(0.05)
     _must(bool(surfaces), f"workspace {ws_id} has no surfaces after 2.0s poll: {surfaces}")
     sid = str(surfaces[0][1])
-    _must(bool(sid), f"surface.list returned surface without id: {surfaces}")
+    _must(bool(sid), f"tab.list returned surface without id: {surfaces}")
     return ws_id, sid
 
 
 def test_send_text_completes_under_main_actor_pressure(socket_path: str) -> None:
-    """One surface.send_text returns within the deadline while the main queue is hot.
+    """One tab.send_text returns within the deadline while the main queue is hot.
 
     Strategy: drive ~50 system.tree calls on a background thread (each runs on
     @MainActor) to keep the main dispatch queue saturated. While that's
-    happening, fire one surface.send_text on a parallel connection. Pre-fix
+    happening, fire one tab.send_text on a parallel connection. Pre-fix
     this could deadlock if the surface happened to be momentarily detached
-    during a layout reshuffle. Post-fix, surface.send_text runs on the worker
+    during a layout reshuffle. Post-fix, tab.send_text runs on the worker
     pool — even if main is busy, the worker-side semaphore wait does not
     nest a CFRunLoopRun on main.
     """
@@ -158,8 +158,8 @@ def test_send_text_completes_under_main_actor_pressure(socket_path: str) -> None
         with cmux(socket_path) as c:
             start = time.monotonic()
             res = c._call(
-                "surface.send_text",
-                {"workspace_id": ws_id, "surface_id": sid, "text": "echo c11_26_main_pressure\n"},
+                "tab.send_text",
+                {"workspace_id": ws_id, "tab_id": sid, "text": "echo c11_26_main_pressure\n"},
                 timeout_s=SINGLE_CALL_DEADLINE_SECONDS,
             )
             elapsed = time.monotonic() - start
@@ -169,12 +169,12 @@ def test_send_text_completes_under_main_actor_pressure(socket_path: str) -> None
 
         _must(
             elapsed < SINGLE_CALL_DEADLINE_SECONDS,
-            f"surface.send_text under main pressure took {elapsed:.2f}s "
+            f"tab.send_text under main pressure took {elapsed:.2f}s "
             f"(deadline {SINGLE_CALL_DEADLINE_SECONDS}s) — possible main-queue deadlock regression",
         )
         _must(
-            isinstance(res, dict) and bool(res.get("surface_id")),
-            f"surface.send_text returned unexpected payload: {res!r}",
+            isinstance(res, dict) and bool(res.get("tab_id")),
+            f"tab.send_text returned unexpected payload: {res!r}",
         )
         print(
             f"PASS: test_send_text_completes_under_main_actor_pressure "
@@ -189,7 +189,7 @@ def test_send_text_completes_under_main_actor_pressure(socket_path: str) -> None
 
 
 def test_send_text_concurrent_burst(socket_path: str) -> None:
-    """20 parallel surface.send_text calls complete within the wall-clock budget.
+    """20 parallel tab.send_text calls complete within the wall-clock budget.
 
     Each worker uses its own socket connection so the connections don't
     serialize at the wire level. Pre-fix any one of these could have hung the
@@ -209,16 +209,16 @@ def test_send_text_concurrent_burst(socket_path: str) -> None:
                 with cmux(socket_path) as c:
                     start = time.monotonic()
                     res = c._call(
-                        "surface.send_text",
+                        "tab.send_text",
                         {
                             "workspace_id": ws_id,
-                            "surface_id": sid,
+                            "tab_id": sid,
                             "text": f"echo c11_26_burst_{idx}\n",
                         },
                         timeout_s=BURST_DEADLINE_SECONDS,
                     )
                     elapsed_ms_per_call[idx] = (time.monotonic() - start) * 1000.0
-                    if not (isinstance(res, dict) and res.get("surface_id")):
+                    if not (isinstance(res, dict) and res.get("tab_id")):
                         errors.append((idx, f"unexpected payload: {res!r}"))
             except Exception as e:
                 errors.append((idx, str(e)))
@@ -238,11 +238,11 @@ def test_send_text_concurrent_burst(socket_path: str) -> None:
         )
         _must(
             not errors,
-            f"surface.send_text errors during burst: {errors[:5]}{'…' if len(errors) > 5 else ''}",
+            f"tab.send_text errors during burst: {errors[:5]}{'…' if len(errors) > 5 else ''}",
         )
         _must(
             wall_elapsed < BURST_DEADLINE_SECONDS,
-            f"20 parallel surface.send_text calls took {wall_elapsed:.2f}s "
+            f"20 parallel tab.send_text calls took {wall_elapsed:.2f}s "
             f"(deadline {BURST_DEADLINE_SECONDS}s) — possible main-queue contention regression",
         )
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v0.54.0 BUG 1: `c11 send-key <arrow>` must deliver the correct PTY bytes.
 
-Before the fix, `surface.send_key` only knew ctrl-*, enter, tab, escape and
+Before the fix, `tab.send_key` only knew ctrl-*, enter, tab, escape and
 backspace; every arrow/navigation name returned `invalid_params: Unknown key`.
 This test drives a real pane: it runs a one-read raw reader that first resets
 DECCKM (normal cursor keys, so arrows encode as CSI and the assertion is
@@ -62,7 +62,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _screen(c: cmux, ws: str, surface: str) -> str:
-    payload = c._call("surface.read_text", {"workspace_id": ws, "surface_id": surface}) or {}
+    payload = c._call("tab.read_text", {"workspace_id": ws, "tab_id": surface}) or {}
     return str(payload.get("text") or "")
 
 
@@ -94,10 +94,10 @@ def test_arrow_keys_emit_csi_bytes(c: cmux) -> None:
     _must(bool(ws), "workspace.create returned no workspace_id")
     try:
         time.sleep(0.3)
-        surfaces = (c._call("surface.list", {"workspace_id": ws}) or {}).get("surfaces") or []
+        surfaces = (c._call("tab.list", {"workspace_id": ws}) or {}).get("tabs") or []
         _must(bool(surfaces), f"No surfaces in workspace {ws}")
         surface = str(surfaces[0].get("id") or "")
-        _must(bool(surface), "surface.list returned surface without id")
+        _must(bool(surface), "tab.list returned surface without id")
 
         for name, expected_hex in ARROW_BYTES.items():
             marker = _ready_marker(name)
@@ -105,16 +105,16 @@ def test_arrow_keys_emit_csi_bytes(c: cmux) -> None:
             # trailing newline, which is the Enter that runs it, so we must NOT
             # also ask for a submit (that stray Return would be the byte the
             # reader captures instead of the arrow under test).
-            c._call("surface.send_text", {
-                "workspace_id": ws, "surface_id": surface,
+            c._call("tab.send_text", {
+                "workspace_id": ws, "tab_id": surface,
                 "text": _reader(name) + "\n", "submit": False,
             })
             _wait_for(c, ws, surface, marker, timeout_s=8.0)
             # Small settle so the reader has entered its raw read before the key.
             time.sleep(0.4)
 
-            c._call("surface.send_key", {
-                "workspace_id": ws, "surface_id": surface, "key": name,
+            c._call("tab.send_key", {
+                "workspace_id": ws, "tab_id": surface, "key": name,
             })
 
             got = None

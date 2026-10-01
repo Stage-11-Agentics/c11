@@ -45,8 +45,10 @@ def _find_cli_binary() -> str:
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -106,8 +108,8 @@ def _wait_remote_ready(client: cmux, workspace_id: str, timeout_s: float = 60.0)
 
 def _surface_scrollback_text(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "surface.read_text",
-        {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+        "tab.read_text",
+        {"workspace_id": workspace_id, "tab_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 
@@ -125,7 +127,7 @@ def _browser_body_text(client: cmux, surface_id: str) -> str:
     payload = client._call(
         "browser.eval",
         {
-            "surface_id": surface_id,
+            "tab_id": surface_id,
             "script": "document.body ? (document.body.innerText || '') : ''",
         },
     ) or {}
@@ -225,17 +227,17 @@ def main() -> int:
                 "done"
             )
             client._call(
-                "surface.send_text",
-                {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "text": server_script},
+                "tab.send_text",
+                {"workspace_id": remote_workspace_id, "tab_id": remote_surface_id, "text": server_script},
             )
             client._call(
-                "surface.send_key",
-                {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "key": "enter"},
+                "tab.send_key",
+                {"workspace_id": remote_workspace_id, "tab_id": remote_surface_id, "key": "enter"},
             )
             _wait_surface_contains(client, remote_workspace_id, remote_surface_id, ready_token, timeout_s=12.0)
 
             browser_surface_id = str(client._resolve_surface_id(browser_surface_id))
-            client._call("browser.navigate", {"surface_id": browser_surface_id, "url": url})
+            client._call("browser.navigate", {"tab_id": browser_surface_id, "url": url})
             local_body = _assert_browser_does_not_contain(client, browser_surface_id, marker_body, sample_window_s=5.0)
             _must(
                 marker_body not in local_body,
@@ -252,7 +254,7 @@ def main() -> int:
 
             _wait_for(_browser_in_remote_workspace, timeout_s=10.0, step_s=0.15)
 
-            client._call("browser.navigate", {"surface_id": browser_surface_id, "url": url})
+            client._call("browser.navigate", {"tab_id": browser_surface_id, "url": url})
             _wait_browser_contains(client, browser_surface_id, marker_body, timeout_s=20.0)
 
             body = _browser_body_text(client, browser_surface_id)
@@ -270,12 +272,12 @@ def main() -> int:
                 cleanup = f"pkill -f 'python3 -m http.server {ssh_web_port}' >/dev/null 2>&1 || true"
                 with cmux(SOCKET_PATH) as cleanup_client:
                     cleanup_client._call(
-                        "surface.send_text",
-                        {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "text": cleanup},
+                        "tab.send_text",
+                        {"workspace_id": remote_workspace_id, "tab_id": remote_surface_id, "text": cleanup},
                     )
                     cleanup_client._call(
-                        "surface.send_key",
-                        {"workspace_id": remote_workspace_id, "surface_id": remote_surface_id, "key": "enter"},
+                        "tab.send_key",
+                        {"workspace_id": remote_workspace_id, "tab_id": remote_surface_id, "key": "enter"},
                     )
             except Exception:  # noqa: BLE001
                 pass

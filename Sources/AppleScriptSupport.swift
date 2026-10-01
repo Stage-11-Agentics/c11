@@ -203,12 +203,12 @@ extension NSApplication {
                 command.scriptErrorString = AppleScriptStrings.failedToCreateWorkspace
                 return nil
             }
-            return ScriptWorkspace(windowId: targetWindow.windowId, workspaceId: workspaceId)
+            return ScriptWorkspace(windowId: targetWindow.windowId, tabId: workspaceId)
         }
 
         if let frontWindow = scriptWindows.first,
            let workspaceId = appDelegate.addWorkspace(windowId: frontWindow.windowId, bringToFront: false) {
-            return ScriptWorkspace(windowId: frontWindow.windowId, workspaceId: workspaceId)
+            return ScriptWorkspace(windowId: frontWindow.windowId, tabId: workspaceId)
         }
 
         let windowId = appDelegate.createMainWindow()
@@ -262,7 +262,7 @@ final class ScriptWindow: NSObject {
               let state else {
             return []
         }
-        return state.workspaceManager.workspaces.map { ScriptWorkspace(windowId: windowId, workspaceId: $0.id) }
+        return state.workspaceManager.workspaces.map { ScriptWorkspace(windowId: windowId, tabId: $0.id) }
     }
 
     @objc(selectedTab)
@@ -271,7 +271,7 @@ final class ScriptWindow: NSObject {
               let selectedId = state?.workspaceManager.selectedWorkspaceId else {
             return nil
         }
-        return ScriptWorkspace(windowId: windowId, workspaceId: selectedId)
+        return ScriptWorkspace(windowId: windowId, tabId: selectedId)
     }
 
     @objc(terminals)
@@ -295,7 +295,7 @@ final class ScriptWindow: NSObject {
               state.workspaceManager.workspaces.contains(where: { $0.id == tabId }) else {
             return nil
         }
-        return ScriptWorkspace(windowId: windowId, workspaceId: tabId)
+        return ScriptWorkspace(windowId: windowId, tabId: tabId)
     }
 
     @objc(valueInTerminalsWithUniqueID:)

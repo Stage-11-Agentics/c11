@@ -119,10 +119,15 @@ struct AgentActivityHelpProjection: Equatable {
     }
 }
 
-struct SurfaceActivityDetailsSnapshot: Equatable {
+struct TabActivityDetailsSnapshot: Equatable {
     let activityHelp: AgentActivityHelpProjection?
     let createdAt: Date?
     let lastActivityAt: Date?
+    /// C11-243: the stored moment the operator last STOPPED looking at this tab
+    /// (nil if never). Not "now" while being seen: when `isBeingSeen` is true the
+    /// Seen clock renders "now"; otherwise it renders this value.
+    var lastSeenAt: Date? = nil
+    var isBeingSeen: Bool = false
 }
 
 struct WorkspacePulseAgent: Equatable, Identifiable {
@@ -161,7 +166,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     /// modifiers are present. The stored `state` remains the source truth for
     /// C11-184; renderers and summary counts consume this presented value.
     var presentedState: WorkspacePulseState {
-        SurfaceAttentionSnapshot.presentedState(
+        TabAttentionSnapshot.presentedState(
             state,
             flagged: flagged,
             suppressed: suppressed

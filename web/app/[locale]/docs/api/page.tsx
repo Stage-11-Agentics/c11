@@ -154,9 +154,9 @@ export default function ApiPage() {
           </tr>
           <tr>
             <td>
-              <code>--surface ID</code>
+              <code>--tab ID</code>
             </td>
-            <td>{t("targetSurface")}</td>
+            <td>{t("targetTab")}</td>
           </tr>
           <tr>
             <td>
@@ -209,20 +209,20 @@ c11 current-workspace --json`}
         desc={t("newSplitDesc")}
         cli={`c11 new-split right
 c11 new-split down`}
-        socket={`{"id":"split-new","method":"surface.split","params":{"direction":"right"}}`}
+        socket={`{"id":"split-new","method":"tab.split","params":{"direction":"right"}}`}
       />
       <Cmd
-        name="list-surfaces"
-        desc={t("listSurfacesDesc")}
-        cli={`c11 list-surfaces
-c11 list-surfaces --json`}
-        socket={`{"id":"surface-list","method":"surface.list","params":{}}`}
+        name="list-tabs"
+        desc={t("listTabsDesc")}
+        cli={`c11 list-tabs
+c11 list-tabs --json`}
+        socket={`{"id":"tab-list","method":"tab.list","params":{}}`}
       />
       <Cmd
-        name="focus-surface"
-        desc={t("focusSurfaceDesc")}
-        cli={`c11 focus-surface --surface <id>`}
-        socket={`{"id":"surface-focus","method":"surface.focus","params":{"surface_id":"<id>"}}`}
+        name="focus-tab"
+        desc={t("focusTabDesc")}
+        cli={`c11 focus-tab --tab <id>`}
+        socket={`{"id":"tab-focus","method":"tab.focus","params":{"tab_id":"<id>"}}`}
       />
 
       <h2>{t("inputCommands")}</h2>
@@ -232,25 +232,25 @@ c11 list-surfaces --json`}
         desc={t("sendDesc")}
         cli={`c11 send "echo hello"
 c11 send "ls -la\\n"`}
-        socket={`{"id":"send-text","method":"surface.send_text","params":{"text":"echo hello\\n"}}`}
+        socket={`{"id":"send-text","method":"tab.send_text","params":{"text":"echo hello\\n"}}`}
       />
       <Cmd
         name="send-key"
         desc={t("sendKeyDesc")}
         cli={`c11 send-key enter`}
-        socket={`{"id":"send-key","method":"surface.send_key","params":{"key":"enter"}}`}
+        socket={`{"id":"send-key","method":"tab.send_key","params":{"key":"enter"}}`}
       />
       <Cmd
-        name="send-surface"
-        desc={t("sendSurfaceDesc")}
-        cli={`c11 send-surface --surface <id> "command"`}
-        socket={`{"id":"send-surface","method":"surface.send_text","params":{"surface_id":"<id>","text":"command"}}`}
+        name="send-tab"
+        desc={t("sendTabDesc")}
+        cli={`c11 send-tab --tab <id> "command"`}
+        socket={`{"id":"send-tab","method":"tab.send_text","params":{"tab_id":"<id>","text":"command"}}`}
       />
       <Cmd
-        name="send-key-surface"
-        desc={t("sendKeySurfaceDesc")}
-        cli={`c11 send-key-surface --surface <id> enter`}
-        socket={`{"id":"send-key-surface","method":"surface.send_key","params":{"surface_id":"<id>","key":"enter"}}`}
+        name="send-key-tab"
+        desc={t("sendKeyTabDesc")}
+        cli={`c11 send-key-tab --tab <id> enter`}
+        socket={`{"id":"send-key-tab","method":"tab.send_key","params":{"tab_id":"<id>","key":"enter"}}`}
       />
 
       <h2>{t("notificationCommands")}</h2>
@@ -399,9 +399,9 @@ c11 identify --json`}
           </tr>
           <tr>
             <td>
-              <code>C11_SURFACE_ID</code>
+              <code>C11_TAB_ID</code>
             </td>
-            <td>{t("surfaceIdDesc")}</td>
+            <td>{t("tabIdDesc")}</td>
           </tr>
           <tr>
             <td>
@@ -430,7 +430,7 @@ SOCK="\${C11_SOCKET_PATH:-/tmp/c11.sock}"
 command -v c11 &>/dev/null && echo "c11 available"
 
 # In c11-managed terminals these are auto-set
-[ -n "\${C11_WORKSPACE_ID:-}" ] && [ -n "\${C11_SURFACE_ID:-}" ] && echo "Inside c11 surface"
+[ -n "\${C11_WORKSPACE_ID:-}" ] && [ -n "\${C11_TAB_ID:-}" ] && echo "Inside a c11 tab"
 
 # Distinguish from regular Ghostty
 [ "$TERM_PROGRAM" = "ghostty" ] && [ -n "\${C11_WORKSPACE_ID:-}" ] && echo "In c11"`}</CodeBlock>

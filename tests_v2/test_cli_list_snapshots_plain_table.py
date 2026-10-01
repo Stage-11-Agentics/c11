@@ -107,10 +107,10 @@ def main() -> int:
             snapshots = payload.get("snapshots") or []
             match = next((e for e in snapshots if e.get("snapshot_id") == snapshot_id), None)
             _must(match is not None, f"list-snapshots --json missing row for {snapshot_id}")
-            surface_count = match.get("surface_count")
+            surface_count = match.get("tab_count")
             _must(
                 isinstance(surface_count, int) and surface_count >= 0,
-                f"surface_count is not a non-negative int: {surface_count!r}",
+                f"tab_count is not a non-negative int: {surface_count!r}",
             )
             _must(match.get("source") == "current", f"source not 'current': {match.get('source')!r}")
             # The row's surface count must match what the plain table
@@ -121,7 +121,7 @@ def main() -> int:
             row_ints = [int(tok) for tok in row.split() if tok.isdigit()]
             _must(
                 surface_count in row_ints,
-                f"plain-table row surface count tokens {row_ints} do not contain JSON surface_count {surface_count}: {row!r}",
+                f"plain-table row surface count tokens {row_ints} do not contain JSON tab_count {surface_count}: {row!r}",
             )
     finally:
         if snapshot_path and os.path.isfile(snapshot_path):

@@ -111,7 +111,7 @@ extension TerminalController {
     }
 
     private func v2MarkdownOpen(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let rawPath = v2String(params, "path") else {
@@ -139,54 +139,54 @@ extension TerminalController {
             return .err(code: "permission_denied", message: "File not readable: \(filePath)", data: ["path": filePath])
         }
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
         v2MainSync {
             // M6 — if pane_id is supplied, locate the owning workspace across all
             // windows so `markdown.open --pane P` works standalone (spec: --pane
             // uniquely identifies). This takes precedence over workspace_id/window_id
             // (which may be injected from env vars by the CLI).
-            var resolvedTabManager: TabManager = tabManager
+            var resolvedWorkspaceManager: WorkspaceManager = workspaceManager
             var resolvedWorkspace: Workspace?
             if v2HasNonNullParam(params, "pane_id") {
                 guard let paneUUID = v2UUID(params, "pane_id") else {
-                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    result = .err(code: "invalid_params", message: "Invalid area_id", data: nil)
                     return
                 }
                 if let located = AppDelegate.shared?.locatePane(paneId: paneUUID) {
                     resolvedWorkspace = located.workspace
-                    resolvedTabManager = located.tabManager
+                    resolvedWorkspaceManager = located.workspaceManager
                 }
             }
-            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, tabManager: resolvedTabManager) else {
+            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, workspaceManager: resolvedWorkspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: resolvedTabManager)
-            v2MaybeSelectWorkspace(resolvedTabManager, workspace: ws)
+            v2MaybeFocusWindow(for: resolvedWorkspaceManager)
+            v2MaybeSelectWorkspace(resolvedWorkspaceManager, workspace: ws)
 
             // M6 — if pane_id is supplied, open as a tab inside that pane (no split).
             if v2HasNonNullParam(params, "pane_id") {
                 guard let paneUUID = v2UUID(params, "pane_id") else {
-                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    result = .err(code: "invalid_params", message: "Invalid area_id", data: nil)
                     return
                 }
                 guard let targetPaneId = ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID }) else {
-                    result = .err(code: "not_found", message: "Pane not found in workspace", data: ["pane_id": paneUUID.uuidString])
+                    result = .err(code: "not_found", message: "Area not found in workspace", data: ["pane_id": paneUUID.uuidString])
                     return
                 }
 
-                let createdPanel = ws.newMarkdownSurface(
+                let createdPanel = ws.newMarkdownTab(
                     inPane: targetPaneId,
                     filePath: filePath,
                     focus: v2FocusAllowed()
                 )
 
                 guard let markdownPanelId = createdPanel?.id else {
-                    result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
                     return
                 }
 
-                let windowId = v2ResolveWindowId(tabManager: resolvedTabManager)
+                let windowId = v2ResolveWindowId(workspaceManager: resolvedWorkspaceManager)
                 result = .ok([
                     "window_id": v2OrNull(windowId?.uuidString),
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -205,11 +205,11 @@ extension TerminalController {
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused surface to split", data: nil)
+                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
                 return
             }
             guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source surface not found", data: ["surface_id": sourceSurfaceId.uuidString])
+                result = .err(code: "not_found", message: "Source tab not found", data: ["surface_id": sourceSurfaceId.uuidString])
                 return
             }
 
@@ -223,12 +223,12 @@ extension TerminalController {
             )
 
             guard let markdownPanelId = createdPanel?.id else {
-                result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
+                result = .err(code: "internal_error", message: "Failed to create markdown tab", data: nil)
                 return
             }
 
             let targetPaneUUID = ws.paneId(forPanelId: markdownPanelId)?.id
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -252,7 +252,7 @@ extension TerminalController {
 
     private func v2MarkdownGetContent(params: [String: Any]) -> V2CallResult {
         guard let resolved = v2ResolveWorkspaceSurface(params: params) else {
-            return .err(code: "not_found", message: "Surface not found", data: nil)
+            return .err(code: "not_found", message: "Tab not found", data: nil)
         }
         let (ws, surfaceId) = resolved
 
@@ -260,11 +260,11 @@ extension TerminalController {
         var errResult: V2CallResult?
         v2MainSync {
             guard let panel = ws.panels[surfaceId] else {
-                errResult = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                errResult = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            guard let markdown = panel as? MarkdownPanel else {
-                errResult = .err(code: "invalid_params", message: "Surface is not a markdown panel", data: ["surface_id": surfaceId.uuidString])
+            guard let markdown = panel as? MarkdownTab else {
+                errResult = .err(code: "invalid_params", message: "Tab is not a markdown tab", data: ["surface_id": surfaceId.uuidString])
                 return
             }
 
@@ -276,7 +276,7 @@ extension TerminalController {
             var out: [String: Any] = [
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "type": PanelType.markdown.rawValue,
+                "type": TabContentType.markdown.rawValue,
                 "file_path": markdown.filePath,
                 "content_length": contentBytes.count,
                 "content_sha256": sha,
@@ -292,7 +292,7 @@ extension TerminalController {
         }
         if let errResult { return errResult }
         guard let out = payload else {
-            return .err(code: "not_found", message: "Surface not found", data: nil)
+            return .err(code: "not_found", message: "Tab not found", data: nil)
         }
         return .ok(out)
     }

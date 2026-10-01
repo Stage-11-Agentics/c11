@@ -56,8 +56,22 @@ final class AgentConfigEditorModelTests: XCTestCase {
         RawCatalogRecord(harness: "omp", rawID: "kimi/kimi-for-coding",
                          efforts: .values(["minimal", "low", "medium", "high"])),
 
-        // xAI, and a long-tail provider so the overflow tier has something in it.
+        // xAI. grok publishes the ids its CLI accepts. grok-build-0.1 and the
+        // floating `grok-latest` alias are router-only; grok.com rejects both.
+        // grok-4.7 is the CLI's current default. opencode also publishes it, so
+        // the harness list after a latest-alias retarget is Grok Build plus
+        // OpenCode. Perplexity keeps the provider overflow tier occupied.
         RawCatalogRecord(harness: "grok", rawID: "grok-4.5", providerHint: "xai"),
+        RawCatalogRecord(harness: "grok", rawID: "grok-4.6", providerHint: "xai"),
+        RawCatalogRecord(harness: "grok", rawID: "grok-4.7", providerHint: "xai"),
+        RawCatalogRecord(harness: "grok", rawID: "grok-4.7-build-fast", providerHint: "xai"),
+        RawCatalogRecord(harness: "opencode", rawID: "openrouter/x-ai/grok-4.7"),
+        RawCatalogRecord(harness: "opencode", rawID: "openrouter/~x-ai/grok-latest"),
+        RawCatalogRecord(harness: "pi", rawID: "openrouter/~x-ai/grok-latest"),
+        RawCatalogRecord(harness: "omp", rawID: "openrouter/~x-ai/grok-latest"),
+        RawCatalogRecord(harness: "opencode", rawID: "openrouter/x-ai/grok-build-0.1",
+                         displayName: "Grok Build"),
+        RawCatalogRecord(harness: "pi", rawID: "openrouter/x-ai/grok-build-0.1"),
         RawCatalogRecord(harness: "pi", rawID: "perplexity/sonar-pro"),
     ]
 
@@ -188,6 +202,53 @@ final class AgentConfigEditorModelTests: XCTestCase {
         let before = selection(provider: "openai", harness: "codex", model: "gpt-5.6-sol")
         let after = AgentConfigAxes.selectingModel(model("openai", "gpt-5.6-astra"), in: before, catalog: catalog)
         XCTAssertEqual(after, before, "the Astra row is dimmed; clicking it changes nothing")
+    }
+
+    func testARouterOnlyXAIModelDoesNotOfferGrokBuild() {
+        // grok.com rejects `grok-build-0.1`. Offering Grok Build here would save
+        // a config that dies at launch with "unknown model id".
+        let routed = selection(provider: "xai", harness: "opencode", model: "openrouter/x-ai/grok-build-0.1")
+        XCTAssertEqual(AgentConfigAxes.harnessOptions(for: routed, catalog: catalog), ["opencode", "pi"])
+    }
+
+    func testPickingARouterOnlyXAIModelLeavesGrokBuild() {
+        let before = selection(provider: "xai", harness: "grok", model: "grok-4.7")
+        let after = AgentConfigAxes.selectingModel(model("xai", "grok-build-0.1"), in: before, catalog: catalog)
+        XCTAssertEqual(after.config.harness, "opencode")
+        XCTAssertEqual(after.config.model, "openrouter/x-ai/grok-build-0.1")
+    }
+
+    func testAnXAIModelGrokPublishesDefaultsToGrokBuild() {
+        let before = selection(provider: "openai", harness: "opencode", model: "openai/gpt-5.6-sol")
+        let after = AgentConfigAxes.selectingModel(model("xai", "grok-4.7"), in: before, catalog: catalog)
+        XCTAssertEqual(after.config.harness, "grok")
+        XCTAssertEqual(after.provider, "xai")
+        XCTAssertEqual(after.config.model, "grok-4.7")
+        XCTAssertEqual(
+            AgentConfigAxes.harnessOptions(for: after, catalog: catalog),
+            ["grok", "opencode"]
+        )
+    }
+
+    func testGrokLatestDefaultsToGrokBuildOnTheCLIDefault() {
+        // The row the operator reads as "Grok latest". Routers are the only
+        // harnesses that publish the alias.
+        let alias = model("xai", "grok-latest")
+        XCTAssertEqual(AgentConfigAxes.harnessOptions(
+            for: selection(provider: "xai", harness: "opencode", model: "openrouter/~x-ai/grok-latest"),
+            catalog: catalog
+        ), ["opencode", "pi", "omp"])
+
+        let before = selection(provider: "openai", harness: "opencode", model: "openai/gpt-5.6-sol")
+        let after = AgentConfigAxes.selectingModel(alias, in: before, catalog: catalog)
+        XCTAssertEqual(after.provider, "xai")
+        XCTAssertEqual(after.config.harness, "grok")
+        XCTAssertEqual(after.config.model, "grok-4.7",
+                       "bare grok-4.7 beats grok-4.7-build-fast; grok.com rejects grok-latest")
+        XCTAssertEqual(
+            AgentConfigAxes.harnessOptions(for: after, catalog: catalog).first,
+            "grok"
+        )
     }
 
     func testSelectingInheritClearsTheModelButLeavesTheHarness() {
@@ -419,7 +480,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
     func testModelOptionsWithNoProviderSearchTheWholeCatalog() {
         XCTAssertTrue(AgentConfigAxes.modelOptions(provider: nil, query: "", catalog: catalog).isEmpty,
                       "no provider and no query is the Inherit case, not a 628-row dump")
-        let hits = AgentConfigAxes.modelOptions(provider: nil, query: "grok", catalog: catalog)
+        let hits = AgentConfigAxes.modelOptions(provider: nil, query: "grok-4.5", catalog: catalog)
         XCTAssertEqual(hits.map(\.id), ["grok-4.5"])
     }
 

@@ -10,7 +10,7 @@ import WebKit
 @MainActor
 final class BrowserCompanionPortalTests: XCTestCase {
     private let linkedAgent = AgentDescriptor(
-        identity: CompanionSurfaceIdentity(
+        identity: CompanionTabIdentity(
             surfaceID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
             surfaceRef: "surface:11",
             surfaceOrdinal: 11,
@@ -19,7 +19,7 @@ final class BrowserCompanionPortalTests: XCTestCase {
         terminalKind: "codex"
     )
     private let activeAgent = AgentDescriptor(
-        identity: CompanionSurfaceIdentity(
+        identity: CompanionTabIdentity(
             surfaceID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
             surfaceRef: "surface:22",
             surfaceOrdinal: 22,
@@ -209,7 +209,7 @@ final class BrowserCompanionPortalTests: XCTestCase {
         }
 
         overlay.keyDown(with: keyEvent(characters: "\r", keyCode: 36, window: window))
-        slot.setCompanion(configuration(for: .orphaned(link: AgentSurfaceLink(
+        slot.setCompanion(configuration(for: .orphaned(link: AgentTabLink(
             surfaceID: linkedAgent.identity.surfaceID,
             lastKnownName: linkedAgent.identity.displayName
         ))))
@@ -274,9 +274,9 @@ final class BrowserCompanionPortalTests: XCTestCase {
         slot.setCompanion(configuration(for: .revealed(linked: linkedAgent, active: activeAgent)))
         slot.setSearchOverlay(searchConfiguration(onClose: {}))
         slot.setPaneInteraction(
-            BrowserPortalPaneInteractionConfiguration(
+            BrowserPortalAreaInteractionConfiguration(
                 panelId: UUID(),
-                runtime: PaneInteractionRuntime()
+                runtime: AreaInteractionRuntime()
             )
         )
 
@@ -286,10 +286,8 @@ final class BrowserCompanionPortalTests: XCTestCase {
                   String(describing: type(of: $0)).contains("NSHostingView")
               }),
               let veilIndex = subviews.firstIndex(where: { $0 is BrowserCompanionOverlayHost }),
-              let dragIndex = subviews.firstIndex(where: {
-                  String(describing: type(of: $0)).contains("BrowserPaneDropTargetView")
-              }),
-              let modalIndex = subviews.firstIndex(where: { $0 is PaneInteractionOverlayHost })
+              let dragIndex = subviews.firstIndex(where: { $0 is BrowserAreaDropTargetView }),
+              let modalIndex = subviews.firstIndex(where: { $0 is AreaInteractionOverlayHost })
         else {
             XCTFail("Expected all five portal interaction layers")
             return
@@ -326,7 +324,7 @@ final class BrowserCompanionPortalTests: XCTestCase {
 
         BrowserWindowPortalRegistry.updateCompanion(
             for: webView,
-            configuration: configuration(for: .orphaned(link: AgentSurfaceLink(
+            configuration: configuration(for: .orphaned(link: AgentTabLink(
                 surfaceID: linkedAgent.identity.surfaceID,
                 lastKnownName: linkedAgent.identity.displayName
             )))

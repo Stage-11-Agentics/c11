@@ -135,16 +135,16 @@ final class EventEmitter {
         emit(.metadataChanged, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitWaiting(entered: Bool, workspace tabId: UUID, surface: UUID?) {
-        emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
+    func emitWaiting(entered: Bool, workspace workspaceId: UUID, surface: UUID?) {
+        emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
 
     func emitFlagRaised(
         workspace: UUID,
         surface: UUID,
         reason: String,
-        callerSurfaceId: UUID?,
-        by actor: SurfaceAttentionActor
+        callerTabId: UUID?,
+        by actor: TabAttentionActor
     ) {
         emit(
             .flagRaised,
@@ -152,21 +152,24 @@ final class EventEmitter {
             surface: surface,
             payload: [
                 "reason": reason,
-                "caller_surface_id": callerSurfaceId?.uuidString ?? NSNull(),
+                // C11-248: `caller_tab_id` is canonical; `caller_surface_id` carries the
+                // same UUID for v1 consumers (remove after one release).
+                "caller_tab_id": callerTabId?.uuidString ?? NSNull(),
+                "caller_surface_id": callerTabId?.uuidString ?? NSNull(),
                 "by": actor.rawValue,
             ]
         )
     }
 
-    func emitFlagLowered(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+    func emitFlagLowered(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
         emit(.flagLowered, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 
-    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
         emit(.flagSuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 
-    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
         emit(.flagUnsuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
     }
 

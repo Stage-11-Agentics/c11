@@ -117,7 +117,7 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
             alternateStore.clearHistory()
         }
 
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             profileID: BrowserProfileStore.shared.builtInDefaultProfileID
         )
@@ -154,7 +154,7 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
 @MainActor
 final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     func testRequestPersistsUntilAcknowledged() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         XCTAssertNil(panel.pendingAddressBarFocusRequestId)
 
         let requestId = panel.requestAddressBarFocus()
@@ -172,7 +172,7 @@ final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testRequestCoalescesWhilePending() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         let secondRequest = panel.requestAddressBarFocus()
 
@@ -181,7 +181,7 @@ final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testStaleAcknowledgementDoesNotClearNewestRequest() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         panel.acknowledgeAddressBarFocusRequest(firstRequest)
         let secondRequest = panel.requestAddressBarFocus()
@@ -395,7 +395,7 @@ final class WindowBrowserHostViewTests: XCTestCase {
     func testDragHoverEventsPassThroughForSidebarReorderWithoutMouseButtonState() {
         XCTAssertTrue(
             WindowBrowserHostView.shouldPassThroughToDragTargets(
-                pasteboardTypes: [DragOverlayRoutingPolicy.sidebarTabReorderType],
+                pasteboardTypes: [DragOverlayRoutingPolicy.sidebarWorkspaceReorderType],
                 eventType: .cursorUpdate
             )
         )
@@ -1670,11 +1670,11 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         let size = CGSize(width: 240, height: 180)
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: size.height - 8), in: size),
+            BrowserAreaDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: size.height - 8), in: size),
             .top
         )
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: 8), in: size),
+            BrowserAreaDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: 8), in: size),
             .bottom
         )
     }
@@ -1683,7 +1683,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         let size = CGSize(width: 240, height: 180)
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(
+            BrowserAreaDropRouting.zone(
                 for: CGPoint(x: size.width * 0.5, y: 110),
                 in: size,
                 topChromeHeight: 36
@@ -1691,7 +1691,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             .center
         )
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(
+            BrowserAreaDropRouting.zone(
                 for: CGPoint(x: size.width * 0.5, y: 150),
                 in: size,
                 topChromeHeight: 36
@@ -1702,19 +1702,19 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
 
     func testHitTestingCapturesOnlyForRelevantDragEvents() {
         XCTAssertTrue(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
                 eventType: .cursorUpdate
             )
         )
         XCTAssertFalse(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
                 eventType: .leftMouseDown
             )
         )
         XCTAssertFalse(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [.fileURL],
                 eventType: .cursorUpdate
             )
@@ -1723,62 +1723,62 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
 
     func testCenterDropOnSamePaneIsNoOp() {
         let paneId = PaneID(id: UUID())
-        let target = BrowserPaneDropContext(
+        let target = BrowserAreaDropContext(
             workspaceId: UUID(),
             panelId: UUID(),
             paneId: paneId
         )
-        let transfer = BrowserPaneDragTransfer(
-            tabId: UUID(),
+        let transfer = BrowserAreaDragTransfer(
+            bonsplitTabId: UUID(),
             sourcePaneId: paneId.id,
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.action(for: transfer, target: target, zone: .center),
+            BrowserAreaDropRouting.action(for: transfer, target: target, zone: .center),
             .noOp
         )
     }
 
     func testRightEdgeDropBuildsSplitMoveAction() {
         let paneId = PaneID(id: UUID())
-        let target = BrowserPaneDropContext(
+        let target = BrowserAreaDropContext(
             workspaceId: UUID(),
             panelId: UUID(),
             paneId: paneId
         )
-        let tabId = UUID()
-        let transfer = BrowserPaneDragTransfer(
-            tabId: tabId,
+        let bonsplitTabId = UUID()
+        let transfer = BrowserAreaDragTransfer(
+            bonsplitTabId: bonsplitTabId,
             sourcePaneId: UUID(),
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.action(for: transfer, target: target, zone: .right),
+            BrowserAreaDropRouting.action(for: transfer, target: target, zone: .right),
             .move(
-                tabId: tabId,
+                bonsplitTabId: bonsplitTabId,
                 targetWorkspaceId: target.workspaceId,
                 targetPane: paneId,
-                splitTarget: BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: false)
+                splitTarget: BrowserAreaSplitTarget(orientation: .horizontal, insertFirst: false)
             )
         )
     }
 
     func testDecodeTransferPayloadReadsTabAndSourcePane() {
-        let tabId = UUID()
+        let bonsplitTabId = UUID()
         let sourcePaneId = UUID()
         let payload = try! JSONSerialization.data(
             withJSONObject: [
-                "tab": ["id": tabId.uuidString],
+                "tab": ["id": bonsplitTabId.uuidString],
                 "sourcePaneId": sourcePaneId.uuidString,
                 "sourceProcessId": ProcessInfo.processInfo.processIdentifier,
             ]
         )
 
-        let transfer = BrowserPaneDragTransfer.decode(from: payload)
+        let transfer = BrowserAreaDragTransfer.decode(from: payload)
 
-        XCTAssertEqual(transfer?.tabId, tabId)
+        XCTAssertEqual(transfer?.bonsplitTabId, bonsplitTabId)
         XCTAssertEqual(transfer?.sourcePaneId, sourcePaneId)
         XCTAssertTrue(transfer?.isFromCurrentProcess == true)
     }

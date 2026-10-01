@@ -347,13 +347,20 @@ final class CommandPaletteAllSurfacesUITests: XCTestCase {
 
         openCommandPaletteCommands(app: app)
 
-        _ = try XCTUnwrap(
+        let commandsSnapshot = try XCTUnwrap(
             waitForCommandPaletteSnapshot(windowId: mainWindowId, mode: "commands", query: "", timeout: 5.0) { snapshot in
                 self.commandPaletteResultRows(from: snapshot).contains { row in
                     let commandId = row["command_id"] as? String ?? ""
                     return !commandId.hasPrefix("switcher.")
                 }
             }
+        )
+        let staleCommandTitle = try XCTUnwrap(
+            commandPaletteResultRows(from: commandsSnapshot).first(where: { row in
+                let commandId = row["command_id"] as? String ?? ""
+                return !commandId.hasPrefix("switcher.")
+            })?["title"] as? String,
+            "Expected the commands list to include a titled command row. snapshot=\(commandsSnapshot)"
         )
 
         app.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
@@ -401,7 +408,7 @@ final class CommandPaletteAllSurfacesUITests: XCTestCase {
             "Expected the restored workspace row to be visibly rendered. title=\(workspaceTitle) snapshot=\(switcherSnapshot)"
         )
 
-        let staleCommandLabel = app.staticTexts["Close Workspaces Below"].firstMatch
+        let staleCommandLabel = app.staticTexts[staleCommandTitle].firstMatch
         XCTAssertTrue(
             sidebarHelpPollUntil(timeout: 2.0) {
                 !staleCommandLabel.exists || !staleCommandLabel.isHittable

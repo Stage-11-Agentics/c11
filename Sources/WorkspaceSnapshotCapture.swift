@@ -46,11 +46,11 @@ struct WorkspaceSnapshotCaptureResult: Sendable {
 ///   never persisted.
 @MainActor
 struct LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource {
-    let tabManager: TabManager
+    let workspaceManager: WorkspaceManager
     let c11Version: String
 
-    init(tabManager: TabManager, c11Version: String = LiveWorkspaceSnapshotSource.defaultVersionString()) {
-        self.tabManager = tabManager
+    init(workspaceManager: WorkspaceManager, c11Version: String = LiveWorkspaceSnapshotSource.defaultVersionString()) {
+        self.workspaceManager = workspaceManager
         self.c11Version = c11Version
     }
 
@@ -68,7 +68,7 @@ struct LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource {
         clock: () -> Date = { Date() },
         companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
     ) -> WorkspaceSnapshotCaptureResult? {
-        guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+        guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
             return nil
         }
         let capture = WorkspacePlanCapture.capture(

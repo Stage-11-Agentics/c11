@@ -1201,31 +1201,31 @@ final class GhosttyTerminalStartupEnvironmentTests: XCTestCase {
 @MainActor
 final class BrowserPanelRemoteStoreTests: XCTestCase {
     func testRemoteWorkspacePanelsShareWorkspaceScopedWebsiteDataStore() {
-        let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
+        let localTab = BrowserTab(workspaceId: UUID(), isRemoteWorkspace: false)
         let remoteWorkspaceId = UUID()
-        let firstRemotePanel = BrowserPanel(
+        let firstRemoteTab = BrowserTab(
             workspaceId: remoteWorkspaceId,
             isRemoteWorkspace: true,
             remoteWebsiteDataStoreIdentifier: remoteWorkspaceId
         )
-        let secondRemotePanel = BrowserPanel(
+        let secondRemoteTab = BrowserTab(
             workspaceId: remoteWorkspaceId,
             isRemoteWorkspace: true,
             remoteWebsiteDataStoreIdentifier: remoteWorkspaceId
         )
 
-        XCTAssertTrue(localPanel.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
-        XCTAssertFalse(firstRemotePanel.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
+        XCTAssertTrue(localTab.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
+        XCTAssertFalse(firstRemoteTab.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
         XCTAssertTrue(
-            firstRemotePanel.webView.configuration.websiteDataStore ===
-                secondRemotePanel.webView.configuration.websiteDataStore
+            firstRemoteTab.webView.configuration.websiteDataStore ===
+                secondRemoteTab.webView.configuration.websiteDataStore
         )
     }
 
     func testRemoteWorkspaceDefersInitialNavigationUntilProxyEndpointIsReady() {
         let remoteWorkspaceId = UUID()
         let url = URL(string: "http://localhost:3000/demo")!
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: remoteWorkspaceId,
             initialURL: url,
             isRemoteWorkspace: true,
@@ -1247,7 +1247,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
     func testRemoteWorkspaceKeepsHTTPSLoopbackUnaliased() {
         let remoteWorkspaceId = UUID()
         let url = URL(string: "https://localhost:3443/demo")!
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: remoteWorkspaceId,
             initialURL: url,
             isRemoteWorkspace: true,
@@ -1294,11 +1294,11 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
         let destinationStore = destinationBrowser.webView.configuration.websiteDataStore
         XCTAssertFalse(destinationStore === WKWebsiteDataStore.default())
 
-        let detached = try XCTUnwrap(source.detachSurface(panelId: sourceBrowser.id))
+        let detached = try XCTUnwrap(source.detachTab(panelId: sourceBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedSurface(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
         )
-        let movedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
+        let movedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserTab)
 
         XCTAssertTrue(movedBrowser.webView.configuration.websiteDataStore === destinationStore)
         XCTAssertFalse(movedBrowser.webView.configuration.websiteDataStore === localStore)
@@ -1329,11 +1329,11 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
 
         let destination = Workspace()
         let destinationPaneId = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
-        let detached = try XCTUnwrap(source.detachSurface(panelId: movedBrowser.id))
+        let detached = try XCTUnwrap(source.detachTab(panelId: movedBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedSurface(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
         )
-        let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
+        let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserTab)
 
         XCTAssertTrue(attachedBrowser.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
         XCTAssertTrue(remainingRemoteBrowser.webView.configuration.websiteDataStore === remoteStore)
@@ -1469,62 +1469,62 @@ final class WorkspaceRemoteDaemonPendingCallRegistryTests: XCTestCase {
 
 final class WindowBackgroundSelectionGateTests: XCTestCase {
     func testShouldApplyWindowBackgroundUsesOwningWindowSelectionWhenAvailable() {
-        let tabId = UUID()
-        let activeSelectedTabId = UUID()
+        let workspaceId = UUID()
+        let activeSelectedWorkspaceId = UUID()
 
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: tabId,
+                surfaceWorkspaceId: workspaceId,
                 owningManagerExists: true,
-                owningSelectedTabId: tabId,
-                activeSelectedTabId: activeSelectedTabId
+                owningSelectedWorkspaceId: workspaceId,
+                activeSelectedWorkspaceId: activeSelectedWorkspaceId
             )
         )
     }
 
     func testShouldApplyWindowBackgroundRejectsWhenOwningSelectionDiffers() {
-        let tabId = UUID()
+        let workspaceId = UUID()
 
         XCTAssertFalse(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: tabId,
+                surfaceWorkspaceId: workspaceId,
                 owningManagerExists: true,
-                owningSelectedTabId: UUID(),
-                activeSelectedTabId: tabId
+                owningSelectedWorkspaceId: UUID(),
+                activeSelectedWorkspaceId: workspaceId
             )
         )
     }
 
     func testShouldApplyWindowBackgroundAllowsWhenOwningManagerSelectionIsTemporarilyNil() {
-        let tabId = UUID()
+        let workspaceId = UUID()
 
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: tabId,
+                surfaceWorkspaceId: workspaceId,
                 owningManagerExists: true,
-                owningSelectedTabId: nil,
-                activeSelectedTabId: UUID()
+                owningSelectedWorkspaceId: nil,
+                activeSelectedWorkspaceId: UUID()
             )
         )
     }
 
     func testShouldApplyWindowBackgroundFallsBackToActiveSelection() {
-        let tabId = UUID()
+        let workspaceId = UUID()
 
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: tabId,
+                surfaceWorkspaceId: workspaceId,
                 owningManagerExists: false,
-                owningSelectedTabId: nil,
-                activeSelectedTabId: tabId
+                owningSelectedWorkspaceId: nil,
+                activeSelectedWorkspaceId: workspaceId
             )
         )
         XCTAssertFalse(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: tabId,
+                surfaceWorkspaceId: workspaceId,
                 owningManagerExists: false,
-                owningSelectedTabId: nil,
-                activeSelectedTabId: UUID()
+                owningSelectedWorkspaceId: nil,
+                activeSelectedWorkspaceId: UUID()
             )
         )
     }
@@ -1532,26 +1532,26 @@ final class WindowBackgroundSelectionGateTests: XCTestCase {
     func testShouldApplyWindowBackgroundAllowsWhenNoSelectionContext() {
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: UUID(),
+                surfaceWorkspaceId: UUID(),
                 owningManagerExists: false,
-                owningSelectedTabId: nil,
-                activeSelectedTabId: nil
+                owningSelectedWorkspaceId: nil,
+                activeSelectedWorkspaceId: nil
             )
         )
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: nil,
+                surfaceWorkspaceId: nil,
                 owningManagerExists: false,
-                owningSelectedTabId: nil,
-                activeSelectedTabId: nil
+                owningSelectedWorkspaceId: nil,
+                activeSelectedWorkspaceId: nil
             )
         )
         XCTAssertTrue(
             GhosttyNSView.shouldApplyWindowBackground(
-                surfaceTabId: nil,
+                surfaceWorkspaceId: nil,
                 owningManagerExists: true,
-                owningSelectedTabId: UUID(),
-                activeSelectedTabId: UUID()
+                owningSelectedWorkspaceId: UUID(),
+                activeSelectedWorkspaceId: UUID()
             )
         )
     }
@@ -1734,8 +1734,8 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
         XCTAssertNil(stack.pop())
     }
 
-    private func makeSnapshot(index: Int) -> ClosedBrowserPanelRestoreSnapshot {
-        ClosedBrowserPanelRestoreSnapshot(
+    private func makeSnapshot(index: Int) -> ClosedBrowserTabRestoreSnapshot {
+        ClosedBrowserTabRestoreSnapshot(
             workspaceId: UUID(),
             url: URL(string: "https://example.com/\(index)"),
             profileID: nil,

@@ -17,7 +17,7 @@ import XCTest
 /// Per `CLAUDE.md`, never run locally — CI only.
 final class SurfaceMetadataStoreValidationTests: XCTestCase {
 
-    private let store = SurfaceMetadataStore.shared
+    private let store = TabMetadataStore.shared
 
     func testStoreAcceptsValidUUIDv4ClaudeSessionId() throws {
         let workspace = UUID()
@@ -49,7 +49,7 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -71,7 +71,7 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -92,7 +92,7 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -177,7 +177,7 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -226,7 +226,7 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")

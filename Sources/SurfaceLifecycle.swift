@@ -38,7 +38,7 @@ import Foundation
 /// Self-transitions (X → X) are accepted as a no-op so dispatchers can
 /// idempotently call `transition(to:)` on every workspace-visibility tick
 /// without bouncing the metadata store.
-public enum SurfaceLifecycleState: String, Sendable, CaseIterable {
+public enum TabLifecycleState: String, Sendable, CaseIterable {
     case active
     case throttled
     case suspended
@@ -57,7 +57,7 @@ public enum SurfaceLifecycleState: String, Sendable, CaseIterable {
     /// Self-transitions are always allowed (idempotent no-op). Transitions
     /// into or out of `.suspended` are rejected in C11-25; the state is
     /// reserved for future PRs.
-    public func canTransition(to target: SurfaceLifecycleState) -> Bool {
+    public func canTransition(to target: TabLifecycleState) -> Bool {
         if self == target { return true }
         switch (self, target) {
         case (.active, .throttled),
@@ -94,12 +94,12 @@ public enum SurfaceLifecycleState: String, Sendable, CaseIterable {
 /// not the surface view, per plan §1.3 — the view is too low-level and
 /// the panel is where workspace-visibility input arrives.
 @MainActor
-final class SurfaceLifecycleController {
-    typealias Handler = (_ from: SurfaceLifecycleState, _ to: SurfaceLifecycleState) -> Void
+final class TabLifecycleController {
+    typealias Handler = (_ from: TabLifecycleState, _ to: TabLifecycleState) -> Void
 
     private(set) var workspaceId: UUID
     let surfaceId: UUID
-    private(set) var state: SurfaceLifecycleState
+    private(set) var state: TabLifecycleState
     private let onTransition: Handler
     /// Reentrancy guard. The current dispatch graph is shallow — handlers
     /// run synchronously and don't loop back into `transition` — but if a
@@ -110,7 +110,7 @@ final class SurfaceLifecycleController {
     init(
         workspaceId: UUID,
         surfaceId: UUID,
-        initial: SurfaceLifecycleState = .active,
+        initial: TabLifecycleState = .active,
         onTransition: @escaping Handler
     ) {
         self.workspaceId = workspaceId
@@ -139,7 +139,7 @@ final class SurfaceLifecycleController {
     ///   `false`); a debug `assertionFailure` flags them in DEBUG so they
     ///   surface in tests.
     @discardableResult
-    func transition(to target: SurfaceLifecycleState, source: MetadataSource = .explicit) -> Bool {
+    func transition(to target: TabLifecycleState, source: MetadataSource = .explicit) -> Bool {
         if isTransitioning {
             assertionFailure(
                 "SurfaceLifecycleController.transition reentered while a prior transition is in flight"
@@ -150,10 +150,10 @@ final class SurfaceLifecycleController {
         if state == target { return true }
         let prior = state
         state = target
-        SurfaceMetadataStore.shared.setInternal(
+        TabMetadataStore.shared.setInternal(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
-            key: SurfaceLifecycleState.metadataKey,
+            key: TabLifecycleState.metadataKey,
             value: target.rawValue,
             source: source
         )

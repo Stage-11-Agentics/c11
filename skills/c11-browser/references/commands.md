@@ -5,96 +5,96 @@ This maps common `agent-browser` usage to `c11 browser` usage.
 ## Direct Equivalents
 
 - `agent-browser open <url>` -> `c11 browser open <url>`
-- `agent-browser goto|navigate <url>` -> `c11 browser <surface> goto|navigate <url>`
-- `agent-browser snapshot -i` -> `c11 browser <surface> snapshot --interactive`
-- `agent-browser click <ref>` -> `c11 browser <surface> click <ref>`
-- `agent-browser fill <ref> <text>` -> `c11 browser <surface> fill <ref> <text>`
-- `agent-browser type <ref> <text>` -> `c11 browser <surface> type <ref> <text>`
-- `agent-browser select <ref> <value>` -> `c11 browser <surface> select <ref> <value>`
-- `agent-browser get text <ref>` -> `c11 browser <surface> get text <ref-or-selector>`
-- `agent-browser get url` -> `c11 browser <surface> get url`
-- `agent-browser get title` -> `c11 browser <surface> get title`
+- `agent-browser goto|navigate <url>` -> `c11 browser <tab> goto|navigate <url>`
+- `agent-browser snapshot -i` -> `c11 browser <tab> snapshot --interactive`
+- `agent-browser click <ref>` -> `c11 browser <tab> click <ref>`
+- `agent-browser fill <ref> <text>` -> `c11 browser <tab> fill <ref> <text>`
+- `agent-browser type <ref> <text>` -> `c11 browser <tab> type <ref> <text>`
+- `agent-browser select <ref> <value>` -> `c11 browser <tab> select <ref> <value>`
+- `agent-browser get text <ref>` -> `c11 browser <tab> get text <ref-or-selector>`
+- `agent-browser get url` -> `c11 browser <tab> get url`
+- `agent-browser get title` -> `c11 browser <tab> get title`
 
 ## Core Command Groups
 
 ### Navigation
 
 ```bash
-c11 browser open <url>                        # opens in caller's workspace (uses CMUX_WORKSPACE_ID)
+c11 browser open <url>                        # opens in caller's workspace (uses C11_WORKSPACE_ID)
 c11 browser open <url> --workspace <id|ref>   # opens in a specific workspace
-c11 browser <surface> goto <url>
-c11 browser <surface> back|forward|reload
-c11 browser <surface> get url|title
+c11 browser <tab> goto <url>
+c11 browser <tab> back|forward|reload
+c11 browser <tab> get url|title
 
 c11 browser open <url> --allow-insecure-http   # consent to one plain-http navigation
-c11 browser <surface> goto <url> --allow-insecure-http
+c11 browser <tab> goto <url> --allow-insecure-http
 ```
 
 > **Plain `http://`:** loopback hosts are allowed by default; any other plain-HTTP host either sheets a prompt for a human (`insecure_http: {"status": "prompted"}` in the payload) or, with no window to prompt on, fails with `insecure_http_blocked`. `--allow-insecure-http` consents for that one navigation to that one host.
 
-> **Workspace context:** `browser open` targets the workspace of the terminal where the command is run (via `CMUX_WORKSPACE_ID`; `C11_WORKSPACE_ID` is the primary name going forward, `CMUX_WORKSPACE_ID` still works), even if a different workspace is currently focused. Use `--workspace` to override.
+> **Workspace context:** `browser open` targets the workspace of the terminal where the command is run (via `C11_WORKSPACE_ID`), even if a different workspace is currently focused. Use `--workspace` to override.
 
 ### Snapshot and Inspection
 
 ```bash
-c11 browser <surface> snapshot --interactive
-c11 browser <surface> snapshot --interactive --compact --max-depth 3
-c11 browser <surface> get text body
-c11 browser <surface> get html body
-c11 browser <surface> get value "#email"
-c11 browser <surface> get attr "#email" --attr placeholder
-c11 browser <surface> get count ".row"
-c11 browser <surface> get box "#submit"
-c11 browser <surface> get styles "#submit" --property color
-c11 browser <surface> eval '<js>'
+c11 browser <tab> snapshot --interactive
+c11 browser <tab> snapshot --interactive --compact --max-depth 3
+c11 browser <tab> get text body
+c11 browser <tab> get html body
+c11 browser <tab> get value "#email"
+c11 browser <tab> get attr "#email" --attr placeholder
+c11 browser <tab> get count ".row"
+c11 browser <tab> get box "#submit"
+c11 browser <tab> get styles "#submit" --property color
+c11 browser <tab> eval '<js>'
 ```
 
 ### Interaction
 
 ```bash
-c11 browser <surface> click|dblclick|hover|focus <selector-or-ref>
-c11 browser <surface> fill <selector-or-ref> [text]   # empty text clears
-c11 browser <surface> type <selector-or-ref> <text>
-c11 browser <surface> press|keydown|keyup <key>
-c11 browser <surface> select <selector-or-ref> <value>
-c11 browser <surface> check|uncheck <selector-or-ref>
-c11 browser <surface> scroll [--selector <css>] [--dx <n>] [--dy <n>]
+c11 browser <tab> click|dblclick|hover|focus <selector-or-ref>
+c11 browser <tab> fill <selector-or-ref> [text]   # empty text clears
+c11 browser <tab> type <selector-or-ref> <text>
+c11 browser <tab> press|keydown|keyup <key>
+c11 browser <tab> select <selector-or-ref> <value>
+c11 browser <tab> check|uncheck <selector-or-ref>
+c11 browser <tab> scroll [--selector <css>] [--dx <n>] [--dy <n>]
 ```
 
 ### Wait
 
 ```bash
-c11 browser <surface> wait --selector "#ready" --timeout-ms 10000
-c11 browser <surface> wait --text "Done" --timeout-ms 10000
-c11 browser <surface> wait --url-contains "/dashboard" --timeout-ms 10000
-c11 browser <surface> wait --load-state complete --timeout-ms 15000
-c11 browser <surface> wait --function "document.readyState === 'complete'" --timeout-ms 10000
+c11 browser <tab> wait --selector "#ready" --timeout-ms 10000
+c11 browser <tab> wait --text "Done" --timeout-ms 10000
+c11 browser <tab> wait --url-contains "/dashboard" --timeout-ms 10000
+c11 browser <tab> wait --load-state complete --timeout-ms 15000
+c11 browser <tab> wait --function "document.readyState === 'complete'" --timeout-ms 10000
 ```
 
 ### Session/State
 
 ```bash
-c11 browser <surface> cookies get|set|clear ...
-c11 browser <surface> storage local|session get|set|clear ...
-c11 browser <surface> tab list|new|switch|close ...
-c11 browser <surface> state save|load <path>
+c11 browser <tab> cookies get|set|clear ...
+c11 browser <tab> storage local|session get|set|clear ...
+c11 browser <tab> tab list|new|switch|close ...
+c11 browser <tab> state save|load <path>
 ```
 
 ### Diagnostics
 
 ```bash
-c11 browser <surface> console list|clear
-c11 browser <surface> errors list|clear
-c11 browser <surface> highlight <selector>
-c11 browser <surface> screenshot
-c11 browser <surface> download wait --timeout-ms 10000
+c11 browser <tab> console list|clear
+c11 browser <tab> errors list|clear
+c11 browser <tab> highlight <selector>
+c11 browser <tab> screenshot
+c11 browser <tab> download wait --timeout-ms 10000
 ```
 
 ## Agent Reliability Tips
 
 - Use `--snapshot-after` on mutating actions to return a fresh post-action snapshot.
 - Re-snapshot after navigation, modal open/close, or major DOM changes.
-- Prefer short handles in outputs by default (`surface:N`, `pane:N`, `workspace:N`, `window:N`).
+- Prefer short handles in outputs by default (`tab:N`, `area:N`, `workspace:N`, `window:N`).
 - Use `--id-format both` only when a UUID must be logged/exported.
 
 ## Known WKWebView Gaps (`not_supported`)

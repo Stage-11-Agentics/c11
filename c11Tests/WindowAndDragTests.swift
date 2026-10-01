@@ -39,31 +39,31 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
             windowB.orderOut(nil)
         }
 
-        let managerA = TabManager()
-        let managerB = TabManager()
+        let managerA = WorkspaceManager()
+        let managerB = WorkspaceManager()
         app.registerMainWindow(
             windowA,
             windowId: windowAId,
-            tabManager: managerA,
+            workspaceManager: managerA,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
         app.registerMainWindow(
             windowB,
             windowId: windowBId,
-            tabManager: managerB,
+            workspaceManager: managerB,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
 
         windowB.makeKeyAndOrderFront(nil)
         _ = app.synchronizeActiveMainWindowContext(preferredWindow: windowB)
-        XCTAssertTrue(app.tabManager === managerB)
+        XCTAssertTrue(app.workspaceManager === managerB)
 
         windowA.makeKeyAndOrderFront(nil)
         let resolved = app.synchronizeActiveMainWindowContext(preferredWindow: windowA)
         XCTAssertTrue(resolved === managerA, "Expected provided active window to win over stale active manager")
-        XCTAssertTrue(app.tabManager === managerA)
+        XCTAssertTrue(app.workspaceManager === managerA)
     }
 
     func testSynchronizeActiveMainWindowContextFallsBackToActiveManagerWithoutFocusedWindow() {
@@ -79,19 +79,19 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
             windowB.orderOut(nil)
         }
 
-        let managerA = TabManager()
-        let managerB = TabManager()
+        let managerA = WorkspaceManager()
+        let managerB = WorkspaceManager()
         app.registerMainWindow(
             windowA,
             windowId: windowAId,
-            tabManager: managerA,
+            workspaceManager: managerA,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
         app.registerMainWindow(
             windowB,
             windowId: windowBId,
-            tabManager: managerB,
+            workspaceManager: managerB,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
@@ -99,13 +99,13 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         // Seed active manager and clear focus windows to force fallback routing.
         windowA.makeKeyAndOrderFront(nil)
         _ = app.synchronizeActiveMainWindowContext(preferredWindow: windowA)
-        XCTAssertTrue(app.tabManager === managerA)
+        XCTAssertTrue(app.workspaceManager === managerA)
         windowA.orderOut(nil)
         windowB.orderOut(nil)
 
         let resolved = app.synchronizeActiveMainWindowContext(preferredWindow: nil)
         XCTAssertTrue(resolved === managerA, "Expected fallback to preserve current active manager instead of arbitrary window")
-        XCTAssertTrue(app.tabManager === managerA)
+        XCTAssertTrue(app.workspaceManager === managerA)
     }
 
     func testSynchronizeActiveMainWindowContextUsesRegisteredWindowEvenIfIdentifierMutates() {
@@ -116,11 +116,11 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         let window = makeMainWindow(id: windowId)
         defer { window.orderOut(nil) }
 
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         app.registerMainWindow(
             window,
             windowId: windowId,
-            tabManager: manager,
+            workspaceManager: manager,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
@@ -130,7 +130,7 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
 
         let resolved = app.synchronizeActiveMainWindowContext(preferredWindow: window)
         XCTAssertTrue(resolved === manager, "Expected registered window object identity to win even if identifier string changed")
-        XCTAssertTrue(app.tabManager === manager)
+        XCTAssertTrue(app.workspaceManager === manager)
     }
 
     func testAddWorkspaceWithoutBringToFrontPreservesActiveWindowAndSelection() {
@@ -146,39 +146,39 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
             windowB.orderOut(nil)
         }
 
-        let managerA = TabManager()
-        let managerB = TabManager()
+        let managerA = WorkspaceManager()
+        let managerB = WorkspaceManager()
         app.registerMainWindow(
             windowA,
             windowId: windowAId,
-            tabManager: managerA,
+            workspaceManager: managerA,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
         app.registerMainWindow(
             windowB,
             windowId: windowBId,
-            tabManager: managerB,
+            workspaceManager: managerB,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
 
         windowA.makeKeyAndOrderFront(nil)
         _ = app.synchronizeActiveMainWindowContext(preferredWindow: windowA)
-        XCTAssertTrue(app.tabManager === managerA)
+        XCTAssertTrue(app.workspaceManager === managerA)
 
-        let originalSelectedA = managerA.selectedTabId
-        let originalSelectedB = managerB.selectedTabId
-        let originalTabCountB = managerB.tabs.count
+        let originalSelectedA = managerA.selectedWorkspaceId
+        let originalSelectedB = managerB.selectedWorkspaceId
+        let originalTabCountB = managerB.workspaces.count
 
         let createdWorkspaceId = app.addWorkspace(windowId: windowBId, bringToFront: false)
 
         XCTAssertNotNil(createdWorkspaceId)
-        XCTAssertTrue(app.tabManager === managerA, "Expected non-focus workspace creation to preserve active window routing")
-        XCTAssertEqual(managerA.selectedTabId, originalSelectedA)
-        XCTAssertEqual(managerB.selectedTabId, originalSelectedB, "Expected background workspace creation to preserve selected tab")
-        XCTAssertEqual(managerB.tabs.count, originalTabCountB + 1)
-        XCTAssertTrue(managerB.tabs.contains(where: { $0.id == createdWorkspaceId }))
+        XCTAssertTrue(app.workspaceManager === managerA, "Expected non-focus workspace creation to preserve active window routing")
+        XCTAssertEqual(managerA.selectedWorkspaceId, originalSelectedA)
+        XCTAssertEqual(managerB.selectedWorkspaceId, originalSelectedB, "Expected background workspace creation to preserve selected tab")
+        XCTAssertEqual(managerB.workspaces.count, originalTabCountB + 1)
+        XCTAssertTrue(managerB.workspaces.contains(where: { $0.id == createdWorkspaceId }))
     }
 
     func testApplicationOpenURLsAddsWorkspaceForDroppedFolderURL() throws {
@@ -189,11 +189,11 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         let window = makeMainWindow(id: windowId)
         defer { window.orderOut(nil) }
 
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         app.registerMainWindow(
             window,
             windowId: windowId,
-            tabManager: manager,
+            workspaceManager: manager,
             sidebarState: SidebarState(),
             sidebarSelectionState: SidebarSelectionState()
         )
@@ -218,14 +218,14 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         try FileManager.default.createDirectory(at: droppedDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: rootDirectory) }
 
-        let existingWorkspaceIds = Set(manager.tabs.map(\.id))
+        let existingWorkspaceIds = Set(manager.workspaces.map(\.id))
 
         app.application(
             NSApplication.shared,
             open: [URL(fileURLWithPath: droppedDirectory.path)]
         )
 
-        let createdWorkspace = manager.tabs.first { !existingWorkspaceIds.contains($0.id) }
+        let createdWorkspace = manager.workspaces.first { !existingWorkspaceIds.contains($0.id) }
         XCTAssertNotNil(createdWorkspace)
         XCTAssertEqual(createdWorkspace?.currentDirectory, droppedDirectory.path)
     }
@@ -1074,7 +1074,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let focusExpectation = expectation(description: "observer forwards focus callback")
         var pointerDownCount = 0
@@ -1102,7 +1102,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let noFocusExpectation = expectation(description: "observer ignores invalid clicks")
         noFocusExpectation.isInverted = true
@@ -1128,7 +1128,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
     }
 
     func testObserverDoesNotParticipateInHitTesting() {
-        let overlay = MarkdownPanelPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let overlay = MarkdownTabPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         XCTAssertNil(overlay.hitTest(NSPoint(x: 40, y: 30)))
     }
 }

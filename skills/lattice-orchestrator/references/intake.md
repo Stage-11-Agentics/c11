@@ -4,7 +4,7 @@ Mechanics for turning a complete build contract into a dispatchable run. Assumes
 
 ## Identity
 
-Declare the seat at invoke, per the c11 skill's orientation block: `c11 set-agent`, `rename-tab` to `Orchestrator`, `set-description` with the run's one-liner. Outside c11, state the role in the first message. (For every *spawned* agent, use the Identity Block in `orchestrator.md` — the env-var pitfalls it guards against apply to fresh surfaces, not to your own established session.)
+Declare the seat at invoke, per the c11 skill's orientation block: `c11 set-agent`, `rename-tab` to `Orchestrator`, `set-description` with the run's one-liner. Outside c11, state the role in the first message. (For every *spawned* agent, use the Identity Block in `orchestrator.md` — the env-var pitfalls it guards against apply to fresh tabs, not to your own established session.)
 
 ## Contract checks
 
@@ -24,7 +24,7 @@ Two checks carry most of a long run's risk, so do them at intake, before any bui
 
 ## Config dialogue
 
-Auto-suggest from plan size, ask only what the defaults don't settle: autonomy (project `CLAUDE.md` may declare `## Autonomy default`); N concurrent delegators (default 5; landing capacity, meaning the serial gate on the runner, and the account's usage window bind before builder count, so raise N only when PRs land faster than builders produce them); PR merge policy (default leave-at-terminal-pre-merge unless `CLAUDE.md` declares auto-merge; pin to run-state); per-ticket workflow mode (default inline-full for medium work; a typical wave is 50–80% fast-track + inline-full); Master Validator (default on >3 tickets); Result Validator (default on); auto-close finished surfaces (default on); c11 workspace preferences. Seat boxes (remote VMs, `lattice-hosted-orchestrator`) help when the laptop is the constraint: builder isolation, more parallel builders, heavy local test runs. They cannot time a wall-clock gate and add nothing when landing is the constraint. Fold any operator global comments (style, libraries to avoid, time windows) into run-state. Close by describing Phase 1 concretely — panes, escalation banners, what "done" looks like.
+Auto-suggest from plan size, ask only what the defaults don't settle: autonomy (project `CLAUDE.md` may declare `## Autonomy default`); N concurrent delegators (default 5; landing capacity, meaning the serial gate on the runner, and the account's usage window bind before builder count, so raise N only when PRs land faster than builders produce them); PR merge policy (default leave-at-terminal-pre-merge unless `CLAUDE.md` declares auto-merge; pin to run-state); per-ticket workflow mode (default inline-full for medium work; a typical wave is 50–80% fast-track + inline-full); Master Validator (default on >3 tickets); Result Validator (default on); auto-close finished tabs (default on); c11 workspace preferences. Prime Intellect seat boxes (`lattice-hosted-orchestrator`) help when the laptop is the constraint: builder isolation, more parallel builders, heavy local test runs. They cannot time a wall-clock gate and add nothing when landing is the constraint. Fold any operator global comments (style, libraries to avoid, time windows) into run-state. Close by describing Phase 1 concretely — areas, escalation banners, what "done" looks like.
 
 ## Minting tickets
 
@@ -107,12 +107,12 @@ Source spec: [SPEC.md](../../SPEC.md) · Source evaluation: [EVALUATION.md](../.
 ## Configuration
 Autonomy · N · PR merge policy · Git remote (verified) · Terminal pre-merge status ·
 Ticket fidelity · plan_review_mode / review_mode (from .lattice/config.json) ·
-Master Validator · Result Validator · auto-close surfaces · c11 workspace ref ·
+Master Validator · Result Validator · auto-close tabs · c11 workspace ref ·
 runtime/browser approval scope · delivery-receipt path
 
-## Workspace panes (c11 refs)
+## Workspace areas (c11 refs)
 main_view_area / control_surface / delegate_view_area_1..3 / workspace / lattice_dashboard_port
-Write every ref as `surface:N <uuid>` (same for pane and workspace). `surface:N` renumbers
+Write every ref as `<ref> <uuid>` (`tab:N`, `area:N`, `workspace:N`). Refs renumber
 after a c11 restart; the UUID does not, and it is the key the events log and the ingester join on.
 Get both from `c11 tree --json` (`ref` and `id`).
 
@@ -130,13 +130,13 @@ Branch base may be a parent feature branch for press-ahead children. Per-ticket 
 
 ## agents.md (`.lattice/orchestration/agents.md`)
 
-Active table, overwritten each tick (Lattice + `c11 tree` are ground truth): `| Role | Ticket | Surface ref | Pane ref | Branch | Worktree | Phase | Last seen | Spawned at |`. Surface and pane refs carry the UUID beside the short ref, as in run-state. Below it, `### Archived (run history)` — append-only `| Actor | Ticket | Outcome | Notes |`, where notes carry merge SHA, LOC, test delta, and any anomaly + recovery. A populated archive turns the closeout audit from "read every transcript" into "scan the anomaly notes," and recurring anomalies feed the footgun catalog.
+Active table, overwritten each tick (Lattice + `c11 tree` are ground truth): `| Role | Ticket | Tab ref | Area ref | Branch | Worktree | Phase | Last seen | Spawned at |`. Tab and area refs carry the UUID beside the short ref, as in run-state. Below it, `### Archived (run history)` — append-only `| Actor | Ticket | Outcome | Notes |`, where notes carry merge SHA, LOC, test delta, and any anomaly + recovery. A populated archive turns the closeout audit from "read every transcript" into "scan the anomaly notes," and recurring anomalies feed the footgun catalog.
 
 ## Workspace geometry & dashboard (inside c11)
 
-1. From your own pane: `c11 new-split right` (your column becomes the Main View Area), then on the right column `c11 new-split down` twice → Control Surface (top) + Delegate View panes. Title panes via `c11 set-metadata --pane <ref> --key title --value "..."`; write all refs to run-state. Mark operator-critical surfaces `--key protected --value true` (advisory).
+1. From your own area: `c11 new-split right` (your column becomes the Main View Area), then on the right column `c11 new-split down` twice → Control Area (top) + Delegate View areas. Title areas via `c11 set-metadata --area <ref> --key title --value "..."`; write all refs to run-state. Mark operator-critical tabs `--key protected --value true` (advisory).
 2. Dashboard: pick a free port (`python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()'`), but verify with `lsof -nP -iTCP:<port> -sTCP:LISTEN` — never assume. Launch `nohup lattice dashboard --port $PORT > /tmp/lattice-dashboard-$PORT.log 2>&1 & disown` (never pipe through `head`/`tail` — SIGPIPE kills it). Wait `until curl -sf http://localhost:$PORT`, and tail the log for "Port X is already in use" before declaring success. Record the port in run-state.
-3. Board surface: `c11 new-surface --type browser --url "http://localhost:$PORT" --pane <control-surface>` titled "Lattice Board".
+3. Board tab: `c11 new-tab --type browser --url "http://localhost:$PORT" --area <control-area>` titled "Lattice Board".
 
 Outside c11: skip geometry; the operator drives `lattice list` / `lattice show` instead of the board.
 

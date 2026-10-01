@@ -775,7 +775,7 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertTrue(LastSurfaceCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        XCTAssertTrue(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 
     func testStoredTrueClosesWorkspace() {
@@ -786,8 +786,8 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(true, forKey: LastSurfaceCloseShortcutSettings.key)
-        XCTAssertTrue(LastSurfaceCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        defaults.set(true, forKey: LastTabCloseShortcutSettings.key)
+        XCTAssertTrue(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 
     func testStoredFalseKeepsWorkspaceOpen() {
@@ -798,8 +798,8 @@ final class LastSurfaceCloseShortcutSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(false, forKey: LastSurfaceCloseShortcutSettings.key)
-        XCTAssertFalse(LastSurfaceCloseShortcutSettings.closesWorkspace(defaults: defaults))
+        defaults.set(false, forKey: LastTabCloseShortcutSettings.key)
+        XCTAssertFalse(LastTabCloseShortcutSettings.closesWorkspace(defaults: defaults))
     }
 }
 
@@ -849,6 +849,57 @@ final class QuitWarningSettingsTests: XCTestCase {
 
         defaults.set(true, forKey: QuitWarningSettings.warnBeforeQuitKey)
         XCTAssertTrue(QuitWarningSettings.isEnabled(defaults: defaults))
+    }
+}
+
+
+final class QuitConfirmationPolicyTests: XCTestCase {
+    private func shouldConfirm(
+        alreadyTerminating: Bool = false,
+        bypassArmed: Bool = false,
+        warnEnabled: Bool = true,
+        quitReason: OSType? = nil
+    ) -> Bool {
+        QuitConfirmationPolicy.shouldConfirm(
+            alreadyTerminating: alreadyTerminating,
+            bypassArmed: bypassArmed,
+            warnEnabled: warnEnabled,
+            quitReason: quitReason
+        )
+    }
+
+    func testOperatorQuitConfirmsByDefault() {
+        XCTAssertTrue(shouldConfirm())
+    }
+
+    func testQuitsThatAlreadyCarryIntentSkipConfirmation() {
+        XCTAssertFalse(shouldConfirm(alreadyTerminating: true))
+        XCTAssertFalse(shouldConfirm(bypassArmed: true))
+        XCTAssertFalse(shouldConfirm(warnEnabled: false))
+    }
+
+    func testSystemLogoutRestartAndShutdownSkipConfirmation() {
+        for reason in [kAELogOut, kAEReallyLogOut, kAERestart, kAEShowRestartDialog, kAEShutDown, kAEShowShutdownDialog] {
+            XCTAssertFalse(shouldConfirm(quitReason: OSType(reason)), "reason \(reason)")
+        }
+    }
+
+    func testUnrecognizedQuitReasonStillConfirms() {
+        XCTAssertTrue(shouldConfirm(quitReason: OSType(kAEQuitApplication)))
+    }
+
+    func testArmedBypassIsConsumedByOneQuitRequest() {
+        let armedAt = Date()
+        QuitConfirmationPolicy.armBypass(now: armedAt)
+        XCTAssertTrue(QuitConfirmationPolicy.consumeBypass(now: armedAt.addingTimeInterval(1)))
+        XCTAssertFalse(QuitConfirmationPolicy.consumeBypass(now: armedAt.addingTimeInterval(2)))
+    }
+
+    func testStaleBypassDoesNotWaiveALaterQuit() {
+        let armedAt = Date()
+        QuitConfirmationPolicy.armBypass(now: armedAt)
+        let later = armedAt.addingTimeInterval(QuitConfirmationPolicy.bypassLifetime + 1)
+        XCTAssertFalse(QuitConfirmationPolicy.consumeBypass(now: later))
     }
 }
 

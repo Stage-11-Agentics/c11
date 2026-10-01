@@ -7,7 +7,7 @@ import Bonsplit
 /// integrator supplies live link and identity reads without changing capture.
 @MainActor
 struct WorkspacePlanCompanionCaptureBridge {
-    var linkedAgentForBrowser: @MainActor (UUID) -> AgentSurfaceLink?
+    var linkedAgentForBrowser: @MainActor (UUID) -> AgentTabLink?
     var declaredAgentKindForTerminal: @MainActor (UUID) -> String?
 
     static let none = WorkspacePlanCompanionCaptureBridge(
@@ -25,7 +25,7 @@ struct WorkspacePlanCompanionCaptureBridge {
                      .aligned(let linked),
                      .veiled(let linked, _),
                      .revealed(let linked, _):
-                    return AgentSurfaceLink(
+                    return AgentTabLink(
                         surfaceID: linked.identity.surfaceID,
                         lastKnownName: linked.identity.displayName
                     )
@@ -88,7 +88,7 @@ enum WorkspacePlanCapture {
     private struct Walker {
         let workspace: Workspace
         let companionBridge: WorkspacePlanCompanionCaptureBridge
-        var surfaces: [SurfaceSpec] = []
+        var surfaces: [TabSpec] = []
         var warnings: [CompanionPlanDiagnostic] = []
         private var planIDByPanelID: [UUID: String] = [:]
         private var nextIdCounter: Int = 1
@@ -101,8 +101,8 @@ enum WorkspacePlanCapture {
         mutating func reservePlanIDs(in node: ExternalTreeNode) {
             switch node {
             case .pane(let pane):
-                for tab in pane.tabs {
-                    guard let panelID = panelID(forTabIDString: tab.id),
+                for bonsplitTab in pane.tabs {
+                    guard let panelID = panelID(forTabIDString: bonsplitTab.id),
                           workspace.panels[panelID] != nil,
                           planIDByPanelID[panelID] == nil else { continue }
                     planIDByPanelID[panelID] = mintId()
@@ -129,7 +129,7 @@ enum WorkspacePlanCapture {
             }
         }
 
-        private mutating func walkPane(_ pane: ExternalPaneNode) -> LayoutTreeSpec.PaneSpec {
+        private mutating func walkPane(_ pane: ExternalPaneNode) -> LayoutTreeSpec.AreaSpec {
             // Resolve the live bonsplit PaneID for this node so we can read
             // pane metadata. `treeSnapshot` pane ids are string forms of a
             // UUID; we match by uuidString against `allPaneIds`.
@@ -143,15 +143,15 @@ enum WorkspacePlanCapture {
 
             var ids: [String] = []
             var selectedIndex: Int? = nil
-            for tab in pane.tabs {
-                guard let panelId = panelID(forTabIDString: tab.id),
+            for bonsplitTab in pane.tabs {
+                guard let panelId = panelID(forTabIDString: bonsplitTab.id),
                       let panel = workspace.panels[panelId],
                       let planId = planIDByPanelID[panelId] else { continue }
                 ids.append(planId)
 
                 let isFirstInPane = ids.count == 1
                 let kind = kind(for: panel)
-                let title = workspace.panelCustomTitles[panelId]
+                let title = workspace.tabCustomTitles[panelId]
                 let metadata = strippingRedundantCanonicalFields(
                     surfaceMetadata(for: panelId),
                     title: title,
@@ -165,7 +165,7 @@ enum WorkspacePlanCapture {
                    let linkedAgent = companionBridge.linkedAgentForBrowser(panelId) {
                     let targetPlanID = planIDByPanelID[linkedAgent.surfaceID]
                     if let targetPlanID,
-                       workspace.panels[linkedAgent.surfaceID] is TerminalPanel,
+                       workspace.panels[linkedAgent.surfaceID] is TerminalTab,
                        AgentIdentityPolicy.isAgentKind(
                            companionBridge.declaredAgentKindForTerminal(linkedAgent.surfaceID)
                        ) {
@@ -187,7 +187,7 @@ enum WorkspacePlanCapture {
                         ? AgentIdentityPolicy.normalizedKind($0)
                         : nil
                     }
-                let surface = SurfaceSpec(
+                let surface = TabSpec(
                     id: planId,
                     kind: kind,
                     title: title,
@@ -203,11 +203,11 @@ enum WorkspacePlanCapture {
                 )
                 surfaces.append(surface)
 
-                if let selectedTabId = pane.selectedTabId, selectedTabId == tab.id {
+                if let selectedBonsplitTabId = pane.selectedTabId, selectedBonsplitTabId == bonsplitTab.id {
                     selectedIndex = ids.count - 1
                 }
             }
-            return LayoutTreeSpec.PaneSpec(
+            return LayoutTreeSpec.AreaSpec(
                 surfaceIds: ids,
                 selectedIndex: selectedIndex
             )
@@ -220,7 +220,7 @@ enum WorkspacePlanCapture {
 
         // MARK: Kind + panel accessors
 
-        private func kind(for panel: any Panel) -> SurfaceSpecKind {
+        private func kind(for panel: any TabContent) -> TabSpecKind {
             switch panel.panelType {
             case .terminal: return .terminal
             case .browser:  return .browser
@@ -228,19 +228,19 @@ enum WorkspacePlanCapture {
             }
         }
 
-        private func workingDirectory(for panel: any Panel) -> String? {
-            guard let terminal = panel as? TerminalPanel else { return nil }
+        private func workingDirectory(for panel: any TabContent) -> String? {
+            guard let terminal = panel as? TerminalTab else { return nil }
             let requested = terminal.requestedWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (requested?.isEmpty == false) ? requested : nil
         }
 
-        private func url(for panel: any Panel) -> String? {
-            guard let browser = panel as? BrowserPanel else { return nil }
+        private func url(for panel: any TabContent) -> String? {
+            guard let browser = panel as? BrowserTab else { return nil }
             return browser.currentURL?.absoluteString
         }
 
-        private func filePath(for panel: any Panel) -> String? {
-            guard let markdown = panel as? MarkdownPanel else { return nil }
+        private func filePath(for panel: any TabContent) -> String? {
+            guard let markdown = panel as? MarkdownTab else { return nil }
             return markdown.filePath
         }
 
@@ -277,7 +277,7 @@ enum WorkspacePlanCapture {
         }
 
         private func surfaceMetadata(for panelId: UUID) -> [String: PersistedJSONValue] {
-            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            let snapshot = TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId
             )
@@ -291,7 +291,7 @@ enum WorkspacePlanCapture {
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {
             guard let paneID else { return [:] }
-            let snapshot = PaneMetadataStore.shared.getMetadata(
+            let snapshot = AreaMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 paneId: paneID.id
             )
@@ -312,7 +312,7 @@ enum WorkspacePlanCapture {
 
         private func panelID(forTabIDString tabIDString: String) -> UUID? {
             guard let tabUUID = UUID(uuidString: tabIDString) else { return nil }
-            return workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID))
+            return workspace.tabIdFromBonsplitTabId(TabID(uuid: tabUUID))
         }
     }
 }

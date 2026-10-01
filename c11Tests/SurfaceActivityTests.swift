@@ -11,7 +11,7 @@ import XCTest
 final class SurfaceActivityTests: XCTestCase {
 
     func testRecordActivityIsAsyncButReadable() {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         let surface = "S1"
         let when = Date(timeIntervalSince1970: 1000)
         tracker.recordActivity(surfaceId: surface, at: when)
@@ -21,7 +21,7 @@ final class SurfaceActivityTests: XCTestCase {
     }
 
     func testInputBurstCoalescedWithDebounce() throws {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         let base = Date()
         // First write fires.
         tracker.recordActivity(surfaceId: "S1", at: base)
@@ -39,17 +39,17 @@ final class SurfaceActivityTests: XCTestCase {
     }
 
     func testWritesPastDebounceWindowAdvanceTheTimestamp() throws {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         let base = Date()
         tracker.recordActivity(surfaceId: "S1", at: base)
-        let later = base.addingTimeInterval(SurfaceActivityTracker.debounceInterval + 0.1)
+        let later = base.addingTimeInterval(TabActivityTracker.debounceInterval + 0.1)
         tracker.recordActivity(surfaceId: "S1", at: later)
         let read = tracker.lastActivity(for: "S1")
         XCTAssertEqual(try XCTUnwrap(read).timeIntervalSince1970, later.timeIntervalSince1970, accuracy: 0.001)
     }
 
     func testEmptyOrWhitespaceSurfaceIdIgnored() {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         tracker.recordActivity(surfaceId: "", at: Date())
         tracker.recordActivity(surfaceId: "   ", at: Date())
         XCTAssertNil(tracker.lastActivity(for: ""))
@@ -57,7 +57,7 @@ final class SurfaceActivityTests: XCTestCase {
     }
 
     func testSeedAndSnapshotRoundTrip() throws {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         let now = Date()
         tracker.seed(from: ["S1": now, "S2": now.addingTimeInterval(-60)])
         let snap = tracker.snapshot()
@@ -69,7 +69,7 @@ final class SurfaceActivityTests: XCTestCase {
     }
 
     func testClearWipesSurfaceOnly() {
-        let tracker = SurfaceActivityTracker()
+        let tracker = TabActivityTracker()
         let now = Date()
         tracker.recordActivity(surfaceId: "S1", at: now)
         tracker.recordActivity(surfaceId: "S2", at: now)

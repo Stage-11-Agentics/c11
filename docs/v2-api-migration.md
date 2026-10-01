@@ -4,7 +4,7 @@ This doc tracks the migration from the existing v1 line protocol (space-delimite
 
 ## Goals
 
-- Add a **v2 JSON socket protocol** (handle-based: `window_id`, `workspace_id`, `pane_id`, `surface_id`).
+- Add a **v2 JSON socket protocol** (handle-based: `window_id`, `workspace_id`, `area_id`, `tab_id`).
 - Keep **v1 fully working** until v2 reaches feature parity.
 - Re-implement the existing automated test suite to use **v2**.
 - Run both suites:
@@ -19,9 +19,9 @@ This doc tracks the migration from the existing v1 line protocol (space-delimite
 ## Status
 
 - [x] Implement v2 request/response envelope (JSON, newline-delimited)
-- [x] Implement v2 core methods (workspaces/surfaces/panes/input/notifications/browser)
+- [x] Implement v2 core methods (workspaces/tabs/areas/input/notifications/browser)
 - [x] Implement v2 multi-window methods (windows + cross-window workspace moves)
-- [x] Add `surface.trigger_flash` (agent-visible highlight for a surface)
+- [x] Add `tab.trigger_flash` (agent-visible highlight for a tab)
 - [x] Implement v2 debug/test methods (simulate typing, render stats, screenshots, etc.)
 - [x] Add `tests_v2/` using v2 client
 - [x] Add runners for v1 + v2 suites on the VM (`./scripts/run-tests-v1.sh`, `./scripts/run-tests-v2.sh`)
@@ -73,30 +73,30 @@ Workspaces:
 - [x] current_workspace -> `workspace.current`
 - [x] close_workspace -> `workspace.close`
 
-Surfaces / Splits:
-- [x] list_surfaces -> `surface.list`
-- [x] focus_surface / focus_surface_by_panel -> `surface.focus`
-- [x] new_split -> `surface.split`
-- [x] new_surface -> `surface.create`
-- [x] close_surface -> `surface.close`
-- [x] drag_surface_to_split -> `surface.drag_to_split`
-- [x] refresh_surfaces -> `surface.refresh`
-- [x] surface_health -> `surface.health`
-- [x] trigger_flash -> `surface.trigger_flash` (new in v2)
+Tabs / Splits:
+- [x] list_surfaces -> `tab.list`
+- [x] focus_surface / focus_surface_by_panel -> `tab.focus`
+- [x] new_split -> `tab.split`
+- [x] new_surface -> `tab.create`
+- [x] close_surface -> `tab.close`
+- [x] drag_surface_to_split -> `tab.drag_to_split`
+- [x] refresh_surfaces -> `tab.refresh`
+- [x] surface_health -> `tab.health`
+- [x] trigger_flash -> `tab.trigger_flash` (new in v2)
 
-Panes:
-- [x] list_panes -> `pane.list`
-- [x] focus_pane -> `pane.focus`
-- [x] list_pane_surfaces -> `pane.surfaces`
-- [x] new_pane -> `pane.create`
+Areas:
+- [x] list_panes -> `area.list`
+- [x] focus_pane -> `area.focus`
+- [x] list_pane_surfaces -> `area.tabs`
+- [x] new_pane -> `area.create`
 
 Input:
-- [x] send / send_surface -> `surface.send_text`
-- [x] send_key / send_key_surface -> `surface.send_key`
+- [x] send / send_surface -> `tab.send_text`
+- [x] send_key / send_key_surface -> `tab.send_key`
 
 Notifications:
 - [x] notify -> `notification.create`
-- [x] notify_surface -> `notification.create_for_surface`
+- [x] notify_surface -> `notification.create_for_tab`
 - [x] notify_target -> `notification.create_for_target`
 - [x] list_notifications -> `notification.list`
 - [x] clear_notifications -> `notification.clear`
@@ -123,10 +123,10 @@ Debug / Test-only:
 - [x] render_stats -> `debug.terminal.render_stats`
 - [x] layout_debug -> `debug.layout`
 - [x] bonsplit_underflow_count/reset -> `debug.bonsplit_underflow.*`
-- [x] empty_panel_count/reset -> `debug.empty_panel.*`
+- [x] empty_panel_count/reset -> `debug.empty_area.*`
 - [x] focus_notification -> `debug.notification.focus`
 - [x] flash_count/reset -> `debug.flash.*`
-- [x] panel_snapshot/panel_snapshot_reset -> `debug.panel_snapshot.*`
+- [x] panel_snapshot/panel_snapshot_reset -> `debug.tab_snapshot.*`
 - [x] screenshot -> `debug.window.screenshot`
 
 ## Test Migration
@@ -143,5 +143,5 @@ VM runners:
 
 ## Open Questions
 
-- Should v2 require explicit `workspace_id`/`surface_id` for all operations, or default to the currently-focused ones?
+- Should v2 require explicit `workspace_id`/`tab_id` for all operations, or default to the currently-focused ones?
 - For move/reorder operations (future): what are the policies for empty workspaces/windows?

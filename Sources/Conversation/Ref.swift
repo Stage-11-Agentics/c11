@@ -118,7 +118,7 @@ struct ConversationRef: Codable, Sendable, Equatable {
 /// Surface ↔ Conversation mapping persisted on each `SessionPanelSnapshot`.
 /// v1 only ever populates `active`; `history` is written explicitly as an
 /// empty array (not omitted) so JSON output is stable across v1/v2.
-struct SurfaceConversations: Codable, Sendable, Equatable {
+struct TabConversations: Codable, Sendable, Equatable {
     var active: ConversationRef?
     var history: [ConversationRef]
 
@@ -127,7 +127,7 @@ struct SurfaceConversations: Codable, Sendable, Equatable {
         self.history = history
     }
 
-    static let empty = SurfaceConversations(active: nil, history: [])
+    static let empty = TabConversations(active: nil, history: [])
 }
 
 extension CaptureSource {

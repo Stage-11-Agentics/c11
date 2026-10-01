@@ -2,7 +2,7 @@
 """Regression: CLI-created background terminal helpers should start a PTY.
 
 Ported from manaflow-ai/cmux PR #4233 (commit 5cb4715a8). Exercises the
-orchestrator pattern (`c11 new-surface --no-focus` then `c11 send`) against a
+orchestrator pattern (`c11 new-tab --no-focus` then `c11 send`) against a
 background workspace. The pre-fix wedge was that offscreen surfaces never
 called `ghostty_surface_new` (their `view.window` stayed nil), so `c11 send`
 silently queued bytes into `pendingTextQueue` that would never flush. This
@@ -56,8 +56,8 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str], check: bool = True) -> Tuple[int, str]:
     env = dict(os.environ)
     for key in (
-        "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_TAB_ID",
-        "C11_WORKSPACE_ID", "C11_SURFACE_ID", "C11_TAB_ID",
+        "CMUX_WORKSPACE_ID", "C11_TAB_ID", "CMUX_TAB_ID",
+        "C11_WORKSPACE_ID", "C11_TAB_ID", "C11_TAB_ID",
     ):
         env.pop(key, None)
 
@@ -86,7 +86,7 @@ def _wait_for_read_screen(cli: str, workspace_ref: str, surface_ref: str, token:
                 "read-screen",
                 "--workspace",
                 workspace_ref,
-                "--surface",
+                "--tab",
                 surface_ref,
                 "--scrollback",
                 "--lines",
@@ -109,7 +109,7 @@ def _exercise_helper(cli: str, workspace_ref: str, surface_ref: str, label: str)
             "send",
             "--workspace",
             workspace_ref,
-            "--surface",
+            "--tab",
             surface_ref,
             "--",
             f"echo {token}\\n",
@@ -134,8 +134,8 @@ def _find_unhosted_background_workspace(c: cmux, cli: str, baseline_ws: str) -> 
             created_workspaces.append(workspace_ref)
             _run_cli(cli, ["select-workspace", "--workspace", baseline_ws])
 
-            health = c._call("surface.health", {"workspace_id": workspace_ref}) or {}
-            surfaces = health.get("surfaces") or []
+            health = c._call("tab.health", {"workspace_id": workspace_ref}) or {}
+            surfaces = health.get("tabs") or []
             if any(row.get("type") == "terminal" and row.get("in_window") is False for row in surfaces):
                 created_workspaces.remove(workspace_ref)
                 return workspace_ref, created_workspaces
@@ -167,19 +167,19 @@ def main() -> int:
             except c11Skip as exc:
                 print(f"SKIP: {exc}")
                 return 0
-            panes = c._call("pane.list", {"workspace_id": workspace_ref}) or {}
-            pane_rows = panes.get("panes") or []
-            _must(bool(pane_rows), f"pane.list returned no panes for background workspace: {panes}")
+            panes = c._call("area.list", {"workspace_id": workspace_ref}) or {}
+            pane_rows = panes.get("areas") or []
+            _must(bool(pane_rows), f"area.list returned no panes for background workspace: {panes}")
             pane_ref = str(pane_rows[0].get("ref") or pane_rows[0].get("id") or "")
-            _must(bool(pane_ref), f"pane.list returned pane without ref/id: {panes}")
+            _must(bool(pane_ref), f"area.list returned pane without ref/id: {panes}")
 
             _, surface_output = _run_cli(
                 cli,
                 [
-                    "new-surface",
+                    "new-tab",
                     "--workspace",
                     workspace_ref,
-                    "--pane",
+                    "--area",
                     pane_ref,
                     "--type",
                     "terminal",
@@ -187,13 +187,13 @@ def main() -> int:
                     "false",
                 ],
             )
-            helper_surface_ref = _extract_ref(surface_output, "surface")
+            helper_surface_ref = _extract_ref(surface_output, "tab")
             _exercise_helper(cli, workspace_ref, helper_surface_ref, "surface")
 
             _, pane_output = _run_cli(
                 cli,
                 [
-                    "new-pane",
+                    "new-area",
                     "--workspace",
                     workspace_ref,
                     "--type",
@@ -204,7 +204,7 @@ def main() -> int:
                     "false",
                 ],
             )
-            helper_pane_surface_ref = _extract_ref(pane_output, "surface")
+            helper_pane_surface_ref = _extract_ref(pane_output, "tab")
             _exercise_helper(cli, workspace_ref, helper_pane_surface_ref, "pane")
 
             current = c._call("workspace.current") or {}

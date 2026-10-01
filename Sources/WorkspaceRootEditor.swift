@@ -11,7 +11,7 @@ enum WorkspaceRootActions {
     /// when the focused panel has not reported one).
     static func focusedDirectory(of workspace: Workspace) -> String? {
         if let focusedPanelId = workspace.focusedPanelId,
-           let reported = workspace.panelDirectories[focusedPanelId]?
+           let reported = workspace.tabDirectories[focusedPanelId]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !reported.isEmpty {
             return reported
@@ -163,13 +163,13 @@ struct WorkspaceRootPopover: View {
         if rootMissing {
             return String(
                 localized: "workspaceRoot.caption.missing",
-                defaultValue: "This folder no longer exists. New terminals start in the focused surface's directory."
+                defaultValue: "This folder no longer exists. New terminals start in the focused tab's directory."
             )
         }
         if root == nil {
             return String(
                 localized: "workspaceRoot.caption.none",
-                defaultValue: "New terminals start in the focused surface's directory until a root is set."
+                defaultValue: "New terminals start in the focused tab's directory until a root is set."
             )
         }
         return String(
@@ -180,7 +180,7 @@ struct WorkspaceRootPopover: View {
 
     private var driftText: String {
         let path = drifted.map(WorkspaceRootActions.displayPath) ?? ""
-        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused surface: \(path)")
+        return String(localized: "workspaceRoot.focusedSurface", defaultValue: "Focused tab: \(path)")
     }
 
     var body: some View {

@@ -27,11 +27,11 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
     }
 
     func testSocketPermissionsFollowAccessMode() throws {
-        let tabManager = TabManager()
+        let workspaceManager = WorkspaceManager()
 
         let allowAllPath = makeSocketPath("allow-all")
         TerminalController.shared.start(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             socketPath: allowAllPath,
             accessMode: .allowAll
         )
@@ -42,7 +42,7 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 
         let restrictedPath = makeSocketPath("c11-only")
         TerminalController.shared.start(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             socketPath: restrictedPath,
             accessMode: .c11Only
         )
@@ -52,10 +52,10 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 
     func testPasswordModeRejectsUnauthenticatedCommands() throws {
         let socketPath = makeSocketPath("password-mode")
-        let tabManager = TabManager()
+        let workspaceManager = WorkspaceManager()
 
         TerminalController.shared.start(
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             socketPath: socketPath,
             accessMode: .password
         )
@@ -132,8 +132,8 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
     }
 
     func testRemoteStatusPayloadOmitsSensitiveSSHConfiguration() {
-        let tabManager = TabManager()
-        let workspace = tabManager.addWorkspace(select: false, eagerLoadTerminal: false)
+        let workspaceManager = WorkspaceManager()
+        let workspace = workspaceManager.addWorkspace(select: false, eagerLoadTerminal: false)
 
         workspace.configureRemoteConnection(
             .init(

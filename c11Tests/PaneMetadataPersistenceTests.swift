@@ -24,7 +24,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
             "panelIds": ["\(panelIds[0])", "\(panelIds[1])"]
         }
         """.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(SessionPaneLayoutSnapshot.self, from: legacyJSON)
+        let decoded = try JSONDecoder().decode(SessionAreaLayoutSnapshot.self, from: legacyJSON)
         XCTAssertEqual(decoded.panelIds.map { $0.uuidString }, panelIds)
         XCTAssertNil(decoded.selectedPanelId)
         XCTAssertNil(decoded.id)
@@ -47,7 +47,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
             "active": PersistedMetadataSource(source: "heuristic", ts: 1_700_000_003),
             "tags": PersistedMetadataSource(source: "osc", ts: 1_700_000_004)
         ]
-        let snapshot = SessionPaneLayoutSnapshot(
+        let snapshot = SessionAreaLayoutSnapshot(
             panelIds: panelIds,
             selectedPanelId: panelIds.first,
             id: paneId,
@@ -55,7 +55,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
             metadataSources: sources
         )
         let data = try JSONEncoder().encode(snapshot)
-        let decoded = try JSONDecoder().decode(SessionPaneLayoutSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionAreaLayoutSnapshot.self, from: data)
         XCTAssertEqual(decoded.id, paneId)
         XCTAssertEqual(decoded.panelIds, panelIds)
         XCTAssertEqual(decoded.selectedPanelId, panelIds.first)
@@ -64,7 +64,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
     }
 
     func testEmptyPaneMetadataEmitsAsNilToKeepSnapshotsSmall() throws {
-        let snapshot = SessionPaneLayoutSnapshot(
+        let snapshot = SessionAreaLayoutSnapshot(
             panelIds: [],
             selectedPanelId: nil,
             id: UUID(),
@@ -80,7 +80,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
     // MARK: - Bridge helpers (pane label)
 
     func testEnforcePaneSizeCapDropsOversizedKeysUntilUnderLimit() {
-        let cap = SurfaceMetadataStore.payloadCapBytes
+        let cap = TabMetadataStore.payloadCapBytes
         // Two big strings that together exceed the cap; the largest-first
         // policy must drop the bigger one and leave the smaller intact.
         let bigger = String(repeating: "a", count: cap)
@@ -110,7 +110,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
     /// dataFromSnapshot` exercises, plus that the surviving metadata installs
     /// while the dropped key's sidecar is filtered out alongside it.
     func testRestoreCapDropsOversizedKeyAndAlignsSources() throws {
-        let cap = SurfaceMetadataStore.payloadCapBytes
+        let cap = TabMetadataStore.payloadCapBytes
         let huge = String(repeating: "a", count: cap)
         let persistedValues: [String: PersistedJSONValue] = [
             "title": .string("Parent :: Restored"),
@@ -136,7 +136,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
         // Install through the live store using the same call shape the
         // restore path uses, then read back to confirm only the survivor
         // landed and its source attribution is preserved.
-        let store = PaneMetadataStore.shared
+        let store = AreaMetadataStore.shared
         let wsId = UUID()
         let paneId = UUID()
         let values = PersistedMetadataBridge.decodeValues(cappedValues)
@@ -156,7 +156,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
     // MARK: - Restore precedence on PaneMetadataStore
 
     func testRestoreFromSnapshotPreservesNonExplicitSourceAttribution() throws {
-        let store = PaneMetadataStore.shared
+        let store = AreaMetadataStore.shared
         let wsId = UUID()
         let paneId = UUID()
         // Snapshot carries a `.declare` value — restoring must NOT stamp it
@@ -167,7 +167,7 @@ final class PaneMetadataPersistenceTests: XCTestCase {
             paneId: paneId,
             values: ["title": "Declared Title"],
             sources: [
-                "title": PaneMetadataStore.SourceRecord(source: .declare, ts: 1.0)
+                "title": AreaMetadataStore.SourceRecord(source: .declare, ts: 1.0)
             ]
         )
         XCTAssertEqual(

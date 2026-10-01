@@ -100,7 +100,7 @@ def main() -> int:
         c.select_workspace(ws0)
         time.sleep(0.1)
 
-    print("PASS: surface.move/surface.reorder/workspace.reorder keep stable IDs and expected ordering")
+    print("PASS: tab.move/tab.reorder/workspace.reorder keep stable IDs and expected ordering")
     return 0
 
 

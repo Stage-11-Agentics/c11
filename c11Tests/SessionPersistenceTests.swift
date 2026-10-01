@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -20,14 +21,14 @@ final class SessionPersistenceTests: XCTestCase {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let panel = try XCTUnwrap(
-            workspace.newMarkdownSurface(
+            workspace.newMarkdownTab(
                 inPane: paneId,
                 filePath: markdownURL.path,
                 focus: true
             )
         )
         workspace.setCustomTitle("Docs")
-        workspace.setPanelCustomTitle(panelId: panel.id, title: "Readme")
+        workspace.setTabCustomTitle(panelId: panel.id, title: "Readme")
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 
@@ -35,10 +36,10 @@ final class SessionPersistenceTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
-        let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
-        XCTAssertEqual(restoredPanel.filePath, markdownURL.path)
+        let restoredTab = try XCTUnwrap(restored.markdownTab(for: restoredPanelId))
+        XCTAssertEqual(restoredTab.filePath, markdownURL.path)
         XCTAssertEqual(restored.customTitle, "Docs")
-        XCTAssertEqual(restored.panelTitle(panelId: restoredPanelId), "Readme")
+        XCTAssertEqual(restored.tabTitle(panelId: restoredPanelId), "Readme")
     }
 
     func testSaveAndLoadRoundTripWithCustomSnapshotPath() throws {
@@ -130,13 +131,13 @@ final class SessionPersistenceTests: XCTestCase {
 
         let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].customColor = "#C0392B"
+        snapshot.windows[0].workspaceManager.workspaces[0].customColor = "#C0392B"
 
         XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
 
         let loaded = SessionPersistenceStore.load(fileURL: snapshotURL)
         XCTAssertEqual(
-            loaded?.windows.first?.tabManager.workspaces.first?.customColor,
+            loaded?.windows.first?.workspaceManager.workspaces.first?.customColor,
             "#C0392B"
         )
     }
@@ -165,7 +166,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionPanelSnapshotCustomColorRoundTrip() throws {
         let panelId = UUID()
-        let snapshot = SessionPanelSnapshot(
+        let snapshot = SessionTabSnapshot(
             id: panelId,
             type: .terminal,
             title: nil,
@@ -189,13 +190,13 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertTrue(json.contains("\"customColor\""))
         XCTAssertTrue(json.contains("#C0392B"))
 
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.customColor, "#C0392B")
         XCTAssertEqual(decoded.id, panelId)
     }
 
     func testSessionPanelSnapshotCustomColorOmittedWhenNil() throws {
-        let snapshot = SessionPanelSnapshot(
+        let snapshot = SessionTabSnapshot(
             id: UUID(),
             type: .terminal,
             title: nil,
@@ -221,7 +222,7 @@ final class SessionPersistenceTests: XCTestCase {
             "Nil customColor should not bloat snapshots — JSONEncoder omits the key"
         )
 
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
         XCTAssertNil(decoded.customColor)
     }
 
@@ -239,7 +240,7 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
 
         XCTAssertEqual(decoded.id, panelId)
         XCTAssertNil(decoded.customColor)
@@ -257,7 +258,7 @@ final class SessionPersistenceTests: XCTestCase {
     func testSessionPanelSnapshotLastActivityAtRoundTrip() throws {
         let panelId = UUID()
         let floor = Date(timeIntervalSince1970: 1_700_000_123)
-        var snapshot = SessionPanelSnapshot(
+        var snapshot = SessionTabSnapshot(
             id: panelId, type: .terminal, title: nil, customTitle: nil,
             customColor: nil, directory: nil, isPinned: false, isManuallyUnread: false,
             gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
@@ -270,7 +271,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertTrue(json.contains("\"last_activity_at\""),
                       "lastActivityAt must be in CodingKeys or it silently never encodes")
 
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.lastActivityAt, floor)
     }
 
@@ -288,14 +289,14 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
         XCTAssertEqual(decoded.id, panelId)
         XCTAssertNil(decoded.lastActivityAt)
     }
 
     func testSessionPanelSnapshotLogicalCreationRoundTrip() throws {
         let createdAt = Date(timeIntervalSince1970: 1_700_000_456)
-        let snapshot = SessionPanelSnapshot(
+        let snapshot = SessionTabSnapshot(
             id: UUID(),
             createdAt: createdAt,
             type: .browser,
@@ -316,7 +317,7 @@ final class SessionPersistenceTests: XCTestCase {
         )
 
         let encoded = try JSONEncoder().encode(snapshot)
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: encoded)
         XCTAssertEqual(decoded.createdAt, createdAt)
     }
 
@@ -333,13 +334,13 @@ final class SessionPersistenceTests: XCTestCase {
         """
 
         let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
         XCTAssertNil(decoded.createdAt)
     }
 
     func testWorkspaceCustomColorDecodeSupportsMissingLegacyField() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].customColor = nil
+        snapshot.windows[0].workspaceManager.workspaces[0].customColor = nil
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(snapshot)
@@ -347,7 +348,7 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(json.contains("\"customColor\""))
 
         let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: data)
-        XCTAssertNil(decoded.windows.first?.tabManager.workspaces.first?.customColor)
+        XCTAssertNil(decoded.windows.first?.workspaceManager.workspaces.first?.customColor)
     }
 
     func testLoadRejectsSchemaVersionMismatch() {
@@ -502,7 +503,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionBrowserPanelSnapshotHistoryRoundTrip() throws {
         let profileID = try XCTUnwrap(UUID(uuidString: "8F03A658-5A84-428B-AD03-5A6D04692F64"))
-        let source = SessionBrowserPanelSnapshot(
+        let source = SessionBrowserTabSnapshot(
             urlString: "https://example.com/current",
             profileID: profileID,
             shouldRenderWebView: true,
@@ -518,7 +519,7 @@ final class SessionPersistenceTests: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(source)
-        let decoded = try JSONDecoder().decode(SessionBrowserPanelSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionBrowserTabSnapshot.self, from: data)
         XCTAssertEqual(decoded.urlString, source.urlString)
         XCTAssertEqual(decoded.profileID, source.profileID)
         XCTAssertEqual(decoded.backHistoryURLStrings, source.backHistoryURLStrings)
@@ -527,7 +528,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testSessionBrowserCompanionLinkRoundTripsWithoutChangingSchemaVersion() throws {
         let linkedID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
-        var source = SessionBrowserPanelSnapshot(
+        var source = SessionBrowserTabSnapshot(
             urlString: "https://example.com/current",
             profileID: nil,
             shouldRenderWebView: true,
@@ -536,13 +537,13 @@ final class SessionPersistenceTests: XCTestCase {
             backHistoryURLStrings: nil,
             forwardHistoryURLStrings: nil
         )
-        source.linkedAgent = AgentSurfaceLink(
+        source.linkedAgent = AgentTabLink(
             surfaceID: linkedID,
             lastKnownName: "Build agent"
         )
 
         let decoded = try JSONDecoder().decode(
-            SessionBrowserPanelSnapshot.self,
+            SessionBrowserTabSnapshot.self,
             from: JSONEncoder().encode(source)
         )
         XCTAssertEqual(decoded.linkedAgent, source.linkedAgent)
@@ -559,7 +560,7 @@ final class SessionPersistenceTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let decoded = try JSONDecoder().decode(SessionBrowserPanelSnapshot.self, from: json)
+        let decoded = try JSONDecoder().decode(SessionBrowserTabSnapshot.self, from: json)
         XCTAssertEqual(decoded.urlString, "https://example.com/current")
         XCTAssertNil(decoded.profileID)
         XCTAssertNil(decoded.backHistoryURLStrings)
@@ -575,7 +576,7 @@ final class SessionPersistenceTests: XCTestCase {
             AppSessionSnapshot.self,
             from: Data(contentsOf: fixture)
         )
-        let workspace = try XCTUnwrap(decoded.windows.first?.tabManager.workspaces.first)
+        let workspace = try XCTUnwrap(decoded.windows.first?.workspaceManager.workspaces.first)
         let browser = try XCTUnwrap(workspace.panels.first?.browser)
         XCTAssertEqual(decoded.version, 1)
         XCTAssertNil(workspace.activeAgentSurfaceId)
@@ -585,14 +586,14 @@ final class SessionPersistenceTests: XCTestCase {
     func testSessionActiveAgentContextRoundTripsButIsOptional() throws {
         let activeID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB"))
         var snapshot = makeSnapshot(version: 1)
-        snapshot.windows[0].tabManager.workspaces[0].activeAgentSurfaceId = activeID
+        snapshot.windows[0].workspaceManager.workspaces[0].activeAgentSurfaceId = activeID
 
         let decoded = try JSONDecoder().decode(
             AppSessionSnapshot.self,
             from: JSONEncoder().encode(snapshot)
         )
         XCTAssertEqual(
-            decoded.windows[0].tabManager.workspaces[0].activeAgentSurfaceId,
+            decoded.windows[0].workspaceManager.workspaces[0].activeAgentSurfaceId,
             activeID
         )
     }
@@ -744,12 +745,89 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(
             AppDelegate.shouldPersistSnapshotOnWindowUnregister(isTerminatingApp: true)
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             AppDelegate.shouldRemoveSnapshotWhenNoWindowsRemainOnWindowUnregister(isTerminatingApp: false)
         )
         XCTAssertFalse(
             AppDelegate.shouldRemoveSnapshotWhenNoWindowsRemainOnWindowUnregister(isTerminatingApp: true)
         )
+    }
+
+    func testFirstOverwriteArchivesThePreviousSessionOnce() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let previous = Data("previous session".utf8)
+        try previous.write(to: snapshotURL)
+
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+        snapshot.createdAt += 1
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), previous)
+        XCTAssertNotNil(SessionPersistenceStore.load(fileURL: snapshotURL))
+    }
+
+    func testRemoveSnapshotArchivesThePreviousSessionFirst() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let previous = Data("previous session".utf8)
+        try previous.write(to: snapshotURL)
+
+        SessionPersistenceStore.removeSnapshot(fileURL: snapshotURL)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: snapshotURL.path))
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), previous)
+    }
+
+    func testSessionHistoryKeepsTheNewestCopies() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        let snapshotURL = tempDir.appendingPathComponent("session.json", isDirectory: false)
+        let historyDir = SessionPersistenceStore.historyDirectoryURL(for: snapshotURL)
+        try FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let retention = SessionPersistenceStore.historyRetentionCount
+        for day in 1...(retention + 2) {
+            let name = String(format: "session-200001%02dT000000.000Z.json", day)
+            try Data("old".utf8).write(to: historyDir.appendingPathComponent(name))
+        }
+        try Data("previous session".utf8).write(to: snapshotURL)
+
+        SessionPersistenceStore.archiveBeforeFirstOverwrite(fileURL: snapshotURL)
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: snapshotURL)
+        XCTAssertEqual(archives.count, retention)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(archives.first)), Data("previous session".utf8))
+        XCTAssertFalse(archives.contains { $0.lastPathComponent == "session-20000101T000000.000Z.json" })
+    }
+
+    func testSessionHistoryKeepsPrefixSharingStemsApart() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-history-\(UUID().uuidString)", isDirectory: true)
+        let fooURL = tempDir.appendingPathComponent("session-dev.foo.json", isDirectory: false)
+        let historyDir = SessionPersistenceStore.historyDirectoryURL(for: fooURL)
+        try FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try Data("foo".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-20260101T000000.000Z.json"))
+        try Data("bar".utf8).write(to: historyDir.appendingPathComponent("session-dev.foo-bar-20260102T000000.000Z.json"))
+
+        let archives = SessionPersistenceStore.historyFileURLs(for: fooURL)
+        XCTAssertEqual(archives.map(\.lastPathComponent), ["session-dev.foo-20260101T000000.000Z.json"])
     }
 
     func testShouldSkipSessionSaveDuringStartupRestorePolicy() {
@@ -1007,7 +1085,7 @@ final class SessionPersistenceTests: XCTestCase {
                 frame: SessionRectSnapshot(x: 0, y: 0, width: 1_600, height: 1_000),
                 visibleFrame: SessionRectSnapshot(x: 0, y: 0, width: 1_600, height: 1_000)
             ),
-            tabManager: SessionTabManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
             sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 220)
         )
         let fallbackFrame = SessionRectSnapshot(x: 40, y: 30, width: 700, height: 500)
@@ -1163,12 +1241,12 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testWorkspaceRootRoundTripsAndOlderSnapshotDefaultsToNoRoot() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
-        snapshot.windows[0].tabManager.workspaces[0].rootDirectory = "/tmp/project-root"
+        snapshot.windows[0].workspaceManager.workspaces[0].rootDirectory = "/tmp/project-root"
 
         let encoded = try JSONEncoder().encode(snapshot)
         let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
         XCTAssertEqual(
-            decoded.windows[0].tabManager.workspaces[0].rootDirectory,
+            decoded.windows[0].workspaceManager.workspaces[0].rootDirectory,
             "/tmp/project-root"
         )
 
@@ -1177,17 +1255,74 @@ final class SessionPersistenceTests: XCTestCase {
         )
         var windows = try XCTUnwrap(json["windows"] as? [[String: Any]])
         var window = windows[0]
-        var tabManager = try XCTUnwrap(window["tabManager"] as? [String: Any])
-        var workspaces = try XCTUnwrap(tabManager["workspaces"] as? [[String: Any]])
+        var workspaceManager = try XCTUnwrap(window["tabManager"] as? [String: Any])
+        var workspaces = try XCTUnwrap(workspaceManager["workspaces"] as? [[String: Any]])
         workspaces[0].removeValue(forKey: "rootDirectory")
-        tabManager["workspaces"] = workspaces
-        window["tabManager"] = tabManager
+        workspaceManager["workspaces"] = workspaces
+        window["tabManager"] = workspaceManager
         windows[0] = window
         json["windows"] = windows
 
         let legacyData = try JSONSerialization.data(withJSONObject: json)
         let legacyDecoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: legacyData)
-        XCTAssertNil(legacyDecoded.windows[0].tabManager.workspaces[0].rootDirectory)
+        XCTAssertNil(legacyDecoded.windows[0].workspaceManager.workspaces[0].rootDirectory)
+    }
+
+    func testWindowSnapshotKeepsOnDiskTabManagerKeyAcrossDecodeAndEncode() throws {
+        let encoded = try JSONEncoder().encode(makeSnapshot(version: SessionSnapshotSchema.currentVersion))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let windows = try XCTUnwrap(json["windows"] as? [[String: Any]])
+        let originalKeys = Set(windows[0].keys)
+        XCTAssertTrue(originalKeys.contains("tabManager"))
+        XCTAssertFalse(originalKeys.contains("workspaceManager"))
+
+        // A file written by an older build carries the same keys; decoding then re-encoding keeps them.
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
+        let reencoded = try JSONEncoder().encode(decoded)
+        let rejson = try XCTUnwrap(JSONSerialization.jsonObject(with: reencoded) as? [String: Any])
+        let rewindows = try XCTUnwrap(rejson["windows"] as? [[String: Any]])
+        XCTAssertEqual(Set(rewindows[0].keys), originalKeys)
+        let manager = try XCTUnwrap(rewindows[0]["tabManager"] as? [String: Any])
+        XCTAssertNotNil(manager["workspaces"])
+    }
+
+    func testRenamedTabPropertiesKeepTheirOnDiskKeysAcrossDecodeAndEncode() throws {
+        func collectKeys(_ value: Any, into keys: inout Set<String>) {
+            if let dict = value as? [String: Any] {
+                for (key, child) in dict {
+                    keys.insert(key)
+                    collectKeys(child, into: &keys)
+                }
+            } else if let array = value as? [Any] {
+                for child in array { collectKeys(child, into: &keys) }
+            }
+        }
+
+        let encoded = try JSONEncoder().encode(makeSnapshot(version: SessionSnapshotSchema.currentVersion))
+        var originalKeys = Set<String>()
+        collectKeys(try JSONSerialization.jsonObject(with: encoded), into: &originalKeys)
+
+        // The tab properties were persisted as panels; those keys are the on-disk contract.
+        for onDisk in ["panels", "panelIds"] {  // non-optional, so always encoded
+            XCTAssertTrue(originalKeys.contains(onDisk), "missing on-disk key \(onDisk)")
+        }
+        for renamed in ["tabs", "tabIds"] {
+            XCTAssertFalse(originalKeys.contains(renamed), "renamed property leaked into the file as \(renamed)")
+        }
+
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
+        var reencodedKeys = Set<String>()
+        collectKeys(try JSONSerialization.jsonObject(with: try JSONEncoder().encode(decoded)), into: &reencodedKeys)
+        XCTAssertEqual(reencodedKeys, originalKeys)
+
+        // Areas were persisted as panes: the layout leaf keeps its "pane" key and a pre-rename file still decodes.
+        XCTAssertTrue(originalKeys.contains("pane"), "missing on-disk key pane")
+        XCTAssertFalse(originalKeys.contains("area"), "renamed vocabulary leaked into the file as area")
+        let legacyLeaf = Data(#"{"type":"pane","pane":{"panelIds":[]}}"#.utf8)
+        guard case .pane(let leaf) = try JSONDecoder().decode(SessionWorkspaceLayoutSnapshot.self, from: legacyLeaf) else {
+            return XCTFail("a legacy pane leaf did not decode as a leaf")
+        }
+        XCTAssertTrue(leaf.panelIds.isEmpty)
     }
 
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
@@ -1199,7 +1334,7 @@ final class SessionPersistenceTests: XCTestCase {
             isPinned: true,
             currentDirectory: "/tmp",
             focusedPanelId: nil,
-            layout: .pane(SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: [], selectedPanelId: nil)),
             panels: [],
             statusEntries: [],
             logEntries: [],
@@ -1207,7 +1342,7 @@ final class SessionPersistenceTests: XCTestCase {
             gitBranch: nil
         )
 
-        let tabManager = SessionTabManagerSnapshot(
+        let workspaceManager = SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: 0,
             workspaces: [workspace]
         )
@@ -1219,7 +1354,7 @@ final class SessionPersistenceTests: XCTestCase {
                 frame: SessionRectSnapshot(x: 0, y: 0, width: 1920, height: 1200),
                 visibleFrame: SessionRectSnapshot(x: 0, y: 25, width: 1920, height: 1175)
             ),
-            tabManager: tabManager,
+            workspaceManager: workspaceManager,
             sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240)
         )
 
@@ -1535,5 +1670,91 @@ final class SidebarDragFailsafePolicyTests: XCTestCase {
                 forMouseEventType: .leftMouseDragged
             )
         )
+    }
+}
+
+final class SidebarHorizontalScrollWorkspaceStepperTests: XCTestCase {
+    private func wheel(
+        _ stepper: inout SidebarHorizontalScrollWorkspaceStepper,
+        dx: CGFloat,
+        dy: CGFloat = 0,
+        precise: Bool = false,
+        at time: TimeInterval
+    ) -> SidebarHorizontalScrollWorkspaceStepper.Outcome {
+        stepper.handle(deltaX: dx, deltaY: dy, hasPreciseDeltas: precise, phase: [], momentumPhase: [], timestamp: time)
+    }
+
+    private func gesture(
+        _ stepper: inout SidebarHorizontalScrollWorkspaceStepper,
+        dx: CGFloat,
+        dy: CGFloat = 0,
+        phase: NSEvent.Phase,
+        momentum: NSEvent.Phase = [],
+        at time: TimeInterval
+    ) -> SidebarHorizontalScrollWorkspaceStepper.Outcome {
+        stepper.handle(deltaX: dx, deltaY: dy, hasPreciseDeltas: true, phase: phase, momentumPhase: momentum, timestamp: time)
+    }
+
+    func testVerticalWheelPassesThrough() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: 0, dy: -3, at: 0), .passThrough)
+        XCTAssertEqual(wheel(&stepper, dx: 1, dy: -3, at: 0.2), .passThrough)
+    }
+
+    func testWheelNotchStepsOneWorkspaceEachWay() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        XCTAssertEqual(wheel(&stepper, dx: 1, at: 0.5), .consume(step: -1))
+    }
+
+    func testFastWheelSpinIsRateLimited() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        XCTAssertEqual(wheel(&stepper, dx: -4, at: 0.02), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.05), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.1), .consume(step: 1))
+    }
+
+    func testResetClearsTheWheelRateLimit() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0), .consume(step: 1))
+        stepper.reset()
+        XCTAssertEqual(wheel(&stepper, dx: -1, at: 0.02), .consume(step: 1))
+    }
+
+    func testSmoothWheelAccumulatesPointsBeforeStepping() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0.01), .consume(step: 1))
+    }
+
+    func testWheelPauseDiscardsPartialAccumulation() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 0), .consume(step: 0))
+        XCTAssertEqual(wheel(&stepper, dx: -20, precise: true, at: 1), .consume(step: 0))
+    }
+
+    func testHorizontalSwipeStepsOnceAndSwallowsItsTailAndMomentum() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .mayBegin, at: 0), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: 20, dy: 2, phase: .began, at: 0.01), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 30, phase: .changed, at: 0.02), .consume(step: -1))
+        XCTAssertEqual(gesture(&stepper, dx: 200, phase: .changed, at: 0.03), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .ended, at: 0.04), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: 80, phase: [], momentum: .began, at: 0.05), .consume(step: 0))
+    }
+
+    func testVerticalSwipeStaysVerticalEvenIfItDriftsSideways() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: 1, dy: -10, phase: .began, at: 0), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: -60, dy: -2, phase: .changed, at: 0.01), .passThrough)
+        XCTAssertEqual(gesture(&stepper, dx: -40, dy: -1, phase: [], momentum: .changed, at: 0.02), .passThrough)
+    }
+
+    func testEachSwipeStepsAgain() {
+        var stepper = SidebarHorizontalScrollWorkspaceStepper()
+        XCTAssertEqual(gesture(&stepper, dx: -40, phase: .began, at: 0), .consume(step: 1))
+        XCTAssertEqual(gesture(&stepper, dx: 0, phase: .ended, at: 0.01), .consume(step: 0))
+        XCTAssertEqual(gesture(&stepper, dx: -40, phase: .began, at: 0.3), .consume(step: 1))
     }
 }

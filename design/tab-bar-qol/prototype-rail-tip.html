@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 rail tip</title>
+<style>
+:root {
+  --void: #16171b; --bar: #2b2d34; --tab: #24262c; --tab-active: #3a3c45;
+  --line: #45474f; --text: #e8e8ea; --dim: #9a9ca3; --faint: #74777f;
+  --gold: #d4a72c; --amber: #e0a030; --violet: #9D8AD9;
+  --s-bg: #1d1e23; --s-hover: #282a31; --s-active: #25272d; --s-border: #4a4c55; --s-sep: #2c2e34; --s-head: #191a1e;
+  --block: #34363e; --count: #2f3138;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #0f1013; color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 22px 16px 80px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+p.lede { color: var(--dim); margin: 0 0 12px; max-width: 760px; }
+.switches { display: grid; grid-template-columns: max-content 1fr; gap: 9px 14px; align-items: center; background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; margin: 12px 0 16px; }
+.switches label { font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.picker { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.picker button, .presets button, #replay { font: inherit; font-size: 12px; padding: 5px 12px; background: #24262c; color: var(--dim); border: 0; border-right: 1px solid var(--line); cursor: pointer; }
+.picker button:last-child { border-right: 0; }
+.picker button.on { background: var(--gold); color: #1b1b1b; font-weight: 700; }
+.slider { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.slider input { width: min(420px, 50vw); accent-color: var(--gold); }
+.slider .v { font: 700 12px ui-monospace, Menlo, monospace; color: var(--gold); width: 92px; }
+.presets button, #replay { border: 1px solid var(--line); border-radius: 4px; margin-right: 4px; }
+#replay { color: var(--text); }
+
+.stage { position: relative; height: 520px; background: #0b0c0e; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px; overflow: hidden; }
+.area { position: relative; display: flex; flex-direction: column; height: 100%; border: 1px solid var(--gold); background: #1a1b20; }
+.bar { position: relative; display: flex; height: 30px; background: var(--bar); border-bottom: 2px solid var(--gold); flex: none; z-index: 6; }
+.controls { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 6px; color: var(--dim); font-size: 12px; background: var(--bar); }
+.controls .sep { width: 1px; height: 14px; background: var(--line); margin: 0 7px; }
+.controls span.b { width: 20px; text-align: center; }
+.stripwrap { position: relative; display: flex; min-width: 0; flex: 0 1 auto; }
+.tabs { display: flex; gap: 1px; min-width: 0; overflow-x: auto; scrollbar-width: none; flex: 0 1 auto; }
+.tabs::-webkit-scrollbar { display: none; }
+.fade { position: absolute; top: 0; bottom: 0; width: 26px; pointer-events: none; z-index: 2; }
+.fade.l { left: 0; background: linear-gradient(90deg, var(--bar), transparent); }
+.fade.r { right: 0; background: linear-gradient(270deg, var(--bar), transparent); }
+.tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; background: var(--tab); color: var(--dim); font-size: 12px; white-space: nowrap; cursor: pointer; flex: none; max-width: 132px; overflow: hidden; }
+.tab.active { background: var(--tab-active); color: var(--text); font-weight: 600; }
+.tab .x { color: #6d7078; margin-left: auto; }
+.tab.linked { background: #34363f; color: var(--text); }
+.tab.linked::after, .block.linked::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: #fff; }
+.num { font: 700 10px ui-monospace, Menlo, monospace; color: var(--faint); }
+.tab.active .num { color: var(--gold); }
+.mark { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.mark.working { background: #d8d9dd; } .mark.waiting { background: var(--amber); } .mark.idle { background: #6a6d75; } .mark.flag { background: var(--violet); } .mark.none { background: transparent; border: 1px solid #4a4d55; }
+.block { position: relative; display: flex; flex: 1; min-width: 0; cursor: pointer; background: var(--block); border-right: 1px solid var(--line); }
+.block .main { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0 10px; font-size: 12px; font-weight: 600; }
+.block .main .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block .num { color: var(--gold); }
+.count { flex: none; color: var(--text); display: flex; align-items: center; justify-content: center; gap: 6px; width: 64px; background: var(--count); border-left: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.count:hover { background: #3a3c45; }
+.count.open { background: var(--gold); color: #1b1b1b; }
+.count.open .dot { background: #1b1b1b; }
+.count .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex: none; }
+.neutral { flex: 1; }
+.titlebar { flex: none; display: flex; align-items: center; height: 32px; padding: 0 12px; background: #1f2126; border-bottom: 1px solid #2f3137; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
+.content { flex: 1; display: flex; min-height: 0; }
+.term { flex: 1; padding: 10px 14px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: #8a8d95; overflow: hidden; min-width: 0; }
+.term .p { color: #9fd08a; }
+.railtitle { display: flex; align-items: center; gap: 8px; flex: 1; padding: 0 10px; font-size: 12px; font-weight: 600; min-width: 0; }
+.railtitle .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sheet { position: absolute; top: 30px; left: -1px; right: -1px; background: var(--s-bg); border: 1px solid var(--s-border); border-top: 0; box-shadow: 0 18px 36px rgba(0,0,0,.6); z-index: 5; }
+.sheet .head, .row, .foot { display: flex; align-items: center; }
+.sheet .head { height: 22px; background: var(--s-head); border-bottom: 1px solid var(--s-sep); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.sheet .head .rn { width: 58px; flex: none; text-align: right; }
+.row { position: relative; min-height: 44px; color: var(--dim); border-left: 3px solid transparent; border-bottom: 1px solid var(--s-sep); cursor: default; padding: 4px 10px 4px 7px; gap: 8px; }
+.row.linked { background: var(--s-hover); color: var(--text); }
+.row.active { background: var(--s-active); color: var(--text); border-left-color: var(--gold); }
+.row .rn { font: 700 11px ui-monospace, Menlo, monospace; color: var(--faint); width: 58px; flex: none; text-align: right; }
+.row.active .rn { color: var(--gold); }
+.row .rt { flex: 1; min-width: 0; }
+.row .t { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.active .t { font-weight: 700; color: #fff; }
+.row .d { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .st { flex: none; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; width: 92px; }
+.st.working { color: #e2e3e6; } .st.waiting { color: var(--amber); } .st.idle { color: var(--faint); font-weight: 600; } .st.flag { color: var(--violet); }
+.dash { color: #50535b; }
+.foot { font-size: 11px; color: var(--faint); padding: 5px 10px; border-top: 1px solid var(--s-sep); background: var(--s-head); gap: 14px; }
+
+.rail { flex: none; background: var(--s-bg); border-right: 1px solid var(--s-border); overflow: hidden; display: flex; flex-direction: column; }
+.rail.in { animation: railIn 160ms cubic-bezier(.2,.8,.2,1); }
+@keyframes railIn { from { opacity: .4; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rail.in { animation: none; } }
+.rail .rh { height: 22px; display: flex; align-items: center; padding: 0 10px; background: var(--s-head); border-bottom: 1px solid var(--s-sep); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); flex: none; }
+.rrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 7px; border-left: 3px solid transparent; border-bottom: 1px solid var(--s-sep); cursor: pointer; min-width: 0; }
+.rrow.active { background: var(--s-active); border-left-color: var(--gold); }
+.rrow.linked { background: var(--s-hover); }
+.rrow .rn { font: 700 10px ui-monospace, Menlo, monospace; color: var(--faint); width: 52px; flex: none; text-align: right; }
+.rrow.active .rn { color: var(--gold); }
+.rrow .rt { flex: 1; min-width: 0; }
+.rrow .t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.rrow.active .t { color: #fff; font-weight: 700; }
+.rrow .s { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tip { position: absolute; z-index: 7; width: min(300px, calc(100% - 16px)); background: var(--s-bg); border: 1px solid var(--s-border); border-radius: 10px; box-shadow: 0 18px 36px rgba(0,0,0,.55); padding: 12px 14px 10px; color: var(--text); }
+.tip .caret { position: absolute; top: -6px; width: 12px; height: 12px; background: var(--s-bg); border-left: 1px solid var(--s-border); border-top: 1px solid var(--s-border); transform: rotate(45deg); }
+.tip h2 { margin: 0 0 4px; font-size: 13px; }
+.tip p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: var(--dim); }
+.tip .plabel { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 0 0 4px; }
+.preview { border: 1px solid var(--s-sep); border-radius: 6px; overflow: hidden; background: var(--s-head); margin: 0 0 10px; }
+.preview .rrow { padding: 3px 8px 3px 5px; gap: 6px; cursor: default; }
+.preview .t { font-size: 11px; } .preview .s { font-size: 10px; } .preview .rn { width: 46px; font-size: 9px; }
+.tip .acts { display: flex; gap: 8px; }
+.tip button { font: inherit; cursor: pointer; }
+.tip .acts button { flex: 1; font-size: 12px; font-weight: 700; padding: 6px 8px; border-radius: 6px; }
+.tip .primary { background: var(--gold); color: #1b1b1b; border: 0; }
+.tip .secondary { background: var(--count); color: var(--text); border: 1px solid var(--s-border); }
+.tip .quiet { display: block; width: 100%; margin-top: 4px; background: transparent; border: 0; color: var(--faint); font-size: 11px; padding: 4px; }
+.tip .quiet:hover { color: var(--text); }
+
+.result { margin-top: 12px; background: #1c1d22; border: 1px solid #2c2e35; border-left: 3px solid var(--gold); border-radius: 10px; padding: 10px 14px 12px; }
+.result .k { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--gold); margin: 0 0 4px; }
+.result .body { margin: 0; font-size: 13px; color: var(--dim); }
+.stored { margin: 8px 0 0; font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--faint); white-space: pre-wrap; }
+.fine { margin: 4px 0 0; font-size: 11px; color: #5d6068; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.note { background: #1c1d22; border: 1px solid #2c2e35; border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--dim); }
+.note h3 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
+.note ul { margin: 0; padding-left: 18px; } .note li { margin: 4px 0; } .note b { color: var(--text); }
+.note code { font: 11px ui-monospace, Menlo, monospace; color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+<h1>A rare tip when tabs overflow</h1>
+<p class="lede">One area, more tabs than the bar can show. The tip sits under the count cell. Use the three actions. The notes under the stage are the proposed trigger rule and where the signal is stored. The switches are prototype controls. They do not ship.</p>
+
+<div class="switches">
+  <label>Area width</label>
+  <div class="slider">
+    <input type="range" id="w" min="300" max="1130" value="640">
+    <span class="v" id="wv">640pt</span>
+    <span class="presets"><button type="button" data-w="380">Block</button><button type="button" data-w="640">Overflow</button><button type="button" data-w="1080">Wide</button></span>
+  </div>
+  <label>Tabs</label>
+  <div>
+    <div class="picker" data-k="nTabs"><button type="button" data-v="8">8, bar overflows</button><button type="button" data-v="2">2, bar can fit them</button></div>
+    <button type="button" id="replay">Replay tip</button>
+  </div>
+</div>
+
+<div class="stage"><div class="area" id="area"></div></div>
+
+<div class="result">
+  <div class="k" id="whatK"></div>
+  <p class="body" id="whatB"></p>
+  <div class="stored" id="stored"></div>
+  <p class="fine">This page does not write your settings. The lines above are what the app would store.</p>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h3>Trigger</h3>
+    <ul>
+      <li>An overflow day is a local calendar day on which any area's strip scrolled, or folded into the solid block. A blip under 2 seconds while the window is being resized does not count. One mark per day.</li>
+      <li>c11 often stays open for days, so this counts days of use, not app launches. A launch counter would almost never reach the threshold.</li>
+      <li>Offer the tip when <b>4 overflow days fall inside the last 14 days</b>, Tab Layout is still Tabs, the tip has never been dismissed, it has not been offered in the last <b>30 days</b>, and the area the operator is looking at is overflowing right now.</li>
+      <li>One tip for the whole app, on that area. Not one per area.</li>
+      <li>The tip is not modal. Leaving it alone records the offer and waits 30 days. It returns only if the pattern still holds.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>Where the signal is stored</h3>
+    <ul>
+      <li>User defaults only, in the app domain <code>com.stage11.c11</code>. A tagged dev build uses <code>com.stage11.c11.debug.&lt;tag&gt;</code> with dashes written as dots. Same domain as <code>tabLayoutMode</code>.</li>
+      <li><code>c11.tabRailTip.overflowDays</code>: list of <code>yyyy-MM-dd</code>, newest 30 kept.</li>
+      <li><code>c11.tabRailTip.lastOffered</code>: <code>yyyy-MM-dd</code>, set when the tip is shown.</li>
+      <li><code>c11.tabRailTip.dismissed</code>: true only after Don't show again. Try Rail, Undo, and switching to Rail in Settings do not set it.</li>
+      <li>Not written to logs, health reports, or the socket. Never leaves the machine.</li>
+      <li>Undo puts Tabs back and does not clear <code>lastOffered</code>. The tip can return after the 30-day gap, if the pattern still holds.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h3>Anchor and the three actions</h3>
+    <ul>
+      <li><b>Anchor:</b> a popover under the count cell, caret aimed at the cell. Same place when the strip is scrolling and when it has folded into the solid block. Drag the width to Block to see that.</li>
+      <li><b>Try Rail</b> sets Tab Layout to Rail for every area and opens the rail in this area. The popover stays up and becomes Undo. Undo puts Tabs back everywhere and does not retire the tip. Closing the popover without Undo leaves Rail on and also does not retire it.</li>
+      <li><b>Show tab list</b> opens this area's tab sheet, the list the number already opens. The tip steps aside while the sheet is up, then comes back. Escape, a row click, or the count cell closes the sheet. None of those retire the tip.</li>
+      <li><b>Don't show again</b> retires the tip and leaves Tab Layout on Tabs. It is the only action that sets <code>dismissed</code>.</li>
+      <li>The gold frame around the area matches the round five prototype. It is not product chrome. The English on the tip is the proposed product copy.</li>
+    </ul>
+  </div>
+</div>
+</main>
+<script>
+const ALL = [
+  { n:150, t:'Agent Build 3', d:'Implementing sheet anchor tracking. Next, re-validate the workspace switch.', st:'working', since:'12m' },
+  { n:137, t:'Overwatch', d:'September 29 state, all nine surfaces.', st:'idle', since:'48m' },
+  { n:160, t:'Ralph Intake', d:'Needs a call: attach the admin prototype, or send the link?', st:'waiting', since:'6m' },
+  { n:158, t:'REPLY-2-DRAFT.md', d:'~/Projects/Stage11/deployments/ralph-daf/REPLY-2-DRAFT.md', st:null, since:'' },
+  { n:154, t:'Migration Review', d:'Flagged: schema migration or dual-write needs a ruling.', st:'flag', since:'14m' },
+  { n:171, t:'zsh', d:'~/Projects/Stage11/code/c11', st:null, since:'' },
+  { n:166, t:'Socket Listener', d:'Restarted the CLI listener. Next, confirm the socket path.', st:'working', since:'3m' },
+  { n:149, t:'Release Notes', d:'Drafting the tab bar notes for the next build.', st:'idle', since:'2h' },
+];
+const DAYS = '2026-09-18, 2026-09-22, 2026-09-26, 2026-09-29';
+const CHEV = '<svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 L6 6 L10.5 1.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CONTROLS = '<div class="controls"><span class="b">A</span><span class="b">•</span><span class="b">▭</span><span class="b">◎</span><span class="b">▤</span><span class="sep"></span><span class="b">◫</span><span class="b">⊟</span><span class="b">+</span><span class="b">×</span></div>';
+const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const stateLabel = r => r.st ? ({working:'working', waiting:'waiting', flag:'flagged', idle:'idle'}[r.st] + ' ' + r.since) : '';
+
+const start = () => ({ w:640, nTabs:8, sel:160, hover:null, layout:'tabs', railOpen:false, dismissed:false, sheet:false, sawList:false, placed:false, justRail:false, undo:false, offerEnded:false, undid:false });
+let S = start();
+const tabs = () => ALL.slice(0, S.nTabs);
+const barMode = () => (S.w - 54 - 250 >= 150) ? 'strip' : 'block';
+const selected = () => tabs().find(r => r.n === S.sel) || tabs()[0];
+
+function previewTabs() {
+  const list = tabs();
+  const i = Math.max(0, list.findIndex(r => r.n === S.sel));
+  const from = Math.min(i, Math.max(0, list.length - 4));
+  return list.slice(from, from + 4);
+}
+function railRow(r, compact) {
+  const act = r.n === S.sel, lk = S.hover === r.n;
+  const sub = stateLabel(r);
+  return `<div class="rrow ${act?'active':''} ${lk?'linked':''}" data-n="${r.n}"><span class="mark ${r.st||'none'}"></span><div class="rt"><div class="t">${esc(r.t)}</div>${sub?`<div class="s st ${r.st}">${esc(sub)}</div>`:''}</div><span class="rn">Tab ${r.n}</span></div>`;
+}
+function countHTML(open) {
+  const list = tabs();
+  const dot = list.some(r => r.n !== S.sel && (r.st === 'waiting' || r.st === 'flag'));
+  return `<div class="count ${open?'open':''}" data-toggle><span class="dot" style="visibility:${dot?'visible':'hidden'}"></span>${CHEV}<span>${list.length}</span></div>`;
+}
+function stripHTML() {
+  if (barMode() === 'block') {
+    const a = selected();
+    const lk = S.hover === a.n ? 'linked' : '';
+    return `<div class="block ${lk}" data-toggle data-tab="${a.n}"><div class="main"><span class="mark ${a.st||'none'}"></span><span class="num">${a.n}</span><span class="t">${esc(a.t)}</span></div></div>${countHTML(S.sheet)}`;
+  }
+  const html = tabs().map(r => `<div class="tab ${r.n===S.sel?'active':''} ${S.hover===r.n?'linked':''}" data-tab="${r.n}"><span class="mark ${r.st||'none'}"></span><span class="num">${r.n}</span>${esc(r.t)}<span class="x">×</span></div>`).join('');
+  return `<div class="stripwrap"><div class="fade l" id="fl" style="display:none"></div><div class="tabs" id="tabs">${html}</div><div class="fade r" id="fr" style="display:none"></div></div><div class="neutral"></div>${countHTML(S.sheet)}${CONTROLS}`;
+}
+function sheetHTML() {
+  const list = tabs();
+  const need = list.filter(r => r.st === 'waiting' || r.st === 'flag').length;
+  const rows = list.map(r => {
+    const act = r.n === S.sel, lk = S.hover === r.n;
+    const sub = stateLabel(r);
+    return `<div class="row ${act?'active':''} ${lk?'linked':''}" data-n="${r.n}"><span class="rn">Tab ${r.n}</span><span class="mark ${r.st||'none'}"></span><div class="rt"><div class="t">${esc(r.t)}</div><div class="d">${r.d?esc(r.d):'<span class="dash">-</span>'}</div></div><span class="st ${r.st||''}">${sub?esc(sub):'<span class="dash">-</span>'}</span></div>`;
+  }).join('');
+  const narrow = S.w < 320 ? ' style="right:auto;width:320px"' : '';
+  return `<div class="sheet"${narrow}><div class="head"><span class="rn">Tab</span><span style="width:16px"></span><span style="flex:1">Title</span><span style="width:92px">Status</span></div>${rows}<div class="foot"><span>${list.length} tabs</span><span style="color:var(--amber)">${need} need you</span></div></div>`;
+}
+function tipHTML() {
+  if (S.undo) {
+    return `<div class="tip" id="tip" role="note"><div class="caret"></div><h2>Tab Layout is Rail</h2><p>Every area keeps its tab list on the left. Undo puts Tabs back.</p><div class="acts"><button type="button" class="primary" data-act="undo">Undo</button></div></div>`;
+  }
+  const body = S.sawList
+    ? 'That list is the number on the bar. Rail keeps it open on the left.'
+    : 'The number opens every tab in this area. Rail keeps that list on the left.';
+  const rows = previewTabs().map(r => railRow(r)).join('');
+  return `<div class="tip" id="tip" role="note"><div class="caret"></div><h2>More tabs than fit</h2><p>${body}</p><div class="plabel">Tab Layout: Rail</div><div class="preview">${rows}</div><div class="acts"><button type="button" class="primary" data-act="try">Try Rail</button><button type="button" class="secondary" data-act="list">Show tab list</button></div><button type="button" class="quiet" data-act="dismiss">Don't show again</button></div>`;
+}
+function railHTML() {
+  const RW = Math.min(300, Math.max(200, Math.round(S.w * 0.38)));
+  const cls = S.justRail ? 'rail in' : 'rail';
+  return `<div class="${cls}" style="width:${RW}px"><div class="rh">${tabs().length} tabs</div>${tabs().map(r => railRow(r)).join('')}</div>`;
+}
+
+function explain(overflows) {
+  if (S.undo && S.railOpen) return ['After Try Rail', 'Tab Layout is Rail for every area, and this rail is open. Undo puts Tabs back everywhere. Undo does not retire the tip.'];
+  if (S.undo) return ['After Try Rail', 'The rail is closed. Tab Layout is still Rail. Undo is still here, and it still does not retire the tip.'];
+  if (S.layout === 'rail' && S.offerEnded) return ['After leaving Undo', 'Tab Layout stays Rail. Closing the tip did not dismiss it. Back on Tabs, the normal rule can offer it again.'];
+  if (S.undid) return ['After Undo', 'Tabs are back everywhere. The tip stepped away and was not dismissed. It can return after 30 days if the pattern still holds.'];
+  if (S.offerEnded && !S.dismissed) return ['After leaving the tip', 'The offer is over and the tip was not dismissed. It can return after 30 days if the pattern still holds.'];
+  if (S.dismissed) return ['After Don\'t show again', 'Dismissed on this Mac. Tab Layout is still Tabs. The tip will not return. Nothing left the machine.'];
+  if (S.sheet) return ['After Show tab list', 'This is the count cell\'s list, the same sheet the number already opens. Nothing was dismissed. Close the list and the tip comes back.'];
+  if (!overflows) return ['Right now', 'Every tab fits in the strip, so the tip stays hidden. It only appears while this area overflows.'];
+  if (barMode() === 'block') {
+    const lead = S.sawList
+      ? 'You closed the list. The tip is back, because showing the list does not retire it. '
+      : 'The strip has folded into the solid block. The tip still points at the count cell. ';
+    return ['Right now', lead + 'Leaving it alone records the offer and waits 30 days.'];
+  }
+  if (S.sawList) return ['After Show tab list', 'The list is closed and the tip is back. Showing the list does not retire it. Leaving it alone records the offer and waits 30 days.'];
+  return ['Right now', 'The tip is offered under the count cell. Leaving it alone records the offer and waits 30 days. The trigger rule is in the notes.'];
+}
+
+function render() {
+  if (!tabs().some(r => r.n === S.sel)) S.sel = tabs()[0].n;
+  document.getElementById('wv').textContent = S.w + 'pt';
+  document.getElementById('w').value = S.w;
+  document.querySelectorAll('.picker').forEach(p => p.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(S[p.dataset.k]) === b.dataset.v)));
+  const area = document.getElementById('area');
+  area.style.width = S.w + 'px';
+  const a = selected();
+  const showRail = S.layout === 'rail' && S.railOpen;
+  const prevScroll = (document.getElementById('tabs') || {}).scrollLeft || 0;
+  let bar;
+  if (showRail) {
+    bar = `<div class="railtitle"><span class="mark ${a.st||'none'}"></span><span class="t">Tab ${a.n} · ${esc(a.t)}</span></div>${countHTML(true)}${barMode()==='strip'?CONTROLS:''}`;
+  } else bar = stripHTML();
+  const mayTip = S.undo || (!S.dismissed && !S.offerEnded && S.layout !== 'rail' && !S.sheet);
+  const content = `<div class="content">${showRail?railHTML():''}<div class="term"><span class="p">~/c11 ❯</span> swift build<br>Building for debugging...</div></div>`;
+  area.innerHTML = `<div class="bar" id="bar">${bar}</div><div class="titlebar">${esc(a.d)}</div>${content}${S.sheet && S.layout!=='rail'?sheetHTML():''}${mayTip?tipHTML():''}`;
+  S.justRail = false;
+
+  const tabsEl = document.getElementById('tabs');
+  let overflows = barMode() === 'block';
+  if (tabsEl) {
+    if (!S.placed) {
+      const act = tabsEl.querySelector('.tab.active');
+      if (act) tabsEl.scrollLeft = Math.max(0, act.offsetLeft - (tabsEl.clientWidth - act.offsetWidth) / 2);
+      S.placed = true;
+    } else tabsEl.scrollLeft = prevScroll;
+    overflows = tabsEl.scrollWidth > tabsEl.clientWidth + 1;
+    const fades = () => {
+      document.getElementById('fl').style.display = tabsEl.scrollLeft > 1 ? 'block' : 'none';
+      document.getElementById('fr').style.display = tabsEl.scrollLeft < tabsEl.scrollWidth - tabsEl.clientWidth - 1 ? 'block' : 'none';
+    };
+    tabsEl.addEventListener('wheel', e => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { tabsEl.scrollLeft += e.deltaY; e.preventDefault(); }
+      fades();
+    }, { passive: false });
+    tabsEl.addEventListener('scroll', fades);
+    fades();
+  }
+  const tip = document.getElementById('tip');
+  if (tip && !overflows && !S.undo) tip.remove();
+  else placeTip();
+
+  const [k, body] = explain(overflows || showRail);
+  document.getElementById('whatK').textContent = k;
+  document.getElementById('whatB').textContent = body;
+  document.getElementById('stored').textContent =
+    `tabLayoutMode = ${S.layout}\nc11.tabRailTip.dismissed = ${S.dismissed}\nc11.tabRailTip.lastOffered = 2026-09-30\nc11.tabRailTip.overflowDays = ${DAYS}`;
+}
+function placeTip() {
+  const tip = document.getElementById('tip');
+  const count = document.querySelector('#bar .count');
+  const area = document.getElementById('area');
+  if (!tip || !count) return;
+  const cr = count.getBoundingClientRect();
+  const ar = area.getBoundingClientRect();
+  const tipW = tip.offsetWidth;
+  let left = cr.left - ar.left + cr.width / 2 - tipW / 2;
+  left = Math.max(8, Math.min(left, ar.width - tipW - 8));
+  tip.style.left = left + 'px';
+  tip.style.top = (cr.bottom - ar.top + 8) + 'px';
+  tip.querySelector('.caret').style.left = (cr.left - ar.left + cr.width / 2 - left - 6) + 'px';
+}
+function closeSheet() { S.sheet = false; S.sawList = true; }
+
+document.getElementById('w').addEventListener('input', e => { S.w = +e.target.value; render(); });
+document.getElementById('replay').addEventListener('click', () => { S = start(); render(); });
+document.addEventListener('click', e => {
+  const preset = e.target.closest('.presets button');
+  if (preset) { S.w = +preset.dataset.w; render(); return; }
+  const pick = e.target.closest('.picker button');
+  if (pick) {
+    S.nTabs = +pick.dataset.v;
+    S.placed = false;
+    render();
+    return;
+  }
+  const act = e.target.closest('[data-act]');
+  if (act) {
+    if (act.dataset.act === 'try') { S.layout = 'rail'; S.railOpen = true; S.sheet = false; S.justRail = true; S.undo = true; }
+    else if (act.dataset.act === 'undo') { S.layout = 'tabs'; S.railOpen = false; S.undo = false; S.offerEnded = true; S.undid = true; }
+    else if (act.dataset.act === 'list') S.sheet = true;
+    else if (act.dataset.act === 'dismiss') { S.dismissed = true; S.undo = false; S.sheet = false; }
+    render();
+    return;
+  }
+  if (e.target.closest('[data-toggle]')) {
+    if (S.layout === 'rail') S.railOpen = !S.railOpen;
+    else if (S.sheet) closeSheet();
+    else S.sheet = true;
+    render();
+    return;
+  }
+  const row = e.target.closest('.row[data-n], .rrow[data-n]');
+  if (row && !row.closest('.preview')) {
+    S.sel = +row.dataset.n;
+    if (S.sheet) closeSheet();
+    render();
+    return;
+  }
+  const tab = e.target.closest('.tab[data-tab]');
+  if (tab) { S.sel = +tab.dataset.tab; render(); return; }
+  if (S.sheet && e.target.closest('.stage') && !e.target.closest('.sheet') && !e.target.closest('#bar')) {
+    closeSheet();
+    render();
+    return;
+  }
+  if ((S.undo || document.getElementById('tip')) && e.target.closest('.stage') && !e.target.closest('.tip') && !e.target.closest('#bar') && !e.target.closest('.sheet')) {
+    S.undo = false;
+    S.offerEnded = true;
+    render();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (S.sheet) { closeSheet(); render(); return; }
+  if (S.undo || document.getElementById('tip')) {
+    S.undo = false;
+    S.offerEnded = true;
+    render();
+  }
+});
+document.addEventListener('mouseover', e => {
+  const linking = S.sheet || (S.layout === 'rail' && S.railOpen);
+  if (!linking) return;
+  const el = e.target.closest('[data-n], [data-tab]');
+  const n = el ? +(el.dataset.n || el.dataset.tab) : null;
+  if (n === S.hover) return;
+  S.hover = Number.isFinite(n) ? n : null;
+  document.querySelectorAll('[data-n],[data-tab]').forEach(x => {
+    const k = +(x.dataset.n || x.dataset.tab);
+    x.classList.toggle('linked', S.hover != null && k === S.hover);
+  });
+});
+render();
+</script>
+</body>
+</html>

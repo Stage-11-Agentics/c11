@@ -291,12 +291,12 @@ struct SessionGitBranchSnapshot: Codable, Sendable {
     var isDirty: Bool
 }
 
-struct SessionTerminalPanelSnapshot: Codable, Sendable {
+struct SessionTerminalTabSnapshot: Codable, Sendable {
     var workingDirectory: String?
     var scrollback: String?
 }
 
-struct SessionBrowserPanelSnapshot: Codable, Sendable {
+struct SessionBrowserTabSnapshot: Codable, Sendable {
     var urlString: String?
     var profileID: UUID?
     var shouldRenderWebView: Bool
@@ -306,10 +306,10 @@ struct SessionBrowserPanelSnapshot: Codable, Sendable {
     var forwardHistoryURLStrings: [String]?
     /// Durable browser-to-agent association. Optional so pre-companion
     /// session-v1 snapshots continue to decode unchanged.
-    var linkedAgent: AgentSurfaceLink? = nil
+    var linkedAgent: AgentTabLink? = nil
 }
 
-struct SessionMarkdownPanelSnapshot: Codable, Sendable {
+struct SessionMarkdownTabSnapshot: Codable, Sendable {
     /// Absolute path to the markdown file, or nil for an unbound panel
     /// (empty state — not yet bound to a file). Unbound panels are not
     /// recreated on restore; see Workspace.createPanel(from:inPane:).
@@ -319,12 +319,12 @@ struct SessionMarkdownPanelSnapshot: Codable, Sendable {
     var fontScale: Double? = nil
 }
 
-struct SessionPanelSnapshot: Codable, Sendable {
+struct SessionTabSnapshot: Codable, Sendable {
     var id: UUID
     /// Logical surface creation time. Optional so legacy snapshots remain
     /// honest: absence means "not recorded", never "created on restore".
     var createdAt: Date? = nil
-    var type: PanelType
+    var type: TabContentType
     var title: String?
     var customTitle: String?
     /// Per-surface tab color, normalized as `#RRGGBB`. Optional for
@@ -337,9 +337,9 @@ struct SessionPanelSnapshot: Codable, Sendable {
     var gitBranch: SessionGitBranchSnapshot?
     var listeningPorts: [Int]
     var ttyName: String?
-    var terminal: SessionTerminalPanelSnapshot?
-    var browser: SessionBrowserPanelSnapshot?
-    var markdown: SessionMarkdownPanelSnapshot?
+    var terminal: SessionTerminalTabSnapshot?
+    var browser: SessionBrowserTabSnapshot?
+    var markdown: SessionMarkdownTabSnapshot?
 
     /// Tier 1 Phase 2: persisted `SurfaceMetadataStore` values for this
     /// surface. Optional for backcompat with pre-Phase-2 snapshots; older
@@ -360,7 +360,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
     ///
     /// `history: []` is written explicitly as an empty array (not omitted)
     /// for stable JSON output across v1/v2.
-    var surfaceConversations: SurfaceConversations? = nil
+    var surfaceConversations: TabConversations? = nil
 
     /// C11-164 (RES-2): persisted `SurfaceActivityTracker.lastActivity` floor
     /// for this surface. The Codex/pi/omp scrape filters use "candidate mtime
@@ -374,6 +374,11 @@ struct SessionPanelSnapshot: Codable, Sendable {
     /// `ScrapeCaptureContext` key on across a restart.
     var lastActivityAt: Date? = nil
 
+    /// C11-243: when the operator last looked at this tab (`SurfaceSeenTracker`).
+    /// A tab being seen at capture time is stamped with the capture time. Optional
+    /// for backcompat: older snapshots decode with `lastSeenAt == nil`.
+    var lastSeenAt: Date? = nil
+
     private enum CodingKeys: String, CodingKey {
         case id, type, title, customTitle, customColor, directory, isPinned,
              isManuallyUnread, gitBranch, listeningPorts, ttyName,
@@ -381,6 +386,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
         case createdAt = "created_at"
         case surfaceConversations = "surface_conversations"
         case lastActivityAt = "last_activity_at"
+        case lastSeenAt = "last_seen_at"
     }
 }
 
@@ -407,7 +413,7 @@ enum SessionSplitOrientation: String, Codable, Sendable {
     }
 }
 
-struct SessionPaneLayoutSnapshot: Codable, Sendable {
+struct SessionAreaLayoutSnapshot: Codable, Sendable {
     var panelIds: [UUID]
     var selectedPanelId: UUID?
 
@@ -432,6 +438,10 @@ struct SessionPaneLayoutSnapshot: Codable, Sendable {
     /// `explicit > declare > osc > heuristic` precedence chain survives a
     /// restart. See `PersistedMetadataSource`.
     var metadataSources: [String: PersistedMetadataSource]? = nil
+
+    /// Round five: whether this area's tab rail was open (Rail layout).
+    /// Optional for backcompat; absent means closed.
+    var railOpen: Bool? = nil
 }
 
 struct SessionSplitLayoutSnapshot: Codable, Sendable {
@@ -442,7 +452,7 @@ struct SessionSplitLayoutSnapshot: Codable, Sendable {
 }
 
 indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
-    case pane(SessionPaneLayoutSnapshot)
+    case pane(SessionAreaLayoutSnapshot)
     case split(SessionSplitLayoutSnapshot)
 
     private enum CodingKeys: String, CodingKey {
@@ -456,7 +466,7 @@ indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "pane":
-            self = .pane(try container.decode(SessionPaneLayoutSnapshot.self, forKey: .pane))
+            self = .pane(try container.decode(SessionAreaLayoutSnapshot.self, forKey: .pane))
         case "split":
             self = .split(try container.decode(SessionSplitLayoutSnapshot.self, forKey: .split))
         default:
@@ -493,7 +503,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var rootAdoptionArmed: Bool? = nil
     var focusedPanelId: UUID?
     var layout: SessionWorkspaceLayoutSnapshot
-    var panels: [SessionPanelSnapshot]
+    var panels: [SessionTabSnapshot]
     var statusEntries: [SessionStatusEntrySnapshot]
     var logEntries: [SessionLogEntrySnapshot]
     var progress: SessionProgressSnapshot?
@@ -506,7 +516,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var activeAgentSurfaceId: UUID? = nil
 }
 
-struct SessionTabManagerSnapshot: Codable, Sendable {
+struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
 }
@@ -514,8 +524,16 @@ struct SessionTabManagerSnapshot: Codable, Sendable {
 struct SessionWindowSnapshot: Codable, Sendable {
     var frame: SessionRectSnapshot?
     var display: SessionDisplaySnapshot?
-    var tabManager: SessionTabManagerSnapshot
+    var workspaceManager: SessionWorkspaceManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+
+    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.
+    enum CodingKeys: String, CodingKey {
+        case frame
+        case display
+        case workspaceManager = "tabManager"
+        case sidebar
+    }
 }
 
 struct AppSessionSnapshot: Codable, Sendable {
@@ -545,6 +563,7 @@ enum SessionPersistenceStore {
             if let existingData = try? Data(contentsOf: fileURL), existingData == data {
                 return true
             }
+            guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return false }
             try data.write(to: fileURL, options: .atomic)
             return true
         } catch {
@@ -560,7 +579,85 @@ enum SessionPersistenceStore {
 
     static func removeSnapshot(fileURL: URL? = nil) {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return }
+        guard archiveBeforeFirstOverwrite(fileURL: fileURL) else { return }
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    static let historyDirectoryName = "session-history"
+    static let historyRetentionCount = 10
+    private static let archiveLock = NSLock()
+    private nonisolated(unsafe) static var archivedFilePaths = Set<String>()
+
+    /// The session file is the only copy of the previous session. The first
+    /// time this process is about to overwrite or remove it, copy it to
+    /// `session-history/<name>-<UTC timestamp>.json` beside it, so a launch
+    /// that skips, filters or never attempts the restore cannot destroy the
+    /// prior session. Keeps the newest `historyRetentionCount` copies per file.
+    /// Returns false when the copy failed; the caller must not overwrite, and
+    /// the next attempt retries the copy.
+    @discardableResult
+    static func archiveBeforeFirstOverwrite(fileURL: URL, now: Date = Date()) -> Bool {
+        archiveLock.lock()
+        defer { archiveLock.unlock() }
+        let key = fileURL.standardizedFileURL.path
+        guard !archivedFilePaths.contains(key) else { return true }
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            archivedFilePaths.insert(key)
+            return true
+        }
+
+        let historyDirectory = historyDirectoryURL(for: fileURL)
+        let stem = fileURL.deletingPathExtension().lastPathComponent
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss.SSS'Z'"
+        let archiveURL = historyDirectory.appendingPathComponent(
+            "\(stem)-\(formatter.string(from: now)).json",
+            isDirectory: false
+        )
+        do {
+            try fileManager.createDirectory(at: historyDirectory, withIntermediateDirectories: true, attributes: nil)
+            try fileManager.copyItem(at: fileURL, to: archiveURL)
+        } catch {
+            return false
+        }
+        archivedFilePaths.insert(key)
+
+        let archives = historyFileURLs(for: fileURL)
+        for stale in archives.dropFirst(historyRetentionCount) {
+            try? fileManager.removeItem(at: stale)
+        }
+        return true
+    }
+
+    static func historyDirectoryURL(for fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent(historyDirectoryName, isDirectory: true)
+    }
+
+    /// Archived copies of `fileURL`, newest first.
+    static func historyFileURLs(for fileURL: URL) -> [URL] {
+        // Exact match on the timestamp suffix: dev-build stems can prefix one
+        // another (`…debug.foo` and `…debug.foo-bar`).
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + "-"
+        let timestamp = try? NSRegularExpression(pattern: #"^\d{8}T\d{6}\.\d{3}Z\.json$"#)
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: historyDirectoryURL(for: fileURL),
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return contents
+            .filter { url in
+                let name = url.lastPathComponent
+                guard name.hasPrefix(prefix), let timestamp else { return false }
+                let suffix = String(name.dropFirst(prefix.count))
+                return timestamp.firstMatch(
+                    in: suffix,
+                    range: NSRange(suffix.startIndex..., in: suffix)
+                ) != nil
+            }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 
     static func defaultSnapshotFileURL(

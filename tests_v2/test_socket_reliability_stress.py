@@ -83,8 +83,10 @@ def _cli_env() -> dict[str, str]:
     env = dict(os.environ)
     env["C11_DEFAULT_SOCKET_DEADLINE_MS"] = DEADLINE_ENV_MS
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     return env
 
 
@@ -138,13 +140,13 @@ def test_no_cli_hangs_under_rapid_surface_creation() -> int:
                 results[idx] = _run(cli, ["new-workspace"], env)
             elif call_type == 1:
                 # surface.create via new-surface (terminal type in existing workspace)
-                args = ["new-surface", "--type", "terminal"]
+                args = ["new-tab", "--type", "terminal"]
                 if seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)
             elif call_type == 2:
                 # pane.create via new-pane (split right in existing workspace)
-                args = ["new-pane", "--direction", "right"]
+                args = ["new-area", "--direction", "right"]
                 if seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)
@@ -152,7 +154,7 @@ def test_no_cli_hangs_under_rapid_surface_creation() -> int:
                 # surface.set_metadata via set-metadata
                 args = ["set-metadata", "--key", "stress_test", "--value", f"v{idx}"]
                 if seed_surface_id:
-                    args += ["--surface", seed_surface_id]
+                    args += ["--tab", seed_surface_id]
                 elif seed_ws_id:
                     args += ["--workspace", seed_ws_id]
                 results[idx] = _run(cli, args, env)

@@ -27,22 +27,22 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
     // MARK: - Scale normalization
 
     func testNormalizedFontScaleClampsToRange() {
-        XCTAssertEqual(MarkdownPanel.normalizedFontScale(0.1), MarkdownPanel.fontScaleRange.lowerBound)
-        XCTAssertEqual(MarkdownPanel.normalizedFontScale(10.0), MarkdownPanel.fontScaleRange.upperBound)
-        XCTAssertEqual(MarkdownPanel.normalizedFontScale(1.0), 1.0)
+        XCTAssertEqual(MarkdownTab.normalizedFontScale(0.1), MarkdownTab.fontScaleRange.lowerBound)
+        XCTAssertEqual(MarkdownTab.normalizedFontScale(10.0), MarkdownTab.fontScaleRange.upperBound)
+        XCTAssertEqual(MarkdownTab.normalizedFontScale(1.0), 1.0)
     }
 
     func testNormalizedFontScaleRoundsToOneStep() {
         // Repeated float additions like 1.0 + 0.1 + 0.1 drift; the normalizer
         // must land on exact tenths so equality short-circuits work.
-        XCTAssertEqual(MarkdownPanel.normalizedFontScale(1.0 + 0.1 + 0.1), 1.2)
-        XCTAssertEqual(MarkdownPanel.normalizedFontScale(0.9999999), 1.0)
+        XCTAssertEqual(MarkdownTab.normalizedFontScale(1.0 + 0.1 + 0.1), 1.2)
+        XCTAssertEqual(MarkdownTab.normalizedFontScale(0.9999999), 1.0)
     }
 
     // MARK: - Zoom stepping on a live panel
 
     func testZoomInOutAndResetStepTheScale() {
-        let panel = MarkdownPanel(workspaceId: UUID())
+        let panel = MarkdownTab(workspaceId: UUID())
         defer { panel.close() }
 
         XCTAssertEqual(panel.fontScale, 1.0)
@@ -57,35 +57,35 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
     }
 
     func testZoomOutClampsAtLowerBound() {
-        let panel = MarkdownPanel(workspaceId: UUID())
+        let panel = MarkdownTab(workspaceId: UUID())
         defer { panel.close() }
 
         for _ in 0..<100 { panel.zoomOut() }
-        XCTAssertEqual(panel.fontScale, MarkdownPanel.fontScaleRange.lowerBound)
+        XCTAssertEqual(panel.fontScale, MarkdownTab.fontScaleRange.lowerBound)
         for _ in 0..<100 { panel.zoomIn() }
-        XCTAssertEqual(panel.fontScale, MarkdownPanel.fontScaleRange.upperBound)
+        XCTAssertEqual(panel.fontScale, MarkdownTab.fontScaleRange.upperBound)
     }
 
     func testNewPanelsInheritLastUsedScale() {
-        let first = MarkdownPanel(workspaceId: UUID())
+        let first = MarkdownTab(workspaceId: UUID())
         first.zoomIn()
         first.zoomIn()
         XCTAssertEqual(first.fontScale, 1.2)
         first.close()
 
-        let second = MarkdownPanel(workspaceId: UUID())
+        let second = MarkdownTab(workspaceId: UUID())
         defer { second.close() }
         XCTAssertEqual(second.fontScale, 1.2)
     }
 
     func testApplyRestoredFontScaleDoesNotChangeLastUsedDefault() {
-        let panel = MarkdownPanel(workspaceId: UUID())
+        let panel = MarkdownTab(workspaceId: UUID())
         defer { panel.close() }
 
         panel.applyRestoredFontScale(2.0)
         XCTAssertEqual(panel.fontScale, 2.0)
 
-        let next = MarkdownPanel(workspaceId: UUID())
+        let next = MarkdownTab(workspaceId: UUID())
         defer { next.close() }
         XCTAssertEqual(next.fontScale, 1.0, "restore must not leak into the new-panel default")
     }
@@ -101,20 +101,20 @@ final class MarkdownPanelFontScaleTests: XCTestCase {
         let edited = prefix + "graph TD; A-->C"
 
         XCTAssertNotEqual(
-            MarkdownPanel.segmentId(index: 0, content: original),
-            MarkdownPanel.segmentId(index: 0, content: edited)
+            MarkdownTab.segmentId(index: 0, content: original),
+            MarkdownTab.segmentId(index: 0, content: edited)
         )
     }
 
     func testSegmentIdStableForIdenticalContent() {
         let content = "## Heading\n\nsome body text"
         XCTAssertEqual(
-            MarkdownPanel.segmentId(index: 3, content: content),
-            MarkdownPanel.segmentId(index: 3, content: content)
+            MarkdownTab.segmentId(index: 3, content: content),
+            MarkdownTab.segmentId(index: 3, content: content)
         )
         XCTAssertNotEqual(
-            MarkdownPanel.segmentId(index: 3, content: content),
-            MarkdownPanel.segmentId(index: 4, content: content)
+            MarkdownTab.segmentId(index: 3, content: content),
+            MarkdownTab.segmentId(index: 4, content: content)
         )
     }
 }

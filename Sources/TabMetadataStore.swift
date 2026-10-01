@@ -1,0 +1,1155 @@
+import Foundation
+
+/// Source precedence for metadata writes.
+///
+/// Writers declare a `source` per call. The precedence chain is
+/// `explicit > declare > osc > heuristic`. A lower-precedence write is
+/// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
+/// Canonical-key namespace.
+/// String constants for the canonical metadata keys rendered in the sidebar
+/// and title bar. Non-canonical keys accept any JSON value and are opaque to c11.
+public enum MetadataKey {
+    public static let role = "role"
+    public static let status = "status"
+    public static let task = "task"
+    public static let model = "model"
+    public static let progress = "progress"
+    public static let terminalType = "terminal_type"
+    public static let title = "title"
+    public static let description = "description"
+    public static let lifecycleState = "lifecycle_state"
+    public static let flag = "flag"
+    public static let legacyFlagCallerSurfaceId = "flag_caller_surface_id"
+    /// C11-248: canonical spelling of the flag caller key. Written beside the
+    /// legacy `flag_caller_surface_id` (both hold the same UUID) and read in
+    /// either spelling, for one release.
+    public static let flagCallerTabId = "flag_caller_tab_id"
+    static let flagCallerKeys = [flagCallerTabId, legacyFlagCallerSurfaceId]
+    public static let suppressed = "suppressed"
+
+    /// C11-104 — derived canonical keys. Written by the c11 runtime,
+    /// not by agents. Validated as plain strings with size caps.
+    public static let worktree = "worktree"
+    public static let branch = "branch"
+
+    /// C11-162 (Telemetry truth) — derived liveness truth. Written by the
+    /// c11 runtime via `SurfaceLivenessDeriver` at the `.derived` tier from a
+    /// surface's shell-activity ground state; agents never write it directly.
+    /// Values: `"working"` | `"idle"`.
+    public static let activity = "activity"
+
+    /// Non-canonical display hint used by M3's sidebar chip.
+    public static let modelLabel = "model_label"
+
+    public static let canonical: Set<String> = [
+        role, status, task, model, progress, terminalType, title, description, lifecycleState,
+        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, suppressed
+    ]
+
+    // Derived from the agent registry plus the two non-agent terminal types.
+    // Adding an agent manifest extends this set automatically.
+    public static let canonicalTerminalTypes: Set<String> = {
+        var types: Set<String> = ["shell", "unknown"]
+        for manifest in AgentRegistry.shared.all where manifest.isCanonicalTerminalType {
+            types.insert(manifest.kind)
+        }
+        return types
+    }()
+}
+
+public enum MetadataSource: String, CaseIterable, Codable, Sendable {
+    case explicit
+    case declare
+    case osc
+    /// C11-104 — system-computed projections of ground-truth state
+    /// (e.g., worktree + branch derived from cwd + gitfs). Ranked
+    /// between `osc` and `heuristic`: an `osc` value wins over a
+    /// `derived` value for the same key; a `derived` value wins over
+    /// a `heuristic` one. Agents should not write `derived` keys
+    /// directly — they are recomputed automatically as state changes.
+    case derived
+    case heuristic
+
+    public var precedence: Int {
+        switch self {
+        case .heuristic: return 0
+        case .derived:   return 1
+        case .osc:       return 2
+        case .declare:   return 3
+        case .explicit:  return 4
+        }
+    }
+
+    /// Alias for `precedence`. Kept so call sites that read `rank` keep working.
+    public var rank: Int { precedence }
+}
+
+/// Per-surface JSON metadata store (c11 Module 2 storage primitive).
+///
+/// Each surface owns two parallel dictionaries:
+///   - `metadata`        — free-form JSON object, capped at 64 KiB serialized.
+///   - `metadata_sources` — parallel dictionary whose values are
+///     `{source, ts}` records identifying who wrote each key.
+///
+/// The store is *in-memory only*. Consumers that need durability persist
+/// externally. Entries are pruned when surfaces close (see
+/// `Workspace.pruneSurfaceMetadata`).
+final class TabMetadataStore: @unchecked Sendable {
+    static let shared = TabMetadataStore()
+
+    // MARK: - Constants
+
+    static let payloadCapBytes: Int = 64 * 1024
+
+    struct SourceRecord {
+        let source: MetadataSource
+        let ts: Double
+
+        func toJSON() -> [String: Any] {
+            return ["source": source.rawValue, "ts": ts]
+        }
+    }
+
+    enum WriteError: Error {
+        case invalidJSON(String)
+        case payloadTooLarge
+        case reservedKeyInvalidType(String, String)
+        case invalidMode(String)
+        case invalidSource(String)
+        case invalidKeysParam
+        case replaceRequiresExplicit
+        case attentionRequiresService
+        case encodeFailed
+
+        var code: String {
+            switch self {
+            case .invalidJSON: return "invalid_json"
+            case .payloadTooLarge: return "payload_too_large"
+            case .reservedKeyInvalidType: return "reserved_key_invalid_type"
+            case .invalidMode: return "invalid_mode"
+            case .invalidSource: return "invalid_source"
+            case .invalidKeysParam: return "invalid_keys_param"
+            case .replaceRequiresExplicit: return "replace_requires_explicit"
+            case .attentionRequiresService: return "attention_requires_service"
+            case .encodeFailed: return "encode_error"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .invalidJSON(let d): return d
+            case .payloadTooLarge: return "metadata payload would exceed 64 KiB cap"
+            case .reservedKeyInvalidType(let k, let d): return "reserved key '\(k)' violates its type rule: \(d)"
+            case .invalidMode(let d): return "invalid mode: \(d)"
+            case .invalidSource(let d): return "invalid source: \(d)"
+            case .invalidKeysParam: return "keys must be an array of strings"
+            case .replaceRequiresExplicit: return "mode 'replace' requires source 'explicit'"
+            case .attentionRequiresService: return "flag and suppressed must be mutated through the attention service"
+            case .encodeFailed: return "failed to encode metadata"
+            }
+        }
+
+        var detailData: Any? {
+            switch self {
+            case .reservedKeyInvalidType(let k, _): return ["key": k]
+            default: return nil
+            }
+        }
+    }
+
+    // MARK: - State
+
+    private let queue = DispatchQueue(label: "com.stage11.c11.surface-metadata", qos: .userInitiated)
+
+    /// Per-workspace per-surface blob.
+    private var metadata: [UUID: [UUID: [String: Any]]] = [:]
+
+    /// Per-workspace per-surface parallel source sidecar.
+    private var sources: [UUID: [UUID: [String: SourceRecord]]] = [:]
+
+    /// Monotonic revision counter (Tier 1 Phase 2). Bumped on every mutation
+    /// that actually changes state — no-op writes of the same (key, value,
+    /// source) do not bump. Included in the autosave fingerprint so
+    /// metadata-only changes between 8s ticks trigger a write instead of
+    /// being silently skipped.
+    private var metadataStoreRevision: UInt64 = 0
+
+    // MARK: - Canonical key validation
+
+    /// Reserved canonical keys. Keys not in this set accept any JSON value.
+    ///
+    /// `claude.session_id` is reserved because its value is interpolated
+    /// into the `cc --resume <id>` shell command at restore time by
+    /// `AgentRestartRegistry.phase1`. Accepting arbitrary strings here
+    /// would make the metadata layer a command-injection vector. See
+    /// `validateReservedKey` for the UUIDv4 grammar enforced at write time.
+    static let reservedKeys: Set<String> = [
+        "role",
+        "status",
+        "task",
+        "model",
+        "progress",
+        "terminal_type",
+        "title",
+        "description",
+        "lifecycle_state",
+        "worktree",
+        "branch",
+        "activity",
+        "flag",
+        "flag_caller_surface_id",
+        "flag_caller_tab_id",
+        "suppressed",
+        "claude.session_id",
+        "claude.session_project_dir",
+        "opencode.session_id",
+        "opencode.session_project_dir"
+    ]
+
+    static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
+        switch key {
+        case "role":
+            return validateKebab(key: key, value: value, maxLen: 64)
+        case "status":
+            return validateString(key: key, value: value, maxLen: 32)
+        case "task":
+            return validateString(key: key, value: value, maxLen: 128)
+        case "model":
+            return validateKebab(key: key, value: value, maxLen: 64)
+        case "progress":
+            guard let num = value as? NSNumber, !(num is Bool) else {
+                return .reservedKeyInvalidType(key, "expected number")
+            }
+            let d = num.doubleValue
+            guard d.isFinite, d >= 0.0, d <= 1.0 else {
+                return .reservedKeyInvalidType(key, "expected 0.0–1.0")
+            }
+            return nil
+        case "terminal_type":
+            return validateKebab(key: key, value: value, maxLen: 32)
+        case "title":
+            return validateString(key: key, value: value, maxLen: 256)
+        case "description":
+            return validateString(key: key, value: value, maxLen: 2048)
+        case "lifecycle_state":
+            // Canonical per-surface lifecycle state (C11-25). The set of
+            // legal values is defined by `SurfaceLifecycleState`; reject
+            // anything outside that vocabulary so a stale snapshot or a
+            // typo can't leak into the runtime path. Length cap matches
+            // `SurfaceLifecycleState.metadataMaxLength`.
+            //
+            // Review fix I4: `.suspended` is reserved-only — the runtime
+            // dispatcher rejects every transition into and out of it
+            // (`SurfaceLifecycleState.canTransition`). Allowing the
+            // metadata write here would let an external writer park a
+            // value the runtime cannot consume, splitting the metadata
+            // mirror from the state machine. Reject at the validator
+            // until a future PR (C11-25c / SIGSTOP terminal hibernate)
+            // lands a real consumer.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if s.count > TabLifecycleState.metadataMaxLength {
+                return .reservedKeyInvalidType(
+                    key,
+                    "exceeds max length \(TabLifecycleState.metadataMaxLength)"
+                )
+            }
+            guard let parsed = TabLifecycleState(rawValue: s) else {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be one of: active, throttled, hibernated"
+                )
+            }
+            if parsed == .suspended {
+                return .reservedKeyInvalidType(
+                    key,
+                    "'suspended' is reserved and not yet a runtime target; use 'hibernated' for operator-pinned surfaces"
+                )
+            }
+            return nil
+        case "worktree":
+            // C11-104 — derived basename, up to 128 chars (matches the
+            // spec's ≤128 cap). Accepts any string within the cap;
+            // the resolver only writes strings that already passed
+            // `git rev-parse` so additional grammar checks would be
+            // belt-and-suspenders.
+            return validateString(key: key, value: value, maxLen: 128)
+        case "branch":
+            // C11-104 — derived branch name (or "(detached @ <sha>)"
+            // or "(no branch)"). Up to 64 chars per spec.
+            return validateString(key: key, value: value, maxLen: 64)
+        case "activity":
+            // C11-162 — derived liveness truth ("working" | "idle"). Plain
+            // string with a tight cap, mirroring the worktree/branch derived
+            // validators. The deriver only ever writes the two rawValues of
+            // `SidebarActivityState`, so a size cap is sufficient; no grammar
+            // check is needed.
+            return validateString(key: key, value: value, maxLen: 16)
+        case "flag":
+            guard let reason = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return .reservedKeyInvalidType(key, "expected a non-empty reason")
+            }
+            guard reason == trimmed else {
+                return .reservedKeyInvalidType(key, "reason must not have leading or trailing whitespace")
+            }
+            guard reason.count <= TabAttentionReason.maxLength else {
+                return .reservedKeyInvalidType(
+                    key,
+                    "exceeds max length \(TabAttentionReason.maxLength)"
+                )
+            }
+            guard !reason.contains("\n"), !reason.contains("\r") else {
+                return .reservedKeyInvalidType(key, "reason must be a single line")
+            }
+            return nil
+        case "flag_caller_surface_id", "flag_caller_tab_id":
+            guard let value = value as? String, UUID(uuidString: value) != nil else {
+                return .reservedKeyInvalidType(key, "expected UUID string")
+            }
+            return nil
+        case "suppressed":
+            guard value is Bool else {
+                return .reservedKeyInvalidType(key, "expected boolean")
+            }
+            return nil
+        case "claude.session_id":
+            // Claude SessionStart's `session_id` is a UUIDv4; reject
+            // anything else. The value is interpolated verbatim into
+            // `cc --resume <id>` at restore time, so a non-UUID value
+            // would be a command-injection vector.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidClaudeSessionId(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must match UUIDv4 shape 8-4-4-4-12 hex"
+                )
+            }
+            return nil
+        case "claude.session_project_dir":
+            // Project directory the claude session was created in;
+            // interpolated into `cd '<path>' && …` at restore time. The
+            // registry single-quote-escapes it, but we still reject
+            // values that could break that escape (single-quote, NUL,
+            // newlines) or yield a non-absolute path. PATH_MAX on Darwin
+            // is 1024 — cap at 4096 for headroom on synthetic / encoded
+            // paths.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidClaudeSessionProjectDir(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be an absolute POSIX path (≤4096 chars, no NUL/newline/single-quote)"
+                )
+            }
+            return nil
+        case "opencode.session_id":
+            // opencode's `session.created` id is `ses_` + 26-char base62,
+            // not a UUID. The value is interpolated into the resume
+            // command (`opencode … -s <id>`) at restore time, so a
+            // non-conforming value would be a command-injection vector.
+            // See `isValidOpencodeSessionId` for the grammar.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidOpencodeSessionId(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must match ses_ + 26-char base62 body"
+                )
+            }
+            return nil
+        case "opencode.session_project_dir":
+            // Project directory the opencode session was created in; same
+            // grammar as `claude.session_project_dir`. Interpolated into
+            // `cd '<path>' && …` at restore time, so reject anything that
+            // could break the single-quote escape.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidOpencodeSessionProjectDir(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be an absolute POSIX path (≤4096 chars, no NUL/newline/single-quote)"
+                )
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private static func validateString(key: String, value: Any, maxLen: Int) -> WriteError? {
+        guard let s = value as? String else {
+            return .reservedKeyInvalidType(key, "expected string")
+        }
+        if s.count > maxLen {
+            return .reservedKeyInvalidType(key, "exceeds max length \(maxLen)")
+        }
+        return nil
+    }
+
+    private static let kebabPattern: NSRegularExpression = {
+        // ^[a-z][a-z0-9-]*$
+        return try! NSRegularExpression(pattern: "^[a-z][a-z0-9-]*$", options: [])
+    }()
+
+    private static func validateKebab(key: String, value: Any, maxLen: Int) -> WriteError? {
+        guard let s = value as? String else {
+            return .reservedKeyInvalidType(key, "expected string")
+        }
+        if s.isEmpty {
+            return .reservedKeyInvalidType(key, "empty string")
+        }
+        if s.count > maxLen {
+            return .reservedKeyInvalidType(key, "exceeds max length \(maxLen)")
+        }
+        let range = NSRange(location: 0, length: (s as NSString).length)
+        if kebabPattern.firstMatch(in: s, options: [], range: range) == nil {
+            return .reservedKeyInvalidType(key, "must be lowercase kebab-case [a-z][a-z0-9-]*")
+        }
+        return nil
+    }
+
+    // MARK: - Public API
+
+    /// Result of a set/clear operation.
+    struct WriteResult {
+        /// per-key applied flag.
+        var applied: [String: Bool] = [:]
+        /// per-key rejection reason (populated when applied == false).
+        var reasons: [String: String] = [:]
+        /// Post-op snapshot of the full surface metadata blob.
+        var metadata: [String: Any] = [:]
+        /// Post-op snapshot of the sidecar.
+        var sources: [String: [String: Any]] = [:]
+        /// Prior values for keys in the incoming partial, captured before the
+        /// write was applied. Only populated when the key existed previously;
+        /// absence means the key was unset. Substrate for the read-then-write
+        /// convention (CMUX-11 Phase 2) so callers get the prior value back
+        /// in-hand without a separate round trip.
+        var priorValues: [String: Any] = [:]
+        /// Keys removed by clear-all, keyed clear, or replace semantics.
+        /// Consumers use this to invalidate projections whose inputs disappeared.
+        var removedKeys: Set<String> = []
+    }
+
+    /// Merge or replace a partial metadata object on a surface.
+    ///
+    /// - Parameters:
+    ///   - workspaceId: Workspace UUID.
+    ///   - surfaceId: Surface UUID.
+    ///   - partial: Partial (or full, for replace) JSON object.
+    ///   - mode: `.merge` or `.replace`.
+    ///   - source: Writer source.
+    /// - Returns: per-key applied flags + reasons + post-op snapshot.
+    func setMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        partial: [String: Any],
+        mode: WriteMode,
+        source: MetadataSource
+    ) throws -> WriteResult {
+        return try queue.sync {
+            try setMetadataLocked(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                partial: partial,
+                mode: mode,
+                source: source
+            )
+        }
+    }
+
+    enum WriteMode: String {
+        case merge
+        case replace
+    }
+
+    /// Returns the current metadata for the surface (empty dict if none).
+    func getMetadata(workspaceId: UUID, surfaceId: UUID) -> (metadata: [String: Any], sources: [String: [String: Any]]) {
+        return queue.sync {
+            let md = metadata[workspaceId]?[surfaceId] ?? [:]
+            let src = sources[workspaceId]?[surfaceId]
+                .map { m in m.mapValues { $0.toJSON() } } ?? [:]
+            return (md, src)
+        }
+    }
+
+    /// One metadata value, without materialising the surface's source map.
+    ///
+    /// `getMetadata` converts every source entry to JSON on every call. The
+    /// sidebar reads `terminal_type` for every surface of every workspace on
+    /// each evaluation of its body, so on a workspace holding tens of agents
+    /// that conversion was being paid hundreds of times per frame for a
+    /// single string. Callers that want one key should ask for one key.
+    func metadataValue(workspaceId: UUID, surfaceId: UUID, key: String) -> Any? {
+        return queue.sync {
+            metadata[workspaceId]?[surfaceId]?[key]
+        }
+    }
+
+    /// Metadata plus sources for a named subset of keys. Same reasoning as
+    /// `metadataValue`: converting the keys the caller asked about is bounded
+    /// work, converting all of them is not.
+    func getMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        keys: [String]
+    ) -> (metadata: [String: Any], sources: [String: [String: Any]]) {
+        return queue.sync {
+            let allMetadata = metadata[workspaceId]?[surfaceId]
+            let allSources = sources[workspaceId]?[surfaceId]
+            var md: [String: Any] = [:]
+            var src: [String: [String: Any]] = [:]
+            for key in keys {
+                if let value = allMetadata?[key] {
+                    md[key] = value
+                }
+                if let source = allSources?[key] {
+                    src[key] = source.toJSON()
+                }
+            }
+            return (md, src)
+        }
+    }
+
+    /// Read the monotonic revision counter. Used by the autosave fingerprint
+    /// so metadata-only mutations trigger a write at the next tick.
+    func currentRevision() -> UInt64 {
+        return queue.sync { metadataStoreRevision }
+    }
+
+    /// Returns whether a specific key is currently set on a surface, and its source.
+    func getSource(workspaceId: UUID, surfaceId: UUID, key: String) -> MetadataSource? {
+        return queue.sync {
+            return sources[workspaceId]?[surfaceId]?[key]?.source
+        }
+    }
+
+    /// C11-248: the flag caller UUID string, read from either key spelling. The legacy key wins: both
+    /// are always written together, so a stale custom `flag_caller_tab_id` never outranks it.
+    static func flagCallerValue(_ blob: [String: Any]) -> String? {
+        (blob[MetadataKey.legacyFlagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
+    }
+
+    /// Canonical attention read. The flag source timestamp is the original
+    /// active-epoch timestamp; reason revisions deliberately preserve it.
+    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> TabAttentionSnapshot {
+        queue.sync {
+            let blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            let source = sources[workspaceId]?[surfaceId]?[MetadataKey.flag]
+            return TabAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                    .flatMap(UUID.init(uuidString:)),
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+        }
+    }
+
+    /// The sole metadata mutation primitive for attention keys. It keeps the
+    /// flag's original source timestamp across active-to-active reason edits,
+    /// and applies both modifiers atomically under the store queue.
+    func mutateAttention(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flag: TabAttentionFlagMutation = .unchanged,
+        suppression: TabAttentionSuppressionMutation = .unchanged,
+        callerTabId: UUID? = nil,
+        now: Date = Date()
+    ) throws -> (result: WriteResult, before: TabAttentionSnapshot, after: TabAttentionSnapshot) {
+        try queue.sync {
+            var blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            var sourceBlob = sources[workspaceId]?[surfaceId] ?? [:]
+            let before = TabAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                    .flatMap(UUID.init(uuidString:)),
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+            var result = WriteResult()
+
+            switch flag {
+            case .unchanged:
+                break
+            case .raise(let reason):
+                if let error = Self.validateReservedKey(MetadataKey.flag, reason) {
+                    throw error
+                }
+                let priorReason = blob[MetadataKey.flag] as? String
+                let existingCaller = TabMetadataStore.flagCallerValue(blob)
+                    .flatMap(UUID.init(uuidString:))
+                let shouldSetCaller = existingCaller == nil && callerTabId != nil
+                if priorReason != reason
+                    || sourceBlob[MetadataKey.flag]?.source != .explicit
+                    || shouldSetCaller {
+                    if let priorReason { result.priorValues[MetadataKey.flag] = priorReason }
+                    blob[MetadataKey.flag] = reason
+                    let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
+                    sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
+                    if let callerTabId, existingCaller == nil {
+                        for key in MetadataKey.flagCallerKeys {
+                            blob[key] = callerTabId.uuidString
+                            sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
+                        }
+                    }
+                    result.applied[MetadataKey.flag] = true
+                } else {
+                    result.applied[MetadataKey.flag] = false
+                    result.reasons[MetadataKey.flag] = "unchanged"
+                }
+            case .lower:
+                if let prior = blob.removeValue(forKey: MetadataKey.flag) {
+                    result.priorValues[MetadataKey.flag] = prior
+                    sourceBlob.removeValue(forKey: MetadataKey.flag)
+                    for key in MetadataKey.flagCallerKeys {
+                        blob.removeValue(forKey: key)
+                        sourceBlob.removeValue(forKey: key)
+                        result.removedKeys.insert(key)
+                    }
+                    result.removedKeys.insert(MetadataKey.flag)
+                    result.applied[MetadataKey.flag] = true
+                } else {
+                    result.applied[MetadataKey.flag] = false
+                    result.reasons[MetadataKey.flag] = "unchanged"
+                }
+            }
+
+            switch suppression {
+            case .unchanged:
+                break
+            case .suppress:
+                if blob[MetadataKey.suppressed] as? Bool != true
+                    || sourceBlob[MetadataKey.suppressed]?.source != .explicit {
+                    if let prior = blob[MetadataKey.suppressed] {
+                        result.priorValues[MetadataKey.suppressed] = prior
+                    }
+                    blob[MetadataKey.suppressed] = true
+                    sourceBlob[MetadataKey.suppressed] = SourceRecord(
+                        source: .explicit,
+                        ts: now.timeIntervalSince1970
+                    )
+                    result.applied[MetadataKey.suppressed] = true
+                } else {
+                    result.applied[MetadataKey.suppressed] = false
+                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                }
+            case .unsuppress:
+                if let prior = blob.removeValue(forKey: MetadataKey.suppressed) {
+                    result.priorValues[MetadataKey.suppressed] = prior
+                    sourceBlob.removeValue(forKey: MetadataKey.suppressed)
+                    result.removedKeys.insert(MetadataKey.suppressed)
+                    result.applied[MetadataKey.suppressed] = true
+                } else {
+                    result.applied[MetadataKey.suppressed] = false
+                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                }
+            }
+
+            let changed = result.applied.values.contains(true)
+            // Attention owns a dedicated mutation primitive, but it still
+            // participates in the same per-surface encoded payload contract as
+            // generic metadata writes. Guard before installing either blob so
+            // rejection cannot partially mutate values, sources, or revision.
+            guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
+                throw WriteError.encodeFailed
+            }
+            if encoded.count > TabMetadataStore.payloadCapBytes {
+                throw WriteError.payloadTooLarge
+            }
+            metadata[workspaceId, default: [:]][surfaceId] = blob
+            sources[workspaceId, default: [:]][surfaceId] = sourceBlob
+            if changed { metadataStoreRevision &+= 1 }
+            result.metadata = blob
+            result.sources = sourceBlob.mapValues { $0.toJSON() }
+
+            let after = TabAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
+                    .flatMap(UUID.init(uuidString:)),
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+            return (result, before, after)
+        }
+    }
+
+    /// Canonical lifecycle restore used when a live surface crosses workspace
+    /// ownership. This preserves the active flag epoch without emitting a new
+    /// raise or notification.
+    func restoreAttention(_ snapshot: TabAttentionSnapshot) {
+        queue.sync {
+            var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
+            var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
+            blob.removeValue(forKey: MetadataKey.flag)
+            for key in MetadataKey.flagCallerKeys {
+                blob.removeValue(forKey: key)
+                sourceBlob.removeValue(forKey: key)
+            }
+            blob.removeValue(forKey: MetadataKey.suppressed)
+            sourceBlob.removeValue(forKey: MetadataKey.flag)
+            sourceBlob.removeValue(forKey: MetadataKey.suppressed)
+
+            if let reason = snapshot.flagReason,
+               Self.validateReservedKey(MetadataKey.flag, reason) == nil {
+                let epoch = Self.validAttentionTimestamp(snapshot.flagRaisedAt?.timeIntervalSince1970)
+                    ?? Date().timeIntervalSince1970
+                blob[MetadataKey.flag] = reason
+                sourceBlob[MetadataKey.flag] = SourceRecord(
+                    source: .explicit,
+                    ts: epoch
+                )
+                if let callerTabId = snapshot.flagCallerTabId {
+                    for key in MetadataKey.flagCallerKeys {
+                        blob[key] = callerTabId.uuidString
+                        sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
+                    }
+                }
+            }
+            if snapshot.suppressed {
+                blob[MetadataKey.suppressed] = true
+                sourceBlob[MetadataKey.suppressed] = SourceRecord(
+                    source: .explicit,
+                    ts: Date().timeIntervalSince1970
+                )
+            }
+            metadata[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = blob
+            sources[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = sourceBlob
+            if snapshot.isFlagged || snapshot.suppressed {
+                metadataStoreRevision &+= 1
+            }
+        }
+    }
+
+    /// Clear specific keys (or the entire blob when `keys == nil`).
+    /// `keys == nil` requires `source == .explicit`.
+    func clearMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        keys: [String]?,
+        source: MetadataSource
+    ) throws -> WriteResult {
+        return try queue.sync {
+            var result = WriteResult()
+            let attentionKeys: Set<String> = [
+                MetadataKey.flag,
+                MetadataKey.legacyFlagCallerSurfaceId,
+                MetadataKey.flagCallerTabId,
+                MetadataKey.suppressed,
+            ]
+            let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
+            if let keys {
+                if !attentionKeys.isDisjoint(with: keys) {
+                    throw WriteError.attentionRequiresService
+                }
+            } else if !attentionKeys.isDisjoint(with: existingKeys) {
+                throw WriteError.attentionRequiresService
+            }
+            if keys == nil {
+                guard source == .explicit else {
+                    throw WriteError.replaceRequiresExplicit
+                }
+                let existing = metadata[workspaceId]?[surfaceId] ?? [:]
+                let existingSrc = sources[workspaceId]?[surfaceId] ?? [:]
+                result.removedKeys = Set(existing.keys).union(existingSrc.keys)
+                metadata[workspaceId]?[surfaceId] = [:]
+                sources[workspaceId]?[surfaceId] = [:]
+                result.metadata = [:]
+                result.sources = [:]
+                // No-op skip: clear-all against an already-empty store
+                // must not bump the revision.
+                if !existing.isEmpty || !existingSrc.isEmpty {
+                    metadataStoreRevision &+= 1
+                }
+                return result
+            }
+
+            var blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            var sblob = sources[workspaceId]?[surfaceId] ?? [:]
+            var removedAny = false
+
+            for key in keys! {
+                if let cur = sblob[key] {
+                    if source.precedence < cur.source.precedence {
+                        result.applied[key] = false
+                        result.reasons[key] = "lower_precedence"
+                        continue
+                    }
+                }
+                let hadValue = blob.removeValue(forKey: key) != nil
+                let hadSource = sblob.removeValue(forKey: key) != nil
+                if hadValue || hadSource {
+                    removedAny = true
+                    result.removedKeys.insert(key)
+                }
+                result.applied[key] = true
+            }
+
+            metadata[workspaceId, default: [:]][surfaceId] = blob
+            sources[workspaceId, default: [:]][surfaceId] = sblob
+            result.metadata = blob
+            result.sources = sblob.mapValues { $0.toJSON() }
+            if removedAny { metadataStoreRevision &+= 1 }
+            return result
+        }
+    }
+
+    /// Restore metadata + sources for a surface from a session snapshot
+    /// (Tier 1 Phase 2). Bypasses the precedence chain — the snapshot IS
+    /// the prior session's source of truth. A `.heuristic` value in the
+    /// snapshot restores as `.heuristic` with its original `ts`, even if
+    /// the newly-initialized surface has already written a `.declare`
+    /// value to the same key: the snapshot wins.
+    ///
+    /// Silent by design. The store has no observer infrastructure today;
+    /// any consumer wanting post-restore data queries it on demand.
+    /// Adding a notification pipeline is Phase 3 scope.
+    func restoreFromSnapshot(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        values: [String: Any],
+        sources: [String: SourceRecord]
+    ) {
+        queue.sync {
+            let canonical = Self.canonicalizingAttention(
+                values: values,
+                sources: sources,
+                now: Date()
+            )
+            metadata[workspaceId, default: [:]][surfaceId] = canonical.values
+            self.sources[workspaceId, default: [:]][surfaceId] = canonical.sources
+            // Bump the revision so a post-restore autosave tick sees the
+            // fingerprint differ from the pre-restore state, writing the
+            // restored contents back to disk with a fresh createdAt.
+            metadataStoreRevision &+= 1
+        }
+    }
+
+    /// Remove all metadata for a surface. Called from `pruneSurfaceMetadata`
+    /// when a surface closes. Bypasses precedence (the surface is gone).
+    func removeSurface(workspaceId: UUID, surfaceId: UUID) {
+        queue.sync {
+            let removedMetadata = metadata[workspaceId]?.removeValue(forKey: surfaceId) != nil
+            let removedSources = sources[workspaceId]?.removeValue(forKey: surfaceId) != nil
+            if removedMetadata || removedSources {
+                metadataStoreRevision &+= 1
+            }
+        }
+    }
+
+    /// Remove metadata for any surfaces not in the `validSurfaceIds` set.
+    /// Called from `Workspace.pruneSurfaceMetadata`.
+    func pruneWorkspace(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
+        queue.sync {
+            var removedAny = false
+            if var wsMetadata = metadata[workspaceId] {
+                let priorCount = wsMetadata.count
+                wsMetadata = wsMetadata.filter { validSurfaceIds.contains($0.key) }
+                metadata[workspaceId] = wsMetadata
+                removedAny = removedAny || wsMetadata.count != priorCount
+            }
+            if var wsSources = sources[workspaceId] {
+                let priorCount = wsSources.count
+                wsSources = wsSources.filter { validSurfaceIds.contains($0.key) }
+                sources[workspaceId] = wsSources
+                removedAny = removedAny || wsSources.count != priorCount
+            }
+            if removedAny {
+                metadataStoreRevision &+= 1
+            }
+        }
+    }
+
+    /// Remove all metadata for a workspace.
+    func removeWorkspace(workspaceId: UUID) {
+        queue.sync {
+            let removedMetadata = metadata.removeValue(forKey: workspaceId) != nil
+            let removedSources = sources.removeValue(forKey: workspaceId) != nil
+            if removedMetadata || removedSources {
+                metadataStoreRevision &+= 1
+            }
+        }
+    }
+
+    private static func canonicalizingAttention(
+        values: [String: Any],
+        sources: [String: SourceRecord],
+        now: Date
+    ) -> (values: [String: Any], sources: [String: SourceRecord]) {
+        var values = values
+        var sources = sources
+        let fallbackTimestamp = now.timeIntervalSince1970
+
+        if let reason = values[MetadataKey.flag] as? String,
+           validateReservedKey(MetadataKey.flag, reason) == nil {
+            values[MetadataKey.flag] = reason
+            let flagTimestamp =
+                validAttentionTimestamp(sources[MetadataKey.flag]?.ts) ?? fallbackTimestamp
+            sources[MetadataKey.flag] = SourceRecord(
+                source: .explicit,
+                ts: flagTimestamp
+            )
+            if let caller = flagCallerValue(values),
+               validateReservedKey(MetadataKey.flagCallerTabId, caller) == nil {
+                for key in MetadataKey.flagCallerKeys {
+                    values[key] = caller
+                    sources[key] = SourceRecord(source: .explicit, ts: flagTimestamp)
+                }
+            } else {
+                for key in MetadataKey.flagCallerKeys {
+                    values.removeValue(forKey: key)
+                    sources.removeValue(forKey: key)
+                }
+            }
+        } else {
+            values.removeValue(forKey: MetadataKey.flag)
+            sources.removeValue(forKey: MetadataKey.flag)
+            for key in MetadataKey.flagCallerKeys {
+                values.removeValue(forKey: key)
+                sources.removeValue(forKey: key)
+            }
+        }
+
+        if values[MetadataKey.suppressed] as? Bool == true {
+            values[MetadataKey.suppressed] = true
+            sources[MetadataKey.suppressed] = SourceRecord(
+                source: .explicit,
+                ts: validAttentionTimestamp(sources[MetadataKey.suppressed]?.ts) ?? fallbackTimestamp
+            )
+        } else {
+            // `false` is the canonical absence of suppression. Invalid values
+            // and orphan source records are dropped rather than installed.
+            values.removeValue(forKey: MetadataKey.suppressed)
+            sources.removeValue(forKey: MetadataKey.suppressed)
+        }
+
+        return (values, sources)
+    }
+
+    private static func validAttentionTimestamp(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    // MARK: - Internal write path (used by heuristic — no socket round-trip)
+
+    /// Write a single key with precedence gating. Returns `true` if applied.
+    /// Used by M1's AgentDetector.
+    @discardableResult
+    func setInternal(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        key: String,
+        value: Any,
+        source: MetadataSource
+    ) -> Bool {
+        guard key != MetadataKey.flag,
+              key != MetadataKey.legacyFlagCallerSurfaceId,
+              key != MetadataKey.flagCallerTabId,
+              key != MetadataKey.suppressed else {
+            return false
+        }
+        return queue.sync {
+            var blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            var sblob = sources[workspaceId]?[surfaceId] ?? [:]
+
+            if let cur = sblob[key], source.precedence < cur.source.precedence {
+                return false
+            }
+            if TabMetadataStore.validateReservedKey(key, value) != nil {
+                return false
+            }
+            // Avoid churn on no-op same-source same-value writes.
+            if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
+                return false
+            }
+            // C11-163: capture prior before overwrite (amendment E).
+            let priorValue = blob[key]
+            blob[key] = value
+            sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
+
+            if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
+               encoded.count > TabMetadataStore.payloadCapBytes {
+                return false
+            }
+
+            metadata[workspaceId, default: [:]][surfaceId] = blob
+            sources[workspaceId, default: [:]][surfaceId] = sblob
+            metadataStoreRevision &+= 1
+
+            // C11-163: publish canonical metadata change (post-commit).
+            if EventEmitter.canonicalMetadataEventKeys.contains(key) {
+                EventEmitter.shared.emitMetadataChanged(
+                    scope: "surface",
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    key: key,
+                    value: value,
+                    prior: priorValue,
+                    source: source.rawValue
+                )
+            }
+            return true
+        }
+    }
+
+    // MARK: - Locked merge helper
+
+    private func setMetadataLocked(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        partial: [String: Any],
+        mode: WriteMode,
+        source: MetadataSource
+    ) throws -> WriteResult {
+        if mode == .replace, source != .explicit {
+            throw WriteError.replaceRequiresExplicit
+        }
+        let attentionKeys: Set<String> = [
+            MetadataKey.flag,
+            MetadataKey.legacyFlagCallerSurfaceId,
+            MetadataKey.flagCallerTabId,
+            MetadataKey.suppressed,
+        ]
+        let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
+        if !attentionKeys.isDisjoint(with: partial.keys)
+            || (mode == .replace && !attentionKeys.isDisjoint(with: existingKeys)) {
+            throw WriteError.attentionRequiresService
+        }
+
+        // Pre-validate every reserved key *before* taking the mutation path so
+        // a single bad value aborts the whole write (matches M2 spec).
+        for (k, v) in partial {
+            if TabMetadataStore.reservedKeys.contains(k) {
+                if let err = TabMetadataStore.validateReservedKey(k, v) {
+                    throw err
+                }
+            }
+        }
+
+        var blob: [String: Any]
+        var sblob: [String: SourceRecord]
+        var result = WriteResult()
+
+        if mode == .replace {
+            blob = [:]
+            sblob = [:]
+        } else {
+            blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            sblob = sources[workspaceId]?[surfaceId] ?? [:]
+        }
+
+        let ts = Date().timeIntervalSince1970
+        var mutated = false
+        // C11-163: canonical metadata changes to publish to the events stream
+        // AFTER the write commits (the size guard below can still abort).
+        // Prior value is captured inline here — the surface store does not
+        // populate WriteResult.priorValues (amendment E).
+        var canonicalEventChanges: [(key: String, value: Any, prior: Any?)] = []
+
+        if mode == .replace {
+            // `mode == .replace` discarded the prior blob above. If that prior
+            // blob was non-empty, the replace is itself a mutation even when
+            // the new partial is a subset; flag accordingly.
+            let priorBlob = metadata[workspaceId]?[surfaceId] ?? [:]
+            let priorSrc = sources[workspaceId]?[surfaceId] ?? [:]
+            result.removedKeys = Set(priorBlob.keys)
+                .union(priorSrc.keys)
+                .subtracting(partial.keys)
+            if !priorBlob.isEmpty || !priorSrc.isEmpty { mutated = true }
+        }
+
+        for (k, v) in partial {
+            if mode == .merge, let cur = sblob[k], source.precedence < cur.source.precedence {
+                result.applied[k] = false
+                result.reasons[k] = "lower_precedence"
+                continue
+            }
+            // No-op skip for revision counter: same value and same source
+            // preserves the prior SourceRecord (original ts) and does not
+            // bump the revision. The key is still reported as applied so
+            // callers see idempotent semantics.
+            let existing = blob[k]
+            let existingSource = sblob[k]?.source
+            let isSameWrite = existing.map { sameJSONValue($0, v) } ?? false
+                && existingSource == source
+            if isSameWrite {
+                result.applied[k] = true
+                continue
+            }
+            if EventEmitter.canonicalMetadataEventKeys.contains(k) {
+                canonicalEventChanges.append((key: k, value: v, prior: existing))
+            }
+            blob[k] = v
+            sblob[k] = SourceRecord(source: source, ts: ts)
+            result.applied[k] = true
+            mutated = true
+        }
+
+        // Size check after merge.
+        guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
+            throw WriteError.encodeFailed
+        }
+        if encoded.count > TabMetadataStore.payloadCapBytes {
+            throw WriteError.payloadTooLarge
+        }
+
+        metadata[workspaceId, default: [:]][surfaceId] = blob
+        sources[workspaceId, default: [:]][surfaceId] = sblob
+
+        result.metadata = blob
+        result.sources = sblob.mapValues { $0.toJSON() }
+        if mutated { metadataStoreRevision &+= 1 }
+
+        // C11-163: publish canonical metadata changes now that the write has
+        // committed (post size-guard). Off the store's serial queue; emit is
+        // fire-and-forget and never blocks this path.
+        for change in canonicalEventChanges {
+            EventEmitter.shared.emitMetadataChanged(
+                scope: "surface",
+                workspace: workspaceId,
+                surface: surfaceId,
+                key: change.key,
+                value: change.value,
+                prior: change.prior,
+                source: source.rawValue
+            )
+        }
+        return result
+    }
+
+    // MARK: - Value equality for dedupe
+
+    private func sameJSONValue(_ a: Any, _ b: Any) -> Bool {
+        if let sa = a as? String, let sb = b as? String { return sa == sb }
+        if let na = a as? NSNumber, let nb = b as? NSNumber { return na == nb }
+        if let ba = a as? Bool, let bb = b as? Bool { return ba == bb }
+        // Fall through to JSON serialization comparison for complex types.
+        let da = try? JSONSerialization.data(withJSONObject: ["v": a], options: [.sortedKeys])
+        let db = try? JSONSerialization.data(withJSONObject: ["v": b], options: [.sortedKeys])
+        return da == db
+    }
+}
+
+public extension MetadataSource {
+    init?(string s: String?) {
+        guard let s, let v = MetadataSource(rawValue: s) else { return nil }
+        self = v
+    }
+}

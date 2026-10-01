@@ -1,0 +1,3 @@
+{"type":"session","version":"3","id":"019c0000-0000-7000-8000-000000000003","timestamp":"2026-01-01T07:00:00.000Z","cwd":"/work/demo","title":"demo"}
+{"type":"model_change","id":"b1","parentId":null,"timestamp":"2026-01-01T07:00:00.000Z","model":"openrouter/~x-ai/grok-latest"}
+{"type":"message","id":"i07:00:05","parentId":null,"timestamp":"2026-01-01T07:00:05.000Z","message":{"role":"user","timestamp":"1","attribution":"user","content":[{"type":"text","text":"hi"}]}}

@@ -86,10 +86,10 @@ final class SidebarActiveTabIndicatorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.removeObject(forKey: SidebarActiveTabIndicatorSettings.styleKey)
+        defaults.removeObject(forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
         XCTAssertEqual(
-            SidebarActiveTabIndicatorSettings.current(defaults: defaults),
-            SidebarActiveTabIndicatorSettings.defaultStyle
+            SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults),
+            SidebarActiveWorkspaceIndicatorSettings.defaultStyle
         )
     }
 
@@ -101,16 +101,16 @@ final class SidebarActiveTabIndicatorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        defaults.set(SidebarActiveTabIndicatorStyle.leftRail.rawValue, forKey: SidebarActiveTabIndicatorSettings.styleKey)
-        XCTAssertEqual(SidebarActiveTabIndicatorSettings.current(defaults: defaults), .leftRail)
+        defaults.set(SidebarActiveWorkspaceIndicatorStyle.leftRail.rawValue, forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
+        XCTAssertEqual(SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults), .leftRail)
 
-        defaults.set("rail", forKey: SidebarActiveTabIndicatorSettings.styleKey)
-        XCTAssertEqual(SidebarActiveTabIndicatorSettings.current(defaults: defaults), .leftRail)
+        defaults.set("rail", forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
+        XCTAssertEqual(SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults), .leftRail)
 
-        defaults.set("not-a-style", forKey: SidebarActiveTabIndicatorSettings.styleKey)
+        defaults.set("not-a-style", forKey: SidebarActiveWorkspaceIndicatorSettings.styleKey)
         XCTAssertEqual(
-            SidebarActiveTabIndicatorSettings.current(defaults: defaults),
-            SidebarActiveTabIndicatorSettings.defaultStyle
+            SidebarActiveWorkspaceIndicatorSettings.current(defaults: defaults),
+            SidebarActiveWorkspaceIndicatorSettings.defaultStyle
         )
     }
 }
@@ -231,7 +231,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second, third, fourth],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 337,
                     label: "PR",
@@ -281,7 +281,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -310,7 +310,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -342,7 +342,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -372,7 +372,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -380,7 +380,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open,
             checks: .pass
         )
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -388,7 +388,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        XCTAssertEqual(workspace.panelPullRequests[panelId]?.checks, .pass)
+        XCTAssertEqual(workspace.tabPullRequests[panelId]?.checks, .pass)
         XCTAssertEqual(workspace.pullRequest?.checks, .pass)
     }
 
@@ -401,7 +401,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
         )
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [],
-            panelPullRequests: [:],
+            tabPullRequests: [:],
             fallbackPullRequest: fallback
         )
 
@@ -416,8 +416,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
-        workspace.updatePanelPullRequest(
+        workspace.updateTabGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",
@@ -425,10 +425,10 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
 
         XCTAssertNil(workspace.pullRequest)
-        XCTAssertNil(workspace.panelPullRequests[panelId])
+        XCTAssertNil(workspace.tabPullRequests[panelId])
         XCTAssertTrue(workspace.sidebarPullRequestsInDisplayOrder().isEmpty)
     }
 
@@ -440,8 +440,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
-        workspace.updatePanelPullRequest(
+        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",
@@ -478,22 +478,22 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: first,
-                targetTabId: first,
-                tabIds: tabIds,
-                pinnedTabIds: []
+                draggedWorkspaceId: first,
+                targetWorkspaceId: first,
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: []
             )
         )
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: third,
-                targetTabId: nil,
-                tabIds: tabIds,
-                pinnedTabIds: []
+                draggedWorkspaceId: third,
+                targetWorkspaceId: nil,
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: []
             )
         )
     }
@@ -502,18 +502,18 @@ final class SidebarDropPlannerTests: XCTestCase {
         let only = UUID()
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: only,
-                targetTabId: nil,
-                tabIds: [only],
-                pinnedTabIds: []
+                draggedWorkspaceId: only,
+                targetWorkspaceId: nil,
+                workspaceIds: [only],
+                pinnedWorkspaceIds: []
             )
         )
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: only,
-                targetTabId: only,
-                tabIds: [only],
-                pinnedTabIds: []
+                draggedWorkspaceId: only,
+                targetWorkspaceId: only,
+                workspaceIds: [only],
+                pinnedWorkspaceIds: []
             )
         )
     }
@@ -522,15 +522,15 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: second,
-            targetTabId: nil,
-            tabIds: tabIds,
-            pinnedTabIds: []
+            draggedWorkspaceId: second,
+            targetWorkspaceId: nil,
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: []
         )
-        XCTAssertEqual(indicator?.tabId, nil)
+        XCTAssertEqual(indicator?.workspaceId, nil)
         XCTAssertEqual(indicator?.edge, .bottom)
     }
 
@@ -538,14 +538,14 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         let index = SidebarDropPlanner.targetIndex(
-            draggedTabId: second,
-            targetTabId: nil,
-            indicator: SidebarDropIndicator(tabId: nil, edge: .bottom),
-            tabIds: tabIds,
-            pinnedTabIds: []
+            draggedWorkspaceId: second,
+            targetWorkspaceId: nil,
+            indicator: SidebarDropIndicator(workspaceId: nil, edge: .bottom),
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: []
         )
         XCTAssertEqual(index, 2)
     }
@@ -554,14 +554,14 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: second,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: []
+                draggedWorkspaceId: second,
+                targetWorkspaceId: second,
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: []
             )
         )
     }
@@ -570,14 +570,14 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: first,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: [],
+                draggedWorkspaceId: first,
+                targetWorkspaceId: second,
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: [],
                 pointerY: 2,
                 targetHeight: 40
             )
@@ -588,25 +588,25 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: first,
-            targetTabId: second,
-            tabIds: tabIds,
-            pinnedTabIds: [],
+            draggedWorkspaceId: first,
+            targetWorkspaceId: second,
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: [],
             pointerY: 38,
             targetHeight: 40
         )
-        XCTAssertEqual(indicator?.tabId, third)
+        XCTAssertEqual(indicator?.workspaceId, third)
         XCTAssertEqual(indicator?.edge, .top)
         XCTAssertEqual(
             SidebarDropPlanner.targetIndex(
-                draggedTabId: first,
-                targetTabId: second,
+                draggedWorkspaceId: first,
+                targetWorkspaceId: second,
                 indicator: indicator,
-                tabIds: tabIds,
-                pinnedTabIds: []
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: []
             ),
             1
         )
@@ -616,28 +616,28 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         let fromBottomOfFirst = SidebarDropPlanner.indicator(
-            draggedTabId: third,
-            targetTabId: first,
-            tabIds: tabIds,
-            pinnedTabIds: [],
+            draggedWorkspaceId: third,
+            targetWorkspaceId: first,
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: [],
             pointerY: 38,
             targetHeight: 40
         )
         let fromTopOfSecond = SidebarDropPlanner.indicator(
-            draggedTabId: third,
-            targetTabId: second,
-            tabIds: tabIds,
-            pinnedTabIds: [],
+            draggedWorkspaceId: third,
+            targetWorkspaceId: second,
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: [],
             pointerY: 2,
             targetHeight: 40
         )
 
-        XCTAssertEqual(fromBottomOfFirst?.tabId, second)
+        XCTAssertEqual(fromBottomOfFirst?.workspaceId, second)
         XCTAssertEqual(fromBottomOfFirst?.edge, .top)
-        XCTAssertEqual(fromTopOfSecond?.tabId, second)
+        XCTAssertEqual(fromTopOfSecond?.workspaceId, second)
         XCTAssertEqual(fromTopOfSecond?.edge, .top)
     }
 
@@ -645,14 +645,14 @@ final class SidebarDropPlannerTests: XCTestCase {
         let first = UUID()
         let second = UUID()
         let third = UUID()
-        let tabIds = [first, second, third]
+        let workspaceIds = [first, second, third]
 
         XCTAssertNil(
             SidebarDropPlanner.indicator(
-                draggedTabId: third,
-                targetTabId: second,
-                tabIds: tabIds,
-                pinnedTabIds: [],
+                draggedWorkspaceId: third,
+                targetWorkspaceId: second,
+                workspaceIds: workspaceIds,
+                pinnedWorkspaceIds: [],
                 pointerY: 38,
                 targetHeight: 40
             )
@@ -664,19 +664,19 @@ final class SidebarDropPlannerTests: XCTestCase {
         let pinnedB = UUID()
         let unpinnedA = UUID()
         let unpinnedB = UUID()
-        let tabIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
+        let workspaceIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
         let pinnedIds: Set<UUID> = [pinnedA, pinnedB]
 
         let indicator = SidebarDropPlanner.indicator(
-            draggedTabId: unpinnedB,
-            targetTabId: pinnedA,
-            tabIds: tabIds,
-            pinnedTabIds: pinnedIds,
+            draggedWorkspaceId: unpinnedB,
+            targetWorkspaceId: pinnedA,
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: pinnedIds,
             pointerY: 2,
             targetHeight: 40
         )
 
-        XCTAssertEqual(indicator?.tabId, unpinnedA)
+        XCTAssertEqual(indicator?.workspaceId, unpinnedA)
         XCTAssertEqual(indicator?.edge, .top)
     }
 
@@ -685,15 +685,15 @@ final class SidebarDropPlannerTests: XCTestCase {
         let pinnedB = UUID()
         let unpinnedA = UUID()
         let unpinnedB = UUID()
-        let tabIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
+        let workspaceIds = [pinnedA, pinnedB, unpinnedA, unpinnedB]
         let pinnedIds: Set<UUID> = [pinnedA, pinnedB]
 
         let targetIndex = SidebarDropPlanner.targetIndex(
-            draggedTabId: unpinnedB,
-            targetTabId: pinnedA,
-            indicator: SidebarDropIndicator(tabId: pinnedA, edge: .top),
-            tabIds: tabIds,
-            pinnedTabIds: pinnedIds
+            draggedWorkspaceId: unpinnedB,
+            targetWorkspaceId: pinnedA,
+            indicator: SidebarDropIndicator(workspaceId: pinnedA, edge: .top),
+            workspaceIds: workspaceIds,
+            pinnedWorkspaceIds: pinnedIds
         )
 
         XCTAssertEqual(targetIndex, 2)

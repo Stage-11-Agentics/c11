@@ -19,7 +19,7 @@ from cmux import cmux, cmuxError
 
 
 def focused_pane_id(client: cmux) -> Optional[str]:
-    """Return the pane_id of the currently focused pane, or None."""
+    """Return the area_id of the currently focused pane, or None."""
     for _idx, pane_id, _count, is_focused in client.list_panes():
         if is_focused:
             return pane_id

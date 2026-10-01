@@ -47,7 +47,7 @@ final class BonsplitTabDragUITests: XCTestCase {
         XCTAssertTrue(alphaTab.waitForExistence(timeout: 5.0), "Expected alpha tab to exist")
         XCTAssertTrue(betaTab.waitForExistence(timeout: 5.0), "Expected beta tab to exist")
         XCTAssertTrue(
-            waitForJSONKey("trackedPaneTabTitles", equals: initialOrder, atPath: dataPath, timeout: 5.0) != nil,
+            waitForJSONKey("trackedAreaTabTitles", equals: initialOrder, atPath: dataPath, timeout: 5.0) != nil,
             "Expected initial tracked tab order to be \(initialOrder). data=\(loadJSON(atPath: dataPath) ?? [:])"
         )
         XCTAssertLessThan(alphaTab.frame.minX, betaTab.frame.minX, "Expected beta tab to start to the right of alpha")
@@ -75,7 +75,7 @@ final class BonsplitTabDragUITests: XCTestCase {
         endMouseDrag(dragSession, atAccessibilityPoint: destination)
 
         XCTAssertTrue(
-            waitForJSONKey("trackedPaneTabTitles", equals: reorderedOrder, atPath: dataPath, timeout: 5.0) != nil,
+            waitForJSONKey("trackedAreaTabTitles", equals: reorderedOrder, atPath: dataPath, timeout: 5.0) != nil,
             "Expected tracked tab order to become \(reorderedOrder). data=\(loadJSON(atPath: dataPath) ?? [:])"
         )
         XCTAssertTrue(

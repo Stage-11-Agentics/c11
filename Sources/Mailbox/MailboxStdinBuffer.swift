@@ -72,7 +72,7 @@ struct MailboxStdinBuffer {
     private var queues: [UUID: [Entry]] = [:]
 
     /// Inject-now vs buffer, purely from the recipient's shell activity state.
-    static func decide(state: Workspace.PanelShellActivityState) -> Decision {
+    static func decide(state: Workspace.TabShellActivityState) -> Decision {
         switch state {
         case .promptIdle:
             return .injectNow

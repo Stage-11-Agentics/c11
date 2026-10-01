@@ -12,7 +12,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - Presentation + queueing
 
     func testPresentOnEmptyPanelBecomesActive() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -27,7 +27,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testSecondPresentOnSamePanelQueues() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var firstResult: ConfirmResult?
         var secondResult: ConfirmResult?
@@ -50,7 +50,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testDifferentPanelsPresentConcurrently() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelA = UUID()
         let panelB = UUID()
         var resultA: ConfirmResult?
@@ -72,7 +72,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - Cancel + dismiss
 
     func testCancelActiveInvokesCompletionWithCancelled() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -84,7 +84,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testClearResolvesActiveAndQueuedWithDismissed() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var first: ConfirmResult?
         var second: ConfirmResult?
@@ -106,7 +106,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Result type distinction — a panel torn down mid-dialog reports .dismissed,
         // not .cancelled. Callers rely on this to distinguish "user said no" from
         // "the state drifted out from under us."
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -120,7 +120,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - Dedupe token
 
     func testDedupeTokenSuppressesDuplicatePresent() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var first: ConfirmResult?
         var second: ConfirmResult?
@@ -147,7 +147,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Regression test for the continuation-leak bug (synthesis-critical §1.2):
         // the old behavior returned early without firing the dropped caller's
         // completion, suspending any withCheckedContinuation wrapper forever.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var firedCount = 0
 
@@ -183,7 +183,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     func testDedupeTokenClearedOnResolveAllowsFuturePresent() {
         // Regression test for the permanent-lockout bug: cancelling a
         // close-confirm should NOT block future presents with the same token.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var first: ConfirmResult?
         var second: ConfirmResult?
@@ -207,7 +207,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testDedupeTokenAllowsDifferentTokens() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var first: ConfirmResult?
         var second: ConfirmResult?
@@ -229,7 +229,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - Queue soft cap
 
     func testQueueSoftCapEvictsOldestQueuedWithDismissed() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         // Soft cap is 4 queued entries (plan §3.2, v3). The currently-active never
         // evicts. A 5th queued entry must evict the oldest queued with .dismissed.
@@ -238,7 +238,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
 
         runtime.present(panelId: panelId,
                         interaction: .confirm(makeConfirm { activeResult = $0 }))
-        for i in 0..<PaneInteractionRuntime.perPanelQueueSoftCap + 1 {
+        for i in 0..<AreaInteractionRuntime.perPanelQueueSoftCap + 1 {
             runtime.present(panelId: panelId,
                             interaction: .confirm(makeConfirm { queuedResults[i] = $0 }))
         }
@@ -250,7 +250,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Draining the queue should deliver the remaining queued confirms in FIFO order.
         runtime.resolveConfirm(panelId: panelId, result: .confirmed)
         XCTAssertEqual(activeResult, .confirmed)
-        for i in 1...PaneInteractionRuntime.perPanelQueueSoftCap {
+        for i in 1...AreaInteractionRuntime.perPanelQueueSoftCap {
             runtime.resolveConfirm(panelId: panelId, result: .confirmed)
             XCTAssertEqual(queuedResults[i], .confirmed, "Queued index \(i) should have resolved")
         }
@@ -259,7 +259,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - Variant mismatch
 
     func testResolveConfirmOnTextInputDoesNotFire() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var textResult: TextInputResult?
 
@@ -271,7 +271,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testResolveTextInputOnConfirmDoesNotFire() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var confirmResult: ConfirmResult?
 
@@ -285,7 +285,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     // MARK: - acceptActive (Cmd+D routing)
 
     func testAcceptActiveConfirmResolvesConfirmed() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -302,7 +302,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // it up. This is what the AppDelegate shortcut gate actually drives —
         // the old test passed an explicit `textInputValue` argument that
         // bypassed the real bridge and hid the data-loss bug.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
@@ -325,7 +325,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Backstop: if Cmd+D fires before the TextInputCard has bridged any
         // value (race between present → Cmd+D with no text edit), submit the
         // defaultValue per the original contract.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
@@ -344,7 +344,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testAcceptActiveTextInputFailsValidationDoesNotResolve() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
@@ -369,19 +369,21 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testAcceptActiveOnEmptyPanelReturnsFalse() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         XCTAssertFalse(runtime.acceptActive(panelId: UUID()))
     }
 
     // MARK: - Key routing fallback
 
     func testHandleKeyDownConfirmLeftReturnCancelsSelectedCancel() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
         runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
 
+        XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 124)) // right
         XCTAssertEqual(runtime.confirmSelection[panelId], .confirm)
         XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 123)) // left
         XCTAssertEqual(runtime.confirmSelection[panelId], .cancel)
@@ -391,8 +393,63 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
     }
 
+    func testStandardConfirmStartsOnItsConfirmButton() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(ConfirmContent(
+            title: "Proceed?",
+            message: nil,
+            confirmLabel: "Proceed",
+            cancelLabel: "Cancel",
+            role: .standard,
+            source: .local,
+            completion: { result = $0 }
+        )))
+        XCTAssertFalse(runtime.hasActiveDestructiveConfirm(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    func testReturnOnAFreshConfirmCancels() {
+        // A destructive confirm must not be accepted by a reflexive Return.
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(makeConfirm { result = $0 }))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .cancelled)
+    }
+
+    func testSingleTabCloseStartsOnClose() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(ConfirmContent(
+            title: "Close tab?",
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: .confirm,
+            source: .local,
+            completion: { result = $0 }
+        )))
+        XCTAssertEqual(runtime.confirmSelection[panelId], .confirm)
+        // Still destructive, so Cmd+D never accepts it.
+        XCTAssertTrue(runtime.hasActiveDestructiveConfirm(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .confirmed)
+    }
+
     func testHandleKeyDownConfirmUpDownAndReturn() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -408,7 +465,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testHandleKeyDownConfirmEscapeCancels() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -420,7 +477,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testHandleKeyDownTextInputFieldSelectedDoesNotInterceptReturn() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
@@ -436,7 +493,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testHandleKeyDownTextInputButtonSelectionSubmits() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
@@ -456,7 +513,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Prevents the "socket timeout cancels newly-advanced successor" race:
         // cancel/resolve with the originally-presented id must no-op if the
         // queue has advanced.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var firstResult: ConfirmResult?
         var secondResult: ConfirmResult?
@@ -491,7 +548,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testAcceptActiveWithWrongInteractionIdIsNoOp() {
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelId = UUID()
         var result: ConfirmResult?
 
@@ -514,7 +571,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         // Workspace-teardown path: every pending interaction (active + queued)
         // must fire with .dismissed so no withCheckedContinuation is left
         // suspended when the workspace is removed.
-        let runtime = PaneInteractionRuntime()
+        let runtime = AreaInteractionRuntime()
         let panelA = UUID()
         let panelB = UUID()
         var results: [ConfirmResult] = []

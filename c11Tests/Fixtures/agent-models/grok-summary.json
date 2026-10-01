@@ -1,0 +1,14 @@
+{
+  "info": {
+    "id": "F0000000-0000-4000-8000-000000000004",
+    "cwd": "/work/demo"
+  },
+  "agent_id": "ag1.x",
+  "session_summary": "",
+  "num_messages": 2,
+  "current_model_id": "grok-4.7",
+  "agent_name": "grok-build-plan",
+  "reasoning_effort": "high",
+  "last_active_at": "2026-01-01T06:00:00.123456Z",
+  "updated_at": "2026-01-01T06:00:00.123456Z"
+}

@@ -49,11 +49,11 @@ def test_report_structure(c: cmux, cli: str) -> None:
     md = _run_report(cli)
     _must(md.startswith("# c11 Fleet Snapshot"), f"report must start with the title header; got: {md[:60]!r}")
     _must("_Generated " in md, "report must carry a `_Generated ...` line")
-    for token in ("window", "workspace", "surface"):
+    for token in ("window", "workspace", "tab"):
         _must(token in md, f"generated line should mention {token!r}")
-    _must("**Pane**" in md, "report must list panes")
+    _must("**Area**" in md, "report must list areas")
     _must("## Summary" in md, "report must end with a Summary section")
-    _must("| Window | Workspace | Panes | Surfaces |" in md, "report must contain the summary table header")
+    _must("| Window | Workspace | Areas | Tabs |" in md, "report must contain the summary table header")
     print("PASS: test_report_structure")
 
 

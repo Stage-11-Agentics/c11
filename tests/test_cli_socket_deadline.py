@@ -18,6 +18,8 @@ import tempfile
 import threading
 import time
 
+from fake_server_env import fake_server_env
+
 
 # ---------------------------------------------------------------------------
 # CLI binary resolution
@@ -128,7 +130,9 @@ def _run_cli(
     extra_env: dict[str, str] | None = None,
     timeout: float = 15.0,
 ) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
+    # Drop every inherited socket variable and caller identity: the test names its own
+    # socket in extra_env, and an inherited C11_SOCKET_PATH would otherwise win over it.
+    env = fake_server_env(None)
     env["CMUX_CLI_SENTRY_DISABLED"] = "1"
     env["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"
     if extra_env:
@@ -236,8 +240,7 @@ def test_no_deadline_for_browser_wait_command(cli_path: str, sock_path: str) -> 
     if not server.wait_ready():
         return False, "deaf server did not become ready"
 
-    env = os.environ.copy()
-    env["CMUX_SOCKET_PATH"] = sock_path
+    env = fake_server_env(sock_path)
     env["C11_DEFAULT_SOCKET_DEADLINE_MS"] = "200"
     env["CMUX_CLI_SENTRY_DISABLED"] = "1"
     env["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"

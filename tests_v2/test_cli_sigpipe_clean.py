@@ -44,9 +44,11 @@ def _find_cli() -> str:
 def _broken_pipe_exit(cli: str, args: List[str]) -> Tuple[int, str]:
     """Run CLI, read only one line from stdout, then close the pipe. Return (returncode, one_line)."""
     env = dict(os.environ)
-    env.pop("CMUX_SURFACE_ID", None)
-    env.pop("CMUX_WORKSPACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_WORKSPACE_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = [cli, "--socket", SOCKET_PATH] + args
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
@@ -90,7 +92,10 @@ def test_tree_sigpipe_clean(cli: str) -> None:
 def test_shell_pipeline_exit_code(cli: str) -> None:
     """Shell pipeline 'c11 list-workspaces | head -1' must exit with overall code 0."""
     env = dict(os.environ)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_WORKSPACE_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = f"{cli!r} --socket {SOCKET_PATH!r} list-workspaces | head -1"

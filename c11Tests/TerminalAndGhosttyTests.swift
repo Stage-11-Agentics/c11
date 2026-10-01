@@ -953,30 +953,30 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
 
     func testTerminalMouseDownDismissesUnreadWhenSurfaceIsAlreadyFirstResponder() {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
         let window = makeWindow()
 
-        let originalTabManager = appDelegate.tabManager
+        let originalWorkspaceManager = appDelegate.workspaceManager
         let originalNotificationStore = appDelegate.notificationStore
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
 
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
-        appDelegate.tabManager = manager
+        appDelegate.workspaceManager = manager
         appDelegate.notificationStore = store
 
         defer {
             store.replaceNotificationsForTesting([])
             store.resetNotificationDeliveryHandlerForTesting()
-            appDelegate.tabManager = originalTabManager
+            appDelegate.workspaceManager = originalWorkspaceManager
             appDelegate.notificationStore = originalNotificationStore
             AppFocusState.overrideIsFocused = originalAppFocusOverride
             window.orderOut(nil)
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             XCTFail("Expected an initial focused terminal panel")
             return
         }
@@ -986,7 +986,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
             return
         }
 
-        let hostedView = terminalPanel.hostedView
+        let hostedView = terminalTab.hostedView
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
         contentView.addSubview(hostedView)
@@ -1003,13 +1003,13 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(surfaceView))
 
         store.addNotification(
-            tabId: workspace.id,
-            surfaceId: terminalPanel.id,
+            workspaceId: workspace.id,
+            surfaceId: terminalTab.id,
             title: "Unread",
             subtitle: "",
             body: ""
         )
-        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
 
         AppFocusState.overrideIsFocused = true
         let pointInWindow = surfaceView.convert(NSPoint(x: 20, y: 20), to: nil)
@@ -1019,36 +1019,36 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         DispatchQueue.main.async { drained.fulfill() }
         wait(for: [drained], timeout: 5.0)
 
-        XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
-        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
+        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalTab.id), 1)
     }
 
     func testTerminalKeyDownDismissesUnreadWhenSurfaceIsAlreadyFirstResponder() {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
         let window = makeWindow()
 
-        let originalTabManager = appDelegate.tabManager
+        let originalWorkspaceManager = appDelegate.workspaceManager
         let originalNotificationStore = appDelegate.notificationStore
         let originalAppFocusOverride = AppFocusState.overrideIsFocused
 
         store.replaceNotificationsForTesting([])
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
-        appDelegate.tabManager = manager
+        appDelegate.workspaceManager = manager
         appDelegate.notificationStore = store
 
         defer {
             store.replaceNotificationsForTesting([])
             store.resetNotificationDeliveryHandlerForTesting()
-            appDelegate.tabManager = originalTabManager
+            appDelegate.workspaceManager = originalWorkspaceManager
             appDelegate.notificationStore = originalNotificationStore
             AppFocusState.overrideIsFocused = originalAppFocusOverride
             window.orderOut(nil)
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             XCTFail("Expected an initial focused terminal panel")
             return
         }
@@ -1058,7 +1058,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
             return
         }
 
-        let hostedView = terminalPanel.hostedView
+        let hostedView = terminalTab.hostedView
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
         contentView.addSubview(hostedView)
@@ -1075,13 +1075,13 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(surfaceView))
 
         store.addNotification(
-            tabId: workspace.id,
-            surfaceId: terminalPanel.id,
+            workspaceId: workspace.id,
+            surfaceId: terminalTab.id,
             title: "Unread",
             subtitle: "",
             body: ""
         )
-        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
 
         let event = makeKeyEvent(characters: "", keyCode: 122, window: window)
         surfaceView.keyDown(with: event)
@@ -1089,8 +1089,8 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         DispatchQueue.main.async { drained.fulfill() }
         wait(for: [drained], timeout: 5.0)
 
-        XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
-        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
+        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalTab.id), 1)
     }
 }
 
@@ -1331,7 +1331,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
     func testSearchOverlayMountsAndUnmountsWithSearchState() {
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1352,7 +1352,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
     func testFlagBannerMountIsAdditiveAndDoesNotStealFocusOrReflowTerminal() {
         let workspace = UUID()
         let surface = TerminalSurface(
-            tabId: workspace,
+            workspaceId: workspace,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1365,7 +1365,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             defer: false
         )
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             window.orderOut(nil)
         }
@@ -1383,8 +1383,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(outsideResponder))
         let before = hostedView.debugFlagBannerState()
 
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need a schema decision",
@@ -1406,14 +1406,14 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
     func testFlagBannerStaysBelowSearchOverlayInPortalZOrder() {
         let workspace = UUID()
         let surface = TerminalSurface(
-            tabId: workspace,
+            workspaceId: workspace,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
         )
         let hostedView = surface.hostedView
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             hostedView.setSearchOverlay(searchState: nil)
         }
@@ -1423,8 +1423,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             searchState: TerminalSurface.SearchState(needle: "operator")
         )
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need operator input",
@@ -1442,7 +1442,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
     func testRapidSearchOverlayToggleDoesNotLeaveStaleOverlayMounted() {
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1461,7 +1461,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
     func testSearchOverlayFocusesSearchFieldAfterDeferredAttach() {
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1508,7 +1508,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
     func testStartOrFocusTerminalSearchReusesExistingSearchState() {
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1535,7 +1535,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         _ = NSApplication.shared
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1628,7 +1628,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
     @MainActor
     func testKeyboardCopyModeIndicatorMountsAndUnmounts() {
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1690,7 +1690,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         }
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1722,7 +1722,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 
         let hostedView: GhosttySurfaceScrollView = {
             let surface = TerminalSurface(
-                tabId: UUID(),
+                workspaceId: UUID(),
                 context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
                 configTemplate: nil,
                 workingDirectory: nil
@@ -1759,7 +1759,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         contentView.addSubview(anchorB)
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -1798,7 +1798,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         contentView.addSubview(anchor)
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -2289,7 +2289,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         shiftedContainer.addSubview(anchor)
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -2352,7 +2352,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         }
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -2435,7 +2435,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         }
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -2519,7 +2519,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         }
 
         let surface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
@@ -2613,13 +2613,13 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         }
 
         let firstSurface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
         )
         let secondSurface = TerminalSurface(
-            tabId: UUID(),
+            workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil

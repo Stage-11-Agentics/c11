@@ -35,17 +35,17 @@ def _fresh_surface(c) -> tuple[str, str]:
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     c._call("workspace.select", {"workspace_id": ws_id})
-    current = c._call("surface.current", {"workspace_id": ws_id}) or {}
-    surface_id = str(current.get("surface_id") or "")
-    _must(bool(surface_id), f"surface.current returned no surface_id: {current}")
+    current = c._call("tab.current", {"workspace_id": ws_id}) or {}
+    surface_id = str(current.get("tab_id") or "")
+    _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
     return ws_id, surface_id
 
 
 def _set_description(c, surface_id: str, desc: str) -> dict:
     return c._call(
-        "surface.set_metadata",
+        "tab.set_metadata",
         {
-            "surface_id": surface_id,
+            "tab_id": surface_id,
             "mode": "merge",
             "source": "explicit",
             "metadata": {"description": desc},
@@ -54,7 +54,7 @@ def _set_description(c, surface_id: str, desc: str) -> dict:
 
 
 def _read_description(c, surface_id: str) -> str | None:
-    state = c._call("surface.get_titlebar_state", {"surface_id": surface_id}) or {}
+    state = c._call("tab.get_titlebar_state", {"tab_id": surface_id}) or {}
     return state.get("description")
 
 
@@ -72,8 +72,8 @@ def main() -> int:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
         _must(
-            "surface.set_metadata" in methods
-            and "surface.get_titlebar_state" in methods,
+            "tab.set_metadata" in methods
+            and "tab.get_titlebar_state" in methods,
             f"Required M2/M7 methods missing. methods={sorted(methods)[:60]}",
         )
 
@@ -103,9 +103,9 @@ def main() -> int:
             title_value = f"Shipping dashboard #{stamp}"
             description_value = "Backend refactor: Tier 1 Phase 2 persistence"
             res = c._call(
-                "surface.set_metadata",
+                "tab.set_metadata",
                 {
-                    "surface_id": surface_id,
+                    "tab_id": surface_id,
                     "mode": "merge",
                     "source": "explicit",
                     "metadata": {
@@ -128,8 +128,8 @@ def main() -> int:
                 return 0
 
             got_full = c._call(
-                "surface.get_metadata",
-                {"surface_id": surface_id, "include_sources": True},
+                "tab.get_metadata",
+                {"tab_id": surface_id, "include_sources": True},
             ) or {}
             md = got_full.get("metadata") or {}
             sources = got_full.get("metadata_sources") or {}

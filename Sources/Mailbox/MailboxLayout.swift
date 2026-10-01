@@ -50,10 +50,10 @@ enum MailboxLayout {
 
     enum Error: Swift.Error, Equatable {
         case stateDirectoryUnavailable
-        case invalidSurfaceName(name: String, reason: SurfaceNameRejection)
+        case invalidSurfaceName(name: String, reason: TabNameRejection)
     }
 
-    enum SurfaceNameRejection: String, Equatable {
+    enum TabNameRejection: String, Equatable {
         case empty
         case containsPathSeparator
         case containsNullByte
@@ -114,10 +114,10 @@ enum MailboxLayout {
 
     /// Returns the inbox directory for a given surface name. Rejects names that
     /// would escape the mailbox tree or produce hidden/unsafe directory entries.
-    static func inboxURL(state: URL, workspaceId: UUID, surfaceName: String) throws -> URL {
-        try validateSurfaceName(surfaceName)
+    static func inboxURL(state: URL, workspaceId: UUID, tabName: String) throws -> URL {
+        try validateSurfaceName(tabName)
         return mailboxesRoot(state: state, workspaceId: workspaceId)
-            .appendingPathComponent(surfaceName, isDirectory: true)
+            .appendingPathComponent(tabName, isDirectory: true)
     }
 
     // MARK: - Filenames

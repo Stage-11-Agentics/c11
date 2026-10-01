@@ -1,0 +1,2130 @@
+CLI/c11.swift	13120	StateVerifyPanel	StateVerifyTab	T	
+CLI/c11.swift	13441	StateVerifyPanel	StateVerifyTab	T	
+CLI/c11.swift	13530	StateVerifyPanel	StateVerifyTab	T	
+CLI/c11.swift	13536	StateVerifyPanel	StateVerifyTab	T	
+Sources/AgentDetector.swift	24	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	29	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	30	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	31	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	40	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	50	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	60	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	132	PanelKey	TabKey	T	
+Sources/AgentDetector.swift	132	panelsToWrite	panelsToWrite tabsToWrite	L	panelsToWrite: Set<PanelKey>
+Sources/AgentDetector.swift	145	panelsToWrite	tabsToWrite	L	panelsToWrite: Set<PanelKey>
+Sources/AgentDetector.swift	179	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/AgentModelDetection.swift	820	syncSurfaceTabDetailForPanel	syncSurfaceTabDetailForTab	Muse	
+Sources/AppDelegate.swift	2970	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	2970	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	2972	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	2973	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	2975	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	2976	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	2978	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	2981	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	2982	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	2984	terminalPanel	terminalTab	L	let terminalPanel: TerminalPanel? = {
+Sources/AppDelegate.swift	4299	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+Sources/AppDelegate.swift	4469	conversationsByPanelId	conversationsByPanelId conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]?
+Sources/AppDelegate.swift	4508	conversationsByPanelId	conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]?
+Sources/AppDelegate.swift	4830	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+Sources/AppDelegate.swift	5243	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(leafId) {
+Sources/AppDelegate.swift	5244	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(leafId) {
+Sources/AppDelegate.swift	6085	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	6107	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	6116	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	6116	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	6117	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	7968	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	7970	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	7970	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	7971	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	7972	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	7982	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	7982	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	7983	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	7989	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/AppDelegate.swift	8406	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	8406	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+Sources/AppDelegate.swift	8408	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+Sources/AppDelegate.swift	8418	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	8418	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+Sources/AppDelegate.swift	8419	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+Sources/AppDelegate.swift	8426	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+Sources/AppDelegate.swift	8590	loadedPanels	loadedTabs	Muse	
+Sources/AppDelegate.swift	8591	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8607	loadedPanels	loadedTabs	Muse	
+Sources/AppDelegate.swift	8608	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8622	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	8622	topLeftPanelId	topLeftTabId	L	let topLeftPanelId = workspace.focusedTerminalPanel?.id ?? workspace.focusedPanelId else {
+Sources/AppDelegate.swift	8626	topLeftPanelId	topLeftTabId	L	let topLeftPanelId = workspace.focusedTerminalPanel?.id ?? workspace.focusedPanelId else {
+Sources/AppDelegate.swift	8634	topLeftPanelId	topLeftTabId	L	let topLeftPanelId = workspace.focusedTerminalPanel?.id ?? workspace.focusedPanelId else {
+Sources/AppDelegate.swift	8675	loadedPanels	loadedTabs	M	owner=DebugStressTabLoadStats; let loadedPanels: Int
+Sources/AppDelegate.swift	8676	failedPanels	failedTabs	M	owner=DebugStressTabLoadStats; let failedPanels: Int
+Sources/AppDelegate.swift	8739	loadedPanels	loadedTabs	Muse	
+Sources/AppDelegate.swift	8740	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8765	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	8791	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8792	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8792	loadedPanels	loadedTabs	Muse	
+Sources/AppDelegate.swift	8803	loadedPanels	loadedTabs	Muse	
+Sources/AppDelegate.swift	8804	failedPanels	failedTabs	Muse	
+Sources/AppDelegate.swift	8825	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	8825	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return false }
+Sources/AppDelegate.swift	8826	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return false }
+Sources/AppDelegate.swift	8889	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	8981	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	8981	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	8982	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	9003	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	9003	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	9005	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/AppDelegate.swift	9317	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/AppDelegate.swift	9325	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/AppDelegate.swift	9401	panelTitle	tabTitle	Muse	
+Sources/AppDelegate.swift	9405	panelTitle	tabTitle	Muse	
+Sources/AppDelegate.swift	9472	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	9478	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	9579	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	9593	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selected.id) else { continue }
+Sources/AppDelegate.swift	9594	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selected.id) else { continue }
+Sources/AppDelegate.swift	9728	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	10017	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	10189	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	10189	browserPanel	browserTab	L	let browserPanel = workspace.panels.values.compactMap { $0 as? BrowserPanel }.first
+Sources/AppDelegate.swift	10190	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	10191	browserPanel	browserTab	L	let browserPanel = workspace.panels.values.compactMap { $0 as? BrowserPanel }.first
+Sources/AppDelegate.swift	10198	browserPanel	browserTab	L	let browserPanel = workspace.panels.values.compactMap { $0 as? BrowserPanel }.first
+Sources/AppDelegate.swift	10388	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppDelegate.swift	10388	terminalPanelId	terminalTabId	L	let terminalPanelId = workspace.focusedTerminalPanel?.id {
+Sources/AppDelegate.swift	10389	terminalPanelId	terminalTabId	L	let terminalPanelId = workspace.focusedTerminalPanel?.id {
+Sources/AppDelegate.swift	10392	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/AppDelegate.swift	10392	terminalPanelId	terminalTabId	L	let terminalPanelId = workspace.focusedTerminalPanel?.id {
+Sources/AppDelegate.swift	10393	terminalPanelId	terminalTabId	L	let terminalPanelId = workspace.focusedTerminalPanel?.id {
+Sources/AppDelegate.swift	10397	TerminalPanel	TerminalTab	T	
+Sources/AppDelegate.swift	11831	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12028	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12028	focusedPanel	focusedTab	L	let focusedPanel = workspaceManager?.focusedBrowserPanel {
+Sources/AppDelegate.swift	12029	focusedPanel	focusedTab	L	let focusedPanel = workspaceManager?.focusedBrowserPanel {
+Sources/AppDelegate.swift	12156	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12227	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12260	BrowserPanel	BrowserTab	T	
+Sources/AppDelegate.swift	12556	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12578	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12630	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	12666	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/AppDelegate.swift	13290	BrowserPanel	BrowserTab	T	
+Sources/AppleScriptSupport.swift	57	TerminalPanel	TerminalTab	T	
+Sources/AppleScriptSupport.swift	57	scriptingTerminalPanels	scriptingTerminalTabs	M	owner=Workspace; func scriptingTerminalPanels() -> [TerminalPanel]
+Sources/AppleScriptSupport.swift	58	TerminalPanel	TerminalTab	T	
+Sources/AppleScriptSupport.swift	61	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/AppleScriptSupport.swift	70	TerminalPanel	TerminalTab	T	
+Sources/AppleScriptSupport.swift	133	scriptingTerminalPanels	scriptingTerminalTabs	Muse	
+Sources/AppleScriptSupport.swift	284	scriptingTerminalPanels	scriptingTerminalTabs	Muse	
+Sources/AppleScriptSupport.swift	413	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/AppleScriptSupport.swift	425	scriptingTerminalPanels	scriptingTerminalTabs	Muse	
+Sources/AppleScriptSupport.swift	518	TerminalPanel	TerminalTab	T	
+Sources/AppleScriptSupport.swift	632	closePanel	closeTab	Muse	
+Sources/ContentView.swift	1448	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/ContentView.swift	1601	PanelFocusIntent	TabFocusIntent	T	
+Sources/ContentView.swift	2423	panelDir	tabDir	L	let panelDir = workspace.panelDirectories[focusedPanelId] {
+Sources/ContentView.swift	2423	panelDirectories	tabDirectories	Muse	
+Sources/ContentView.swift	2424	panelDir	tabDir	L	let panelDir = workspace.panelDirectories[focusedPanelId] {
+Sources/ContentView.swift	4904	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+Sources/ContentView.swift	4904	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/ContentView.swift	4905	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+Sources/ContentView.swift	4907	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+Sources/ContentView.swift	4907	panelIds	tabIds	L	var panelIds = orderedPanelIds
+Sources/ContentView.swift	4908	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+Sources/ContentView.swift	4911	panelIds	tabIds	L	var panelIds = orderedPanelIds
+Sources/ContentView.swift	4913	panelIds	tabIds	L	var panelIds = orderedPanelIds
+Sources/ContentView.swift	4958	panelDirectories	tabDirectories	Muse	
+Sources/ContentView.swift	4959	panelGitBranches	tabGitBranches	Muse	
+Sources/ContentView.swift	4968	PanelType	TabContentType	T	
+Sources/ContentView.swift	4968	panelType	tabType	L	panelType: PanelType
+Sources/ContentView.swift	4969	panelType	tabType	L	panelType: PanelType
+Sources/ContentView.swift	4979	PanelType	TabContentType	T	
+Sources/ContentView.swift	4979	panelType	tabType	L	panelType: PanelType
+Sources/ContentView.swift	4980	panelType	tabType	L	panelType: PanelType
+Sources/ContentView.swift	5221	panelCustomTitles	tabCustomTitles	Muse	
+Sources/ContentView.swift	5222	isPanelPinned	isTabPinned	Muse	
+Sources/ContentView.swift	5223	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/ContentView.swift	6133	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/ContentView.swift	6140	setPanelPinned	setTabPinned	Muse	
+Sources/ContentView.swift	6142	isPanelPinned	isTabPinned	Muse	
+Sources/ContentView.swift	6150	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/ContentView.swift	6153	markPanelRead	markTabRead	Muse	
+Sources/ContentView.swift	6155	markPanelUnread	markTabUnread	Muse	
+Sources/ContentView.swift	6173	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	6176	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	6179	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	6226	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	6295	Panel	TabContent	T	
+Sources/ContentView.swift	6314	panelTitle	tabTitle	Muse	
+Sources/ContentView.swift	6941	BrowserPanel	BrowserTab	T	
+Sources/ContentView.swift	6941	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel,
+Sources/ContentView.swift	6942	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel,
+Sources/ContentView.swift	6960	PanelFocusIntent	TabFocusIntent	T	
+Sources/ContentView.swift	7014	PanelFocusIntent	TabFocusIntent	T	
+Sources/ContentView.swift	7262	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/ContentView.swift	7269	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	7276	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/ContentView.swift	7383	panelDirectories	tabDirectories	Muse	
+Sources/ContentView.swift	8564	panelGitContexts	tabGitContexts	Muse	
+Sources/ContentView.swift	8565	panelGitBranches	tabGitBranches	Muse	
+Sources/ContentView.swift	8587	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8587	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/ContentView.swift	8588	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8590	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8599	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8602	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8614	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8620	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8625	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8627	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	8632	panelId	tabId	L	for panelId in ws.sidebarOrderedPanelIds()
+Sources/ContentView.swift	12752	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/Conversation/ScrapeCapturePipeline.swift	61	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Conversation/SnapshotBridge.swift	80	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/GhosttyTerminalView.swift	6422	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/GhosttyTerminalView.swift	8984	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/GhosttyTerminalView.swift	9001	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/GhosttyTerminalView.swift	9008	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/GhosttyTerminalView.swift	9025	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/GhosttyTerminalView.swift	9055	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/GhosttyTerminalView.swift	9077	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/Mailbox/MailboxStdinBuffer.swift	75	PanelShellActivityState	TabShellActivityState	T	
+Sources/Panels/BrowserPanel.swift	1959	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	1959	Panel	TabContent	T	
+Sources/Panels/BrowserPanel.swift	2109	PanelType	TabContentType	T	
+Sources/Panels/BrowserPanel.swift	2424	BrowserPanelFocusIntent	BrowserTabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	2723	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	4371	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	4516	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	5481	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5498	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5508	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5532	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5556	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5573	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/BrowserPanel.swift	5855	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	5939	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	6029	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanel.swift	6117	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	276	BrowserPanelView	BrowserTabView	T	
+Sources/Panels/BrowserPanelView.swift	277	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	285	onRequestPanelFocus	onRequestTabFocus	M	owner=BrowserPanelView; let onRequestPanelFocus: () -> Void
+Sources/Panels/BrowserPanelView.swift	621	handlePanelFocusChange	handleTabFocusChange	Muse	
+Sources/Panels/BrowserPanelView.swift	675	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/BrowserPanelView.swift	713	syncURLFromPanel	syncURLFromTab	Muse	
+Sources/Panels/BrowserPanelView.swift	726	syncURLFromPanel	syncURLFromTab	Muse	
+Sources/Panels/BrowserPanelView.swift	774	handlePanelFocusChange	handleTabFocusChange	M	owner=BrowserPanelView; func handlePanelFocusChange(_ focused: Bool)
+Sources/Panels/BrowserPanelView.swift	819	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/BrowserPanelView.swift	1354	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/BrowserPanelView.swift	1502	isPanelFocusedInModel	isTabFocusedInModel	M	owner=BrowserPanelView; func isPanelFocusedInModel() -> Bool
+Sources/Panels/BrowserPanelView.swift	1513	isPanelFocusedInModel	isTabFocusedInModel	Muse	
+Sources/Panels/BrowserPanelView.swift	1547	syncURLFromPanel	syncURLFromTab	M	owner=BrowserPanelView; func syncURLFromPanel()
+Sources/Panels/BrowserPanelView.swift	1553	isCommandPaletteVisibleForPanelWindow	isCommandPaletteVisibleForTabWindow	M	owner=BrowserPanelView; func isCommandPaletteVisibleForPanelWindow() -> Bool
+Sources/Panels/BrowserPanelView.swift	1599	isCommandPaletteVisibleForPanelWindow	isCommandPaletteVisibleForTabWindow	Muse	
+Sources/Panels/BrowserPanelView.swift	1828	isCommandPaletteVisibleForPanelWindow	isCommandPaletteVisibleForTabWindow	Muse	
+Sources/Panels/BrowserPanelView.swift	1910	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/BrowserPanelView.swift	2187	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	2192	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	2192	browserPanel	browserTab	L	let browserPanel = anyPanel as? BrowserPanel else { continue }
+Sources/Panels/BrowserPanelView.swift	2193	browserPanel	browserTab	L	let browserPanel = anyPanel as? BrowserPanel else { continue }
+Sources/Panels/BrowserPanelView.swift	2242	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	2242	browserPanel	browserTab	L	let browserPanel = anyPanel as? BrowserPanel else { continue }
+Sources/Panels/BrowserPanelView.swift	2243	browserPanel	browserTab	L	let browserPanel = anyPanel as? BrowserPanel else { continue }
+Sources/Panels/BrowserPanelView.swift	2250	browserPanel	browserTab	L	let browserPanel = anyPanel as? BrowserPanel else { continue }
+Sources/Panels/BrowserPanelView.swift	4471	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	4485	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	5887	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	6449	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPanelView.swift	6513	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPopupWindowController.swift	72	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPopupWindowController.swift	87	BrowserPanel	BrowserTab	T	
+Sources/Panels/BrowserPopupWindowController.swift	87	openerPanel	openerPanel openerTab	L	openerPanel: BrowserPanel?
+Sources/Panels/BrowserPopupWindowController.swift	91	openerPanel	openerTab	L	openerPanel: BrowserPanel?
+Sources/Panels/BrowserPopupWindowController.swift	115	openerPanel	openerTab	L	openerPanel: BrowserPanel?
+Sources/Panels/BrowserPopupWindowController.swift	227	openerPanel	openerTab	L	openerPanel: BrowserPanel?
+Sources/Panels/MarkdownPanel.swift	25	MarkdownPanel	MarkdownTab	T	
+Sources/Panels/MarkdownPanel.swift	25	Panel	TabContent	T	
+Sources/Panels/MarkdownPanel.swift	28	PanelType	TabContentType	T	
+Sources/Panels/MarkdownPanelView.swift	7	MarkdownPanelView	MarkdownTabView	T	
+Sources/Panels/MarkdownPanelView.swift	8	MarkdownPanel	MarkdownTab	T	
+Sources/Panels/MarkdownPanelView.swift	13	onRequestPanelFocus	onRequestTabFocus	M	owner=MarkdownPanelView; let onRequestPanelFocus: () -> Void
+Sources/Panels/MarkdownPanelView.swift	58	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/MarkdownPanelView.swift	226	presentOpenMarkdownPanel	presentOpenMarkdownTab	Muse	
+Sources/Panels/MarkdownPanelView.swift	261	presentOpenMarkdownPanel	presentOpenMarkdownTab	M	owner=MarkdownPanelView; func presentOpenMarkdownPanel()
+Sources/Panels/MarkdownPanelView.swift	513	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+Sources/Panels/MarkdownPanelView.swift	514	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+Sources/Panels/MarkdownPanelView.swift	519	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+Sources/Panels/MarkdownPanelView.swift	524	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+Sources/Panels/Panel.swift	6	PanelType	TabContentType	T	
+Sources/Panels/Panel.swift	12	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/Panels/Panel.swift	17	BrowserPanelFocusIntent	BrowserTabFocusIntent	T	
+Sources/Panels/Panel.swift	23	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	25	TerminalPanelFocusIntent	TerminalTabFocusIntent	T	
+Sources/Panels/Panel.swift	26	BrowserPanelFocusIntent	BrowserTabFocusIntent	T	
+Sources/Panels/Panel.swift	78	Panel	TabContent	T	
+Sources/Panels/Panel.swift	87	PanelType	TabContentType	T	
+Sources/Panels/Panel.swift	117	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	120	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	123	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	127	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	130	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	134	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	138	Panel	TabContent	T	
+Sources/Panels/Panel.swift	149	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	154	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	158	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	163	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	169	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/Panel.swift	176	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/PanelContentView.swift	6	PanelContentView	TabContentView	T	
+Sources/Panels/PanelContentView.swift	8	Panel	TabContent	T	
+Sources/Panels/PanelContentView.swift	15	PanelAppearance	TabAppearance	T	
+Sources/Panels/PanelContentView.swift	18	onRequestPanelFocus	onRequestTabFocus	M	owner=PanelContentView; let onRequestPanelFocus: () -> Void
+Sources/Panels/PanelContentView.swift	38	TerminalPanel	TerminalTab	T	
+Sources/Panels/PanelContentView.swift	38	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Panels/PanelContentView.swift	39	TerminalPanelView	TerminalTabView	T	
+Sources/Panels/PanelContentView.swift	40	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Panels/PanelContentView.swift	42	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Panels/PanelContentView.swift	54	BrowserPanel	BrowserTab	T	
+Sources/Panels/PanelContentView.swift	54	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Panels/PanelContentView.swift	55	BrowserPanelView	BrowserTabView	T	
+Sources/Panels/PanelContentView.swift	56	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Panels/PanelContentView.swift	62	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/PanelContentView.swift	66	MarkdownPanel	MarkdownTab	T	
+Sources/Panels/PanelContentView.swift	66	markdownPanel	markdownTab	Muse	
+Sources/Panels/PanelContentView.swift	67	MarkdownPanelView	MarkdownTabView	T	
+Sources/Panels/PanelContentView.swift	68	markdownPanel	markdownTab	Muse	
+Sources/Panels/PanelContentView.swift	72	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/Panels/TerminalPanel.swift	9	Panel	TabContent	T	
+Sources/Panels/TerminalPanel.swift	9	TerminalPanel	TerminalTab	T	
+Sources/Panels/TerminalPanel.swift	12	PanelType	TabContentType	T	
+Sources/Panels/TerminalPanel.swift	321	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanel.swift	325	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanel.swift	329	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanel.swift	335	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanel.swift	347	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanel.swift	354	PanelFocusIntent	TabFocusIntent	T	
+Sources/Panels/TerminalPanelView.swift	6	TerminalPanelView	TerminalTabView	T	
+Sources/Panels/TerminalPanelView.swift	7	TerminalPanel	TerminalTab	T	
+Sources/Panels/TerminalPanelView.swift	25	PanelAppearance	TabAppearance	T	
+Sources/Panels/TerminalPanelView.swift	158	PanelAppearance	TabAppearance	T	
+Sources/Panels/TerminalPanelView.swift	163	PanelAppearance	TabAppearance	T	
+Sources/Panels/TerminalPanelView.swift	164	PanelAppearance	TabAppearance	T	
+Sources/PortScanner.swift	26	PanelKey	TabKey	T	
+Sources/PortScanner.swift	29	PanelKey	TabKey	T	
+Sources/PortScanner.swift	44	PanelKey	TabKey	T	
+Sources/PortScanner.swift	51	PanelKey	TabKey	T	
+Sources/PortScanner.swift	59	PanelKey	TabKey	T	
+Sources/PortScanner.swift	67	PanelKey	TabKey	T	
+Sources/PortScanner.swift	163	PanelKey	TabKey	T	
+Sources/PortScanner.swift	172	PanelKey	TabKey	T	
+Sources/SessionPersistence.swift	294	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+Sources/SessionPersistence.swift	299	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+Sources/SessionPersistence.swift	312	SessionMarkdownPanelSnapshot	SessionMarkdownTabSnapshot	T	
+Sources/SessionPersistence.swift	322	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/SessionPersistence.swift	327	PanelType	TabContentType	T	
+Sources/SessionPersistence.swift	340	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+Sources/SessionPersistence.swift	341	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+Sources/SessionPersistence.swift	342	SessionMarkdownPanelSnapshot	SessionMarkdownTabSnapshot	T	
+Sources/SessionPersistence.swift	506	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/SocketHandlers/AttentionHandlers.swift	110	panelTitle	tabTitle	Muse	
+Sources/SocketHandlers/BrowserHandlers.swift	242	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	242	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	259	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	263	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	951	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	951	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	954	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	955	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	964	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1089	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	1089	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1100	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1103	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1118	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1186	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	1186	createdPanel	createdTab	L	createdPanel: BrowserPanel?
+Sources/SocketHandlers/BrowserHandlers.swift	1188	createdPanel	createdTab	L	createdPanel: BrowserPanel?
+Sources/SocketHandlers/BrowserHandlers.swift	1197	createdPanel	createdTab	L	createdPanel: BrowserPanel?
+Sources/SocketHandlers/BrowserHandlers.swift	1205	browserPanelId	browserTabId	L	let browserPanelId = createdPanel?.id else {
+Sources/SocketHandlers/BrowserHandlers.swift	1205	createdPanel	createdTab	L	createdPanel: BrowserPanel?
+Sources/SocketHandlers/BrowserHandlers.swift	1210	browserPanelId	browserTabId	L	let browserPanelId = createdPanel?.id else {
+Sources/SocketHandlers/BrowserHandlers.swift	1219	browserPanelId	browserTabId	L	let browserPanelId = createdPanel?.id else {
+Sources/SocketHandlers/BrowserHandlers.swift	1220	browserPanelId	browserTabId	L	let browserPanelId = createdPanel?.id else {
+Sources/SocketHandlers/BrowserHandlers.swift	1235	createdPanel	createdTab	L	createdPanel: BrowserPanel?
+Sources/SocketHandlers/BrowserHandlers.swift	1304	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	1304	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1371	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1400	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserHandlers.swift	1400	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserHandlers.swift	1402	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserQueryHandlers.swift	712	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	712	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserQueryHandlers.swift	714	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserQueryHandlers.swift	715	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	721	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	721	browserPanel	browserPanel browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserQueryHandlers.swift	723	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/SocketHandlers/BrowserQueryHandlers.swift	724	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	1217	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	1218	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	1300	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	1342	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/BrowserQueryHandlers.swift	1372	closePanel	closeTab	Muse	
+Sources/SocketHandlers/DebugHandlers.swift	121	TerminalPanel	TerminalTab	T	
+Sources/SocketHandlers/DebugHandlers.swift	230	TerminalPanel	TerminalTab	T	
+Sources/SocketHandlers/DebugHandlers.swift	230	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	231	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	238	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	239	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	240	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	242	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	243	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/SocketHandlers/DebugHandlers.swift	261	panelGitBranches	tabGitBranches	Muse	
+Sources/SocketHandlers/DebugHandlers.swift	263	panelTitle	tabTitle	Muse	
+Sources/SocketHandlers/DebugHandlers.swift	267	panelDirectories	tabDirectories	Muse	
+Sources/SocketHandlers/DebugHandlers.swift	305	isPanelPinned	isTabPinned	Muse	
+Sources/SocketHandlers/MarkdownFeedbackHandlers.swift	266	MarkdownPanel	MarkdownTab	T	
+Sources/SocketHandlers/MarkdownFeedbackHandlers.swift	279	PanelType	TabContentType	T	
+Sources/SocketHandlers/MiscHandlers.swift	120	isPanelPinned	isTabPinned	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	134	isPanelPinned	isTabPinned	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	141	closePanel	closeTab	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	156	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	160	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	164	setPanelPinned	setTabPinned	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	168	setPanelPinned	setTabPinned	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	172	markPanelRead	markTabRead	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	176	markPanelUnread	markTabUnread	Muse	
+Sources/SocketHandlers/MiscHandlers.swift	196	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	204	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	206	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	207	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	208	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	209	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	220	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	224	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	226	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	227	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	228	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	229	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	247	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	251	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	253	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	254	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	255	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/MiscHandlers.swift	256	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(
+Sources/SocketHandlers/PaneHandlers.swift	498	closePanel	closeTab	Muse	
+Sources/SocketHandlers/PaneHandlers.swift	501	closePanel	closeTab	Muse	
+Sources/SocketHandlers/SocketDispatch.swift	1287	TerminalPanel	TerminalTab	T	
+Sources/SocketHandlers/SocketDispatch.swift	1306	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/SocketHandlers/SocketDispatch.swift	1306	initialPanel	initialTab	L	let initialPanel = created.focusedTerminalPanel else {
+Sources/SocketHandlers/SocketDispatch.swift	1311	initialPanel	initialTab	L	let initialPanel = created.focusedTerminalPanel else {
+Sources/SocketHandlers/SocketDispatch.swift	1382	panelTitle	tabTitle	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	105	panelTitle	tabTitle	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	112	panelCustomColor	tabCustomColor	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	115	BrowserPanel	BrowserTab	T	
+Sources/SocketHandlers/SurfaceHandlers.swift	115	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/SocketHandlers/SurfaceHandlers.swift	116	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/SocketHandlers/SurfaceHandlers.swift	118	MarkdownPanel	MarkdownTab	T	
+Sources/SocketHandlers/SurfaceHandlers.swift	118	markdownPanel	markdownTab	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	119	markdownPanel	markdownTab	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	191	panelCustomColor	tabCustomColor	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	231	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	234	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	235	panelCustomColor	tabCustomColor	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	502	closePanel	closeTab	Muse	
+Sources/SocketHandlers/SurfaceHandlers.swift	784	TerminalPanel	TerminalTab	T	
+Sources/SocketHandlers/SurfaceHandlers.swift	784	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/SocketHandlers/SurfaceHandlers.swift	785	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/SocketHandlers/SurfaceHandlers.swift	806	TerminalPanel	TerminalTab	T	
+Sources/SocketHandlers/SurfaceHandlers.swift	808	BrowserPanel	BrowserTab	T	
+Sources/TabLivenessDeriver.swift	92	PanelShellActivityState	TabShellActivityState	T	
+Sources/TabLivenessDeriver.swift	113	PanelShellActivityState	TabShellActivityState	T	
+Sources/TabSheetDetail.swift	19	PanelType	TabContentType	T	
+Sources/TabSheetDetail.swift	129	PanelType	TabContentType	T	
+Sources/TabSheetDetail.swift	129	panelType	tabType	L	panelType: PanelType
+Sources/TabSheetDetail.swift	130	panelType	tabType	L	panelType: PanelType
+Sources/TabSheetDetail.swift	308	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/TabSheetDetail.swift	310	panelTitles	tabTitles	Muse	
+Sources/TabSheetDetail.swift	334	panelDirectories	tabDirectories	Muse	
+Sources/TabSheetDetail.swift	335	BrowserPanel	BrowserTab	T	
+Sources/TabSheetDetail.swift	336	MarkdownPanel	MarkdownTab	T	
+Sources/TabSheetDetail.swift	359	Panel	TabContent	T	
+Sources/TabSheetDetail.swift	365	TerminalPanel	TerminalTab	T	
+Sources/TabSheetDetail.swift	372	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/TabSheetDetail.swift	388	MarkdownPanel	MarkdownTab	T	
+Sources/TabSheetDetail.swift	390	BrowserPanel	BrowserTab	T	
+Sources/TabSheetDetail.swift	398	syncSurfaceTabDetailForPanel	syncSurfaceTabDetailForTab	M	owner=Workspace; func syncSurfaceTabDetailForPanel(_ panelId: UUID)
+Sources/TabTypeAvailability.swift	44	PanelType	TabContentType	T	
+Sources/TabTypeAvailability.swift	97	PanelType	TabContentType	T	
+Sources/TerminalController.swift	657	PanelShellActivityState	TabShellActivityState	T	
+Sources/TerminalController.swift	678	PanelShellActivityState	TabShellActivityState	T	
+Sources/TerminalController.swift	799	PanelShellActivityState	TabShellActivityState	T	
+Sources/TerminalController.swift	2252	panelTitle	tabTitle	Muse	
+Sources/TerminalController.swift	2263	BrowserPanel	BrowserTab	T	
+Sources/TerminalController.swift	2263	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/TerminalController.swift	2264	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/TerminalController.swift	2268	MarkdownPanel	MarkdownTab	T	
+Sources/TerminalController.swift	2268	markdownPanel	markdownTab	Muse	
+Sources/TerminalController.swift	2269	markdownPanel	markdownTab	Muse	
+Sources/TerminalController.swift	2602	BrowserPanel	BrowserTab	T	
+Sources/TerminalController.swift	2605	MarkdownPanel	MarkdownTab	T	
+Sources/TerminalController.swift	2873	PanelType	TabContentType	T	
+Sources/TerminalController.swift	2875	PanelType	TabContentType	T	
+Sources/TerminalController.swift	2882	PanelType	TabContentType	T	
+Sources/TerminalController.swift	3171	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3277	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3292	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	3295	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	3300	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/TerminalController.swift	3300	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	3303	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	3388	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3388	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3398	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3399	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3440	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3453	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3453	terminalPanel	terminalPanel terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3454	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3592	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3592	terminalPanel	terminalPanel terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3602	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3633	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3633	terminalPanel	terminalPanel terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3639	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3646	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3663	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3663	terminalPanel	terminalPanel terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3668	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	3709	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/TerminalController.swift	3723	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/TerminalController.swift	3726	syncSurfaceTabDetailForPanel	syncSurfaceTabDetailForTab	Muse	
+Sources/TerminalController.swift	3944	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	3944	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else {
+Sources/TerminalController.swift	3951	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else {
+Sources/TerminalController.swift	4932	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/TerminalController.swift	4932	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel
+Sources/TerminalController.swift	4933	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	4934	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel
+Sources/TerminalController.swift	4939	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel
+Sources/TerminalController.swift	5872	PanelSnapshotState	TabSnapshotState	T	
+Sources/TerminalController.swift	5882	PanelSnapshotState	TabSnapshotState	T	
+Sources/TerminalController.swift	5908	PanelSnapshotState	TabSnapshotState	T	
+Sources/TerminalController.swift	5935	PanelSnapshotState	TabSnapshotState	T	
+Sources/TerminalController.swift	5938	PanelSnapshotState	TabSnapshotState	T	
+Sources/TerminalController.swift	6056	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6092	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6173	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6173	selectedPanels	selectedTabs	L	selectedPanels: [LayoutDebugSelectedPanel]
+Sources/TerminalController.swift	6179	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6192	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6193	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6194	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6207	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6210	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6214	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6223	BrowserPanel	BrowserTab	T	
+Sources/TerminalController.swift	6226	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6230	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6239	LayoutDebugSelectedPanel	LayoutDebugSelectedTab	T	
+Sources/TerminalController.swift	6243	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6254	selectedPanels	selectedTabs	L	selectedPanels: [LayoutDebugSelectedPanel]
+Sources/TerminalController.swift	6404	Panel	TabContent	T	
+Sources/TerminalController.swift	6409	Panel	TabContent	T	
+Sources/TerminalController.swift	6428	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6441	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6452	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6452	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	6453	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	6455	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	6494	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/TerminalController.swift	6880	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/TerminalController.swift	6880	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	6886	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	6991	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6992	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6992	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/TerminalController.swift	6994	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6995	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	6995	panelId	tabId	L	let panelId = workspace.tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/TerminalController.swift	6995	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	6998	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7001	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	7001	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7002	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7011	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/TerminalController.swift	7011	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7012	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7015	lastRememberedTerminalPanelForConfigInheritance	lastRememberedTerminalTabForConfigInheritance	Muse	
+Sources/TerminalController.swift	7021	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/TerminalController.swift	7021	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7022	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/TerminalController.swift	7068	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/TerminalController.swift	7068	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	7074	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+Sources/TerminalController.swift	7510	PanelType	TabContentType	T	
+Sources/TerminalController.swift	7510	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	7520	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	7538	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	7539	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	7555	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	8471	panelPullRequests	tabPullRequests	Muse	
+Sources/TerminalController.swift	8482	updatePanelPullRequest	updateTabPullRequest	Muse	
+Sources/TerminalController.swift	8501	clearPanelPullRequest	clearTabPullRequest	Muse	
+Sources/TerminalController.swift	8993	panelDirectories	tabDirectories	Muse	
+Sources/TerminalController.swift	9119	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	9119	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/TerminalController.swift	9120	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/TerminalController.swift	9159	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	9164	BrowserPanel	BrowserTab	T	
+Sources/TerminalController.swift	9208	closePanel	closeTab	Muse	
+Sources/TerminalController.swift	9218	PanelType	TabContentType	T	
+Sources/TerminalController.swift	9218	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	9227	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	9236	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	9237	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	9269	panelType	tabType	L	var panelType: PanelType = .terminal
+Sources/TerminalController.swift	9539	TerminalPanel	TerminalTab	T	
+Sources/TerminalController.swift	9539	targetPanel	targetTab	L	targetPanel: TerminalPanel?
+Sources/TerminalController.swift	9542	targetPanel	targetTab	L	targetPanel: TerminalPanel?
+Sources/TerminalController.swift	9546	targetPanel	targetTab	L	targetPanel: TerminalPanel?
+Sources/Workspace.swift	167	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/Workspace.swift	198	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+Sources/Workspace.swift	202	sessionPanelSnapshot	sessionTabSnapshot	Muse	
+Sources/Workspace.swift	267	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	433	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	433	terminalPanel	terminalTab	L	let terminalPanel = self.panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	436	terminalPanel	terminalTab	L	let terminalPanel = self.panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	457	readConversationsByPanelIdSync	readConversationsByTabIdSync	M	owner=Workspace; func readConversationsByPanelIdSync(         timeout: TimeInterval = 2.0     ) -> [String: TabConver
+Sources/Workspace.swift	492	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+Sources/Workspace.swift	669	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	669	terminalPanel	terminalTab	L	let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+Sources/Workspace.swift	676	terminalPanel	terminalTab	L	let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+Sources/Workspace.swift	678	terminalPanel	terminalTab	L	let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+Sources/Workspace.swift	691	sessionPanelIDs	sessionTabIDs	Muse	
+Sources/Workspace.swift	692	sessionPanelID	sessionTabID	Muse	
+Sources/Workspace.swift	762	sessionPanelIDs	sessionTabIDs	M	owner=Workspace; func sessionPanelIDs(for pane: ExternalPaneNode) -> [UUID]
+Sources/Workspace.swift	766	sessionPanelID	sessionTabID	Muse	
+Sources/Workspace.swift	774	sessionPanelID	sessionTabID	M	owner=Workspace; func sessionPanelID(forExternalTabIDString tabIDString: String) -> UUID?
+Sources/Workspace.swift	797	sessionPanelSnapshot	sessionTabSnapshot	M	owner=Workspace; func sessionPanelSnapshot(         panelId: UUID,         includeScrollback: Bool,         conversat
+Sources/Workspace.swift	800	conversationsByPanelId	conversationsByPanelId conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]
+Sources/Workspace.swift	801	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	804	panelTitle	tabTitle	Muse	
+Sources/Workspace.swift	805	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	806	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	807	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	808	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	809	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	815	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+Sources/Workspace.swift	816	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+Sources/Workspace.swift	817	SessionMarkdownPanelSnapshot	SessionMarkdownTabSnapshot	T	
+Sources/Workspace.swift	820	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	820	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return nil }
+Sources/Workspace.swift	821	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return nil }
+Sources/Workspace.swift	824	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return nil }
+Sources/Workspace.swift	835	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+Sources/Workspace.swift	836	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	842	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	842	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	844	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	845	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+Sources/Workspace.swift	846	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	847	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	848	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	849	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	850	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { return nil }
+Sources/Workspace.swift	856	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	856	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	859	SessionMarkdownPanelSnapshot	SessionMarkdownTabSnapshot	T	
+Sources/Workspace.swift	860	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	861	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	912	conversationsByPanelId	conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]
+Sources/Workspace.swift	922	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	926	panelTitle	tabTitle	Muse	
+Sources/Workspace.swift	928	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	965	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	972	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	974	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	1032	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	1032	panelSnapshotsById	panelSnapshotsById tabSnapshotsById	L	panelSnapshotsById: [UUID: SessionPanelSnapshot]
+Sources/Workspace.swift	1037	desiredPanelIds	desiredTabIds	L	let desiredPanelIds = snapshot.panelIds.filter { panelSnapshotsById[$0] != nil }
+Sources/Workspace.swift	1037	panelSnapshotsById	tabSnapshotsById	L	panelSnapshotsById: [UUID: SessionPanelSnapshot]
+Sources/Workspace.swift	1040	desiredPanelIds	desiredTabIds	L	let desiredPanelIds = snapshot.panelIds.filter { panelSnapshotsById[$0] != nil }
+Sources/Workspace.swift	1041	panelSnapshot	tabSnapshot	L	let panelSnapshot = panelSnapshotsById[desiredPanelId] else { continue }
+Sources/Workspace.swift	1041	panelSnapshotsById	tabSnapshotsById	L	panelSnapshotsById: [UUID: SessionPanelSnapshot]
+Sources/Workspace.swift	1042	createPanel	createTab	Muse	
+Sources/Workspace.swift	1042	panelSnapshot	tabSnapshot	L	let panelSnapshot = panelSnapshotsById[desiredPanelId] else { continue }
+Sources/Workspace.swift	1053	closePanel	closeTab	Muse	
+Sources/Workspace.swift	1069	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	1069	createPanel	createTab	M	owner=Workspace; func createPanel(from snapshot: SessionPanelSnapshot, inPane paneId: PaneID) -> UUID?
+Sources/Workspace.swift	1082	terminalPanel	terminalTab	L	let terminalPanel = newTerminalSurface(
+Sources/Workspace.swift	1094	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	1094	terminalPanel	terminalTab	L	let terminalPanel = newTerminalSurface(
+Sources/Workspace.swift	1096	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	1096	terminalPanel	terminalTab	L	let terminalPanel = newTerminalSurface(
+Sources/Workspace.swift	1098	applySessionPanelMetadata	applySessionTabMetadata	Muse	
+Sources/Workspace.swift	1098	terminalPanel	terminalTab	L	let terminalPanel = newTerminalSurface(
+Sources/Workspace.swift	1099	terminalPanel	terminalTab	L	let terminalPanel = newTerminalSurface(
+Sources/Workspace.swift	1108	browserPanel	browserTab	L	let browserPanel = newBrowserSurface(
+Sources/Workspace.swift	1119	applySessionPanelMetadata	applySessionTabMetadata	Muse	
+Sources/Workspace.swift	1119	browserPanel	browserTab	L	let browserPanel = newBrowserSurface(
+Sources/Workspace.swift	1120	browserPanel	browserTab	L	let browserPanel = newBrowserSurface(
+Sources/Workspace.swift	1122	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	1132	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	1134	applySessionPanelMetadata	applySessionTabMetadata	Muse	
+Sources/Workspace.swift	1134	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	1135	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	1144	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	1152	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	1152	applySessionPanelMetadata	applySessionTabMetadata	M	owner=Workspace; func applySessionPanelMetadata(_ snapshot: SessionPanelSnapshot, toPanelId panelId: UUID)
+Sources/Workspace.swift	1158	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	1161	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/Workspace.swift	1162	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/Workspace.swift	1163	setPanelPinned	setTabPinned	Muse	
+Sources/Workspace.swift	1166	markPanelUnread	markTabUnread	Muse	
+Sources/Workspace.swift	1172	updatePanelDirectory	updateTabDirectory	Muse	
+Sources/Workspace.swift	1176	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	1178	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	5222	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	5268	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	5292	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/Workspace.swift	5370	Panel	TabContent	T	
+Sources/Workspace.swift	5379	lastKnownPanelIds	lastKnownTabIds	M	owner=Workspace; private var lastKnownPanelIds: Set<UUID> = []
+Sources/Workspace.swift	5408	persistentFlashPanels	persistentFlashTabs	M	owner=Workspace; @Published private(set) var persistentFlashPanels: [UUID: PersistentFlashState] = [:]
+Sources/Workspace.swift	5419	panelSubscriptions	tabSubscriptions	M	owner=Workspace; private var panelSubscriptions: [UUID: AnyCancellable] = [:]
+Sources/Workspace.swift	5431	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	M	owner=Workspace; private var lastTerminalConfigInheritancePanelId: UUID?
+Sources/Workspace.swift	5437	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	M	owner=Workspace; private var terminalInheritanceFontPointsByPanelId: [UUID: Float] = [:]
+Sources/Workspace.swift	5440	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/Workspace.swift	5440	onClosedBrowserPanel	onClosedBrowserTab	M	owner=Workspace; var onClosedBrowserPanel: ((ClosedBrowserPanelRestoreSnapshot) -> Void)?
+Sources/Workspace.swift	5494	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	5494	focusedTerminalPanel	focusedTerminalTab	M	owner=Workspace; var focusedTerminalPanel: TerminalPanel? {
+Sources/Workspace.swift	5496	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	5502	effectiveSelectedPanelId	effectiveSelectedTabId	M	owner=Workspace; func effectiveSelectedPanelId(inPane paneId: PaneID) -> UUID?
+Sources/Workspace.swift	5506	FocusPanelTrigger	FocusTabTrigger	T	
+Sources/Workspace.swift	5512	panelDirectories	tabDirectories	M	owner=Workspace; @Published var panelDirectories: [UUID: String] = [:]
+Sources/Workspace.swift	5513	panelTitles	tabTitles	M	owner=Workspace; @Published var panelTitles: [UUID: String] = [:]
+Sources/Workspace.swift	5514	panelCustomTitles	tabCustomTitles	M	owner=Workspace; @Published private(set) var panelCustomTitles: [UUID: String] = [:]
+Sources/Workspace.swift	5518	panelCustomColors	tabCustomColors	M	owner=Workspace; @Published private(set) var panelCustomColors: [UUID: String] = [:]
+Sources/Workspace.swift	5525	pinnedPanelIds	pinnedTabIds	M	owner=Workspace; @Published private(set) var pinnedPanelIds: Set<UUID> = []
+Sources/Workspace.swift	5526	manualUnreadPanelIds	manualUnreadTabIds	M	owner=Workspace; @Published private(set) var manualUnreadPanelIds: Set<UUID> = []
+Sources/Workspace.swift	5555	panelGitBranches	tabGitBranches	M	owner=Workspace; @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
+Sources/Workspace.swift	5559	panelGitContexts	tabGitContexts	M	owner=Workspace; @Published var panelGitContexts: [UUID: ResolvedGitContext?] = [:]
+Sources/Workspace.swift	5561	panelPullRequests	tabPullRequests	M	owner=Workspace; @Published var panelPullRequests: [UUID: SidebarPullRequestState] = [:]
+Sources/Workspace.swift	5590	PanelShellActivityState	TabShellActivityState	T	
+Sources/Workspace.swift	5590	panelShellActivityStates	tabShellActivityStates	M	owner=Workspace; private var panelShellActivityStates: [UUID: PanelShellActivityState] = [:]
+Sources/Workspace.swift	5593	panelShellEdgeAt	tabShellEdgeAt	M	owner=Workspace; var panelShellEdgeAt: [UUID: Date] = [:]
+Sources/Workspace.swift	5601	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	M	owner=Workspace; private var restoredTerminalScrollbackByPanelId: [UUID: String] = [:]
+Sources/Workspace.swift	5624	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	5625	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	5637	PanelShellActivityState	TabShellActivityState	T	
+Sources/Workspace.swift	5644	PanelShellActivityState	TabShellActivityState	T	
+Sources/Workspace.swift	6126	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6126	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6135	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6136	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	6136	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6137	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6147	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6149	terminalPanel	terminalTab	L	let terminalPanel = TerminalPanel(
+Sources/Workspace.swift	6228	reconcilePanelEvents	reconcileTabEvents	Muse	
+Sources/Workspace.swift	6244	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	6247	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	6256	Panel	TabContent	T	
+Sources/Workspace.swift	6256	newPanels	newTabs	L	newPanels: [UUID: any Panel]
+Sources/Workspace.swift	6256	reconcilePanelEvents	reconcileTabEvents	M	owner=Workspace; func reconcilePanelEvents(_ newTabs: [UUID: any Panel])
+Sources/Workspace.swift	6257	newPanels	newTabs	L	newPanels: [UUID: any Panel]
+Sources/Workspace.swift	6258	lastKnownPanelIds	lastKnownTabIds	Muse	
+Sources/Workspace.swift	6259	lastKnownPanelIds	lastKnownTabIds	Muse	
+Sources/Workspace.swift	6260	newPanels	newTabs	L	newPanels: [UUID: any Panel]
+Sources/Workspace.swift	6268	lastKnownPanelIds	lastKnownTabIds	Muse	
+Sources/Workspace.swift	6271	lastKnownPanelIds	lastKnownTabIds	Muse	
+Sources/Workspace.swift	6354	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6354	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return .surfaceNotTerminal }
+Sources/Workspace.swift	6356	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	6359	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { return .surfaceNotTerminal }
+Sources/Workspace.swift	6402	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6402	terminalPanel	terminalTab	L	let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
+Sources/Workspace.swift	6404	terminalPanel	terminalTab	L	let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
+Sources/Workspace.swift	6447	pendingPaneClosePanelIds	pendingPaneCloseTabIds	M	owner=Workspace; private var pendingPaneClosePanelIds: [UUID: [UUID]] = [:]
+Sources/Workspace.swift	6448	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/Workspace.swift	6454	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	6470	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	M	owner=Workspace; private var layoutFollowUpTerminalFocusPanelId: UUID?
+Sources/Workspace.swift	6471	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	M	owner=Workspace; private var layoutFollowUpBrowserPanelId: UUID?
+Sources/Workspace.swift	6472	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	M	owner=Workspace; private var layoutFollowUpBrowserExitFocusPanelId: UUID?
+Sources/Workspace.swift	6489	Panel	TabContent	T	
+Sources/Workspace.swift	6548	paneIdForPanel	paneIdForTab	M	owner=Workspace; func paneIdForPanel(_ panelId: UUID) -> PaneID?
+Sources/Workspace.swift	6576	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6578	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6587	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6587	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6587	installBrowserPanelSubscription	installBrowserTabSubscription	M	owner=Workspace; func installBrowserPanelSubscription(_ browserTab: BrowserPanel)
+Sources/Workspace.swift	6589	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6590	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6591	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6594	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6596	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6597	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6600	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6601	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6601	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	6602	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6602	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	6604	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6604	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	6615	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6615	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	6622	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6622	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	6623	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	6655	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	6655	declareMarkdownTitleFromPanel	declareMarkdownTitleFromTab	M	owner=Workspace; func declareMarkdownTitleFromPanel(_ markdownPanel: MarkdownPanel)
+Sources/Workspace.swift	6655	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6656	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6657	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6661	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6666	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6666	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/Workspace.swift	6669	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	6669	installMarkdownPanelSubscription	installMarkdownTabSubscription	M	owner=Workspace; func installMarkdownPanelSubscription(_ markdownPanel: MarkdownPanel)
+Sources/Workspace.swift	6669	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6673	declareMarkdownTitleFromPanel	declareMarkdownTitleFromTab	Muse	
+Sources/Workspace.swift	6673	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6675	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6678	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6680	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6685	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6689	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6694	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6694	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/Workspace.swift	6698	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6701	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6701	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	6702	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6702	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	6704	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6704	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	6710	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6710	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	6714	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	6714	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	6730	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6730	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	6731	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	6737	Panel	TabContent	T	
+Sources/Workspace.swift	6742	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6743	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6746	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6747	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6780	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6797	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6809	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	6816	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	6816	markdownPanel	markdownTab	M	owner=Workspace; func markdownPanel(for panelId: UUID) -> MarkdownPanel?
+Sources/Workspace.swift	6817	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	6820	Panel	TabContent	T	
+Sources/Workspace.swift	6831	resolvedPanelTitle	resolvedTabTitle	M	owner=Workspace; func resolvedPanelTitle(panelId: UUID, fallback: String) -> String
+Sources/Workspace.swift	6834	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	6842	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	6877	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	6878	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	6977	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	M	owner=Workspace; func syncSurfaceTabActivityStateForPanel(         _ panelId: UUID,         hasExactSurfaceNotificati
+Sources/Workspace.swift	6992	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	6994	syncSurfaceTabDetailForPanel	syncSurfaceTabDetailForTab	Muse	
+Sources/Workspace.swift	7008	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	7012	syncUnreadBadgeStateForPanel	syncUnreadBadgeStateForTab	M	owner=Workspace; func syncUnreadBadgeStateForPanel(_ panelId: UUID)
+Sources/Workspace.swift	7013	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	7024	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7028	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7045	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7053	setPanelCustomTitle	setTabCustomTitle	M	owner=Workspace; func setPanelCustomTitle(panelId: UUID, title: String?)
+Sources/Workspace.swift	7056	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7059	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7069	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7080	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/Workspace.swift	7087	setPanelCustomColor	setTabCustomColor	M	owner=Workspace; func setPanelCustomColor(panelId: UUID, color: String?)
+Sources/Workspace.swift	7096	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	7099	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	7101	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	7110	panelCustomColor	tabCustomColor	M	owner=Workspace; func panelCustomColor(panelId: UUID) -> String?
+Sources/Workspace.swift	7111	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	7114	isPanelPinned	isTabPinned	M	owner=Workspace; func isPanelPinned(_ panelId: UUID) -> Bool
+Sources/Workspace.swift	7115	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7124	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7133	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7135	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7135	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7144	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7145	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7148	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7151	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7152	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel else {
+Sources/Workspace.swift	7160	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7160	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7161	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7162	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7165	panelTitle	tabTitle	M	owner=Workspace; func panelTitle(panelId: UUID) -> String?
+Sources/Workspace.swift	7167	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7168	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	7171	setPanelPinned	setTabPinned	M	owner=Workspace; func setPanelPinned(panelId: UUID, pinned: Bool)
+Sources/Workspace.swift	7173	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7176	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7178	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	7187	markPanelUnread	markTabUnread	M	owner=Workspace; func markPanelUnread(_ panelId: UUID)
+Sources/Workspace.swift	7189	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	7191	syncUnreadBadgeStateForPanel	syncUnreadBadgeStateForTab	Muse	
+Sources/Workspace.swift	7194	markPanelRead	markTabRead	M	owner=Workspace; func markPanelRead(_ panelId: UUID)
+Sources/Workspace.swift	7201	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	7204	syncUnreadBadgeStateForPanel	syncUnreadBadgeStateForTab	Muse	
+Sources/Workspace.swift	7355	updatePanelDirectory	updateTabDirectory	M	owner=Workspace; func updatePanelDirectory(panelId: UUID, directory: String)
+Sources/Workspace.swift	7358	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	7359	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	7367	PanelShellActivityState	TabShellActivityState	T	
+Sources/Workspace.swift	7367	updatePanelShellActivityState	updateTabShellActivityState	M	owner=Workspace; func updatePanelShellActivityState(panelId: UUID, state: PanelShellActivityState)
+Sources/Workspace.swift	7369	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	7371	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	7373	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	7418	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	7431	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	7454	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	7474	panelNeedsConfirmClose	tabNeedsConfirmClose	M	owner=Workspace; func panelNeedsConfirmClose(panelId: UUID, fallbackNeedsConfirmClose: Bool) -> Bool
+Sources/Workspace.swift	7476	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	7481	updatePanelGitBranch	updateTabGitBranch	M	owner=Workspace; func updatePanelGitBranch(panelId: UUID, branch: String, isDirty: Bool)
+Sources/Workspace.swift	7483	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	7486	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	7489	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7499	clearPanelGitBranch	clearTabGitBranch	M	owner=Workspace; func clearPanelGitBranch(panelId: UUID)
+Sources/Workspace.swift	7500	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	7501	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7512	updatePanelGitContext	updateTabGitContext	M	owner=Workspace; func updatePanelGitContext(panelId: UUID, context: ResolvedGitContext?)
+Sources/Workspace.swift	7515	panelGitContexts	tabGitContexts	Muse	
+Sources/Workspace.swift	7517	panelGitContexts	tabGitContexts	Muse	
+Sources/Workspace.swift	7520	clearPanelGitContext	clearTabGitContext	M	owner=Workspace; func clearPanelGitContext(panelId: UUID)
+Sources/Workspace.swift	7521	panelGitContexts	tabGitContexts	Muse	
+Sources/Workspace.swift	7524	updatePanelPullRequest	updateTabPullRequest	M	owner=Workspace; func updatePanelPullRequest(         panelId: UUID,         number: Int,         label: String,     
+Sources/Workspace.swift	7533	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7535	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	7574	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7581	clearPanelPullRequest	clearTabPullRequest	M	owner=Workspace; func clearPanelPullRequest(panelId: UUID)
+Sources/Workspace.swift	7582	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7594	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	7595	panelGitContexts	tabGitContexts	Muse	
+Sources/Workspace.swift	7597	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	7605	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	7605	browserPanels	browserTabs	L	let browserPanels = panels.values.compactMap { $0 as? BrowserPanel }
+Sources/Workspace.swift	7606	browserPanels	browserTabs	L	let browserPanels = panels.values.compactMap { $0 as? BrowserPanel }
+Sources/Workspace.swift	7611	browserPanels	browserTabs	L	let browserPanels = panels.values.compactMap { $0 as? BrowserPanel }
+Sources/Workspace.swift	7615	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7615	browserPanels	browserTabs	L	let browserPanels = panels.values.compactMap { $0 as? BrowserPanel }
+Sources/Workspace.swift	7616	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7617	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7618	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7618	updatePanelTitle	updateTabTitle	Muse	
+Sources/Workspace.swift	7620	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7635	browserPanel	browserTab	L	for browserPanel in browserPanels
+Sources/Workspace.swift	7635	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7642	updatePanelTitle	updateTabTitle	M	owner=Workspace; func updatePanelTitle(panelId: UUID, title: String) -> Bool
+Sources/Workspace.swift	7647	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7648	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7656	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7657	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	7661	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7668	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7668	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	7669	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	7704	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7704	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7705	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7708	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7712	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7715	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7718	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7748	terminalPanels	terminalTabs	L	let terminalPanels = panels.values.compactMap { $0 as? TerminalPanel }
+Sources/Workspace.swift	7765	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7791	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7791	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel,
+Sources/Workspace.swift	7792	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel,
+Sources/Workspace.swift	7804	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	7825	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	M	owner=Workspace; func syncPanelTitleFromMetadata(panelId: UUID)
+Sources/Workspace.swift	7840	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7841	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7846	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	7847	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	7851	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	7854	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	7971	SessionPanelSnapshot	SessionTabSnapshot	T	
+Sources/Workspace.swift	7971	snapshotPanels	snapshotTabs	L	snapshotPanels: [SessionPanelSnapshot]
+Sources/Workspace.swift	7973	panelSnapshot	tabSnapshot	L	via func restoreSurfaceMetadataFromSnapshot(         panels snapshotPanels: [SessionPanelSnapshot]     )
+Sources/Workspace.swift	7973	snapshotPanels	snapshotTabs	L	snapshotPanels: [SessionPanelSnapshot]
+Sources/Workspace.swift	7974	panelSnapshot	tabSnapshot	L	via func restoreSurfaceMetadataFromSnapshot(         panels snapshotPanels: [SessionPanelSnapshot]     )
+Sources/Workspace.swift	7975	panelSnapshot	tabSnapshot	L	via func restoreSurfaceMetadataFromSnapshot(         panels snapshotPanels: [SessionPanelSnapshot]     )
+Sources/Workspace.swift	7976	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	7976	panelSnapshot	tabSnapshot	L	via func restoreSurfaceMetadataFromSnapshot(         panels snapshotPanels: [SessionPanelSnapshot]     )
+Sources/Workspace.swift	7977	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	7989	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	7995	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	7999	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	8001	panelId	tabId	L	let panelId = panelSnapshot.id
+Sources/Workspace.swift	8056	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	8057	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	8058	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	8059	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	8060	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	8061	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	8062	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	8063	panelGitContexts	tabGitContexts	Muse	
+Sources/Workspace.swift	8067	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	8068	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	8078	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	8097	sidebarOrderedPanelIds	sidebarOrderedTabIds	M	owner=Workspace; func sidebarOrderedPanelIds() -> [UUID]
+Sources/Workspace.swift	8120	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	8127	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/Workspace.swift	8139	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	8143	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	8147	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	8153	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/Workspace.swift	8345	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8364	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	8364	hasBrowserPanels	hasBrowserTabs	L	let hasBrowserPanels = panels.values.contains { $0 is BrowserPanel }
+Sources/Workspace.swift	8365	hasBrowserPanels	hasBrowserTabs	L	let hasBrowserPanels = panels.values.contains { $0 is BrowserPanel }
+Sources/Workspace.swift	8467	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	8467	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	8468	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	8528	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8533	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8533	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8538	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8538	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8552	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8552	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8553	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	Muse	
+Sources/Workspace.swift	8553	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8554	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8556	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8556	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8558	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8558	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8561	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8561	terminalPanel	terminalTab	L	terminalPanel: TerminalPanel
+Sources/Workspace.swift	8565	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8565	lastRememberedTerminalPanelForConfigInheritance	lastRememberedTerminalTabForConfigInheritance	M	owner=Workspace; func lastRememberedTerminalPanelForConfigInheritance() -> TerminalPanel?
+Sources/Workspace.swift	8566	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	Muse	
+Sources/Workspace.swift	8582	terminalPanelConfigInheritanceCandidates	terminalTabConfigInheritanceCandidates	M	owner=Workspace; func terminalPanelConfigInheritanceCandidates(         preferredPanelId: UUID? = nil,         inPane
+Sources/Workspace.swift	8585	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8586	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8589	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8601	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedSurfaceId),
+Sources/Workspace.swift	8602	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedSurfaceId),
+Sources/Workspace.swift	8602	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/Workspace.swift	8603	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/Workspace.swift	8606	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	8607	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	8610	lastRememberedTerminalPanelForConfigInheritance	lastRememberedTerminalTabForConfigInheritance	Muse	
+Sources/Workspace.swift	8623	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8632	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	M	owner=Workspace; func terminalPanelForConfigInheritance(         preferredPanelId: UUID? = nil,         inPane prefer
+Sources/Workspace.swift	8635	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8636	terminalPanelConfigInheritanceCandidates	terminalTabConfigInheritanceCandidates	Muse	
+Sources/Workspace.swift	8648	terminalPanelConfigInheritanceCandidates	terminalTabConfigInheritanceCandidates	Muse	
+Sources/Workspace.swift	8663	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8760	paneIdForPanel	paneIdForTab	Muse	
+Sources/Workspace.swift	8822	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8823	paneIdForPanel	paneIdForTab	Muse	
+Sources/Workspace.swift	8838	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8838	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8846	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8847	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8847	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	8849	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8851	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8856	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8857	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8859	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8861	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8863	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8868	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	8874	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8875	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8875	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	8878	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8880	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8880	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8893	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8900	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8905	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8920	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8923	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	8928	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/Workspace.swift	8937	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	8937	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8948	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8949	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8949	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	8951	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8953	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8957	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8958	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8960	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8962	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8965	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8966	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8966	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	8968	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8970	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8970	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	8974	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8982	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8987	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	8991	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	9039	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/Workspace.swift	9050	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	9081	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	9082	paneIdForPanel	paneIdForTab	Muse	
+Sources/Workspace.swift	9085	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	9085	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9098	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9099	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9099	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9103	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9104	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9106	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9107	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9109	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9111	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9120	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9121	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9121	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9124	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9127	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	9130	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9137	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9142	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9142	installBrowserPanelSubscription	installBrowserTabSubscription	Muse	
+Sources/Workspace.swift	9143	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9145	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9167	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	9169	effectiveSelectedPanelId	effectiveSelectedTabId	Muse	
+Sources/Workspace.swift	9171	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	9173	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	9173	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9188	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9189	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9189	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9192	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9193	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9195	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9196	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9198	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9201	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9202	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9202	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9206	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9207	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9219	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9224	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9229	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9229	installBrowserPanelSubscription	installBrowserTabSubscription	Muse	
+Sources/Workspace.swift	9230	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9232	browserPanel	browserTab	L	let browserPanel = BrowserPanel(
+Sources/Workspace.swift	9241	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	9242	paneIdForPanel	paneIdForTab	Muse	
+Sources/Workspace.swift	9244	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	9244	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9245	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9246	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9246	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9249	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9250	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9252	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9255	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9257	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9264	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9265	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9265	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9269	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	9272	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9279	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9284	installMarkdownPanelSubscription	installMarkdownTabSubscription	Muse	
+Sources/Workspace.swift	9284	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9285	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9295	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	9298	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	9300	MarkdownPanel	MarkdownTab	T	
+Sources/Workspace.swift	9300	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9306	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9307	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9307	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9310	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9311	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9313	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9316	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9319	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9320	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9320	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9324	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9332	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9337	installMarkdownPanelSubscription	installMarkdownTabSubscription	Muse	
+Sources/Workspace.swift	9337	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9338	markdownPanel	markdownTab	Muse	
+Sources/Workspace.swift	9364	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	9374	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	9376	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	9377	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	9378	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	Muse	
+Sources/Workspace.swift	9384	closePanel	closeTab	M	owner=Workspace; func closePanel(_ panelId: UUID, force: Bool = false) -> Bool
+Sources/Workspace.swift	9637	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/Workspace.swift	9830	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	9830	terminalPanel	terminalTab	L	let terminalPanel = detached.panel as? TerminalPanel {
+Sources/Workspace.swift	9831	terminalPanel	terminalTab	L	let terminalPanel = detached.panel as? TerminalPanel {
+Sources/Workspace.swift	9832	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	9832	browserPanel	browserTab	L	let browserPanel = detached.panel as? BrowserPanel {
+Sources/Workspace.swift	9833	browserPanel	browserTab	L	let browserPanel = detached.panel as? BrowserPanel {
+Sources/Workspace.swift	9840	browserPanel	browserTab	L	let browserPanel = detached.panel as? BrowserPanel {
+Sources/Workspace.swift	9840	installBrowserPanelSubscription	installBrowserTabSubscription	Muse	
+Sources/Workspace.swift	9844	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	9847	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9850	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	9853	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	9855	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	9858	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	9860	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	9863	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	9866	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	9882	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	9935	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	9936	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	9937	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	9938	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	9939	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	9940	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	9946	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	9961	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	10076	FocusPanelTrigger	FocusTabTrigger	T	
+Sources/Workspace.swift	10095	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/Workspace.swift	10162	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	10162	browserPanel	browserTab	L	let browserPanel = panels[panelId] as? BrowserPanel {
+Sources/Workspace.swift	10163	browserPanel	browserTab	L	let browserPanel = panels[panelId] as? BrowserPanel {
+Sources/Workspace.swift	10163	maybeAutoFocusBrowserAddressBarOnPanelFocus	maybeAutoFocusBrowserAddressBarOnTabFocus	Muse	
+Sources/Workspace.swift	10167	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10175	maybeAutoFocusBrowserAddressBarOnPanelFocus	maybeAutoFocusBrowserAddressBarOnTabFocus	M	owner=Workspace; func maybeAutoFocusBrowserAddressBarOnPanelFocus(         _ browserTab: BrowserPanel,         trigge
+Sources/Workspace.swift	10176	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	10176	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10177	FocusPanelTrigger	FocusTabTrigger	T	
+Sources/Workspace.swift	10181	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10182	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10184	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10185	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10273	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10395	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10403	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10414	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10419	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10450	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10470	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10471	persistentFlashPanels	persistentFlashTabs	Muse	
+Sources/Workspace.swift	10532	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10540	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	10549	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10549	createReplacementTerminalPanel	createReplacementTerminalTab	M	owner=Workspace; func createReplacementTerminalPanel() -> TerminalPanel
+Sources/Workspace.swift	10555	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10555	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10562	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10563	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10563	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	10564	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10568	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10569	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10571	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10573	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10575	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10578	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	10587	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10594	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10594	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel,
+Sources/Workspace.swift	10595	panelNeedsConfirmClose	tabNeedsConfirmClose	Muse	
+Sources/Workspace.swift	10595	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel,
+Sources/Workspace.swift	10613	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10614	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10615	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10619	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10620	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10623	mappedPanelId	mappedTabId	L	let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
+Sources/Workspace.swift	10646	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10646	terminalPanel	terminalTab	L	let terminalPanel = targetPanel as? TerminalPanel {
+Sources/Workspace.swift	10647	terminalPanel	terminalTab	L	let terminalPanel = targetPanel as? TerminalPanel {
+Sources/Workspace.swift	10649	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	10652	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	10653	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	10682	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10685	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10688	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10780	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10781	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10782	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10815	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	10815	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10816	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10824	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	10824	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10825	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10826	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10827	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10828	browserPanel	browserTab	L	browserPanel: BrowserPanel
+Sources/Workspace.swift	10844	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10852	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10877	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10883	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10888	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10891	layoutFollowUpTerminalFocusPanelId	layoutFollowUpTerminalFocusTabId	Muse	
+Sources/Workspace.swift	10902	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10918	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10921	layoutFollowUpBrowserPanelId	layoutFollowUpBrowserTabId	Muse	
+Sources/Workspace.swift	10925	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10931	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10934	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10940	layoutFollowUpBrowserExitFocusPanelId	layoutFollowUpBrowserExitFocusTabId	Muse	
+Sources/Workspace.swift	10996	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	10996	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	10997	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	10999	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11000	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11005	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11018	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11019	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11028	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11029	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11059	panelId	tabId	L	let panelId = tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/Workspace.swift	11060	panelId	tabId	L	let panelId = tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/Workspace.swift	11063	panelId	tabId	L	let panelId = tabIdFromBonsplitTabId(selectedBonsplitTab.id),
+Sources/Workspace.swift	11082	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11082	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11083	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11084	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11085	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11088	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11089	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11090	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11094	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11106	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11106	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11107	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11108	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11111	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel else { continue }
+Sources/Workspace.swift	11128	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	11128	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11129	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11130	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11131	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11135	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11141	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11142	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11145	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11147	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11154	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11166	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11172	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11187	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	11187	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11188	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11189	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11196	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11197	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11198	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel else { continue }
+Sources/Workspace.swift	11236	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	11264	newPanel	newTab	L	let newPanel = newTerminalSurface(inPane: paneId, focus: true) else { return }
+Sources/Workspace.swift	11265	newPanel	newTab	L	let newPanel = newTerminalSurface(inPane: paneId, focus: true) else { return }
+Sources/Workspace.swift	11271	newPanel	newTab	L	let newPanel = newBrowserSurface(
+Sources/Workspace.swift	11277	newPanel	newTab	L	let newPanel = newBrowserSurface(
+Sources/Workspace.swift	11281	panelId	tabId	L	let panelId = tabIdFromBonsplitTabId(anchorBonsplitTabId),
+Sources/Workspace.swift	11282	panelId	tabId	L	let panelId = tabIdFromBonsplitTabId(anchorBonsplitTabId),
+Sources/Workspace.swift	11284	newPanel	newTab	L	let newPanel = newBrowserSurface(
+Sources/Workspace.swift	11290	newPanel	newTab	L	let newPanel = newBrowserSurface(
+Sources/Workspace.swift	11296	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	11296	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	11326	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/Workspace.swift	11363	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/Workspace.swift	11366	PanelMoveDestination	TabMoveDestination	T	
+Sources/Workspace.swift	11382	PanelMoveDestination	TabMoveDestination	T	
+Sources/Workspace.swift	11694	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11739	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11782	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedBonsplitTabId) else {
+Sources/Workspace.swift	11785	effectiveFocusedPanelId	effectiveFocusedTabId	L	let effectiveFocusedPanelId = effectiveSelectedPanelId(inPane: focusedPane) ?? selectedPanelId
+Sources/Workspace.swift	11785	effectiveSelectedPanelId	effectiveSelectedTabId	Muse	
+Sources/Workspace.swift	11785	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedBonsplitTabId) else {
+Sources/Workspace.swift	11786	effectiveFocusedPanelId	effectiveFocusedTabId	L	let effectiveFocusedPanelId = effectiveSelectedPanelId(inPane: focusedPane) ?? selectedPanelId
+Sources/Workspace.swift	11791	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11791	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11792	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11794	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11800	effectiveFocusedPanelId	effectiveFocusedTabId	L	let effectiveFocusedPanelId = effectiveSelectedPanelId(inPane: focusedPane) ?? selectedPanelId
+Sources/Workspace.swift	11804	effectiveFocusedPanelId	effectiveFocusedTabId	L	let effectiveFocusedPanelId = effectiveSelectedPanelId(inPane: focusedPane) ?? selectedPanelId
+Sources/Workspace.swift	11806	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedBonsplitTabId) else {
+Sources/Workspace.swift	11807	selectedPanelId	selectedTabId	L	let selectedPanelId = tabIdFromBonsplitTabId(selectedBonsplitTabId) else {
+Sources/Workspace.swift	11807	syncUnreadBadgeStateForPanel	syncUnreadBadgeStateForTab	Muse	
+Sources/Workspace.swift	11810	effectiveFocusedPanelId	effectiveFocusedTabId	L	let effectiveFocusedPanelId = effectiveSelectedPanelId(inPane: focusedPane) ?? selectedPanelId
+Sources/Workspace.swift	11822	activatePanel	activateTab	Muse	
+Sources/Workspace.swift	11830	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	11830	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel,
+Sources/Workspace.swift	11833	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel,
+Sources/Workspace.swift	11833	maybeAutoFocusBrowserAddressBarOnPanelFocus	maybeAutoFocusBrowserAddressBarOnTabFocus	Muse	
+Sources/Workspace.swift	11835	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11835	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11836	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11838	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	11859	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11859	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11861	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11870	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11879	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11887	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	11890	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	11891	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	11913	activatePanel	activateTab	M	owner=Workspace; func activatePanel(         _ panel: any Panel,         focusIntent: PanelFocusIntent,         reass
+Sources/Workspace.swift	11914	Panel	TabContent	T	
+Sources/Workspace.swift	11915	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11918	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11918	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11920	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11921	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11923	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11928	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	11928	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Workspace.swift	11930	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Workspace.swift	11939	Panel	TabContent	T	
+Sources/Workspace.swift	11940	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	11940	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11941	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/Workspace.swift	11943	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	11943	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Workspace.swift	11944	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel {
+Sources/Workspace.swift	11952	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11970	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11979	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11988	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	11997	PanelFocusIntent	TabFocusIntent	T	
+Sources/Workspace.swift	12093	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	12116	panelNeedsConfirmClose	tabNeedsConfirmClose	Muse	
+Sources/Workspace.swift	12183	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	12183	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel
+Sources/Workspace.swift	12184	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12189	resolvedPanelTitle	resolvedTabTitle	Muse	
+Sources/Workspace.swift	12191	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel
+Sources/Workspace.swift	12193	browserPanel	browserTab	L	let browserPanel = panel as? BrowserPanel
+Sources/Workspace.swift	12194	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	12195	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	12197	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	12198	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	12199	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	12220	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	12224	onClosedBrowserPanel	onClosedBrowserTab	Muse	
+Sources/Workspace.swift	12245	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	12246	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	12247	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	12248	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12249	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	12250	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	12251	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	12252	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	12254	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	12255	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	12256	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	12263	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	12270	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	12271	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	Muse	
+Sources/Workspace.swift	12272	lastTerminalConfigInheritancePanelId	lastTerminalConfigInheritanceTabId	Muse	
+Sources/Workspace.swift	12284	createReplacementTerminalPanel	createReplacementTerminalTab	Muse	
+Sources/Workspace.swift	12392	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	12392	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel {
+Sources/Workspace.swift	12393	terminalPanel	terminalTab	L	let terminalPanel = panels[panelId] as? TerminalPanel {
+Sources/Workspace.swift	12418	pendingPaneClosePanelIds	pendingPaneCloseTabIds	Muse	
+Sources/Workspace.swift	12439	panelDirectories	tabDirectories	Muse	
+Sources/Workspace.swift	12440	panelGitBranches	tabGitBranches	Muse	
+Sources/Workspace.swift	12441	panelPullRequests	tabPullRequests	Muse	
+Sources/Workspace.swift	12442	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12443	panelCustomTitles	tabCustomTitles	Muse	
+Sources/Workspace.swift	12444	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	12445	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	12446	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/Workspace.swift	12447	panelSubscriptions	tabSubscriptions	Muse	
+Sources/Workspace.swift	12448	panelShellActivityStates	tabShellActivityStates	Muse	
+Sources/Workspace.swift	12449	panelShellEdgeAt	tabShellEdgeAt	Muse	
+Sources/Workspace.swift	12456	restoredTerminalScrollbackByPanelId	restoredTerminalScrollbackByTabId	Muse	
+Sources/Workspace.swift	12487	panelNeedsConfirmClose	tabNeedsConfirmClose	Muse	
+Sources/Workspace.swift	12488	pendingPaneClosePanelIds	pendingPaneCloseTabIds	Muse	
+Sources/Workspace.swift	12492	pendingPaneClosePanelIds	pendingPaneCloseTabIds	Muse	
+Sources/Workspace.swift	12501	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	12502	BrowserPanel	BrowserTab	T	
+Sources/Workspace.swift	12579	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/Workspace.swift	12583	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	12583	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12590	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12591	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12591	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12592	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12593	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12597	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12598	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12602	replacementPanel	replacementTab	L	let replacementPanel = TerminalPanel(
+Sources/Workspace.swift	12636	sourcePanelId	sourceTabId	L	let sourcePanelId = sourceBonsplitTabId.flatMap { tabIdFromBonsplitTabId($0) }
+Sources/Workspace.swift	12641	sourcePanelId	sourceTabId	L	let sourcePanelId = sourceBonsplitTabId.flatMap { tabIdFromBonsplitTabId($0) }
+Sources/Workspace.swift	12645	sourcePanelId	sourceTabId	L	let sourcePanelId = sourceBonsplitTabId.flatMap { tabIdFromBonsplitTabId($0) }
+Sources/Workspace.swift	12647	sourcePanelId	sourceTabId	L	let sourcePanelId = sourceBonsplitTabId.flatMap { tabIdFromBonsplitTabId($0) }
+Sources/Workspace.swift	12651	TerminalPanel	TerminalTab	T	
+Sources/Workspace.swift	12651	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12658	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12659	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12659	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12660	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12663	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12664	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12666	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12668	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12671	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12672	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12672	panelTitles	tabTitles	Muse	
+Sources/Workspace.swift	12673	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12673	terminalInheritanceFontPointsByPanelId	terminalInheritanceFontPointsByTabId	Muse	
+Sources/Workspace.swift	12677	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	12682	newPanel	newTab	L	let newPanel = TerminalPanel(
+Sources/Workspace.swift	13021	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/Workspace.swift	13022	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	13080	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/Workspace.swift	13081	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+Sources/Workspace.swift	13365	effectiveSelectedPanelId	effectiveSelectedTabId	Muse	
+Sources/Workspace.swift	13385	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/Workspace.swift	13418	pinnedPanelIds	pinnedTabIds	Muse	
+Sources/Workspace.swift	13419	setPanelPinned	setTabPinned	Muse	
+Sources/Workspace.swift	13425	markPanelUnread	markTabUnread	Muse	
+Sources/Workspace.swift	13431	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/Workspace.swift	13466	Panel	TabContent	T	
+Sources/Workspace.swift	13485	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/Workspace.swift	13489	panelCustomColors	tabCustomColors	Muse	
+Sources/Workspace.swift	13540	setPanelCustomColor	setTabCustomColor	Muse	
+Sources/WorkspaceContentView.swift	59	PanelAppearance	TabAppearance	T	
+Sources/WorkspaceContentView.swift	75	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceContentView.swift	93	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/WorkspaceContentView.swift	95	PanelContentView	TabContentView	T	
+Sources/WorkspaceContentView.swift	114	onRequestPanelFocus	onRequestTabFocus	Muse	
+Sources/WorkspaceContentView.swift	126	EmptyPanelView	EmptyTabView	T	
+Sources/WorkspaceContentView.swift	130	EmptyPanelView	EmptyTabView	T	
+Sources/WorkspaceContentView.swift	173	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/WorkspaceContentView.swift	262	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+Sources/WorkspaceContentView.swift	268	isPanelPinned	isTabPinned	Muse	
+Sources/WorkspaceContentView.swift	390	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceContentView.swift	390	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel {
+Sources/WorkspaceContentView.swift	391	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel {
+Sources/WorkspaceContentView.swift	437	EmptyPanelView	EmptyTabView	T	
+Sources/WorkspaceLayoutExecutor.swift	163	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceLayoutExecutor.swift	163	seedPanel	seedTab	L	let seedPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceLayoutExecutor.swift	164	paneIdForPanel	paneIdForTab	Muse	
+Sources/WorkspaceLayoutExecutor.swift	164	seedPanel	seedTab	L	let seedPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceLayoutExecutor.swift	187	seedPanel	seedTab	L	let seedPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceLayoutExecutor.swift	315	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceLayoutExecutor.swift	315	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/WorkspaceLayoutExecutor.swift	365	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/WorkspaceLayoutExecutor.swift	372	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/WorkspaceLayoutExecutor.swift	378	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+Sources/WorkspaceLayoutExecutor.swift	403	paneIdForPanel	paneIdForTab	Muse	
+Sources/WorkspaceLayoutExecutor.swift	683	AnchorPanel	AnchorTab	T	
+Sources/WorkspaceLayoutExecutor.swift	687	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceLayoutExecutor.swift	744	AnchorPanel	AnchorTab	T	
+Sources/WorkspaceLayoutExecutor.swift	757	AnchorPanel	AnchorTab	T	
+Sources/WorkspaceLayoutExecutor.swift	807	closePanel	closeTab	Muse	
+Sources/WorkspaceLayoutExecutor.swift	820	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/WorkspaceLayoutExecutor.swift	842	setPanelCustomTitle	setTabCustomTitle	Muse	
+Sources/WorkspaceLayoutExecutor.swift	864	AnchorPanel	AnchorTab	T	
+Sources/WorkspaceLayoutExecutor.swift	901	paneIdForPanel	paneIdForTab	Muse	
+Sources/WorkspaceLayoutExecutor.swift	1077	paneIdForPanel	paneIdForTab	Muse	
+Sources/WorkspaceManager.swift	566	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/WorkspaceManager.swift	577	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/WorkspaceManager.swift	584	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/WorkspaceManager.swift	961	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	1059	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	M	owner=WorkspaceManager; private var lastFocusedPanelByWorkspace: [UUID: UUID] = [:]
+Sources/WorkspaceManager.swift	1060	PanelTitleUpdateKey	TabTitleUpdateKey	T	
+Sources/WorkspaceManager.swift	1064	PanelTitleUpdateKey	TabTitleUpdateKey	T	
+Sources/WorkspaceManager.swift	1064	pendingPanelTitleUpdates	pendingTabTitleUpdates	M	owner=WorkspaceManager; private var pendingPanelTitleUpdates: [PanelTitleUpdateKey: String] = [:]
+Sources/WorkspaceManager.swift	1150	enqueuePanelTitleUpdate	enqueueTabTitleUpdate	Muse	
+Sources/WorkspaceManager.swift	1162	markPanelReadOnFocusIfActive	markTabReadOnFocusIfActive	Muse	
+Sources/WorkspaceManager.swift	1229	panelDirectories	tabDirectories	Muse	
+Sources/WorkspaceManager.swift	1256	onClosedBrowserPanel	onClosedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1262	onClosedBrowserPanel	onClosedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1276	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1280	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	1280	selectedTerminalPanel	selectedTerminalTab	M	owner=WorkspaceManager; var selectedTerminalPanel: TerminalPanel? {
+Sources/WorkspaceManager.swift	1281	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1285	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1285	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1289	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1293	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1302	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1317	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1321	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1331	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1336	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1340	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1345	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1350	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1355	selectedTerminalPanel	selectedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1360	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	1418	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1418	terminalPanel	terminalTab	L	let terminalPanel = newWorkspace.focusedTerminalPanel {
+Sources/WorkspaceManager.swift	1421	terminalPanel	terminalTab	L	let terminalPanel = newWorkspace.focusedTerminalPanel {
+Sources/WorkspaceManager.swift	1427	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1468	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1468	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1469	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1472	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1483	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1483	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1484	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1492	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1528	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	1528	initialPanel	initialTab	L	initialPanel: TerminalPanel
+Sources/WorkspaceManager.swift	1531	initialPanel	initialTab	L	initialPanel: TerminalPanel
+Sources/WorkspaceManager.swift	1535	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1535	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1536	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1537	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1547	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	1547	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1548	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1554	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel,
+Sources/WorkspaceManager.swift	1707	updatePanelDirectory	updateTabDirectory	Muse	
+Sources/WorkspaceManager.swift	1711	updatePanelGitBranch	updateTabGitBranch	Muse	
+Sources/WorkspaceManager.swift	1717	clearPanelGitBranch	clearTabGitBranch	Muse	
+Sources/WorkspaceManager.swift	1722	updatePanelPullRequest	updateTabPullRequest	Muse	
+Sources/WorkspaceManager.swift	1731	panelPullRequests	tabPullRequests	Muse	
+Sources/WorkspaceManager.swift	1732	clearPanelPullRequest	clearTabPullRequest	Muse	
+Sources/WorkspaceManager.swift	1745	updatePanelGitContext	updateTabGitContext	Muse	
+Sources/WorkspaceManager.swift	2251	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	2251	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	M	owner=WorkspaceManager; func terminalPanelForWorkspaceConfigInheritanceSource() -> TerminalPanel?
+Sources/WorkspaceManager.swift	2252	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	Muse	
+Sources/WorkspaceManager.swift	2262	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	M	owner=WorkspaceManager; func terminalPanelForWorkspaceConfigInheritanceSource(         snapshot: WorkspaceCreationSnapshot  
+Sources/WorkspaceManager.swift	2264	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	2266	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	2269	lastRememberedTerminalPanelForConfigInheritance	lastRememberedTerminalTabForConfigInheritance	Muse	
+Sources/WorkspaceManager.swift	2273	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/WorkspaceManager.swift	2276	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+Sources/WorkspaceManager.swift	2286	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	Muse	
+Sources/WorkspaceManager.swift	2347	panelDirectories	tabDirectories	Muse	
+Sources/WorkspaceManager.swift	2465	updatePanelDirectory	updateTabDirectory	Muse	
+Sources/WorkspaceManager.swift	2484	panelGitBranches	tabGitBranches	Muse	
+Sources/WorkspaceManager.swift	2487	updatePanelGitBranch	updateTabGitBranch	Muse	
+Sources/WorkspaceManager.swift	2570	panelGitBranches	tabGitBranches	Muse	
+Sources/WorkspaceManager.swift	2571	panelPullRequests	tabPullRequests	Muse	
+Sources/WorkspaceManager.swift	2573	clearPanelGitBranch	clearTabGitBranch	Muse	
+Sources/WorkspaceManager.swift	2574	clearPanelPullRequest	clearTabPullRequest	Muse	
+Sources/WorkspaceManager.swift	2585	PanelShellActivityState	TabShellActivityState	T	
+Sources/WorkspaceManager.swift	2588	updatePanelShellActivityState	updateTabShellActivityState	Muse	
+Sources/WorkspaceManager.swift	2660	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	2734	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	2869	isPanelPinned	isTabPinned	Muse	
+Sources/WorkspaceManager.swift	2873	panelTitle	tabTitle	Muse	
+Sources/WorkspaceManager.swift	3036	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	3037	BrowserPanel	BrowserTab	T	
+Sources/WorkspaceManager.swift	3056	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	3078	panelNeedsConfirmClose	tabNeedsConfirmClose	Muse	
+Sources/WorkspaceManager.swift	3123	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	3144	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	3210	BrowserPanel	BrowserTab	T	
+Sources/WorkspaceManager.swift	3210	focusedBrowserPanel	focusedBrowserTab	M	owner=WorkspaceManager; var focusedBrowserPanel: BrowserPanel? {
+Sources/WorkspaceManager.swift	3213	BrowserPanel	BrowserTab	T	
+Sources/WorkspaceManager.swift	3218	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	3223	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	3228	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	3232	MarkdownPanel	MarkdownTab	T	
+Sources/WorkspaceManager.swift	3232	focusedMarkdownPanel	focusedMarkdownTab	M	owner=WorkspaceManager; var focusedMarkdownPanel: MarkdownPanel? {
+Sources/WorkspaceManager.swift	3235	MarkdownPanel	MarkdownTab	T	
+Sources/WorkspaceManager.swift	3240	focusedMarkdownPanel	focusedMarkdownTab	Muse	
+Sources/WorkspaceManager.swift	3245	focusedMarkdownPanel	focusedMarkdownTab	Muse	
+Sources/WorkspaceManager.swift	3250	focusedMarkdownPanel	focusedMarkdownTab	Muse	
+Sources/WorkspaceManager.swift	3255	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	3260	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	3269	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	3275	focusedTerminalPanel	focusedTerminalTab	Muse	
+Sources/WorkspaceManager.swift	3275	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else { return }
+Sources/WorkspaceManager.swift	3276	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else { return }
+Sources/WorkspaceManager.swift	3299	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	3329	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	3329	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/WorkspaceManager.swift	3330	terminalPanel	terminalTab	L	let terminalPanel = panel as? TerminalPanel {
+Sources/WorkspaceManager.swift	3354	unfocusWorkspacePanel	unfocusWorkspaceTab	Muse	
+Sources/WorkspaceManager.swift	3384	unfocusWorkspacePanel	unfocusWorkspaceTab	Muse	
+Sources/WorkspaceManager.swift	3415	unfocusWorkspacePanel	unfocusWorkspaceTab	M	owner=WorkspaceManager; func unfocusWorkspacePanel(workspaceId: UUID, panelId: UUID)
+Sources/WorkspaceManager.swift	3431	markPanelReadOnFocusIfActive	markTabReadOnFocusIfActive	Muse	
+Sources/WorkspaceManager.swift	3434	markPanelReadOnFocusIfActive	markTabReadOnFocusIfActive	M	owner=WorkspaceManager; func markPanelReadOnFocusIfActive(workspaceId: UUID, panelId: UUID)
+Sources/WorkspaceManager.swift	3460	enqueuePanelTitleUpdate	enqueueTabTitleUpdate	M	owner=WorkspaceManager; func enqueuePanelTitleUpdate(workspaceId: UUID, panelId: UUID, title: String)
+Sources/WorkspaceManager.swift	3463	PanelTitleUpdateKey	TabTitleUpdateKey	T	
+Sources/WorkspaceManager.swift	3464	pendingPanelTitleUpdates	pendingTabTitleUpdates	Muse	
+Sources/WorkspaceManager.swift	3471	pendingPanelTitleUpdates	pendingTabTitleUpdates	Muse	
+Sources/WorkspaceManager.swift	3472	pendingPanelTitleUpdates	pendingTabTitleUpdates	Muse	
+Sources/WorkspaceManager.swift	3473	pendingPanelTitleUpdates	pendingTabTitleUpdates	Muse	
+Sources/WorkspaceManager.swift	3475	updatePanelTitle	updateTabTitle	Muse	
+Sources/WorkspaceManager.swift	3479	updatePanelTitle	updateTabTitle	M	owner=WorkspaceManager; func updatePanelTitle(workspaceId: UUID, panelId: UUID, title: String)
+Sources/WorkspaceManager.swift	3513	syncPanelTitleFromMetadata	syncTabTitleFromMetadata	Muse	
+Sources/WorkspaceManager.swift	3523	panelTitles	tabTitles	Muse	
+Sources/WorkspaceManager.swift	3559	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	4053	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4097	BrowserPanel	BrowserTab	T	
+Sources/WorkspaceManager.swift	4118	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4125	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4126	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4134	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	4138	orderedPanelId	orderedTabId	L	let orderedPanelId = workspace.sidebarOrderedPanelIds().first(where: { workspace.panels[$0] != nil }) {
+Sources/WorkspaceManager.swift	4138	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+Sources/WorkspaceManager.swift	4139	orderedPanelId	orderedTabId	L	let orderedPanelId = workspace.sidebarOrderedPanelIds().first(where: { workspace.panels[$0] != nil }) {
+Sources/WorkspaceManager.swift	4145	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4152	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4153	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4158	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4167	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4168	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4205	reopenClosedBrowserPanel	reopenClosedBrowserTab	Muse	
+Sources/WorkspaceManager.swift	4274	reopenClosedBrowserPanel	reopenClosedBrowserTab	M	owner=WorkspaceManager; func reopenClosedBrowserPanel(         _ snapshot: ClosedBrowserPanelRestoreSnapshot,         in wor
+Sources/WorkspaceManager.swift	4275	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+Sources/WorkspaceManager.swift	4279	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4288	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4289	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(
+Sources/WorkspaceManager.swift	4296	anchorPanelId	anchorTabId	L	let anchorPanelId = workspace.tabIdFromBonsplitTabId(anchorBonsplitTab.id),
+Sources/WorkspaceManager.swift	4298	anchorPanelId	anchorTabId	L	let anchorPanelId = workspace.tabIdFromBonsplitTabId(anchorBonsplitTab.id),
+Sources/WorkspaceManager.swift	4345	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4395	waitForTerminalPanelCondition	waitForTerminalTabCondition	M	owner=WorkspaceManager; func waitForTerminalPanelCondition(         workspace: Workspace,         panelId: UUID,         tim
+Sources/WorkspaceManager.swift	4399	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4490	waitForTerminalPanelCondition	waitForTerminalTabCondition	Muse	
+Sources/WorkspaceManager.swift	4636	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4638	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4664	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4712	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4763	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4769	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4770	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4771	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	4845	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4854	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4858	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4867	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4871	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4879	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4882	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4891	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4895	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	4939	selectedPanelId	selectedTabId	L	let selectedPanelId = selected.flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
+Sources/WorkspaceManager.swift	4945	selectedPanelId	selectedTabId	L	let selectedPanelId = selected.flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
+Sources/WorkspaceManager.swift	5101	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	5129	waitForTerminalPanelCondition	waitForTerminalTabCondition	Muse	
+Sources/WorkspaceManager.swift	5276	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	5278	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	5319	closePanel	closeTab	Muse	
+Sources/WorkspaceManager.swift	5384	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	5432	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	5494	waitForTerminalPanelCondition	waitForTerminalTabCondition	Muse	
+Sources/WorkspaceManager.swift	5598	panelDirectories	tabDirectories	Muse	
+Sources/WorkspaceManager.swift	5599	panelTitles	tabTitles	Muse	
+Sources/WorkspaceManager.swift	5600	panelPullRequests	tabPullRequests	Muse	
+Sources/WorkspaceManager.swift	5601	panelGitBranches	tabGitBranches	Muse	
+Sources/WorkspaceManager.swift	5629	conversationsByPanelId	conversationsByPanelId conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]?
+Sources/WorkspaceManager.swift	5640	conversationsByPanelId	conversationsByTabId	L	conversationsByPanelId: [String: TabConversations]?
+Sources/WorkspaceManager.swift	5662	lastFocusedPanelByWorkspace	lastFocusedTabByWorkspace	Muse	
+Sources/WorkspaceManager.swift	5663	pendingPanelTitleUpdates	pendingTabTitleUpdates	Muse	
+Sources/WorkspaceManager.swift	5727	TerminalPanel	TerminalTab	T	
+Sources/WorkspaceManager.swift	5727	terminalPanels	terminalTabs	L	let terminalPanels = workspace.panels.values.compactMap { $0 as? TerminalPanel }
+Sources/WorkspaceManager.swift	5728	terminalPanel	terminalTab	L	for terminalPanel in terminalPanels
+Sources/WorkspaceManager.swift	5728	terminalPanels	terminalTabs	L	let terminalPanels = workspace.panels.values.compactMap { $0 as? TerminalPanel }
+Sources/WorkspaceManager.swift	5729	terminalPanel	terminalTab	L	for terminalPanel in terminalPanels
+Sources/WorkspaceManager.swift	5734	terminalPanel	terminalTab	L	for terminalPanel in terminalPanels
+Sources/WorkspacePlanCapture.swift	154	panelCustomTitles	tabCustomTitles	Muse	
+Sources/WorkspacePlanCapture.swift	168	TerminalPanel	TerminalTab	T	
+Sources/WorkspacePlanCapture.swift	223	Panel	TabContent	T	
+Sources/WorkspacePlanCapture.swift	231	Panel	TabContent	T	
+Sources/WorkspacePlanCapture.swift	232	TerminalPanel	TerminalTab	T	
+Sources/WorkspacePlanCapture.swift	237	Panel	TabContent	T	
+Sources/WorkspacePlanCapture.swift	238	BrowserPanel	BrowserTab	T	
+Sources/WorkspacePlanCapture.swift	242	Panel	TabContent	T	
+Sources/WorkspacePlanCapture.swift	243	MarkdownPanel	MarkdownTab	T	
+Sources/WorkspaceRootEditor.swift	14	panelDirectories	tabDirectories	Muse	
+Sources/c11App.swift	1023	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/c11App.swift	1028	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/c11App.swift	1033	focusedBrowserPanel	focusedBrowserTab	Muse	
+Sources/c11App.swift	4144	TerminalPanel	TerminalTab	T	
+Sources/c11App.swift	4144	initialPanel	initialPanel initialTab	L	initialPanel: TerminalPanel
+Sources/c11App.swift	4145	initialPanel	initialTab	L	initialPanel: TerminalPanel
+Sources/c11App.swift	4145	initialPanelId	initialTabId	L	let initialPanelId = initialPanel.id
+Sources/c11App.swift	4149	initialPanelId	initialTabId	L	let initialPanelId = initialPanel.id
+Sources/c11App.swift	4156	TerminalPanel	TerminalTab	T	
+Sources/c11App.swift	4156	bottomRightPanel	bottomRightTab	L	bottomRightPanel: TerminalPanel?
+Sources/c11App.swift	4158	bottomRightPanel	bottomRightTab	L	bottomRightPanel: TerminalPanel?
+Sources/c11App.swift	4168	initialPanelId	initialTabId	L	let initialPanelId = initialPanel.id
+Sources/c11App.swift	4176	bottomRightPanel	bottomRightTab	L	bottomRightPanel: TerminalPanel?
+Sources/c11App.swift	4177	bottomRightPanel	bottomRightTab	L	bottomRightPanel: TerminalPanel?
+Sources/c11App.swift	4182	initialPanel	initialTab	L	initialPanel: TerminalPanel
+Sources/c11App.swift	4234	TerminalPanel	TerminalTab	T	
+Sources/c11App.swift	4234	initialPanel	initialPanel initialTab	L	initialPanel: TerminalPanel
+Sources/c11App.swift	4244	TerminalPanel	TerminalTab	T	
+Sources/c11App.swift	4244	initialPanel	initialTab	L	initialPanel: TerminalPanel
+c11Tests/BrowserConfigTests.swift	1101	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1111	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1137	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1147	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1155	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1168	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1216	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1242	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1261	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1279	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1304	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1333	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1356	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1383	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1618	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1661	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1689	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1724	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1740	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1775	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/BrowserConfigTests.swift	1776	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/BrowserConfigTests.swift	1816	panelGitBranches	tabGitBranches	Muse	
+c11Tests/BrowserConfigTests.swift	1818	panelPullRequests	tabPullRequests	Muse	
+c11Tests/BrowserConfigTests.swift	1905	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserConfigTests.swift	1906	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserPanelTests.swift	120	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserPanelTests.swift	157	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserPanelTests.swift	175	BrowserPanel	BrowserTab	T	
+c11Tests/BrowserPanelTests.swift	184	BrowserPanel	BrowserTab	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	17	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	28	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	50	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	72	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	101	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	112	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	138	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	149	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	167	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	175	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	186	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+c11Tests/ConversationSnapshotBridgeTests.swift	209	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/GhosttyConfigTests.swift	1204	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1204	localPanel	localTab	L	let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
+c11Tests/GhosttyConfigTests.swift	1206	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1206	firstRemotePanel	firstRemoteTab	L	let firstRemotePanel = BrowserPanel(
+c11Tests/GhosttyConfigTests.swift	1211	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1211	secondRemotePanel	secondRemoteTab	L	let secondRemotePanel = BrowserPanel(
+c11Tests/GhosttyConfigTests.swift	1217	localPanel	localTab	L	let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
+c11Tests/GhosttyConfigTests.swift	1218	firstRemotePanel	firstRemoteTab	L	let firstRemotePanel = BrowserPanel(
+c11Tests/GhosttyConfigTests.swift	1220	firstRemotePanel	firstRemoteTab	L	let firstRemotePanel = BrowserPanel(
+c11Tests/GhosttyConfigTests.swift	1221	secondRemotePanel	secondRemoteTab	L	let secondRemotePanel = BrowserPanel(
+c11Tests/GhosttyConfigTests.swift	1228	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1250	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1301	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1336	BrowserPanel	BrowserTab	T	
+c11Tests/GhosttyConfigTests.swift	1737	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+c11Tests/GhosttyConfigTests.swift	1738	ClosedBrowserPanelRestoreSnapshot	ClosedBrowserTabRestoreSnapshot	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	30	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	31	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	32	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	38	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	39	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	45	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	60	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	64	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	66	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	70	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	76	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	82	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	88	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	104	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	105	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	112	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	113	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	116	MarkdownPanel	MarkdownTab	T	
+c11Tests/MarkdownPanelFontScaleTests.swift	117	MarkdownPanel	MarkdownTab	T	
+c11Tests/MetadataPersistenceRoundTripTests.swift	121	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/MetadataPersistenceRoundTripTests.swift	140	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/MetadataPersistenceRoundTripTests.swift	158	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/MetadataPersistenceRoundTripTests.swift	168	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/NotificationAndMenuBarTests.swift	246	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/NotificationAndMenuBarTests.swift	246	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	253	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	258	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	265	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	274	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	280	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	284	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	321	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/NotificationAndMenuBarTests.swift	321	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	327	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	332	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	339	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	348	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	354	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	359	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	395	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/NotificationAndMenuBarTests.swift	395	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	404	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/NotificationAndMenuBarTests.swift	410	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/PanelIdentityRestoreTests.swift	50	markdownPanel	markdownTab	Muse	
+c11Tests/PanelIdentityRestoreTests.swift	54	markdownPanel	markdownTab	Muse	
+c11Tests/PanelIdentityRestoreTests.swift	64	markdownPanel	markdownTab	Muse	
+c11Tests/PanelIdentityRestoreTests.swift	104	terminalPanel	terminalTab	L	let terminalPanel = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+c11Tests/PanelIdentityRestoreTests.swift	112	markdownPanel	markdownTab	Muse	
+c11Tests/PanelIdentityRestoreTests.swift	117	terminalPanel	terminalTab	L	let terminalPanel = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+c11Tests/PanelIdentityRestoreTests.swift	119	markdownPanel	markdownTab	Muse	
+c11Tests/ScrapeCapturePipelineTests.swift	540	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ScrapeCapturePipelineTests.swift	541	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ScrapeCapturePipelineTests.swift	549	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ScrapeCapturePipelineTests.swift	550	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/ScrapeCapturePipelineTests.swift	559	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	31	setPanelCustomTitle	setTabCustomTitle	Muse	
+c11Tests/SessionPersistenceTests.swift	39	markdownPanel	markdownTab	Muse	
+c11Tests/SessionPersistenceTests.swift	39	restoredPanel	restoredTab	L	let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
+c11Tests/SessionPersistenceTests.swift	40	restoredPanel	restoredTab	L	let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
+c11Tests/SessionPersistenceTests.swift	42	panelTitle	tabTitle	Muse	
+c11Tests/SessionPersistenceTests.swift	169	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	193	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	199	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	225	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	243	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	261	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	274	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	292	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	299	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	320	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	337	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	506	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	522	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	531	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	546	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+c11Tests/SessionPersistenceTests.swift	563	SessionBrowserPanelSnapshot	SessionBrowserTabSnapshot	T	
+c11Tests/SidebarOrderingTests.swift	234	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	284	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	313	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	345	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	375	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/SidebarOrderingTests.swift	383	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/SidebarOrderingTests.swift	391	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	404	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	419	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/SidebarOrderingTests.swift	420	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/SidebarOrderingTests.swift	428	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/SidebarOrderingTests.swift	431	panelPullRequests	tabPullRequests	Muse	
+c11Tests/SidebarOrderingTests.swift	443	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/SidebarOrderingTests.swift	444	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/SurfaceLifecycleTests.swift	269	BrowserPanel	BrowserTab	T	
+c11Tests/SurfaceLifecycleTests.swift	312	BrowserPanel	BrowserTab	T	
+c11Tests/SurfaceLifecycleTests.swift	477	TerminalPanel	TerminalTab	T	
+c11Tests/SurfaceLifecycleTests.swift	478	TerminalPanel	TerminalTab	T	
+c11Tests/SurfaceSeenClockTests.swift	91	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SurfaceSeenClockTests.swift	92	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SurfaceSeenClockTests.swift	102	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/SurfaceSeenClockTests.swift	106	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/TabManagerUnitTests.swift	109	externalPanelTitlesBefore	externalTabTitlesBefore	L	let externalPanelTitlesBefore = externalWorkspace.panelTitles
+c11Tests/TabManagerUnitTests.swift	109	panelTitles	tabTitles	Muse	
+c11Tests/TabManagerUnitTests.swift	116	externalPanelTitlesBefore	externalTabTitlesBefore	L	let externalPanelTitlesBefore = externalWorkspace.panelTitles
+c11Tests/TabManagerUnitTests.swift	116	panelTitles	tabTitles	Muse	
+c11Tests/TabManagerUnitTests.swift	353	updatePanelShellActivityState	updateTabShellActivityState	Muse	
+c11Tests/TabManagerUnitTests.swift	380	updatePanelShellActivityState	updateTabShellActivityState	Muse	
+c11Tests/TabManagerUnitTests.swift	471	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	509	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	531	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	761	BrowserPanel	BrowserTab	T	
+c11Tests/TabManagerUnitTests.swift	872	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	872	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	Muse	
+c11Tests/TabManagerUnitTests.swift	873	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	881	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
+c11Tests/TabManagerUnitTests.swift	886	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
+c11Tests/TabManagerUnitTests.swift	888	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	888	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	Muse	
+c11Tests/TabManagerUnitTests.swift	890	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	910	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	910	terminalPanelForWorkspaceConfigInheritanceSource	terminalTabForWorkspaceConfigInheritanceSource	Muse	
+c11Tests/TabManagerUnitTests.swift	912	sourcePanel	sourceTab	L	let sourcePanel = manager.terminalPanelForWorkspaceConfigInheritanceSource()
+c11Tests/TabManagerUnitTests.swift	931	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	953	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	985	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	1008	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	1032	BrowserPanel	BrowserTab	T	
+c11Tests/TabManagerUnitTests.swift	1045	closePanel	closeTab	Muse	
+c11Tests/TabManagerUnitTests.swift	1066	BrowserPanel	BrowserTab	T	
+c11Tests/TabManagerUnitTests.swift	1071	BrowserPanel	BrowserTab	T	
+c11Tests/TabSheetDetailBuilderTests.swift	16	PanelType	TabContentType	T	
+c11Tests/TabSheetDetailBuilderTests.swift	16	panelType	panelType tabType	L	panelType: PanelType
+c11Tests/TabSheetDetailBuilderTests.swift	29	panelType	tabType	L	panelType: PanelType
+c11Tests/TerminalAndGhosttyTests.swift	979	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/TerminalAndGhosttyTests.swift	979	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	989	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1007	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1012	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1022	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1023	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1051	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/TerminalAndGhosttyTests.swift	1051	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1061	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1079	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1084	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1092	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/TerminalAndGhosttyTests.swift	1093	terminalPanel	terminalTab	L	let terminalPanel = workspace.focusedTerminalPanel else {
+c11Tests/WindowAndDragTests.swift	1077	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+c11Tests/WindowAndDragTests.swift	1105	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+c11Tests/WindowAndDragTests.swift	1131	MarkdownPanelPointerObserverView	MarkdownTabPointerObserverView	T	
+c11Tests/WorkspaceConversationResumeTests.swift	314	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/WorkspaceConversationResumeTests.swift	507	PanelType	TabContentType	T	
+c11Tests/WorkspaceConversationResumeTests.swift	509	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/WorkspaceConversationResumeTests.swift	510	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/WorkspaceConversationResumeTests.swift	521	SessionTerminalPanelSnapshot	SessionTerminalTabSnapshot	T	
+c11Tests/WorkspaceConversationResumeTests.swift	529	SessionPanelSnapshot	SessionTabSnapshot	T	
+c11Tests/WorkspaceConversationResumeTests.swift	611	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+c11Tests/WorkspaceConversationResumeTests.swift	626	readConversationsByPanelIdSync	readConversationsByTabIdSync	Muse	
+c11Tests/WorkspaceFlashTests.swift	41	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	54	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	58	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	76	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	79	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	87	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	99	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	106	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	135	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	136	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	137	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	141	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	161	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceFlashTests.swift	185	persistentFlashPanels	persistentFlashTabs	Muse	
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	341	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	390	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	828	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	828	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	832	terminalPanel	terminalTab	L	let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	881	paneIdForPanel	paneIdForTab	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	33	panelGitBranches	tabGitBranches	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	34	panelPullRequests	tabPullRequests	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	51	panelGitBranches	tabGitBranches	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	52	panelGitBranches	tabGitBranches	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	53	panelPullRequests	tabPullRequests	Muse	
+c11Tests/WorkspacePullRequestSidebarTests.swift	61	panelPullRequests	tabPullRequests	Muse	
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	150	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	183	paneIdForPanel	paneIdForTab	Muse	
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	243	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	383	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	455	TerminalPanel	TerminalTab	T	
+c11Tests/WorkspaceUnitTests.swift	821	setPanelCustomTitle	setTabCustomTitle	Muse	
+c11Tests/WorkspaceUnitTests.swift	822	setPanelPinned	setTabPinned	Muse	
+c11Tests/WorkspaceUnitTests.swift	829	setPanelCustomTitle	setTabCustomTitle	Muse	
+c11Tests/WorkspaceUnitTests.swift	830	setPanelPinned	setTabPinned	Muse	
+c11Tests/WorkspaceUnitTests.swift	831	markPanelUnread	markTabUnread	Muse	
+c11Tests/WorkspaceUnitTests.swift	834	panelTitles	tabTitles	Muse	
+c11Tests/WorkspaceUnitTests.swift	835	panelCustomTitles	tabCustomTitles	Muse	
+c11Tests/WorkspaceUnitTests.swift	836	pinnedPanelIds	pinnedTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	837	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	842	panelTitles	tabTitles	Muse	
+c11Tests/WorkspaceUnitTests.swift	843	panelCustomTitles	tabCustomTitles	Muse	
+c11Tests/WorkspaceUnitTests.swift	844	pinnedPanelIds	pinnedTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	845	manualUnreadPanelIds	manualUnreadTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	861	sourcePanel	sourceTab	L	let sourcePanel = workspace.newTerminalSurface(
+c11Tests/WorkspaceUnitTests.swift	870	sourcePanel	sourceTab	L	let sourcePanel = workspace.newTerminalSurface(
+c11Tests/WorkspaceUnitTests.swift	872	panelDirectories	tabDirectories	Muse	
+c11Tests/WorkspaceUnitTests.swift	872	sourcePanel	sourceTab	L	let sourcePanel = workspace.newTerminalSurface(
+c11Tests/WorkspaceUnitTests.swift	882	sourcePanel	sourceTab	L	let sourcePanel = workspace.newTerminalSurface(
+c11Tests/WorkspaceUnitTests.swift	933	updatePanelDirectory	updateTabDirectory	Muse	
+c11Tests/WorkspaceUnitTests.swift	934	panelDirectories	tabDirectories	Muse	
+c11Tests/WorkspaceUnitTests.swift	1039	createReplacementTerminalPanel	createReplacementTerminalTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	1053	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	1057	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	1076	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	1324	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: leftPaneId)
+c11Tests/WorkspaceUnitTests.swift	1324	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+c11Tests/WorkspaceUnitTests.swift	1326	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: leftPaneId)
+c11Tests/WorkspaceUnitTests.swift	1337	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
+c11Tests/WorkspaceUnitTests.swift	1342	browserPanel	browserTab	L	let browserPanel = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
+c11Tests/WorkspaceUnitTests.swift	1344	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: paneId)
+c11Tests/WorkspaceUnitTests.swift	1344	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+c11Tests/WorkspaceUnitTests.swift	1346	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: paneId)
+c11Tests/WorkspaceUnitTests.swift	1360	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(preferredPanelId: terminalPanelId)
+c11Tests/WorkspaceUnitTests.swift	1360	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+c11Tests/WorkspaceUnitTests.swift	1361	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(preferredPanelId: terminalPanelId)
+c11Tests/WorkspaceUnitTests.swift	1378	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: rightPaneId)
+c11Tests/WorkspaceUnitTests.swift	1378	terminalPanelForConfigInheritance	terminalTabForConfigInheritance	Muse	
+c11Tests/WorkspaceUnitTests.swift	1380	sourcePanel	sourceTab	L	let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: rightPaneId)
+c11Tests/WorkspaceUnitTests.swift	1710	updatePanelTitle	updateTabTitle	Muse	
+c11Tests/WorkspaceUnitTests.swift	1737	panelTitle	tabTitle	Muse	
+c11Tests/WorkspaceUnitTests.swift	1843	syncSurfaceTabActivityStateForPanel	syncSurfaceTabActivityStateForTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	2130	newPanel	newTab	L	let newPanel = workspace.newTerminalSurface(inPane: originalPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2139	newPanel	newTab	L	let newPanel = workspace.newTerminalSurface(inPane: originalPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2160	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(inPane: originalPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2169	newPanel	newTab	L	let newPanel = workspace.newBrowserSurface(inPane: originalPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2250	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2256	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2261	closePanel	closeTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	2274	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2279	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2291	secondPanel	secondTab	L	let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2296	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2297	secondPanel	secondTab	L	let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2297	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2298	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/WorkspaceUnitTests.swift	2299	secondPanel	secondTab	L	let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2312	secondPanel	secondTab	L	let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2326	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2327	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2333	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2335	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2337	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2338	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2338	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2339	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2340	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2340	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2343	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	2344	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2344	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2358	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2359	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2364	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2365	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2365	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2366	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2368	updatePanelDirectory	updateTabDirectory	Muse	
+c11Tests/WorkspaceUnitTests.swift	2369	leftSecondPanel	leftSecondTab	L	let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+c11Tests/WorkspaceUnitTests.swift	2369	updatePanelDirectory	updateTabDirectory	Muse	
+c11Tests/WorkspaceUnitTests.swift	2370	updatePanelDirectory	updateTabDirectory	Muse	
+c11Tests/WorkspaceUnitTests.swift	2371	rightSecondPanel	rightSecondTab	L	let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+c11Tests/WorkspaceUnitTests.swift	2371	updatePanelDirectory	updateTabDirectory	Muse	
+c11Tests/WorkspaceUnitTests.swift	2373	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/WorkspaceUnitTests.swift	2380	updatePanelPullRequest	updateTabPullRequest	Muse	
+c11Tests/WorkspaceUnitTests.swift	2388	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+c11Tests/WorkspaceUnitTests.swift	2388	sidebarOrderedPanelIds	sidebarOrderedTabIds	Muse	
+c11Tests/WorkspaceUnitTests.swift	2391	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+c11Tests/WorkspaceUnitTests.swift	2395	orderedPanelIds	orderedTabIds	L	let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+c11Tests/WorkspaceUnitTests.swift	2409	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2410	updatePanelGitBranch	updateTabGitBranch	Muse	
+c11Tests/WorkspaceUnitTests.swift	2788	focusedTerminalPanel	focusedTerminalTab	Muse	
+c11Tests/WorkspaceUnitTests.swift	2968	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2969	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2971	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2972	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2982	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2983	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2985	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2987	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2991	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	2992	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3002	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3003	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3005	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3006	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3007	panelCustomColors	tabCustomColors	Muse	
+c11Tests/WorkspaceUnitTests.swift	3009	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3010	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3011	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3018	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3019	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3020	panelCustomColors	tabCustomColors	Muse	
+c11Tests/WorkspaceUnitTests.swift	3030	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3031	panelCustomColors	tabCustomColors	Muse	
+c11Tests/WorkspaceUnitTests.swift	3036	panelCustomColors	tabCustomColors	Muse	
+c11Tests/WorkspaceUnitTests.swift	3051	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3057	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3071	setPanelCustomColor	setTabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3083	panelCustomColor	tabCustomColor	Muse	
+c11Tests/WorkspaceUnitTests.swift	3100	panelCustomColor	tabCustomColor	Muse	

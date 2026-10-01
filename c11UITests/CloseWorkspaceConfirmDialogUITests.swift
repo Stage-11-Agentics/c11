@@ -39,7 +39,7 @@ final class CloseWorkspaceConfirmDialogUITests: XCTestCase {
     }
 
     private func paneInteractionConfirmCard(app: XCUIApplication) -> XCUIElement {
-        app.otherElements["PaneInteraction.confirm.card"].firstMatch
+        app.otherElements["AreaInteraction.confirm.card"].firstMatch
     }
 
     private func waitForCloseWorkspaceAlert(app: XCUIApplication, timeout: TimeInterval) -> Bool {

@@ -4,7 +4,7 @@
 Connects to a tagged-build socket per CLAUDE.md (do not launch an untagged
 ``c11 DEV.app``). The test exercises:
 
-  * one-shot ``surface.trigger_flash`` (control case)
+  * one-shot ``tab.trigger_flash`` (control case)
   * persistent variant writes ``flash_state=persistent`` to surface metadata
   * cancel clears the metadata key
   * malformed ``--color`` is rejected with ``invalid_argument``
@@ -39,8 +39,8 @@ def main() -> int:
     with cmux(SOCKET_PATH) as c:
         ident = c.identify()
         focused = ident.get("focused") or {}
-        focused_surface_id = focused.get("surface_id")
-        _must(bool(focused_surface_id), f"identify should return a focused surface_id: {focused}")
+        focused_surface_id = focused.get("tab_id")
+        _must(bool(focused_surface_id), f"identify should return a focused tab_id: {focused}")
 
         # CMUX-10: persistent triggers degrade to one-shot when targeting the
         # focused surface in the focused window (Workspace.swift:isFocused-
@@ -56,25 +56,25 @@ def main() -> int:
         # surface, so the original `focused_surface_id` becomes non-focused —
         # but we read identify again rather than assume.
         ident2 = c.identify()
-        focused2 = (ident2.get("focused") or {}).get("surface_id")
+        focused2 = (ident2.get("focused") or {}).get("tab_id")
         candidates = [focused_surface_id, sibling_surface_id]
         non_focused = [sid for sid in candidates if sid and sid != focused2]
         _must(bool(non_focused), f"need a non-focused surface; got candidates={candidates} focused={focused2}")
         surface_id = non_focused[0]
 
         # 1. One-shot trigger (control case): no metadata side effect.
-        result = c._call("surface.trigger_flash", {"surface_id": surface_id})
-        _must(result.get("surface_id") == surface_id, f"one-shot: surface_id round-trip: {result}")
+        result = c._call("tab.trigger_flash", {"tab_id": surface_id})
+        _must(result.get("tab_id") == surface_id, f"one-shot: tab_id round-trip: {result}")
         _must(result.get("persistent") is False, f"one-shot: persistent flag should be False: {result}")
 
         # 2. Persistent trigger writes flash_state=persistent.
         result = c._call(
-            "surface.trigger_flash",
-            {"surface_id": surface_id, "persistent": True},
+            "tab.trigger_flash",
+            {"tab_id": surface_id, "persistent": True},
         )
         _must(result.get("persistent") is True, f"persistent: result echoes flag: {result}")
 
-        meta = c._call("surface.get_metadata", {"surface_id": surface_id}) or {}
+        meta = c._call("tab.get_metadata", {"tab_id": surface_id}) or {}
         meta_dict = meta.get("metadata") or {}
         _must(
             meta_dict.get("flash_state") == "persistent",
@@ -84,28 +84,28 @@ def main() -> int:
         # CMUX-10: clear the persistent state before continuing so subsequent
         # asserts run against a clean surface (steps 3+ should not race the
         # in-flight repeating timer).
-        c._call("surface.cancel_flash", {"surface_id": surface_id})
+        c._call("tab.cancel_flash", {"tab_id": surface_id})
 
         # 3. Color override is honored.
         result = c._call(
-            "surface.trigger_flash",
-            {"surface_id": surface_id, "color": "#FF00FF"},
+            "tab.trigger_flash",
+            {"tab_id": surface_id, "color": "#FF00FF"},
         )
-        _must(result.get("surface_id") == surface_id, f"color: surface_id round-trip: {result}")
+        _must(result.get("tab_id") == surface_id, f"color: tab_id round-trip: {result}")
 
         # 4. Malformed color is rejected with invalid_argument.
         try:
-            c._call("surface.trigger_flash", {"surface_id": surface_id, "color": "not-a-hex"})
+            c._call("tab.trigger_flash", {"tab_id": surface_id, "color": "not-a-hex"})
         except cmuxError as e:
             _must("invalid_argument" in str(e) or "hex" in str(e).lower(), f"bad color: expected invalid_argument-ish error, got: {e}")
         else:
             raise cmuxError("bad color: expected error, got success")
 
         # 5. cancel_flash clears the metadata key.
-        result = c._call("surface.cancel_flash", {"surface_id": surface_id})
-        _must(result.get("surface_id") == surface_id, f"cancel: surface_id round-trip: {result}")
+        result = c._call("tab.cancel_flash", {"tab_id": surface_id})
+        _must(result.get("tab_id") == surface_id, f"cancel: tab_id round-trip: {result}")
 
-        meta = c._call("surface.get_metadata", {"surface_id": surface_id}) or {}
+        meta = c._call("tab.get_metadata", {"tab_id": surface_id}) or {}
         meta_dict = meta.get("metadata") or {}
         _must(
             "flash_state" not in meta_dict,
@@ -113,8 +113,8 @@ def main() -> int:
         )
 
         # 6. cancel_flash is idempotent (no error on a surface with no active flash).
-        result = c._call("surface.cancel_flash", {"surface_id": surface_id})
-        _must(result.get("surface_id") == surface_id, f"cancel idempotent: {result}")
+        result = c._call("tab.cancel_flash", {"tab_id": surface_id})
+        _must(result.get("tab_id") == surface_id, f"cancel idempotent: {result}")
 
         # 7. Tear down the sibling surface so the test leaves the workspace
         # in roughly the same shape it found it. Best-effort; failures here

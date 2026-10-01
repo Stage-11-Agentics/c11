@@ -30,8 +30,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str], env: Optional[Dict[str, str]] = None) -> str:
     merged_env = dict(os.environ)
     merged_env.pop("CMUX_WORKSPACE_ID", None)
-    merged_env.pop("CMUX_SURFACE_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
     merged_env.pop("CMUX_TAB_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
     if env:
         merged_env.update(env)
 
@@ -57,16 +59,16 @@ def main() -> int:
         _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
 
         c._call("workspace.select", {"workspace_id": ws_id})
-        current = c._call("surface.current", {"workspace_id": ws_id}) or {}
-        surface_id = str(current.get("surface_id") or "")
-        _must(bool(surface_id), f"surface.current returned no surface_id: {current}")
+        current = c._call("tab.current", {"workspace_id": ws_id}) or {}
+        surface_id = str(current.get("tab_id") or "")
+        _must(bool(surface_id), f"tab.current returned no tab_id: {current}")
 
         socket_title = f"socket rename {stamp}"
         socket_payload = c._call(
             "tab.action",
             {
                 "workspace_id": ws_id,
-                "surface_id": surface_id,
+                "tab_id": surface_id,
                 "action": "rename",
                 "title": socket_title,
             },
@@ -99,8 +101,8 @@ def main() -> int:
 
         # M7: legacy rename-tab must land in the M2 metadata blob with source=explicit.
         titlebar_state = c._call(
-            "surface.get_titlebar_state",
-            {"surface_id": surface_id},
+            "tab.get_titlebar_state",
+            {"tab_id": surface_id},
         ) or {}
         _must(
             titlebar_state.get("title") == env_title,
@@ -116,7 +118,7 @@ def main() -> int:
             capture_output=True,
             text=True,
             check=False,
-            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_TAB_ID"}},
+            env={k: v for k, v in os.environ.items() if k not in {"CMUX_WORKSPACE_ID", "C11_TAB_ID", "CMUX_TAB_ID"}},
         )
         invalid_output = f"{invalid.stdout}\n{invalid.stderr}"
         _must(invalid.returncode != 0, "Expected rename-tab without title to fail")

@@ -7,7 +7,7 @@ import WebKit
 
 private enum AgentLaunchContextSnapshot {
     case success(
-        tabManager: TabManager,
+        workspaceManager: WorkspaceManager,
         paneId: UUID?,
         workspaceRoot: String?,
         launchingSurfaceCwd: String?
@@ -34,10 +34,11 @@ extension TerminalController {
             return nil
         }
 
+        // C11-248: resolve old method/param spellings once, here.
         return V2SocketRequest(
             id: dict["id"],
-            method: method,
-            params: dict["params"] as? [String: Any] ?? [:]
+            method: LegacyWireAliases.canonicalMethod(method),
+            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
         )
     }
 
@@ -60,13 +61,13 @@ extension TerminalController {
         #endif
 
         switch request.method {
-        case "surface.send_text":
+        case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
-        case "surface.send_key":
+        case "tab.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
-        case "surface.read_text":
+        case "tab.read_text":
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
-        case "surface.clear_history":
+        case "tab.clear_history":
             return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
@@ -75,7 +76,7 @@ extension TerminalController {
         // C11-165 COR-3: off-main handlers that block on a user click / async
         // submission. Each must have a matching entry in socketWorkerV2Methods;
         // a mismatch here would return method_not_found instead of executing.
-        case "pane.confirm":
+        case "area.confirm":
             return v2Result(id: request.id, v2PaneConfirm(params: request.params))
         case "feedback.submit":
             return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
@@ -360,15 +361,15 @@ extension TerminalController {
         let directory = parsed.positional.joined(separator: " ")
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceDirectory(
-                    tabId: scope.workspaceId,
+                workspaceManager.updateSurfaceDirectory(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId,
                     directory: directory
                 )
@@ -411,9 +412,9 @@ extension TerminalController {
                             preferredWorkspaceId: scope.workspaceId
                         )?.workspace.id
                     }
-                ), let tabManager = app.tabManagerFor(tabId: target.workspaceId) else { return }
-                tabManager.updateSurfaceShellActivity(
-                    tabId: target.workspaceId,
+                ), let workspaceManager = app.workspaceManagerFor(workspaceId: target.workspaceId) else { return }
+                workspaceManager.updateSurfaceShellActivity(
+                    workspaceId: target.workspaceId,
                     surfaceId: target.panelId,
                     state: state
                 )
@@ -445,7 +446,7 @@ extension TerminalController {
                         )?.workspace.id
                     }
                 ) else { return }
-                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity
@@ -468,15 +469,15 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceGitBranch(
-                    tabId: scope.workspaceId,
+                workspaceManager.updateSurfaceGitBranch(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId,
                     branch: branch,
                     isDirty: isDirty
@@ -494,15 +495,15 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.clearSurfaceGitBranch(
-                    tabId: scope.workspaceId,
+                workspaceManager.clearSurfaceGitBranch(
+                    workspaceId: scope.workspaceId,
                     surfaceId: scope.panelId
                 )
             }
@@ -518,12 +519,12 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 PortScanner.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
             }
@@ -539,11 +540,11 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
                     return
                 }
-                let validSurfaceIds = Set(tab.panels.keys)
+                let validSurfaceIds = Set(workspace.panels.keys)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
             }
@@ -939,12 +940,14 @@ extension TerminalController {
         }
 
         let id: Any? = dict["id"]
-        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let params = dict["params"] as? [String: Any] ?? [:]
+        let rawMethod = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        guard !method.isEmpty else {
+        guard !rawMethod.isEmpty else {
             return v2Error(id: id, code: "invalid_request", message: "Missing method")
         }
+        // C11-248: resolve old method/param spellings once, here.
+        let method = LegacyWireAliases.canonicalMethod(rawMethod)
+        let params = LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
 
         // C11-26: Methods on the socket-worker policy must be dispatched via
         // socketWorkerV2Response (off main); reaching processV2Command for one of
@@ -993,8 +996,10 @@ extension TerminalController {
         if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
-        if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
-        if method.hasPrefix("surface.") { return v2DispatchSurface(method, id: id, params: params) }
+        if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
+        // `tab.action` is the tab context-menu verb set (Misc); every other `tab.*` is the surface domain.
+        if method == "tab.action" { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("tab.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
         if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
         if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
@@ -1004,7 +1009,7 @@ extension TerminalController {
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
         if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
-        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("tab.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
         return nil
     }
 
@@ -1044,7 +1049,7 @@ extension TerminalController {
 
         let launchFlagReason: String?
         if params["flag"] != nil {
-            switch SurfaceAttentionReason.validate(params["flag"]) {
+            switch TabAttentionReason.validate(params["flag"]) {
             case .success(let reason):
                 launchFlagReason = reason
             case .failure(let error):
@@ -1053,9 +1058,9 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
-        let launchFlagActor: SurfaceAttentionActor
+        let launchFlagActor: TabAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = SurfaceAttentionActor(rawValue: rawActor) else {
+            guard let parsed = TabAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1072,7 +1077,7 @@ extension TerminalController {
             guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
                 return .err(
                     code: "invalid_params",
-                    message: "caller_surface_id must be a UUID",
+                    message: "caller_tab_id must be a UUID",
                     data: nil
                 )
             }
@@ -1080,7 +1085,7 @@ extension TerminalController {
         } else if params["caller_surface_id"] != nil {
             return .err(
                 code: "invalid_params",
-                message: "caller_surface_id must be a UUID",
+                message: "caller_tab_id must be a UUID",
                 data: nil
             )
         } else {
@@ -1091,7 +1096,7 @@ extension TerminalController {
            launchCallerSurfaceId == nil {
             return .err(
                 code: "missing_caller_surface",
-                message: "agent-raised flags require caller_surface_id",
+                message: "agent-raised flags require caller_tab_id",
                 data: nil
             )
         }
@@ -1121,7 +1126,7 @@ extension TerminalController {
         // planning; git/config I/O remains off-main.
         let contextGate = FailClosedCommitGate<AgentLaunchContextSnapshot> {
             MainActor.assumeIsolated {
-                guard let tabManager = self.v2ResolveTabManager(params: params) else {
+                guard let workspaceManager = self.v2ResolveWorkspaceManager(params: params) else {
                     return .failure(.err(
                         code: "unavailable",
                         message: "TabManager not available",
@@ -1132,7 +1137,7 @@ extension TerminalController {
                 if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
                     return .failure(.err(
                         code: "invalid_params",
-                        message: "new_workspace is mutually exclusive with pane_id/workspace_id",
+                        message: "new_workspace is mutually exclusive with area_id/workspace_id",
                         data: nil
                     ))
                 }
@@ -1149,20 +1154,20 @@ extension TerminalController {
                         // launch context; selected is only the no-caller
                         // compatibility fallback.
                         if let callerWorkspace { return callerWorkspace }
-                        guard let selectedId = tabManager.selectedTabId else { return nil }
-                        return tabManager.tabs.first(where: { $0.id == selectedId })
+                        guard let selectedId = workspaceManager.selectedWorkspaceId else { return nil }
+                        return workspaceManager.workspaces.first(where: { $0.id == selectedId })
                     }
-                    return self.v2ResolveWorkspace(params: params, tabManager: tabManager)
+                    return self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager)
                 }()
                 // The target workspace owns the stable root. The actual calling
                 // surface owns the compatibility fallback when one is available.
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
-                    callerSurfaceId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                    callerTabId: callerWorkspace == nil ? nil : launchCallerSurfaceId
                 )
                 return .success(
-                    tabManager: tabManager,
+                    workspaceManager: workspaceManager,
                     paneId: paneParam,
                     workspaceRoot: workspaceRoot,
                     launchingSurfaceCwd: launchingSurfaceCwd
@@ -1173,13 +1178,13 @@ extension TerminalController {
         guard let contextSnapshot = contextGate.wait(timeout: 8) else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
-        let tabManager: TabManager
+        let workspaceManager: WorkspaceManager
         let paneParam: UUID?
         let workspaceRoot: String?
         let launchingSurfaceCwd: String?
         switch contextSnapshot {
         case .success(let manager, let paneId, let root, let surfaceCwd):
-            tabManager = manager
+            workspaceManager = manager
             paneParam = paneId
             workspaceRoot = root
             launchingSurfaceCwd = surfaceCwd
@@ -1270,7 +1275,7 @@ extension TerminalController {
                ) == nil {
                 result = .err(
                     code: "caller_surface_not_found",
-                    message: "Calling surface not found",
+                    message: "Calling tab not found",
                     data: nil
                 )
                 return result
@@ -1279,7 +1284,7 @@ extension TerminalController {
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
             let ws: Workspace
-            let panel: TerminalPanel
+            let panel: TerminalTab
             let paneUUID: UUID?
             if newWorkspace {
                 // Identity env rides workspace creation so it is present at
@@ -1290,7 +1295,7 @@ extension TerminalController {
                 // skips shell rc, which changes PATH-wrapper resolution.
                 // autoWelcome is suppressed: this workspace hosts an agent,
                 // not the onboarding grid.
-                let created = tabManager.addWorkspace(
+                let created = workspaceManager.addWorkspace(
                     workingDirectory: cwdResolution.path,
                     establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
                     initialTerminalEnvironment: plan.env,
@@ -1298,21 +1303,21 @@ extension TerminalController {
                     eagerLoadTerminal: !focus,
                     autoWelcomeIfNeeded: false
                 )
-                guard let initialPanel = created.focusedTerminalPanel else {
-                    result = .err(code: "internal_error", message: "New workspace has no terminal surface", data: nil)
+                guard let initialTab = created.focusedTerminalTab else {
+                    result = .err(code: "internal_error", message: "New workspace has no terminal tab", data: nil)
                     return result
                 }
                 ws = created
-                panel = initialPanel
+                panel = initialTab
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
-                guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+                guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return result
                 }
                 if focus {
-                    self.v2MaybeFocusWindow(for: tabManager)
-                    self.v2MaybeSelectWorkspace(tabManager, workspace: target)
+                    self.v2MaybeFocusWindow(for: workspaceManager)
+                    self.v2MaybeSelectWorkspace(workspaceManager, workspace: target)
                 }
                 let paneId: PaneID? = {
                     if let paneParam {
@@ -1321,7 +1326,7 @@ extension TerminalController {
                     return target.bonsplitController.focusedPaneId
                 }()
                 guard let paneId else {
-                    result = .err(code: "not_found", message: "Pane not found", data: nil)
+                    result = .err(code: "not_found", message: "Area not found", data: nil)
                     return result
                 }
                 guard let created = target.newTerminalSurface(
@@ -1330,7 +1335,7 @@ extension TerminalController {
                     workingDirectory: cwdResolution.path,
                     startupEnvironment: plan.env
                 ) else {
-                    result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
                     return result
                 }
                 ws = target
@@ -1359,7 +1364,7 @@ extension TerminalController {
                     },
                     stampSuppression: {
                         if launchSuppressed {
-                            _ = try SurfaceAttentionService.shared.suppress(
+                            _ = try TabAttentionService.shared.suppress(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 by: .operator
@@ -1368,13 +1373,13 @@ extension TerminalController {
                     },
                     stampFlag: {
                         if let launchFlagReason {
-                            _ = try SurfaceAttentionService.shared.raise(
+                            _ = try TabAttentionService.shared.raise(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
-                                callerSurfaceId: launchCallerSurfaceId,
+                                callerTabId: launchCallerSurfaceId,
                                 by: launchFlagActor,
-                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
+                                title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
                     },
@@ -1385,7 +1390,7 @@ extension TerminalController {
                         panel.sendText(plan.launchLine + "\n")
                     }
                 )
-            } catch let error as SurfaceMetadataStore.WriteError {
+            } catch let error as TabMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return result
             } catch {
@@ -1399,9 +1404,9 @@ extension TerminalController {
                 // a follow-up there too).
                 let panelId = panel.id
                 let wsId = ws.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak tabManager] in
-                    guard let tabManager,
-                          let liveWs = tabManager.tabs.first(where: { $0.id == wsId }),
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak workspaceManager] in
+                    guard let workspaceManager,
+                          let liveWs = workspaceManager.workspaces.first(where: { $0.id == wsId }),
                           let livePanel = liveWs.terminalPanel(for: panelId) else { return }
                     livePanel.surface.sendSubmitFormText(delayedPrompt)
                 }
@@ -1410,7 +1415,7 @@ extension TerminalController {
             // Make the just-minted refs resolvable by the caller's next command.
             self.v2RefreshKnownRefs()
 
-            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+            let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
             var agent: [String: Any] = ["type": plan.kind]
             agent["model"] = plan.model.isEmpty ? NSNull() : plan.model
             agent["effort"] = plan.effort.isEmpty ? NSNull() : plan.effort
@@ -1517,6 +1522,6 @@ extension TerminalController {
         for dir in dirs where fm.isExecutableFile(atPath: "\(dir)/\(binary)") {
             return nil
         }
-        return "binary '\(binary)' not found on the app PATH or common install dirs; the pane's login shell may still resolve it"
+        return "binary '\(binary)' not found on the app PATH or common install dirs; the tab's login shell may still resolve it"
     }
 }

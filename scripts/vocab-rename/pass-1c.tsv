@@ -1,0 +1,25 @@
+# Pass 1c: workspace-meaning leftovers whose names collide with the Surface -> Tab renames (hand-written).
+# Columns: old<TAB>new<TAB>globs<TAB>fallback<TAB>flags
+@delete	Sources/TabManager.swift	func closeTab(_ workspace: Workspace) { closeWorkspace(workspace) }
+@delete	Sources/WorkspaceManager.swift	func closeTab(_ workspace: Workspace) { closeWorkspace(workspace) }
+@delete	Sources/WorkspaceManager.swift	func selectTab(_ workspace: Workspace) { selectWorkspace(workspace) }
+@delete	Sources/WorkspaceManager.swift	// Keep selectTab as convenience alias
+@regionrename	Sources/AppDelegate.swift	workspaceId tabId: UUID	tabId=watchedWorkspaceId
+closeTab	closeWorkspace	Sources/TerminalController.swift
+selectTab	selectWorkspace	Sources/AppDelegate.swift,Sources/ContentView.swift,Sources/TerminalController.swift,Sources/WorkspaceManager.swift,Sources/c11App.swift
+focusTab	focusWorkspace	Sources/AppDelegate.swift,Sources/ContentView.swift,Sources/WorkspaceManager.swift,Sources/Panels/BrowserPanelView.swift
+resolveTab	resolveWorkspace	Sources/TerminalController.swift
+targetTab	targetWorkspace	Sources/AppDelegate.swift
+tabA	workspaceA	c11Tests/NotificationAndMenuBarTests.swift
+tabB	workspaceB	c11Tests/NotificationAndMenuBarTests.swift
+newTab	newWorkspace	Sources/KeyboardShortcutSettings.swift,Sources/AppDelegate.swift,Sources/ContentView.swift,Sources/c11App.swift,Sources/WorkspaceContentView.swift,Sources/Workspace.swift,c11Tests/AppDelegateShortcutRoutingTests.swift		memberonly
+@fix	Sources/Update/UpdateTitlebarAccessory.swift	            case .newTab:\n                return .newTab	            case .newTab:\n                return .newWorkspace
+normalizeTabHandle	normalizeCanonicalTabHandle	CLI/c11.swift
+# CLI: the wrapper that canonicalizes `tab:N` input keeps a distinct name from the renamed normalizeSurfaceHandle
+# The legacy metadata key constant (`flag_caller_surface_id`) keeps a distinct, explicitly legacy name
+@fixall	Sources/SocketHandlers/SurfaceHandlers.swift	MetadataKey.flagCallerSurfaceId	MetadataKey.legacyFlagCallerSurfaceId
+@fixall	Sources/SurfaceMetadataStore.swift	MetadataKey.flagCallerSurfaceId	MetadataKey.legacyFlagCallerSurfaceId
+@fixall	c11Tests/AttentionModelTests.swift	MetadataKey.flagCallerSurfaceId	MetadataKey.legacyFlagCallerSurfaceId
+@fix	Sources/SurfaceMetadataStore.swift	public static let flagCallerSurfaceId =	public static let legacyFlagCallerSurfaceId =
+@fix	Sources/SurfaceMetadataStore.swift	[flagCallerTabId, flagCallerSurfaceId]	[flagCallerTabId, legacyFlagCallerSurfaceId]
+@fix	Sources/SurfaceMetadataStore.swift	flag, flagCallerSurfaceId, flagCallerTabId,	flag, legacyFlagCallerSurfaceId, flagCallerTabId,

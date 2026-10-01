@@ -156,14 +156,16 @@ export CMUX_CLAUDE_PID=$$
 # ensures a prior explicit value is not overwritten.
 #
 # Default --type to "claude-code" since this is the claude wrapper; callers may
-# override by exporting CMUX_AGENT_TYPE. Optional --model / --task / --role
-# forward from matching CMUX_AGENT_* vars if present.
+# override by exporting CMUX_AGENT_TYPE. Optional --task / --role forward from
+# matching CMUX_AGENT_* vars if present. --model is deliberately NOT forwarded:
+# CMUX_AGENT_MODEL is what the launch asked for, which c11 already recorded as a
+# launch stamp (heuristic tier). Declaring it here would outrank the model c11
+# detects from the session file, so a later `/model` would never show.
 c11_set_agent_bg() {
     local c11_bin="$1"
     local agent_type="${CMUX_AGENT_TYPE:-claude-code}"
     [[ -n "$agent_type" ]] || return 0
     local args=(--type "$agent_type")
-    [[ -n "${CMUX_AGENT_MODEL:-}" ]] && args+=(--model "$CMUX_AGENT_MODEL")
     [[ -n "${CMUX_AGENT_TASK:-}" ]] && args+=(--task "$CMUX_AGENT_TASK")
     [[ -n "${CMUX_AGENT_ROLE:-}" ]] && args+=(--role "$CMUX_AGENT_ROLE")
     (CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \

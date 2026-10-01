@@ -19,7 +19,7 @@ struct WorkspaceApplyPlan: Codable, Sendable, Equatable {
     var layout: LayoutTreeSpec
     /// Surfaces keyed by plan-local `SurfaceSpec.id`; referenced from
     /// `LayoutTreeSpec.pane.surfaceIds`.
-    var surfaces: [SurfaceSpec]
+    var surfaces: [TabSpec]
 }
 
 struct WorkspaceSpec: Codable, Sendable, Equatable {
@@ -47,17 +47,17 @@ struct WorkspaceSpec: Codable, Sendable, Equatable {
     }
 }
 
-enum SurfaceSpecKind: String, Codable, Sendable, Equatable {
+enum TabSpecKind: String, Codable, Sendable, Equatable {
     case terminal
     case browser
     case markdown
 }
 
-struct SurfaceSpec: Codable, Sendable, Equatable {
+struct TabSpec: Codable, Sendable, Equatable {
     /// Plan-local stable id, referenced from `LayoutTreeSpec.pane.surfaceIds`.
     /// Never persisted beyond `ApplyResult`; live refs replace it at apply time.
     var id: String
-    var kind: SurfaceSpecKind
+    var kind: TabSpecKind
     /// Applied via `Workspace.setPanelCustomTitle`, which writes the canonical
     /// `title` key into `SurfaceMetadataStore` — no double-write.
     var title: String?
@@ -97,7 +97,7 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
 
     init(
         id: String,
-        kind: SurfaceSpecKind,
+        kind: TabSpecKind,
         title: String? = nil,
         description: String? = nil,
         workingDirectory: String? = nil,
@@ -141,7 +141,7 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        kind = try c.decode(SurfaceSpecKind.self, forKey: .kind)
+        kind = try c.decode(TabSpecKind.self, forKey: .kind)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)
@@ -179,7 +179,7 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
 /// `SplitOrientation` are the two sides of the translation, handled inside
 /// the executor — callers stay in plan-space.
 indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
-    case pane(PaneSpec)
+    case pane(AreaSpec)
     case split(SplitSpec)
 
     private enum CodingKeys: String, CodingKey { case type, pane, split }
@@ -189,7 +189,7 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "pane":
-            self = .pane(try container.decode(PaneSpec.self, forKey: .pane))
+            self = .pane(try container.decode(AreaSpec.self, forKey: .pane))
         case "split":
             self = .split(try container.decode(SplitSpec.self, forKey: .split))
         default:
@@ -213,7 +213,7 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
         }
     }
 
-    struct PaneSpec: Codable, Sendable, Equatable {
+    struct AreaSpec: Codable, Sendable, Equatable {
         /// Plan-local surface ids referenced into `WorkspaceApplyPlan.surfaces`.
         /// Order matches tab order in the pane. At least one entry required.
         var surfaceIds: [String]
@@ -442,12 +442,12 @@ enum CompanionPlanDiagnosticMessage {
         case .duplicateSurfaceID:
             return String(
                 localized: "workspace.companion.diagnostic.duplicateSurfaceID",
-                defaultValue: "Blueprint surface ID '\(sourcePlanID)' is duplicated."
+                defaultValue: "Blueprint tab ID '\(sourcePlanID)' is duplicated."
             )
         case .invalidAgentKind:
             return String(
                 localized: "workspace.companion.diagnostic.invalidAgentKind",
-                defaultValue: "Blueprint surface '\(sourcePlanID)' declares an invalid agent kind."
+                defaultValue: "Blueprint tab '\(sourcePlanID)' declares an invalid agent kind."
             )
         }
     }

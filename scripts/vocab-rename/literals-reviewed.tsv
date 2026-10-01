@@ -1,0 +1,217 @@
+# Reviewed hits of `rename.py check-literals`: a string literal that contains the old spelling of a renamed identifier
+# and was judged a name that is not looked up at runtime (or a deliberate wire/persisted key). Columns: file, old name, class, reason.
+# A new hit that is not listed here fails the check: classify it (fix a runtime-name use; list the rest).
+CLI/c11.swift	bonsplitTab	log	debug/diagnostic log text, never looked up: leave
+CLI/c11.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+CLI/c11.swift	surfaceRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+CLI/c11.swift	tabManager	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/AppDelegate.swift	expectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	failedPanels	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	focusedPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	focusedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	handleBrowserSurfaceKeyEquivalent	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	loadedPanels	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	openTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/AppDelegate.swift	panelId	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	pendingSurfaces	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/AppDelegate.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	tabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	tabId1	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	tabId2	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/AppDelegate.swift	tabsPerPane	log	debug/diagnostic log text, never looked up: leave
+Sources/AppDelegate.swift	targetPane	log	debug/diagnostic log text, never looked up: leave
+Sources/BrowserWindowPortal.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/ContentView.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/ContentView.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/ContentView.swift	selectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/ContentView.swift	surfaceDetails	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/ContentView.swift	tabCount	log	debug/diagnostic log text, never looked up: leave
+Sources/ContentView.swift	tabTitle	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/CreateWorkspaceSheet.swift	panelTitle	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/GhosttyTerminalView.swift	createSurface	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	ensureSurfaceMs	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	hasSurface	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	hasTabDrag	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	paneDropZone	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	refreshSurfaceNow	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/GhosttyTerminalView.swift	restorePanelFocusIntent	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	sendTextToSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/GhosttyTerminalView.swift	surfaceHidden	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	surfaceId	log	debug/diagnostic log text, never looked up: leave
+Sources/GhosttyTerminalView.swift	surfaceOverride	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/GhosttyTerminalView.swift	yieldPanelFocusIntent	log	debug/diagnostic log text, never looked up: leave
+Sources/KeyboardShortcutSettings.swift	newSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/KeyboardShortcutSettings.swift	newTab	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/KeyboardShortcutSettings.swift	nextSidebarTab	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/KeyboardShortcutSettings.swift	nextSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/KeyboardShortcutSettings.swift	prevSidebarTab	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/KeyboardShortcutSettings.swift	prevSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/KeyboardShortcutSettings.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/KeyboardShortcutSettings.swift	togglePaneZoom	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/LaunchResumePicker.swift	surfaceCount	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SessionPersistence.swift	tabManager	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SocketHandlers/BrowserHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/BrowserQueryHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/BrowserQueryHandlers.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SocketHandlers/DebugHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/LegacyWireAliases.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SocketHandlers/LegacyWireAliases.swift	surfaceRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/SocketHandlers/MarkdownFeedbackHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/MiscHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/NotificationHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/PaneHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/PaneHandlers.swift	v2PaneConfirm	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/SnapshotHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/SocketDispatch.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/SurfaceHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceClearHistory	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceRefresh	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceSendKey	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/SurfaceHandlers.swift	v2SurfaceSendText	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/SocketHandlers/WindowHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SocketHandlers/WorkspaceHandlers.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/SurfaceLifecycle.swift	SurfaceLifecycleController	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/TabManifestView.swift	surfaceUUID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/TabTypeAvailability.swift	markdownSurfacesEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Tabs/AreaInteractionOverlayHost.swift	paneInteraction	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/BrowserTab.swift	BrowserPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/BrowserTab.swift	currentTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/BrowserTab.swift	newTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Tabs/BrowserTab.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Tabs/BrowserTabView.swift	currentPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/BrowserTabView.swift	isPanelFocused	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/BrowserTabView.swift	switchToTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Tabs/TerminalTab.swift	runtimeSurface	log	debug/diagnostic log text, never looked up: leave
+Sources/Tabs/TerminalTab.swift	terminalPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/TerminalController.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/TerminalController.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/TerminalNotificationStore.swift	notificationPaneFlashEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/TerminalNotificationStore.swift	notificationPaneRingEnabled	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/TerminalNotificationStore.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/C11Theme.swift	activeTabFill	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	activeTabFillFallback	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	activeTabRail	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	activeTabRailFallback	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	activeTabRailOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	inactiveTabCustomOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/C11Theme.swift	inactiveTabMultiSelectOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeCanonicalizer.swift	activeTabFill	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	activeTabFillFallback	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	activeTabRail	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	activeTabRailFallback	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	activeTabRailOpacity	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	inactiveTabCustomOpacity	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeCanonicalizer.swift	inactiveTabMultiSelectOpacity	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/Theme/ThemeRoleRegistry.swift	activeTabFill	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	activeTabFillFallback	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	activeTabRail	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	activeTabRailFallback	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	activeTabRailOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	inactiveTabCustomOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Theme/ThemeRoleRegistry.swift	inactiveTabMultiSelectOpacity	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Update/UpdateTitlebarAccessory.swift	newTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Workspace.swift	browserPanels	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	closePane	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Workspace.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Workspace.swift	currentPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	didCloseTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	didFocusPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	focusPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	focusPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	focusedPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	focusedPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	fromPane	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	hasRealSurface	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	moveTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	newTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Workspace.swift	newTabs	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	originalTabs	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	paneId	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	panelId	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/Workspace.swift	selectTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	selectedTab	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	sourcePane	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	sourcePanel	log	debug/diagnostic log text, never looked up: leave
+Sources/Workspace.swift	targetPane	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceApplyPlan.swift	duplicateSurfaceID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceBlueprintMarkdown.swift	duplicateSurfaceID	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceBlueprintMarkdown.swift	unsupportedSurfaceKind	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceContentView.swift	emptyPane	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceContentView.swift	focusedPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceContentView.swift	panelCount	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceLayoutExecutor.swift	PaneSpec	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceLayoutExecutor.swift	SurfaceSpec	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/WorkspaceLayoutExecutor.swift	TabManager	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/WorkspaceLayoutExecutor.swift	paneMetadata	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/WorkspaceLayoutExecutor.swift	surfaceIds	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+Sources/WorkspaceManager.swift	bonsplitTabs	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceManager.swift	closeTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceManager.swift	commandPaletteRenameTabRequested	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/WorkspaceManager.swift	focusPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceManager.swift	missingPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceManager.swift	missingSelectedTabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	panelCount	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceManager.swift	panelCountBefore	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	selectedPanel	log	debug/diagnostic log text, never looked up: leave
+Sources/WorkspaceManager.swift	selectedTabId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	showSurfaceIdsInTabTitles	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	sidebarActiveTabIndicatorStyle	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	surfaceId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/WorkspaceManager.swift	tabCount	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+Sources/c11App.swift	closeWorkspaceOnLastSurfaceShortcut	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	commandPaletteSearchAllSurfaces	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	newSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	nextSurface	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	paneRing	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	showSurfaceIdsInTabTitles	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+Sources/c11App.swift	sidebarActiveTabIndicatorStyle	log	debug/diagnostic log text, never looked up: leave
+Sources/c11App.swift	togglePaneZoom	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+c11Tests/AppDelegateShortcutRoutingTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/BrowserConfigTests.swift	BrowserPanel	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/BrowserPanelTests.swift	sourcePaneId	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/MainThreadHangDetectorTests.swift	VerticalTabsSidebar	fixture	test fixture: the type of that name still exists
+c11Tests/SessionPersistenceTests.swift	panelIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/SessionPersistenceTests.swift	tabIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/SessionPersistenceTests.swift	tabManager	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/TabManagerUnitTests.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	paneMetadata	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	paneRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	surfaceIds	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceApplyPlanCodableTests.swift	surfaceRefs	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/WorkspaceBlueprintMarkdownTests.swift	duplicateSurfaceID	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceBlueprintMarkdownTests.swift	unsupportedSurfaceKind	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	PaneMetadataStore	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	SurfaceMetadataStore	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	paneRefs	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	selectedTabId	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	surfaceRefs	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift	paneUUID	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceStressProfileTests.swift	tabsPerWorkspace	log	debug/diagnostic log text, never looked up: leave
+c11Tests/WorkspaceUnitTests.swift	DetachedSurfaceTransfer	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceUnitTests.swift	nextSidebarTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+c11Tests/WorkspaceUnitTests.swift	panelCustomColors	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceUnitTests.swift	prevSidebarTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+c11Tests/WorkspaceUnitTests.swift	pruneSurfaceMetadata	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/WorkspaceUnitTests.swift	renameTab	id	stable identifier (localization key, command/shortcut id, settings or accessibility id): leave
+c11Tests/WorkspaceUnitTests.swift	teardownAllPanels	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11UITests/BonsplitTabDragUITests.swift	alphaTab	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/BonsplitTabDragUITests.swift	betaTab	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/BonsplitTabDragUITests.swift	newTab	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/BonsplitTabDragUITests.swift	paneLeadingGap	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/JumpToUnreadUITests.swift	expectedTabId	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/JumpToUnreadUITests.swift	focusedTabId	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/MenuKeyEquivalentRoutingUITests.swift	missingSelectedTabCount	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/MultiWindowNotificationsUITests.swift	tabId2	harness	debug payload key shared by the app and c11UITests: leave
+c11UITests/UpdatePillUITests.swift	newTab	harness	debug payload key shared by the app and c11UITests: leave
+Sources/SocketHandlers/BrowserHandlers.swift	tabIndex	wire	JavaScript source evaluated in the page (the page's own variable): leave
+Sources/TerminalController.swift	EmptyPanelView	msg	help text of a legacy v1 command: leave
+Sources/WorkspaceManager.swift	closeWorkspaceOnLastSurfaceShortcut	wire	wire, persisted or settings key (JSON/dict key, UserDefaults, theme schema): leave
+c11Tests/AppDelegateShortcutRoutingTests.swift	selectedTabId	msg	message text naming a type or schema field (error, assertion, test label), never looked up: leave
+c11Tests/PaneMetadataPersistenceTests.swift	panelIds	wire	JSON fixture of an on-disk file: leave
+c11Tests/WorkspaceBlueprintFileCodableTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
+c11Tests/WorkspaceSnapshotCaptureTests.swift	surfaceIds	wire	JSON fixture of an on-disk file: leave
+Sources/TerminalController.swift	selectedTabs	harness	debug layout JSON key (area/tab vocabulary) read by tests and tests_v2: leave

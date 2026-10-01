@@ -34,8 +34,8 @@ def _sidebar_visible(client: cmux, window_id: str) -> bool:
 
 
 def _surface_count(client: cmux, workspace_id: str) -> int:
-    payload = client._call("surface.list", {"workspace_id": workspace_id}) or {}
-    return len(payload.get("surfaces") or [])
+    payload = client._call("tab.list", {"workspace_id": workspace_id}) or {}
+    return len(payload.get("tabs") or [])
 
 
 def main() -> int:

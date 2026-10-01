@@ -383,7 +383,7 @@ final class DisplayResolutionRegressionUITests: XCTestCase {
 
         init?(diagnostics: [String: String]) {
             guard diagnostics["renderStatsAvailable"] == "1",
-                  let panelId = diagnostics["renderPanelId"], !panelId.isEmpty,
+                  let panelId = diagnostics["renderTabId"], !panelId.isEmpty,
                   let drawCount = Int(diagnostics["renderDrawCount"] ?? ""),
                   let presentCount = Int(diagnostics["renderPresentCount"] ?? ""),
                   let lastPresentTime = Double(diagnostics["renderLastPresentTime"] ?? ""),

@@ -2,7 +2,9 @@
 
 ## Mission
 
-c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown surfaces composed in one window — addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace itself as the atom of work.
+c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown tabs composed in one window — addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace itself as the atom of work.
+
+c11's model is workspaces → areas → tabs: a pane is an area, a surface is a tab, and a sidebar entry is a workspace, never a tab. Old names (commands, flags, refs, socket methods, env vars, JSON keys) keep working as hidden aliases that never appear in help, skills or docs.
 
 Short name: **c11**. Formal long name (publicly): **c11 terminal multiplexer**. Use the short form in CLI, UI, filenames, and default prose; reach for the long form for first references in formal external contexts (press, docs landing pages, legal copy).
 
@@ -10,18 +12,18 @@ Theme naming: in user-facing product copy, say **c11 theme** and **Light/Dark th
 
 **Who it's for.** The operator running eight, ten, thirty agents at once. The one already feeling the pain of `cmd-tab` roulette across a screen full of terminal windows and wanting structure — not less work, just enough shape that the whole orchestra stays legible while the agents drive.
 
-**What that implies for this codebase.** Every surface has a handle. Every handle is scriptable from outside the process. Agents are first-class; the CLI and socket exist so they can compose their own environment without the operator in the loop for routine moves.
+**What that implies for this codebase.** Every tab has a handle. Every handle is scriptable from outside the process. Agents are first-class; the CLI and socket exist so they can compose their own environment without the operator in the loop for routine moves.
 
 ## Lineage
 
-tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. tmux was for humans driving shells. cmux by [manaflow-ai](https://github.com/manaflow-ai) is the parent — the Ghostty embed, the browser substrate, and the CLI shape all belong to them upstream. c11 is the fork-level iteration for the operator:agent pair: more primitives (markdown surfaces, addressable surface handles, the skill system, agent-written sidebar telemetry), same ancestry. The tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk), forked in `vendor/bonsplit/`.
+tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. tmux was for humans driving shells. cmux by [manaflow-ai](https://github.com/manaflow-ai) is the parent — the Ghostty embed, the browser substrate, and the CLI shape all belong to them upstream. c11 is the fork-level iteration for the operator:agent pair: more primitives (markdown tabs, addressable tab handles, the skill system, agent-written sidebar telemetry), same ancestry. The tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk), forked in `vendor/bonsplit/`.
 
 ### The cmux ↔ c11 relationship is bidirectional
 
 Both projects are open source. The relationship between them is unusual and worth making explicit so nobody has to guess:
 
 - **Upstream → c11 (pull).** We may cherry-pick or merge PRs and commits from `manaflow-ai/cmux` when they fix bugs, improve performance, or add primitives we want. Credit stays with the original authors in the commit metadata. Don't rewrite their code to look like ours; import it cleanly so the provenance is obvious and future syncs stay clean.
-- **c11 → upstream (suggest).** When a fix or improvement made in c11 would also benefit cmux — a bug fix in a shared code path, a performance win in Ghostty embedding, a CLI ergonomics improvement that isn't c11-specific — surface it. Options: open a PR against `manaflow-ai/cmux` directly, or flag it to the operator with a one-line note so they can decide. Default to offering the fix upstream; c11-specific work (skill system, agent telemetry, markdown surfaces, operator-centric primitives) stays here.
+- **c11 → upstream (suggest).** When a fix or improvement made in c11 would also benefit cmux — a bug fix in a shared code path, a performance win in Ghostty embedding, a CLI ergonomics improvement that isn't c11-specific — surface it. Options: open a PR against `manaflow-ai/cmux` directly, or flag it to the operator with a one-line note so they can decide. Default to offering the fix upstream; c11-specific work (skill system, agent telemetry, markdown tabs, operator-centric primitives) stays here.
 - **What stays c11-only.** Anything that only makes sense under "the operator:agent pair is the unit" framing. Agent-facing primitives, skill infrastructure, sidebar telemetry written by agents, the c11 brand surface. These are fork-level by design.
 
 **Practical implication for agents working in this repo:** when you touch a file that clearly came from upstream and your fix isn't c11-specific, flag it. The operator can decide whether to land it here, upstream, or both. Don't silently diverge on shared code — it makes future upstream merges painful and costs both projects improvements they'd otherwise share.
@@ -30,11 +32,11 @@ Treat upstream patterns as load-bearing unless you have a specific reason to div
 
 ## The skill is the agent's steering wheel
 
-c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer skills (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-hotload`, `release`). An agent that's read the skill learns to split panes, open markdown surfaces, drive the embedded browser, report status to the sidebar, and navigate the workspace as infrastructure. An agent that hasn't just sees another terminal.
+c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer skills (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-hotload`, `release`). An agent that's read the skill learns to split areas, open markdown tabs, drive the embedded browser, report status to the sidebar, and navigate the workspace as infrastructure. An agent that hasn't just sees another terminal.
 
-**The bar: fast, fluid, effective.** An agent should be able to fully drive a c11 session — spawning the surfaces it needs, dissolving them when done, reporting progress, recovering from its own mistakes — without the operator having to intervene for routine moves. That only happens if the skill teaches it how, accurately, tersely, and in the exact shape of the CLI that ships.
+**The bar: fast, fluid, effective.** An agent should be able to fully drive a c11 session — spawning the tabs it needs, dissolving them when done, reporting progress, recovering from its own mistakes — without the operator having to intervene for routine moves. That only happens if the skill teaches it how, accurately, tersely, and in the exact shape of the CLI that ships.
 
-**Therefore:** every change to the CLI, socket protocol, metadata schema, or surface model is incomplete until the skill is updated to match. If you add a command, add it to the skill. If you rename a command, rename it in the skill. If you change defaults, update the examples. The skill is the contract; let it rot and agents get worse at using c11. Invest there first, not last.
+**Therefore:** every change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill is updated to match. If you add a command, add it to the skill. If you rename a command, rename it in the skill. If you change defaults, update the examples. The skill is the contract; let it rot and agents get worse at using c11. Invest there first, not last.
 
 ### Editing a skill source is incomplete until the installed copy is synced (HARD RULE)
 
@@ -53,31 +55,31 @@ The script mirrors `skills/<name>/` → `~/.claude/skills/<name>/` (preserving t
 
 There are two different genres here; do not blur them:
 
-- **Agent operating skill (`c11`).** Teaches an agent inside c11 how to use the room: split panes, open surfaces, target handles, report status, drive browser/markdown surfaces, and compose its own working environment.
-- **Maintainer validation skill (`c11-computer-use`, planned).** Teaches a maintainer/developer agent how to test c11 as a product through the real macOS UI: screenshots, clicks, keyboard focus, pane readability, visual recovery, and user-path validation.
+- **Agent operating skill (`c11`).** Teaches an agent inside c11 how to use the room: split areas, open tabs, target handles, report status, drive browser/markdown tabs, and compose its own working environment.
+- **Maintainer validation skill (`c11-computer-use`, planned).** Teaches a maintainer/developer agent how to test c11 as a product through the real macOS UI: screenshots, clicks, keyboard focus, area readability, visual recovery, and user-path validation.
 
 The distinction matters. Socket/CLI commands are excellent for setup, orchestration, recovery, and deterministic oracle checks, but they do not prove that a human-visible workflow works. Computer use should validate behaviors that are visual, spatial, focus-sensitive, pointer-driven, or human-ergonomic.
 
 When validating c11 with computer use:
 
 - Launch only tagged builds (`./scripts/reload.sh --tag <tag>` and `./scripts/launch-tagged-automation.sh <tag>`). Never launch an untagged `c11 DEV.app`.
-- Default handoff is a fresh c11 surface running interactive Codex: create a new terminal pane/surface, run `codex --yolo`, then send a file-backed expert prompt. Do not use `codex exec` for watched validation panes.
-- The expert prompt should name the target tagged app/window, the scenario, success criteria, safety boundaries, artifact expectations, and the caller's workspace/surface refs so Codex can report back with `c11 send` or leave a readable result for `read-screen`.
-- This pattern is cross-agent: Claude Code can delegate visual validation to Codex, and Codex can delegate a clean computer-use pass to another Codex surface. Keep the handoff explicit so the validation context is fresh and inspectable.
+- Default handoff is a fresh c11 tab running interactive Codex: create a new terminal area/tab, run `codex --yolo`, then send a file-backed expert prompt. Do not use `codex exec` for watched validation tabs.
+- The expert prompt should name the target tagged app/window, the scenario, success criteria, safety boundaries, artifact expectations, and the caller's workspace/tab refs so Codex can report back with `c11 send` or leave a readable result for `read-screen`.
+- This pattern is cross-agent: Claude Code can delegate visual validation to Codex, and Codex can delegate a clean computer-use pass to another Codex tab. Keep the handoff explicit so the validation context is fresh and inspectable.
 - Use the socket as setup/oracle infrastructure, not as a substitute for the UI path being tested.
 - Capture screenshots and scenario artifacts for claims about visible behavior.
-- Inspect `c11 tree --no-layout` before calling a run successful. If important panes are too small for a human to read, rebalance them and treat that as part of the validation, not cleanup.
+- Inspect `c11 tree --no-layout` before calling a run successful. If important areas are too small for a human to read, rebalance them and treat that as part of the validation, not cleanup.
 - Prefer repeatable harness scenarios for comparisons across providers. Manual computer-use runs are useful, but they should feed back into reusable scenarios and skill guidance.
 
 The lesson from the OpenAI CUA runner work: "it executed" is not enough. If the resulting workspace is hard for the operator to read, the validation found a product/workflow issue worth preserving.
 
 ## Principle: unopinionated about the terminal
 
-c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. The operator's tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.) are off-limits: c11 never reaches in to install hooks, persist configuration, or inject behavior into any TUI's on-disk state.
+c11 is **host and primitive, not configurator.** It provides tabs, areas, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. The operator's tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.) are off-limits: c11 never reaches in to install hooks, persist configuration, or inject behavior into any TUI's on-disk state.
 
 **One narrow exception: session-resume wrappers under `Resources/bin/`.** When a TUI's lifecycle is otherwise opaque to c11, c11 may ship a PATH-scoped wrapper that captures the minimum lifecycle signal needed for *session resume* across c11 reboots. The wrapper must:
 
-- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `C11_SURFACE_ID` + a live socket).
+- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `C11_TAB_ID` + a live socket).
 - Make **no persistent writes** to tenant config, dotfiles, or any path outside c11's own runtime (`/tmp` is fine; `~/.claude/`, `~/.codex/`, etc. are not).
 - Capture only the minimum needed for session resume — usually a session id and `terminal_type`, plus lifecycle status where the TUI exposes it (Claude Code does via hooks; codex does not).
 - Fall through to the real binary unchanged when outside a c11 terminal or when the c11 socket is unreachable.
@@ -90,15 +92,15 @@ Consequences:
 - **Skill-driven self-reporting is still the standard pattern** for status/lifecycle telemetry. Agents that read the c11 skill learn to call `c11 set-metadata` / `c11 set-status` from their own lifecycle. The `cmux` CLI is a compat alias that dispatches to the same binary. The session-resume wrappers do not replace this — they handle only the resume capture path that the skill cannot, because they have to run *before* the agent process exists.
 - **The skill file is the only outgoing touch for behavior.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
 
-When in doubt: c11's job stops at the edge of its surfaces, save for the narrow session-resume rail above. What happens inside an agent's process is the agent's business.
+When in doubt: c11's job stops at the edge of its tabs, save for the narrow session-resume rail above. What happens inside an agent's process is the agent's business.
 
 ## Default workflow for Lattice tickets: lattice-orchestrator
 
-When the operator hands you a Lattice ticket to execute (or asks to "run", "delegate", "walk through" a ticket), the default is the **Lattice Orchestrator Workflow**, shipped in this repo at `skills/lattice-orchestrator/SKILL.md` and exposed as an installable skill via c11's `skills/MANIFEST.json`. Do not attack the ticket inline from the orchestrator pane.
+When the operator hands you a Lattice ticket to execute (or asks to "run", "delegate", "walk through" a ticket), the default is the **Lattice Orchestrator Workflow**, shipped in this repo at `skills/lattice-orchestrator/SKILL.md` and exposed as an installable skill via c11's `skills/MANIFEST.json`. Do not attack the ticket inline from the orchestrator tab.
 
 Why this is the default here:
 - c11 tickets routinely involve typing-latency hot paths, tagged builds, localization passes, and submodule discipline. One worktree per delegator carves blast-radius cleanly so build artifacts and submodule state cannot bleed across parallel work.
-- Multi-phase work (plan → implement → review → fix → open PR) is hard to keep coherent in a single chat. A delegator pane per ticket plus Lattice-as-comms-bus gives every reader (operator, future agent, retro-AAR) a clean trail.
+- Multi-phase work (plan → implement → review → fix → open PR) is hard to keep coherent in a single chat. A delegator tab per ticket plus Lattice-as-comms-bus gives every reader (operator, future agent, retro-AAR) a clean trail.
 - A master validator singleton audits global build/test/PR state independent of any one delegator.
 
 Skip the pattern only when the ticket is a one-line text edit, a trivially mechanical change with no review surface, or the operator explicitly says "just do it inline." When in doubt, default to the skill.
@@ -121,19 +123,19 @@ The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-sl
 
 - **`dlog` is DEBUG-only.** It's bonsplit's `DebugEventLog` free function, defined inside `#if DEBUG`. Every call site must be `#if DEBUG`-gated or the Release configuration fails to compile — and CI's `build` job compiles Debug, so an ungated `dlog` sails through PR CI and only breaks at release-staging time (v0.51.0 staging caught four of these from PR #95). Gate the logging, not the surrounding logic.
 - **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.stage11.c11.tabtransfer`, `com.stage11.c11.sidebar-tab-reorder`).
-- **`runModal()` on any path an agent can reach wedges the whole app.** `NSAlert.runModal()` spins a nested run loop on main and blocks every terminal, pane, and agent until a human dismisses it, and socket commands run their work through `v2MainSync`, so the modal loop ends up inside a `DispatchQueue.main.sync`. It is fine for an alert the operator just triggered from a menu or button; it is a hang bug anywhere else (C11-204: the browser insecure-HTTP prompt held main for up to 6.8 hours). For browser modals use `browserPresentModalAlert` in `Sources/Panels/BrowserPanel.swift`, which sheets onto a usable window and applies a safe default when there is none.
+- **`runModal()` on any path an agent can reach wedges the whole app.** `NSAlert.runModal()` spins a nested run loop on main and blocks every terminal, area, and agent until a human dismisses it, and socket commands run their work through `v2MainSync`, so the modal loop ends up inside a `DispatchQueue.main.sync`. It is fine for an alert the operator just triggered from a menu or button; it is a hang bug anywhere else (C11-204: the browser insecure-HTTP prompt held main for up to 6.8 hours). For browser modals use `browserPresentModalAlert` in `Sources/Tabs/BrowserTab.swift`, which sheets onto a usable window and applies a safe default when there is none.
 - **A loop on a long-lived thread must drain an `autoreleasepool` per iteration.** A `Thread`'s root pool only drains when the thread exits, so every autoreleased object its Foundation calls leave behind (`JSONSerialization` buffers, bridged strings, `FileManager`) stays alive until then, and `leaks` won't flag it because the pool still references it all. c11's long-lived threads are the socket accept loop, each per-connection `handleClient` thread (clients can hold a connection for days), and the hang-monitor watchdog; any new one needs the same drain. C11-211: one held socket connection pinned ~3 GB/day of JSON buffers.
 - Do not add an app-level display link or manual `ghostty_surface_draw` loop; rely on Ghostty wakeups/renderer to avoid typing lag.
 - **Typing-latency-sensitive paths** (read carefully before touching these areas):
   - `WindowTerminalHostView.hitTest()` in `TerminalWindowPortal.swift`: called on every event including keyboard. All divider/sidebar/drag routing is gated to pointer events only. Do not add work outside the `isPointerEvent` guard.
-  - `TabItemView` in `ContentView.swift`: uses `Equatable` conformance + `.equatable()` to skip body re-evaluation during typing. Do not add `@EnvironmentObject`, `@ObservedObject` (besides `tab`), or `@Binding` properties without updating the `==` function. Do not remove `.equatable()` from the ForEach call site. Do not read `tabManager` or `notificationStore` in the body; use the precomputed `let` parameters instead.
+  - `WorkspaceRowView` in `ContentView.swift`: uses `Equatable` conformance + `.equatable()` to skip body re-evaluation during typing. Do not add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` properties without updating the `==` function. Do not remove `.equatable()` from the ForEach call site. Do not read `workspaceManager` or `notificationStore` in the body; use the precomputed `let` parameters instead.
   - `TerminalSurface.forceRefresh()` in `GhosttyTerminalView.swift`: called on every keystroke. Do not add allocations, file I/O, or formatting here.
-- **Terminal find layering contract:** `SurfaceSearchOverlay` must be mounted from `GhosttySurfaceScrollView` in `Sources/GhosttyTerminalView.swift` (AppKit portal layer), not from SwiftUI panel containers such as `Sources/Panels/TerminalPanelView.swift`. Portal-hosted terminal views can sit above SwiftUI during split/workspace churn.
+- **Terminal find layering contract:** `TabSearchOverlay` must be mounted from `GhosttySurfaceScrollView` in `Sources/GhosttyTerminalView.swift` (AppKit portal layer), not from SwiftUI panel containers such as `Sources/Tabs/TerminalTabView.swift`. Portal-hosted terminal views can sit above SwiftUI during split/workspace churn.
 - **Submodule safety:** When modifying a submodule (ghostty, vendor/bonsplit, etc.), always push the submodule commit to its remote `main` branch BEFORE committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch — the commit will be orphaned and lost. Verify with: `cd <submodule> && git merge-base --is-ancestor HEAD origin/main`.
 - **A fresh `git worktree add` cannot build until you provision it.** A new worktree has neither the submodules nor the prebuilt `GhosttyKit.xcframework` symlink, so xcodebuild fails in sequence with "Could not resolve package dependencies" (bonsplit), "Ghostty submodule is missing", then "no XCFramework found" — none of which are code problems. Before the first build in any new worktree: `git submodule update --init --recursive ghostty vendor/bonsplit`, then link the SHA-keyed cache entry: `GHOSTTY_SHA="$(git -C ghostty rev-parse HEAD)"; GHOSTTYKIT_CACHE_ROOT="${CMUX_GHOSTTYKIT_CACHE_DIR:-$HOME/.cache/cmux/ghosttykit}"; ln -s "$GHOSTTYKIT_CACHE_ROOT/$GHOSTTY_SHA/GhosttyKit.xcframework" GhosttyKit.xcframework`. The local build entry points verify and repair this link before xcodebuild, so a missing cache entry is fetched when its checksum is pinned. Both are gitignored, so neither dirties the branch. (Per-delegator worktrees in the orchestrator workflow inherit this — provision before building, not after the first red.)
 - **pbxproj edits via the `xcodeproj` Ruby gem normalize formatting on save** (3-tab → 2-tab indent, reordered `PBXBuildFile` entries, re-issued some object IDs). A "small" semantic edit can produce a multi-thousand-line diff; line-by-line review is not the right gate. Reviewers of future pbxproj-touching tickets should expect the diff bloat and gate on `xcodebuild -list` + file-membership counts + `xcodebuild -showBuildSettings` spot-checks instead. Don't fight the gem by hand-restoring whitespace; that just compounds churn on the next save.
-- **No c11 on this machine can open a terminal while the Mac's screen is locked.** Symptom: every new terminal surface (tab, split, `new-surface`, `launch-agent`) stays unattached, and the ghostty log shows `embedded_window: error initializing surface err=error.OutOfMemory` from `ghostty_surface_new`, in production c11 and in every tagged DEV build alike. RAM, file descriptors, process and thread counts, Metal, and IOSurface all look healthy from a shell, so do not spend time ruling them out. Cause: with the screen locked, WindowServer refuses the GPU-backed surface the renderer needs and ghostty reports the refusal as an allocation failure. Recovery: unlock the screen; surface creation resumes at once and queued `send` payloads flush on attach. If a delegator's tagged-build validation hits this, park it and ask the operator to unlock; do not reboot or reset anything. (C11-238 run, 2026-09-26.)
-- **c11 CLI socket can go unreachable while the prod app is still alive.** Symptom: every `c11 <cmd>` errors with `Socket not found at ~/Library/Application Support/c11/c11.sock`, but the c11.app process is still running and the macOS UI / panes / agents are fully interactive. `lsof` shows the process is still bound to the path; the file has been unlinked from the filesystem. **Recovery (non-destructive):** Cmd+Shift+P → run **"Restart CLI Listener"** from the command palette. Invokes `AppDelegate.restartSocketListener(_:)` which stops + re-binds the socket without touching `TabManager`, workspaces, panes, or PTYs. **Root cause (C11-105):** `TerminalControllerSocketSecurityTests.swift` was a member of the `c11LogicTests` target (despite living in `c11Tests/` on disk). The test's `setUp` calls `TerminalController.shared.stop()`, and `TerminalController.socketPath` was default-initialized to `SocketControlSettings.stableDefaultSocketPath` — so any local `xcodebuild -scheme c11-logic test` run would `unlink()` the prod c11's bind dentry while its FD stayed live in-kernel. The fix moves the test back into `c11Tests`, empties the field's default, and gates `stop()`'s unlink on a non-empty path. The kqueue diagnostic at `tools/socket-watcher/` + `docs/c11-socket-unlink-diagnostic.md` remains as a canary for any future unlink source.
+- **No c11 on this machine can open a terminal while the Mac's screen is locked.** Symptom: every new terminal tab (tab, split, `new-tab`, `launch-agent`) stays unattached, and the ghostty log shows `embedded_window: error initializing surface err=error.OutOfMemory` from `ghostty_surface_new`, in production c11 and in every tagged DEV build alike. RAM, file descriptors, process and thread counts, Metal, and IOSurface all look healthy from a shell, so do not spend time ruling them out. Cause: with the screen locked, WindowServer refuses the GPU-backed surface the renderer needs and ghostty reports the refusal as an allocation failure. Recovery: unlock the screen; surface creation resumes at once and queued `send` payloads flush on attach. If a delegator's tagged-build validation hits this, park it and ask the operator to unlock; do not reboot or reset anything. (C11-238 run, 2026-09-26.)
+- **c11 CLI socket can go unreachable while the prod app is still alive.** Symptom: every `c11 <cmd>` errors with `Socket not found at ~/Library/Application Support/c11/c11.sock`, but the c11.app process is still running and the macOS UI / areas / agents are fully interactive. `lsof` shows the process is still bound to the path; the file has been unlinked from the filesystem. **Recovery (non-destructive):** Cmd+Shift+P → run **"Restart CLI Listener"** from the command palette. Invokes `AppDelegate.restartSocketListener(_:)` which stops + re-binds the socket without touching `TabManager`, workspaces, areas, or PTYs. **Root cause (C11-105):** `TerminalControllerSocketSecurityTests.swift` was a member of the `c11LogicTests` target (despite living in `c11Tests/` on disk). The test's `setUp` calls `TerminalController.shared.stop()`, and `TerminalController.socketPath` was default-initialized to `SocketControlSettings.stableDefaultSocketPath` — so any local `xcodebuild -scheme c11-logic test` run would `unlink()` the prod c11's bind dentry while its FD stayed live in-kernel. The fix moves the test back into `c11Tests`, empties the field's default, and gates `stop()`'s unlink on a non-empty path. The kqueue diagnostic at `tools/socket-watcher/` + `docs/c11-socket-unlink-diagnostic.md` remains as a canary for any future unlink source.
 
 ## Localization
 
@@ -141,7 +143,7 @@ c11 ships in English plus six translations: Japanese (ja), Ukrainian (uk), Korea
 
 - **Write English only.** The `defaultValue:` in `String(localized:)` is the source of truth. Don't hand-author other languages in product code — that's a separate pass.
 - **All user-facing strings must be localized at the call site.** Use `String(localized: "key.name", defaultValue: "English text")` everywhere — labels, buttons, menus, alerts, tooltips, error messages. No bare string literals in SwiftUI `Text()`, `Button()`, alert titles, etc.
-- **Delegate translation to a sub-agent in a new c11 surface.** After adding or changing English strings, spawn a translator in a fresh c11 pane to sync `Localizable.xcstrings` for the other six locales. Point it at the new/changed English values; it reads the xcstrings, emits the six translations, writes back.
+- **Delegate translation to a sub-agent in a new c11 tab.** After adding or changing English strings, spawn a translator in a fresh c11 area to sync `Localizable.xcstrings` for the other six locales. Point it at the new/changed English values; it reads the xcstrings, emits the six translations, writes back.
 - **Parallelize when there's a lot to translate.** For a handful of strings, one sub-agent is fine. For a larger batch, spawn one sub-agent per locale — six in parallel — so the translation pass doesn't gate the next piece of work.
 - **Validate the edited xcstrings with `jq`, not `plutil`.** `plutil -lint Resources/Localizable.xcstrings` fails with `Unexpected character { at line 1` — it dispatches on the file extension and tries to parse the JSON as a plist. That is a tooling artifact, not a corrupt file, so don't chase it. `jq . Resources/Localizable.xcstrings > /dev/null` is the real well-formedness check. Also assert that every interpolation token (`%@`, `%lld`, …) present in the English value survives in all six translations — a dropped token is a crash at format time, not a cosmetic bug.
 
@@ -178,7 +180,7 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
   Schemes that build c11-unit (or `c11-ci`) without the `test` action are safe — they only compile.
 
-- **Python socket tests (`tests_v2/`)** — connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+- **Python socket tests (`tests_v2/`)** — connect to a running c11 over its socket. Live runs go through `scripts/sandbox-tests-v2.sh` inside the guest from `scripts/sandbox-up.sh`, never against the operator's session. The suite is plain `python3` scripts, not pytest. The runner sets `C11_SOCKET`, `C11_SOCKET_PATH`, and `C11_CLI` to that guest.
 
 - **E2E / UI tests** — trigger via `gh workflow run test-e2e.yml`. Never run locally.
 
@@ -201,7 +203,7 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 ## Socket focus policy
 
 - Socket/CLI commands must not steal macOS app focus (no app activation/window raising side effects).
-- Only explicit focus-intent commands may mutate in-app focus/selection (`window.focus`, `workspace.select/next/previous/last`, `surface.focus`, `pane.focus/last`, browser focus commands, and v1 focus equivalents).
+- Only explicit focus-intent commands may mutate in-app focus/selection (`window.focus`, `workspace.select/next/previous/last`, `tab.focus`, `area.focus/last`, browser focus commands, and v1 focus equivalents).
 - All non-focus commands should preserve current user focus context while still applying data/model changes.
 
 ## Ghostty submodule workflow

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Spec test: env-var declaration path.
 
-Per spec, the wrapper reads CMUX_AGENT_TYPE/_MODEL/_TASK/_ROLE once at
-surface-child-process start and calls `cmux set-agent`. In the interim
-the test uses a send-text stand-in:
+Per spec, the wrapper reads CMUX_AGENT_TYPE/_TASK/_ROLE once at
+surface-child-process start and calls `cmux set-agent`. CMUX_AGENT_MODEL is NOT
+forwarded: it records what the launch asked for (a launch stamp, heuristic tier),
+so the model c11 detects from the session file outranks it. A model an agent
+declares itself with `set-agent --model` is still tier `declare`, which is what
+this test exercises with a send-text stand-in:
 
     cmux send-text 'cmux set-agent --type claude-code --model claude-opus-4-7\n'
 
@@ -36,9 +39,9 @@ def main() -> int:
         # Uses explicit --surface so the CLI inside the surface targets its own surface.
         cmd = (
             f"cmux set-agent --type claude-code --model claude-opus-4-7 "
-            f"--surface {surface_id}\n"
+            f"--tab {surface_id}\n"
         )
-        client._call("surface.send_text", {"surface_id": surface_id, "text": cmd})
+        client._call("tab.send_text", {"tab_id": surface_id, "text": cmd})
 
         meta, sources = wait_for_terminal_type(
             client,

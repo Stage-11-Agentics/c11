@@ -18,12 +18,12 @@ final class WorkspaceFlashTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.set(pinnedMs, forKey: NotificationFlashDurationSettings.storageKey)
-        UserDefaults.standard.set(true, forKey: NotificationPaneFlashSettings.enabledKey)
+        UserDefaults.standard.set(true, forKey: NotificationAreaFlashSettings.enabledKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: NotificationFlashDurationSettings.storageKey)
-        UserDefaults.standard.removeObject(forKey: NotificationPaneFlashSettings.enabledKey)
+        UserDefaults.standard.removeObject(forKey: NotificationAreaFlashSettings.enabledKey)
         super.tearDown()
     }
 
@@ -38,7 +38,7 @@ final class WorkspaceFlashTests: XCTestCase {
         )
 
         XCTAssertEqual(workspace.sidebarFlashToken, initialToken &+ 1)
-        XCTAssertNil(workspace.persistentFlashPanels[panelId])
+        XCTAssertNil(workspace.persistentFlashTabs[panelId])
     }
 
     func testPersistentFlashRegistersStateAndKeepsRegistrationUntilCancel() {
@@ -51,11 +51,11 @@ final class WorkspaceFlashTests: XCTestCase {
             persistent: true
         )
 
-        let registered = workspace.persistentFlashPanels[panelId]
+        let registered = workspace.persistentFlashTabs[panelId]
         XCTAssertNotNil(registered, "Persistent flash should register state on the workspace")
 
         workspace.cancelPersistentFlash(panelId: panelId)
-        XCTAssertNil(workspace.persistentFlashPanels[panelId])
+        XCTAssertNil(workspace.persistentFlashTabs[panelId])
     }
 
     func testCancelAllPersistentFlashesClearsEveryRegistration() {
@@ -73,10 +73,10 @@ final class WorkspaceFlashTests: XCTestCase {
             appearance: FlashAppearance(color: .red, envelope: .paneRing),
             persistent: true
         )
-        XCTAssertEqual(workspace.persistentFlashPanels.count, 2)
+        XCTAssertEqual(workspace.persistentFlashTabs.count, 2)
 
         workspace.cancelAllPersistentFlashes()
-        XCTAssertTrue(workspace.persistentFlashPanels.isEmpty)
+        XCTAssertTrue(workspace.persistentFlashTabs.isEmpty)
     }
 
     func testCancelOnUnregisteredPanelIsIdempotent() {
@@ -84,7 +84,7 @@ final class WorkspaceFlashTests: XCTestCase {
         let panelId = UUID()
         // No prior persistent flash; cancel should not crash or alter state.
         workspace.cancelPersistentFlash(panelId: panelId)
-        XCTAssertTrue(workspace.persistentFlashPanels.isEmpty)
+        XCTAssertTrue(workspace.persistentFlashTabs.isEmpty)
     }
 
     func testRetriggerPersistentReplacesExistingTimerWithoutLeaking() {
@@ -96,14 +96,14 @@ final class WorkspaceFlashTests: XCTestCase {
             appearance: FlashAppearance.current(envelope: .paneRing),
             persistent: true
         )
-        let firstTimer = workspace.persistentFlashPanels[panelId]?.timer
+        let firstTimer = workspace.persistentFlashTabs[panelId]?.timer
 
         workspace.triggerFocusFlash(
             panelId: panelId,
             appearance: FlashAppearance(color: .blue, envelope: .paneRing),
             persistent: true
         )
-        let secondTimer = workspace.persistentFlashPanels[panelId]?.timer
+        let secondTimer = workspace.persistentFlashTabs[panelId]?.timer
 
         XCTAssertNotNil(firstTimer)
         XCTAssertNotNil(secondTimer)
@@ -132,13 +132,13 @@ final class WorkspaceFlashTests: XCTestCase {
             appearance: FlashAppearance.current(envelope: .paneRing),
             persistent: true
         )
-        let timerA = workspace.persistentFlashPanels[panelA]?.timer
-        let timerB = workspace.persistentFlashPanels[panelB]?.timer
-        XCTAssertEqual(workspace.persistentFlashPanels.count, 2)
+        let timerA = workspace.persistentFlashTabs[panelA]?.timer
+        let timerB = workspace.persistentFlashTabs[panelB]?.timer
+        XCTAssertEqual(workspace.persistentFlashTabs.count, 2)
 
         workspace.teardownAllPanels()
 
-        XCTAssertTrue(workspace.persistentFlashPanels.isEmpty)
+        XCTAssertTrue(workspace.persistentFlashTabs.isEmpty)
         XCTAssertEqual(timerA?.isValid, false, "teardown must invalidate persistent timers")
         XCTAssertEqual(timerB?.isValid, false, "teardown must invalidate persistent timers")
     }
@@ -158,7 +158,7 @@ final class WorkspaceFlashTests: XCTestCase {
                 appearance: FlashAppearance.current(envelope: .paneRing),
                 persistent: true
             )
-            capturedTimer = workspace.persistentFlashPanels[panelId]?.timer
+            capturedTimer = workspace.persistentFlashTabs[panelId]?.timer
             XCTAssertNotNil(capturedTimer)
         }
         // After the autoreleasepool drains, `Workspace` should deallocate;
@@ -168,8 +168,8 @@ final class WorkspaceFlashTests: XCTestCase {
     }
 
     func testPaneFlashDisabledGuardSilencesAllChannels() {
-        UserDefaults.standard.set(false, forKey: NotificationPaneFlashSettings.enabledKey)
-        defer { UserDefaults.standard.set(true, forKey: NotificationPaneFlashSettings.enabledKey) }
+        UserDefaults.standard.set(false, forKey: NotificationAreaFlashSettings.enabledKey)
+        defer { UserDefaults.standard.set(true, forKey: NotificationAreaFlashSettings.enabledKey) }
 
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()
@@ -182,6 +182,6 @@ final class WorkspaceFlashTests: XCTestCase {
         )
 
         XCTAssertEqual(workspace.sidebarFlashToken, initialToken)
-        XCTAssertNil(workspace.persistentFlashPanels[panelId])
+        XCTAssertNil(workspace.persistentFlashTabs[panelId])
     }
 }

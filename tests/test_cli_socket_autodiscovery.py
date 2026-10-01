@@ -10,6 +10,8 @@ import socket
 import subprocess
 import threading
 
+from fake_server_env import fake_server_env
+
 
 def resolve_cmux_cli() -> str:
     explicit = os.environ.get("CMUX_CLI_BIN") or os.environ.get("CMUX_CLI")
@@ -101,7 +103,8 @@ def main() -> int:
         print(f"FAIL: socket server failed to start: {server.error}")
         return 1
 
-    env = os.environ.copy()
+    # No inherited socket variable may override the discovery under test.
+    env = fake_server_env(None)
     env["CMUX_SOCKET_PATH"] = "/tmp/cmux.sock"
     env["CMUX_TAG"] = tag
     env["CMUX_CLI_SENTRY_DISABLED"] = "1"

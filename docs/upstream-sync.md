@@ -51,7 +51,7 @@ while accepting upstream's functional changes.
 | `CHANGELOG.md` | Release notes | Merge entries; prefix our c11-only changes clearly. |
 | `Sources/SocketControlSettings.swift` | Socket path constants, `baseDebugBundleIdentifier` | Keep `com.stage11.c11mux` debug base. Socket filenames stay upstream-compatible per the contract. |
 | `Package.swift` | Product executable name | Keep executable product name as per contract (`cmux` internal, display `c11mux` only in bundle). |
-| `Resources/shell-integration/*` | `CMUX_*` env contract (gate: `CMUX_SHELL_INTEGRATION`, plus `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, etc.) | Keep the `CMUX_*` namespace as-is — it is the canonical, upstream-compatible public contract. Do not rename to `C11MUX_*`. |
+| `Resources/shell-integration/*` | `CMUX_*` env contract (gate: `CMUX_SHELL_INTEGRATION`, plus `CMUX_WORKSPACE_ID`, etc.) | Keep the `CMUX_*` namespace as-is — it is the canonical, upstream-compatible public contract. Do not rename to `C11MUX_*`. |
 | `Sources/cmuxApp.swift` | About dialog attribution | Keep "c11mux — a fork of cmux by manaflow-ai" string. |
 | `GhosttyTabs.xcodeproj/project.pbxproj` | Bundle IDs, `PRODUCT_NAME` for DEV variant | Keep `com.stage11.c11mux(.debug/.apptests/...)`. `PRODUCT_NAME` stays upstream-compatible per contract; only the DEV variant is renamed. |
 | `Sources/AppDelegate.swift` | Prefs migration shim | Keep `migrateLegacyPreferencesIfNeeded()` + its call at the top of `applicationDidFinishLaunching`. |
@@ -104,10 +104,10 @@ Do all of these before pushing:
 1. **Build:** `xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/cmux-sync build`
 2. **Launch app:** `./scripts/reload.sh --tag sync-YYYYMMDD` and confirm the window opens,
    display name reads "c11", About box attribution still says "a fork of cmux".
-3. **Smoke test socket:** from another terminal, `cmux new-split right --surface <id>` and
+3. **Smoke test socket:** from another terminal, `cmux new-split right --tab <id>` and
    confirm it works (socket path/filename unchanged for upstream compat).
-4. **Shell integration:** open a new pane, confirm `CMUX_SURFACE_ID` and `C11MUX_SHELL_INTEGRATION`
-   are both set.
+4. **Shell integration:** open a new tab, confirm both shell-integration env namespaces
+   (upstream-compatible and c11mux) are set.
 5. **Prefs migration smoke:** blow away `~/Library/Preferences/com.stage11.c11mux.plist`, seed
    `~/Library/Preferences/ai.manaflow.cmuxterm.plist` with a known key, launch, confirm
    the key transfers.

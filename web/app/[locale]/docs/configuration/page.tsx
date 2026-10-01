@@ -52,7 +52,7 @@ cursor-text = #1e1e2e
 selection-background = #585b70
 selection-foreground = #cdd6f4`}</CodeBlock>
 
-      <h3>{t("splitPanes")}</h3>
+      <h3>{t("splitAreas")}</h3>
       <CodeBlock title="~/.config/ghostty/config" lang="ini">{`# Opacity for unfocused splits (0.0 to 1.0)
 unfocused-split-opacity = 0.7
 

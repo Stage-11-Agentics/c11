@@ -111,13 +111,13 @@ enum LaunchResumePicker {
     /// workspaces (nothing to choose from), the picker is skipped and
     /// `completion(.skipAll)` fires synchronously.
     ///
-    /// The sheet is non-cancellable via the standard ⎋ keystroke alone:
-    /// a misclick that dismisses the sheet should not silently throw the
-    /// session away. ⎋ inside the picker is wired to "Skip" so the
-    /// operator's intent is recorded explicitly.
+    /// ⎋ does nothing: a stray keystroke must not throw the session away.
+    /// Skip takes a click; Return resumes the selection. `onSheetEnded`
+    /// fires however the sheet ends, with or without a decision.
     static func presentSheet(
         on parentWindow: NSWindow,
         snapshot: AppSessionSnapshot,
+        onSheetEnded: (() -> Void)? = nil,
         completion: @escaping (LaunchResumePickerDecision) -> Void
     ) {
         let entries = entries(from: snapshot)
@@ -161,7 +161,7 @@ enum LaunchResumePicker {
         sheetWindow.setContentSize(NSSize(width: 460, height: 420))
 
         capturedSheetWindow = sheetWindow
-        parentWindow.beginSheet(sheetWindow, completionHandler: nil)
+        parentWindow.beginSheet(sheetWindow) { _ in onSheetEnded?() }
     }
 
     /// Filter `snapshot.windows[*].tabManager.workspaces` to only those
@@ -175,7 +175,7 @@ enum LaunchResumePicker {
     ) -> AppSessionSnapshot? {
         var newWindows: [SessionWindowSnapshot] = []
         for window in snapshot.windows {
-            let kept = window.tabManager.workspaces.filter { keep.contains($0.id) }
+            let kept = window.workspaceManager.workspaces.filter { keep.contains($0.id) }
             guard !kept.isEmpty else { continue }
             var newWindow = window
             // Reanchor selectedWorkspaceIndex to a kept workspace —
@@ -185,17 +185,17 @@ enum LaunchResumePicker {
             // fallback). Map the prior selected ID to the new index, or
             // fall back to the first kept workspace.
             let priorSelectedId: UUID? = {
-                if let idx = window.tabManager.selectedWorkspaceIndex,
+                if let idx = window.workspaceManager.selectedWorkspaceIndex,
                    idx >= 0,
-                   idx < window.tabManager.workspaces.count {
-                    return window.tabManager.workspaces[idx].id
+                   idx < window.workspaceManager.workspaces.count {
+                    return window.workspaceManager.workspaces[idx].id
                 }
                 return nil
             }()
             let newSelectedIndex = priorSelectedId.flatMap { id in
                 kept.firstIndex { $0.id == id }
             } ?? 0
-            newWindow.tabManager = SessionTabManagerSnapshot(
+            newWindow.workspaceManager = SessionWorkspaceManagerSnapshot(
                 selectedWorkspaceIndex: newSelectedIndex,
                 workspaces: kept
             )
@@ -214,7 +214,7 @@ enum LaunchResumePicker {
     private static func entries(from snapshot: AppSessionSnapshot) -> [LaunchResumePickerEntry] {
         var out: [LaunchResumePickerEntry] = []
         for (windowIndex, window) in snapshot.windows.enumerated() {
-            for workspace in window.tabManager.workspaces {
+            for workspace in window.workspaceManager.workspaces {
                 let resolvedTitle = (workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
                     ?? workspace.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
                     ?? workspace.processTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -358,7 +358,6 @@ struct LaunchResumePickerView: View {
                     ))
                     .frame(minWidth: 60)
                 }
-                .keyboardShortcut(.cancelAction)
                 Button(action: {
                     if model.selection.isEmpty {
                         onComplete(.skipAll)
@@ -433,7 +432,7 @@ private struct LaunchResumePickerRow: View {
     private var secondaryLine: String {
         let countFormat = String(
             localized: "launch.resume.surfaceCount",
-            defaultValue: "%lld surface(s)"
+            defaultValue: "%lld tab(s)"
         )
         let countText = String(format: countFormat, entry.surfaceCount)
         if entry.surfaceTitles.isEmpty {

@@ -33,7 +33,7 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
         XCTAssertTrue(app.windows.firstMatch.exists, "Expected the window to remain open after cancelling close")
     }
 
-    func testReturnConfirmsCloseWindowDialog() {
+    func testReturnCancelsCloseWindowDialog() {
         let app = XCUIApplication()
         app.launchEnvironment["CMUX_TAG"] = launchTag
         app.launch()
@@ -49,19 +49,42 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
             "Expected Cmd+Ctrl+W to show the close window confirmation alert"
         )
 
+        // Cancel is the default: a reflexive Return must keep the window.
         app.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(
             waitForCloseWindowAlertToDismiss(app: app, timeout: 5.0),
             "Expected Return to dismiss the close window confirmation alert"
         )
+        XCTAssertTrue(app.windows.firstMatch.exists, "Expected Return to cancel, keeping the window open")
+    }
+
+    func testClickingCloseConfirmsCloseWindowDialog() {
+        let app = XCUIApplication()
+        app.launchEnvironment["CMUX_TAG"] = launchTag
+        app.launch()
+        XCTAssertTrue(
+            ensureForegroundAfterLaunch(app, timeout: 12.0),
+            "Expected app to launch for close-window confirmation test. state=\(app.state.rawValue)"
+        )
+
+        app.typeKey("w", modifierFlags: [.command, .control])
+
+        XCTAssertTrue(
+            waitForCloseWindowAlert(app: app, timeout: 5.0),
+            "Expected Cmd+Ctrl+W to show the close window confirmation alert"
+        )
+
+        clickButtonOnCloseWindowAlert(app: app, title: "Close")
+
         XCTAssertTrue(
             waitForMainWindowToClose(app: app, timeout: 5.0),
-            "Expected Return to confirm window close"
+            "Expected clicking Close to close the window"
         )
     }
 
     private func isCloseWindowAlertPresent(app: XCUIApplication) -> Bool {
+        if closeWindowSheet(app: app).exists { return true }
         if closeWindowDialog(app: app).exists { return true }
         if closeWindowAlert(app: app).exists { return true }
         return app.staticTexts["Close window?"].exists
@@ -98,20 +121,23 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
     }
 
     private func clickCancelOnCloseWindowAlert(app: XCUIApplication) {
-        let dialog = closeWindowDialog(app: app)
-        if dialog.exists {
-            dialog.buttons["Cancel"].firstMatch.click()
-            return
-        }
-        let alert = closeWindowAlert(app: app)
-        if alert.exists {
-            alert.buttons["Cancel"].firstMatch.click()
+        clickButtonOnCloseWindowAlert(app: app, title: "Cancel")
+    }
+
+    private func clickButtonOnCloseWindowAlert(app: XCUIApplication, title: String) {
+        for container in [closeWindowSheet(app: app), closeWindowDialog(app: app), closeWindowAlert(app: app)]
+        where container.exists {
+            container.buttons[title].firstMatch.click()
             return
         }
         let anyDialog = app.dialogs.firstMatch
-        if anyDialog.exists, anyDialog.buttons["Cancel"].exists {
-            anyDialog.buttons["Cancel"].firstMatch.click()
+        if anyDialog.exists, anyDialog.buttons[title].exists {
+            anyDialog.buttons[title].firstMatch.click()
         }
+    }
+
+    private func closeWindowSheet(app: XCUIApplication) -> XCUIElement {
+        app.sheets.containing(.staticText, identifier: "Close window?").firstMatch
     }
 
     private func closeWindowDialog(app: XCUIApplication) -> XCUIElement {

@@ -1098,7 +1098,7 @@ final class BrowserDeveloperToolsShortcutDefaultsTests: XCTestCase {
 @MainActor
 final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     func testBrowserPanelEnablesInspectableWebViewAndDeveloperExtras() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let developerExtras = panel.webView.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool
         XCTAssertEqual(developerExtras, true)
 
@@ -1108,7 +1108,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     }
 
     func testBrowserPanelRefreshesUnderPageBackgroundColorWhenGhosttyBackgroundChanges() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
         let updatedOpacity = 0.57
 
@@ -1134,7 +1134,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     }
 
     func testBrowserPanelStartsAsNewTabWithoutLoadingAboutBlank() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
 
         XCTAssertEqual(panel.displayTitle, "New tab")
         XCTAssertFalse(panel.shouldRenderWebView)
@@ -1144,7 +1144,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     }
 
     func testBrowserPanelLeavesNewTabPageStateWhenNavigationStarts() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
 
         XCTAssertTrue(panel.isShowingNewTabPage)
         panel.navigate(to: URL(string: "https://example.com")!)
@@ -1152,7 +1152,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     }
 
     func testBrowserPanelThemeModeUpdatesWebViewAppearance() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
 
         panel.setBrowserThemeMode(.dark)
         XCTAssertEqual(panel.webView.appearance?.bestMatch(from: [.darkAqua, .aqua]), .darkAqua)
@@ -1165,7 +1165,7 @@ final class BrowserDeveloperToolsConfigurationTests: XCTestCase {
     }
 
     func testBrowserPanelRefreshesUnderPageBackgroundColorWithGhosttyOpacity() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let updatedColor = NSColor(srgbRed: 0.18, green: 0.29, blue: 0.44, alpha: 1.0)
 
         NotificationCenter.default.post(
@@ -1213,7 +1213,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     }
 
     func testInsecureHTTPPromptUsesSheetWhenWindowIsAvailable() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         let alertSpy = BrowserInsecureHTTPAlertSpy()
@@ -1239,7 +1239,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// would spin a nested run loop and freeze every surface in the app until
     /// a human found an alert they could not see.
     func testInsecureHTTPPromptNeverGoesAppModalWithoutWindow() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         let alertSpy = BrowserInsecureHTTPAlertSpy()
@@ -1258,7 +1258,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// C11-207: with no window to prompt on, the caller is told why nothing
     /// happened instead of watching a page that never loads.
     func testUnpromptableNavigationReportsABlockedDisposition() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         panel.configureInsecureHTTPAlertHooksForTesting(
@@ -1276,7 +1276,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// C11-207: a merely backgrounded window still hosts the sheet, so the
     /// caller is told a human has to answer rather than getting a bare OK.
     func testPromptableNavigationReportsAPendingPrompt() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         let alertSpy = BrowserInsecureHTTPAlertSpy()
@@ -1301,7 +1301,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// C11-207: every answer resolves the prompt, so an agent polling
     /// `browser.url.get` is not told "a human must answer" after one did.
     func testDeclinedPromptReportsADeclinedDisposition() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         let alertSpy = BrowserInsecureHTTPAlertSpy()
@@ -1330,7 +1330,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// never reaches `didSettleNavigation`, so the prompt path has to be the
     /// one that drops the now-stale consent for the original host.
     func testPromptingForAnotherHostDropsAStaleConsent() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         panel.configureInsecureHTTPAlertHooksForTesting(
@@ -1353,7 +1353,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// one-time bypass must survive the caller-side pre-check so WebKit's
     /// `decidePolicyFor` (the single consuming gate) still sees it.
     func testAllowInsecureHTTPOptInNavigatesWithoutPromptingAndKeepsTheBypass() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         defer { panel.resetInsecureHTTPAlertHooksForTesting() }
 
         let alertSpy = BrowserInsecureHTTPAlertSpy()
@@ -1380,7 +1380,7 @@ final class BrowserInsecureHTTPAlertPresentationTests: XCTestCase {
     /// C11-207: the same pre-check bug broke the shipped "Proceed in c11"
     /// new-tab path, whose bypass is seeded through `BrowserPanel.init`.
     func testInitSeededBypassSurvivesTheInitialNavigation() {
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             initialURL: URL(string: "http://192.0.2.1:8000/")!,
             bypassInsecureHTTPHostOnce: "192.0.2.1"
@@ -1615,7 +1615,7 @@ final class BrowserPopupContentRectTests: XCTestCase {
 @MainActor
 final class BrowserJavaScriptDialogDelegateTests: XCTestCase {
     func testBrowserPanelUIDelegateImplementsJavaScriptDialogSelectors() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         guard let uiDelegate = panel.webView.uiDelegate as? NSObject else {
             XCTFail("Expected BrowserPanel webView.uiDelegate to be an NSObject")
             return
@@ -1658,7 +1658,7 @@ final class BrowserJavaScriptDialogDelegateTests: XCTestCase {
 @MainActor
 final class BrowserSessionHistoryRestoreTests: XCTestCase {
     func testSessionNavigationHistorySnapshotUsesRestoredStacks() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
 
         panel.restoreSessionNavigationHistory(
             backHistoryURLStrings: [
@@ -1686,7 +1686,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
     }
 
     func testSessionNavigationHistoryBackAndForwardUpdateStacks() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
 
         panel.restoreSessionNavigationHistory(
             backHistoryURLStrings: [
@@ -1721,7 +1721,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
     }
 
     func testWebViewReplacementAfterProcessTerminationUpdatesInstanceIdentity() {
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             initialURL: URL(string: "https://example.com")
         )
@@ -1737,7 +1737,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
     }
 
     func testWebViewReplacementPreservesEmptyNewTabRenderState() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         XCTAssertFalse(panel.shouldRenderWebView)
 
         panel.debugSimulateWebContentProcessTermination()
@@ -1772,8 +1772,8 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
             timestamp: Date()
         )
         workspace.progress = SidebarProgressState(value: 0.5, label: "Loading")
-        workspace.updatePanelGitBranch(panelId: contextPanelId, branch: "issue-1208", isDirty: false)
-        workspace.updatePanelPullRequest(
+        workspace.updateTabGitBranch(panelId: contextPanelId, branch: "issue-1208", isDirty: false)
+        workspace.updateTabPullRequest(
             panelId: contextPanelId,
             number: 1208,
             label: "PR",
@@ -1788,7 +1788,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
                 timestamp: Date()
             )
         )
-        workspace.surfaceListeningPorts[contextPanelId] = [3000]
+        workspace.tabListeningPorts[contextPanelId] = [3000]
         workspace.recomputeListeningPorts()
 
         XCTAssertTrue(browser.shouldRenderWebView)
@@ -1813,10 +1813,10 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertTrue(workspace.metadataBlocks.isEmpty)
         XCTAssertNil(workspace.progress)
         XCTAssertNil(workspace.gitBranch)
-        XCTAssertTrue(workspace.panelGitBranches.isEmpty)
+        XCTAssertTrue(workspace.tabGitBranches.isEmpty)
         XCTAssertNil(workspace.pullRequest)
-        XCTAssertTrue(workspace.panelPullRequests.isEmpty)
-        XCTAssertTrue(workspace.surfaceListeningPorts.isEmpty)
+        XCTAssertTrue(workspace.tabPullRequests.isEmpty)
+        XCTAssertTrue(workspace.tabListeningPorts.isEmpty)
         XCTAssertTrue(workspace.listeningPorts.isEmpty)
         XCTAssertFalse(browser.shouldRenderWebView)
         XCTAssertNil(browser.preferredURLStringForOmnibar())
@@ -1902,8 +1902,8 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
     private func makePanelWithInspector(
         hideBehavior: FakeInspector.HideBehavior = .unsupported
-    ) -> (BrowserPanel, FakeInspector) {
-        let panel = BrowserPanel(workspaceId: UUID())
+    ) -> (BrowserTab, FakeInspector) {
+        let panel = BrowserTab(workspaceId: UUID())
         let inspector = FakeInspector(hideBehavior: hideBehavior)
         panel.webView.cmuxSetUnitTestInspector(inspector)
         return (panel, inspector)
@@ -2105,7 +2105,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
         let coordinator = representable.makeCoordinator()
@@ -2149,7 +2149,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
         let coordinator = representable.makeCoordinator()
@@ -2212,7 +2212,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
 
@@ -2297,7 +2297,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
-            paneInteractionRuntime: PaneInteractionRuntime(),
+            paneInteractionRuntime: AreaInteractionRuntime(),
             paneTopChromeHeight: 0
         )
 

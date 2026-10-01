@@ -56,7 +56,7 @@ struct WorkspaceContentView: View {
     }
 
     var body: some View {
-        let appearance = PanelAppearance.fromConfig(config)
+        let appearance = TabAppearance.fromConfig(config)
         let isSplit = workspace.bonsplitController.allPaneIds.count > 1 ||
             workspace.panels.count > 1
 
@@ -70,29 +70,29 @@ struct WorkspaceContentView: View {
             workspace.bonsplitController.onFileDrop = { [weak workspace] urls, paneId in
                 guard let workspace else { return false }
                 // Find the focused panel in this pane and drop the files into it.
-                guard let tabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id,
-                      let panelId = workspace.panelIdFromSurfaceId(tabId),
-                      let panel = workspace.panels[panelId] as? TerminalPanel else { return false }
+                guard let bonsplitTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id,
+                      let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId),
+                      let panel = workspace.panels[panelId] as? TerminalTab else { return false }
                 return panel.hostedView.handleDroppedURLs(urls)
             }
         }()
 
-        let bonsplitView = BonsplitView(controller: workspace.bonsplitController) { tab, paneId in
+        let bonsplitView = BonsplitView(controller: workspace.bonsplitController) { bonsplitTab, paneId in
             // Content for each tab in bonsplit
-            let _ = Self.debugPanelLookup(tab: tab, workspace: workspace)
-            if let panel = workspace.panel(for: tab.id) {
+            let _ = Self.debugPanelLookup(bonsplitTab: bonsplitTab, workspace: workspace)
+            if let panel = workspace.panel(for: bonsplitTab.id) {
                 let isFocused = isWorkspaceInputActive && workspace.focusedPanelId == panel.id
-                let isSelectedInPane = workspace.bonsplitController.selectedTab(inPane: paneId)?.id == tab.id
+                let isSelectedInPane = workspace.bonsplitController.selectedTab(inPane: paneId)?.id == bonsplitTab.id
                 let isVisibleInUI = Self.panelVisibleInUI(
                     isWorkspaceVisible: isWorkspaceVisible,
                     isSelectedInPane: isSelectedInPane,
                     isFocused: isFocused
                 )
                 let hasUnreadNotification = Workspace.shouldShowUnreadIndicator(
-                    hasUnreadNotification: notificationStore.hasUnreadNotification(forTabId: workspace.id, surfaceId: panel.id),
-                    isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
+                    hasUnreadNotification: notificationStore.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: panel.id),
+                    isManuallyUnread: workspace.manualUnreadTabIds.contains(panel.id)
                 )
-                PanelContentView(
+                TabContentView(
                     workspace: workspace,
                     panel: panel,
                     paneId: paneId,
@@ -111,7 +111,7 @@ struct WorkspaceContentView: View {
                         guard workspace.panels[panel.id] != nil else { return }
                         workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
                     },
-                    onRequestPanelFocus: {
+                    onRequestTabFocus: {
                         guard isWorkspaceInputActive else { return }
                         guard workspace.panels[panel.id] != nil else { return }
                         workspace.focusPanel(panel.id)
@@ -123,11 +123,11 @@ struct WorkspaceContentView: View {
                 }
             } else {
                 // Fallback for tabs without panels (shouldn't happen normally)
-                EmptyPanelView(workspace: workspace, paneId: paneId)
+                EmptyTabView(workspace: workspace, paneId: paneId)
             }
         } emptyPane: { paneId in
             // Empty pane content
-            EmptyPanelView(workspace: workspace, paneId: paneId)
+            EmptyTabView(workspace: workspace, paneId: paneId)
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
                 }
@@ -142,9 +142,9 @@ struct WorkspaceContentView: View {
         // AppKit overlay layer instead.
         .environment(\.paneOverlayBuilder, { paneId in
             AnyView(
-                PaneInteractionOverlayHostView(
+                AreaInteractionOverlayHostView(
                     paneId: paneId,
-                    controller: workspace.paneCloseOverlayController
+                    controller: workspace.areaCloseOverlayController
                 )
             )
         })
@@ -170,10 +170,10 @@ struct WorkspaceContentView: View {
         .onChange(of: notificationStore.notifications) { _, _ in
             syncBonsplitNotificationBadges()
         }
-        .onChange(of: workspace.manualUnreadPanelIds) { _, _ in
+        .onChange(of: workspace.manualUnreadTabIds) { _, _ in
             syncBonsplitNotificationBadges()
         }
-        .onChange(of: workspace.derivedActivityBySurface) { _, _ in
+        .onChange(of: workspace.derivedActivityByTab) { _, _ in
             syncBonsplitNotificationBadges()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidReload)) { _ in
@@ -256,16 +256,16 @@ struct WorkspaceContentView: View {
     private func syncBonsplitNotificationBadges() {
         let unreadFromNotifications: Set<UUID> = Set(
             notificationStore.notifications
-                .filter { $0.tabId == workspace.id && !$0.isRead }
+                .filter { $0.workspaceId == workspace.id && !$0.isRead }
                 .compactMap { $0.surfaceId }
         )
-        let manualUnread = workspace.manualUnreadPanelIds
+        let manualUnread = workspace.manualUnreadTabIds
 
         for paneId in workspace.bonsplitController.allPaneIds {
-            for tab in workspace.bonsplitController.tabs(inPane: paneId) {
-                let panelId = workspace.panelIdFromSurfaceId(tab.id)
+            for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
+                let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
-                let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
+                let expectedPinned = panelId.map { workspace.isTabPinned($0) } ?? false
                 let expectedActivity = panelId.flatMap {
                     workspace.resolvedSurfaceTabActivityState(
                         panelId: $0,
@@ -278,16 +278,24 @@ struct WorkspaceContentView: View {
                         activityState: expectedActivity
                     )
                 }
+                // Same notification rule as the sync path (signal-eligible unread), not
+                // the raw-unread set the badge uses, so a suppressed agent's clock holds.
+                if let panelId {
+                    workspace.recordTabSheetStatusTransition(
+                        panelId: panelId,
+                        activity: workspace.resolvedSurfaceTabActivityState(panelId: panelId)
+                    )
+                }
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 
-                if tab.showsNotificationBadge != shouldShow ||
-                    tab.activityState != expectedActivity ||
-                    tab.activityPresentation != expectedPresentation ||
-                    tab.isPinned != expectedPinned ||
-                    (expectedKind != nil && tab.kind != expectedKind) {
+                if bonsplitTab.showsNotificationBadge != shouldShow ||
+                    bonsplitTab.activityState != expectedActivity ||
+                    bonsplitTab.activityPresentation != expectedPresentation ||
+                    bonsplitTab.isPinned != expectedPinned ||
+                    (expectedKind != nil && bonsplitTab.kind != expectedKind) {
                     workspace.bonsplitController.updateTab(
-                        tab.id,
+                        bonsplitTab.id,
                         kind: kindUpdate,
                         showsNotificationBadge: shouldShow,
                         isPinned: expectedPinned,
@@ -379,8 +387,8 @@ struct WorkspaceContentView: View {
         let chromeReason =
             "refreshGhosttyAppearanceConfig:reason=\(reason):event=\(eventLabel):source=\(sourceLabel):payload=\(payloadLabel)"
         workspace.applyGhosttyChrome(from: next, reason: chromeReason)
-        if let terminalPanel = workspace.focusedTerminalPanel {
-            terminalPanel.applyWindowBackgroundIfActive()
+        if let terminalTab = workspace.focusedTerminalTab {
+            terminalTab.applyWindowBackgroundIfActive()
             logTheme(
                 "theme refresh terminal-applied workspace=\(workspace.id.uuidString) reason=\(reason) event=\(eventLabel) panel=\(workspace.focusedPanelId?.uuidString ?? "nil")"
             )
@@ -402,11 +410,11 @@ struct WorkspaceContentView: View {
 
 extension WorkspaceContentView {
     #if DEBUG
-    static func debugPanelLookup(tab: Bonsplit.Tab, workspace: Workspace) {
-        let found = workspace.panel(for: tab.id) != nil
+    static func debugPanelLookup(bonsplitTab: Bonsplit.Tab, workspace: Workspace) {
+        let found = workspace.panel(for: bonsplitTab.id) != nil
         if !found {
             let ts = ISO8601DateFormatter().string(from: Date())
-            let line = "[\(ts)] PANEL NOT FOUND for tabId=\(tab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
+            let line = "[\(ts)] PANEL NOT FOUND for tabId=\(bonsplitTab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
             let logPath = "/tmp/cmux-panel-debug.log"
             if let handle = FileHandle(forWritingAtPath: logPath) {
                 handle.seekToEndOfFile()
@@ -418,15 +426,15 @@ extension WorkspaceContentView {
         }
     }
     #else
-    static func debugPanelLookup(tab: Bonsplit.Tab, workspace: Workspace) {
-        _ = tab
+    static func debugPanelLookup(bonsplitTab: Bonsplit.Tab, workspace: Workspace) {
+        _ = bonsplitTab
         _ = workspace
     }
     #endif
 }
 
 /// View shown for empty panes
-struct EmptyPanelView: View {
+struct EmptyTabView: View {
     @ObservedObject var workspace: Workspace
     let paneId: PaneID
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
@@ -514,7 +522,7 @@ struct EmptyPanelView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
 
-            Text(String(localized: "workspace.emptyPane.title", defaultValue: "Empty Panel"))
+            Text(String(localized: "workspace.emptyPane.title", defaultValue: "Empty Area"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
 

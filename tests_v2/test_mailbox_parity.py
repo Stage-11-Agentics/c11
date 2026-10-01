@@ -64,8 +64,10 @@ def _run_cli(
 ) -> subprocess.CompletedProcess:
     merged_env = dict(os.environ)
     merged_env.pop("CMUX_WORKSPACE_ID", None)
-    merged_env.pop("CMUX_SURFACE_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
     merged_env.pop("CMUX_TAB_ID", None)
+    merged_env.pop("C11_TAB_ID", None)
     if env:
         merged_env.update(env)
     cmd = [cli, "--socket", SOCKET_PATH] + args
@@ -244,14 +246,14 @@ def _create_workspace_with_surfaces(
     _must(bool(workspace_id), f"workspace.create returned no id: {created}")
     c._call("workspace.select", {"workspace_id": workspace_id})
 
-    current = c._call("surface.current", {"workspace_id": workspace_id}) or {}
-    sender_id = str(current.get("surface_id") or "")
-    _must(bool(sender_id), f"surface.current returned no id: {current}")
+    current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
+    sender_id = str(current.get("tab_id") or "")
+    _must(bool(sender_id), f"tab.current returned no id: {current}")
     c._call(
-        "surface.set_metadata",
+        "tab.set_metadata",
         {
             "workspace_id": workspace_id,
-            "surface_id": sender_id,
+            "tab_id": sender_id,
             "metadata": {"title": sender_name},
             "mode": "merge",
             "source": "explicit",
@@ -259,16 +261,16 @@ def _create_workspace_with_surfaces(
     )
 
     created_surface = c._call(
-        "surface.create",
+        "tab.create",
         {"workspace_id": workspace_id, "type": "terminal"},
     ) or {}
-    receiver_id = str(created_surface.get("surface_id") or "")
-    _must(bool(receiver_id), f"surface.create returned no id: {created_surface}")
+    receiver_id = str(created_surface.get("tab_id") or "")
+    _must(bool(receiver_id), f"tab.create returned no id: {created_surface}")
     c._call(
-        "surface.set_metadata",
+        "tab.set_metadata",
         {
             "workspace_id": workspace_id,
-            "surface_id": receiver_id,
+            "tab_id": receiver_id,
             "metadata": {
                 "title": receiver_name,
                 "mailbox.delivery": "silent",

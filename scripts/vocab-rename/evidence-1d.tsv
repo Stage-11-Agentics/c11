@@ -1,0 +1,243 @@
+Sources/AppDelegate.swift	0	bonsplitTabId	leafId	F	curated @fix row
+Sources/AppDelegate.swift	0	tabId	bonsplitTabId	F	curated @fix row
+Sources/AppDelegate.swift	5239	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5240	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5365	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
+Sources/AppDelegate.swift	5369	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
+Sources/AppDelegate.swift	5458	movedTabId	movedBonsplitTabId	Leaf	let movedTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
+Sources/AppDelegate.swift	5462	movedTabId	movedBonsplitTabId	Leaf	let movedTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
+Sources/AppDelegate.swift	5532	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5547	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5551	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5554	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5562	tabId	bonsplitTabId	X	explicit region rule
+Sources/AppDelegate.swift	5577	tabId	bonsplitTabId	X	explicit region rule
+Sources/BrowserWindowPortal.swift	0	tabId	bonsplitTabId	F	curated @fix row
+Sources/BrowserWindowPortal.swift	1740	tabIdRaw	bonsplitTabIdRaw	Leaf	let tabIdRaw = bonsplitTab["id"] as? String,
+Sources/BrowserWindowPortal.swift	1741	tabIdRaw	bonsplitTabIdRaw	Leaf	let tabIdRaw = bonsplitTab["id"] as? String,
+Sources/ContentView.swift	0	panel	openPanel	F	curated @fix row
+Sources/ContentView.swift	0	tabId	bonsplitTabId	F	curated @fix row
+Sources/SocketHandlers/DebugHandlers.swift	222	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
+Sources/SocketHandlers/DebugHandlers.swift	225	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
+Sources/SocketHandlers/MiscHandlers.swift	0	anchorTabId	anchorBonsplitTabId	F	curated @fix row
+Sources/SocketHandlers/MiscHandlers.swift	115	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	117	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	188	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	195	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	213	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	219	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	233	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	246	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	260	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	266	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	275	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	281	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	290	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/MiscHandlers.swift	297	anchorTabId	anchorBonsplitTabId	Leaf	let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+Sources/SocketHandlers/PaneHandlers.swift	462	selectedSourceTab	selectedSourceBonsplitTab	Leaf	let selectedSourceTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
+Sources/SocketHandlers/PaneHandlers.swift	463	selectedTargetTab	selectedTargetBonsplitTab	Leaf	let selectedTargetTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
+Sources/SocketHandlers/PaneHandlers.swift	464	selectedSourceTab	selectedSourceBonsplitTab	Leaf	let selectedSourceTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
+Sources/SocketHandlers/PaneHandlers.swift	465	selectedTargetTab	selectedTargetBonsplitTab	Leaf	let selectedTargetTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
+Sources/TerminalController.swift	6059	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6176	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6182	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6197	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6213	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6229	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	6242	selectedTabId	selectedBonsplitTabId	X	
+Sources/TerminalController.swift	7346	tabCount	bonsplitTabCount	Leaf	let tabCount = workspace.bonsplitController.tabs(inPane: paneId).count
+Sources/TerminalController.swift	7347	tabCount	bonsplitTabCount	Leaf	let tabCount = workspace.bonsplitController.tabs(inPane: paneId).count
+Sources/Workspace.swift	0	anchorTabId	anchorBonsplitTabId	F	curated @fix row
+Sources/Workspace.swift	0	forSurfaceId	forBonsplitTabId	F	curated @fix row
+Sources/Workspace.swift	0	tabId	bonsplitTabId	F	curated @fix row
+Sources/Workspace.swift	6123	welcomeTabIds	welcomeBonsplitTabIds	Leaf	let welcomeTabIds = bonsplitController.allTabIds
+Sources/Workspace.swift	6140	initialTabId	initialBonsplitTabId	Leaf	initialTabId: TabID
+Sources/Workspace.swift	6150	initialTabId	initialBonsplitTabId	Leaf	initialTabId: TabID
+Sources/Workspace.swift	6154	welcomeTabId	welcomeBonsplitTabId	Leaf	for welcomeTabId in welcomeTabIds
+Sources/Workspace.swift	6154	welcomeTabIds	welcomeBonsplitTabIds	Leaf	let welcomeTabIds = bonsplitController.allTabIds
+Sources/Workspace.swift	6155	welcomeTabId	welcomeBonsplitTabId	Leaf	for welcomeTabId in welcomeTabIds
+Sources/Workspace.swift	6176	initialTabId	initialBonsplitTabId	Leaf	initialTabId: TabID
+Sources/Workspace.swift	6180	initialTabId	initialBonsplitTabId	Leaf	initialTabId: TabID
+Sources/Workspace.swift	6189	initialTabId	initialBonsplitTabId	Leaf	initialTabId: TabID
+Sources/Workspace.swift	6430	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	6434	pendingCloseConfirmTabIds	pendingCloseConfirmBonsplitTabIds	Leaf	private var pendingCloseConfirmTabIds: Set<TabID> = []
+Sources/Workspace.swift	6440	explicitUserCloseTabIds	explicitUserCloseBonsplitTabIds	Leaf	private var explicitUserCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	6444	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	6515	detachingTabIds	detachingBonsplitTabIds	Leaf	private var detachingTabIds: Set<TabID> = []
+Sources/Workspace.swift	6532	explicitUserCloseTabIds	explicitUserCloseBonsplitTabIds	Leaf	private var explicitUserCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	7022	pinnedTabs	pinnedBonsplitTabs	Leaf	let pinnedTabs = bonsplitTabs.filter { bonsplitTab in
+Sources/Workspace.swift	7026	unpinnedTabs	unpinnedBonsplitTabs	Leaf	let unpinnedTabs = bonsplitTabs.filter { bonsplitTab in
+Sources/Workspace.swift	7030	pinnedTabs	pinnedBonsplitTabs	Leaf	let pinnedTabs = bonsplitTabs.filter { bonsplitTab in
+Sources/Workspace.swift	7030	unpinnedTabs	unpinnedBonsplitTabs	Leaf	let unpinnedTabs = bonsplitTabs.filter { bonsplitTab in
+Sources/Workspace.swift	7033	currentTabs	currentBonsplitTabs	Leaf	let currentTabs = bonsplitController.tabs(inPane: paneId)
+Sources/Workspace.swift	7034	currentTabs	currentBonsplitTabs	Leaf	let currentTabs = bonsplitController.tabs(inPane: paneId)
+Sources/Workspace.swift	7041	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	7043	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	8855	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	8863	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	8873	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	8876	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	8956	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	8974	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	8981	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	8983	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9102	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9111	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9118	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9119	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9191	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9206	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9212	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9218	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9220	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9248	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9257	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9262	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9263	newTab	newBonsplitTab	Leaf	let newTab = Bonsplit.Tab(
+Sources/Workspace.swift	9309	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9324	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9327	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9328	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9387	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	9415	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	9625	tabIndex	bonsplitTabIndex	Leaf	let tabIndex = bonsplitController.tabs(inPane: pane).firstIndex(where: { $0.id == bonsplitTab.id }) else {
+Sources/Workspace.swift	9642	tabIndex	bonsplitTabIndex	Leaf	let tabIndex = bonsplitController.tabs(inPane: pane).firstIndex(where: { $0.id == bonsplitTab.id }) else {
+Sources/Workspace.swift	9768	detachingTabIds	detachingBonsplitTabIds	Leaf	private var detachingTabIds: Set<TabID> = []
+Sources/Workspace.swift	9769	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	9773	detachingTabIds	detachingBonsplitTabIds	Leaf	private var detachingTabIds: Set<TabID> = []
+Sources/Workspace.swift	9775	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	9915	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9956	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9958	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9960	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9966	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9968	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	9977	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	10567	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	10575	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	10612	focusedTab	focusedBonsplitTab	Leaf	let focusedTab = bonsplitController.selectedTab(inPane: focusedPane),
+Sources/Workspace.swift	10613	focusedTab	focusedBonsplitTab	Leaf	let focusedTab = bonsplitController.selectedTab(inPane: focusedPane),
+Sources/Workspace.swift	10618	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: pane),
+Sources/Workspace.swift	10619	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: pane),
+Sources/Workspace.swift	10622	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: pane),
+Sources/Workspace.swift	10630	fallbackTabId	fallbackBonsplitTabId	Leaf	let fallbackTabId = bonsplitTabIdFromTabId(fallbackPanelId),
+Sources/Workspace.swift	10632	fallbackTabId	fallbackBonsplitTabId	Leaf	let fallbackTabId = bonsplitTabIdFromTabId(fallbackPanelId),
+Sources/Workspace.swift	10635	fallbackTabId	fallbackBonsplitTabId	Leaf	let fallbackTabId = bonsplitTabIdFromTabId(fallbackPanelId),
+Sources/Workspace.swift	11057	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: paneId) ?? bonsplitController.tabs(inPane: paneId).first
+Sources/Workspace.swift	11058	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: paneId) ?? bonsplitController.tabs(inPane: paneId).first
+Sources/Workspace.swift	11059	selectedTab	selectedBonsplitTab	Leaf	let selectedTab = bonsplitController.selectedTab(inPane: paneId) ?? bonsplitController.tabs(inPane: paneId).first
+Sources/Workspace.swift	11243	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11243	tabIdsToLeft	bonsplitTabIdsToLeft	Leaf	owner=Workspace; func tabIdsToLeft(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID]
+Sources/Workspace.swift	11245	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11249	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11249	tabIdsToRight	bonsplitTabIdsToRight	Leaf	owner=Workspace; func tabIdsToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID]
+Sources/Workspace.swift	11251	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11256	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11256	tabIdsToCloseOthers	bonsplitTabIdsToCloseOthers	Leaf	owner=Workspace; func tabIdsToCloseOthers(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID]
+Sources/Workspace.swift	11259	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11262	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11263	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11268	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11269	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11270	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11280	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11281	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11283	anchorTabId	anchorBonsplitTabId	Leaf	anchorTabId: TabID
+Sources/Workspace.swift	11768	currentTabId	currentBonsplitTabId	Leaf	let currentTabId = bonsplitController.selectedTab(inPane: currentPane)?.id {
+Sources/Workspace.swift	11770	currentTabId	currentBonsplitTabId	Leaf	let currentTabId = bonsplitController.selectedTab(inPane: currentPane)?.id {
+Sources/Workspace.swift	12061	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	12067	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	12078	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	12080	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	12084	explicitUserCloseTabIds	explicitUserCloseBonsplitTabIds	Leaf	private var explicitUserCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	12086	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	12118	pendingCloseConfirmTabIds	pendingCloseConfirmBonsplitTabIds	Leaf	private var pendingCloseConfirmTabIds: Set<TabID> = []
+Sources/Workspace.swift	12122	pendingCloseConfirmTabIds	pendingCloseConfirmBonsplitTabIds	Leaf	private var pendingCloseConfirmTabIds: Set<TabID> = []
+Sources/Workspace.swift	12127	pendingCloseConfirmTabIds	pendingCloseConfirmBonsplitTabIds	Leaf	private var pendingCloseConfirmTabIds: Set<TabID> = []
+Sources/Workspace.swift	12145	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	12159	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	12160	postCloseSelectTabId	postCloseSelectBonsplitTabId	Leaf	private var postCloseSelectTabId: [TabID: TabID] = [:]
+Sources/Workspace.swift	12160	selectTabId	selectBonsplitTabId	Leaf	let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+Sources/Workspace.swift	12162	detachingTabIds	detachingBonsplitTabIds	Leaf	private var detachingTabIds: Set<TabID> = []
+Sources/Workspace.swift	12285	replacementTabId	replacementBonsplitTabId	Leaf	let replacementTabId = bonsplitTabIdFromTabId(replacement.id),
+Sources/Workspace.swift	12288	replacementTabId	replacementBonsplitTabId	Leaf	let replacementTabId = bonsplitTabIdFromTabId(replacement.id),
+Sources/Workspace.swift	12289	replacementTabId	replacementBonsplitTabId	Leaf	let replacementTabId = bonsplitTabIdFromTabId(replacement.id),
+Sources/Workspace.swift	12296	selectTabId	selectBonsplitTabId	Leaf	let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+Sources/Workspace.swift	12298	selectTabId	selectBonsplitTabId	Leaf	let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+Sources/Workspace.swift	12302	selectTabId	selectBonsplitTabId	Leaf	let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+Sources/Workspace.swift	12303	selectTabId	selectBonsplitTabId	Leaf	let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+Sources/Workspace.swift	12305	focusedTabId	focusedBonsplitTabId	Leaf	let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+Sources/Workspace.swift	12308	focusedTabId	focusedBonsplitTabId	Leaf	let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+Sources/Workspace.swift	12467	focusedTabId	focusedBonsplitTabId	Leaf	let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+Sources/Workspace.swift	12468	focusedTabId	focusedBonsplitTabId	Leaf	let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+Sources/Workspace.swift	12484	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	12498	panelKindForTab	panelKindForBonsplitTab	Leaf	let panelKindForTab: (TabID) -> String = { bonsplitTabId in
+Sources/Workspace.swift	12509	panelKindForTab	panelKindForBonsplitTab	Leaf	let panelKindForTab: (TabID) -> String = { bonsplitTabId in
+Sources/Workspace.swift	12512	panelKindForTab	panelKindForBonsplitTab	Leaf	let panelKindForTab: (TabID) -> String = { bonsplitTabId in
+Sources/Workspace.swift	12513	panelKindForTab	panelKindForBonsplitTab	Leaf	let panelKindForTab: (TabID) -> String = { bonsplitTabId in
+Sources/Workspace.swift	12555	originalTabs	originalBonsplitTabs	Leaf	let originalTabs = controller.tabs(inPane: originalPane)
+Sources/Workspace.swift	12556	originalTabs	originalBonsplitTabs	Leaf	let originalTabs = controller.tabs(inPane: originalPane)
+Sources/Workspace.swift	12560	originalTabs	originalBonsplitTabs	Leaf	let originalTabs = controller.tabs(inPane: originalPane)
+Sources/Workspace.swift	12566	originalTabs	originalBonsplitTabs	Leaf	let originalTabs = controller.tabs(inPane: originalPane)
+Sources/Workspace.swift	12566	placeholderTabs	placeholderBonsplitTabs	Leaf	let placeholderTabs = originalTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+Sources/Workspace.swift	12570	placeholderTabs	placeholderBonsplitTabs	Leaf	let placeholderTabs = originalTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+Sources/Workspace.swift	12573	placeholderTabs	placeholderBonsplitTabs	Leaf	let placeholderTabs = originalTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+Sources/Workspace.swift	12573	replacementTab	replacementBonsplitTab	Leaf	let replacementTab = placeholderTabs.first {
+Sources/Workspace.swift	12593	replacementTab	replacementBonsplitTab	Leaf	let replacementTab = placeholderTabs.first {
+Sources/Workspace.swift	12596	replacementTab	replacementBonsplitTab	Leaf	let replacementTab = placeholderTabs.first {
+Sources/Workspace.swift	12608	placeholderTabs	placeholderBonsplitTabs	Leaf	let placeholderTabs = originalTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+Sources/Workspace.swift	12635	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = controller.selectedTab(inPane: originalPane)?.id
+Sources/Workspace.swift	12636	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = controller.selectedTab(inPane: originalPane)?.id
+Sources/Workspace.swift	12662	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	12677	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	12691	newTabId	newBonsplitTabId	Leaf	let newTabId = bonsplitController.createTab(
+Sources/Workspace.swift	13261	tabsNow	bonsplitTabsNow	Leaf	let tabsNow = self.bonsplitController.tabs(inPane: pane)
+Sources/Workspace.swift	13262	tabsNow	bonsplitTabsNow	Leaf	let tabsNow = self.bonsplitController.tabs(inPane: pane)
+Sources/Workspace.swift	13263	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	13275	forceCloseTabIds	forceCloseBonsplitTabIds	Leaf	private var forceCloseTabIds: Set<TabID> = []
+Sources/Workspace.swift	13399	tabIdsToLeft	bonsplitTabIdsToLeft	Leafuse	
+Sources/Workspace.swift	13401	tabIdsToRight	bonsplitTabIdsToRight	Leafuse	
+Sources/Workspace.swift	13403	tabIdsToCloseOthers	bonsplitTabIdsToCloseOthers	Leafuse	
+Sources/Workspace.swift	13446	forSurfaceId	forBonsplitTabId	X	explicit region rule
+Sources/Workspace.swift	13459	forSurfaceId	forBonsplitTabId	X	explicit region rule
+Sources/WorkspaceManager.swift	2859	tabsInPane	bonsplitTabsInPane	Leaf	let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
+Sources/WorkspaceManager.swift	2860	tabsInPane	bonsplitTabsInPane	Leaf	let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
+Sources/WorkspaceManager.swift	2861	tabsInPane	bonsplitTabsInPane	Leaf	let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
+Sources/WorkspaceManager.swift	2867	tabsInPane	bonsplitTabsInPane	Leaf	let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
+Sources/WorkspaceManager.swift	4285	tabCount	bonsplitTabCount	Leaf	let tabCount = workspace.bonsplitController.tabs(inPane: originalPane).count
+Sources/WorkspaceManager.swift	4286	tabCount	bonsplitTabCount	Leaf	let tabCount = workspace.bonsplitController.tabs(inPane: originalPane).count
+Sources/WorkspaceManager.swift	4295	anchorTab	anchorBonsplitTab	Leaf	let anchorTab = workspace.bonsplitController.selectedTab(inPane: anchorPane) ?? workspace.bonsplitController.tabs(inPane: anchorPane).first,
+Sources/WorkspaceManager.swift	4296	anchorTab	anchorBonsplitTab	Leaf	let anchorTab = workspace.bonsplitController.selectedTab(inPane: anchorPane) ?? workspace.bonsplitController.tabs(inPane: anchorPane).first,
+Sources/c11App.swift	0	panel	openPanel	F	curated @fix row
+Sources/c11App.swift	1526	closeTabOrWindow	closeWorkspaceOrWindow	X	
+Sources/c11App.swift	1527	closeCurrentTabWithConfirmation	closeCurrentWorkspaceWithConfirmation	X	
+c11Tests/TabManagerUnitTests.swift	801	targetPaneTabs	targetPaneBonsplitTabs	Leaf	let targetPaneTabs = workspace.bonsplitController.tabs(inPane: topRightPaneId)
+c11Tests/TabManagerUnitTests.swift	802	targetPaneTabs	targetPaneBonsplitTabs	Leaf	let targetPaneTabs = workspace.bonsplitController.tabs(inPane: topRightPaneId)
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	776	tabUUID	bonsplitTabUUID	Leaf	let tabUUID = UUID(uuidString: bonsplitTab.id),
+c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift	777	tabUUID	bonsplitTabUUID	Leaf	let tabUUID = UUID(uuidString: bonsplitTab.id),
+c11Tests/WorkspaceUnitTests.swift	947	bonsplitTab	panel	L	let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false)
+c11Tests/WorkspaceUnitTests.swift	948	bonsplitTab	panel	L	let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false)
+c11Tests/WorkspaceUnitTests.swift	980	bonsplitTab	panel	L	let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false, workingDirectory: explicit)
+c11Tests/WorkspaceUnitTests.swift	981	bonsplitTab	panel	L	let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false, workingDirectory: explicit)
+c11Tests/WorkspaceUnitTests.swift	1739	attachedTabId	attachedBonsplitTabId	Leaf	let attachedTabId = destination.bonsplitTabIdFromTabId(panelId),
+c11Tests/WorkspaceUnitTests.swift	1740	attachedTab	attachedBonsplitTab	Leaf	let attachedTab = destination.bonsplitController.tab(attachedTabId) else {
+c11Tests/WorkspaceUnitTests.swift	1740	attachedTabId	attachedBonsplitTabId	Leaf	let attachedTabId = destination.bonsplitTabIdFromTabId(panelId),
+c11Tests/WorkspaceUnitTests.swift	1744	attachedTab	attachedBonsplitTab	Leaf	let attachedTab = destination.bonsplitController.tab(attachedTabId) else {
+c11Tests/WorkspaceUnitTests.swift	1745	attachedTab	attachedBonsplitTab	Leaf	let attachedTab = destination.bonsplitController.tab(attachedTabId) else {
+c11Tests/WorkspaceUnitTests.swift	1752	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = source.bonsplitTabIdFromTabId(panelId) else {
+c11Tests/WorkspaceUnitTests.swift	1775	sourceTabId	sourceBonsplitTabId	Leaf	let sourceTabId = source.bonsplitTabIdFromTabId(panelId) else {
+c11Tests/WorkspaceUnitTests.swift	1790	destinationTabId	destinationBonsplitTabId	Leaf	let destinationTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1793	destinationTabId	destinationBonsplitTabId	Leaf	let destinationTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1812	destinationTabId	destinationBonsplitTabId	Leaf	let destinationTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1820	rollbackTabId	rollbackBonsplitTabId	Leaf	let rollbackTabId = try XCTUnwrap(source.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1823	rollbackTabId	rollbackBonsplitTabId	Leaf	let rollbackTabId = try XCTUnwrap(source.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1933	restoredTabId	restoredBonsplitTabId	Leaf	let restoredTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	1935	restoredTabId	restoredBonsplitTabId	Leaf	let restoredTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
+c11Tests/WorkspaceUnitTests.swift	2031	backgroundTabId	backgroundBonsplitTabId	Leaf	let backgroundTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(backgroundPanel.id))
+c11Tests/WorkspaceUnitTests.swift	2034	backgroundTabId	backgroundBonsplitTabId	Leaf	let backgroundTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(backgroundPanel.id))
+c11Tests/WorkspaceUnitTests.swift	2059	splitTabId	splitBonsplitTabId	Leaf	let splitTabId = workspace.bonsplitTabIdFromTabId(browserSplitPanel.id),
+c11Tests/WorkspaceUnitTests.swift	2060	splitTab	splitBonsplitTab	Leaf	let splitTab = workspace.bonsplitController               .tabs(inPane: splitPaneId)               .first(where: { $0.id == splitTabId }) el
+c11Tests/WorkspaceUnitTests.swift	2062	splitTabId	splitBonsplitTabId	Leaf	let splitTabId = workspace.bonsplitTabIdFromTabId(browserSplitPanel.id),
+c11Tests/WorkspaceUnitTests.swift	2069	splitTab	splitBonsplitTab	Leaf	let splitTab = workspace.bonsplitController               .tabs(inPane: splitPaneId)               .first(where: { $0.id == splitTabId }) el
+c11Tests/WorkspaceUnitTests.swift	3104	attachedTabId	attachedBonsplitTabId	Leaf	let attachedTabId = destination.bonsplitTabIdFromTabId(panelId) else {
+c11Tests/WorkspaceUnitTests.swift	3109	attachedTabId	attachedBonsplitTabId	Leaf	let attachedTabId = destination.bonsplitTabIdFromTabId(panelId) else {

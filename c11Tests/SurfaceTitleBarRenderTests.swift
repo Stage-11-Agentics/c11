@@ -18,72 +18,71 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
 
     private static let testWidth: CGFloat = 400
 
-    private func measure(state: SurfaceTitleBarState) -> CGFloat {
-        let host = NSHostingView(rootView: SurfaceTitleBarView(state: state))
+    private func measure(state: TabTitleBarState) -> CGFloat {
+        let host = NSHostingView(rootView: TabTitleBarView(state: state))
         host.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 10_000)
         host.layoutSubtreeIfNeeded()
         let target = CGSize(width: Self.testWidth, height: NSView.noIntrinsicMetric)
         return host.fittingSize(for: target).height
     }
 
-    func testExpandedMultiLineTitleTallerThanCollapsed() {
-        // A 100-character title forces wrapping in expanded state.
-        let title = String(repeating: "token ", count: 17).trimmingCharacters(in: .whitespaces)
-        let description = "Some non-empty description text."
+    func testExpandedMultiLineDescriptionTallerThanCollapsed() {
+        let description = "First line of the description.\n\nSecond paragraph that adds height."
 
-        let collapsed = SurfaceTitleBarState(
-            title: title,
-            description: description,
-            collapsed: true
-        )
-        let expanded = SurfaceTitleBarState(
-            title: title,
-            description: description,
-            collapsed: false
-        )
+        let collapsed = TabTitleBarState(title: "Ignored", description: description, collapsed: true)
+        let expanded = TabTitleBarState(title: "Ignored", description: description, collapsed: false)
 
         let collapsedHeight = measure(state: collapsed)
         let expandedHeight = measure(state: expanded)
 
-        // Expanded must be at least ~1 line taller (title wraps + description).
         XCTAssertGreaterThan(
             expandedHeight,
-            collapsedHeight + 12,
-            "Expanded title bar (\(expandedHeight)) must grow by at least one title line over collapsed (\(collapsedHeight))"
+            collapsedHeight + 8,
+            "Expanded bar (\(expandedHeight)) must grow over the one-line collapsed bar (\(collapsedHeight))"
         )
     }
 
-    func testEmptyDescriptionIgnoresCollapsedFlag() {
-        // With an empty description, effectiveCollapsed rule forces the
-        // rendered state to match between collapsed=true and collapsed=false.
-        let title = String(repeating: "a ", count: 60)
+    func testNoDescriptionTakesNoHeight() {
+        for collapsed in [true, false] {
+            for description in [nil, "", "   \n "] as [String?] {
+                let state = TabTitleBarState(
+                    title: "A perfectly good title",
+                    description: description,
+                    collapsed: collapsed
+                )
+                XCTAssertFalse(state.rendersBar)
+                XCTAssertEqual(
+                    measure(state: state), 0, accuracy: 0.5,
+                    "A surface without a description must not reserve any bar height"
+                )
+            }
+        }
+    }
 
-        let flagTrue = SurfaceTitleBarState(
-            title: title,
-            description: nil,
+    func testTitleIsNeverRepeatedInTheBar() {
+        // The bar shows only the description: a long title must not change its height.
+        let description = "Short live description."
+        let shortTitle = TabTitleBarState(title: "zsh", description: description, collapsed: true)
+        let longTitle = TabTitleBarState(
+            title: String(repeating: "very long title ", count: 20),
+            description: description,
             collapsed: true
         )
-        let flagFalse = SurfaceTitleBarState(
-            title: title,
-            description: nil,
-            collapsed: false
-        )
+        XCTAssertEqual(measure(state: shortTitle), measure(state: longTitle), accuracy: 0.5)
+    }
 
-        let h1 = measure(state: flagTrue)
-        let h2 = measure(state: flagFalse)
-
-        XCTAssertEqual(
-            h1, h2, accuracy: 0.5,
-            "With empty description, collapsed flag must not change rendered height (got \(h1) vs \(h2))"
-        )
+    func testHiddenTitleBarNeverRenders() {
+        let state = TabTitleBarState(title: "t", description: "d", visible: false, collapsed: true)
+        XCTAssertFalse(state.rendersBar)
+        XCTAssertEqual(measure(state: state), 0, accuracy: 0.5)
     }
 
     func testDescriptionScrollCap() {
-        // Long description must not grow the title bar beyond the scroll cap.
+        // Long description must not grow the bar beyond the scroll cap.
         let longDescription = (0..<50)
             .map { "- item \($0)" }
             .joined(separator: "\n")
-        let state = SurfaceTitleBarState(
+        let state = TabTitleBarState(
             title: "Short title",
             description: longDescription,
             collapsed: false
@@ -91,52 +90,28 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
 
         let height = measure(state: state)
 
-        // Expected ceiling: title row (~24pt with padding) + scroll cap (90pt)
-        // + outer vertical padding (6+6) + separator — allow generous slack.
-        let ceiling: CGFloat = 24 + titleBarDescriptionMaxHeight + 40
+        // Scroll cap (90pt) + outer vertical padding (6+6) + separator, with slack.
+        let ceiling: CGFloat = titleBarDescriptionMaxHeight + 40
         XCTAssertLessThanOrEqual(
             height, ceiling,
             "Title bar height \(height) must stay within scroll cap ceiling \(ceiling)"
         )
     }
 
-    func testChevronDisabledWhenDescriptionEmpty() {
-        // When description is empty, the chevron button is `.disabled(true)`.
-        // The invariant we protect: invoking the onToggleCollapsed callback
-        // must be impossible via the UI path because no code outside the
-        // disabled Button fires the closure. We therefore assert that the
-        // view was constructed with a closure the test can observe, and that
-        // rendering the view never fires the closure automatically.
-        var fireCount = 0
-        let state = SurfaceTitleBarState(
-            title: "Title only",
-            description: nil,
-            collapsed: false
+    func testSingleLineFlattensNewlinesAndBlankRuns() {
+        XCTAssertEqual(
+            TabTitleBarView.singleLine("Working on it.\n\n  Next: verify.  \n"),
+            "Working on it. Next: verify."
         )
-        let view = SurfaceTitleBarView(state: state) {
-            fireCount += 1
-        }
+    }
 
-        let host = NSHostingView(rootView: view)
+    func testRenderingNeverFiresTheToggle() {
+        var fireCount = 0
+        let state = TabTitleBarState(title: "t", description: "Some description", collapsed: false)
+        let host = NSHostingView(rootView: TabTitleBarView(state: state) { fireCount += 1 })
         host.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 200)
         host.layoutSubtreeIfNeeded()
-
         XCTAssertEqual(fireCount, 0, "Mounting the view must not invoke the toggle closure")
-
-        // With description set, the button is enabled but rendering alone
-        // must still not invoke the closure.
-        let stateWithDesc = SurfaceTitleBarState(
-            title: "Title only",
-            description: "Some description",
-            collapsed: false
-        )
-        let viewWithDesc = SurfaceTitleBarView(state: stateWithDesc) {
-            fireCount += 1
-        }
-        let host2 = NSHostingView(rootView: viewWithDesc)
-        host2.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 200)
-        host2.layoutSubtreeIfNeeded()
-        XCTAssertEqual(fireCount, 0, "Rendering enabled state must not fire toggle closure either")
     }
 }
 

@@ -11,8 +11,8 @@ import XCTest
 /// monotonic under concurrent mutation from many queues (atomicity is
 /// what makes it safe to read from the autosave fingerprint tick).
 final class MetadataStoreRevisionCounterTests: XCTestCase {
-    private func makeStoreAndSurface() -> (SurfaceMetadataStore, UUID, UUID) {
-        return (SurfaceMetadataStore.shared, UUID(), UUID())
+    private func makeStoreAndSurface() -> (TabMetadataStore, UUID, UUID) {
+        return (TabMetadataStore.shared, UUID(), UUID())
     }
 
     func testSetMetadataBumpsCounter() throws {
@@ -178,7 +178,7 @@ final class MetadataStoreRevisionCounterTests: XCTestCase {
             surfaceId: surfaceId,
             values: ["k": "v"],
             sources: [
-                "k": SurfaceMetadataStore.SourceRecord(source: .explicit, ts: 1.0)
+                "k": TabMetadataStore.SourceRecord(source: .explicit, ts: 1.0)
             ]
         )
         XCTAssertEqual(store.currentRevision(), before &+ 1,
@@ -186,7 +186,7 @@ final class MetadataStoreRevisionCounterTests: XCTestCase {
     }
 
     func testConcurrentMutationsYieldMonotonicNonDuplicateIncrements() {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let before = store.currentRevision()
 
         // Each iteration writes to a fresh surface so every write is a

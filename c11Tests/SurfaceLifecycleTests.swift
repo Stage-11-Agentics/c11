@@ -35,24 +35,24 @@ final class SurfaceLifecycleTests: XCTestCase {
     // MARK: - Transition validator
 
     func testActiveCanTransitionToThrottledAndHibernated() {
-        XCTAssertTrue(SurfaceLifecycleState.active.canTransition(to: .throttled))
-        XCTAssertTrue(SurfaceLifecycleState.active.canTransition(to: .hibernated))
+        XCTAssertTrue(TabLifecycleState.active.canTransition(to: .throttled))
+        XCTAssertTrue(TabLifecycleState.active.canTransition(to: .hibernated))
     }
 
     func testThrottledCanTransitionToActiveAndHibernated() {
-        XCTAssertTrue(SurfaceLifecycleState.throttled.canTransition(to: .active))
-        XCTAssertTrue(SurfaceLifecycleState.throttled.canTransition(to: .hibernated))
+        XCTAssertTrue(TabLifecycleState.throttled.canTransition(to: .active))
+        XCTAssertTrue(TabLifecycleState.throttled.canTransition(to: .hibernated))
     }
 
     func testHibernatedCanResumeToActive() {
-        XCTAssertTrue(SurfaceLifecycleState.hibernated.canTransition(to: .active))
+        XCTAssertTrue(TabLifecycleState.hibernated.canTransition(to: .active))
     }
 
     func testHibernatedDoesNotAutoFlipToThrottled() {
         // Hibernated is operator-pinned. A workspace selection change
         // must not yank the surface back to throttled — the only legal
         // exit is to active (via "Resume Workspace").
-        XCTAssertFalse(SurfaceLifecycleState.hibernated.canTransition(to: .throttled))
+        XCTAssertFalse(TabLifecycleState.hibernated.canTransition(to: .throttled))
     }
 
     func testSuspendedIsReservedInC11_25() {
@@ -60,33 +60,33 @@ final class SurfaceLifecycleTests: XCTestCase {
         // but no transitions are valid in C11-25 — guards against a
         // stale snapshot or a typo flipping a surface into a state the
         // dispatcher has no handler for.
-        for from in SurfaceLifecycleState.allCases {
+        for from in TabLifecycleState.allCases {
             if from == .suspended { continue }
             XCTAssertFalse(
                 from.canTransition(to: .suspended),
                 "expected \(from.rawValue) → suspended to be rejected"
             )
         }
-        for to in SurfaceLifecycleState.allCases {
+        for to in TabLifecycleState.allCases {
             if to == .suspended { continue }
             XCTAssertFalse(
-                SurfaceLifecycleState.suspended.canTransition(to: to),
+                TabLifecycleState.suspended.canTransition(to: to),
                 "expected suspended → \(to.rawValue) to be rejected"
             )
         }
     }
 
     func testSelfTransitionsAreIdempotent() {
-        for state in SurfaceLifecycleState.allCases {
+        for state in TabLifecycleState.allCases {
             XCTAssertTrue(state.canTransition(to: state))
         }
     }
 
     func testIsOperatorPinnedOnlyHibernated() {
-        XCTAssertFalse(SurfaceLifecycleState.active.isOperatorPinned)
-        XCTAssertFalse(SurfaceLifecycleState.throttled.isOperatorPinned)
-        XCTAssertFalse(SurfaceLifecycleState.suspended.isOperatorPinned)
-        XCTAssertTrue(SurfaceLifecycleState.hibernated.isOperatorPinned)
+        XCTAssertFalse(TabLifecycleState.active.isOperatorPinned)
+        XCTAssertFalse(TabLifecycleState.throttled.isOperatorPinned)
+        XCTAssertFalse(TabLifecycleState.suspended.isOperatorPinned)
+        XCTAssertTrue(TabLifecycleState.hibernated.isOperatorPinned)
     }
 
     // MARK: - Canonical metadata mirror
@@ -94,12 +94,12 @@ final class SurfaceLifecycleTests: XCTestCase {
     func testStoreAcceptsValidLifecycleState() throws {
         let workspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         // C11-25 review fix I4: `.suspended` is reserved-only and rejected
         // at the validator. Walk only the runtime-acceptable set here.
-        for state in SurfaceLifecycleState.allCases where state != .suspended {
+        for state in TabLifecycleState.allCases where state != .suspended {
             let result = try store.setMetadata(
                 workspaceId: workspace,
                 surfaceId: surface,
@@ -118,19 +118,19 @@ final class SurfaceLifecycleTests: XCTestCase {
     func testStoreRejectsSuspendedAsReservedOnly() {
         let workspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         XCTAssertThrowsError(
             try store.setMetadata(
                 workspaceId: workspace,
                 surfaceId: surface,
-                partial: [MetadataKey.lifecycleState: SurfaceLifecycleState.suspended.rawValue],
+                partial: [MetadataKey.lifecycleState: TabLifecycleState.suspended.rawValue],
                 mode: .merge,
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -140,7 +140,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     func testStoreRejectsUnknownLifecycleStateValue() {
         let workspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         XCTAssertThrowsError(
@@ -152,7 +152,7 @@ final class SurfaceLifecycleTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -162,7 +162,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     func testStoreRejectsNonStringLifecycleState() {
         let workspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         XCTAssertThrowsError(
@@ -174,7 +174,7 @@ final class SurfaceLifecycleTests: XCTestCase {
                 source: .explicit
             )
         ) { error in
-            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+            guard let writeError = error as? TabMetadataStore.WriteError else {
                 return XCTFail("expected WriteError, got \(error)")
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
@@ -183,14 +183,14 @@ final class SurfaceLifecycleTests: XCTestCase {
 
     func testLifecycleStateIsCanonicalKey() {
         XCTAssertTrue(MetadataKey.canonical.contains(MetadataKey.lifecycleState))
-        XCTAssertTrue(SurfaceMetadataStore.reservedKeys.contains(MetadataKey.lifecycleState))
+        XCTAssertTrue(TabMetadataStore.reservedKeys.contains(MetadataKey.lifecycleState))
     }
 
     // MARK: - Controller
 
     @MainActor
     func testControllerStartsActiveByDefault() {
-        let controller = SurfaceLifecycleController(
+        let controller = TabLifecycleController(
             workspaceId: UUID(),
             surfaceId: UUID()
         ) { _, _ in }
@@ -201,10 +201,10 @@ final class SurfaceLifecycleTests: XCTestCase {
     func testControllerTransitionMirrorsToMetadata() throws {
         let workspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
-        let controller = SurfaceLifecycleController(
+        let controller = TabLifecycleController(
             workspaceId: workspace,
             surfaceId: surface
         ) { _, _ in }
@@ -213,13 +213,13 @@ final class SurfaceLifecycleTests: XCTestCase {
         let snapshot = store.getMetadata(workspaceId: workspace, surfaceId: surface)
         XCTAssertEqual(
             snapshot.metadata[MetadataKey.lifecycleState] as? String,
-            SurfaceLifecycleState.throttled.rawValue
+            TabLifecycleState.throttled.rawValue
         )
     }
 
     @MainActor
     func testControllerRejectsInvalidTransition() {
-        let controller = SurfaceLifecycleController(
+        let controller = TabLifecycleController(
             workspaceId: UUID(),
             surfaceId: UUID(),
             initial: .active
@@ -231,8 +231,8 @@ final class SurfaceLifecycleTests: XCTestCase {
 
     @MainActor
     func testControllerFiresHandlerOnRealTransitionOnly() {
-        var calls: [(SurfaceLifecycleState, SurfaceLifecycleState)] = []
-        let controller = SurfaceLifecycleController(
+        var calls: [(TabLifecycleState, TabLifecycleState)] = []
+        let controller = TabLifecycleController(
             workspaceId: UUID(),
             surfaceId: UUID(),
             initial: .active
@@ -266,7 +266,7 @@ final class SurfaceLifecycleTests: XCTestCase {
         BrowserSnapshotStore.shared.clear(forSurfaceId: surfaceId)
         defer { BrowserSnapshotStore.shared.clear(forSurfaceId: surfaceId) }
 
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             id: surfaceId,
             workspaceId: UUID(),
             initialURL: url,
@@ -309,7 +309,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     @MainActor
     func testBrowserPanelDefaultConstructionStillFiresInitialLoad() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/c11-25-default"))
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             initialURL: url
         )
@@ -383,7 +383,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     /// (rather than spinning the timer) so the test stays deterministic
     /// and CI-safe.
     func testSamplerInvokesPidProviderAndCachesResult() {
-        let sampler = SurfaceMetricsSampler.shared
+        let sampler = TabMetricsSampler.shared
         let surfaceId = UUID()
         let providerPID: pid_t = getpid()
         sampler.register(surfaceId: surfaceId)
@@ -425,7 +425,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     /// the sampler drops the cached pid so the sidebar can render `—`
     /// instead of a stale value.
     func testSamplerClearsCacheWhenProviderReturnsNil() {
-        let sampler = SurfaceMetricsSampler.shared
+        let sampler = TabMetricsSampler.shared
         let surfaceId = UUID()
         sampler.register(surfaceId: surfaceId, initialPid: getpid())
         defer { sampler.unregister(surfaceId: surfaceId) }
@@ -444,13 +444,13 @@ final class SurfaceLifecycleTests: XCTestCase {
         let originalWorkspace = UUID()
         let newWorkspace = UUID()
         let surface = UUID()
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         defer {
             store.removeSurface(workspaceId: originalWorkspace, surfaceId: surface)
             store.removeSurface(workspaceId: newWorkspace, surfaceId: surface)
         }
 
-        let controller = SurfaceLifecycleController(
+        let controller = TabLifecycleController(
             workspaceId: originalWorkspace,
             surfaceId: surface
         ) { _, _ in }
@@ -461,7 +461,7 @@ final class SurfaceLifecycleTests: XCTestCase {
         let newSnap = store.getMetadata(workspaceId: newWorkspace, surfaceId: surface)
         XCTAssertEqual(
             newSnap.metadata[MetadataKey.lifecycleState] as? String,
-            SurfaceLifecycleState.throttled.rawValue
+            TabLifecycleState.throttled.rawValue
         )
         let oldSnap = store.getMetadata(workspaceId: originalWorkspace, surfaceId: surface)
         XCTAssertNil(oldSnap.metadata[MetadataKey.lifecycleState])
@@ -474,26 +474,26 @@ final class SurfaceLifecycleTests: XCTestCase {
 @MainActor
 final class WorkspaceSelectionLifecycleTests: XCTestCase {
 
-    private func terminals(_ workspace: Workspace) -> [TerminalPanel] {
-        workspace.panels.values.compactMap { $0 as? TerminalPanel }
+    private func terminals(_ workspace: Workspace) -> [TerminalTab] {
+        workspace.panels.values.compactMap { $0 as? TerminalTab }
     }
 
     func testDeselectingWorkspaceThrottlesItsTerminalsAndSelectingActivates() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let firstTerminal = try XCTUnwrap(terminals(first).first)
         let secondTerminal = try XCTUnwrap(terminals(second).first)
 
         manager.selectWorkspace(second)
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
         XCTAssertEqual(firstTerminal.lifecycle.state, .throttled)
         XCTAssertEqual(secondTerminal.lifecycle.state, .active)
         XCTAssertEqual(
-            SurfaceMetadataStore.shared
+            TabMetadataStore.shared
                 .getMetadata(workspaceId: first.id, surfaceId: firstTerminal.id)
                 .metadata[MetadataKey.lifecycleState] as? String,
-            SurfaceLifecycleState.throttled.rawValue
+            TabLifecycleState.throttled.rawValue
         )
 
         manager.selectWorkspace(first)
@@ -502,8 +502,8 @@ final class WorkspaceSelectionLifecycleTests: XCTestCase {
     }
 
     func testTabCreatedInsideHiddenWorkspaceStaysThrottled() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         manager.selectWorkspace(second)
 
@@ -524,8 +524,8 @@ final class WorkspaceSelectionLifecycleTests: XCTestCase {
     }
 
     func testHibernatedTerminalIsNotReactivatedBySelection() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let firstTerminal = try XCTUnwrap(terminals(first).first)
 

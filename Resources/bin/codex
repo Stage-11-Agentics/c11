@@ -133,12 +133,28 @@ self_dir="$(cd "$(dirname "$0")" && pwd)"
 c11_bin="$self_dir/c11"
 [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
-# Treat strict `codex resume <uuid>` argv as lifecycle intent only. Plain
-# launches and `resume --last` intentionally carry no expected id, so the
-# store invalidates any exact identity left by the previous process.
+# Treat `codex resume [flags] <uuid> [flags]` argv as lifecycle intent only.
+# Flags may precede the id: c11's own resume rail is
+# `codex resume --yolo <uuid>`. Exactly one UUID-shaped argument is the
+# intent; plain launches, `resume --last`, and zero or several UUIDs carry no
+# expected id, so the store invalidates any exact identity left by the
+# previous process.
 EXPECTED_RESUME_ID=""
-if [[ "${1:-}" == "resume" && "${2:-}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
-    EXPECTED_RESUME_ID="$2"
+if [[ "${1:-}" == "resume" ]]; then
+    resume_uuid_count=0
+    resume_uuid=""
+    resume_last=0
+    for resume_arg in "${@:2}"; do
+        if [[ "$resume_arg" == "--last" ]]; then
+            resume_last=1
+        elif [[ "$resume_arg" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+            resume_uuid_count=$((resume_uuid_count + 1))
+            resume_uuid="$resume_arg"
+        fi
+    done
+    if [[ "$resume_last" -eq 0 && "$resume_uuid_count" -eq 1 ]]; then
+        EXPECTED_RESUME_ID="$resume_uuid"
+    fi
 fi
 
 # (1) Mark the surface as terminal_type=codex (sidebar chip / role hint).

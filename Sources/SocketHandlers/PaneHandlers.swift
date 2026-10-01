@@ -12,31 +12,31 @@ extension TerminalController {
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchPane(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
-        case "pane.list":
+        case "area.list":
             return v2Result(id: id, self.v2PaneList(params: params))
-        case "pane.focus":
+        case "area.focus":
             return v2Result(id: id, self.v2PaneFocus(params: params))
-        case "pane.surfaces":
+        case "area.tabs":
             return v2Result(id: id, self.v2PaneSurfaces(params: params))
-        case "pane.create":
+        case "area.create":
             return v2Result(id: id, self.v2PaneCreate(params: params))
-        case "pane.resize":
+        case "area.resize":
             return v2Result(id: id, self.v2PaneResize(params: params))
-        case "pane.swap":
+        case "area.swap":
             return v2Result(id: id, self.v2PaneSwap(params: params))
-        case "pane.break":
+        case "area.break":
             return v2Result(id: id, self.v2PaneBreak(params: params))
-        case "pane.join":
+        case "area.join":
             return v2Result(id: id, self.v2PaneJoin(params: params))
-        case "pane.last":
+        case "area.last":
             return v2Result(id: id, self.v2PaneLast(params: params))
-        case "pane.confirm":
+        case "area.confirm":
             return v2Result(id: id, self.v2PaneConfirm(params: params))
-        case "pane.set_metadata":
+        case "area.set_metadata":
             return v2Result(id: id, self.v2PaneSetMetadata(params: params))
-        case "pane.get_metadata":
+        case "area.get_metadata":
             return v2Result(id: id, self.v2PaneGetMetadata(params: params))
-        case "pane.clear_metadata":
+        case "area.clear_metadata":
             return v2Result(id: id, self.v2PaneClearMetadata(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
@@ -75,6 +75,7 @@ extension TerminalController {
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "areas": panes,
                 "panes": panes,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
@@ -92,17 +93,17 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let paneUUID = v2UUID(params, "pane_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid pane_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid area_id", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "Pane not found", data: ["pane_id": paneUUID.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Area not found", data: ["pane_id": paneUUID.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
             guard let paneId = ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID }) else {
-                result = .err(code: "not_found", message: "Pane not found", data: ["pane_id": paneUUID.uuidString])
+                result = .err(code: "not_found", message: "Area not found", data: ["pane_id": paneUUID.uuidString])
                 return
             }
             if let windowId = v2ResolveWindowId(tabManager: tabManager) {
@@ -159,6 +160,7 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": paneId.id.uuidString,
                 "pane_ref": v2Ref(kind: .pane, uuid: paneId.id),
+                "tabs": surfaces,
                 "surfaces": surfaces,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
@@ -166,7 +168,7 @@ extension TerminalController {
         }
 
         guard let payload else {
-            return .err(code: "not_found", message: "Pane or workspace not found", data: nil)
+            return .err(code: "not_found", message: "Area or workspace not found", data: nil)
         }
         return .ok(payload)
     }
@@ -205,7 +207,7 @@ extension TerminalController {
 
         let force = splitForceFlag(params)
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create pane", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create area", data: nil)
         guard v2MainSyncWithDeadline({
             guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -214,7 +216,7 @@ extension TerminalController {
             self.v2MaybeFocusWindow(for: tabManager)
             self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
             guard let focusedPanelId = ws.focusedPanelId else {
-                result = .err(code: "not_found", message: "No focused surface to split", data: nil)
+                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
                 return
             }
 
@@ -266,7 +268,7 @@ extension TerminalController {
             }
 
             guard let createdPanelId = newPanelId else {
-                result = .err(code: "internal_error", message: "Failed to create pane", data: nil)
+                result = .err(code: "internal_error", message: "Failed to create area", data: nil)
                 return
             }
             let paneUUID = becameTab ? targetPaneForTab?.id : ws.paneId(forPanelId: createdPanelId)?.id
@@ -354,7 +356,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "direction must be one of left|right|up|down and amount must be > 0", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to resize pane", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to resize area", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -363,11 +365,11 @@ extension TerminalController {
 
             let paneUUID = v2UUID(params, "pane_id") ?? ws.bonsplitController.focusedPaneId?.id
             guard let paneUUID else {
-                result = .err(code: "not_found", message: "No focused pane", data: nil)
+                result = .err(code: "not_found", message: "No focused area", data: nil)
                 return
             }
             guard ws.bonsplitController.allPaneIds.contains(where: { $0.id == paneUUID }) else {
-                result = .err(code: "not_found", message: "Pane not found", data: ["pane_id": paneUUID.uuidString])
+                result = .err(code: "not_found", message: "Area not found", data: ["pane_id": paneUUID.uuidString])
                 return
             }
 
@@ -379,7 +381,7 @@ extension TerminalController {
                 candidates: &candidates
             )
             guard trace.containsTarget else {
-                result = .err(code: "not_found", message: "Pane not found in split tree", data: ["pane_id": paneUUID.uuidString])
+                result = .err(code: "not_found", message: "Area not found in split tree", data: ["pane_id": paneUUID.uuidString])
                 return
             }
 
@@ -387,7 +389,7 @@ extension TerminalController {
             guard !orientationMatches.isEmpty else {
                 result = .err(
                     code: "invalid_state",
-                    message: "No \(direction.splitOrientation) split ancestor for pane",
+                    message: "No \(direction.splitOrientation) split ancestor for area",
                     data: ["pane_id": paneUUID.uuidString, "direction": direction.rawValue]
                 )
                 return
@@ -396,7 +398,7 @@ extension TerminalController {
             guard let candidate = orientationMatches.first(where: { $0.paneInFirstChild == direction.requiresPaneInFirstChild }) else {
                 result = .err(
                     code: "invalid_state",
-                    message: "Pane has no adjacent border in direction \(direction.rawValue)",
+                    message: "Area has no adjacent border in direction \(direction.rawValue)",
                     data: ["pane_id": paneUUID.uuidString, "direction": direction.rawValue]
                 )
                 return
@@ -434,24 +436,24 @@ extension TerminalController {
 
     private func v2PaneSwap(params: [String: Any]) -> V2CallResult {
         guard let sourcePaneUUID = v2UUID(params, "pane_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid pane_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid area_id", data: nil)
         }
         guard let targetPaneUUID = v2UUID(params, "target_pane_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid target_pane_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid target_area_id", data: nil)
         }
         if sourcePaneUUID == targetPaneUUID {
-            return .err(code: "invalid_params", message: "pane_id and target_pane_id must be different", data: nil)
+            return .err(code: "invalid_params", message: "area_id and target_area_id must be different", data: nil)
         }
         let focus = v2FocusAllowed(requested: v2Bool(params, "focus") ?? true)
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to swap panes", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to swap areas", data: nil)
         v2MainSync {
             guard let located = v2LocatePane(sourcePaneUUID) else {
-                result = .err(code: "not_found", message: "Source pane not found", data: ["pane_id": sourcePaneUUID.uuidString])
+                result = .err(code: "not_found", message: "Source area not found", data: ["pane_id": sourcePaneUUID.uuidString])
                 return
             }
             guard let targetPane = located.workspace.bonsplitController.allPaneIds.first(where: { $0.id == targetPaneUUID }) else {
-                result = .err(code: "not_found", message: "Target pane not found in source workspace", data: ["target_pane_id": targetPaneUUID.uuidString])
+                result = .err(code: "not_found", message: "Target area not found in source workspace", data: ["target_pane_id": targetPaneUUID.uuidString])
                 return
             }
             let workspace = located.workspace
@@ -461,7 +463,7 @@ extension TerminalController {
                   let selectedTargetTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
                   let sourceSurfaceId = workspace.panelIdFromSurfaceId(selectedSourceTab.id),
                   let targetSurfaceId = workspace.panelIdFromSurfaceId(selectedTargetTab.id) else {
-                result = .err(code: "invalid_state", message: "Both panes must have a selected surface", data: nil)
+                result = .err(code: "invalid_state", message: "Both areas must have a selected tab", data: nil)
                 return
             }
 
@@ -471,24 +473,24 @@ extension TerminalController {
             if workspace.bonsplitController.tabs(inPane: sourcePane).count <= 1 {
                 sourcePlaceholder = workspace.newTerminalSurface(inPane: sourcePane, focus: false)?.id
                 if sourcePlaceholder == nil {
-                    result = .err(code: "internal_error", message: "Failed to create source placeholder surface", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create source placeholder tab", data: nil)
                     return
                 }
             }
             if workspace.bonsplitController.tabs(inPane: targetPane).count <= 1 {
                 targetPlaceholder = workspace.newTerminalSurface(inPane: targetPane, focus: false)?.id
                 if targetPlaceholder == nil {
-                    result = .err(code: "internal_error", message: "Failed to create target placeholder surface", data: nil)
+                    result = .err(code: "internal_error", message: "Failed to create target placeholder tab", data: nil)
                     return
                 }
             }
 
             guard workspace.moveSurface(panelId: sourceSurfaceId, toPane: targetPane, focus: false) else {
-                result = .err(code: "internal_error", message: "Failed moving source surface into target pane", data: nil)
+                result = .err(code: "internal_error", message: "Failed moving source tab into target area", data: nil)
                 return
             }
             guard workspace.moveSurface(panelId: targetSurfaceId, toPane: sourcePane, focus: false) else {
-                result = .err(code: "internal_error", message: "Failed moving target surface into source pane", data: nil)
+                result = .err(code: "internal_error", message: "Failed moving target tab into source area", data: nil)
                 return
             }
 
@@ -527,7 +529,7 @@ extension TerminalController {
         }
         let focus = v2FocusAllowed(requested: v2Bool(params, "focus") ?? true)
 
-        var result: V2CallResult = .err(code: "internal_error", message: "Failed to break pane", data: nil)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to break area", data: nil)
         v2MainSync {
             guard let sourceWorkspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -551,18 +553,18 @@ extension TerminalController {
                 return sourceWorkspace.focusedPanelId
             }()
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No source surface to break", data: nil)
+                result = .err(code: "not_found", message: "No source tab to break", data: nil)
                 return
             }
             guard sourceWorkspace.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
             let sourcePaneForRollback = sourceWorkspace.paneId(forPanelId: surfaceId)
 
             guard let detached = sourceWorkspace.detachSurface(panelId: surfaceId) else {
-                result = .err(code: "internal_error", message: "Failed to detach source surface", data: nil)
+                result = .err(code: "internal_error", message: "Failed to detach source tab", data: nil)
                 return
             }
 
@@ -577,7 +579,7 @@ extension TerminalController {
                         focus: true
                     )
                 }
-                result = .err(code: "internal_error", message: "Destination workspace has no pane", data: nil)
+                result = .err(code: "internal_error", message: "Destination workspace has no area", data: nil)
                 return
             }
 
@@ -590,7 +592,7 @@ extension TerminalController {
                         focus: true
                     )
                 }
-                result = .err(code: "internal_error", message: "Failed to attach surface to new workspace", data: nil)
+                result = .err(code: "internal_error", message: "Failed to attach tab to new workspace", data: nil)
                 return
             }
             let windowId = v2ResolveWindowId(tabManager: tabManager)
@@ -610,7 +612,7 @@ extension TerminalController {
 
     private func v2PaneJoin(params: [String: Any]) -> V2CallResult {
         guard let targetPaneUUID = v2UUID(params, "target_pane_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid target_pane_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid target_area_id", data: nil)
         }
 
         var surfaceId = v2UUID(params, "surface_id")
@@ -618,14 +620,14 @@ extension TerminalController {
             guard let sourceLocated = v2LocatePane(sourcePaneUUID),
                   let selected = sourceLocated.workspace.bonsplitController.selectedTab(inPane: sourceLocated.paneId),
                   let selectedSurface = sourceLocated.workspace.panelIdFromSurfaceId(selected.id) else {
-                return .err(code: "not_found", message: "Unable to resolve selected surface in source pane", data: [
+                return .err(code: "not_found", message: "Unable to resolve selected tab in source area", data: [
                     "pane_id": sourcePaneUUID.uuidString
                 ])
             }
             surfaceId = selectedSurface
         }
         guard let surfaceId else {
-            return .err(code: "invalid_params", message: "Missing surface_id (or pane_id with selected surface)", data: nil)
+            return .err(code: "invalid_params", message: "Missing tab_id (or area_id with selected tab)", data: nil)
         }
 
         var moveParams: [String: Any] = [
@@ -643,18 +645,18 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
-        var result: V2CallResult = .err(code: "not_found", message: "No alternate pane available", data: nil)
+        var result: V2CallResult = .err(code: "not_found", message: "No alternate area available", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
             guard let focused = ws.bonsplitController.focusedPaneId else {
-                result = .err(code: "not_found", message: "No focused pane", data: nil)
+                result = .err(code: "not_found", message: "No focused area", data: nil)
                 return
             }
             guard let target = ws.bonsplitController.allPaneIds.first(where: { $0.id != focused.id }) else {
-                result = .err(code: "not_found", message: "No alternate pane available", data: nil)
+                result = .err(code: "not_found", message: "No alternate area available", data: nil)
                 return
             }
 
@@ -716,7 +718,7 @@ extension TerminalController {
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
-            return .err(code: "pane_not_found", message: "Pane not found", data: nil)
+            return .err(code: "pane_not_found", message: "Area not found", data: nil)
         }
 
         do {
@@ -754,7 +756,7 @@ extension TerminalController {
         let includeSources = v2Bool(params, "include_sources") ?? false
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
-            return .err(code: "pane_not_found", message: "Pane not found", data: nil)
+            return .err(code: "pane_not_found", message: "Area not found", data: nil)
         }
 
         let (fullMetadata, fullSources) = PaneMetadataStore.shared.getMetadata(
@@ -828,7 +830,7 @@ extension TerminalController {
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
-            return .err(code: "pane_not_found", message: "Pane not found", data: nil)
+            return .err(code: "pane_not_found", message: "Area not found", data: nil)
         }
 
         do {
@@ -874,7 +876,7 @@ extension TerminalController {
             // Seeding is best-effort: the pane is already created and the
             // caller can retry via pane.set_metadata. Log and continue.
             #if DEBUG
-            dlog("pane.title_seed.failed pane=\(paneUUID.uuidString) err=\(error)")
+            dlog("area.title_seed.failed pane=\(paneUUID.uuidString) err=\(error)")
             #endif
         }
     }
@@ -959,8 +961,8 @@ extension TerminalController {
                 resolveError = .err(code: "unavailable", message: "TabManager not available", data: nil)
                 return
             }
-            guard let panelId = v2UUID(params, "panel_id") else {
-                resolveError = .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
+            guard let panelId = v2UUID(params, "panel_id") ?? v2UUID(params, "surface_id") else {
+                resolveError = .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
                 return
             }
             resolvedPanelId = panelId
@@ -992,7 +994,7 @@ extension TerminalController {
 
         if let resolveError { return resolveError }
         guard presented, let panelId = resolvedPanelId else {
-            return .err(code: "unknown_panel", message: "Panel not found",
+            return .err(code: "unknown_panel", message: "Tab not found",
                         data: ["panel_id": resolvedPanelId?.uuidString ?? ""])
         }
 

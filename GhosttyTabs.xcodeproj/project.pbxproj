@@ -302,6 +302,7 @@
 		B2829D4794BE50E1B18243D2 /* PaneHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B86DD36D8CB96AA0FD94E1 /* PaneHandlers.swift */; };
 		B33BAA37AE6B8D449B5CD405 /* ConfigCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBC71594BF2FF8B59D1AE28 /* ConfigCommandCore.swift */; };
 		B39195B311AC251C6034CB4A /* SocketDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BCDD954BED18665E7E3145 /* SocketDispatch.swift */; };
+		C248B0A1B2C3D4E5F6071801 /* LegacyWireAliases.swift in Sources */ = {isa = PBXBuildFile; fileRef = C248B0A1B2C3D4E5F6071802 /* LegacyWireAliases.swift */; };
 		B56F0F5D50E43946F0510B03 /* SurfaceTypeAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FF3E8B8443DEA778BA817BB /* SurfaceTypeAvailability.swift */; };
 		B5A46E690FBBA51D395F88F1 /* ConversationHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640DC1629D340031E0516DA5 /* ConversationHandlers.swift */; };
 		B6BF3DC98DB1495E57900199 /* TabManagerUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */; };
@@ -991,6 +992,7 @@
 		F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketControlPasswordStoreTests.swift; sourceTree = "<group>"; };
 		F81492660FA7D00E8115BD46 /* ConversationRefTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConversationRefTests.swift; sourceTree = "<group>"; };
 		F8BCDD954BED18665E7E3145 /* SocketDispatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketDispatch.swift; sourceTree = "<group>"; };
+		C248B0A1B2C3D4E5F6071802 /* LegacyWireAliases.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyWireAliases.swift; sourceTree = "<group>"; };
 		F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyEnsureFocusWindowActivationTests.swift; sourceTree = "<group>"; };
 		FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStressProfileTests.swift; sourceTree = "<group>"; };
 		FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImportMappingTests.swift; sourceTree = "<group>"; };
@@ -1377,6 +1379,7 @@
 				B7C0D996AACCF41CBCBC7D7C /* BrowserQueryHandlers.swift */,
 				C11222D001B2C3D4E5F60718 /* DownloadPathWatcher.swift */,
 				F8BCDD954BED18665E7E3145 /* SocketDispatch.swift */,
+				C248B0A1B2C3D4E5F6071802 /* LegacyWireAliases.swift */,
 				C11840000000000000000004 /* AttentionHandlers.swift */,
 				C967AD5F66B6E2304632FD54 /* ConfigHandlers.swift */,
 			);
@@ -2141,6 +2144,7 @@
 				9112C6C26F5FA76D26214579 /* BrowserQueryHandlers.swift in Sources */,
 				C11222C001B2C3D4E5F60718 /* DownloadPathWatcher.swift in Sources */,
 				B39195B311AC251C6034CB4A /* SocketDispatch.swift in Sources */,
+				C248B0A1B2C3D4E5F6071801 /* LegacyWireAliases.swift in Sources */,
 				C11840000000000000000003 /* AttentionHandlers.swift in Sources */,
 				6A0C33F6E77CC3ACF487BAF9 /* SidebarStalenessSettings.swift in Sources */,
 				C11B0001A1B2C3D4E5F60701 /* TabSheetDetail.swift in Sources */,

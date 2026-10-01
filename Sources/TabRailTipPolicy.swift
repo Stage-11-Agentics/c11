@@ -91,8 +91,18 @@ struct TabRailTipPolicy {
     /// A resize blip shorter than this does not count as an overflow day.
     static let sustain: TimeInterval = 2
 
-    let calendar: Calendar
+    /// Gregorian, in a chosen time zone. The app uses `localCalendar()` and
+    /// refreshes it when the day or zone changes. Tests pass their own.
+    var calendar: Calendar
     let store: TabRailTipStoring
+
+    /// Gregorian calendar in the current time zone. Day keys must not follow
+    /// `Calendar.current`, whose identifier can be something other than Gregorian.
+    static func localCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
 
     /// True when the overflow is still going and has lasted at least `sustain`.
     static func sustained(since: Date, now: Date, stillOverflowing: Bool) -> Bool {

@@ -12395,6 +12395,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didClosePane paneId: PaneID) {
+        TabRailTipCenter.shared.notePaneClosed(workspace: self, paneId: paneId)
         // The pane is gone — drop any pending pane-scoped overlay (e.g. a stale
         // pane-close confirmation that survived the close path) so its
         // continuation resolves with .dismissed instead of leaking.

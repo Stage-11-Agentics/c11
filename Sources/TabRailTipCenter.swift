@@ -6,13 +6,16 @@ import Bonsplit
 /// and whether the tab sheet is open. This type decides when the tip is on
 /// screen and owns the popover. The policy decides when a new offer may start.
 ///
-/// The popover is not modal. After it is shown, keyboard focus is given back
-/// to the terminal window. Clicking outside ends this offer and does not
-/// dismiss the tip. Undo restores Tabs and does the same.
+/// The popover is not modal. The first time it opens during an offer, if
+/// the terminal window was key just before, that window is made key once.
+/// Later refreshes do not take the keyboard back. Clicking outside ends
+/// this offer and does not dismiss the tip. Undo restores Tabs and does
+/// the same.
+@MainActor
 final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     static let shared = TabRailTipCenter()
 
-    private let policy: TabRailTipPolicy
+    private var policy: TabRailTipPolicy
     private let model = TabRailTipModel()
     private var slots: [String: Slot] = [:]
     private var phase: Phase = .idle
@@ -25,16 +28,21 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// the operator leaving the tip.
     private var reanchoring = false
     private weak var anchorBeforeSwitch: NSView?
-    private var programmaticClose = false
+    /// Set just before a close this type asked for. Cleared by `popoverDidClose`,
+    /// or on the next turn if that callback never runs, so a later user close
+    /// is not swallowed.
+    private var programmaticCloseID: UUID?
     private var userClose = false
     private var popover: NSPopover?
     private var hosting: NSHostingController<TabRailTipView>?
     private var shownAnchor: NSView?
-    private var sustainItem: DispatchWorkItem?
-    private var recordedDayKey: String?
     private var refreshQueued = false
-    private var keyWindow: NSWindow?
-    private var escapeMonitor: Any?
+    /// The terminal window that was key when this offer's popover first opened.
+    /// Weak so a closed window does not stay alive. Key is restored at most once.
+    private weak var keyWindow: NSWindow?
+    private var restoredKey = false
+    /// Readable from `deinit`, which may not be on the main actor.
+    nonisolated(unsafe) private var escapeMonitor: Any?
 
     private enum Phase {
         case idle
@@ -47,6 +55,9 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         weak var workspace: Workspace?
         let paneId: PaneID
         var overflowing = false
+        /// When the current overflow started. Nil while the strip fits.
+        var overflowSince: Date?
+        var sustainItem: DispatchWorkItem?
         weak var anchor: NSView?
         var sheetOpen = false
 
@@ -57,11 +68,13 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private override init() {
-        policy = TabRailTipPolicy(calendar: .current, store: UserDefaultsTabRailTipStore())
+        policy = TabRailTipPolicy(calendar: TabRailTipPolicy.localCalendar(), store: UserDefaultsTabRailTipStore())
         super.init()
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didResignKeyNotification, object: nil)
+        center.addObserver(self, selector: #selector(defaultsChanged(_:)), name: UserDefaults.didChangeNotification, object: nil)
+        center.addObserver(self, selector: #selector(calendarDayChanged(_:)), name: .NSCalendarDayChanged, object: nil)
     }
 
     deinit {
@@ -77,7 +90,21 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         let slot = slot(workspace, paneId)
         guard slot.overflowing != overflowing else { return }
         slot.overflowing = overflowing
-        updateSustain()
+        if overflowing {
+            armSustain(slot)
+        } else {
+            slot.overflowSince = nil
+            slot.sustainItem?.cancel()
+            slot.sustainItem = nil
+        }
+        scheduleRefresh()
+    }
+
+    func notePaneClosed(workspace: Workspace, paneId: PaneID) {
+        let id = slotID(workspace, paneId)
+        if let slot = slots.removeValue(forKey: id) {
+            slot.sustainItem?.cancel()
+        }
         scheduleRefresh()
     }
 
@@ -98,11 +125,15 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         scheduleRefresh()
     }
 
-    func scheduleRefresh() {
+    /// Safe from a tab-selection callback that is not already on the main actor.
+    nonisolated func scheduleRefresh() {
         if Thread.isMainThread {
-            enqueueRefresh()
+            MainActor.assumeIsolated { self.enqueueRefresh() }
         } else {
-            DispatchQueue.main.async { [weak self] in self?.enqueueRefresh() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated { self.enqueueRefresh() }
+            }
         }
     }
 
@@ -119,7 +150,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         TabLayoutSettings.setMode(.rail)
         workspace.bonsplitController.setRailOpen(true, inPane: slot.paneId)
         resizePopover()
-        restoreKey()
         scheduleRefresh()
     }
 
@@ -131,9 +161,9 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        clearKeyRestore()
         hidePopover()
         TabLayoutSettings.setMode(.tabs)
-        restoreKey()
     }
 
     func performShowList() {
@@ -158,8 +188,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        clearKeyRestore()
         hidePopover()
-        restoreKey()
     }
 
     // MARK: Popover
@@ -167,8 +197,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let closed = notification.object as? NSPopover, closed === popover else { return }
         removeEscapeMonitor()
-        if programmaticClose {
-            programmaticClose = false
+        if programmaticCloseID != nil {
+            programmaticCloseID = nil
             return
         }
         if userClose {
@@ -185,13 +215,33 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         endOffer()
     }
 
-    func popoverDidShow(_ notification: Notification) {
-        guard let shown = notification.object as? NSPopover, shown === popover else { return }
-        restoreKey()
+    @objc nonisolated private func windowKeyChanged(_ notification: Notification) {
+        scheduleRefresh()
     }
 
-    @objc private func windowKeyChanged(_ notification: Notification) {
+    /// A `defaults write` of `forceOffer` (or a reset of the tip keys) must
+    /// start or stop an offer without waiting for the next tab event.
+    @objc nonisolated private func defaultsChanged(_ notification: Notification) {
         scheduleRefresh()
+    }
+
+    /// An area that is still overflowing when the local day rolls over records
+    /// the new day. The notification is not promised to arrive on the main queue.
+    @objc nonisolated private func calendarDayChanged(_ notification: Notification) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                self.recordOpenOverflows()
+                self.scheduleRefresh()
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.recordOpenOverflows()
+                    self.scheduleRefresh()
+                }
+            }
+        }
     }
 
     private func enqueueRefresh() {
@@ -206,10 +256,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     private func refresh() {
         dispatchPrecondition(condition: .onQueue(.main))
-        let stale = slots.compactMap { $0.value.workspace == nil ? $0.key : nil }
-        for key in stale {
-            slots.removeValue(forKey: key)
-        }
+        pruneSlots()
+        recordOpenOverflows()
         if policy.isDismissed {
             phase = .idle
             reanchoring = false
@@ -288,6 +336,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        clearKeyRestore()
         hidePopover()
     }
 
@@ -296,26 +345,56 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         if popover.isShown, shownAnchor === anchor {
             resizePopover()
             installEscapeMonitor()
-            restoreKey()
             return
         }
+        let wasKey = anchor.window?.isKeyWindow == true
         if popover.isShown {
-            programmaticClose = true
-            popover.performClose(nil)
+            closeProgrammatically(popover)
         }
         shownAnchor = anchor
-        keyWindow = anchor.window
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
         resizePopover()
-        if popover.isShown { installEscapeMonitor() }
-        restoreKey()
+        guard popover.isShown else { return }
+        installEscapeMonitor()
+        guard wasKey else { return }
+        claimKeyOnce(anchor.window)
     }
 
     private func hidePopover() {
         guard let popover, popover.isShown else { return }
-        programmaticClose = true
-        popover.performClose(nil)
+        closeProgrammatically(popover)
         shownAnchor = nil
+    }
+
+    /// Marks the close that follows as ours. If `didClose` never runs, the
+    /// token is dropped so the next close is not treated as programmatic.
+    private func closeProgrammatically(_ popover: NSPopover) {
+        let token = UUID()
+        programmaticCloseID = token
+        popover.performClose(nil)
+        guard programmaticCloseID == token else { return }
+        if popover.isShown {
+            programmaticCloseID = nil
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.programmaticCloseID == token else { return }
+            self.programmaticCloseID = nil
+        }
+    }
+
+    /// Once per offer, and only when the terminal window was key immediately
+    /// before the popover opened. A later refresh must not call `makeKey`.
+    private func claimKeyOnce(_ window: NSWindow?) {
+        guard !restoredKey, let window else { return }
+        keyWindow = window
+        window.makeKey()
+        restoredKey = true
+    }
+
+    private func clearKeyRestore() {
+        restoredKey = false
+        keyWindow = nil
     }
 
     private func ensurePopover() -> NSPopover {
@@ -340,23 +419,21 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         popover.contentSize = NSSize(width: ceil(fit.width), height: ceil(fit.height))
     }
 
-    /// The tip must not keep the keyboard. Put key status back on the
-    /// terminal window the popover is attached to. Semitransient closes on a
-    /// click in that window, not on this key change.
-    private func restoreKey() {
-        keyWindow?.makeKey()
-    }
-
-    /// Escape ends the offer and is not typed into the terminal. The popover
-    /// is not key, so the window would otherwise deliver Escape to the shell.
+    /// Escape ends the offer only when the popover's own window is the one
+    /// receiving it. The event is returned so a terminal still gets Escape.
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.popover?.isShown == true else { return event }
-            let flags = event.modifierFlags.intersection([.command, .control, .option])
-            guard event.keyCode == 53, flags.isEmpty else { return event }
-            self.closeFromUser()
-            return nil
+            MainActor.assumeIsolated {
+                guard let self else { return event }
+                guard self.popover?.isShown == true else { return event }
+                guard let popoverWindow = self.popover?.contentViewController?.view.window else { return event }
+                guard event.window === popoverWindow else { return event }
+                let flags = event.modifierFlags.intersection([.command, .control, .option])
+                guard event.keyCode == 53, flags.isEmpty else { return event }
+                self.closeFromUser()
+                return event
+            }
         }
     }
 
@@ -380,8 +457,12 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     // MARK: Slots and the sustain timer
 
+    private func slotID(_ workspace: Workspace, _ paneId: PaneID) -> String {
+        workspace.id.uuidString + "|" + paneId.id.uuidString
+    }
+
     private func slot(_ workspace: Workspace, _ paneId: PaneID) -> Slot {
-        let id = workspace.id.uuidString + "|" + paneId.id.uuidString
+        let id = slotID(workspace, paneId)
         if let existing = slots[id] {
             existing.workspace = workspace
             return existing
@@ -389,6 +470,18 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         let created = Slot(workspace: workspace, paneId: paneId)
         slots[id] = created
         return created
+    }
+
+    /// Drops slots whose workspace or pane is gone, and cancels their timers.
+    private func pruneSlots() {
+        let stale = slots.keys.filter { key in
+            guard let slot = slots[key], let workspace = slot.workspace else { return true }
+            return !workspace.bonsplitController.allPaneIds.contains(slot.paneId)
+        }
+        for key in stale {
+            slots[key]?.sustainItem?.cancel()
+            slots.removeValue(forKey: key)
+        }
     }
 
     /// The focused pane of the front window's selected workspace.
@@ -411,37 +504,50 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         return nil
     }
 
-    private func updateSustain(now: Date = Date()) {
-        let today = policy.dayKey(for: now)
-        if recordedDayKey == today || policy.hasRecordedOverflow(on: now) {
-            recordedDayKey = today
-            sustainItem?.cancel()
-            sustainItem = nil
-            return
+    private func refreshCalendar() {
+        policy.calendar = TabRailTipPolicy.localCalendar()
+    }
+
+    /// Starts this area's own 2s timer. A blip in another area cannot credit it.
+    private func armSustain(_ slot: Slot, now: Date = Date()) {
+        refreshCalendar()
+        if policy.hasRecordedOverflow(on: now) { return }
+        guard slot.sustainItem == nil else { return }
+        let since = now
+        slot.overflowSince = since
+        let item = DispatchWorkItem { [weak self, weak slot] in
+            MainActor.assumeIsolated {
+                guard let self, let slot else { return }
+                slot.sustainItem = nil
+                self.refreshCalendar()
+                let started = slot.overflowSince ?? since
+                let still = slot.overflowing && slot.workspace != nil
+                if self.policy.recordSustainedOverflow(since: started, now: Date(), stillOverflowing: still) {
+                    self.scheduleRefresh()
+                }
+            }
         }
-        let any = slots.values.contains { $0.overflowing && $0.workspace != nil }
-        if !any {
-            sustainItem?.cancel()
-            sustainItem = nil
-            return
-        }
-        guard sustainItem == nil else { return }
-        let item = DispatchWorkItem { [weak self] in
-            self?.sustainFired()
-        }
-        sustainItem = item
+        slot.sustainItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + TabRailTipPolicy.sustain, execute: item)
     }
 
-    private func sustainFired() {
-        sustainItem = nil
-        guard slots.values.contains(where: { $0.overflowing && $0.workspace != nil }) else { return }
-        let now = Date()
-        if policy.recordOverflow(now: now) {
-            recordedDayKey = policy.dayKey(for: now)
-            scheduleRefresh()
-        } else {
-            recordedDayKey = policy.dayKey(for: now)
+    /// Records today for an area that has already been overflowing for 2s.
+    /// Used when the day changes and on refresh, so a strip that stays
+    /// overflowing across midnight still counts the new day. One mark per day.
+    private func recordOpenOverflows(now: Date = Date()) {
+        refreshCalendar()
+        if policy.hasRecordedOverflow(on: now) {
+            for slot in slots.values {
+                slot.sustainItem?.cancel()
+                slot.sustainItem = nil
+            }
+            return
+        }
+        for slot in slots.values {
+            guard slot.overflowing, slot.workspace != nil, let since = slot.overflowSince else { continue }
+            if policy.recordSustainedOverflow(since: since, now: now, stillOverflowing: true) {
+                break
+            }
         }
     }
 

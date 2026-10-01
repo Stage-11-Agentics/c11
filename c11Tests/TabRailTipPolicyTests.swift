@@ -72,6 +72,12 @@ final class TabRailTipPolicyTests: XCTestCase {
         XCTAssertTrue(tip.hasRecordedOverflow(on: now))
     }
 
+    func testLocalCalendarIsGregorianInTheCurrentTimeZone() {
+        let calendar = TabRailTipPolicy.localCalendar()
+        XCTAssertEqual(calendar.identifier, .gregorian)
+        XCTAssertEqual(calendar.timeZone, TimeZone.current)
+    }
+
     func testDayKeyUsesTheLocalCalendar() {
         let store = MemoryStore()
         let tip = policy(store)

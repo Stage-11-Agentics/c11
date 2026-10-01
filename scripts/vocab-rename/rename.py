@@ -548,6 +548,9 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
             if glob_match(rel, globs):
                 new, fallback, flags = cand, fb, fl
                 break
+        if new is None and callees and lst:
+            if is_call_label(src, a, b) and callees.get(callee_name(src, a) or "") == "rename":
+                new, fallback, flags = lst[0][0], lst[0][2], set()  # follows its renamed declaration
         if new is None:
             continue
         pre = src[max(0, a - 20):a]

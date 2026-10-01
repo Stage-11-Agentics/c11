@@ -7,14 +7,16 @@ Applies a TSV symbol table of whole-identifier renames to Swift sources.
 
 Table format (one entry per line, `#` comments and blank lines ignored):
 
-  old<TAB>new[<TAB>glob[,glob...][<TAB>fallback]]
+  old<TAB>new[<TAB>glob[,glob...][<TAB>fallback[<TAB>flags]]]
                                         identifier rename; optional repo-relative
                                         globs restrict where it applies (prefix a
                                         glob with `!` to exclude). If `new` already
                                         occurs in the same member (a shadowing
                                         hazard), `fallback` is used there instead;
                                         with no usable fallback the token is left
-                                        alone and reported as COLLISION.
+                                        alone and reported as COLLISION. Flag
+                                        `noimplicit` skips leading-dot implicit
+                                        members (`.tabs` enum cases).
   @path<TAB>old<TAB>new                 file or directory rename (git mv, then
                                         project.pbxproj path edits)
   @keep<TAB>glob<TAB>regex<TAB>name,name  in files matching glob, members whose source
@@ -79,7 +81,8 @@ def load_table(path):
                 sys.exit(f"{path}:{ln}: need old<TAB>new")
             globs = [g for g in (cols[2].split(",") if len(cols) > 2 else []) if g]
             fallback = cols[3] if len(cols) > 3 and cols[3] else None
-            renames.setdefault(cols[0], []).append((cols[1], globs, fallback))
+            flags = set(cols[4].split(",")) if len(cols) > 4 and cols[4] else set()
+            renames.setdefault(cols[0], []).append((cols[1], globs, fallback, flags))
     return renames, paths, deletes, keeps
 
 
@@ -94,12 +97,12 @@ def glob_match(rel, globs):
 
 
 def validate(renames):
-    news = {n for lst in renames.values() for n, _, _ in lst}
+    news = {e[0] for lst in renames.values() for e in lst}
     clash = news & set(renames)
     if clash:
         sys.exit("table chains renames (new name is also an old name): " + ", ".join(sorted(clash)))
     for old, lst in renames.items():
-        for n, _, _ in lst:
+        for n, *_ in lst:
             if n == old:
                 sys.exit(f"identity rename: {old}")
 
@@ -418,16 +421,18 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         lst = renames.get(tok)
         if not lst:
             continue
-        new, fallback = None, None
-        for cand, globs, fb in lst:
+        new, fallback, flags = None, None, set()
+        for cand, globs, fb, fl in lst:
             if glob_match(rel, globs):
-                new, fallback = cand, fb
+                new, fallback, flags = cand, fb, fl
                 break
         if new is None:
             continue
         pre = src[max(0, a - 20):a]
         if pre.endswith(VENDOR_RECEIVERS):
             continue
+        if "noimplicit" in flags and a >= 1 and src[a - 1] == "." and (a < 2 or not (src[a - 2].isalnum() or src[a - 2] in "_)]}?!>\\")):
+            continue  # leading-dot implicit member (an enum case), not a property
         if keeps:
             skip = False
             for names, rx in keeps:

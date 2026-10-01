@@ -896,6 +896,7 @@ extension TerminalController {
                 "surface_id": surfaceId.uuidString,
                 "title": v2OrNull(detail.title),
                 "agent_label": v2OrNull(detail.agentLabel),
+                "agent_tint": v2OrNull(detail.agentTintHex),
                 "type_label": v2OrNull(detail.typeLabel),
                 "subtitle": v2OrNull(detail.subtitle),
                 "status": v2OrNull(detail.status?.kind.rawValue),

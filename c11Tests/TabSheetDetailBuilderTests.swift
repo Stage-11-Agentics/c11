@@ -90,6 +90,21 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         XCTAssertEqual(agent.typeLabel, "Terminal")
     }
 
+    func testAgentTintFollowsTheModelFamily() {
+        func tint(_ kind: String?, _ model: String?, _ label: String? = nil) -> String? {
+            TabSheetDetailBuilder.agentTintHex(terminalKind: kind, model: model, modelLabel: label)
+        }
+        XCTAssertEqual(tint("claude-code", "claude-fable-5-1"), "#AF5FFF")
+        XCTAssertEqual(tint("claude-code", "claude-opus-5-5"), "#FFFFFF")
+        XCTAssertEqual(tint("claude-code", nil, "Sonnet 5.5"), "#5AA0FF")
+        XCTAssertEqual(tint("claude-code", "claude-haiku-4-5-20251001"), "#FF80C8")
+        XCTAssertEqual(tint("codex", "gpt-5.5"), "#5FD7D7")
+        XCTAssertEqual(tint("claude-code", nil), "#5FD7D7")
+        XCTAssertNil(tint(nil, "claude-opus-5-5"))
+        XCTAssertEqual(TabSheetDetailBuilder.build(inputs(terminalKind: "claude-code", model: "claude-opus-5-5")).agentTintHex, "#FFFFFF")
+        XCTAssertNil(TabSheetDetailBuilder.build(inputs(panelType: .browser)).agentTintHex)
+    }
+
     // MARK: Status
 
     private func status(

@@ -2934,11 +2934,11 @@ class TabManager: ObservableObject {
         let format = willCloseWindow
             ? String(
                 localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panes:\n%2$@"
+                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their areas:\n%2$@"
             )
             : String(
                 localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panes:\n%2$@"
+                defaultValue: "This will close %1$lld workspaces and all of their areas:\n%2$@"
             )
         let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
         return CloseWorkspacesPlan(
@@ -2968,7 +2968,7 @@ class TabManager: ObservableObject {
             let displayName = closeWorkspaceDisplayTitle(workspace.title)
             let format = String(
                 localized: "dialog.closeWorkspace.messageNamed",
-                defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its panes."
+                defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its areas."
             )
             let message = String(format: format, locale: .current, displayName)
             // Off-screen workspaces are isHidden=true (perf #127), so their anchor

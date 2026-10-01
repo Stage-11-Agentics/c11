@@ -924,7 +924,7 @@ struct cmuxApp: App {
             }
 
             // C11-41 Pane menu: splits, directional focus, surface ops.
-            CommandMenu(String(localized: "menu.pane.title", defaultValue: "Pane")) {
+            CommandMenu(String(localized: "menu.pane.title", defaultValue: "Area")) {
                 splitCommandButton(title: String(localized: "menu.pane.splitRight", defaultValue: "Split Right"), shortcut: splitRightMenuShortcut) {
                     performSplitFromMenu(direction: .right)
                 }
@@ -941,7 +941,7 @@ struct cmuxApp: App {
                     performBrowserSplitFromMenu(direction: .down)
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.togglePaneZoom", defaultValue: "Toggle Pane Zoom"), shortcut: toggleSplitZoomMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.togglePaneZoom", defaultValue: "Toggle Area Zoom"), shortcut: toggleSplitZoomMenuShortcut) {
                     _ = activeTabManager.toggleFocusedSplitZoom()
                 }
 
@@ -965,7 +965,7 @@ struct cmuxApp: App {
 
                 Divider()
 
-                Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Surface")) {
+                Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Tab")) {
                     splitCommandButton(title: String(localized: "menu.pane.newTerminal", defaultValue: "New Terminal"), shortcut: newSurfaceMenuShortcut) {
                         activeTabManager.newSurface()
                     }
@@ -979,11 +979,11 @@ struct cmuxApp: App {
                     }
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.nextSurface", defaultValue: "Next Surface"), shortcut: nextSurfaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.nextSurface", defaultValue: "Next Tab"), shortcut: nextSurfaceMenuShortcut) {
                     activeTabManager.selectNextSurface()
                 }
 
-                splitCommandButton(title: String(localized: "menu.pane.previousSurface", defaultValue: "Previous Surface"), shortcut: prevSurfaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.pane.previousSurface", defaultValue: "Previous Tab"), shortcut: prevSurfaceMenuShortcut) {
                     activeTabManager.selectPreviousSurface()
                 }
 
@@ -994,7 +994,7 @@ struct cmuxApp: App {
 
                 Divider()
 
-                Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Tabs in Pane")) {
+                Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Tabs in Area")) {
                     closeOtherTabsInFocusedPane()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
@@ -1053,7 +1053,7 @@ struct cmuxApp: App {
 
                 Divider()
 
-                Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Pane")) {
+                Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Tab")) {
                     _ = activeTabManager.reopenMostRecentlyClosedBrowserPanel()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
@@ -1515,7 +1515,7 @@ struct cmuxApp: App {
             .disabled(workspace == nil)
             .help(String(
                 localized: "contextMenu.hibernateWorkspaceTooltip",
-                defaultValue: "Suspends browser surfaces in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+                defaultValue: "Suspends browser tabs in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
             ))
         }
 
@@ -3232,7 +3232,7 @@ private struct AboutPanelView: View {
                         .font(.caption)
                         .tint(.secondary)
                         .opacity(0.85)
-                    Text(String(localized: "about.description", defaultValue: "terminal command center for the operator:agent pair.\nmany surfaces. one workspace. one field of view."))
+                    Text(String(localized: "about.description", defaultValue: "terminal command center for the operator:agent pair.\nmany tabs. one workspace. one field of view."))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)
@@ -4387,7 +4387,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .general:
             return String(localized: "settings.page.general.helper", defaultValue: "choose the app-level defaults that travel with the room.")
         case .agents:
-            return String(localized: "settings.page.agents.helper", defaultValue: "the A button on every pane launches an agent. shape what runs and what it knows about c11.")
+            return String(localized: "settings.page.agents.helper", defaultValue: "the A button on every area launches an agent. shape what runs and what it knows about c11.")
         case .appearance:
             return String(localized: "settings.page.appearance.helper", defaultValue: "tune the room without touching terminal themes.")
         case .workspaceSidebar:
@@ -4397,7 +4397,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .notifications:
             return String(localized: "settings.page.notifications.helper", defaultValue: "decide what gets to interrupt the operator.")
         case .input:
-            return String(localized: "settings.page.input.helper", defaultValue: "shape command input before it reaches a surface.")
+            return String(localized: "settings.page.input.helper", defaultValue: "shape command input before it reaches a tab.")
         case .keyboardShortcuts:
             return String(localized: "settings.page.keyboardShortcuts.helper", defaultValue: "shape the keys that move through the room.")
         case .automation:
@@ -4597,12 +4597,12 @@ struct SettingsView: View {
         if keepWorkspaceOpenOnLastSurfaceShortcut {
             return String(
                 localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOn",
-                defaultValue: "If the focused surface is the last one, the close-surface shortcut still closes only the surface. Close the workspace explicitly with the close-workspace shortcut."
+                defaultValue: "If the focused tab is the last one, the close-tab shortcut still closes only the tab. Close the workspace explicitly with the close-workspace shortcut."
             )
         }
         return String(
             localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOff",
-            defaultValue: "If the focused surface is the last one, the close-surface shortcut also closes the workspace."
+            defaultValue: "If the focused tab is the last one, the close-tab shortcut also closes the workspace."
         )
     }
 
@@ -5172,13 +5172,13 @@ struct SettingsView: View {
             }
         }
 
-        SettingsSectionHeader(title: String(localized: "settings.section.surfaces", defaultValue: "Surfaces"))
+        SettingsSectionHeader(title: String(localized: "settings.section.surfaces", defaultValue: "Tabs & Areas"))
         SettingsCard {
             SettingsCardRow(
                 String(localized: "settings.app.internalBrowser", defaultValue: "Internal Browser"),
                 subtitle: internalBrowserEnabled
-                    ? String(localized: "settings.app.internalBrowser.subtitleOn", defaultValue: "Allow creating internal browser surfaces. Open browser surfaces keep running when turned off.")
-                    : String(localized: "settings.app.internalBrowser.subtitleOff", defaultValue: "Block new internal browser surfaces. The Browser spawn button is hidden and CLI/socket creation is rejected.")
+                    ? String(localized: "settings.app.internalBrowser.subtitleOn", defaultValue: "Allow creating internal browser tabs. Open browser tabs keep running when turned off.")
+                    : String(localized: "settings.app.internalBrowser.subtitleOff", defaultValue: "Block new internal browser tabs. The Browser spawn button is hidden and CLI/socket creation is rejected.")
             ) {
                 Toggle("", isOn: $internalBrowserEnabled)
                     .labelsHidden()
@@ -5188,10 +5188,10 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.markdownSurfaces", defaultValue: "Markdown Surfaces"),
+                String(localized: "settings.app.markdownSurfaces", defaultValue: "Markdown Tabs"),
                 subtitle: markdownSurfacesEnabled
-                    ? String(localized: "settings.app.markdownSurfaces.subtitleOn", defaultValue: "Allow creating markdown surfaces. Open markdown surfaces keep running when turned off.")
-                    : String(localized: "settings.app.markdownSurfaces.subtitleOff", defaultValue: "Block new markdown surfaces. The Markdown spawn button is hidden and CLI/socket creation is rejected.")
+                    ? String(localized: "settings.app.markdownSurfaces.subtitleOn", defaultValue: "Allow creating markdown tabs. Open markdown tabs keep running when turned off.")
+                    : String(localized: "settings.app.markdownSurfaces.subtitleOff", defaultValue: "Block new markdown tabs. The Markdown spawn button is hidden and CLI/socket creation is rejected.")
             ) {
                 Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
@@ -5204,8 +5204,8 @@ struct SettingsView: View {
                 SettingsCardRow(
                     String(localized: "settings.app.markdownSpawnButton", defaultValue: "Markdown Button in Tab Bar"),
                     subtitle: markdownSpawnButtonVisible
-                        ? String(localized: "settings.app.markdownSpawnButton.subtitleOn", defaultValue: "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown surfaces stay available via the CLI and command palette.")
-                        : String(localized: "settings.app.markdownSpawnButton.subtitleOff", defaultValue: "The Markdown spawn button is hidden. Markdown surfaces remain fully available via the CLI and command palette.")
+                        ? String(localized: "settings.app.markdownSpawnButton.subtitleOn", defaultValue: "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown tabs stay available via the CLI and command palette.")
+                        : String(localized: "settings.app.markdownSpawnButton.subtitleOff", defaultValue: "The Markdown spawn button is hidden. Markdown tabs remain fully available via the CLI and command palette.")
                 ) {
                     Toggle("", isOn: $markdownSpawnButtonVisible)
                         .labelsHidden()
@@ -5216,10 +5216,10 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Surface IDs in Tab Titles"),
+                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Tab Numbers in Tab Titles"),
                 subtitle: showSurfaceIdsInTabTitles
-                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Tabs display their surface number (\"292: Build agent\"). Say the number to address a surface; agents target it as surface:N.")
-                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Tabs display their title only. Turn on to prefix every tab with its addressable surface number.")
+                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Tabs display their tab number (\"292: Build agent\"). Say the number to address a tab; agents target it as tab:N.")
+                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Tabs display their title only. Turn on to prefix every tab with its addressable tab number.")
             ) {
                 Toggle("", isOn: $showSurfaceIdsInTabTitles)
                     .labelsHidden()
@@ -5266,7 +5266,7 @@ struct SettingsView: View {
                 String(localized: "settings.chromeScale.title", defaultValue: "App Chrome UI Scale"),
                 subtitle: String(
                     localized: "settings.chromeScale.subtitle",
-                    defaultValue: "Scale c11 sidebar text and surface tab strip without changing terminal font size."
+                    defaultValue: "Scale c11 sidebar text and tab strip without changing terminal font size."
                 ),
                 controlWidth: pickerColumnWidth,
                 selection: $chromeScalePresetRaw
@@ -5501,7 +5501,7 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace Open When Closing Last Surface"),
+                String(localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut", defaultValue: "Keep Workspace When Last Tab Closes"),
                 subtitle: closeWorkspaceOnLastSurfaceShortcutSubtitle
             ) {
                 Toggle("", isOn: keepWorkspaceOpenOnLastSurfaceShortcutBinding)
@@ -6000,28 +6000,28 @@ struct SettingsView: View {
         SettingsSectionHeader(title: String(localized: "settings.section.inAppSignals", defaultValue: "In-App Signals"))
         SettingsCard {
             SettingsCardRow(
-                String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring"),
-                subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Show a blue ring around panes with unread notifications.")
+                String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Area Ring"),
+                subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Rings unread areas in blue.")
             ) {
                 Toggle("", isOn: $notificationPaneRingEnabled)
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityLabel(
-                        String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Pane Ring")
+                        String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Area Ring")
                     )
             }
 
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
-                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a yellow outline when c11 highlights a pane.")
+                String(localized: "settings.notifications.paneFlash.title", defaultValue: "Area Flash"),
+                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Flashes a blue outline when c11 highlights an area.")
             ) {
                 Toggle("", isOn: $notificationPaneFlashEnabled)
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityLabel(
-                        String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash")
+                        String(localized: "settings.notifications.paneFlash.title", defaultValue: "Area Flash")
                     )
             }
 
@@ -6232,9 +6232,9 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces"),
+                String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Tabs"),
                 subtitle: commandPaletteSearchAllSurfaces
-                    ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown surfaces across workspaces.")
+                    ? String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOn", defaultValue: "Cmd+P also matches terminal, browser, and markdown tabs across workspaces.")
                     : String(localized: "settings.app.commandPaletteSearchAllSurfaces.subtitleOff", defaultValue: "Cmd+P matches workspace rows only.")
             ) {
                 Toggle("", isOn: $commandPaletteSearchAllSurfaces)
@@ -6242,7 +6242,7 @@ struct SettingsView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("CommandPaletteSearchAllSurfacesToggle")
                     .accessibilityLabel(
-                        String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Surfaces")
+                        String(localized: "settings.app.commandPaletteSearchAllSurfaces", defaultValue: "Command Palette Searches All Tabs")
                     )
             }
         }
@@ -6252,7 +6252,7 @@ struct SettingsView: View {
             SettingsCardRow(
                 String(localized: "settings.shortcuts.showHints", defaultValue: "Show Cmd/Ctrl-Hold Shortcut Hints"),
                 subtitle: showShortcutHintsOnCommandHold
-                    ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (pane tabs) shows shortcut hint pills.")
+                    ? String(localized: "settings.shortcuts.showHints.subtitleOn", defaultValue: "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (area tabs) reveals shortcut hints.")
                     : String(localized: "settings.shortcuts.showHints.subtitleOff", defaultValue: "Holding Cmd or Ctrl keeps shortcut hint pills hidden.")
             ) {
                 Toggle("", isOn: $showShortcutHintsOnCommandHold)
@@ -6322,7 +6322,7 @@ struct SettingsView: View {
         .id(SettingsNavigationTarget.agents)
         SettingsCardNote(String(
             localized: "settings.defaultAgent.note",
-            defaultValue: "the A button on every pane launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
+            defaultValue: "the A button on every area launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
         ))
         SettingsCard {
             DefaultAgentSettingsSection()
@@ -6537,7 +6537,7 @@ struct SettingsView: View {
             ),
             ShortcutSettingsGroup(
                 id: "panes",
-                title: String(localized: "settings.shortcuts.group.panes", defaultValue: "Panes"),
+                title: String(localized: "settings.shortcuts.group.panes", defaultValue: "Areas"),
                 actions: [.focusLeft, .focusRight, .focusUp, .focusDown, .splitRight, .splitDown, .toggleSplitZoom, .splitBrowserRight, .splitBrowserDown]
             ),
             ShortcutSettingsGroup(

@@ -94,7 +94,7 @@ struct NotificationsPage: View {
                 .foregroundColor(.secondary)
             Text(String(localized: "notifications.empty.title", defaultValue: "It's quiet."))
                 .font(.headline)
-            Text(String(localized: "notifications.empty.description", defaultValue: "When a pane needs you, it rings here. Tap one to jump to its pane."))
+            Text(String(localized: "notifications.empty.description", defaultValue: "When an area needs you, it rings here. Tap one to jump to its area."))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }

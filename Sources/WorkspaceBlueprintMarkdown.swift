@@ -124,17 +124,17 @@ enum WorkspaceBlueprintMarkdown {
             case .unsupportedSurfaceKind(let raw):
                 return String(
                     localized: "blueprint.markdown.error.unsupportedSurfaceKind",
-                    defaultValue: "blueprint markdown: unsupported surface kind '\(raw)' (expected terminal/browser/markdown)"
+                    defaultValue: "blueprint markdown: unsupported tab kind '\(raw)' (expected terminal/browser/markdown)"
                 )
             case .duplicateSurfaceID(let id):
                 return String(
                     localized: "blueprint.markdown.error.duplicateSurfaceID",
-                    defaultValue: "blueprint markdown: duplicate surface id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
+                    defaultValue: "blueprint markdown: duplicate tab id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
                 )
             case .invalidAgentKind(let surfaceID, let kind):
                 return String(
                     localized: "blueprint.markdown.error.invalidAgentKind",
-                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on surface '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
+                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on tab '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
                 )
             case .invalidCompanionLink(let code, let sourceID, let targetID):
                 let target = targetID.map { " -> '\($0)'" } ?? ""

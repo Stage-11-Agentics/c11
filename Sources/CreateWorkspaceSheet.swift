@@ -1209,7 +1209,7 @@ struct CreateWorkspaceSheet: View {
             Toggle(isOn: $launchAgent) {
                 Text(String(
                     localized: "createWorkspace.launchAgent",
-                    defaultValue: "Launch your default coding agent in the first pane"
+                    defaultValue: "Launch your default coding agent in the first area"
                 ))
                 .font(.system(size: 11))
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.75))
@@ -1394,7 +1394,7 @@ private struct BlueprintEntry: Identifiable {
             label: String(localized: "createWorkspace.starter.single.label", defaultValue: "Single"),
             description: String(
                 localized: "createWorkspace.starter.single.description",
-                defaultValue: "One terminal pane filling the workspace."
+                defaultValue: "One terminal area filling the workspace."
             ),
             fileName: "basic-terminal",
             shape: .oneColumn
@@ -1414,7 +1414,7 @@ private struct BlueprintEntry: Identifiable {
             label: String(localized: "createWorkspace.starter.quad.label", defaultValue: "2 × 2"),
             description: String(
                 localized: "createWorkspace.starter.quad.description",
-                defaultValue: "Four terminal panes in a 2 × 2 grid. Agent in the top-left."
+                defaultValue: "Four terminal areas in a 2 × 2 grid. Agent in the top-left."
             ),
             fileName: "quad-terminal",
             shape: .quad
@@ -1424,7 +1424,7 @@ private struct BlueprintEntry: Identifiable {
             label: String(localized: "createWorkspace.starter.twoByThree.label", defaultValue: "2 × 3"),
             description: String(
                 localized: "createWorkspace.starter.twoByThree.description",
-                defaultValue: "Six terminal panes in 2 columns, 3 rows. External 27-inch+ monitor suggested."
+                defaultValue: "Six terminal areas in 2 columns, 3 rows. External 27-inch+ monitor suggested."
             ),
             fileName: "two-by-three",
             shape: .twoByThree

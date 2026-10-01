@@ -18424,7 +18424,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.surface-not-found",
-                    defaultValue: "No surface named %@ in this workspace."
+                    defaultValue: "No tab named %@ in this workspace."
                 ).replacingOccurrences(of: "%@", with: "(untitled)")
             )
         }
@@ -18470,7 +18470,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.topics-not-implemented",
-                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <surface-name> to send now."
+                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <tab-name> to send now."
                 )
             )
         }
@@ -18616,7 +18616,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.unresolved-recipient",
-                    defaultValue: "No live surface named \"%@\" in any workspace. Message not sent."
+                    defaultValue: "No live tab named \"%@\" in any workspace. Message not sent."
                 ).replacingOccurrences(of: "%@", with: to)
             )
         }
@@ -18633,7 +18633,7 @@ extension CMUXCLI {
         }
         let header = String(
             localized: "mailbox.cli.error.ambiguous-header",
-            defaultValue: "Surface \"%@\" exists in more than one workspace:"
+            defaultValue: "Tab \"%@\" exists in more than one workspace:"
         ).replacingOccurrences(of: "%@", with: to)
         let hint = String(
             localized: "mailbox.cli.error.ambiguous-hint",

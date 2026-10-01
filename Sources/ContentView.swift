@@ -4130,7 +4130,7 @@ struct ContentView: View {
             return String(localized: "commandPalette.search.commandsPlaceholder", defaultValue: "Type a command")
         case .switcher:
             return commandPaletteSearchAllSurfaces
-                ? String(localized: "commandPalette.search.switcherPlaceholderAllSurfaces", defaultValue: "Search workspaces and surfaces")
+                ? String(localized: "commandPalette.search.switcherPlaceholderAllSurfaces", defaultValue: "Search workspaces and tabs")
                 : String(localized: "commandPalette.search.switcherPlaceholder", defaultValue: "Search workspaces")
         }
     }
@@ -4141,7 +4141,7 @@ struct ContentView: View {
             return String(localized: "commandPalette.search.commandsEmpty", defaultValue: "No commands match your search.")
         case .switcher:
             return commandPaletteSearchAllSurfaces
-                ? String(localized: "commandPalette.search.switcherEmptyAllSurfaces", defaultValue: "No workspaces or surfaces match your search.")
+                ? String(localized: "commandPalette.search.switcherEmptyAllSurfaces", defaultValue: "No workspaces or tabs match.")
                 : String(localized: "commandPalette.search.switcherEmpty", defaultValue: "No workspaces match your search.")
         }
     }
@@ -5332,7 +5332,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.surfaceDetails",
-                title: constant(String(localized: "command.surfaceDetails.title", defaultValue: "Surface Details")),
+                title: constant(String(localized: "command.surfaceDetails.title", defaultValue: "Tab Details")),
                 subtitle: panelSubtitle,
                 keywords: ["surface", "details", "manifest", "metadata", "id", "number", "tab"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
@@ -5410,7 +5410,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.triggerFlash",
-                title: constant(String(localized: "command.triggerFlash.title", defaultValue: "Flash Focused Pane")),
+                title: constant(String(localized: "command.triggerFlash.title", defaultValue: "Flash Focused Area")),
                 subtitle: constant(String(localized: "command.triggerFlash.subtitle", defaultValue: "View")),
                 keywords: ["flash", "highlight", "focus", "panel"]
             )
@@ -5643,7 +5643,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.nextTabInPane",
-                title: constant(String(localized: "command.nextTabInPane.title", defaultValue: "Next Tab in Pane")),
+                title: constant(String(localized: "command.nextTabInPane.title", defaultValue: "Next Tab in Area")),
                 subtitle: constant(String(localized: "command.nextTabInPane.subtitle", defaultValue: "Tab Navigation")),
                 keywords: ["next", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
@@ -5652,7 +5652,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.previousTabInPane",
-                title: constant(String(localized: "command.previousTabInPane.title", defaultValue: "Previous Tab in Pane")),
+                title: constant(String(localized: "command.previousTabInPane.title", defaultValue: "Previous Tab in Area")),
                 subtitle: constant(String(localized: "command.previousTabInPane.subtitle", defaultValue: "Tab Navigation")),
                 keywords: ["previous", "tab", "pane"],
                 when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
@@ -5927,7 +5927,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.toggleSplitZoom",
-                title: constant(String(localized: "command.toggleSplitZoom.title", defaultValue: "Toggle Pane Zoom")),
+                title: constant(String(localized: "command.toggleSplitZoom.title", defaultValue: "Toggle Area Zoom")),
                 subtitle: constant(String(localized: "command.toggleSplitZoom.subtitle", defaultValue: "Terminal Layout")),
                 keywords: ["terminal", "pane", "split", "zoom", "maximize"],
                 when: { context in
@@ -12350,7 +12350,7 @@ private struct TabItemView: View, Equatable {
             if workspacePulseVisibleAgents.isEmpty {
                 Text(String(
                     localized: "sidebar.workspacePulse.terminalsOnly",
-                    defaultValue: "Terminals only · no agent surfaces"
+                    defaultValue: "Terminals only · no agent tabs"
                 ))
                 .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.65))
@@ -12441,7 +12441,7 @@ private struct TabItemView: View, Equatable {
             ),
             empty: String(
                 localized: "sidebar.workspacePulse.censusEmpty",
-                defaultValue: "No surfaces"
+                defaultValue: "No tabs"
             )
         )
     }
@@ -13348,7 +13348,7 @@ private struct TabItemView: View, Equatable {
             }
             .help(String(
                 localized: "contextMenu.hibernateWorkspaceTooltip",
-                defaultValue: "Suspends browser surfaces in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+                defaultValue: "Suspends browser tabs in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
             ))
         }
 

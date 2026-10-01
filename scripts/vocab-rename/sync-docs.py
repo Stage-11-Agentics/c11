@@ -2,7 +2,7 @@
 """Rewrite source paths and type names that the passes renamed in the docs an agent reads first
 (CLAUDE.md, docs/DEVELOPMENT.md, docs/adding-a-new-agent.md, docs/agent-registry-design.md).
 
-  sync-docs.py            # reads the @path rows of pass-2a/2b tables plus the type renames below
+  sync-docs.py            # reads the @path rows of pass-2a/2b/3 tables plus the type renames below
 
 Planning documents under docs/ and .lattice/ describe the code as it was when they were written and are left alone.
 """
@@ -20,12 +20,23 @@ PHRASES = [("`@ObservedObject` (besides `tab`)", "`@ObservedObject` (besides `wo
 
 def path_rows():
     rows = []
-    for t in ("pass-2a.tsv", "pass-2b.tsv"):
+    for t in ("pass-2a.tsv", "pass-2b.tsv", "pass-3.tsv"):
         for line in open(os.path.join(HERE, t), encoding="utf-8"):
             cols = line.rstrip("\n").split("\t")
             if cols[0] == "@path":
                 rows.append((cols[1], cols[2]))
     return rows
+
+
+def type_rows():
+    """Type renames of the evidence passes (ev:T rows) that the docs may name."""
+    out = {}
+    for t in ("pass-3.tsv",):
+        for line in open(os.path.join(HERE, t), encoding="utf-8"):
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) > 4 and cols[4] == "ev:T":
+                out[cols[0]] = cols[1]
+    return out
 
 
 def main():
@@ -45,7 +56,7 @@ def main():
             text = re.sub(r"(?<![\w/])" + re.escape(old) + r"(?![\w])", new, text)
         for old, new in PHRASES:
             text = text.replace(old, new)
-        for old, new in TYPES.items():
+        for old, new in {**TYPES, **type_rows()}.items():
             text = re.sub(r"\b" + old + r"\b", new, text)
         if text != orig:
             open(path, "w", encoding="utf-8").write(text)

@@ -559,5 +559,116 @@ class RoundTwoShapes(unittest.TestCase):
             rename.GHOSTTY_RETURNING.discard("applySingleTerminal")
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Pass 3 (Pane -> Area): c11-owned panes only; Bonsplit panes and every vendor name stay
+# ---------------------------------------------------------------------------------------------------------------
+FIXTURE3 = {
+    "vendor/bonsplit/Sources/V.swift": (
+        "public struct PaneID { public let id: UUID }\n"
+        "public final class BonsplitController {\n"
+        "    public var focusedPaneId: PaneID? = nil\n"
+        "    public func closePane(_ pane: PaneID) {}\n"
+        "    public func tabs(inPane pane: PaneID) -> [Int] { [] }\n"
+        "}\n"),
+    "Sources/Thing.swift": (
+        "import Foundation\n"
+        "final class PaneThing {\n"
+        "    var paneLabel: String = \"\"\n"
+        "    var closePane: Int = 0\n"
+        "}\n"),
+    "Sources/Workspace.swift": (
+        "import Foundation\n"
+        "final class Workspace {\n"
+        "    var paneThings: [UUID: PaneThing] = [:]\n"
+        "    var paneCursor: Int = 0\n"
+        "    func place(paneHolder: PaneThing) {\n"
+        "        let paneNote = paneHolder.paneLabel\n"
+        "        use(paneNote)\n"
+        "    }\n"
+        "    func leaf(paneId: PaneID) {\n"
+        "        let targetPane = paneId\n"
+        "        use(targetPane)\n"
+        "    }\n"
+        "    func focus() {\n"
+        "        let focusedPane = bonsplitController.focusedPaneId\n"
+        "        use(focusedPane)\n"
+        "        bonsplitController.closePane(focusedPane!)\n"
+        "    }\n"
+        "    func geometry(w: CGFloat, h: CGFloat) {\n"
+        "        let area: CGFloat = w * h\n"
+        "        use(area)\n"
+        "    }\n"
+        "    func unrelated() {\n"
+        "        let paneId = makeId()\n"
+        "        use(paneId)\n"
+        "    }\n"
+        "}\n"),
+}
+
+
+class PaneEvidence(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_repo(FIXTURE3)
+        cls.table, cls.log = run_evidence_pass(cls.root, "3")
+        cls.thing = read(cls.root, "Sources/Thing.swift")
+        cls.ws = read(cls.root, "Sources/Workspace.swift")
+
+    def test_c11_pane_type_and_members_are_renamed(self):
+        self.assertIn("final class AreaThing", self.thing)
+        self.assertIn("var areaLabel: String", self.thing)
+        self.assertIn("var areaThings: [UUID: AreaThing]", self.ws)
+        self.assertIn("areaHolder", self.ws)
+        self.assertIn("let areaNote = areaHolder.areaLabel", self.ws.replace("paneHolder", "areaHolder"))
+
+    def test_bonsplit_panes_and_vendor_names_stay(self):
+        self.assertIn("func leaf(paneId: PaneID)", self.ws)
+        self.assertIn("let targetPane = paneId", self.ws)
+        self.assertIn("let focusedPane = bonsplitController.focusedPaneId", self.ws)
+        self.assertIn("bonsplitController.closePane(focusedPane!)", self.ws)
+        self.assertIn("var closePane: Int", self.thing)  # a c11 member that shares a vendor name
+
+    def test_geometry_area_and_unevidenced_names_stay(self):
+        self.assertIn("let area: CGFloat = w * h", self.ws)
+        self.assertIn("let paneId = makeId()", self.ws)
+        self.assertIn("var paneCursor: Int", self.ws)
+
+    def test_gate_proves_the_pass(self):
+        cmd = [sys.executable, os.path.join(HERE, "rename.py"), "check-evidence", self.log, "HEAD", "WORKTREE", self.table]
+        ok = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        dom = subprocess.run([sys.executable, os.path.join(HERE, "rename.py"), "check-domains", "--root", self.root], capture_output=True, text=True)
+        self.assertEqual(dom.returncode, 0, dom.stdout)
+
+
+class PaneDomainGate(unittest.TestCase):
+    """The deliberately bad fixtures: a Bonsplit pane named for the c11 area, geometry and area sharing a name."""
+
+    def leak(self, stmt, dom):
+        report = []
+        return rename.check_domains(wrap(stmt), "Sources/X.swift", report)[dom], report
+
+    def test_bonsplit_pane_values_named_area_are_flagged(self):
+        for stmt in ("let areaId = bonsplitController.focusedPaneId",
+                     "for areaId in bonsplitController.allPaneIds { use(areaId) }",
+                     "func f(targetArea: PaneID) { use(targetArea) }",
+                     "let liveAreaIds: [PaneID] = []",
+                     "guard let area = bonsplitController.focusedPaneId else { return }"):
+            self.assertGreater(self.leak(stmt, "D")[0], 0, stmt)
+
+    def test_pane_spelling_and_c11_area_sources_are_fine(self):
+        for stmt in ("let paneId = bonsplitController.focusedPaneId",
+                     "let area = metadataStore.area(for: key)",
+                     "let areaSpec = AreaSpec(surfaceIds: [])",
+                     "let safeAreaInsets = view.safeAreaInsets"):
+            self.assertEqual(self.leak(stmt, "D")[0], 0, stmt)
+
+    def test_geometry_and_area_sharing_a_name_are_flagged(self):
+        both = "let area = rect.width * rect.height\n        let spec = { let area = AreaSpec(surfaceIds: []); use(area) }"
+        self.assertGreater(self.leak(both, "E")[0], 0)
+        self.assertEqual(self.leak("let area = rect.width * rect.height", "E")[0], 0)
+        self.assertEqual(self.leak("let area = AreaSpec(surfaceIds: [])", "E")[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

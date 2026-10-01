@@ -77,3 +77,16 @@ Table directives: `@taint ... <region regex> <exclude regex> <opts>` (opts `prop
 `@fixall`; flags `memberonly`, `nomember`, `noprop`, `nolabel`. Colliding locals take the row's fallback name
 consistently within a member. `sync-docs.py` brings the paths and type names in CLAUDE.md and the developer docs
 along.
+
+## Pass 3 (PR C): Pane -> Area
+
+`gen-evidence.py 3` renames c11-owned panes only: the types c11 declares (`PaneMetadataStore`, `PaneInteraction*`,
+`PaneSizePolicy`, `BrowserPane*`, `V2Pane*`, `SessionPaneLayoutSnapshot`, `AreaSpec`, ... and their files), members
+declared on them, and locals or parameters annotated with one of those types. Bonsplit's panes stay panes:
+`PaneID`, `inPane:`, `focusedPaneId` and every identifier the vendored Bonsplit declares or uses are never renamed
+as types or members, and a local that holds a `PaneID` keeps its `pane*` name. A name that already exists is left
+alone (the pass lists it as a CLASH), so a geometry `area` can never be merged with a c11 area.
+
+`check-domains` adds two probes for it: D (an area-named binding that holds a Bonsplit `PaneID`) and E (one name bound
+to a geometry measure and to a c11 area in the same member). Persisted keys are untouched: layout leaves are still
+persisted as `"pane"`, `paneMetadata` keeps its key, and renamed Codable properties get automatic `CodingKeys` pins.

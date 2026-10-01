@@ -1482,6 +1482,21 @@ DOMAIN_C11 = (r"\bnew(?:Terminal|Browser|Markdown)(?:Panel|Surface|Tab)\w*\(|\.(
 DOMAIN_GHOSTTY_LIFECYCLE = (r"createTab|teardownTab|releaseTabForTesting|allTabs|runtimeTab\w*|recordRuntimeTabCreation|"
                             r"requestBackgroundTabStartIfNeeded|backgroundTabStartQueued|tabLog\w*|sendTextToTab|"
                             r"hasTab(?![A-Z])|waitForTerminalTab\w*|resolveTerminalTab\w*|initialTab|liveTab")
+# pane domain: a Bonsplit PaneID value is a Bonsplit pane and never carries the c11 area name
+DOMAIN_PANE_LEAF = (r"\bPaneID\b|\bPaneState\b|\bExternalPaneNode\b|\bPaneGeometry\b|\bPaneBounds\b|\binPane\s*:|"
+                    r"\bbonsplitController\??\.(?:focusedPaneId|allPaneIds|selectedPane\w*|pane\(|paneIds)\b|\bfocusedPaneId\b|\ballPaneIds\b")
+DOMAIN_PANE_LEAF_EXCLUDE = r"\.(?:map|compactMap|flatMap|reduce)\b(?!\s*\{\s*\$0\.id\s*\})"
+# geometry: a CGFloat/CGRect measure named `area` (width * height, intersection areas)
+DOMAIN_GEOMETRY = (r":\s*CGFloat\b|\bCGRect\b|\bNSRect\b|\bCGSize\b|\.intersection\(|[\w.]*\bwidth\s*\*\s*[\w.]*\bheight\b|"
+                   r"[\w.]*\bheight\s*\*\s*[\w.]*\bwidth\b")
+DOMAIN_AREA_TYPE = r"\b(?:Area[A-Z]\w*|\w+Area[A-Z]\w*|SessionAreaLayoutSnapshot)\s*[({.]|:\s*(?:\w+\.)?(?:Area[A-Z]\w*|\w*Area(?:Spec|Box|Interaction\w*|MetadataStore))\b"
+_AREA_SEGMENT = re.compile(r"(?:^|[a-z0-9])[Aa]rea(?:s|Id|Ids|ID|IDs|UUID)?(?=[A-Z]|$)")
+
+
+def _is_area_name(name):
+    return name[0].islower() and bool(_AREA_SEGMENT.search(name)) and not re.search(r"(?i)safe|tracking|overflow|content|text|intersection|portalHost|threshold", name)
+
+
 _TAB_SEGMENT = re.compile(r"(?:^|[a-z0-9])[Tt]ab(?:s|Id|Ids|ID|IDs|Raw)?(?=[A-Z]|$)")
 
 
@@ -1515,8 +1530,30 @@ def check_domains(src, rel, report):
     gh, leaf, c11 = re.compile(gh_rx), re.compile(DOMAIN_LEAF), re.compile(DOMAIN_C11)
     ready = re.compile(DOMAIN_GHOSTTY + r"|\.surface\.surface\s*!=\s*nil")
     leaf_ex = re.compile(DOMAIN_LEAF_EXCLUDE)
-    counts = {"A": 0, "B": 0, "C": 0}
+    counts = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
+    pane_leaf, pane_ex = re.compile(DOMAIN_PANE_LEAF), re.compile(DOMAIN_PANE_LEAF_EXCLUDE)
+    geometry, area_type = re.compile(DOMAIN_GEOMETRY), re.compile(DOMAIN_AREA_TYPE)
     for r, toks in by_region.items():
+        a0_, b0_ = spans[r]
+        text_ = src[a0_:b0_]
+        area_names = sorted({src[a:b] for a, b in toks if _is_area_name(src[a:b])})
+        if area_names:
+            # D: an area-named binding that holds a Bonsplit pane
+            for name in sorted(find_tainted(text_, pane_leaf, area_names, (), pane_ex, frozenset(), False, False, False, False)):
+                for a, b in toks:
+                    if src[a:b] == name and not (a >= 1 and src[a - 1] == "."):
+                        report.append(f"DOMAIN-LEAK-D {rel}:{src.count(chr(10), 0, a) + 1} {name} (a Bonsplit pane named for the c11 area)")
+                        counts["D"] += 1
+                        break
+            # E: one name bound to a geometry measure and to a c11 area in the same member
+            geo = find_tainted(text_, geometry, area_names, (), None, frozenset(), False, False, False, False)
+            both = geo & find_tainted(text_, area_type, area_names, (), None, frozenset(), False, False, False, False)
+            for name in sorted(both):
+                for a, b in toks:
+                    if src[a:b] == name and not (a >= 1 and src[a - 1] == "."):
+                        report.append(f"DOMAIN-LEAK-E {rel}:{src.count(chr(10), 0, a) + 1} {name} (geometry and c11 area share a name)")
+                        counts["E"] += 1
+                        break
         a0, b0 = spans[r]
         text = src[a0:b0]
         names = {src[a:b] for a, b in toks}
@@ -1580,7 +1617,7 @@ def check_domains(src, rel, report):
 def check_domains_main(argv):
     """rename.py check-domains [--root DIR]: exit 1 if any binding sits in the wrong naming domain."""
     root = argv[argv.index("--root") + 1] if "--root" in argv else os.getcwd()
-    report, total = [], {"A": 0, "B": 0, "C": 0}
+    report, total = [], {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
     GHOSTTY_RETURNING.clear()
     LEAF_LABEL_DECLS.clear()
     base_gh = re.compile(DOMAIN_GHOSTTY)
@@ -1598,7 +1635,8 @@ def check_domains_main(argv):
             total[k] += v
     for line in report:
         print(line)
-    print(f"domain leaks: A(ghostty)={total['A']} B(bonsplit leaf)={total['B']} C(c11 from bonsplitTab*)={total['C']}")
+    print(f"domain leaks: A(ghostty)={total['A']} B(bonsplit leaf)={total['B']} C(c11 from bonsplitTab*)={total['C']} "
+          f"D(bonsplit pane)={total['D']} E(geometry)={total['E']}")
     return 1 if report else 0
 
 

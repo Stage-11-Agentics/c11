@@ -4923,7 +4923,7 @@ struct ContentView: View {
         // without being blocked by the palette-visibility guard.
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusTab(workspaceId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true)
         }
     }
 
@@ -4935,7 +4935,7 @@ struct ContentView: View {
     ) {
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusTab(workspaceId, surfaceId: panelId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true)
         }
     }
 
@@ -5075,7 +5075,7 @@ struct ContentView: View {
     private func commandPaletteShortcutAction(for commandId: String) -> KeyboardShortcutSettings.Action? {
         switch commandId {
         case "palette.newWorkspace":
-            return .newTab
+            return .newWorkspace
         case "palette.newWindow":
             return .newWindow
         case "palette.openFolder":
@@ -6997,7 +6997,7 @@ struct ContentView: View {
         if let window = observedWindow, !window.isKeyWindow {
             window.makeKeyAndOrderFront(nil)
         }
-        workspaceManager.focusTab(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
+        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
 
         guard let context = focusedPanelContext,
               context.workspace.id == target.workspaceId,
@@ -13353,7 +13353,7 @@ private struct WorkspaceRowView: View, Equatable {
         guard workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex) else { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-        workspaceManager.selectTab(workspace)
+        workspaceManager.selectWorkspace(workspace)
         setSelectionToTabs()
     }
 
@@ -13392,7 +13392,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
 
         lastSidebarSelectionIndex = index
-        workspaceManager.selectTab(workspace)
+        workspaceManager.selectWorkspace(workspace)
         if wasSelected, !isCommand, !isShift {
             workspaceManager.dismissNotificationOnDirectInteraction(
                 workspaceId: workspace.id,

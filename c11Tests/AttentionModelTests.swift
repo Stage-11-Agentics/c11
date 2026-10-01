@@ -211,12 +211,12 @@ final class AttentionModelTests: XCTestCase {
             surfaceId: surface,
             values: [
                 MetadataKey.flag: "Need a deployment decision",
-                MetadataKey.flagCallerSurfaceId: caller.uuidString,
+                MetadataKey.legacyFlagCallerSurfaceId: caller.uuidString,
                 MetadataKey.suppressed: true,
             ],
             sources: [
                 MetadataKey.flag: .init(source: .explicit, ts: raisedAt),
-                MetadataKey.flagCallerSurfaceId: .init(
+                MetadataKey.legacyFlagCallerSurfaceId: .init(
                     source: .heuristic,
                     ts: raisedAt + 99
                 ),
@@ -236,7 +236,7 @@ final class AttentionModelTests: XCTestCase {
             store.getSource(
                 workspaceId: workspace,
                 surfaceId: surface,
-                key: MetadataKey.flagCallerSurfaceId
+                key: MetadataKey.legacyFlagCallerSurfaceId
             ),
             .explicit
         )
@@ -743,7 +743,7 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: surface,
                 partial: [
                     MetadataKey.flag: "Bypass",
-                    MetadataKey.flagCallerSurfaceId: UUID().uuidString,
+                    MetadataKey.legacyFlagCallerSurfaceId: UUID().uuidString,
                 ],
                 mode: .merge,
                 source: .explicit
@@ -764,7 +764,7 @@ final class AttentionModelTests: XCTestCase {
             store.setInternal(
                 workspaceId: workspace,
                 surfaceId: surface,
-                key: MetadataKey.flagCallerSurfaceId,
+                key: MetadataKey.legacyFlagCallerSurfaceId,
                 value: UUID().uuidString,
                 source: .explicit
             )

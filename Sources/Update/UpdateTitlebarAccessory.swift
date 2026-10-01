@@ -280,7 +280,7 @@ struct TitlebarControlsView: View {
             case .showNotifications:
                 return .showNotifications
             case .newTab:
-                return .newTab
+                return .newWorkspace
             }
         }
     }

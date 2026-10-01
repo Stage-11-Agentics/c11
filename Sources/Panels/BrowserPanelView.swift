@@ -1931,7 +1931,7 @@ struct BrowserPanelView: View {
         omnibarState.isUserEditing = false
         switch suggestion.kind {
         case .switchToTab(let workspaceId, let panelId, _, _):
-            AppDelegate.shared?.workspaceManager?.focusTab(workspaceId, surfaceId: panelId)
+            AppDelegate.shared?.workspaceManager?.focusWorkspace(workspaceId, surfaceId: panelId)
         default:
             panel.navigateSmart(suggestion.completion)
         }

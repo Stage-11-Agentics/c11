@@ -735,13 +735,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
     }
 
     func testNotificationIndexesTrackUnreadCountsByTabAndSurface() {
-        let tabA = UUID()
-        let tabB = UUID()
+        let workspaceA = UUID()
+        let workspaceB = UUID()
         let surfaceA = UUID()
         let surfaceB = UUID()
         let notificationAUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            workspaceId: workspaceA,
             surfaceId: surfaceA,
             title: "A unread",
             subtitle: "",
@@ -751,7 +751,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationARead = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            workspaceId: workspaceA,
             surfaceId: surfaceB,
             title: "A read",
             subtitle: "",
@@ -761,7 +761,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationBUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabB,
+            workspaceId: workspaceB,
             surfaceId: nil,
             title: "B unread",
             subtitle: "",
@@ -778,13 +778,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
         ])
 
         XCTAssertEqual(store.unreadCount, 2)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabA), 1)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabB), 1)
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceA))
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceB))
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabB, surfaceId: nil))
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabA)?.id, notificationAUnread.id)
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabB)?.id, notificationBUnread.id)
+        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspaceA), 1)
+        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspaceB), 1)
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspaceA, surfaceId: surfaceA))
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspaceA, surfaceId: surfaceB))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspaceB, surfaceId: nil))
+        XCTAssertEqual(store.latestNotification(forWorkspaceId: workspaceA)?.id, notificationAUnread.id)
+        XCTAssertEqual(store.latestNotification(forWorkspaceId: workspaceB)?.id, notificationBUnread.id)
     }
 
     func testUnreadNotificationCreationBoundaryUsesExactEligibleSurfaceSignal() {

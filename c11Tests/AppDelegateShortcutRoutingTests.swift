@@ -318,7 +318,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let orphanCount = orphanManager.workspaces.count
         let remappedCmdT = StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
 
-        withTemporaryShortcut(action: .newTab, shortcut: remappedCmdT) {
+        withTemporaryShortcut(action: .newWorkspace, shortcut: remappedCmdT) {
             guard let event = makeKeyDownEvent(
                 key: "t",
                 modifiers: [.command],

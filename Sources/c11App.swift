@@ -138,7 +138,7 @@ struct cmuxApp: App {
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
     @AppStorage(KeyboardShortcutSettings.Action.toggleSidebar.defaultsKey) private var toggleSidebarShortcutData = Data()
-    @AppStorage(KeyboardShortcutSettings.Action.newTab.defaultsKey) private var newWorkspaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.newWorkspace.defaultsKey) private var newWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.newWindow.defaultsKey) private var newWindowShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.showNotifications.defaultsKey) private var showNotificationsShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey) private var jumpToUnreadShortcutData = Data()
@@ -916,7 +916,7 @@ struct cmuxApp: App {
                     Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeWorkspaceManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.workspaces.count) {
-                            manager.selectTab(at: targetIndex)
+                            manager.selectWorkspace(at: targetIndex)
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -1139,7 +1139,7 @@ struct cmuxApp: App {
     }
 
     private var newWorkspaceMenuShortcut: StoredShortcut {
-        decodeShortcut(from: newWorkspaceShortcutData, fallback: KeyboardShortcutSettings.Action.newTab.defaultShortcut)
+        decodeShortcut(from: newWorkspaceShortcutData, fallback: KeyboardShortcutSettings.Action.newWorkspace.defaultShortcut)
     }
 
     private var newWindowMenuShortcut: StoredShortcut {
@@ -6496,7 +6496,7 @@ struct SettingsView: View {
             ShortcutSettingsGroup(
                 id: "window",
                 title: String(localized: "settings.shortcuts.group.window", defaultValue: "Window"),
-                actions: [.toggleSidebar, .newTab, .newWindow, .closeWindow, .openFolder]
+                actions: [.toggleSidebar, .newWorkspace, .newWindow, .closeWindow, .openFolder]
             ),
             ShortcutSettingsGroup(
                 id: "navigation",

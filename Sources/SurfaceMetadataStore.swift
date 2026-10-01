@@ -19,12 +19,12 @@ public enum MetadataKey {
     public static let description = "description"
     public static let lifecycleState = "lifecycle_state"
     public static let flag = "flag"
-    public static let flagCallerSurfaceId = "flag_caller_surface_id"
+    public static let legacyFlagCallerSurfaceId = "flag_caller_surface_id"
     /// C11-248: canonical spelling of the flag caller key. Written beside the
     /// legacy `flag_caller_surface_id` (both hold the same UUID) and read in
     /// either spelling, for one release.
     public static let flagCallerTabId = "flag_caller_tab_id"
-    static let flagCallerKeys = [flagCallerTabId, flagCallerSurfaceId]
+    static let flagCallerKeys = [flagCallerTabId, legacyFlagCallerSurfaceId]
     public static let suppressed = "suppressed"
 
     /// C11-104 — derived canonical keys. Written by the c11 runtime,
@@ -43,7 +43,7 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity, flag, flagCallerSurfaceId, flagCallerTabId, suppressed
+        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, suppressed
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -537,7 +537,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     /// C11-248: the flag caller UUID string, read from either key spelling. The legacy key wins: both
     /// are always written together, so a stale custom `flag_caller_tab_id` never outranks it.
     static func flagCallerValue(_ blob: [String: Any]) -> String? {
-        (blob[MetadataKey.flagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
+        (blob[MetadataKey.legacyFlagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
     }
 
     /// Canonical attention read. The flag source timestamp is the original
@@ -749,7 +749,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             var result = WriteResult()
             let attentionKeys: Set<String> = [
                 MetadataKey.flag,
-                MetadataKey.flagCallerSurfaceId,
+                MetadataKey.legacyFlagCallerSurfaceId,
                 MetadataKey.flagCallerTabId,
                 MetadataKey.suppressed,
             ]
@@ -960,7 +960,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         source: MetadataSource
     ) -> Bool {
         guard key != MetadataKey.flag,
-              key != MetadataKey.flagCallerSurfaceId,
+              key != MetadataKey.legacyFlagCallerSurfaceId,
               key != MetadataKey.flagCallerTabId,
               key != MetadataKey.suppressed else {
             return false
@@ -1023,7 +1023,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
         let attentionKeys: Set<String> = [
             MetadataKey.flag,
-            MetadataKey.flagCallerSurfaceId,
+            MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ]

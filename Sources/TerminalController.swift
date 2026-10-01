@@ -5604,7 +5604,7 @@ class TerminalController {
         guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
         var result = ""
         v2MainSync {
-            guard let workspace = resolveTab(from: workspaceArg, workspaceManager: workspaceManager) else {
+            guard let workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager) else {
                 result = "ERROR: Tab not found"
                 return
             }
@@ -5723,7 +5723,7 @@ class TerminalController {
             if let workspaceId = UUID(uuidString: workspaceArg) {
                 workspace = workspaceForSidebarMutation(id: workspaceId)
             } else {
-                workspace = resolveTab(from: workspaceArg, workspaceManager: workspaceManager)
+                workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager)
             }
             guard let workspace else {
                 result = "ERROR: Tab not found"
@@ -5823,7 +5823,7 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            guard let workspace = resolveTab(from: workspaceArg, workspaceManager: workspaceManager) else {
+            guard let workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager) else {
                 result = "ERROR: Tab not found"
                 return
             }
@@ -6370,7 +6370,7 @@ class TerminalController {
         }
     }
 
-    private func resolveTab(from arg: String, workspaceManager: WorkspaceManager) -> Workspace? {
+    private func resolveWorkspace(from arg: String, workspaceManager: WorkspaceManager) -> Workspace? {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             guard let selected = workspaceManager.selectedWorkspaceId else { return nil }
@@ -6520,7 +6520,7 @@ class TerminalController {
         var success = false
         v2MainSync {
             if let workspace = workspaceManager.workspaces.first(where: { $0.id == uuid }) {
-                workspaceManager.closeTab(workspace)
+                workspaceManager.closeWorkspace(workspace)
                 success = true
             }
         }
@@ -6535,13 +6535,13 @@ class TerminalController {
             // Try as UUID first
             if let uuid = UUID(uuidString: arg) {
                 if let workspace = workspaceManager.workspaces.first(where: { $0.id == uuid }) {
-                    workspaceManager.selectTab(workspace)
+                    workspaceManager.selectWorkspace(workspace)
                     success = true
                 }
             }
             // Try as index
             else if let index = Int(arg), index >= 0, index < workspaceManager.workspaces.count {
-                workspaceManager.selectTab(at: index)
+                workspaceManager.selectWorkspace(at: index)
                 success = true
             }
         }
@@ -7733,7 +7733,7 @@ class TerminalController {
         guard let workspaceManager else { return nil }
         let parsed = parseOptions(args)
         if let workspaceArg = parsed.options["tab"], !workspaceArg.isEmpty {
-            if let workspace = resolveTab(from: workspaceArg, workspaceManager: workspaceManager) {
+            if let workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager) {
                 return workspace
             }
             // The tab may belong to a different window — search all contexts.
@@ -9135,7 +9135,7 @@ class TerminalController {
         guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
         var result = ""
         v2MainSync {
-            guard let workspace = resolveTab(from: workspaceArg, workspaceManager: workspaceManager) else {
+            guard let workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager) else {
                 result = "ERROR: Tab not found"
                 return
             }

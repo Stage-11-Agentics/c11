@@ -1434,7 +1434,7 @@ extension TerminalController {
 
         let attentionKeys = Set([
             MetadataKey.flag,
-            MetadataKey.flagCallerSurfaceId,
+            MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])
@@ -1569,7 +1569,7 @@ extension TerminalController {
 
         let attentionKeys = Set([
             MetadataKey.flag,
-            MetadataKey.flagCallerSurfaceId,
+            MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])

@@ -2688,7 +2688,6 @@ class WorkspaceManager: ObservableObject {
     }
 
     // Keep closeTab as convenience alias
-    func closeTab(_ workspace: Workspace) { closeWorkspace(workspace) }
     func closeCurrentTabWithConfirmation() { closeCurrentWorkspaceWithConfirmation() }
 
     func closeCurrentWorkspace() {
@@ -2814,8 +2813,6 @@ class WorkspaceManager: ObservableObject {
         selectedWorkspaceId = workspace.id
     }
 
-    // Keep selectTab as convenience alias
-    func selectTab(_ workspace: Workspace) { selectWorkspace(workspace) }
 
     private func confirmClose(title: String, message: String, acceptCmdD: Bool) -> Bool {
         if let confirmCloseHandler {
@@ -3556,7 +3553,7 @@ class WorkspaceManager: ObservableObject {
         return trimmedDirectory.isEmpty ? "cmux" : trimmedDirectory
     }
 
-    func focusTab(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false) {
+    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         if let surfaceId, workspace.panels[surfaceId] != nil {
             // Keep selected-surface intent stable across selectedTabId didSet async restore.
@@ -3622,7 +3619,7 @@ class WorkspaceManager: ObservableObject {
         // state active around it.
         workspace.clearSplitZoom()
         suppressFocusFlash = true
-        focusTab(workspaceId, surfaceId: desiredPanelId, suppressFlash: true)
+        focusWorkspace(workspaceId, surfaceId: desiredPanelId, suppressFlash: true)
         if wasSelected {
             suppressFocusFlash = false
         }
@@ -3781,7 +3778,7 @@ class WorkspaceManager: ObservableObject {
     }
 #endif
 
-    func selectTab(at index: Int) {
+    func selectWorkspace(at index: Int) {
         guard index >= 0 && index < workspaces.count else { return }
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select_index", to: workspaces[index].id)

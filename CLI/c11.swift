@@ -5281,7 +5281,7 @@ struct CMUXCLI {
         return "tab:\(ordinal)"
     }
 
-    private func normalizeTabHandle(
+    private func normalizeCanonicalTabHandle(
         _ raw: String?,
         client: SocketClient,
         workspaceHandle: String? = nil,
@@ -5773,7 +5773,7 @@ struct CMUXCLI {
         // operator-focused tab client-side; a ref-less rename must be rejected
         // server-side (missing_ref). Other tab actions keep their focused fallback.
         let allowFocusedFallback = (workspaceId == nil) && action != "rename"
-        let surfaceId = try normalizeTabHandle(
+        let surfaceId = try normalizeCanonicalTabHandle(
             tabArg,
             client: client,
             workspaceHandle: workspaceId,

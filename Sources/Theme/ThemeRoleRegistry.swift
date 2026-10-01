@@ -105,7 +105,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.activeTabFill",
                 expectedType: .color,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .colorExpression("$workspaceColor")
             )
@@ -113,7 +113,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.titleBar.background",
                 expectedType: .color,
-                owningSurface: "SurfaceTitleBarView, ContentView.customTitlebar",
+                owningSurface: "TabTitleBarView, ContentView.customTitlebar",
                 section: .titleBar,
                 defaultValue: .colorExpression("$surface")
             )
@@ -169,7 +169,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.browserChrome.background",
                 expectedType: .color,
-                owningSurface: "BrowserPanelView",
+                owningSurface: "BrowserTabView",
                 section: .browserChrome,
                 defaultValue: .colorExpression("$ghosttyBackground")
             )
@@ -177,7 +177,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.browserChrome.omnibarFill",
                 expectedType: .color,
-                owningSurface: "BrowserPanelView",
+                owningSurface: "BrowserTabView",
                 section: .browserChrome,
                 defaultValue: .colorExpression("$surface.mix($background, 0.15)")
             )
@@ -185,7 +185,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.markdownChrome.background",
                 expectedType: .color,
-                owningSurface: "MarkdownPanelView",
+                owningSurface: "MarkdownTabView",
                 section: .markdownChrome,
                 defaultValue: .colorExpression("$background")
             )
@@ -249,7 +249,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.activeTabFillFallback",
                 expectedType: .color,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .colorExpression("$surface")
             )
@@ -257,7 +257,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.activeTabRail",
                 expectedType: .color,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .colorExpression("$workspaceColor")
             )
@@ -265,7 +265,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.activeTabRailFallback",
                 expectedType: .color,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .colorExpression("$accent")
             )
@@ -273,7 +273,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.activeTabRailOpacity",
                 expectedType: .number,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .number(0.95)
             )
@@ -281,7 +281,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.inactiveTabCustomOpacity",
                 expectedType: .number,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .number(0.70)
             )
@@ -289,7 +289,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.inactiveTabMultiSelectOpacity",
                 expectedType: .number,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .number(0.35)
             )
@@ -297,7 +297,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.sidebar.badgeFill",
                 expectedType: .color,
-                owningSurface: "ContentView.TabItemView",
+                owningSurface: "ContentView.WorkspaceRowView",
                 section: .sidebar,
                 defaultValue: .colorExpression("$accent")
             )
@@ -313,7 +313,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.titleBar.backgroundOpacity",
                 expectedType: .number,
-                owningSurface: "SurfaceTitleBarView, ContentView.customTitlebar",
+                owningSurface: "TabTitleBarView, ContentView.customTitlebar",
                 section: .titleBar,
                 defaultValue: .number(0.85)
             )
@@ -321,7 +321,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.titleBar.foreground",
                 expectedType: .color,
-                owningSurface: "SurfaceTitleBarView",
+                owningSurface: "TabTitleBarView",
                 section: .titleBar,
                 defaultValue: .colorExpression("$foreground")
             )
@@ -329,7 +329,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.titleBar.foregroundSecondary",
                 expectedType: .color,
-                owningSurface: "SurfaceTitleBarView",
+                owningSurface: "TabTitleBarView",
                 section: .titleBar,
                 defaultValue: .colorExpression("$foregroundSecondary")
             )
@@ -337,7 +337,7 @@ public enum ThemeRoleRegistry {
             return .init(
                 path: "chrome.titleBar.borderBottom",
                 expectedType: .color,
-                owningSurface: "SurfaceTitleBarView, ContentView.customTitlebar",
+                owningSurface: "TabTitleBarView, ContentView.customTitlebar",
                 section: .titleBar,
                 defaultValue: .colorExpression("$separator")
             )

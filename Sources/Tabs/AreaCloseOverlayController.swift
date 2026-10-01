@@ -10,10 +10,10 @@ import Foundation
 /// frames are pushed in from `PaneInteractionOverlayHostView`, which is
 /// rendered inside each Bonsplit pane via the pane-overlay environment value.
 @MainActor
-final class PaneCloseOverlayController {
-    let runtime: PaneInteractionRuntime
+final class AreaCloseOverlayController {
+    let runtime: AreaInteractionRuntime
     private var anchors: [UUID: AnchorRecord] = [:]
-    private var hosts: [UUID: PaneInteractionOverlayHost] = [:]
+    private var hosts: [UUID: AreaInteractionOverlayHost] = [:]
     private var activeIds: Set<UUID> = []
     private var subscription: AnyCancellable?
     // Weak registry of every live AnchorView so the controller can ask
@@ -22,14 +22,14 @@ final class PaneCloseOverlayController {
     // SwiftUI (updateNSView) and AppKit (viewDidMoveToWindow) DURING
     // the reflow, when convert(bounds, to: nil) can return transient
     // half-applied coordinates that the system never corrects.
-    private let liveAnchorViews = NSHashTable<PaneInteractionOverlayHostView.AnchorView>.weakObjects()
+    private let liveAnchorViews = NSHashTable<AreaInteractionOverlayHostView.AnchorView>.weakObjects()
 
     private struct AnchorRecord {
         var frameInWindow: NSRect
         weak var window: NSWindow?
     }
 
-    init(runtime: PaneInteractionRuntime) {
+    init(runtime: AreaInteractionRuntime) {
         self.runtime = runtime
         subscription = runtime.$active
             .receive(on: RunLoop.main)
@@ -64,7 +64,7 @@ final class PaneCloseOverlayController {
     /// Called by AnchorView the first time it gains a window. The hash table is
     /// weak, so dead entries auto-prune when SwiftUI deallocates the view —
     /// no explicit unregister needed.
-    func registerAnchorView(_ view: PaneInteractionOverlayHostView.AnchorView) {
+    func registerAnchorView(_ view: AreaInteractionOverlayHostView.AnchorView) {
         liveAnchorViews.add(view)
     }
 
@@ -110,11 +110,11 @@ final class PaneCloseOverlayController {
                 continue
             }
 
-            let host: PaneInteractionOverlayHost
+            let host: AreaInteractionOverlayHost
             if let existing = hosts[id] {
                 host = existing
             } else {
-                host = PaneInteractionOverlayHost(panelId: id, runtime: runtime)
+                host = AreaInteractionOverlayHost(panelId: id, runtime: runtime)
                 hosts[id] = host
             }
 

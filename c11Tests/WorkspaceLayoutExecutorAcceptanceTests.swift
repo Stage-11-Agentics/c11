@@ -303,7 +303,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "b4 whitespace"),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["t"])),
             surfaces: [
                 TabSpec(
                     id: "t",
@@ -363,7 +363,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: "submit opt-in"),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["t"])),
             surfaces: [
                 TabSpec(
                     id: "t",
@@ -543,7 +543,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let plan = WorkspaceApplyPlan(
             version: 99,
             workspace: WorkspaceSpec(title: "bad-version"),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s"])),
             surfaces: [TabSpec(id: "s", kind: .terminal)]
         )
         let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
@@ -566,7 +566,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         WorkspaceApplyPlan(
             version: 1,
             workspace: WorkspaceSpec(title: title),
-            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
+            layout: .pane(LayoutTreeSpec.AreaSpec(surfaceIds: ["s"])),
             surfaces: [TabSpec(id: "s", kind: .terminal, title: title)]
         )
     }
@@ -755,7 +755,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     private func comparePane(
         fixtureName: String,
         path: String,
-        planPane: LayoutTreeSpec.PaneSpec,
+        planPane planArea: LayoutTreeSpec.AreaSpec,
         livePane: ExternalPaneNode,
         planSurfaceIdToPanelUUID: [String: UUID],
         workspace: Workspace
@@ -782,13 +782,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         }
         XCTAssertEqual(
             livePlanIds,
-            planPane.surfaceIds,
+            planArea.surfaceIds,
             "[\(fixtureName) @ \(path)] pane tab ordering mismatch"
         )
 
-        let expectedSelectedIndex = planPane.selectedIndex ?? 0
-        if expectedSelectedIndex >= 0, expectedSelectedIndex < planPane.surfaceIds.count {
-            let expectedSurfaceId = planPane.surfaceIds[expectedSelectedIndex]
+        let expectedSelectedIndex = planArea.selectedIndex ?? 0
+        if expectedSelectedIndex >= 0, expectedSelectedIndex < planArea.surfaceIds.count {
+            let expectedSurfaceId = planArea.surfaceIds[expectedSelectedIndex]
             guard let expectedPanelId = planSurfaceIdToPanelUUID[expectedSurfaceId],
                   let expectedBonsplitTabId = workspace.bonsplitTabIdFromTabId(expectedPanelId) else {
                 XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
@@ -917,7 +917,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             if let paneMetadata = surfaceSpec.paneMetadata,
                !paneMetadata.isEmpty,
                let paneUUID {
-                let (livePaneMetadata, _) = PaneMetadataStore.shared.getMetadata(
+                let (livePaneMetadata, _) = AreaMetadataStore.shared.getMetadata(
                     workspaceId: workspace.id,
                     paneId: paneUUID
                 )

@@ -25928,43 +25928,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Debug: Theme M1b / Toggle BrowserPanelView"
+            "value": "Debug: Theme M1b / Toggle BrowserTabView"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デバッグ: テーマ M1b / BrowserPanelView を切り替え"
+            "value": "デバッグ: テーマ M1b / BrowserTabView を切り替え"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Налагодження: тема M1b / перемкнути BrowserPanelView"
+            "value": "Налагодження: тема M1b / перемкнути BrowserTabView"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "디버그: 테마 M1b / BrowserPanelView 전환"
+            "value": "디버그: 테마 M1b / BrowserTabView 전환"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调试：主题 M1b / 切换 BrowserPanelView"
+            "value": "调试：主题 M1b / 切换 BrowserTabView"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "除錯：主題 M1b / 切換 BrowserPanelView"
+            "value": "除錯：主題 M1b / 切換 BrowserTabView"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отладка: тема M1b / переключить BrowserPanelView"
+            "value": "Отладка: тема M1b / переключить BrowserTabView"
           }
         }
       }
@@ -26022,43 +26022,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Debug: Theme M1b / Toggle MarkdownPanelView"
+            "value": "Debug: Theme M1b / Toggle MarkdownTabView"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デバッグ: テーマ M1b / MarkdownPanelView を切り替え"
+            "value": "デバッグ: テーマ M1b / MarkdownTabView を切り替え"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Налагодження: тема M1b / перемкнути MarkdownPanelView"
+            "value": "Налагодження: тема M1b / перемкнути MarkdownTabView"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "디버그: 테마 M1b / MarkdownPanelView 전환"
+            "value": "디버그: 테마 M1b / MarkdownTabView 전환"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调试：主题 M1b / 切换 MarkdownPanelView"
+            "value": "调试：主题 M1b / 切换 MarkdownTabView"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "除錯：主題 M1b / 切換 MarkdownPanelView"
+            "value": "除錯：主題 M1b / 切換 MarkdownTabView"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отладка: тема M1b / переключить MarkdownPanelView"
+            "value": "Отладка: тема M1b / переключить MarkdownTabView"
           }
         }
       }
@@ -26069,43 +26069,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Debug: Theme M1b / Toggle ContentView.TabItemView"
+            "value": "Debug: Theme M1b / Toggle ContentView.WorkspaceRowView"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デバッグ: テーマ M1b / ContentView.TabItemView を切り替え"
+            "value": "デバッグ: テーマ M1b / ContentView.WorkspaceRowView を切り替え"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Налагодження: тема M1b / перемкнути ContentView.TabItemView"
+            "value": "Налагодження: тема M1b / перемкнути ContentView.WorkspaceRowView"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "디버그: 테마 M1b / ContentView.TabItemView 전환"
+            "value": "디버그: 테마 M1b / ContentView.WorkspaceRowView 전환"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调试：主题 M1b / 切换 ContentView.TabItemView"
+            "value": "调试：主题 M1b / 切换 ContentView.WorkspaceRowView"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "除錯：主題 M1b / 切換 ContentView.TabItemView"
+            "value": "除錯：主題 M1b / 切換 ContentView.WorkspaceRowView"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отладка: тема M1b / переключить ContentView.TabItemView"
+            "value": "Отладка: тема M1b / переключить ContentView.WorkspaceRowView"
           }
         }
       }
@@ -26116,43 +26116,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+            "value": "Debug: Theme M1b / Toggle TabTitleBarView"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デバッグ: テーマ M1b / SurfaceTitleBarView を切り替え"
+            "value": "デバッグ: テーマ M1b / TabTitleBarView を切り替え"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Налагодження: тема M1b / перемкнути SurfaceTitleBarView"
+            "value": "Налагодження: тема M1b / перемкнути TabTitleBarView"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "디버그: 테마 M1b / SurfaceTitleBarView 전환"
+            "value": "디버그: 테마 M1b / TabTitleBarView 전환"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调试：主题 M1b / 切换 SurfaceTitleBarView"
+            "value": "调试：主题 M1b / 切换 TabTitleBarView"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "除錯：主題 M1b / 切換 SurfaceTitleBarView"
+            "value": "除錯：主題 M1b / 切換 TabTitleBarView"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Отладка: тема M1b / переключить SurfaceTitleBarView"
+            "value": "Отладка: тема M1b / переключить TabTitleBarView"
           }
         }
       }

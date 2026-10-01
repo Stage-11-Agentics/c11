@@ -401,7 +401,7 @@ enum WorkspaceBlueprintMarkdown {
                 surfaces.append(try buildSurfaceSpec(id: id, from: tabNode))
             }
             let selectedIndex: Int? = node.lookup("selected")?.asScalar.flatMap { Int($0) }
-            return .pane(LayoutTreeSpec.PaneSpec(
+            return .pane(LayoutTreeSpec.AreaSpec(
                 surfaceIds: ids,
                 selectedIndex: selectedIndex
             ))
@@ -410,7 +410,7 @@ enum WorkspaceBlueprintMarkdown {
         // Single-tab leaf: has `type:` directly.
         let id = surfaceID(from: node, generator: &idGen)
         surfaces.append(try buildSurfaceSpec(id: id, from: node))
-        return .pane(LayoutTreeSpec.PaneSpec(surfaceIds: [id], selectedIndex: nil))
+        return .pane(LayoutTreeSpec.AreaSpec(surfaceIds: [id], selectedIndex: nil))
     }
 
     private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> TabSpec {
@@ -546,14 +546,14 @@ enum WorkspaceBlueprintMarkdown {
     }
 
     private static func emitPaneNode(
-        _ pane: LayoutTreeSpec.PaneSpec,
+        _ area: LayoutTreeSpec.AreaSpec,
         surfaces: [TabSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
         let pad = String(repeating: " ", count: indent)
         let firstLinePad = listItem ? String(repeating: " ", count: indent - 2) + "- " : pad
-        let resolved = pane.surfaceIds.compactMap { id in surfaces.first(where: { $0.id == id }) }
+        let resolved = area.surfaceIds.compactMap { id in surfaces.first(where: { $0.id == id }) }
         if resolved.count == 1 {
             return emitSurfaceFields(resolved[0], firstLinePad: firstLinePad, restPad: pad)
         }
@@ -567,7 +567,7 @@ enum WorkspaceBlueprintMarkdown {
                 restPad: pad + "    "
             )
         }
-        if let sel = pane.selectedIndex, sel != 0 {
+        if let sel = area.selectedIndex, sel != 0 {
             out += "\(pad)selected: \(sel)\n"
         }
         return out

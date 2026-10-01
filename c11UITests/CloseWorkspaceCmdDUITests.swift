@@ -640,7 +640,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 // set in Sources/Panels/PaneInteractionCardView.swift). Retained
                 // so the test still finds older builds; current workspace-close
                 // path lands on WorkspaceCloseOverlay.card (C11-30).
-                app.otherElements["PaneInteraction.confirm.card"].firstMatch.exists ||
+                app.otherElements["AreaInteraction.confirm.card"].firstMatch.exists ||
                 // C11-30: workspace-scoped close overlay (Sources/Panels/WorkspaceCloseCardView.swift).
                 app.otherElements["WorkspaceCloseOverlay.card"].firstMatch.exists ||
                 app.staticTexts["Close workspace?"].exists
@@ -664,7 +664,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
     private func isCloseTabAlertPresent(app: XCUIApplication) -> Bool {
         if app.dialogs.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
         if app.alerts.containing(.staticText, identifier: "Close tab?").firstMatch.exists { return true }
-        if app.otherElements["PaneInteraction.confirm.card"].firstMatch.exists { return true }
+        if app.otherElements["AreaInteraction.confirm.card"].firstMatch.exists { return true }
         return app.staticTexts["Close tab?"].exists
     }
 
@@ -683,7 +683,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         }
 
         // M10: pane-interaction overlay path.
-        let card = app.otherElements["PaneInteraction.confirm.card"].firstMatch
+        let card = app.otherElements["AreaInteraction.confirm.card"].firstMatch
         if card.exists, card.buttons["Close"].exists {
             card.buttons["Close"].firstMatch.click()
             return

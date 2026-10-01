@@ -1670,11 +1670,11 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         let size = CGSize(width: 240, height: 180)
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: size.height - 8), in: size),
+            BrowserAreaDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: size.height - 8), in: size),
             .top
         )
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: 8), in: size),
+            BrowserAreaDropRouting.zone(for: CGPoint(x: size.width * 0.5, y: 8), in: size),
             .bottom
         )
     }
@@ -1683,7 +1683,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         let size = CGSize(width: 240, height: 180)
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(
+            BrowserAreaDropRouting.zone(
                 for: CGPoint(x: size.width * 0.5, y: 110),
                 in: size,
                 topChromeHeight: 36
@@ -1691,7 +1691,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             .center
         )
         XCTAssertEqual(
-            BrowserPaneDropRouting.zone(
+            BrowserAreaDropRouting.zone(
                 for: CGPoint(x: size.width * 0.5, y: 150),
                 in: size,
                 topChromeHeight: 36
@@ -1702,19 +1702,19 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
 
     func testHitTestingCapturesOnlyForRelevantDragEvents() {
         XCTAssertTrue(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
                 eventType: .cursorUpdate
             )
         )
         XCTAssertFalse(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [DragOverlayRoutingPolicy.bonsplitTabTransferType],
                 eventType: .leftMouseDown
             )
         )
         XCTAssertFalse(
-            BrowserPaneDropTargetView.shouldCaptureHitTesting(
+            BrowserAreaDropTargetView.shouldCaptureHitTesting(
                 pasteboardTypes: [.fileURL],
                 eventType: .cursorUpdate
             )
@@ -1723,44 +1723,44 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
 
     func testCenterDropOnSamePaneIsNoOp() {
         let paneId = PaneID(id: UUID())
-        let target = BrowserPaneDropContext(
+        let target = BrowserAreaDropContext(
             workspaceId: UUID(),
             panelId: UUID(),
             paneId: paneId
         )
-        let transfer = BrowserPaneDragTransfer(
+        let transfer = BrowserAreaDragTransfer(
             bonsplitTabId: UUID(),
             sourcePaneId: paneId.id,
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.action(for: transfer, target: target, zone: .center),
+            BrowserAreaDropRouting.action(for: transfer, target: target, zone: .center),
             .noOp
         )
     }
 
     func testRightEdgeDropBuildsSplitMoveAction() {
         let paneId = PaneID(id: UUID())
-        let target = BrowserPaneDropContext(
+        let target = BrowserAreaDropContext(
             workspaceId: UUID(),
             panelId: UUID(),
             paneId: paneId
         )
         let bonsplitTabId = UUID()
-        let transfer = BrowserPaneDragTransfer(
+        let transfer = BrowserAreaDragTransfer(
             bonsplitTabId: bonsplitTabId,
             sourcePaneId: UUID(),
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
 
         XCTAssertEqual(
-            BrowserPaneDropRouting.action(for: transfer, target: target, zone: .right),
+            BrowserAreaDropRouting.action(for: transfer, target: target, zone: .right),
             .move(
                 bonsplitTabId: bonsplitTabId,
                 targetWorkspaceId: target.workspaceId,
                 targetPane: paneId,
-                splitTarget: BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: false)
+                splitTarget: BrowserAreaSplitTarget(orientation: .horizontal, insertFirst: false)
             )
         )
     }
@@ -1776,7 +1776,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             ]
         )
 
-        let transfer = BrowserPaneDragTransfer.decode(from: payload)
+        let transfer = BrowserAreaDragTransfer.decode(from: payload)
 
         XCTAssertEqual(transfer?.bonsplitTabId, bonsplitTabId)
         XCTAssertEqual(transfer?.sourcePaneId, sourcePaneId)

@@ -1393,7 +1393,7 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
         }
     }
 
-    private final class RejectingSplitPaneDelegate: BonsplitDelegate {
+    private final class RejectingSplitAreaDelegate: BonsplitDelegate {
         func splitTabBar(_ controller: BonsplitController, shouldSplitPane pane: PaneID, orientation: SplitOrientation) -> Bool {
             false
         }
@@ -1490,7 +1490,7 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
         )
         XCTAssertEqual(workspace.preferredBrowserProfileID, preferredProfile.id)
 
-        let rejectingDelegate = RejectingSplitPaneDelegate()
+        let rejectingDelegate = RejectingSplitAreaDelegate()
         workspace.bonsplitController.delegate = rejectingDelegate
         let created = workspace.newBrowserSplit(
             from: browser.id,

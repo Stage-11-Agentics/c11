@@ -179,7 +179,7 @@ struct TabSpec: Codable, Sendable, Equatable {
 /// `SplitOrientation` are the two sides of the translation, handled inside
 /// the executor — callers stay in plan-space.
 indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
-    case pane(PaneSpec)
+    case pane(AreaSpec)
     case split(SplitSpec)
 
     private enum CodingKeys: String, CodingKey { case type, pane, split }
@@ -189,7 +189,7 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "pane":
-            self = .pane(try container.decode(PaneSpec.self, forKey: .pane))
+            self = .pane(try container.decode(AreaSpec.self, forKey: .pane))
         case "split":
             self = .split(try container.decode(SplitSpec.self, forKey: .split))
         default:
@@ -213,7 +213,7 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
         }
     }
 
-    struct PaneSpec: Codable, Sendable, Equatable {
+    struct AreaSpec: Codable, Sendable, Equatable {
         /// Plan-local surface ids referenced into `WorkspaceApplyPlan.surfaces`.
         /// Order matches tab order in the pane. At least one entry required.
         var surfaceIds: [String]

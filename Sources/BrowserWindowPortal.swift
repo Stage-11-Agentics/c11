@@ -1318,9 +1318,9 @@ struct BrowserPortalSearchOverlayConfiguration {
 /// Pane-interaction overlay hook for WebView-backed browser panels. The overlay
 /// host observes `runtime.$active[panelId]` itself, so this configuration just
 /// identifies the (panel, runtime) pair the slot view should attach to.
-struct BrowserPortalPaneInteractionConfiguration {
+struct BrowserPortalAreaInteractionConfiguration {
     let panelId: UUID
-    let runtime: PaneInteractionRuntime
+    let runtime: AreaInteractionRuntime
 }
 
 private final class BrowserCompanionAccessibilitySnapshot {
@@ -1709,13 +1709,13 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     }
 }
 
-struct BrowserPaneDropContext: Equatable {
+struct BrowserAreaDropContext: Equatable {
     let workspaceId: UUID
     let panelId: UUID
     let paneId: PaneID
 }
 
-struct BrowserPaneDragTransfer: Equatable {
+struct BrowserAreaDragTransfer: Equatable {
     let bonsplitTabId: UUID
     let sourcePaneId: UUID
     let sourceProcessId: Int32
@@ -1724,7 +1724,7 @@ struct BrowserPaneDragTransfer: Equatable {
         sourceProcessId == Int32(ProcessInfo.processInfo.processIdentifier)
     }
 
-    static func decode(from pasteboard: NSPasteboard) -> BrowserPaneDragTransfer? {
+    static func decode(from pasteboard: NSPasteboard) -> BrowserAreaDragTransfer? {
         if let data = pasteboard.data(forType: DragOverlayRoutingPolicy.bonsplitTabTransferType) {
             return decode(from: data)
         }
@@ -1734,7 +1734,7 @@ struct BrowserPaneDragTransfer: Equatable {
         return nil
     }
 
-    static func decode(from data: Data) -> BrowserPaneDragTransfer? {
+    static func decode(from data: Data) -> BrowserAreaDragTransfer? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let bonsplitTab = json["tab"] as? [String: Any],
               let bonsplitTabIdRaw = bonsplitTab["id"] as? String,
@@ -1745,7 +1745,7 @@ struct BrowserPaneDragTransfer: Equatable {
         }
 
         let sourceProcessId = (json["sourceProcessId"] as? NSNumber)?.int32Value ?? -1
-        return BrowserPaneDragTransfer(
+        return BrowserAreaDragTransfer(
             bonsplitTabId: bonsplitTabId,
             sourcePaneId: sourcePaneId,
             sourceProcessId: sourceProcessId
@@ -1753,39 +1753,39 @@ struct BrowserPaneDragTransfer: Equatable {
     }
 }
 
-struct BrowserPaneSplitTarget: Equatable {
+struct BrowserAreaSplitTarget: Equatable {
     let orientation: SplitOrientation
     let insertFirst: Bool
 }
 
-enum BrowserPaneDropAction: Equatable {
+enum BrowserAreaDropAction: Equatable {
     case noOp
     case move(
         bonsplitTabId: UUID,
         targetWorkspaceId: UUID,
         targetPane: PaneID,
-        splitTarget: BrowserPaneSplitTarget?
+        splitTarget: BrowserAreaSplitTarget?
     )
 }
 
-enum BrowserPaneDropRouting {
+enum BrowserAreaDropRouting {
     private static let padding: CGFloat = 4
 
-    private static func fullPaneSize(for slotSize: CGSize, topChromeHeight: CGFloat) -> CGSize {
+    private static func fullAreaSize(for slotSize: CGSize, topChromeHeight: CGFloat) -> CGSize {
         CGSize(width: slotSize.width, height: slotSize.height + max(0, topChromeHeight))
     }
 
     static func zone(for location: CGPoint, in size: CGSize, topChromeHeight: CGFloat = 0) -> DropZone {
-        let fullPaneSize = fullPaneSize(for: size, topChromeHeight: topChromeHeight)
+        let fullAreaSize = fullAreaSize(for: size, topChromeHeight: topChromeHeight)
         let edgeRatio: CGFloat = 0.25
-        let horizontalEdge = max(80, fullPaneSize.width * edgeRatio)
-        let verticalEdge = max(80, fullPaneSize.height * edgeRatio)
+        let horizontalEdge = max(80, fullAreaSize.width * edgeRatio)
+        let verticalEdge = max(80, fullAreaSize.height * edgeRatio)
 
         if location.x < horizontalEdge {
             return .left
-        } else if location.x > fullPaneSize.width - horizontalEdge {
+        } else if location.x > fullAreaSize.width - horizontalEdge {
             return .right
-        } else if location.y > fullPaneSize.height - verticalEdge {
+        } else if location.y > fullAreaSize.height - verticalEdge {
             return .top
         } else if location.y < verticalEdge {
             return .bottom
@@ -1795,67 +1795,67 @@ enum BrowserPaneDropRouting {
     }
 
     static func overlayFrame(for zone: DropZone, in size: CGSize, topChromeHeight: CGFloat = 0) -> CGRect {
-        let fullPaneSize = fullPaneSize(for: size, topChromeHeight: topChromeHeight)
+        let fullAreaSize = fullAreaSize(for: size, topChromeHeight: topChromeHeight)
         switch zone {
         case .center:
             return CGRect(
                 x: padding,
                 y: padding,
-                width: fullPaneSize.width - padding * 2,
-                height: fullPaneSize.height - padding * 2
+                width: fullAreaSize.width - padding * 2,
+                height: fullAreaSize.height - padding * 2
             )
         case .left:
             return CGRect(
                 x: padding,
                 y: padding,
-                width: fullPaneSize.width / 2 - padding,
-                height: fullPaneSize.height - padding * 2
+                width: fullAreaSize.width / 2 - padding,
+                height: fullAreaSize.height - padding * 2
             )
         case .right:
             return CGRect(
-                x: fullPaneSize.width / 2,
+                x: fullAreaSize.width / 2,
                 y: padding,
-                width: fullPaneSize.width / 2 - padding,
-                height: fullPaneSize.height - padding * 2
+                width: fullAreaSize.width / 2 - padding,
+                height: fullAreaSize.height - padding * 2
             )
         case .top:
             return CGRect(
                 x: padding,
-                y: fullPaneSize.height / 2,
-                width: fullPaneSize.width - padding * 2,
-                height: fullPaneSize.height / 2 - padding
+                y: fullAreaSize.height / 2,
+                width: fullAreaSize.width - padding * 2,
+                height: fullAreaSize.height / 2 - padding
             )
         case .bottom:
             return CGRect(
                 x: padding,
                 y: padding,
-                width: fullPaneSize.width - padding * 2,
-                height: fullPaneSize.height / 2 - padding
+                width: fullAreaSize.width - padding * 2,
+                height: fullAreaSize.height / 2 - padding
             )
         }
     }
 
     static func action(
-        for transfer: BrowserPaneDragTransfer,
-        target: BrowserPaneDropContext,
+        for transfer: BrowserAreaDragTransfer,
+        target: BrowserAreaDropContext,
         zone: DropZone
-    ) -> BrowserPaneDropAction? {
+    ) -> BrowserAreaDropAction? {
         if zone == .center, transfer.sourcePaneId == target.paneId.id {
             return .noOp
         }
 
-        let splitTarget: BrowserPaneSplitTarget?
+        let splitTarget: BrowserAreaSplitTarget?
         switch zone {
         case .center:
             splitTarget = nil
         case .left:
-            splitTarget = BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: true)
+            splitTarget = BrowserAreaSplitTarget(orientation: .horizontal, insertFirst: true)
         case .right:
-            splitTarget = BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: false)
+            splitTarget = BrowserAreaSplitTarget(orientation: .horizontal, insertFirst: false)
         case .top:
-            splitTarget = BrowserPaneSplitTarget(orientation: .vertical, insertFirst: true)
+            splitTarget = BrowserAreaSplitTarget(orientation: .vertical, insertFirst: true)
         case .bottom:
-            splitTarget = BrowserPaneSplitTarget(orientation: .vertical, insertFirst: false)
+            splitTarget = BrowserAreaSplitTarget(orientation: .vertical, insertFirst: false)
         }
 
         return .move(
@@ -1867,9 +1867,9 @@ enum BrowserPaneDropRouting {
     }
 }
 
-final class BrowserPaneDropTargetView: NSView {
+final class BrowserAreaDropTargetView: NSView {
     weak var slotView: WindowBrowserSlotView?
-    var dropContext: BrowserPaneDropContext?
+    var dropContext: BrowserAreaDropContext?
     private var activeZone: DropZone?
 #if DEBUG
     private var lastHitTestSignature: String?
@@ -1945,7 +1945,7 @@ final class BrowserPaneDropTargetView: NSView {
         }
 
         guard let dropContext,
-              let transfer = BrowserPaneDragTransfer.decode(from: sender.draggingPasteboard),
+              let transfer = BrowserAreaDragTransfer.decode(from: sender.draggingPasteboard),
               transfer.isFromCurrentProcess else {
 #if DEBUG
             dlog("browser.paneDrop.perform allowed=0 reason=missingTransfer")
@@ -1954,12 +1954,12 @@ final class BrowserPaneDropTargetView: NSView {
         }
 
         let location = convert(sender.draggingLocation, from: nil)
-        let zone = BrowserPaneDropRouting.zone(
+        let zone = BrowserAreaDropRouting.zone(
             for: location,
             in: bounds.size,
             topChromeHeight: slotView?.effectivePaneTopChromeHeight() ?? 0
         )
-        guard let action = BrowserPaneDropRouting.action(
+        guard let action = BrowserAreaDropRouting.action(
             for: transfer,
             target: dropContext,
             zone: zone
@@ -2007,14 +2007,14 @@ final class BrowserPaneDropTargetView: NSView {
 
     private func updateDragState(_ sender: any NSDraggingInfo, phase: String) -> NSDragOperation {
         guard let dropContext,
-              let transfer = BrowserPaneDragTransfer.decode(from: sender.draggingPasteboard),
+              let transfer = BrowserAreaDragTransfer.decode(from: sender.draggingPasteboard),
               transfer.isFromCurrentProcess else {
             clearDragState(phase: "\(phase).reject")
             return []
         }
 
         let location = convert(sender.draggingLocation, from: nil)
-        let zone = BrowserPaneDropRouting.zone(
+        let zone = BrowserAreaDropRouting.zone(
             for: location,
             in: bounds.size,
             topChromeHeight: slotView?.effectivePaneTopChromeHeight() ?? 0
@@ -2079,13 +2079,13 @@ final class WindowBrowserSlotView: NSView {
             yieldOwnedFirstResponderIfNeeded(in: window, reason: "slotHidden")
         }
     }
-    private let paneDropTargetView = BrowserPaneDropTargetView(frame: .zero)
+    private let paneDropTargetView = BrowserAreaDropTargetView(frame: .zero)
     private let dropZoneOverlayView = BrowserDropZoneOverlayView(frame: .zero)
     private var searchOverlayHostingView: NSHostingView<BrowserSearchOverlay>?
     private var searchOverlayConfiguration: BrowserPortalSearchOverlayConfiguration?
     private var companionOverlayHost: BrowserCompanionOverlayHost?
     private var companionConfiguration: BrowserPortalCompanionConfiguration?
-    private var paneInteractionOverlay: PaneInteractionOverlayHost?
+    private var paneInteractionOverlay: AreaInteractionOverlayHost?
     private var paneInteractionActivityCancellable: AnyCancellable?
     private weak var hostedWebView: WKWebView?
     private var hostedWebViewConstraints: [NSLayoutConstraint] = []
@@ -2205,7 +2205,7 @@ final class WindowBrowserSlotView: NSView {
         applyResolvedDropZoneOverlay()
     }
 
-    func setPaneDropContext(_ context: BrowserPaneDropContext?) {
+    func setPaneDropContext(_ context: BrowserAreaDropContext?) {
         paneDropTargetView.dropContext = context
     }
 
@@ -2387,7 +2387,7 @@ final class WindowBrowserSlotView: NSView {
     /// shows/hides itself. Each call ensures the overlay sits ABOVE the WKWebView
     /// subview, which the portal re-adds on bind; otherwise a fresh bind would push
     /// the webView above the modal card.
-    func setPaneInteraction(_ configuration: BrowserPortalPaneInteractionConfiguration?) {
+    func setPaneInteraction(_ configuration: BrowserPortalAreaInteractionConfiguration?) {
         guard let configuration else {
             paneInteractionActivityCancellable = nil
             paneInteractionOverlay?.removeFromSuperview()
@@ -2412,7 +2412,7 @@ final class WindowBrowserSlotView: NSView {
             paneInteractionOverlay = nil
         }
 
-        let overlay = PaneInteractionOverlayHost(
+        let overlay = AreaInteractionOverlayHost(
             panelId: configuration.panelId,
             runtime: configuration.runtime
         )
@@ -2683,7 +2683,7 @@ final class WindowBrowserSlotView: NSView {
     }
 
     private func dropZoneOverlayFrame(for zone: DropZone, in size: CGSize) -> CGRect {
-        let localFrame = BrowserPaneDropRouting.overlayFrame(
+        let localFrame = BrowserAreaDropRouting.overlayFrame(
             for: zone,
             in: size,
             topChromeHeight: paneTopChromeHeight
@@ -2728,10 +2728,10 @@ final class WindowBrowserPortal: NSObject {
         var visibleInUI: Bool
         var zPriority: Int
         var dropZone: DropZone?
-        var paneDropContext: BrowserPaneDropContext?
+        var paneDropContext: BrowserAreaDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
         var companion: BrowserPortalCompanionConfiguration?
-        var paneInteraction: BrowserPortalPaneInteractionConfiguration?
+        var paneInteraction: BrowserPortalAreaInteractionConfiguration?
         var workspaceFrameStyle: PortalWorkspaceFrameStyle?
         var paneTopChromeHeight: CGFloat
         var transientRecoveryReason: String?
@@ -3522,7 +3522,7 @@ final class WindowBrowserPortal: NSObject {
         entry.containerView?.setDropZoneOverlay(zone: zone)
     }
 
-    func updatePaneDropContext(forWebViewId webViewId: ObjectIdentifier, context: BrowserPaneDropContext?) {
+    func updatePaneDropContext(forWebViewId webViewId: ObjectIdentifier, context: BrowserAreaDropContext?) {
         guard var entry = entriesByWebViewId[webViewId] else { return }
         guard entry.paneDropContext != context else { return }
         entry.paneDropContext = context
@@ -3568,7 +3568,7 @@ final class WindowBrowserPortal: NSObject {
 
     func updatePaneInteraction(
         forWebViewId webViewId: ObjectIdentifier,
-        configuration: BrowserPortalPaneInteractionConfiguration?
+        configuration: BrowserPortalAreaInteractionConfiguration?
     ) {
         guard var entry = entriesByWebViewId[webViewId] else { return }
         entry.paneInteraction = configuration
@@ -4650,7 +4650,7 @@ enum BrowserWindowPortalRegistry {
         portal.updateDropZoneOverlay(forWebViewId: webViewId, zone: zone)
     }
 
-    static func updatePaneDropContext(for webView: WKWebView, context: BrowserPaneDropContext?) {
+    static func updatePaneDropContext(for webView: WKWebView, context: BrowserAreaDropContext?) {
         let webViewId = ObjectIdentifier(webView)
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }
@@ -4679,7 +4679,7 @@ enum BrowserWindowPortalRegistry {
 
     static func updatePaneInteraction(
         for webView: WKWebView,
-        configuration: BrowserPortalPaneInteractionConfiguration?
+        configuration: BrowserPortalAreaInteractionConfiguration?
     ) {
         let webViewId = ObjectIdentifier(webView)
         guard let windowId = webViewToWindowId[webViewId],

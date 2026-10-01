@@ -7,10 +7,10 @@ import SwiftUI
 ///
 /// Scrim covers only the panel's bounds. The card grabs first responder via an internal
 /// `@FocusState` anchor so Return/Escape/Tab/Cmd+D route through `onKeyPress`.
-struct PaneInteractionCardView: View {
+struct AreaInteractionCardView: View {
     let panelId: UUID
-    let interaction: PaneInteraction
-    @ObservedObject var runtime: PaneInteractionRuntime
+    let interaction: AreaInteraction
+    @ObservedObject var runtime: AreaInteractionRuntime
 
     var body: some View {
         ZStack {
@@ -44,7 +44,7 @@ struct PaneInteractionCardView: View {
 private struct ConfirmCard: View {
     let panelId: UUID
     let content: ConfirmContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    @ObservedObject var runtime: AreaInteractionRuntime
     @State private var pulse: Bool = false
 
     private var selected: ConfirmSelectionField {
@@ -173,7 +173,7 @@ private struct ConfirmCard: View {
                 )
         )
         .environment(\.colorScheme, .dark)
-        .accessibilityIdentifier("PaneInteraction.confirm.card")
+        .accessibilityIdentifier("AreaInteraction.confirm.card")
         .onAppear {
             if isCritical { pulse = true }
         }
@@ -236,7 +236,7 @@ private struct ConfirmCard: View {
 private struct TextInputCard: View {
     let panelId: UUID
     let content: TextInputContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    @ObservedObject var runtime: AreaInteractionRuntime
 
     @State private var value: String = ""
     @State private var errorText: String?
@@ -275,7 +275,7 @@ private struct TextInputCard: View {
                 Text(errorText)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.red)
-                    .accessibilityIdentifier("PaneInteraction.textInput.error")
+                    .accessibilityIdentifier("AreaInteraction.textInput.error")
             }
 
             HStack(spacing: 8) {
@@ -326,7 +326,7 @@ private struct TextInputCard: View {
                 )
         )
         .environment(\.colorScheme, .dark)
-        .accessibilityIdentifier("PaneInteraction.textInput.card")
+        .accessibilityIdentifier("AreaInteraction.textInput.card")
         .onAppear {
             value = content.defaultValue
             // Seed the bridge so Cmd+D immediately after present() submits the

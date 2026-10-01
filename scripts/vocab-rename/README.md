@@ -64,6 +64,14 @@ Gates, after each pass (all must report zero):
 
     python3 scripts/vocab-rename/rename.py check-evidence scripts/vocab-rename/evidence-2a.tsv <base> WORKTREE scripts/vocab-rename/pass-2a.tsv
     python3 scripts/vocab-rename/rename.py check-domains
+    python3 scripts/vocab-rename/rename.py check-literals
+
+`check-literals` finds string literals (Sources, CLI, c11Tests, c11UITests) that still contain, as a whole identifier,
+the old spelling of anything a pass table or evidence log renamed (camel/Pascal-case names of 6+ characters). A name
+that is looked up at runtime must follow the rename (reflection such as `String(describing: type(of:))`,
+`NSClassFromString`, accessibility ids read by UI tests, debug-menu titles naming a type). Deliberate wire, persisted
+and settings keys, localization and command ids, log text and message text stay, and are recorded in
+`literals-reviewed.tsv` (file, name, class, reason); an unlisted hit fails the run.
 
 `check-evidence` diffs the pass against its base and requires every changed identifier token to be in the log
 with a class, then re-derives each class from the tree (a type declaration, a member declaration on a tab
@@ -77,3 +85,16 @@ Table directives: `@taint ... <region regex> <exclude regex> <opts>` (opts `prop
 `@fixall`; flags `memberonly`, `nomember`, `noprop`, `nolabel`. Colliding locals take the row's fallback name
 consistently within a member. `sync-docs.py` brings the paths and type names in CLAUDE.md and the developer docs
 along.
+
+## Pass 3 (PR C): Pane -> Area
+
+`gen-evidence.py 3` renames c11-owned panes only: the types c11 declares (`PaneMetadataStore`, `PaneInteraction*`,
+`PaneSizePolicy`, `BrowserPane*`, `V2Pane*`, `SessionPaneLayoutSnapshot`, `AreaSpec`, ... and their files), members
+declared on them, and locals or parameters annotated with one of those types. Bonsplit's panes stay panes:
+`PaneID`, `inPane:`, `focusedPaneId` and every identifier the vendored Bonsplit declares or uses are never renamed
+as types or members, and a local that holds a `PaneID` keeps its `pane*` name. A name that already exists is left
+alone (the pass lists it as a CLASH), so a geometry `area` can never be merged with a c11 area.
+
+`check-domains` adds two probes for it: D (an area-named binding that holds a Bonsplit `PaneID`) and E (one name bound
+to a geometry measure and to a c11 area in the same member). Persisted keys are untouched: layout leaves are still
+persisted as `"pane"`, `paneMetadata` keeps its key, and renamed Codable properties get automatic `CodingKeys` pins.

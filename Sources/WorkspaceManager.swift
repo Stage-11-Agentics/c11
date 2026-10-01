@@ -2706,11 +2706,11 @@ class WorkspaceManager: ObservableObject {
     }
 
     func canCloseOtherTabsInFocusedPane() -> Bool {
-        closeOtherTabsInFocusedPanePlan() != nil
+        closeOtherTabsInFocusedAreaPlan() != nil
     }
 
     func closeOtherTabsInFocusedPaneWithConfirmation() {
-        guard let plan = closeOtherTabsInFocusedPanePlan() else { return }
+        guard let plan = closeOtherTabsInFocusedAreaPlan() else { return }
 
         let count = plan.panelIds.count
         let titleLines = plan.titles.map { "• \($0)" }.joined(separator: "\n")
@@ -2838,7 +2838,7 @@ class WorkspaceManager: ObservableObject {
         return alert.runModal() == .alertSecondButtonReturn
     }
 
-    private struct CloseOtherTabsInFocusedPanePlan {
+    private struct CloseOtherTabsInFocusedAreaPlan {
         let workspace: Workspace
         let panelIds: [UUID]
         let titles: [String]
@@ -2850,7 +2850,7 @@ class WorkspaceManager: ObservableObject {
         let message: String
     }
 
-    private func closeOtherTabsInFocusedPanePlan() -> CloseOtherTabsInFocusedPanePlan? {
+    private func closeOtherTabsInFocusedAreaPlan() -> CloseOtherTabsInFocusedAreaPlan? {
         guard let workspace = selectedWorkspace else { return nil }
         guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
             return nil
@@ -2874,7 +2874,7 @@ class WorkspaceManager: ObservableObject {
         }
 
         guard !targetPanelIds.isEmpty else { return nil }
-        return CloseOtherTabsInFocusedPanePlan(
+        return CloseOtherTabsInFocusedAreaPlan(
             workspace: workspace,
             panelIds: targetPanelIds,
             titles: targetTitles
@@ -3086,7 +3086,7 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
-        guard PaneInteractionFeatureFlag.isEnabled else {
+        guard AreaInteractionFeatureFlag.isEnabled else {
             // Legacy NSAlert path — kept as a rollback/fallback.
             guard confirmClose(
                 title: String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
@@ -5572,7 +5572,7 @@ extension WorkspaceManager {
         // mutations (`pane.set_metadata`, --title seed on new-split) bump the
         // pane revision; including it here ensures those writes hit disk on
         // the same 8s cadence as surface metadata.
-        hasher.combine(PaneMetadataStore.shared.currentRevision())
+        hasher.combine(AreaMetadataStore.shared.currentRevision())
 
         for workspace in workspaces.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
             hasher.combine(workspace.id)

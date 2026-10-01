@@ -713,7 +713,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.surfaceTitleBar",
-                            defaultValue: "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+                            defaultValue: "Debug: Theme M1b / Toggle TabTitleBarView"
                         ),
                         checked: m1bSurfaceTitleBarMigrated
                     )
@@ -725,7 +725,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.browserChrome",
-                            defaultValue: "Debug: Theme M1b / Toggle BrowserPanelView"
+                            defaultValue: "Debug: Theme M1b / Toggle BrowserTabView"
                         ),
                         checked: m1bBrowserChromeMigrated
                     )
@@ -737,7 +737,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.markdownChrome",
-                            defaultValue: "Debug: Theme M1b / Toggle MarkdownPanelView"
+                            defaultValue: "Debug: Theme M1b / Toggle MarkdownTabView"
                         ),
                         checked: m1bMarkdownChromeMigrated
                     )
@@ -762,7 +762,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.sidebarTabItem",
-                            defaultValue: "Debug: Theme M1b / Toggle ContentView.TabItemView"
+                            defaultValue: "Debug: Theme M1b / Toggle ContentView.WorkspaceRowView"
                         ),
                         checked: m1bSidebarTabItemMigrated
                     )
@@ -4457,8 +4457,8 @@ struct SettingsView: View {
     @AppStorage(NotificationSoundSettings.customFilePathKey)
     private var notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
     @AppStorage(NotificationSoundSettings.customCommandKey) private var notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-    @AppStorage(NotificationPaneRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
-    @AppStorage(NotificationPaneFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
+    @AppStorage(NotificationAreaRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
+    @AppStorage(NotificationAreaFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationAreaFlashSettings.defaultEnabled
     @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
@@ -6589,8 +6589,8 @@ struct SettingsView: View {
         showNotificationCustomSoundErrorAlert = false
         notificationCustomSoundErrorAlertMessage = ""
         notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-        notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
-        notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
+        notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
+        notificationPaneFlashEnabled = NotificationAreaFlashSettings.defaultEnabled
         warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
         commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
         commandPaletteSearchAllSurfaces = CommandPaletteSwitcherSearchSettings.defaultSearchAllSurfaces

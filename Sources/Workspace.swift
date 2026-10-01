@@ -109,9 +109,9 @@ enum SidebarMetadataFormat: String {
     case markdown
 }
 
-private struct SessionPaneRestoreEntry {
+private struct SessionAreaRestoreEntry {
     let paneId: PaneID
-    let snapshot: SessionPaneLayoutSnapshot
+    let snapshot: SessionAreaLayoutSnapshot
 }
 
 struct WorkspaceRemoteDaemonManifest: Decodable, Equatable {
@@ -291,7 +291,7 @@ extension Workspace {
 
         // CMUX-11 Phase 3: rehydrate PaneMetadataStore entries from each
         // restored leaf and prune any pane metadata not in the live set.
-        restorePaneMetadataFromSnapshot(leafEntries: leafEntries)
+        restoreAreaMetadataFromSnapshot(leafEntries: leafEntries)
         prunePaneMetadata(validPaneIds: Set(bonsplitController.allPaneIds.map { $0.id }))
 
         pruneSurfaceMetadata(validSurfaceIds: Set(panels.keys))
@@ -708,7 +708,7 @@ extension Workspace {
                 bonsplitController.railOpenPaneIds.contains(PaneID(id: uuid)) ? true : nil
             }
             return .pane(
-                SessionPaneLayoutSnapshot(
+                SessionAreaLayoutSnapshot(
                     panelIds: panelIds,
                     selectedPanelId: selectedPanelId,
                     id: paneUUID,
@@ -737,7 +737,7 @@ extension Workspace {
         forPaneUUID paneUUID: UUID?
     ) -> ([String: PersistedJSONValue]?, [String: PersistedMetadataSource]?) {
         guard let paneUUID else { return (nil, nil) }
-        let snapshot = PaneMetadataStore.shared.getMetadata(workspaceId: id, paneId: paneUUID)
+        let snapshot = AreaMetadataStore.shared.getMetadata(workspaceId: id, paneId: paneUUID)
         if snapshot.metadata.isEmpty && snapshot.sources.isEmpty {
             return (nil, nil)
         }
@@ -976,12 +976,12 @@ extension Workspace {
         return resolved
     }
 
-    private func restoreSessionLayout(_ layout: SessionWorkspaceLayoutSnapshot) -> [SessionPaneRestoreEntry] {
+    private func restoreSessionLayout(_ layout: SessionWorkspaceLayoutSnapshot) -> [SessionAreaRestoreEntry] {
         guard let rootPaneId = bonsplitController.allPaneIds.first else {
             return []
         }
 
-        var leaves: [SessionPaneRestoreEntry] = []
+        var leaves: [SessionAreaRestoreEntry] = []
         restoreSessionLayoutNode(layout, inPane: rootPaneId, leaves: &leaves)
         return leaves
     }
@@ -989,11 +989,11 @@ extension Workspace {
     private func restoreSessionLayoutNode(
         _ node: SessionWorkspaceLayoutSnapshot,
         inPane paneId: PaneID,
-        leaves: inout [SessionPaneRestoreEntry]
+        leaves: inout [SessionAreaRestoreEntry]
     ) {
         switch node {
         case .pane(let pane):
-            leaves.append(SessionPaneRestoreEntry(paneId: paneId, snapshot: pane))
+            leaves.append(SessionAreaRestoreEntry(paneId: paneId, snapshot: pane))
         case .split(let split):
             var anchorPanelId = bonsplitController
                 .tabs(inPane: paneId)
@@ -1013,9 +1013,9 @@ extension Workspace {
                   ),
                   let secondPaneId = self.paneId(forPanelId: newSplitPanel.id) else {
                 leaves.append(
-                    SessionPaneRestoreEntry(
+                    SessionAreaRestoreEntry(
                         paneId: paneId,
-                        snapshot: SessionPaneLayoutSnapshot(panelIds: [], selectedPanelId: nil)
+                        snapshot: SessionAreaLayoutSnapshot(panelIds: [], selectedPanelId: nil)
                     )
                 )
                 return
@@ -1028,7 +1028,7 @@ extension Workspace {
 
     private func restorePane(
         _ paneId: PaneID,
-        snapshot: SessionPaneLayoutSnapshot,
+        snapshot: SessionAreaLayoutSnapshot,
         panelSnapshotsById tabSnapshotsById: [UUID: SessionTabSnapshot]
     ) {
         let existingPanelIds = bonsplitController
@@ -5443,7 +5443,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// Workspace-scoped presenter for pane-anchored interactions (close-confirm,
     /// rename, custom-color, socket-triggered agent consent). Per-panel FIFO
     /// queue + soft cap lives inside the runtime. Views observe `.active`.
-    let paneInteractionRuntime = PaneInteractionRuntime()
+    let paneInteractionRuntime = AreaInteractionRuntime()
 
     /// Pane-scoped (rather than panel-scoped) presenter. Shares the same runtime
     /// implementation, but its overlays mount over the entire pane — tab strip
@@ -5451,14 +5451,14 @@ final class Workspace: Identifiable, ObservableObject {
     /// about to remove. Keyed by `PaneID.id` (the runtime's `panelId` argument
     /// is just an opaque UUID; using a separate instance keeps panel teardown
     /// from clearing pane-scoped state and vice versa).
-    let paneCloseInteractionRuntime = PaneInteractionRuntime()
+    let areaCloseInteractionRuntime = AreaInteractionRuntime()
 
     /// Mounts pane-scoped overlays as AppKit subviews of the workspace window's
     /// themeFrame so they render above the `WindowTerminalPortal` host (and
     /// thus above terminal/browser portal content). Driven by anchor frames
     /// pushed in from `PaneInteractionOverlayHostView` per pane.
-    lazy var paneCloseOverlayController = PaneCloseOverlayController(
-        runtime: paneCloseInteractionRuntime
+    lazy var areaCloseOverlayController = AreaCloseOverlayController(
+        runtime: areaCloseInteractionRuntime
     )
 
     /// Workspace-scoped close-confirmation runtime. Distinct keyspace from
@@ -6439,7 +6439,7 @@ final class Workspace: Identifiable, ObservableObject {
     private var postCloseSelectBonsplitTabId: [TabID: TabID] = [:]
     /// Panel IDs that were in a pane when a pane-close operation was approved.
     /// Bonsplit pane-close does not emit per-tab didClose callbacks.
-    private var pendingPaneCloseTabIds: [UUID: [UUID]] = [:]
+    private var pendingAreaCloseTabIds: [UUID: [UUID]] = [:]
     private var pendingClosedBrowserRestoreSnapshots: [TabID: ClosedBrowserTabRestoreSnapshot] = [:]
     private var isApplyingTabSelection = false
     private struct PendingTabSelectionRequest {
@@ -8004,8 +8004,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// new pane UUID, preserving the original `(source, ts)` records so the
     /// precedence chain survives the restart. Silent — same contract as the
     /// surface restore path.
-    private func restorePaneMetadataFromSnapshot(
-        leafEntries: [SessionPaneRestoreEntry]
+    private func restoreAreaMetadataFromSnapshot(
+        leafEntries: [SessionAreaRestoreEntry]
     ) {
         for entry in leafEntries {
             guard let persistedValues = entry.snapshot.metadata,
@@ -8025,7 +8025,7 @@ final class Workspace: Identifiable, ObservableObject {
             let alignedSources = persistedSources.filter { cappedValues.keys.contains($0.key) }
             let values = PersistedMetadataBridge.decodeValues(cappedValues)
             let sources = PersistedMetadataBridge.decodeSources(alignedSources)
-            PaneMetadataStore.shared.restoreFromSnapshot(
+            AreaMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 paneId: entry.paneId.id,
                 values: values,
@@ -8041,7 +8041,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// DEBUG `debugForceMetadataSaveAndLoad` rail bypasses this path; it
     /// drains stale state by clearing per-pane before replay instead.
     func prunePaneMetadata(validPaneIds: Set<UUID>) {
-        PaneMetadataStore.shared.pruneWorkspace(
+        AreaMetadataStore.shared.pruneWorkspace(
             workspaceId: id,
             validPaneIds: validPaneIds
         )
@@ -8682,7 +8682,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// The result of evaluating a split request against the active size policy.
     struct SplitSizeEvaluation {
-        let decision: PaneSizePolicy.Decision
+        let decision: AreaSizePolicy.Decision
         /// The pane that would be split — the fallback target when the decision is `addTab`.
         let targetPaneId: PaneID
         let sourceKind: String?
@@ -8732,10 +8732,10 @@ final class Workspace: Identifiable, ObservableObject {
     /// factor to keep the two in the same unit before deriving columns × rows.
     private func sourceCellSize(panelId: UUID) -> CGSize {
         guard let host = terminalPanel(for: panelId)?.hostedView else {
-            return PaneSizePolicy.fallbackCellSize
+            return AreaSizePolicy.fallbackCellSize
         }
         let cs = host.cellSize
-        guard cs.width > 0, cs.height > 0 else { return PaneSizePolicy.fallbackCellSize }
+        guard cs.width > 0, cs.height > 0 else { return AreaSizePolicy.fallbackCellSize }
         let scale = host.window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor
             ?? 2.0
@@ -8764,10 +8764,10 @@ final class Workspace: Identifiable, ObservableObject {
         let cell = sourceCellSize(panelId: sourcePanelId)
 
         // Existing child keeps the source kind (with optional metadata override).
-        let baseMin = PaneSizePolicy.minCells(forKind: kind)
+        let baseMin = AreaSizePolicy.minCells(forKind: kind)
         let (ovCols, ovRows) = surfaceMinCellsOverride(panelId: sourcePanelId)
-        let minCells = PaneCellSize(cols: ovCols ?? baseMin.cols, rows: ovRows ?? baseMin.rows)
-        let minExistingPts = PaneSizePolicy.points(minCells, cellSize: cell)
+        let minCells = AreaCellSize(cols: ovCols ?? baseMin.cols, rows: ovRows ?? baseMin.rows)
+        let minExistingPts = AreaSizePolicy.points(minCells, cellSize: cell)
 
         // New child: a terminal split inherits the source kind (the orchestrator
         // fan-out case — every spawned agent pane must stay usable); a browser /
@@ -8777,8 +8777,8 @@ final class Workspace: Identifiable, ObservableObject {
             minNewPts = minExistingPts
         } else {
             minNewPts = CGSize(
-                width: max(minExistingPts.width, PaneSizePolicy.nonTerminalMinPoints.width),
-                height: max(minExistingPts.height, PaneSizePolicy.nonTerminalMinPoints.height)
+                width: max(minExistingPts.width, AreaSizePolicy.nonTerminalMinPoints.width),
+                height: max(minExistingPts.height, AreaSizePolicy.nonTerminalMinPoints.height)
             )
         }
         let minPts = CGSize(
@@ -8786,18 +8786,18 @@ final class Workspace: Identifiable, ObservableObject {
             height: max(minExistingPts.height, minNewPts.height)
         )
 
-        let decision = PaneSizePolicy.decide(
+        let decision = AreaSizePolicy.decide(
             paneFrame: frame,
             requested: requested,
             minPoints: minPts,
-            mode: PaneSizeSettings.effectiveMode(),
+            mode: AreaSizeSettings.effectiveMode(),
             force: force
         )
         return SplitSizeEvaluation(
             decision: decision,
             targetPaneId: paneId,
             sourceKind: kind,
-            kindLabel: PaneSizePolicy.kindLabel(forKind: kind)
+            kindLabel: AreaSizePolicy.kindLabel(forKind: kind)
         )
     }
 
@@ -9343,8 +9343,8 @@ final class Workspace: Identifiable, ObservableObject {
         // leaks CheckedContinuations and blocks socket worker threads forever
         // (synthesis-standard §1.1, synthesis-critical §1.3).
         paneInteractionRuntime.clearAll()
-        paneCloseInteractionRuntime.clearAll()
-        paneCloseOverlayController.cleanup()
+        areaCloseInteractionRuntime.clearAll()
+        areaCloseOverlayController.cleanup()
         workspaceCloseInteractionRuntime.clear()
         workspaceCloseOverlayController.cleanup()
 
@@ -9440,7 +9440,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let sourcePane = paneId(forPanelId: panelId) else { return nil }
         let sourcePaneId = sourcePane.id.uuidString
         let tree = bonsplitController.treeSnapshot()
-        guard let path = browserPathToPane(targetPaneId: sourcePaneId, node: tree) else { return nil }
+        guard let path = browserPathToArea(targetPaneId: sourcePaneId, node: tree) else { return nil }
 
         let layout = bonsplitController.layoutSnapshot()
         let paneFrameById = Dictionary(uniqueKeysWithValues: layout.panes.map { ($0.paneId, $0.frame) })
@@ -9523,27 +9523,27 @@ final class Workspace: Identifiable, ObservableObject {
         return paneIds.sorted { $0.id.uuidString < $1.id.uuidString }.first
     }
 
-    private enum BrowserPaneBranch {
+    private enum BrowserAreaBranch {
         case first
         case second
     }
 
-    private struct BrowserPaneBreadcrumb {
+    private struct BrowserAreaBreadcrumb {
         let split: ExternalSplitNode
-        let branch: BrowserPaneBranch
+        let branch: BrowserAreaBranch
     }
 
-    private func browserPathToPane(targetPaneId: String, node: ExternalTreeNode) -> [BrowserPaneBreadcrumb]? {
+    private func browserPathToArea(targetPaneId: String, node: ExternalTreeNode) -> [BrowserAreaBreadcrumb]? {
         switch node {
         case .pane(let paneNode):
             return paneNode.id == targetPaneId ? [] : nil
         case .split(let splitNode):
-            if var path = browserPathToPane(targetPaneId: targetPaneId, node: splitNode.first) {
-                path.append(BrowserPaneBreadcrumb(split: splitNode, branch: .first))
+            if var path = browserPathToArea(targetPaneId: targetPaneId, node: splitNode.first) {
+                path.append(BrowserAreaBreadcrumb(split: splitNode, branch: .first))
                 return path
             }
-            if var path = browserPathToPane(targetPaneId: targetPaneId, node: splitNode.second) {
-                path.append(BrowserPaneBreadcrumb(split: splitNode, branch: .second))
+            if var path = browserPathToArea(targetPaneId: targetPaneId, node: splitNode.second) {
+                path.append(BrowserAreaBreadcrumb(split: splitNode, branch: .second))
                 return path
             }
             return nil
@@ -10370,7 +10370,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// strip pulse stays on the bonsplit-internal accent and is intentionally
     /// not retinted here.
     func triggerFocusFlash(panelId: UUID, appearance: FlashAppearance, persistent: Bool = false) {
-        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        guard NotificationAreaFlashSettings.isEnabled() else { return }
 
         // CMUX-10: persistent on the focused surface in the focused window
         // degrades to a one-shot. Persistence is "look at this when you
@@ -11290,7 +11290,7 @@ final class Workspace: Identifiable, ObservableObject {
               let panel = panels[panelId] else { return }
         let currentTitle = tabCustomTitles[panelId] ?? tabTitles[panelId] ?? panel.displayTitle
 
-        if PaneInteractionFeatureFlag.isEnabled {
+        if AreaInteractionFeatureFlag.isEnabled {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let value = await self.presentTextInput(
@@ -11523,7 +11523,7 @@ extension Workspace: BonsplitDelegate {
         // rather than a window-centered NSAlert (plan §3.4, §4.3). Falls back to
         // the legacy NSAlert when the feature is disabled or no panel is
         // resolvable (defensive; the tab was already deselected).
-        if PaneInteractionFeatureFlag.isEnabled,
+        if AreaInteractionFeatureFlag.isEnabled,
            let panelId = tabIdFromBonsplitTabId(bonsplitTabId) {
             return await presentConfirmClose(
                 panelId: panelId,
@@ -12394,13 +12394,13 @@ extension Workspace: BonsplitDelegate {
         // The pane is gone — drop any pending pane-scoped overlay (e.g. a stale
         // pane-close confirmation that survived the close path) so its
         // continuation resolves with .dismissed instead of leaking.
-        paneCloseInteractionRuntime.clear(panelId: paneId.id)
+        areaCloseInteractionRuntime.clear(panelId: paneId.id)
         // Authoritative anchor cleanup for the close-pane overlay. AnchorView
         // dismantleNSView deliberately does NOT remove the anchor (SwiftUI
         // dismantles transient AnchorViews during sibling re-layout, and
         // removing on every dismantle orphans surviving panes). This is the
         // one place where we know the pane is actually gone.
-        paneCloseOverlayController.removeAnchor(paneIdentity: paneId.id)
+        areaCloseOverlayController.removeAnchor(paneIdentity: paneId.id)
         // After Bonsplit removes a pane, surviving siblings get reflowed into
         // their new positions but the existing reportFrame paths (SwiftUI
         // updateNSView, AppKit viewDidMoveToWindow) all fire DURING the
@@ -12408,9 +12408,9 @@ extension Workspace: BonsplitDelegate {
         // this nudge the controller's anchors map stays stale and the
         // confirmation overlay mounts at the wrong pane position. Triggers
         // twice (next tick + ~60ms) to cover multi-pass layouts.
-        paneCloseOverlayController.refreshAllAnchorsAfterReflow()
+        areaCloseOverlayController.refreshAllAnchorsAfterReflow()
 
-        let closedPanelIds = pendingPaneCloseTabIds.removeValue(forKey: paneId.id) ?? []
+        let closedPanelIds = pendingAreaCloseTabIds.removeValue(forKey: paneId.id) ?? []
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
 
         if !closedPanelIds.isEmpty {
@@ -12480,11 +12480,11 @@ extension Workspace: BonsplitDelegate {
             if let panelId = tabIdFromBonsplitTabId(bonsplitTab.id),
                let terminalPanel = terminalPanel(for: panelId),
                tabNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()) {
-                pendingPaneCloseTabIds.removeValue(forKey: pane.id)
+                pendingAreaCloseTabIds.removeValue(forKey: pane.id)
                 return false
             }
         }
-        pendingPaneCloseTabIds[pane.id] = bonsplitTabs.compactMap { tabIdFromBonsplitTabId($0.id) }
+        pendingAreaCloseTabIds[pane.id] = bonsplitTabs.compactMap { tabIdFromBonsplitTabId($0.id) }
         return true
     }
 
@@ -13220,7 +13220,7 @@ extension Workspace: BonsplitDelegate {
             defaultValue: "Cancel"
         )
 
-        let runtime = paneCloseInteractionRuntime
+        let runtime = areaCloseInteractionRuntime
         let paneKey = pane.id
         Task { @MainActor [weak self] in
             let confirmed = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in

@@ -12,9 +12,9 @@ import XCTest
 /// OSC/heuristic-specific tests are omitted; those sources don't apply to
 /// panes in v1, but the precedence chain is still exercised end-to-end.
 final class PaneMetadataStoreTests: XCTestCase {
-    private func makeStoreAndPane() -> (PaneMetadataStore, UUID, UUID) {
+    private func makeStoreAndPane() -> (AreaMetadataStore, UUID, UUID) {
         // Shared singleton with fresh UUIDs so parallel tests don't collide.
-        return (PaneMetadataStore.shared, UUID(), UUID())
+        return (AreaMetadataStore.shared, UUID(), UUID())
     }
 
     // MARK: - set / get
@@ -180,7 +180,7 @@ final class PaneMetadataStoreTests: XCTestCase {
 
     func testOverCapWriteIsRejected() throws {
         let (store, wsId, paneId) = makeStoreAndPane()
-        let big = String(repeating: "x", count: PaneMetadataStore.payloadCapBytes + 128)
+        let big = String(repeating: "x", count: AreaMetadataStore.payloadCapBytes + 128)
         XCTAssertThrowsError(
             try store.setMetadata(
                 workspaceId: wsId,
@@ -288,7 +288,7 @@ final class PaneMetadataStoreTests: XCTestCase {
             paneId: paneId,
             values: ["title": "Restored"],
             sources: [
-                "title": PaneMetadataStore.SourceRecord(source: .explicit, ts: 1.0)
+                "title": AreaMetadataStore.SourceRecord(source: .explicit, ts: 1.0)
             ]
         )
         XCTAssertEqual(store.currentRevision(), before &+ 1)
@@ -310,7 +310,7 @@ final class PaneMetadataStoreTests: XCTestCase {
             paneId: paneId,
             values: ["title": "From Snapshot"],
             sources: [
-                "title": PaneMetadataStore.SourceRecord(source: .explicit, ts: 123.0)
+                "title": AreaMetadataStore.SourceRecord(source: .explicit, ts: 123.0)
             ]
         )
         let snap = store.getMetadata(workspaceId: wsId, paneId: paneId)
@@ -325,7 +325,7 @@ final class PaneMetadataStoreTests: XCTestCase {
             paneId: paneId,
             values: ["title": "Explicit Title"],
             sources: [
-                "title": PaneMetadataStore.SourceRecord(source: .explicit, ts: 100.0)
+                "title": AreaMetadataStore.SourceRecord(source: .explicit, ts: 100.0)
             ]
         )
         let result = try store.setMetadata(
@@ -351,7 +351,7 @@ final class PaneMetadataStoreTests: XCTestCase {
             mode: .merge,
             source: .explicit
         )
-        store.removePane(workspaceId: wsId, paneId: paneId)
+        store.removeArea(workspaceId: wsId, paneId: paneId)
         // removePane is async; drain the store's queue by issuing a sync read.
         _ = store.currentRevision()
         let snap = store.getMetadata(workspaceId: wsId, paneId: paneId)
@@ -359,7 +359,7 @@ final class PaneMetadataStoreTests: XCTestCase {
     }
 
     func testPruneWorkspaceKeepsValidPanes() throws {
-        let store = PaneMetadataStore.shared
+        let store = AreaMetadataStore.shared
         let wsId = UUID()
         let keep = UUID()
         let drop = UUID()
@@ -473,7 +473,7 @@ final class PaneMetadataStoreTests: XCTestCase {
     // MARK: - concurrency
 
     func testConcurrentMutationsYieldMonotonicCounter() {
-        let store = PaneMetadataStore.shared
+        let store = AreaMetadataStore.shared
         let before = store.currentRevision()
 
         let totalWrites = 200

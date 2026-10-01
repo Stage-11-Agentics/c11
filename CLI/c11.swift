@@ -14622,7 +14622,7 @@ struct CMUXCLI {
         let header = "workspace \(workspaceHandle)\(title.isEmpty ? "" : " \"\(title)\"")  content: \(Int(contentWidth.rounded()))×\(Int(contentHeight.rounded())) px"
 
         // Build per-pane box rectangles in canvas coordinates.
-        struct PaneBox {
+        struct AreaBox {
             let pane: [String: Any]
             // Inclusive col0..col1, row0..row1 ranges in the canvas grid.
             // Border characters live ON these rows/cols (the box body sits inside).
@@ -14632,7 +14632,7 @@ struct CMUXCLI {
             var row1: Int
         }
 
-        var boxes: [PaneBox] = []
+        var boxes: [AreaBox] = []
         for pane in panes {
             guard let layout = pane["layout"] as? [String: Any],
                   let percent = layout["percent"] as? [String: Any],
@@ -14653,7 +14653,7 @@ struct CMUXCLI {
             let col1 = Int((Double(canvasWidth - 1) * h1).rounded())
             let row0 = Int((Double(canvasHeight - 1) * v0).rounded())
             let row1 = Int((Double(canvasHeight - 1) * v1).rounded())
-            boxes.append(PaneBox(pane: pane, col0: col0, col1: max(col0 + 1, col1), row0: row0, row1: max(row0 + 1, row1)))
+            boxes.append(AreaBox(pane: pane, col0: col0, col1: max(col0 + 1, col1), row0: row0, row1: max(row0 + 1, row1)))
         }
 
         guard !boxes.isEmpty else { return header }

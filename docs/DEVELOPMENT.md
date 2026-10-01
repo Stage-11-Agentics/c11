@@ -55,7 +55,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | Terminal | `TerminalView.swift`, `GhosttyTerminalView.swift`, `GhosttyConfig.swift`, `TerminalController.swift`, `TerminalWindowPortal.swift` |
 | Browser | `BrowserWindowPortal.swift`, `Tabs/BrowserTab.swift`, `Tabs/BrowserTabView.swift`, `Tabs/CmuxWebView.swift` |
 | Markdown | `Tabs/MarkdownTab.swift`, `Tabs/MarkdownTabView.swift`, `Tabs/FencedCodeRenderer.swift`, `Tabs/MermaidRenderer.swift` |
-| Tab base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/PaneInteraction.swift` |
+| Tab base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/AreaInteraction.swift` |
 
 ### Areas, tabs, workspaces
 
@@ -72,7 +72,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a tab |
 | `AgentChip.swift`, `AgentChipBadge.swift` | Sidebar chip UI |
 | `AgentSkillsView.swift`, `SkillInstaller.swift` | Skills onboarding sheet |
-| `PaneMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The tab manifest — the open JSON blob agents read/write over the socket |
+| `AreaMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The tab manifest — the open JSON blob agents read/write over the socket |
 
 ### Theming
 

@@ -8,7 +8,7 @@ This doc is the checklist. Grok Build is the worked example; replace `grok` / `G
 
 c11 is collapsing the per-agent switches into a single manifest. `Sources/AgentManifest.swift` holds one `AgentManifest` per agent in `AgentRegistry.shared`, and subsystems read the registry instead of their own switch. Current state:
 
-**Already registry-driven — a manifest entry is all these need:** process detection (`AgentDetector`), sidebar chip icon + SF symbol (`AgentChip`), restart/resume command (`AgentRestartRegistry.phase1`), canonical terminal-type set (`MetadataKey`), coding-agent area sizing (`PaneSizePolicy`), and the factory command + initial prompt (`AgentType.factoryCommand` / `factoryInitialPrompt`).
+**Already registry-driven — a manifest entry is all these need:** process detection (`AgentDetector`), sidebar chip icon + SF symbol (`AgentChip`), restart/resume command (`AgentRestartRegistry.phase1`), canonical terminal-type set (`MetadataKey`), coding-agent area sizing (`AreaSizePolicy`), and the factory command + initial prompt (`AgentType.factoryCommand` / `factoryInitialPrompt`).
 
 **The minimal add today is two files:**
 1. **`Sources/AgentManifest.swift`** — add an `AgentManifest` to `AgentRegistry.shared` (kind, displayName, factory command, detect comms / node-args, icon + SF symbol, `ResumeSpec`, canonical + strategy flags). `AgentManifestTests` fails unless the registry covers exactly `AgentType.allCases`.

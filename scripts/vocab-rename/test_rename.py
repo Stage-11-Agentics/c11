@@ -559,5 +559,167 @@ class RoundTwoShapes(unittest.TestCase):
             rename.GHOSTTY_RETURNING.discard("applySingleTerminal")
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Pass 3 (Pane -> Area): c11-owned panes only; Bonsplit panes and every vendor name stay
+# ---------------------------------------------------------------------------------------------------------------
+FIXTURE3 = {
+    "vendor/bonsplit/Sources/V.swift": (
+        "public struct PaneID { public let id: UUID }\n"
+        "public final class BonsplitController {\n"
+        "    public var focusedPaneId: PaneID? = nil\n"
+        "    public func closePane(_ pane: PaneID) {}\n"
+        "    public func tabs(inPane pane: PaneID) -> [Int] { [] }\n"
+        "}\n"),
+    "Sources/Thing.swift": (
+        "import Foundation\n"
+        "final class PaneThing {\n"
+        "    var paneLabel: String = \"\"\n"
+        "    var closePane: Int = 0\n"
+        "}\n"),
+    "Sources/Workspace.swift": (
+        "import Foundation\n"
+        "final class Workspace {\n"
+        "    var paneThings: [UUID: PaneThing] = [:]\n"
+        "    var paneCursor: Int = 0\n"
+        "    func place(paneHolder: PaneThing) {\n"
+        "        let paneNote = paneHolder.paneLabel\n"
+        "        use(paneNote)\n"
+        "    }\n"
+        "    func leaf(paneId: PaneID) {\n"
+        "        let targetPane = paneId\n"
+        "        use(targetPane)\n"
+        "    }\n"
+        "    func focus() {\n"
+        "        let focusedPane = bonsplitController.focusedPaneId\n"
+        "        use(focusedPane)\n"
+        "        bonsplitController.closePane(focusedPane!)\n"
+        "    }\n"
+        "    func geometry(w: CGFloat, h: CGFloat) {\n"
+        "        let area: CGFloat = w * h\n"
+        "        use(area)\n"
+        "    }\n"
+        "    func unrelated() {\n"
+        "        let paneId = makeId()\n"
+        "        use(paneId)\n"
+        "    }\n"
+        "}\n"),
+}
+
+
+class PaneEvidence(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = make_repo(FIXTURE3)
+        cls.table, cls.log = run_evidence_pass(cls.root, "3")
+        cls.thing = read(cls.root, "Sources/Thing.swift")
+        cls.ws = read(cls.root, "Sources/Workspace.swift")
+
+    def test_c11_pane_type_and_members_are_renamed(self):
+        self.assertIn("final class AreaThing", self.thing)
+        self.assertIn("var areaLabel: String", self.thing)
+        self.assertIn("var areaThings: [UUID: AreaThing]", self.ws)
+        self.assertIn("areaHolder", self.ws)
+        self.assertIn("let areaNote = areaHolder.areaLabel", self.ws.replace("paneHolder", "areaHolder"))
+
+    def test_bonsplit_panes_and_vendor_names_stay(self):
+        self.assertIn("func leaf(paneId: PaneID)", self.ws)
+        self.assertIn("let targetPane = paneId", self.ws)
+        self.assertIn("let focusedPane = bonsplitController.focusedPaneId", self.ws)
+        self.assertIn("bonsplitController.closePane(focusedPane!)", self.ws)
+        self.assertIn("var closePane: Int", self.thing)  # a c11 member that shares a vendor name
+
+    def test_geometry_area_and_unevidenced_names_stay(self):
+        self.assertIn("let area: CGFloat = w * h", self.ws)
+        self.assertIn("let paneId = makeId()", self.ws)
+        self.assertIn("var paneCursor: Int", self.ws)
+
+    def test_gate_proves_the_pass(self):
+        cmd = [sys.executable, os.path.join(HERE, "rename.py"), "check-evidence", self.log, "HEAD", "WORKTREE", self.table]
+        ok = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        dom = subprocess.run([sys.executable, os.path.join(HERE, "rename.py"), "check-domains", "--root", self.root], capture_output=True, text=True)
+        self.assertEqual(dom.returncode, 0, dom.stdout)
+
+
+class PaneDomainGate(unittest.TestCase):
+    """The deliberately bad fixtures: a Bonsplit pane named for the c11 area, geometry and area sharing a name."""
+
+    def leak(self, stmt, dom):
+        report = []
+        return rename.check_domains(wrap(stmt), "Sources/X.swift", report)[dom], report
+
+    def test_bonsplit_pane_values_named_area_are_flagged(self):
+        for stmt in ("let areaId = bonsplitController.focusedPaneId",
+                     "for areaId in bonsplitController.allPaneIds { use(areaId) }",
+                     "func f(targetArea: PaneID) { use(targetArea) }",
+                     "let liveAreaIds: [PaneID] = []",
+                     "guard let area = bonsplitController.focusedPaneId else { return }"):
+            self.assertGreater(self.leak(stmt, "D")[0], 0, stmt)
+
+    def test_pane_spelling_and_c11_area_sources_are_fine(self):
+        for stmt in ("let paneId = bonsplitController.focusedPaneId",
+                     "let area = metadataStore.area(for: key)",
+                     "let areaSpec = AreaSpec(surfaceIds: [])",
+                     "let safeAreaInsets = view.safeAreaInsets"):
+            self.assertEqual(self.leak(stmt, "D")[0], 0, stmt)
+
+    def test_geometry_and_area_sharing_a_name_are_flagged(self):
+        both = "let area = rect.width * rect.height\n        let spec = { let area = AreaSpec(surfaceIds: []); use(area) }"
+        self.assertGreater(self.leak(both, "E")[0], 0)
+        self.assertEqual(self.leak("let area = rect.width * rect.height", "E")[0], 0)
+        self.assertEqual(self.leak("let area = AreaSpec(surfaceIds: [])", "E")[0], 0)
+
+
+class LiteralSweep(unittest.TestCase):
+    """check-literals: a string literal that still names a renamed identifier is a hit unless it was reviewed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="vr-literals-")
+        cls.tables = os.path.join(cls.root, "tables")
+        os.makedirs(cls.tables)
+        open(os.path.join(cls.tables, "pass-9.tsv"), "w").write(
+            "BrowserPaneDropTargetView\tBrowserAreaDropTargetView\t!c11UITests/**\t\tev:T\n"
+            "paneMetadataStoreRevision\tareaMetadataStoreRevision\t!c11UITests/**\t\tev:M\n"
+            "surface\ttab\t!c11UITests/**\t\t\n")
+        os.makedirs(os.path.join(cls.root, "Sources"))
+        os.makedirs(os.path.join(cls.root, "c11Tests"))
+        open(os.path.join(cls.root, "Sources", "A.swift"), "w").write(
+            'let reflected = String(describing: type(of: v)).contains("BrowserPaneDropTargetView")\n'
+            'let prose = "BrowserPaneDropTargetViewSpace is a different name"\n'
+            '// "BrowserPaneDropTargetView" in a comment is not a literal\n'
+            'let interp = "x \\(BrowserAreaDropTargetView.self) y"\n'
+            'let key = "paneMetadataStoreRevision"\n'
+            'let word = "surface"\n')
+        open(os.path.join(cls.root, "c11Tests", "B.swift"), "w").write('let q = "a BrowserPaneDropTargetView b"\n')
+
+    def run_check(self, allow=None):
+        cmd = [sys.executable, os.path.join(HERE, "rename.py"), "check-literals", "--root", self.root, "--tables", self.tables,
+               "--allow", allow or os.devnull]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def test_reflected_type_name_is_a_hit_and_look_alikes_are_not(self):
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("LITERAL Sources/A.swift:1 BrowserPaneDropTargetView", r.stdout)
+        self.assertIn("LITERAL c11Tests/B.swift:1 BrowserPaneDropTargetView", r.stdout)
+        self.assertIn("A.swift:5 paneMetadataStoreRevision", r.stdout)
+        self.assertNotIn("A.swift:2", r.stdout)   # a longer identifier
+        self.assertNotIn("A.swift:3", r.stdout)   # a comment
+        self.assertNotIn("A.swift:4", r.stdout)   # the interpolation is code, not literal text
+        self.assertNotIn("A.swift:6", r.stdout)   # a plain word is too common to judge by spelling
+
+    def test_reviewed_hits_pass_and_new_ones_fail(self):
+        allow = os.path.join(self.root, "allow.tsv")
+        open(allow, "w").write("Sources/A.swift\tBrowserPaneDropTargetView\tlog\tr\n"
+                               "Sources/A.swift\tpaneMetadataStoreRevision\twire\tr\n"
+                               "c11Tests/B.swift\tBrowserPaneDropTargetView\tmsg\tr\n")
+        ok = self.run_check(allow)
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        self.assertIn("0 unreviewed", ok.stdout)
+        open(allow, "w").write("Sources/A.swift\tBrowserPaneDropTargetView\tlog\tr\n")
+        self.assertEqual(self.run_check(allow).returncode, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

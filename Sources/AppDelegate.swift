@@ -4964,7 +4964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // snapshot's, for symmetry with the surface-arm loop above).
                 let livePaneIds = workspace.bonsplitController.allPaneIds.map { $0.id }
                 for paneId in livePaneIds {
-                    PaneMetadataStore.shared.removePane(
+                    AreaMetadataStore.shared.removeArea(
                         workspaceId: workspace.id,
                         paneId: paneId
                     )
@@ -5002,7 +5002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let sources = PersistedMetadataBridge.decodeSources(
                         paneSnapshot.metadataSources ?? [:]
                     )
-                    PaneMetadataStore.shared.restoreFromSnapshot(
+                    AreaMetadataStore.shared.restoreFromSnapshot(
                         workspaceId: workspace.id,
                         paneId: paneUUID,
                         values: values,
@@ -5020,7 +5020,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// rail to walk persisted pane metadata without re-creating the layout.
     private func collectPaneLayoutSnapshots(
         _ node: SessionWorkspaceLayoutSnapshot
-    ) -> [SessionPaneLayoutSnapshot] {
+    ) -> [SessionAreaLayoutSnapshot] {
         switch node {
         case .pane(let pane):
             return [pane]

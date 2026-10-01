@@ -184,7 +184,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
                 XCTFail("surface[\(surfaceSpec.id)] paneUUID not resolvable on restored workspace")
                 continue
             }
-            let (liveMap, _) = PaneMetadataStore.shared.getMetadata(
+            let (liveMap, _) = AreaMetadataStore.shared.getMetadata(
                 workspaceId: restoredWorkspace.id,
                 paneId: paneUUID
             )

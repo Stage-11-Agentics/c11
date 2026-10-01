@@ -11,7 +11,7 @@ struct MarkdownTabView: View {
     let isVisibleInUI: Bool
     let portalPriority: Int
     let onRequestTabFocus: () -> Void
-    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject var paneInteractionRuntime: AreaInteractionRuntime
 
     @State private var focusFlashOpacity: Double = 0.0
     @State private var focusFlashAnimationGeneration: Int = 0
@@ -60,7 +60,7 @@ struct MarkdownTabView: View {
         }
         .overlay {
             if let interaction = paneInteractionRuntime.active[panel.id] {
-                PaneInteractionCardView(
+                AreaInteractionCardView(
                     panelId: panel.id,
                     interaction: interaction,
                     runtime: paneInteractionRuntime

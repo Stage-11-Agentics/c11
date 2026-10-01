@@ -142,9 +142,9 @@ struct WorkspaceContentView: View {
         // AppKit overlay layer instead.
         .environment(\.paneOverlayBuilder, { paneId in
             AnyView(
-                PaneInteractionOverlayHostView(
+                AreaInteractionOverlayHostView(
                     paneId: paneId,
-                    controller: workspace.paneCloseOverlayController
+                    controller: workspace.areaCloseOverlayController
                 )
             )
         })

@@ -752,11 +752,11 @@ enum WorkspaceLayoutExecutor {
         }
 
         private mutating func materializePane(
-            _ paneSpec: LayoutTreeSpec.PaneSpec,
+            _ areaSpec: LayoutTreeSpec.AreaSpec,
             intoPane paneId: PaneID,
             anchor: AnchorTab
         ) {
-            guard let firstSurfaceId = paneSpec.surfaceIds.first,
+            guard let firstSurfaceId = areaSpec.surfaceIds.first,
                   let firstSurface = surfacesById[firstSurfaceId] else {
                 failures.append(ApplyFailure(
                     code: "validation_failed",
@@ -822,7 +822,7 @@ enum WorkspaceLayoutExecutor {
             writeSurfaceMetadata(firstSurface, panelId: firstPanelId)
 
             // Additional surfaces in the same pane (tab-stacked).
-            for additionalSurfaceId in paneSpec.surfaceIds.dropFirst() {
+            for additionalSurfaceId in areaSpec.surfaceIds.dropFirst() {
                 guard let spec = surfacesById[additionalSurfaceId] else { continue }
                 let addClock = StepClock()
                 guard let newPanelId = createSurface(spec, inPane: paneId, focus: false) else {
@@ -847,10 +847,10 @@ enum WorkspaceLayoutExecutor {
             // Apply selectedIndex. Only when selectAllowed (B-IM2): background
             // applies (select: false) must not steal bonsplit tab focus.
             if selectAllowed,
-               let selectedIndex = paneSpec.selectedIndex,
+               let selectedIndex = areaSpec.selectedIndex,
                selectedIndex >= 0,
-               selectedIndex < paneSpec.surfaceIds.count {
-                let selectedSurfaceId = paneSpec.surfaceIds[selectedIndex]
+               selectedIndex < areaSpec.surfaceIds.count {
+                let selectedSurfaceId = areaSpec.surfaceIds[selectedIndex]
                 if let selectedPanelId = planSurfaceIdToPanelId[selectedSurfaceId],
                    let selectedBonsplitTabId = workspace.bonsplitTabIdFromTabId(selectedPanelId) {
                     workspace.bonsplitController.selectTab(selectedBonsplitTabId)
@@ -1114,7 +1114,7 @@ enum WorkspaceLayoutExecutor {
                 }
                 let decoded = PersistedMetadataBridge.decodeValues([key: value])
                 do {
-                    _ = try PaneMetadataStore.shared.setMetadata(
+                    _ = try AreaMetadataStore.shared.setMetadata(
                         workspaceId: workspaceId,
                         paneId: paneUUID,
                         partial: decoded,

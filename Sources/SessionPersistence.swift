@@ -413,7 +413,7 @@ enum SessionSplitOrientation: String, Codable, Sendable {
     }
 }
 
-struct SessionPaneLayoutSnapshot: Codable, Sendable {
+struct SessionAreaLayoutSnapshot: Codable, Sendable {
     var panelIds: [UUID]
     var selectedPanelId: UUID?
 
@@ -452,7 +452,7 @@ struct SessionSplitLayoutSnapshot: Codable, Sendable {
 }
 
 indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
-    case pane(SessionPaneLayoutSnapshot)
+    case pane(SessionAreaLayoutSnapshot)
     case split(SessionSplitLayoutSnapshot)
 
     private enum CodingKeys: String, CodingKey {
@@ -466,7 +466,7 @@ indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "pane":
-            self = .pane(try container.decode(SessionPaneLayoutSnapshot.self, forKey: .pane))
+            self = .pane(try container.decode(SessionAreaLayoutSnapshot.self, forKey: .pane))
         case "split":
             self = .split(try container.decode(SessionSplitLayoutSnapshot.self, forKey: .split))
         default:

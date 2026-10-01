@@ -18,12 +18,12 @@ final class WorkspaceFlashTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.set(pinnedMs, forKey: NotificationFlashDurationSettings.storageKey)
-        UserDefaults.standard.set(true, forKey: NotificationPaneFlashSettings.enabledKey)
+        UserDefaults.standard.set(true, forKey: NotificationAreaFlashSettings.enabledKey)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: NotificationFlashDurationSettings.storageKey)
-        UserDefaults.standard.removeObject(forKey: NotificationPaneFlashSettings.enabledKey)
+        UserDefaults.standard.removeObject(forKey: NotificationAreaFlashSettings.enabledKey)
         super.tearDown()
     }
 
@@ -168,8 +168,8 @@ final class WorkspaceFlashTests: XCTestCase {
     }
 
     func testPaneFlashDisabledGuardSilencesAllChannels() {
-        UserDefaults.standard.set(false, forKey: NotificationPaneFlashSettings.enabledKey)
-        defer { UserDefaults.standard.set(true, forKey: NotificationPaneFlashSettings.enabledKey) }
+        UserDefaults.standard.set(false, forKey: NotificationAreaFlashSettings.enabledKey)
+        defer { UserDefaults.standard.set(true, forKey: NotificationAreaFlashSettings.enabledKey) }
 
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()

@@ -536,7 +536,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             isPinned: false,
             currentDirectory: "/tmp",
             focusedPanelId: nil,
-            layout: .pane(SessionPaneLayoutSnapshot(panelIds: panels.map { $0.id }, selectedPanelId: panels.first?.id)),
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: panels.map { $0.id }, selectedPanelId: panels.first?.id)),
             panels: panels,
             statusEntries: [],
             logEntries: [],

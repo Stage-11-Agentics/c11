@@ -14,7 +14,7 @@ enum TabActivityResolver {
             if suppressed && !flagged { return .idle }
             return .waiting
         }
-        guard PaneSizePolicy.isAgentKind(terminalType) else {
+        guard AreaSizePolicy.isAgentKind(terminalType) else {
             return nil
         }
         if isCold {
@@ -42,7 +42,7 @@ enum TabActivityTerminalKindResolver {
         if detectedTerminalType == "shell" {
             return "shell"
         }
-        if PaneSizePolicy.isAgentKind(detectedTerminalType) {
+        if AreaSizePolicy.isAgentKind(detectedTerminalType) {
             return detectedTerminalType
         }
         return declaredTerminalType
@@ -253,7 +253,7 @@ enum TabLivenessDeriver {
         // TUIs) render idle. Exact lifecycle completion signals own the
         // working→idle transition for detected agents; retain the timeout
         // only as the fallback for ordinary shell commands.
-        guard !PaneSizePolicy.isAgentKind(detectedTerminalType) else { return }
+        guard !AreaSizePolicy.isAgentKind(detectedTerminalType) else { return }
 
         let isStale = last.map { now.timeIntervalSince($0) >= idleDecayThreshold } ?? true
         guard isStale else { return }

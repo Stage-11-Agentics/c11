@@ -10,7 +10,7 @@ import SwiftUI
 /// Day-one variants: `.confirm` and `.textInput`. Future variants (`.picker`,
 /// `.banner`, `.progress`) are reserved — the enum and the presenter are sized to
 /// accept them without a rewrite.
-public enum PaneInteraction: Identifiable {
+public enum AreaInteraction: Identifiable {
     case confirm(ConfirmContent)
     case textInput(TextInputContent)
 
@@ -179,7 +179,7 @@ public enum InteractionSource {
 /// - UserDefaults key `cmux.paneDialog.enabled` — set false to disable.
 /// - Environment variable `CMUX_PANE_DIALOG_DISABLED=1` — overrides UserDefaults
 ///   to off. Set for UI tests / CI runs that predate the overlay detectors.
-public enum PaneInteractionFeatureFlag {
+public enum AreaInteractionFeatureFlag {
     public static let userDefaultsKey = "cmux.paneDialog.enabled"
     public static let disableEnvVar = "CMUX_PANE_DIALOG_DISABLED"
 
@@ -210,9 +210,9 @@ public enum PaneInteractionFeatureFlag {
 /// verify they are acting on the interaction they originally saw, not whatever
 /// happens to be active right now.
 @MainActor
-public final class PaneInteractionRuntime: ObservableObject {
-    @Published public private(set) var active: [UUID: PaneInteraction] = [:]
-    private var queues: [UUID: [PaneInteraction]] = [:]
+public final class AreaInteractionRuntime: ObservableObject {
+    @Published public private(set) var active: [UUID: AreaInteraction] = [:]
+    private var queues: [UUID: [AreaInteraction]] = [:]
     /// Dedupe tokens for currently-in-flight interactions (active + queued),
     /// keyed by panel. When the last interaction for a token resolves/cancels
     /// the token is cleared so future `present()` with the same token is
@@ -239,7 +239,7 @@ public final class PaneInteractionRuntime: ObservableObject {
 
     public init() {}
 
-    public func present(panelId: UUID, interaction: PaneInteraction, dedupeToken: String? = nil) {
+    public func present(panelId: UUID, interaction: AreaInteraction, dedupeToken: String? = nil) {
         if let token = dedupeToken {
             var byToken = tokenToInteractionIds[panelId, default: [:]]
             if let existing = byToken[token], !existing.isEmpty {
@@ -265,7 +265,7 @@ public final class PaneInteractionRuntime: ObservableObject {
             var queue = queues[panelId, default: []]
             queue.append(interaction)
             // Enforce soft cap: drop OLDEST queued with .dismissed. Never evict the active.
-            while queue.count > PaneInteractionRuntime.perPanelQueueSoftCap {
+            while queue.count > AreaInteractionRuntime.perPanelQueueSoftCap {
                 let evicted = queue.removeFirst()
                 retireToken(forInteractionId: evicted.id, panelId: panelId)
                 dismissEvicted(evicted)
@@ -572,7 +572,7 @@ public final class PaneInteractionRuntime: ObservableObject {
         }
     }
 
-    private func dismissEvicted(_ interaction: PaneInteraction) {
+    private func dismissEvicted(_ interaction: AreaInteraction) {
         switch interaction {
         case .confirm(let c): c.completion(.dismissed)
         case .textInput(let t): t.completion(.dismissed)
@@ -598,7 +598,7 @@ public final class PaneInteractionRuntime: ObservableObject {
     }
 
 #if DEBUG
-    private func describeSource(_ interaction: PaneInteraction) -> String {
+    private func describeSource(_ interaction: AreaInteraction) -> String {
         let source: InteractionSource
         switch interaction {
         case .confirm(let c): source = c.source

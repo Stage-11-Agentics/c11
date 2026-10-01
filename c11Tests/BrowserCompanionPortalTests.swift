@@ -274,9 +274,9 @@ final class BrowserCompanionPortalTests: XCTestCase {
         slot.setCompanion(configuration(for: .revealed(linked: linkedAgent, active: activeAgent)))
         slot.setSearchOverlay(searchConfiguration(onClose: {}))
         slot.setPaneInteraction(
-            BrowserPortalPaneInteractionConfiguration(
+            BrowserPortalAreaInteractionConfiguration(
                 panelId: UUID(),
-                runtime: PaneInteractionRuntime()
+                runtime: AreaInteractionRuntime()
             )
         )
 
@@ -286,10 +286,8 @@ final class BrowserCompanionPortalTests: XCTestCase {
                   String(describing: type(of: $0)).contains("NSHostingView")
               }),
               let veilIndex = subviews.firstIndex(where: { $0 is BrowserCompanionOverlayHost }),
-              let dragIndex = subviews.firstIndex(where: {
-                  String(describing: type(of: $0)).contains("BrowserPaneDropTargetView")
-              }),
-              let modalIndex = subviews.firstIndex(where: { $0 is PaneInteractionOverlayHost })
+              let dragIndex = subviews.firstIndex(where: { $0 is BrowserAreaDropTargetView }),
+              let modalIndex = subviews.firstIndex(where: { $0 is AreaInteractionOverlayHost })
         else {
             XCTFail("Expected all five portal interaction layers")
             return

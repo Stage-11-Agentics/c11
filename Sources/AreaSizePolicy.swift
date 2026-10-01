@@ -17,7 +17,7 @@ import Foundation
 
 /// How size-aware split creation behaves when a 50/50 split would leave a child
 /// pane below the minimum usable size for what it holds.
-enum PaneSizeMode: String, CaseIterable, Identifiable {
+enum AreaSizeMode: String, CaseIterable, Identifiable {
     /// Never block — the blind 50/50 split (legacy behavior).
     case off
     /// Never block, but report when a result is undersized or near the threshold.
@@ -29,17 +29,17 @@ enum PaneSizeMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static var `default`: PaneSizeMode { .balance }
+    static var `default`: AreaSizeMode { .balance }
 
-    static func parse(_ raw: String?) -> PaneSizeMode? {
+    static func parse(_ raw: String?) -> AreaSizeMode? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !trimmed.isEmpty else { return nil }
-        return PaneSizeMode(rawValue: trimmed)
+        return AreaSizeMode(rawValue: trimmed)
     }
 }
 
 /// A pane size expressed in terminal cells (columns × rows).
-struct PaneCellSize: Equatable {
+struct AreaCellSize: Equatable {
     var cols: Int
     var rows: Int
 }
@@ -55,21 +55,21 @@ enum SplitAxis: Equatable {
 }
 
 /// Whether a resulting child pane is comfortably sized, close to the minimum, or below it.
-enum PaneSizeStatus: Equatable {
+enum AreaSizeStatus: Equatable {
     case ok
     case near
     case undersized
 }
 
-enum PaneSizePolicy {
+enum AreaSizePolicy {
     // MARK: Per-kind minimums / optimums (columns × rows)
 
     /// Coding-agent TUIs (Claude Code, Codex, …) need a substantial grid to stay usable.
-    static let agentMin = PaneCellSize(cols: 80, rows: 20)
-    static let agentOptimum = PaneCellSize(cols: 120, rows: 30)
+    static let agentMin = AreaCellSize(cols: 80, rows: 20)
+    static let agentOptimum = AreaCellSize(cols: 120, rows: 30)
     /// A plain shell / log tail is usable much smaller.
-    static let terminalMin = PaneCellSize(cols: 40, rows: 10)
-    static let terminalOptimum = PaneCellSize(cols: 80, rows: 24)
+    static let terminalMin = AreaCellSize(cols: 40, rows: 10)
+    static let terminalOptimum = AreaCellSize(cols: 80, rows: 24)
 
     /// Point floor for panes with no character grid (browser / markdown).
     static let nonTerminalMinPoints = CGSize(width: 320, height: 240)
@@ -86,7 +86,7 @@ enum PaneSizePolicy {
     }
 
     /// The minimum cell budget for a surface of the given kind.
-    static func minCells(forKind kind: String?) -> PaneCellSize {
+    static func minCells(forKind kind: String?) -> AreaCellSize {
         isAgentKind(kind) ? agentMin : terminalMin
     }
 
@@ -97,7 +97,7 @@ enum PaneSizePolicy {
 
     /// Convert a cell budget to points using the given cell size (falling back to a
     /// default when the surface has not reported metrics yet).
-    static func points(_ cells: PaneCellSize, cellSize: CGSize) -> CGSize {
+    static func points(_ cells: AreaCellSize, cellSize: CGSize) -> CGSize {
         let cw = cellSize.width > 0 ? cellSize.width : fallbackCellSize.width
         let ch = cellSize.height > 0 ? cellSize.height : fallbackCellSize.height
         return CGSize(width: CGFloat(cells.cols) * cw, height: CGFloat(cells.rows) * ch)
@@ -121,7 +121,7 @@ enum PaneSizePolicy {
     }
 
     /// Classify a resulting child against the minimum.
-    static func status(child: CGSize, minPoints: CGSize) -> PaneSizeStatus {
+    static func status(child: CGSize, minPoints: CGSize) -> AreaSizeStatus {
         let belowW = minPoints.width > 0 && child.width < minPoints.width
         let belowH = minPoints.height > 0 && child.height < minPoints.height
         if belowW || belowH { return .undersized }
@@ -150,7 +150,7 @@ enum PaneSizePolicy {
         var flipped: Bool
         /// Status of the resulting child for the chosen path (or the requested,
         /// undersized child when refusing / falling back to a tab).
-        var status: PaneSizeStatus
+        var status: AreaSizeStatus
         /// Resulting child size for the chosen path (points).
         var resultingChild: CGSize
         /// The controlling minimum applied (points).
@@ -169,7 +169,7 @@ enum PaneSizePolicy {
         paneFrame: CGSize,
         requested: SplitAxis,
         minPoints: CGSize,
-        mode: PaneSizeMode,
+        mode: AreaSizeMode,
         force: Bool
     ) -> Decision {
         func proceed(_ axis: SplitAxis, flipped: Bool) -> Decision {
@@ -268,18 +268,18 @@ enum PaneSizePolicy {
 }
 
 /// Persisted + env-overridable policy mode, following the `SocketControlSettings` pattern.
-enum PaneSizeSettings {
+enum AreaSizeSettings {
     static let appStorageKey = "paneSizeMode"
 
     /// `C11_SPLIT_SIZE_POLICY` (or the `CMUX_*` compat alias) overrides the stored mode —
     /// useful for headless runs and tests.
-    static func envMode() -> PaneSizeMode? {
+    static func envMode() -> AreaSizeMode? {
         let env = ProcessInfo.processInfo.environment
-        return PaneSizeMode.parse(env["C11_SPLIT_SIZE_POLICY"] ?? env["CMUX_SPLIT_SIZE_POLICY"])
+        return AreaSizeMode.parse(env["C11_SPLIT_SIZE_POLICY"] ?? env["CMUX_SPLIT_SIZE_POLICY"])
     }
 
-    static func effectiveMode() -> PaneSizeMode {
+    static func effectiveMode() -> AreaSizeMode {
         if let env = envMode() { return env }
-        return PaneSizeMode.parse(UserDefaults.standard.string(forKey: appStorageKey)) ?? .default
+        return AreaSizeMode.parse(UserDefaults.standard.string(forKey: appStorageKey)) ?? .default
     }
 }

@@ -41,6 +41,22 @@ PASSES = {
         "fixes": [],
         "allow_conflict": set(),
     },
+    "3": {
+        # c11-owned Pane* -> Area*. Bonsplit's panes (PaneID, inPane:, focusedPaneId, every vendor member) stay panes.
+        "words": {"pane": "area", "panes": "areas"},
+        "keep": r"^PaneID$|PaneID$|^PaneState$|ExternalPaneNode|^Pane(?:Geometry|Bounds)$",
+        "explicit": {},
+        "id_rule": None,
+        "dirs": [],
+        "fixes": [],
+        "allow_conflict": set(),
+        "extra_owners": (),
+        "use_prev": False,
+        "vendor": True,
+        "leaf_extra": r"|\bPaneID\b|\bPaneState\b|\bExternalPaneNode\b|\binPane\b|\bfocusedPaneId\b|\bbonsplitPane\w*",
+        "sources": (),
+        "word_rx": r"[Pp]ane(?!l)",
+    },
     "2b": {
         "words": {"panel": "tab", "panels": "tabs"},
         "keep": (r"^(NS|WK)\w*|FloatingPanel|nonactivatingPanel|modalPanel|JavaScript\w*Panel|OpenPanel|^openPanel$|^savePanel$|"
@@ -131,7 +147,9 @@ def main(argv=None):
     if "--root" in argv:
         ROOT = os.path.abspath(argv[argv.index("--root") + 1])
     out_path = argv[argv.index("--out") + 1] if "--out" in argv else os.path.join(HERE, f"pass-{which}.tsv")
-    cfg = PASSES[which]
+    cfg = dict(PASSES[which])
+    for k, v in (("extra_owners", PANEL_TYPES), ("use_prev", True), ("vendor", False), ("leaf_extra", ""), ("word_rx", None), ("sources", None)):
+        cfg.setdefault(k, v)
     keep = re.compile(cfg["keep"])
     types, members = scan(ROOT)
     universe = set()
@@ -139,18 +157,44 @@ def main(argv=None):
     for ident in idents.collect(ROOT):
         universe.add(ident)
 
+    vendor_names = set()
+    if cfg["vendor"]:  # every identifier Bonsplit declares or uses is a vendor name: types and members keep it
+        vroot = os.path.join(ROOT, "vendor", "bonsplit", "Sources")
+        for dp, dn, fn in os.walk(vroot):
+            for f in fn:
+                if f.endswith(".swift"):
+                    vsrc = open(os.path.join(dp, f), encoding="utf-8").read()
+                    vlx = rename.Lexer(vsrc)
+                    vlx.scan(0, False)
+                    vendor_names.update(vsrc[a:b] for a, b in vlx.idents)
+    word_rx = re.compile(cfg["word_rx"]) if cfg["word_rx"] else None
+
     def cand(ident):
-        return not SKIP.search(ident) and not keep.search(ident) and new_name(ident, cfg) is not None
+        if SKIP.search(ident) or keep.search(ident):
+            return False
+        if word_rx and not word_rx.search(ident):
+            return False
+        return new_name(ident, cfg) is not None
+
+    def declared_ok(ident):  # types and members additionally never take a vendor name or one that already exists
+        nn = new_name(ident, cfg)
+        if ident in vendor_names:
+            return False
+        if nn in universe and ident not in cfg["allow_conflict"]:
+            clashes.append((ident, nn))
+            return False
+        return True
+    clashes = []
 
     # ---- T: c11-declared types in the family
-    T = {n for n, k in types.items() if k in ("class", "struct", "enum", "protocol", "actor") and cand(n)}
+    T = {n for n, k in types.items() if k in ("class", "struct", "enum", "protocol", "actor") and cand(n) and declared_ok(n)}
     T |= {n for n in cfg["explicit"] if n in types and n not in T}
-    prevT = prev_tab_types(which)
-    tab_types = set(T) | prevT | set(PANEL_TYPES)
+    prevT = prev_tab_types(which) if cfg["use_prev"] else set()
+    tab_types = set(T) | prevT | set(cfg["extra_owners"])
     tab_types_rx = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, tab_types), key=len, reverse=True)) + r")\b") if tab_types else None
-    owner_types = set(T) | prevT | set(PANEL_TYPES)
+    owner_types = set(T) | prevT | set(cfg["extra_owners"])
     gh = re.compile(GHOSTTY_SIG)
-    leaf = re.compile(LEAF_SIG)  # a signature that also names a Bonsplit leaf is ambiguous: it keeps its name
+    leaf = re.compile(LEAF_SIG + cfg["leaf_extra"])  # a signature that also names a Bonsplit leaf is ambiguous: it keeps its name
     id_rx = re.compile(cfg["id_rule"]) if cfg["id_rule"] else None
 
     def host_evident(sig):
@@ -159,7 +203,7 @@ def main(argv=None):
     # ---- M: members whose every declaration is evident
     decls = {}
     for name, owner, kind, sig, rel in members:
-        if cand(name) and name not in T:
+        if cand(name) and name not in T and declared_ok(name):
             ok = (not gh.search(sig)) and (not leaf.search(sig)) and (owner in owner_types or (owner in HOSTS and host_evident(sig)))
             decls.setdefault(name, []).append((ok, owner, rel, sig))
     declared_anywhere = {}
@@ -179,15 +223,15 @@ def main(argv=None):
     # ---- L: bindings with evidence, for every other candidate name
     L_names = sorted(n for n in universe if cand(n) and n not in T and n not in M)
     m_words = "|".join(sorted(map(re.escape, M), key=len, reverse=True))
-    sources = [r"\bnew(?:Terminal|Browser|Markdown)(?:Panel|Surface)\w*\(",
+    sources = list(cfg["sources"] if cfg["sources"] is not None else (r"\bnew(?:Terminal|Browser|Markdown)(?:Panel|Surface)\w*\(",
                # a c11 id converted from a Bonsplit id: the head of the initializer, or the result of a map/flatMap over it
-               r"=\s*(?:[\w?!.()]*\.)?tabIdFromBonsplitTabId\(", r"\.(?:flatMap|compactMap|map)\s*\{[^}]*tabIdFromBonsplitTabId"]
+               r"=\s*(?:[\w?!.()]*\.)?tabIdFromBonsplitTabId\(", r"\.(?:flatMap|compactMap|map)\s*\{[^}]*tabIdFromBonsplitTabId"))
     if m_words:
         sources.append(r"\.(?:" + m_words + r")\b")
     if tab_types_rx:
         sources.append(tab_types_rx.pattern)
     l_rx = "|".join(sources)
-    l_ex = GHOSTTY_SIG + "|" + LEAF_SIG
+    l_ex = GHOSTTY_SIG + "|" + LEAF_SIG + cfg["leaf_extra"]
 
     out = [f"# Pass {which}: evidence-based renames. Generated by gen-evidence.py.",
            "# Columns: old<TAB>new<TAB>globs<TAB>fallback<TAB>flags (ev:T type, ev:M member); @taint rows are ev:L"]
@@ -217,7 +261,9 @@ def main(argv=None):
     with open(path, "w") as fh:
         fh.write("\n".join(out) + "\n")
     print(f"T={len(T)} types, M={len(M)} members, L candidates={len(L_names)} -> {path}")
-    print(f"ambiguous member names kept: {len(ambiguous)}; conflicts kept: {len(conflicts)}")
+    print(f"ambiguous member names kept: {len(ambiguous)}; conflicts kept: {len(conflicts)}; existing-name clashes kept: {len(set(clashes))}")
+    for n, nn in sorted(set(clashes)):
+        print(f"CLASH {n} -> {nn} already exists; kept")
     for n, nn in conflicts:
         print(f"CONFLICT {n} -> {nn} already declared on the same owner; kept")
 

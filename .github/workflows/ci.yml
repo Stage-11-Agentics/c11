@@ -198,6 +198,17 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
 
+      - name: SSH shell command availability
+        run: |
+          set -euo pipefail
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+            -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
+            -disableAutomaticPackageResolution -destination "platform=macOS" \
+            -showBuildSettings -json > "$RUNNER_TEMP/c11-build-settings.json"
+          CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
+          test -x "$CLI_BINARY"
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
         # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)

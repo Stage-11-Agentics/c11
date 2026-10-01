@@ -116,7 +116,7 @@ def _run_remote_shell_probe(client: cmux, surface_id: str, probe_label: str) -> 
     client.send_surface(
         surface_id,
         (
-            f"__cmux_socket_path=\"${{CMUX_SOCKET_PATH:-}}\"; "
+            f"__cmux_socket_path=\"${{SSH_CONNECTION:+remote}}:${{CMUX_SOCKET_PATH:-unset}}\"; "
             f"printf '{token}:%s:__CMUX_REMOTE_SOCKET_END__\\n' \"$__cmux_socket_path\"\n"
         ),
     )
@@ -138,8 +138,8 @@ def _run_remote_shell_probe(client: cmux, surface_id: str, probe_label: str) -> 
 def _assert_remote_socket_path(client: cmux, surface_id: str, shortcut_name: str) -> None:
     socket_path = _run_remote_shell_probe(client, surface_id, shortcut_name)
     _must(
-        socket_path.startswith("127.0.0.1:"),
-        f"{shortcut_name} should keep the new terminal on the ssh relay, got CMUX_SOCKET_PATH={socket_path!r}",
+        socket_path == "remote:unset",
+        f"{shortcut_name} should keep the new terminal remote without a command socket, got {socket_path!r}",
     )
 
 
@@ -263,7 +263,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    print("PASS: cmd+t/cmd+d/cmd+shift+d keep ssh terminals on the remote relay")
+    print("PASS: cmd+t/cmd+d/cmd+shift+d keep SSH terminals remote without a command socket")
     return 0
 
 

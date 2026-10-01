@@ -6081,18 +6081,10 @@ struct CMUXCLI {
         }
     }
 
-    private func generateRemoteRelayPort() -> Int {
-        // Random port in the ephemeral range (49152-65535)
+    private func generateSSHSessionID() -> Int {
+        // Retain the numeric lifecycle identifier expected by ssh-session-end.
+        // This value no longer represents a listening port.
         Int.random(in: 49152...65535)
-    }
-
-    private func randomHex(byteCount: Int) throws -> String {
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard status == errSecSuccess else {
-            throw CLIError(message: "failed to generate SSH relay credential")
-        }
-        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
     private func runSSH(
@@ -6104,9 +6096,7 @@ struct CMUXCLI {
         let sshStartedAt = Date()
         // Use the socket path from this invocation (supports --socket overrides).
         let localSocketPath = client.socketPath
-        let remoteRelayPort = generateRemoteRelayPort()
-        let relayID = UUID().uuidString.lowercased()
-        let relayToken = try randomHex(byteCount: 32)
+        let remoteRelayPort = generateSSHSessionID()
         let sshOptions = try parseSSHCommandOptions(commandArgs, localSocketPath: localSocketPath, remoteRelayPort: remoteRelayPort)
         func logSSHTiming(_ stage: String, extra: String = "") {
             let elapsedMs = Int(Date().timeIntervalSince(sshStartedAt) * 1000)
@@ -6125,7 +6115,6 @@ struct CMUXCLI {
             "source=\(terminfoSource == nil ? 0 : 1)"
         )
         let shellFeaturesValue = scopedGhosttyShellFeaturesValue()
-        let initialSSHCommand = buildSSHCommandText(sshOptions)
         let remoteTerminalBootstrapScript = sshOptions.extraArguments.isEmpty
             ? buildInteractiveRemoteShellScript(
                 remoteRelayPort: sshOptions.remoteRelayPort,
@@ -6137,6 +6126,7 @@ struct CMUXCLI {
             sshOptions,
             remoteBootstrapScript: remoteTerminalBootstrapScript
         )
+        let initialSSHCommand = remoteTerminalSSHCommand
         let initialSSHStartupCommand = try buildSSHStartupCommand(
             sshCommand: initialSSHCommand,
             shellFeatures: "",
@@ -6204,10 +6194,8 @@ struct CMUXCLI {
                 configureParams["ssh_options"] = remoteSSHOptions
             }
             if sshOptions.remoteRelayPort > 0 {
+                // Legacy wire key used only to match local SSH session-end notifications.
                 configureParams["relay_port"] = sshOptions.remoteRelayPort
-                configureParams["relay_id"] = relayID
-                configureParams["relay_token"] = relayToken
-                configureParams["local_socket_path"] = sshOptions.localSocketPath
             }
             configureParams["terminal_startup_command"] = remoteTerminalSSHStartupCommand
 
@@ -6218,7 +6206,7 @@ struct CMUXCLI {
                 "sshOptions=\(remoteSSHOptions.joined(separator: "|"))"
             )
             let configureStartedAt = Date()
-            // deadline: .none — SSH handshake and relay negotiation can exceed 10 s on slow
+            // deadline: .none — SSH handshake and remote setup can exceed 10 s on slow
             // VPNs or distant hosts; the server governs the timeout for this operation.
             configuredPayload = try client.sendV2(method: "workspace.remote.configure", params: configureParams, deadline: .none)
             var selectParams: [String: Any] = ["workspace_id": workspaceId]
@@ -6256,7 +6244,7 @@ struct CMUXCLI {
         payload["ssh_env_overrides"] = [
             "GHOSTTY_SHELL_FEATURES": shellFeaturesValue,
         ]
-        payload["remote_relay_port"] = remoteRelayPort
+        payload["ssh_session_id"] = remoteRelayPort
         logSSHTiming("complete", extra: "workspace=\(String(workspaceId.prefix(8)))")
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -6394,12 +6382,18 @@ struct CMUXCLI {
     ) -> String {
         let remoteTerminalLines = interactiveRemoteTerminalSetupLines(terminfoSource: terminfoSource)
         let remoteEnvExportLines = interactiveRemoteShellExportLines(shellFeatures: shellFeatures)
-        let relaySocket = remoteRelayPort > 0 ? "127.0.0.1:\(remoteRelayPort)" : nil
-        let shellStateDir = "$HOME/.cmux/relay/\(max(remoteRelayPort, 0)).shell"
+        let shellStateDir = "$HOME/.cmux/ssh/\(max(remoteRelayPort, 0)).shell"
+        let unavailableMessage = "c11 commands are not available over c11 ssh in this version"
+        let socketVariables = "C11_SOCKET C11_SOCKET_PATH CMUX_SOCKET CMUX_SOCKET_PATH CMUX_SOCKET_PASSWORD CMUX_RELAY_TOKEN"
         let commonShellLines = remoteTerminalLines
             + remoteEnvExportLines
-            + ["export PATH=\"$HOME/.cmux/bin:$PATH\""]
-            + (relaySocket.map { ["export CMUX_SOCKET_PATH=\($0)"] } ?? [])
+            + [
+                "unset \(socketVariables)",
+                "export PATH=\"\(shellStateDir)/bin:$PATH\"",
+                "unalias c11 cmux >/dev/null 2>&1 || true",
+                "c11() { printf '%s\\n' \(shellQuote(unavailableMessage)) >&2; return 1; }",
+                "cmux() { c11 \"$@\"; }",
+            ]
             + [
                 "hash -r >/dev/null 2>&1 || true",
                 "rehash >/dev/null 2>&1 || true",
@@ -6417,18 +6411,33 @@ struct CMUXCLI {
         ] + commonShellLines
         let zshLoginLines = [
             "[ -f \"$CMUX_REAL_ZDOTDIR/.zlogin\" ] && source \"$CMUX_REAL_ZDOTDIR/.zlogin\"",
-        ]
+        ] + commonShellLines
         let bashRCLines = [
             "if [ -f \"$HOME/.bash_profile\" ]; then . \"$HOME/.bash_profile\"; elif [ -f \"$HOME/.bash_login\" ]; then . \"$HOME/.bash_login\"; elif [ -f \"$HOME/.profile\" ]; then . \"$HOME/.profile\"; fi",
             "[ -f \"$HOME/.bashrc\" ] && . \"$HOME/.bashrc\"",
         ] + commonShellLines
-        let relayWarmupLines = interactiveRemoteRelayWarmupLines(remoteRelayPort: remoteRelayPort)
+        let fishSetup = [
+            "set -e \(socketVariables.replacingOccurrences(of: " ", with: "; set -e "))",
+            "set -gx PATH \"\(shellStateDir)/bin\" $PATH",
+            "function c11; printf '%s\\n' \(shellQuote(unavailableMessage)) >&2; return 1; end",
+            "function cmux; c11 $argv; end",
+        ].joined(separator: "; ")
 
         var outerLines: [String] = [
+            "cmux_original_umask=$(umask)",
+            "umask 077",
+            "cmux_shell_dir=\"\(shellStateDir)\"",
+            "mkdir -p \"$cmux_shell_dir/bin\" || exit 1",
+            "cat > \"$cmux_shell_dir/bin/c11\" <<'CMUXDISABLED'",
+            "#!/bin/sh",
+            "printf '%s\\n' \(shellQuote(unavailableMessage)) >&2",
+            "exit 1",
+            "CMUXDISABLED",
+            "chmod 700 \"$cmux_shell_dir/bin/c11\" || exit 1",
+            "cp \"$cmux_shell_dir/bin/c11\" \"$cmux_shell_dir/bin/cmux\" || exit 1",
             "CMUX_LOGIN_SHELL=\"${SHELL:-/bin/zsh}\"",
             "case \"${CMUX_LOGIN_SHELL##*/}\" in",
             "  zsh)",
-            "    mkdir -p \"$HOME/.cmux/relay\"",
             "    cmux_shell_dir=\"\(shellStateDir)\"",
             "    mkdir -p \"$cmux_shell_dir\"",
             "    cat > \"$cmux_shell_dir/.zshenv\" <<'CMUXZSHENV'",
@@ -6453,14 +6462,13 @@ struct CMUXCLI {
             "CMUXZSHLOGIN",
             "    chmod 600 \"$cmux_shell_dir/.zshenv\" \"$cmux_shell_dir/.zprofile\" \"$cmux_shell_dir/.zshrc\" \"$cmux_shell_dir/.zlogin\" >/dev/null 2>&1 || true",
         ]
-        outerLines.append(contentsOf: relayWarmupLines.map { "    " + $0 })
         outerLines += [
             "    export CMUX_REAL_ZDOTDIR=\"${ZDOTDIR:-$HOME}\"",
             "    export ZDOTDIR=\"$cmux_shell_dir\"",
+            "    umask \"$cmux_original_umask\"",
             "    exec \"$CMUX_LOGIN_SHELL\" -il",
             "    ;;",
             "  bash)",
-            "    mkdir -p \"$HOME/.cmux/relay\"",
             "    cmux_shell_dir=\"\(shellStateDir)\"",
             "    mkdir -p \"$cmux_shell_dir\"",
             "    cat > \"$cmux_shell_dir/.bashrc\" <<'CMUXBASHRC'",
@@ -6470,15 +6478,23 @@ struct CMUXCLI {
             "CMUXBASHRC",
             "    chmod 600 \"$cmux_shell_dir/.bashrc\" >/dev/null 2>&1 || true",
         ]
-        outerLines.append(contentsOf: relayWarmupLines.map { "    " + $0 })
         outerLines += [
+            "    umask \"$cmux_original_umask\"",
             "    exec \"$CMUX_LOGIN_SHELL\" --rcfile \"$cmux_shell_dir/.bashrc\" -i",
+            "    ;;",
+            "  fish)",
+        ]
+        outerLines.append(contentsOf: remoteTerminalLines + remoteEnvExportLines)
+        outerLines += [
+            "    unset \(socketVariables)",
+            "    umask \"$cmux_original_umask\"",
+            "    exec \"$CMUX_LOGIN_SHELL\" -i --init-command \(shellQuote(fishSetup))",
             "    ;;",
             "  *)",
         ]
         outerLines.append(contentsOf: commonShellLines)
-        outerLines.append(contentsOf: relayWarmupLines)
         outerLines += [
+            "umask \"$cmux_original_umask\"",
             "exec \"$CMUX_LOGIN_SHELL\" -i",
             ";;",
             "esac",
@@ -6545,11 +6561,6 @@ struct CMUXCLI {
             exports.append("export GHOSTTY_SHELL_FEATURES=\(shellQuote(trimmedShellFeatures))")
         }
         return exports
-    }
-
-    private func interactiveRemoteRelayWarmupLines(remoteRelayPort: Int) -> [String] {
-        guard remoteRelayPort > 0 else { return [] }
-        return []
     }
 
     private func baseSSHArguments(_ options: SSHCommandOptions) -> [String] {
@@ -6633,7 +6644,7 @@ struct CMUXCLI {
     func encodedRemoteBootstrapCommand(_ remoteBootstrapScript: String) -> String {
         let encodedScript = Data(remoteBootstrapScript.utf8).base64EncodedString()
         let encodedLiteral = shellQuote(encodedScript)
-        return [
+        let command = [
             "cmux_tmp=$(mktemp \"${TMPDIR:-/tmp}/cmux-ssh-bootstrap.XXXXXX\") || exit 1",
             "(printf %s \(encodedLiteral) | base64 -d 2>/dev/null || printf %s \(encodedLiteral) | base64 -D 2>/dev/null) > \"$cmux_tmp\" || { rm -f \"$cmux_tmp\"; exit 1; }",
             "chmod 700 \"$cmux_tmp\" >/dev/null 2>&1 || true",
@@ -6642,6 +6653,7 @@ struct CMUXCLI {
             "rm -f \"$cmux_tmp\"",
             "exit $cmux_status",
         ].joined(separator: "; ")
+        return "/bin/sh -c \(shellQuote(command))"
     }
 
     func sshPercentEscapedRemoteCommand(_ remoteCommand: String) -> String {

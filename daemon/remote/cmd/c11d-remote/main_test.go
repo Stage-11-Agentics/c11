@@ -104,7 +104,7 @@ func TestWrapperBinaryDispatchesIntoCLI(t *testing.T) {
 		return
 	}
 
-	sockPath := startMockSocket(t, "PONG")
+	sockPath := filepath.Join(t.TempDir(), "unused.sock")
 	wrapperPath := filepath.Join(t.TempDir(), "c11d-remote-current")
 	if err := os.Symlink(os.Args[0], wrapperPath); err != nil {
 		t.Fatalf("symlink wrapper path: %v", err)
@@ -118,12 +118,13 @@ func TestWrapperBinaryDispatchesIntoCLI(t *testing.T) {
 	)
 	cmd.Env = append(os.Environ(), "CMUXD_REMOTE_MAIN_HELPER=1")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("wrapper invocation failed: %v\n%s", err, output)
+	exitError, ok := err.(*exec.ExitError)
+	if !ok || exitError.ExitCode() != 1 {
+		t.Fatalf("wrapper invocation should refuse relay: %v\n%s", err, output)
 	}
 
-	if got := strings.TrimSpace(string(output)); got != "PONG" {
-		t.Fatalf("wrapper invocation output = %q, want %q", got, "PONG")
+	if got := strings.TrimSpace(string(output)); got != remoteCLIDisabledMessage {
+		t.Fatalf("wrapper invocation output = %q, want %q", got, remoteCLIDisabledMessage)
 	}
 }
 

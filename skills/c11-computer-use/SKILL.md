@@ -19,6 +19,8 @@ This is not the `c11` operating skill. That one teaches an agent to drive the ro
 
 ### Target a specific build unambiguously — by PID and window ID
 
+Do this inside the sandbox guest (via `scripts/sandbox-exec.sh`), where the click cannot reach the operator. The same PID rule still matters there if more than one c11 is running.
+
 - **Find your build's PID** (it launched from `…/DerivedData/c11-<tag>/…/c11 DEV <tag>.app`), then use the PID as the filter for everything. `unix id is <pid>` selects exactly one process no matter how many are named `c11`.
 - **Screenshot the exact window, even when it's behind another app**, by CGWindowID:
   ```
@@ -36,18 +38,23 @@ This is not the `c11` operating skill. That one teaches an agent to drive the ro
 
 Use the tagged build's socket (`C11_SOCKET=/tmp/c11-debug-<tag>.sock`) to build the scene (workspaces, splits, seed terminals with size-revealing content) and to read state (`tree`, `read-screen`). The socket **cannot** drive AppKit menus, keys, the text box, settings, or the sidebar — that is exactly why the PID-scoped GUI-scripting path above exists for the actual UI trigger. `send` reaches PTYs only.
 
-## Synthesized input disrupts the person at the keyboard
+## Clicks, drags, and live tests run in a sandbox
 
-The operator is usually working on the machine you are driving, so real input has a cost. Spend it deliberately.
+Any click, drag, or app activation runs in a sandboxed c11, not in the operator's session. The operator's session is only for socket and CLI oracles, and for `screencapture -l` of a window that is already on screen.
 
-- **Get consent before a synthesized drag-and-drop.** It takes over the pointer for its whole duration. If a drag must be verified and consent isn't given, hand the operator a short numbered manual check script instead.
-- **A click now and then is fine.** If a click, app activation, or focus steal will disrupt whoever is typing, tell them first, or right after when it was unavoidable.
-- **Prefer what takes no input:** socket/CLI setup, socket/CLI oracles, and window screenshots by window ID (`screencapture -l <windowid>`), which don't take focus.
-- Unrestricted, free-running driving belongs in a sandboxed c11 instance (Lattice C11-244) once it exists.
+```
+scripts/sandbox-up.sh <run-id> <tagged.app> [--allow-second]
+scripts/sandbox-exec.sh <run-id> <command> [args...]
+scripts/sandbox-shot.sh <run-id> <host-png> [screencapture args...]
+scripts/sandbox-down.sh <run-id>
+scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]
+```
+
+`sandbox-up` clones a stopped golden image and launches the `.app` inside that guest. It does not boot the golden image. The Tart host is `C11_SANDBOX_HOST` (default `atlas`). A second guest needs `--allow-second`. Live `tests_v2` runs go through `sandbox-tests-v2.sh` after `sandbox-up`; they are python3 scripts, not pytest, and they never attach to the operator's c11. A new clone can show Setup Assistant over the window until `scripts/sandbox-skip-setup.mobileconfig` is installed on the golden image. Leave that process running. Why this shape, and the one-time host setup, live in `docs/c11-sandbox-research.md`.
 
 ## Launch discipline
 
-- Launch **only tagged builds** (`./scripts/reload.sh --tag <tag>`, or `./scripts/launch-tagged-automation.sh <tag> --qa fresh`). Never `open` an untagged `c11 DEV.app` — it conflicts with the operator's running instance.
+- Launch **only tagged builds** (`./scripts/reload.sh --tag <tag>`, or `./scripts/launch-tagged-automation.sh <tag> --qa fresh`). Never `open` an untagged `c11 DEV.app` — it conflicts with the operator's running instance. For a click, drag, or activation check, pass that `.app` to `scripts/sandbox-up.sh` instead of opening it on the operator's session.
 - Suppress the startup dialogs for automation: `C11_QA_LAUNCH=fresh` (the skills-install and resume-picker sheets otherwise block coordinate-driven UI). `reload.sh --tag` does **not** set it; export it yourself or use `launch-tagged-automation.sh --qa`.
 - Quit only **your** build when done — `kill <your-pid>`, never a blanket match on `c11`.
 

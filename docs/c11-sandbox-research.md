@@ -1,14 +1,14 @@
 # Sandboxed c11 instances for computer-use validation
 
-C11-244, phase 1 research. 2026-09-30. No VM was installed and no image was downloaded. Phase 2 (the scripts and the `skills/c11-computer-use` update) waits for the orchestrator's go.
+C11-244. Phase 1 was the research (2026-09-30). Phase 2 was approved on 2026-10-01: build the Tart design, with the VMs hosted on Atlas.
 
 The failure this has to remove: synthesized clicks and drags against a tagged c11 build run in the operator's Aqua session, so they move the operator's cursor and key window. That happened on Hyperion on 2026-09-29. The sandbox has to give the validation run a different cursor and a different key window. Screenshots already have a safe path (`screencapture -l <windowid>`); the unsolved part is pointer and focus.
 
 ## Recommendation
 
-Use a headless Tart macOS guest on this Mac. One APFS clone per run, deleted afterward. The host never opens a VM window. The agent drives the guest over SSH with the same `cliclick` / `osascript` / `screencapture` tools the computer-use skill already uses, posted into the guest's Aqua session. Copy a prebuilt tagged `.app` in. Do not build inside the guest.
+Use a headless Tart macOS guest. One APFS clone per run, deleted afterward. The Tart host never opens a VM window. The agent drives the guest over SSH with the same `cliclick` / `osascript` / `screencapture` tools the computer-use skill already uses, posted into the guest's Aqua session. Copy a prebuilt tagged `.app` in. Do not build inside the guest.
 
-Keep a second local user, reached through Screen Sharing's virtual display, as the fallback if the phase-2 Ghostty probe cannot allocate a GPU surface in the guest. Do not use an in-session virtual display. Do not move this to Atlas by default.
+The Tart host is `C11_SANDBOX_HOST`, default `atlas`. The scripts run on the operator's machine, SSH to that host, then SSH from the host into the guest. On 2026-10-01 Atin approved this design and moved the guests to Atlas (the phase 1 note said not to). A second local user, reached through Screen Sharing's virtual display, stays the fallback only if the Ghostty probe cannot allocate a GPU surface. That switch is a decision, not something the scripts do on their own. Do not use an in-session virtual display.
 
 ## This machine
 
@@ -27,7 +27,7 @@ Probed locally on 2026-09-30. Nothing below required sudo.
 | Screen Sharing | `com.apple.screensharing` is not registered in the system launchd domain |
 | Tagged c11 app size | 105 MB for `c11 DEV c11-212.app`. `/Applications/c11.app` is 135 MB |
 
-A 25 GB base image fits. An 8 GB guest is a small slice of 128 GB. Capacity is not the constraint. The constraint is Apple's two-guest cap, and whether Ghostty's renderer accepts the guest GPU.
+A 25 GB base image fits. An 8 GB guest is a small slice of 128 GB. Capacity is not the constraint on Hyperion. The constraint that still matters is Apple's two-guest cap. Ghostty's renderer does accept the guest GPU; that was measured on Atlas (below).
 
 ## Options
 
@@ -35,8 +35,8 @@ A 25 GB base image fits. An 8 GB guest is a small slice of 128 GB. Capacity is n
 |---|---|---|---|
 | Isolation | Own kernel, WindowServer, cursor, `/tmp`, TCC | Own Aqua session and cursor. Shared kernel, GPU, and `/tmp` | Same session. Same cursor, same key window |
 | Solves the 2026-09-29 collision | Yes, if the host runs the VM with `--no-graphics` | Yes, if input is posted in the other session and the console user is never switched | No |
-| Boot / clone | Cold boot not measured (image not pulled). Clone is an APFS copy-on-write | Session comes up on VNC login. No multi-GB image | Instant. No image |
-| GPU for Ghostty | Paravirtualized Metal, reduced capability. Unproven for Ghostty until the probe | Host GPU, full capability | Host GPU, full capability |
+| Boot / clone | Cold boot to SSH was 103s. `tart clone` of the golden image was 1s | Session comes up on VNC login. No multi-GB image | Instant. No image |
+| GPU for Ghostty | Paravirtualized Metal. The v0.66.1 probe attached surfaces and drew terminals | Host GPU, full capability | Host GPU, full capability |
 | License | Two running macOS guests per Mac, enforced by the framework | No extra macOS license | No extra license |
 | Disk | ~25 GB golden, clones cheap until they diverge | A second home directory | None |
 | Operator setup | Install Tart, pull one image, bake the golden once | Create a user, turn on Screen Sharing, grant TCC once | None, and it still fails the requirement |
@@ -113,7 +113,7 @@ What it costs:
 - A runaway validation can still fill the disk and peg the GPU. The kernel is the operator's kernel.
 - Screen Sharing is a network service. Restrict it to the sandbox user. Prefer a localhost client (`vncdotool` is already installed) over opening a window.
 
-Use this path if, and only if, the Ghostty probe fails in the VM. It is the option most likely to satisfy the renderer, because the GPU is the real one, and it is the option with the weakest blast-radius isolation.
+The Ghostty probe succeeded, so this path is not the plan. It stays the fallback only if a later probe hits `error.OutOfMemory`. It is the option with the weakest blast-radius isolation.
 
 ## 3. In-session virtual display
 
@@ -123,56 +123,101 @@ Window-id screenshots stay the right tool for "look without touching." They do n
 
 ## Atlas
 
-The operator's steer was a sandbox per c11 instance, probably not Atlas. Atlas is also one Apple-silicon Mac, so it has the same two-guest cap. Hyperion has the RAM and the free disk to run one 8 GB guest. The cursor that got stolen is Hyperion's, and a local VM fixes that without moving the run. Do not build in the guest, so this does not become the kind of Hyperion load the machine rules forbid.
+Phase 1 recommended keeping the guest on Hyperion. Phase 2 moved it to Atlas: the cursor that must stay put is still Hyperion's, and a guest on another machine protects it the same way, without putting VM CPU on the laptop. Atlas is one Apple-silicon Mac, so it has the same two-guest cap. The scripts default to `ssh atlas`. Set `C11_SANDBOX_HOST=local` to run Tart on the machine where the script is invoked.
 
-## Proposed scripts
+Atlas has no Xcode. Nothing is built there. A tagged `.app` is copied from the laptop to Atlas, then into the guest. Long image pulls run detached on Atlas. Do not reboot Atlas to clear a stuck VM slot; that takes the always-on services down with it. Scanner VMs already on the machine (`scanner-base`, `scanner-golden`) are left alone.
 
-Four scripts, all refusing to download an image or install Tart. If `tart` is missing or the golden VM `c11-sandbox-golden` is missing, they exit with the operator setup below and do nothing else.
+## Scripts
 
-`scripts/sandbox-up.sh <run-id> <path-to-tagged.app>`
+The scripts run on the laptop (or wherever you invoke them) and talk to the Tart host over SSH. They refuse to download an image or install Tart. If `tart` is missing or `c11-sandbox-golden` is missing, they exit and do nothing else. The golden image is never booted for a run. State on the Tart host lives under `~/.c11-sandbox/` (run metadata, the copied `.app`, screenshots, test logs). The guest SSH key is `~/.ssh/c11-sandbox` on that host. It is not in this repo.
 
-- Refuse if another macOS guest is already running, unless `--allow-second` is passed, and refuse always if two are already running.
+`scripts/sandbox-up.sh <run-id> <path-to-tagged.app> [--allow-second]`
+
+- Refuse if any guest is already running, unless `--allow-second` is passed, and refuse always if two are already not stopped. A suspended guest counts, because it can still hold a macOS VM slot.
 - `tart clone c11-sandbox-golden c11-sb-<run-id>`
 - `tart set c11-sb-<run-id> --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial`
-- `tart run --no-graphics --no-audio --dir=app:<app-dir>:ro --dir=out:<host-artifact-dir> c11-sb-<run-id>`, supervised in the background so the shell can return.
-- Wait until `tart ip` answers and SSH accepts the golden image's key.
-- Copy the `.app` from `/Volumes/My Shared Files/app` onto the guest disk, strip quarantine, launch with the `launch-tagged-automation.sh` environment (`C11_QA_LAUNCH=fresh`, automation socket, inherited `C11_*` removed).
-- Print the run id, the guest IP, and the guest socket path. Do not print the SSH private key.
+- `tart run --no-graphics --no-audio --no-clipboard --dir=out:<artifact-dir>`, detached so the SSH session can return. The `.app` goes in over SSH, not through that share.
+- Wait until `tart ip` answers and SSH accepts the key.
+- Copy the `.app` into the guest with `tar` over SSH, strip quarantine, and launch the binary in the guest Aqua session. The app is not read from virtiofs: that share turns Sparkle and Sentry framework symlinks into loops and `ditto` fails. The `out` share stays virtiofs, for screenshots and logs. `launchctl asuser` has to run as root to enter that session, and it does not change uid, so the scripts then `sudo -u` the console user. Otherwise the process and its socket are root-owned and the CLI refuses the socket. Environment matches `launch-tagged-automation.sh`: inherited `C11_*` / `CMUX_*` removed, `C11_SOCKET_MODE=automation`, `C11_QA_LAUNCH=fresh`, `C11_ALLOW_SOCKET_OVERRIDE=1`, socket `/tmp/c11-sandbox-<run-id>.sock`. The golden image gives `admin` passwordless sudo. A password prompt would hang a run.
+- Print the run id, the guest IP, the guest socket, and the clone and boot times. Do not print the SSH private key.
 
-`scripts/sandbox-exec.sh <run-id> <command…>`
+`scripts/sandbox-exec.sh <run-id> <command> [args...]`
 
-- SSH as the guest user, `launchctl asuser` into the Aqua session, run the command. This is how `cliclick` and menu `osascript` are supposed to be invoked. Exit status is the remote status.
+- SSH as the guest user, `launchctl asuser` into the Aqua session, run the command. This is how `cliclick` and menu `osascript` are invoked. Exit status is the remote status. A pipeline is `sandbox-exec.sh <run-id> zsh -c 'cmd | other'`.
 
-`scripts/sandbox-shot.sh <run-id> <guest-window-or-display> <host-png>`
+`scripts/sandbox-shot.sh <run-id> <host-png> [screencapture args...]`
 
-- `screencapture` in the guest Aqua session, write into the shared `out` directory, so the file lands on the host without a second copy tool.
+- `screencapture` in the guest Aqua session (default `-x`, the whole guest display). Extra arguments such as `-l <windowid>` are passed through. The PNG is written into the shared `out` directory and copied back to `<host-png>`.
 
 `scripts/sandbox-down.sh <run-id>`
 
-- Shut the guest down, then `tart delete c11-sb-<run-id>`. Refuse to delete `c11-sandbox-golden`.
+- `tart stop` the clone, then `tart delete c11-sb-<run-id>`. Refuse to delete `c11-sandbox-golden` or a `scanner-*` VM. Screenshots and logs under `~/.c11-sandbox/out/<run-id>` stay.
 
-The skill update, in phase 2 only, tells computer-use to prefer these scripts for any click or drag, and to keep using the host socket and `screencapture -l` only against the operator's own session when no pointer is involved. Unrestricted driving on the operator's session stays forbidden.
+`scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]`
 
-### Phase-2 probe, before the skill change ships
+- Requires `sandbox-up` to have launched the app. Copies `tests_v2/` (and `tests/fixtures` when that tree exists) into the guest and runs the python3 scripts there against the guest socket. With no file arguments, runs every `tests_v2/test_*.py` except `test_ctrl_interactive.py`. Flags such as `-k` are rejected: this suite is not pytest. The guest relaunches its c11 once before each file. Stdout streams back, and a copy of the log is left at `~/.c11-sandbox/out/<run-id>/tests-v2.log` on the Tart host.
 
-One clone, one tagged build (build slot granted separately if the app does not already exist), `C11_QA_LAUNCH=fresh`. Success is a guest screenshot that shows the tagged window, plus a `c11` CLI over SSH reporting an attached terminal surface. Failure is `ghostty_surface_new` / `error.OutOfMemory` or a window that never attaches. On failure, stop and switch the scripts to the second-user design. Do not paper over a dead renderer.
+`skills/c11-computer-use/SKILL.md` sends any click, drag, or activation through these scripts. The operator's own session stays on socket/CLI oracles and `screencapture -l`.
+
+### Ghostty probe
+
+Done on the golden image, 2026-10-01, with the public release `v0.66.1` (`c11-macos.dmg`), not a laptop build. The app was launched in the guest Aqua session with the automation environment. `c11 debug-terminals` reported `runtime=1` and a non-nil `ghostty=` pointer on two terminal surfaces, and the guest display showed shell prompts in those panes. No `error.OutOfMemory`.
+
+![Guest c11 window with attached terminals](images/c11-244-guest-terminal.png)
+
+The first launch ran as root, because `launchctl asuser` keeps the caller's uid. The CLI then refused the socket (`not owned by the current user`). Relaunching through `sudo -u admin` after `asuser` fixed ownership, and the same `debug-terminals` check passed without a chown. The screenshot above is that second launch. The probe app was deleted from the golden disk before shutdown.
 
 ## Operator setup, once
 
-Not done in this phase. The pull is about 25 GB.
+Done on Atlas for `c11-sandbox-golden`. A new host repeats this; the scripts do not.
 
-1. Install Tart from the tap that actually resolves (`cirruslabs/cli/tart` per tart.run, or `openai/tools/tart` per the current GitHub README). Confirm `tart run --help` still has `--no-graphics`.
-2. `tart clone ghcr.io/cirruslabs/macos-tahoe-base:latest c11-sandbox-golden` while the host keychain is unlocked.
-3. Boot it once with a display. Confirm auto-login, Remote Login, lock screen off, screen saver off. Install `cliclick`. Grant Accessibility to the helper that will post events. Add an SSH key and disable password login. Install the Tart guest agent if `tart exec` is how we want Aqua-session commands.
-4. `tart set c11-sandbox-golden --cpu 4 --memory 8192 --display 1440x900`, shut it down, and leave it stopped. Runs clone it. Nobody boots the golden image to do validation.
-5. Expect roughly 25 GB for the golden image plus a small per-run divergence (the 105 MB app and whatever the guest writes). 637 GiB is free today.
+1. Tart 2.32.1 was already installed at `/opt/homebrew/bin/tart`. It was left in place. See the license section.
+2. `tart clone ghcr.io/cirruslabs/macos-tahoe-base:latest c11-sandbox-golden`. The host login keychain was unlocked; this boot did not hit `SecKeyCreateRandomKey`.
+3. `tart set c11-sandbox-golden --cpu 4 --memory 8192 --display 1440x900`, then one headless boot (`tart run --no-graphics --no-audio --no-clipboard --vnc-experimental`).
+4. Guest is macOS 26.6.2. Auto-login was already `admin`. Sleep and display sleep are off, and the screensaver idle time was already 0. `cliclick` 5.1 is installed. `/usr/bin/python3` is 3.9.6. `admin` has passwordless sudo, which the scripts depend on.
+5. SSH key `~/.ssh/c11-sandbox` on Atlas is installed in the guest. Password authentication, keyboard-interactive, and challenge-response are off. The account password is still `admin`, so an optional Screen Sharing check can use it. Rotate that password once nobody needs the console login. Do not commit the key.
+6. The base image already allows Accessibility, Screen Recording, and PostEvent for `/usr/libexec/sshd-keygen-wrapper`, `/usr/bin/osascript`, and the Tart guest agent. `cliclick` and a full-display `screencapture -x` work over SSH. `screencapture -l` raised a separate prompt for `com.apple.sshd-session`. That prompt was dismissed during the probe and did not add a TCC row, so a window-id capture may ask again. The default shot is full-display `-x`.
+7. The golden image is stopped. Runs clone it. Nobody boots it to do validation.
+8. `--random-serial` makes macOS treat the clone as a new Mac, so Setup Assistant runs again (Software Update, Apple Account, FileVault) even though the golden desktop was already set up. `scripts/sandbox-skip-setup.mobileconfig` is the suppression payload (`SkipSetupItems`, including `FileVault`). It is not installed on the golden image: on this guest, `profiles install` is gone (`profiles tool no longer supports installs`), and opening the file only stages it for a System Settings click. The FileVault confirmation sheet ignored synthesized clicks. Do not `killall "Setup Assistant"`; that took the guest session down.
+
+## Tart on Atlas: source and license
+
+Checked on Atlas during phase 2, against the binary that is actually installed.
+
+| Fact | Result |
+|---|---|
+| Version | 2.32.1 (`CFBundleShortVersionString`) |
+| Bundle id | `com.github.cirruslabs.tart` |
+| Binary | `/opt/homebrew/bin/tart` → `/Applications/tart.app/Contents/MacOS/tart` |
+| How it got there | Already installed before this ticket. It is not a current Homebrew cask (`/opt/homebrew/Caskroom/tart` is absent) and `brew list --cask` does not name it. The `cirruslabs/cli` tap is present, but its `tart.rb` formula does not evaluate (`depends_on :macos` at line 22), so `brew info tart` fails. The working app was left as it was. |
+| License file in the app | None. `Contents/` has `Info.plist`, `MacOS/tart`, and `Resources/` (icon and asset catalog only). |
+| License of this version | Tag `2.32.1` of [cirruslabs/tart](https://github.com/cirruslabs/tart) is **Fair Source License 0.9**, copyright 2023 Cirrus Labs, Inc. Use limitation: 100 users, where a user is one CPU core used by the product. That limitation does not apply to CPUs in a device used by a single individual. |
+| Upstream main | The GitHub project page now resolves as [openai/tart](https://github.com/openai/tart). Its README installs `brew install openai/tools/tart`, and `main` carries the Functional Source License 1.1 (Apache-2.0 future license). tart.run still documents `brew install cirruslabs/cli/tart` and the image `ghcr.io/cirruslabs/macos-tahoe-base:latest`. |
+
+The binary we run is 2.32.1, so the Fair Source 0.9 text is the one that applies, not the license on `main`. Our use fits. Atlas is one person's machine, which is the single-individual exception, and an M2 Ultra is also well under 100 cores. c11 does not redistribute Tart, ship it, or offer it as a service. Internal validation clones are the permitted use.
+
+## Measured on Atlas
+
+Numbers below are the ones this phase actually observed.
+
+| Measurement | Result |
+|---|---|
+| Host | Atlas, M2 Ultra, 128 GB, macOS 26.5.2. About 321 GB free before the pull. 284 GiB free on `/System/Volumes/Data` after the golden image existed. |
+| Base image | `ghcr.io/cirruslabs/macos-tahoe-base:latest`, cloned as `c11-sandbox-golden`. Tart reported the disk layer as 27.3 GB compressed. |
+| Golden image | 4 CPU, 8192 MB, 1440×900. `du -sh` of `~/.tart/vms/c11-sandbox-golden` is 31G. `~/.tart` is 120G, which includes the OCI cache and the stopped scanner VMs. |
+| APFS clone time | 1 second (`tart clone c11-sandbox-golden c11-sb-measure`, then deleted). `du` still reports 31G for a fresh clone because the extents are shared. |
+| Cold boot to SSH | 103 seconds on the first golden boot (epoch 1790837076 to the first successful SSH at 1790837179). |
+| Warm clone, tart run to socket | `sandbox-up` on a warm host reported `clone_secs=0` and `boot_secs=27` for `c11-sb-ghostty1`, through SSH and app launch to a live socket. A later Atlas-local `sandbox-up ghostty2` (app already staged on the host) reported `clone_secs=0` and `boot_secs=50`. |
+| Attached terminal | Once the process was the console user, `debug-terminals` showed `runtime=1` and a live `ghostty` pointer about 1 second after launch. The screenshot is above. |
+| tests_v2 in the guest | From the laptop, `sandbox-tests-v2.sh ghostty2 tests_v2/test_cli_id_format_defaults.py` copied the suite to Atlas, relaunched c11 in the guest, and passed both of that file's assertions against the guest socket. Wall time was about 17 seconds. |
 
 ## Open risks
 
-- Ghostty on Family 5 Metal is untested here. The probe is the gate.
+- Ghostty on Family 5 Metal worked for the v0.66.1 probe (attached surfaces, visible shell prompts). A later guest OS or a different c11 build can still fail the same way a locked host screen fails: `ghostty_surface_new` returns `error.OutOfMemory`. Treat that as a stop, not a reason to switch designs inside a run.
 - Two running guests is a hard cap. A stuck `VZError` slot after shutdown has been reported on macOS 26.5 on an M4 Max and is only cleared by rebooting the host.
 - `tart run` can fail while the host login keychain is locked.
-- The published base image's `admin`/`admin` password has to be removed before agents use the golden image.
+- Password SSH is off. The account password is still `admin` so Screen Sharing can use it. Rotate it when that console login is no longer needed. The scripts use the SSH key, not the password.
+- A clone's new serial retriggers Setup Assistant. The FileVault confirmation sheet did not accept a synthesized click, so a run can boot with that sheet over the c11 window. The skip payload is `scripts/sandbox-skip-setup.mobileconfig`. Installing it is a System Settings step on the golden image; the `profiles` CLI on macOS 26.6 will not install it.
 - Duplicate machine identifiers if a future change runs two clones without `--random-serial`.
 - Second-user fallback is unverified on 26.6: localhost VNC as another user must not prompt or steal the console. Screen Sharing would be a new network service on the operator's Mac.
 - Guest macOS will drift from the host. Rebuild the golden image deliberately. Do not let a run update it.

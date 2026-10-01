@@ -48,3 +48,29 @@ index 421204768..d10aa5a5c 100644
          guard let browserPanel = tab.browserPanel(for: browserPanelId) else {
              writeGotoSplitTestData([
                  "webViewFocused": "false",
+diff --git a/Sources/GhosttyTerminalView.swift b/Sources/GhosttyTerminalView.swift
+index 67ed78a75..598eab71e 100644
+--- a/Sources/GhosttyTerminalView.swift
++++ b/Sources/GhosttyTerminalView.swift
+@@ -6547,7 +6547,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
+     }
+ 
+     @objc private func showSurfaceManifest(_ sender: Any?) {
+-        guard let workspaceId = tabId,
++        guard let workspaceId = self.workspaceId,
+               let surfaceId = terminalSurface?.id else { return }
+         SurfaceManifestViewerWindowController.show(
+             workspaceId: workspaceId,
+diff --git a/Sources/WorkspaceContentView.swift b/Sources/WorkspaceContentView.swift
+index f3b28f1b0..8562c4348 100644
+--- a/Sources/WorkspaceContentView.swift
++++ b/Sources/WorkspaceContentView.swift
+@@ -256,7 +256,7 @@ struct WorkspaceContentView: View {
+     private func syncBonsplitNotificationBadges() {
+         let unreadFromNotifications: Set<UUID> = Set(
+             notificationStore.notifications
+-                .filter { $0.tabId == workspace.id && !$0.isRead }
++                .filter { $0.workspaceId == workspace.id && !$0.isRead }
+                 .compactMap { $0.surfaceId }
+         )
+         let manualUnread = workspace.manualUnreadPanelIds

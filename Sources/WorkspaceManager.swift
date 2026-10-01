@@ -2802,7 +2802,7 @@ class WorkspaceManager: ObservableObject {
                 source: .local
             )
             guard accepted, let self else { return }
-            for workspace in plan.workspaces where self.workspaceList.contains(where: { $0.id == workspace.id }) {
+            for workspace in plan.workspaces where self.workspaces.contains(where: { $0.id == workspace.id }) {
                 self.closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
             }
         }

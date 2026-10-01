@@ -1115,7 +1115,7 @@ final class TerminalNotificationStore: ObservableObject {
 
     func cancelRoutineExternalNotifications(workspaceId: UUID, surfaceId: UUID) {
         let identifiers = notifications.compactMap { notification in
-            notification.tabId == workspaceId && notification.surfaceId == surfaceId
+            notification.workspaceId == workspaceId && notification.surfaceId == surfaceId
                 ? notification.id.uuidString
                 : nil
         }

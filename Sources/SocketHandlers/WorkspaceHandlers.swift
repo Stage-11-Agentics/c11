@@ -81,7 +81,7 @@ extension TerminalController {
 
         var workspaces: [[String: Any]] = []
         v2MainSync {
-            workspaces = workspaceManager.workspaceList.enumerated().map { index, ws in
+            workspaces = workspaceManager.workspaces.enumerated().map { index, ws in
                 return [
                     "id": ws.id.uuidString,
                     "ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -1453,7 +1453,7 @@ extension TerminalController {
         v2MainSync {
             let requestedWorkspaceId = v2UUID(params, "workspace_id") ?? workspaceManager.selectedWorkspaceId
             guard let workspaceId = requestedWorkspaceId,
-                  let workspace = workspaceManager.workspaceList.first(where: { $0.id == workspaceId }) else {
+                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -1464,10 +1464,10 @@ extension TerminalController {
             func closeWorkspaces(_ workspaces: [Workspace]) -> Int {
                 var closed = 0
                 for candidate in workspaces where candidate.id != workspace.id {
-                    let existedBefore = workspaceManager.workspaceList.contains(where: { $0.id == candidate.id })
+                    let existedBefore = workspaceManager.workspaces.contains(where: { $0.id == candidate.id })
                     guard existedBefore else { continue }
                     workspaceManager.closeWorkspace(candidate)
-                    if !workspaceManager.workspaceList.contains(where: { $0.id == candidate.id }) {
+                    if !workspaceManager.workspaces.contains(where: { $0.id == candidate.id }) {
                         closed += 1
                     }
                 }
@@ -1513,47 +1513,47 @@ extension TerminalController {
                 finish(["title": workspace.title])
 
             case "move_up":
-                guard let currentIndex = workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
                 _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: max(currentIndex - 1, 0))
-                finish(["index": v2OrNull(workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }))])
+                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
 
             case "move_down":
-                guard let currentIndex = workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: min(currentIndex + 1, workspaceManager.workspaceList.count - 1))
-                finish(["index": v2OrNull(workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }))])
+                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: min(currentIndex + 1, workspaceManager.workspaces.count - 1))
+                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
 
             case "move_top":
                 workspaceManager.moveWorkspaceToTop(workspace.id)
-                finish(["index": v2OrNull(workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }))])
+                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
 
             case "close_others":
-                let candidates = workspaceManager.workspaceList.filter { $0.id != workspace.id && !$0.isPinned }
+                let candidates = workspaceManager.workspaces.filter { $0.id != workspace.id && !$0.isPinned }
                 let closed = closeWorkspaces(candidates)
                 finish(["closed": closed])
 
             case "close_above":
-                guard let index = workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let index = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                let candidates = Array(workspaceManager.workspaceList.prefix(index)).filter { !$0.isPinned }
+                let candidates = Array(workspaceManager.workspaces.prefix(index)).filter { !$0.isPinned }
                 let closed = closeWorkspaces(candidates)
                 finish(["closed": closed])
 
             case "close_below":
-                guard let index = workspaceManager.workspaceList.firstIndex(where: { $0.id == workspace.id }) else {
+                guard let index = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
                 let candidates: [Workspace]
-                if index + 1 < workspaceManager.workspaceList.count {
-                    candidates = Array(workspaceManager.workspaceList.suffix(from: index + 1)).filter { !$0.isPinned }
+                if index + 1 < workspaceManager.workspaces.count {
+                    candidates = Array(workspaceManager.workspaces.suffix(from: index + 1)).filter { !$0.isPinned }
                 } else {
                     candidates = []
                 }

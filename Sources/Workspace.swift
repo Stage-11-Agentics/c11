@@ -11392,7 +11392,7 @@ final class Workspace: Identifiable, ObservableObject {
         case .selectedWorkspaceInNewWindow:
             let newWindowId = app.createMainWindow()
             guard let destinationManager = app.workspaceManagerFor(windowId: newWindowId),
-                  let destinationWorkspaceId = destinationManager.selectedTabId else {
+                  let destinationWorkspaceId = destinationManager.selectedWorkspaceId else {
                 return
             }
             moved = app.moveSurface(
@@ -11489,7 +11489,7 @@ extension Workspace: BonsplitDelegate {
         guard panels.count <= 1,
               panelIdFromSurfaceId(tabId) != nil,
               let manager,
-              manager.tabs.contains(where: { $0.id == id }) else {
+              manager.workspaces.contains(where: { $0.id == id }) else {
             return false
         }
         return true
@@ -11707,7 +11707,7 @@ extension Workspace: BonsplitDelegate {
         // C11-228: a tab selected inside a hidden workspace must stay throttled;
         // its view may never update (a new panel starts `.active`).
         if let owningWorkspaceManager {
-            applyPanelVisibility(workspaceVisible: owningWorkspaceManager.selectedTabId == id)
+            applyPanelVisibility(workspaceVisible: owningWorkspaceManager.selectedWorkspaceId == id)
         }
 
         // C11-243: tab switch / pane focus changes what the operator is seeing.

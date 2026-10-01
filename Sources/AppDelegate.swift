@@ -4866,8 +4866,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard windowIdx < contexts.count else { continue }
             let context = contexts[windowIdx]
             for (wsIdx, wsSnapshot) in windowSnapshot.workspaceManager.workspaces.enumerated() {
-                guard wsIdx < context.workspaceManager.workspaceList.count else { continue }
-                let workspace = context.workspaceManager.workspaceList[wsIdx]
+                guard wsIdx < context.workspaceManager.workspaces.count else { continue }
+                let workspace = context.workspaceManager.workspaces[wsIdx]
                 // Clear every live surface- and pane-layer entry on this
                 // workspace so the only surviving data path is "loaded from
                 // disk".
@@ -5154,7 +5154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func locateBonsplitSurface(tabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
         let bonsplitTabId = TabID(uuid: tabId)
         for context in mainWindowContexts.values {
-            for workspace in context.workspaceManager.tabs {
+            for workspace in context.workspaceManager.workspaces {
                 if let panelId = workspace.panelIdFromSurfaceId(bonsplitTabId) {
                     return (context.windowId, workspace.id, panelId, context.workspaceManager)
                 }
@@ -6590,7 +6590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? NSApp.keyWindow?.firstResponder
             ?? NSApp.mainWindow?.firstResponder
         guard let ghosttyView = cmuxOwningGhosttyView(for: responder),
-              let workspaceId = ghosttyView.tabId,
+              let workspaceId = ghosttyView.workspaceId,
               let panelId = ghosttyView.terminalSurface?.id,
               let manager = resolveShortcutWorkspaceManager(for: workspaceId, preferredWindow: targetWindow) else {
             return nil
@@ -8663,7 +8663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func waitForDebugStressMountedWorkspaces(_ workspaces: [Workspace]) async -> Int {
         guard !workspaces.isEmpty else { return 0 }
         var mountedWorkspaceCount = 0
-        let selectedWorkspaceId = workspaceManager?.selectedTabId
+        let selectedWorkspaceId = workspaceManager?.selectedWorkspaceId
 
         let updateMountedCount = { [self] in
             self.forceDebugStressVisibleLayout()
@@ -8727,7 +8727,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let deadline = Date().addingTimeInterval(debugStressSurfaceLoadTimeoutSeconds)
-        let selectedWorkspaceId = workspaceManager?.selectedTabId
+        let selectedWorkspaceId = workspaceManager?.selectedWorkspaceId
         var pendingTargets = targets
         var attempts = 0
         var eventCount = 0
@@ -9239,7 +9239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         betaPanelId: UUID
     ) {
         guard let workspaceManager else { return }
-        guard let workspace = (workspaceManager.tabs.first { $0.id == workspaceId } ?? workspaceManager.selectedWorkspace ?? workspaceManager.tabs.first) else {
+        guard let workspace = (workspaceManager.workspaces.first { $0.id == workspaceId } ?? workspaceManager.selectedWorkspace ?? workspaceManager.workspaces.first) else {
             return
         }
 
@@ -10300,7 +10300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 object: nil,
                 queue: .main
             ) { note in
-                guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.tabId] as? UUID,
+                guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
                       candidateWorkspaceId == tabId else { return }
                 attemptResolve()
             }
@@ -10353,8 +10353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     // Insert after W2 so it becomes "latest unread" (first in list).
                     store.addNotification(workspaceId: workspaceId1, surfaceId: nil, title: "W1", subtitle: "multiwindow", body: "")
 
-                    let notif1 = store.notifications.first(where: { $0.tabId == workspaceId1 && $0.title == "W1" })
-                    let notif2 = store.notifications.first(where: { $0.tabId == workspaceId2 && $0.title == "W2" })
+                    let notif1 = store.notifications.first(where: { $0.workspaceId == workspaceId1 && $0.title == "W1" })
+                    let notif2 = store.notifications.first(where: { $0.workspaceId == workspaceId2 && $0.title == "W2" })
 
                     self.writeMultiWindowNotificationTestData([
                         "window1Id": window1.windowId.uuidString,
@@ -10478,7 +10478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             object: nil,
             queue: .main
         ) { note in
-            guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.tabId] as? UUID,
+            guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
                   let candidateSurfaceId = note.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID,
                   candidateWorkspaceId == tabId,
                   candidateSurfaceId == surfaceId else { return }
@@ -10489,7 +10489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             object: nil,
             queue: .main
         ) { note in
-            guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.tabId] as? UUID,
+            guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
                   let candidateSurfaceId = note.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID,
                   candidateWorkspaceId == tabId,
                   candidateSurfaceId == surfaceId else { return }
@@ -10693,7 +10693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // tab manager currently owns the tab.
         for notification in notificationStore.notifications
         where !notification.isRead && notificationStore.isSignalEligible(notification) {
-            if openNotification(workspaceId: notification.tabId, surfaceId: notification.surfaceId, notificationId: notification.id) {
+            if openNotification(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId, notificationId: notification.id) {
                 return
             }
         }

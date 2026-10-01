@@ -29,9 +29,9 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        XCTAssertEqual(restored.workspaceList.count, 1)
+        XCTAssertEqual(restored.workspaces.count, 1)
         XCTAssertEqual(
-            restored.workspaceList.first?.id,
+            restored.workspaces.first?.id,
             originalId,
             "Restored workspace should keep the UUID from the snapshot"
         )
@@ -52,7 +52,7 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let third = manager.addWorkspace(select: true, placementOverride: .end)
         third.setCustomTitle("Third")
 
-        let orderedIds = manager.workspaceList.map(\.id)
+        let orderedIds = manager.workspaces.map(\.id)
         XCTAssertEqual(orderedIds.count, 3)
         XCTAssertEqual(Set(orderedIds).count, 3, "Pre-snapshot workspace ids must be distinct")
 
@@ -63,7 +63,7 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        let restoredIds = restored.workspaceList.map(\.id)
+        let restoredIds = restored.workspaces.map(\.id)
         XCTAssertEqual(
             restoredIds,
             orderedIds,
@@ -73,9 +73,9 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
 
         // Workspace-scoped metadata (customTitle) must still track the correct workspace
         // after restore — a sanity check that the id stability doesn't cross ids.
-        XCTAssertEqual(restored.workspaceList[0].customTitle, "First")
-        XCTAssertEqual(restored.workspaceList[1].customTitle, "Second")
-        XCTAssertEqual(restored.workspaceList[2].customTitle, "Third")
+        XCTAssertEqual(restored.workspaces[0].customTitle, "First")
+        XCTAssertEqual(restored.workspaces[1].customTitle, "Second")
+        XCTAssertEqual(restored.workspaces[2].customTitle, "Third")
     }
 
     func testFallbackWorkspaceOnEmptySnapshotGetsFreshId() {

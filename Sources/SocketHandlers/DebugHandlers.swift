@@ -211,7 +211,7 @@ extension TerminalController {
             var mappedLocations: [ObjectIdentifier: MappedTerminalLocation] = [:]
             for (windowIndex, state) in windows.enumerated() {
                 let workspaceManager = state.workspaceManager
-                for (workspaceIndex, workspace) in workspaceManager.tabs.enumerated() {
+                for (workspaceIndex, workspace) in workspaceManager.workspaces.enumerated() {
                     let paneIndexById = Dictionary(
                         uniqueKeysWithValues: workspace.bonsplitController.allPaneIds.enumerated().map {
                             ($0.element.id, $0.offset)
@@ -233,7 +233,7 @@ extension TerminalController {
                             windowId: state.windowId,
                             window: state.window,
                             workspaceIndex: workspaceIndex,
-                            workspaceSelected: workspace.id == workspaceManager.selectedTabId,
+                            workspaceSelected: workspace.id == workspaceManager.selectedWorkspaceId,
                             workspace: workspace,
                             terminalPanel: terminalPanel,
                             paneId: workspace.paneId(forPanelId: terminalPanel.id),

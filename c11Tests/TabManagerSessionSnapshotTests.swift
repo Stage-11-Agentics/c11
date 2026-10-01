@@ -18,7 +18,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
         let secondWorkspace = manager.addWorkspace(select: true)
         secondWorkspace.setCustomTitle("Second")
-        XCTAssertEqual(manager.workspaceList.count, 2)
+        XCTAssertEqual(manager.workspaces.count, 2)
         XCTAssertEqual(manager.selectedWorkspaceId, secondWorkspace.id)
 
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
@@ -28,10 +28,10 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        XCTAssertEqual(restored.workspaceList.count, 2)
-        XCTAssertEqual(restored.selectedWorkspaceId, restored.workspaceList[1].id)
-        XCTAssertEqual(restored.workspaceList[0].customTitle, "First")
-        XCTAssertEqual(restored.workspaceList[1].customTitle, "Second")
+        XCTAssertEqual(restored.workspaces.count, 2)
+        XCTAssertEqual(restored.selectedWorkspaceId, restored.workspaces[1].id)
+        XCTAssertEqual(restored.workspaces[0].customTitle, "First")
+        XCTAssertEqual(restored.workspaces[1].customTitle, "Second")
     }
 
     func testRestoreSessionSnapshotWithNoWorkspacesKeepsSingleFallbackWorkspace() {
@@ -67,10 +67,10 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
         let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
-        XCTAssertEqual(restored.workspaceList.count, 1)
-        XCTAssertEqual(restored.workspaceList[0].metadata["description"], "Backend refactor")
-        XCTAssertEqual(restored.workspaceList[0].metadata["icon"], "🦊")
-        XCTAssertEqual(restored.workspaceList[0].metadata["custom.tag"], "v2")
+        XCTAssertEqual(restored.workspaces.count, 1)
+        XCTAssertEqual(restored.workspaces[0].metadata["description"], "Backend refactor")
+        XCTAssertEqual(restored.workspaces[0].metadata["icon"], "🦊")
+        XCTAssertEqual(restored.workspaces[0].metadata["custom.tag"], "v2")
     }
 
     func testEmptyMetadataIsOmittedFromSnapshot() {

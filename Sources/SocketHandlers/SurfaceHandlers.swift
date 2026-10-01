@@ -633,7 +633,7 @@ extension TerminalController {
                 }
                 targetWindowId = windowUUID
                 targetWorkspaceManager = tm
-                guard let selectedWorkspaceId = tm.selectedTabId,
+                guard let selectedWorkspaceId = tm.selectedWorkspaceId,
                       let ws = tm.workspaces.first(where: { $0.id == selectedWorkspaceId }) else {
                     result = .err(code: "not_found", message: "Target window has no selected workspace", data: ["window_id": windowUUID.uuidString])
                     return

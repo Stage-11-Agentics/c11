@@ -1399,12 +1399,12 @@ struct cmuxApp: App {
 
     private func selectedWorkspaceHasUnreadNotifications(in manager: WorkspaceManager) -> Bool {
         guard let workspaceId = manager.selectedWorkspace?.id else { return false }
-        return notificationStore.notifications.contains { $0.tabId == workspaceId && !$0.isRead }
+        return notificationStore.notifications.contains { $0.workspaceId == workspaceId && !$0.isRead }
     }
 
     private func selectedWorkspaceHasReadNotifications(in manager: WorkspaceManager) -> Bool {
         guard let workspaceId = manager.selectedWorkspace?.id else { return false }
-        return notificationStore.notifications.contains { $0.tabId == workspaceId && $0.isRead }
+        return notificationStore.notifications.contains { $0.workspaceId == workspaceId && $0.isRead }
     }
 
     private func markSelectedWorkspaceRead(in manager: WorkspaceManager) {

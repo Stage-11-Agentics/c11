@@ -2132,7 +2132,7 @@ struct ContentView: View {
     private var terminalContent: some View {
         let mountedWorkspaceIdSet = Set(mountedWorkspaceIds)
         let mountedWorkspaces = workspaceManager.workspaces.filter { mountedWorkspaceIdSet.contains($0.id) }
-        let selectedWorkspaceId = workspaceManager.selectedTabId
+        let selectedWorkspaceId = workspaceManager.selectedWorkspaceId
         let retiringWorkspaceId = self.retiringWorkspaceId
 
         return ZStack {
@@ -4720,9 +4720,9 @@ struct ContentView: View {
 
         var entries: [CommandPaletteCommand] = []
         let estimatedCount = windowContexts.reduce(0) { partial, context in
-            let workspaceCount = context.workspaceManager.workspaceList.count
+            let workspaceCount = context.workspaceManager.workspaces.count
             guard includeSurfaces else { return partial + workspaceCount }
-            let surfaceCount = context.workspaceManager.workspaceList.reduce(0) { count, workspace in
+            let surfaceCount = context.workspaceManager.workspaces.reduce(0) { count, workspace in
                 count + commandPaletteOrderedSwitcherPanels(for: workspace).count
             }
             return partial + workspaceCount + surfaceCount
@@ -4829,7 +4829,7 @@ struct ContentView: View {
         let fallback = CommandPaletteSwitcherWindowContext(
             windowId: windowId,
             workspaceManager: workspaceManager,
-            selectedWorkspaceId: workspaceManager.selectedTabId,
+            selectedWorkspaceId: workspaceManager.selectedWorkspaceId,
             windowLabel: nil
         )
 
@@ -4887,10 +4887,10 @@ struct ContentView: View {
     private func commandPaletteOrderedSwitcherWorkspaces(
         for context: CommandPaletteSwitcherWindowContext
     ) -> [Workspace] {
-        var workspaces = context.workspaceManager.workspaceList
+        var workspaces = context.workspaceManager.workspaces
         guard !workspaces.isEmpty else { return [] }
 
-        let selectedWorkspaceId = context.selectedWorkspaceId ?? context.workspaceManager.selectedTabId
+        let selectedWorkspaceId = context.selectedWorkspaceId ?? context.workspaceManager.selectedWorkspaceId
         if let selectedWorkspaceId,
            let selectedIndex = workspaces.firstIndex(where: { $0.id == selectedWorkspaceId }) {
             let selectedWorkspace = workspaces.remove(at: selectedIndex)
@@ -6908,7 +6908,7 @@ struct ContentView: View {
         }
 
         if let terminalView = TerminalWindowPortalRegistry.terminalViewAtWindowPoint(windowPoint, in: window),
-           let workspaceId = terminalView.tabId,
+           let workspaceId = terminalView.workspaceId,
            let panelId = terminalView.terminalSurface?.id,
            workspaceManager.workspaces.contains(where: { $0.id == workspaceId }) {
             return commandPaletteRestoreFocusTarget(
@@ -6924,7 +6924,7 @@ struct ContentView: View {
 
     private func commandPaletteBackdropFocusTarget(for responder: NSResponder) -> CommandPaletteRestoreFocusTarget? {
         if let terminalView = cmuxOwningGhosttyView(for: responder),
-           let workspaceId = terminalView.tabId,
+           let workspaceId = terminalView.workspaceId,
            let panelId = terminalView.terminalSurface?.id,
            workspaceManager.workspaces.contains(where: { $0.id == workspaceId }) {
             return commandPaletteRestoreFocusTarget(
@@ -6949,7 +6949,7 @@ struct ContentView: View {
             return target
         }
 
-        let selectedWorkspaceId = workspaceManager.selectedTabId
+        let selectedWorkspaceId = workspaceManager.selectedWorkspaceId
         for workspace in workspaceManager.workspaces where workspace.id != selectedWorkspaceId {
             if let target = commandPaletteBrowserFocusTarget(in: workspace, for: webView) {
                 return target

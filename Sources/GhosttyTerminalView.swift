@@ -8694,12 +8694,12 @@ final class GhosttySurfaceScrollView: NSView {
 
         guard let delegate = AppDelegate.shared,
               let workspaceManager = delegate.workspaceManagerFor(tabId: tabId) ?? delegate.workspaceManager,
-              workspaceManager.selectedTabId == tabId else {
+              workspaceManager.selectedWorkspaceId == tabId else {
             scheduleAutomaticFirstResponderApply(reason: "ensureFocus.inactiveTab")
             return
         }
 
-        guard let tab = workspaceManager.tabs.first(where: { $0.id == tabId }),
+        guard let tab = workspaceManager.workspaces.first(where: { $0.id == tabId }),
               let workspaceIdForSurface = tab.surfaceIdFromPanelId(surfaceId),
               let paneId = tab.bonsplitController.allPaneIds.first(where: { paneId in
                   tab.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == workspaceIdForSurface })
@@ -8780,8 +8780,8 @@ final class GhosttySurfaceScrollView: NSView {
     private func matchesCurrentTerminalFocusTarget(tabId: UUID, surfaceId: UUID) -> Bool {
         guard let delegate = AppDelegate.shared,
               let workspaceManager = delegate.workspaceManagerFor(tabId: tabId) ?? delegate.workspaceManager,
-              workspaceManager.selectedTabId == tabId,
-              let tab = workspaceManager.tabs.first(where: { $0.id == tabId }),
+              workspaceManager.selectedWorkspaceId == tabId,
+              let tab = workspaceManager.workspaces.first(where: { $0.id == tabId }),
               let workspaceIdForSurface = tab.surfaceIdFromPanelId(surfaceId),
               let paneId = tab.bonsplitController.allPaneIds.first(where: { paneId in
                   tab.bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == workspaceIdForSurface })

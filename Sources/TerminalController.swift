@@ -2580,7 +2580,7 @@ class TerminalController {
 
         if let located = AppDelegate.shared?.locateSurface(surfaceId: surfaceId) {
             windowRef = v2EnsureHandleRef(kind: .window, uuid: located.windowId)
-            if let ws = located.workspaceManager.tabs.first(where: { $0.id == located.workspaceId }) {
+            if let ws = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }) {
                 for paneId in ws.bonsplitController.allPaneIds
                 where ws.bonsplitController.tabs(inPane: paneId)
                     .contains(where: { ws.panelIdFromSurfaceId($0.id) == surfaceId }) {
@@ -6039,8 +6039,8 @@ class TerminalController {
 
         var result = "ERROR: No tab selected"
         v2MainSync {
-            guard let tabId = workspaceManager.selectedTabId,
-                  let tab = workspaceManager.tabs.first(where: { $0.id == tabId }) else {
+            guard let tabId = workspaceManager.selectedWorkspaceId,
+                  let tab = workspaceManager.workspaces.first(where: { $0.id == tabId }) else {
                 return
             }
 
@@ -7272,8 +7272,8 @@ class TerminalController {
 
         var result = ""
         v2MainSync {
-            guard let tabId = workspaceManager.selectedTabId,
-                  let tab = workspaceManager.tabs.first(where: { $0.id == tabId }) else {
+            guard let tabId = workspaceManager.selectedWorkspaceId,
+                  let tab = workspaceManager.workspaces.first(where: { $0.id == tabId }) else {
                 result = "ERROR: No tab selected"
                 return
             }
@@ -7296,8 +7296,8 @@ class TerminalController {
 
         var result = ""
         v2MainSync {
-            guard let tabId = workspaceManager.selectedTabId,
-                  let tab = workspaceManager.tabs.first(where: { $0.id == tabId }) else {
+            guard let tabId = workspaceManager.selectedWorkspaceId,
+                  let tab = workspaceManager.workspaces.first(where: { $0.id == tabId }) else {
                 result = "ERROR: No tab selected"
                 return
             }

@@ -220,7 +220,7 @@ func buildConfigLaunchParams(subArgs: [String]) throws -> (params: [String: Any]
     do {
         inputs = try ConfigCommandCore.parseLaunchInputs(
             nameOrId: ref,
-            pane: cfgOption(subArgs, "--pane"),
+            pane: cfgOption(subArgs, "--area") ?? cfgOption(subArgs, "--pane"),
             workspace: cfgOption(subArgs, "--workspace"),
             newWorkspace: cfgFlag(subArgs, "--new-workspace"),
             cwd: cfgOption(subArgs, "--cwd").map(cfgResolvePath),

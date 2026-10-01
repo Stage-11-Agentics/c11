@@ -91,14 +91,14 @@ c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.role    --value "delegator"  
 **Bare name vs qualifier forms.** A bare `--to <x>` walks the precedence chain (address, then role, then title). To target a specific key unambiguously — never falling back to the title — use a qualifier form:
 
 ```bash
-c11 mailbox send --to surface:delegator-c11-143 --body "…"   # matches mailbox.address ONLY
+c11 mailbox send --to tab:delegator-c11-143 --body "…"   # matches mailbox.address ONLY
 c11 mailbox send --to role:delegator            --body "…"   # matches mailbox.role ONLY
 c11 mailbox send --to watcher                   --body "…"   # bare: address → role → title
 ```
 
-These `surface:` / `role:` forms select *which tabs* match; the workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used.
+These `tab:` / `role:` forms select *which tabs* match; the workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used.
 
-`surface:` and `role:` are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a tab whose title literally starts with `surface:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
+`tab:` and `role:` are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a tab whose title literally starts with `tab:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
 
 **Back-compat.** A tab with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive; the inbox directory is still keyed on the recipient's title.
 
@@ -137,7 +137,7 @@ Send flags accepted by the CLI:
 
 | Flag                  | Purpose                                                            |
 |-----------------------|--------------------------------------------------------------------|
-| `--to <tab>`      | Recipient handle, in any workspace. Bare name resolves address → role → title; `surface:<addr>` / `role:<name>` target one key. Required in Stage 2 (topic-only rejected). |
+| `--to <tab>`      | Recipient handle, in any workspace. Bare name resolves address → role → title; `tab:<addr>` / `role:<name>` target one key. Required in Stage 2 (topic-only rejected). |
 | `--to-workspace <ref>`| Disambiguate a name that exists in more than one workspace. A workspace UUID or `workspace:*` ref. |
 | `--topic <token>`     | Dotted topic. Stored on the envelope; not used for routing yet.    |
 | `--body <text>`       | Inline body, ≤ 4096 bytes UTF-8.                                   |

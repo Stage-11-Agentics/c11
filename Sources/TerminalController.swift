@@ -344,7 +344,7 @@ class TerminalController {
     /// `evaluateJavaScript`'s completion handler is never invoked and the await
     /// would burn its full timeout holding main. See C11-209.
     nonisolated static let v2BrowserNoDocumentMessage =
-        "Browser surface has not loaded a document; navigate first (c11 browser goto <url>)."
+        "Browser tab has not loaded a document; navigate first (c11 browser goto <url>)."
 
     /// Same condition, but the surface does have a target URL — a load was asked
     /// for and withheld. Reachable when the insecure-HTTP prompt is pending, when
@@ -352,7 +352,7 @@ class TerminalController {
     /// surface. "Navigate first" would be wrong advice there.
     nonisolated static func v2BrowserNavigationWithheldMessage(url: String) -> String {
         "Navigation to \(url) was requested but no load has been issued yet — "
-            + "check the insecure-HTTP prompt, a pending remote-workspace proxy, or a hibernated surface."
+            + "check the insecure-HTTP prompt, a pending remote-workspace proxy, or a hibernated tab."
     }
 
     /// True when a JS eval against this view can expect a completion handler.
@@ -2798,7 +2798,7 @@ class TerminalController {
         if anyResolves { return nil }
         return .err(
             code: "not_found",
-            message: "tab ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused surface",
+            message: "tab ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused tab",
             data: nil
         )
     }
@@ -4380,7 +4380,7 @@ class TerminalController {
 
     func helpText() -> String {
         var text = """
-        Hierarchy: Workspace (sidebar entry) > Area (split region) > Tab (terminal/browser/markdown). A tab is also called a panel or surface in this protocol.
+        Hierarchy: Workspace (sidebar entry) > Area (split region) > Tab (terminal/browser/markdown).
 
         Available commands:
           ping                        - Check if server is running
@@ -4391,20 +4391,20 @@ class TerminalController {
           close_workspace <id>        - Close workspace by ID
 
         Split & tab commands:
-          new_split <direction> [panel]   - Split panel (left/right/up/down)
-          drag_surface_to_split <id|idx> <direction> - Move surface into a new split (drag-to-edge)
+          new_split <direction> [tab]   - Split tab (left/right/up/down)
+          drag_surface_to_split <id|idx> <direction> - Move tab into a new split (drag-to-edge)
           new_pane [--type=terminal|browser] [--direction=left|right|up|down] [--url=...]
           new_surface [--type=terminal|browser] [--pane=<pane-id|index>] [--url=...]
-          list_surfaces [workspace]       - List surfaces for workspace (current if omitted)
-          list_panes                      - List all panes with IDs
-          list_pane_surfaces [--pane=<pane-id|index>] - List surfaces in pane
-          focus_surface <id|idx>          - Focus surface by ID or index
-          focus_pane <pane-id|index>      - Focus a pane
-          focus_surface_by_panel <panel_id> - Focus surface by panel ID
-          close_surface [id|idx]          - Close surface (collapse split)
+          list_surfaces [workspace]       - List tabs for workspace (current if omitted)
+          list_panes                      - List all areas with IDs
+          list_pane_surfaces [--pane=<pane-id|index>] - List tabs in area
+          focus_surface <id|idx>          - Focus tab by ID or index
+          focus_pane <pane-id|index>      - Focus an area
+          focus_surface_by_panel <tab_id> - Focus tab by tab ID
+          close_surface [id|idx]          - Close tab (collapse split)
           reload_config [soft]            - Reload Ghostty config and refresh terminals
           refresh_surfaces                - Force refresh all terminals
-          surface_health [workspace]      - Check view health of all surfaces
+          surface_health [workspace]      - Check view health of all tabs
 
         Input commands:
           send <text>                     - Send text to current terminal
@@ -4417,9 +4417,9 @@ class TerminalController {
           read_screen [id|idx] [--scrollback] [--lines N] - Read terminal text (plain text)
 
         Notification commands:
-          notify <title>|<subtitle>|<body>   - Notify focused panel
-          notify_surface <id|idx> <payload>  - Notify a specific surface
-          notify_target <workspace_id> <surface_id> <payload> - Notify by workspace+surface
+          notify <title>|<subtitle>|<body>   - Notify focused tab
+          notify_surface <id|idx> <payload>  - Notify a specific tab
+          notify_target <workspace_id> <surface_id> <payload> - Notify by workspace+tab
           list_notifications              - List all notifications
           clear_notifications [--tab=X]    - Clear notifications (all or per-workspace; --tab=X is a workspace id)
           set_app_focus <active|inactive|clear> - Override app focus state
@@ -4445,7 +4445,7 @@ class TerminalController {
           clear_pr [--tab=X] [--panel=Y] - Clear pull request
           report_ports <port1> [port2...] [--tab=X] [--panel=Y] - Report listening ports
           report_tty <tty_name> [--tab=X] [--panel=Y] - Register TTY for batched port scanning
-          ports_kick [--tab=X] [--panel=Y] - Request batched port scan for panel
+          ports_kick [--tab=X] [--panel=Y] - Request batched port scan for tab
           report_shell_state <prompt|running> [--tab=X] [--panel=Y] - Report whether the shell is idle at a prompt or running a command
           report_pwd <path> [--tab=X] [--panel=Y] - Report current working directory
           clear_ports [--tab=X] [--panel=Y] - Clear listening ports
@@ -4453,14 +4453,14 @@ class TerminalController {
           reset_sidebar [--tab=X] - Clear sidebar metadata
 
         Browser commands:
-          open_browser [url]              - Create browser panel with optional URL
-          navigate <panel_id> <url>       - Navigate browser to URL
-          browser_back <panel_id>         - Go back in browser history
-          browser_forward <panel_id>      - Go forward in browser history
-          browser_reload <panel_id>       - Reload browser page
-          get_url <panel_id>              - Get current URL of browser panel
-          focus_webview <panel_id>        - Move keyboard focus into the WKWebView (for tests)
-          is_webview_focused <panel_id>   - Return true/false if WKWebView is first responder
+          open_browser [url]              - Create browser tab with optional URL
+          navigate <tab_id> <url>       - Navigate browser to URL
+          browser_back <tab_id>         - Go back in browser history
+          browser_forward <tab_id>      - Go forward in browser history
+          browser_reload <tab_id>       - Reload browser page
+          get_url <tab_id>              - Get current URL of browser tab
+          focus_webview <tab_id>        - Move keyboard focus into the WKWebView (for tests)
+          is_webview_focused <tab_id>   - Return true/false if WKWebView is first responder
 
           help                            - Show this help
         """

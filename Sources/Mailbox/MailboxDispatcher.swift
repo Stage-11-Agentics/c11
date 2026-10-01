@@ -485,7 +485,7 @@ final class MailboxDispatcher {
     /// vanishing. Distinct reason string so `c11 mailbox trace` can tell a
     /// malformed envelope from an unknown recipient.
     private func rejectUnresolved(id: String, processingURL: URL, to: String) {
-        let reason = "no live surface named '\(to)' in workspace \(workspaceId.uuidString)"
+        let reason = "no live tab named '\(to)' in workspace \(workspaceId.uuidString)"
         let rejectedDir = MailboxLayout.rejectedURL(state: stateURL, workspaceId: workspaceId)
         let rejectedMsg = rejectedDir.appendingPathComponent(
             MailboxLayout.envelopeFilename(id: id)

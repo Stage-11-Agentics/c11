@@ -534,9 +534,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
-    /// C11-248: the flag caller UUID string, read from either key spelling.
+    /// C11-248: the flag caller UUID string, read from either key spelling. The legacy key wins: both
+    /// are always written together, so a stale custom `flag_caller_tab_id` never outranks it.
     static func flagCallerValue(_ blob: [String: Any]) -> String? {
-        (blob[MetadataKey.flagCallerTabId] as? String) ?? (blob[MetadataKey.flagCallerSurfaceId] as? String)
+        (blob[MetadataKey.flagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
     }
 
     /// Canonical attention read. The flag source timestamp is the original

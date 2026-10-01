@@ -596,6 +596,21 @@ struct AgentConfigEditorSheet: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
+            Button(action: newConfig) {
+                HStack(spacing: 6) {
+                    Text("＋").font(.system(size: 14, weight: .semibold))
+                    Text(String(localized: "agentConfigEditor.newConfig", defaultValue: "New config"))
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(BrandColors.goldSwiftUI)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(BrandColors.goldSwiftUI, lineWidth: 1.2)
+            )
+            .buttonStyle(.plain)
+
             Text(String(localized: "agentConfigEditor.default", defaultValue: "Default"))
                 .font(.system(size: 9, weight: .medium)).textCase(.uppercase).tracking(1.2)
                 .foregroundStyle(BrandColors.dimSwiftUI)
@@ -623,18 +638,16 @@ struct AgentConfigEditorSheet: View {
 
             Spacer()
 
-            // Save is the primary act (C11-203 F2): most edits end here, and
-            // launching is the occasional follow-on, not the default gesture.
-            Button(String(localized: "agentConfigEditor.saveLaunch", defaultValue: "Save & Launch"),
-                   action: saveAndLaunch)
-                .buttonStyle(.bordered)
             Button(action: saveOnly) {
                 HStack(spacing: 8) {
                     Text(String(localized: "agentConfigEditor.save", defaultValue: "Save"))
                     Text("\u{23CE}").opacity(0.55).font(.system(size: 11))
                 }
             }
-            .buttonStyle(GoldCTAButtonStyle())
+            .buttonStyle(.bordered)
+            Button(String(localized: "agentConfigEditor.saveLaunch", defaultValue: "Save & Launch"),
+                   action: saveAndLaunch)
+                .buttonStyle(GoldCTAButtonStyle())
         }
         .padding(.horizontal, 22).padding(.vertical, 12)
         .background(BrandColors.surfaceSwiftUI.opacity(0.6))
@@ -662,6 +675,7 @@ struct AgentConfigEditorSheet: View {
 
     private func newConfig() {
         draft = .new()
+        draft.name = AgentConfigAxes.autoName(for: draft.config)
         provider = AgentConfigAxes.derivedProvider(for: draft.config, catalog: catalog)
         advancedOpen = false
         modelFilter = ""
@@ -760,8 +774,10 @@ struct AgentConfigRecipeEditor: View {
     }
 
     private func apply(_ next: AgentConfigAxisSelection) {
+        let previous = draft.config
         provider = next.provider
         draft.config = next.config
+        draft.name = AgentConfigAxes.syncedName(draft.name, from: previous, to: next.config)
     }
 
     var body: some View {
@@ -1118,8 +1134,7 @@ struct AgentConfigRecipeEditor: View {
         return VStack(alignment: .leading, spacing: 6) {
             fieldLabel(String(localized: "agentConfigEditor.harness", defaultValue: "Harness"),
                        trailing: AnyView(
-                        Text(String(localized: "agentConfigEditor.harness.hint",
-                                    defaultValue: "the last question — which shell runs it"))
+                        Text(harnessHint)
                             .font(.system(size: 9, weight: .light)).foregroundStyle(Color(white: 0.29))))
             if options.count == 1, let only = options.first {
                 resolvedHarnessRow(only)
@@ -1131,6 +1146,15 @@ struct AgentConfigRecipeEditor: View {
                 }
             }
         }
+    }
+
+    private var harnessHint: String {
+        if provider == "xai" {
+            return String(localized: "agentConfigEditor.harness.xaiHint",
+                          defaultValue: "Grok Build is the default — grok.com account on this machine")
+        }
+        return String(localized: "agentConfigEditor.harness.hint",
+                      defaultValue: "the last question — which shell runs it")
     }
 
     /// Exactly one harness can serve the pair: state it rather than presenting

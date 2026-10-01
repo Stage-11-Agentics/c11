@@ -10,12 +10,12 @@ import Foundation
 // harness CLIs published when this file was generated, in the same raw
 // form live enumeration produces, so the merge has one code path.
 //
-// 1442 raw records → 629 models across 57 providers:
+// 1443 raw records → 630 models across 57 providers:
 //   openai: 177
 //   anthropic: 41
 //   google: 84
 //   moonshot: 15
-//   xai: 15
+//   xai: 16
 //   deepseek: 15
 //   qwen: 61
 //   mistral: 26
@@ -71,7 +71,7 @@ import Foundation
 
 enum ModelCatalogSnapshot {
     /// When the capture behind this snapshot was taken.
-    static let generatedAtISO8601 = "2026-08-09T01:35:29Z"
+    static let generatedAtISO8601 = "2026-09-16T19:44:56Z"
     static let generatedAt: Date? = ISO8601DateFormatter().date(from: generatedAtISO8601)
 
     /// Raw rows, decoded once.
@@ -93,6 +93,7 @@ codex	gpt-5.6-sol	GPT-5.6-Sol	272000	low,medium,high,xhigh,max,ultra		openai	low
 codex	gpt-5.6-sol-wm	GPT-5.6-Sol-WM	272000	low,medium,high,xhigh,max,ultra		openai	low		1
 codex	gpt-5.6-terra	GPT-5.6-Terra	272000	low,medium,high,xhigh,max,ultra		openai	medium		2
 grok	grok-4.5			-		xai
+grok	grok-4.6			-		xai
 kimi	k3	K3	1048576	low,high,max		moonshot	high
 kimi	k3-256k	K3-256k	262144	low,high,max		moonshot	high
 kimi	kimi-for-coding	K2.7 Coding	262144	0		moonshot

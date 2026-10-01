@@ -230,7 +230,7 @@ final class ModelCatalogTests: XCTestCase {
 
     func testGrokParserReadsBulletList() throws {
         let records = GrokModelsParser.parse(try fixture("grok-models.txt"))
-        XCTAssertEqual(records.map(\.rawID), ["grok-4.5"])
+        XCTAssertEqual(records.map(\.rawID), ["grok-4.6", "grok-4.5"])
         XCTAssertEqual(records.first?.providerHint, "xai")
     }
 

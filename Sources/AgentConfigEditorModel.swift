@@ -170,7 +170,8 @@ enum AgentConfigAxes {
     ///
     /// Search is not a nicety here: OpenAI alone publishes 176 models through
     /// the five catalogs, so an unfiltered list is unusable. An empty query
-    /// returns the provider's models in catalog order.
+    /// returns the provider's models with the native harness's own rows first
+    /// (xAI opens onto Grok Build's list, not the OpenRouter long tail).
     static func modelOptions(
         provider: String?,
         query: String,
@@ -184,9 +185,25 @@ enum AgentConfigAxes {
             return needle.isEmpty ? [] : catalog.search(needle, provider: nil, limit: limit)
         }
         if needle.isEmpty {
-            return Array(catalog.models(forProvider: provider).prefix(limit))
+            return Array(nativeHarnessFirst(
+                catalog.models(forProvider: provider),
+                provider: provider
+            ).prefix(limit))
         }
         return catalog.search(needle, provider: provider, limit: limit)
+    }
+
+    /// Native-harness rows first, catalog order preserved inside each group.
+    /// xAI otherwise opens on OpenRouter's grok-4.20 / grok-build-0.1 soup and
+    /// the operator never sees Grok Build's own two models.
+    private static func nativeHarnessFirst(_ models: [CatalogModel], provider: String) -> [CatalogModel] {
+        let native = ModelCatalogHarnesses.partCDefault(forProvider: provider)
+        var head: [CatalogModel] = []
+        var tail: [CatalogModel] = []
+        for model in models {
+            if model.harness == native { head.append(model) } else { tail.append(model) }
+        }
+        return head + tail
     }
 
     /// The catalog model a selection currently names, or `nil` for Inherit.
@@ -252,6 +269,12 @@ enum AgentConfigAxes {
     /// can always launch. With no model pinned every harness is reachable,
     /// which is how Custom and any harness that publishes no catalog stay
     /// selectable.
+    ///
+    /// Grok Build is the exception: `grok models` publishes two ids, while
+    /// routers list the rest of xAI. The grok CLI takes `--model` free-form, so
+    /// an xAI model the grok catalog missed must still offer Grok Build —
+    /// otherwise picking xAI and then any router row locks the harness to
+    /// OpenCode/pi/omp and Grok Build disappears.
     static func harnessOptions(
         for selection: AgentConfigAxisSelection,
         catalog: EditorModelCatalog
@@ -259,8 +282,22 @@ enum AgentConfigAxes {
         guard let model = resolvedModel(for: selection, catalog: catalog) else {
             return AgentType.allCases.map(\.rawValue)
         }
-        let served = catalog.harnesses(forModel: model)
-        return served.isEmpty ? [model.harness] : served
+        var served = catalog.harnesses(forModel: model)
+        if served.isEmpty { served = [model.harness] }
+        return withNativeHarnessIfFreeform(served, provider: model.provider)
+    }
+
+    /// xAI's native harness. Grok's CLI accepts `--model` for ids it does not
+    /// list, so the editor always offers it for an xAI model.
+    static let grokHarnessKey = "grok"
+
+    private static func withNativeHarnessIfFreeform(_ served: [String], provider: String) -> [String] {
+        guard provider == "xai",
+              acceptsModel(forHarness: grokHarnessKey),
+              !served.contains(grokHarnessKey) else {
+            return served
+        }
+        return [grokHarnessKey] + served
     }
 
     // MARK: Effort axis (Part E1)
@@ -420,6 +457,10 @@ enum AgentConfigAxes {
     /// it can serve the model, otherwise the model's default (top-line) harness
     /// is auto-selected. The stored value is always the *chosen harness's* flag
     /// spelling, never the harness-independent `CatalogModel.id`.
+    ///
+    /// xAI is the exception: every xAI model defaults to Grok Build. This
+    /// machine has a grok.com account; routers stay reachable from the harness
+    /// cards but are never the automatic pick.
     static func selectingModel(
         _ model: CatalogModel?,
         in selection: AgentConfigAxisSelection,
@@ -433,10 +474,18 @@ enum AgentConfigAxes {
         guard !model.isComingSoon else { return selection }
 
         next.provider = model.provider
-        let served = catalog.harnesses(forModel: model)
-        let harness = served.contains(selection.config.harness)
-            ? selection.config.harness
-            : (served.first ?? model.harness)
+        let served = withNativeHarnessIfFreeform(
+            catalog.harnesses(forModel: model),
+            provider: model.provider
+        )
+        let harness: String
+        if model.provider == "xai" {
+            harness = grokHarnessKey
+        } else if served.contains(selection.config.harness) {
+            harness = selection.config.harness
+        } else {
+            harness = served.first ?? model.harness
+        }
         next.config.harness = harness
         next.config.model = catalog.modelFlagValue(for: model, harness: harness)
         return reconciled(next, from: selection, catalog: catalog)
@@ -453,7 +502,10 @@ enum AgentConfigAxes {
         var next = selection
         next.config.harness = harness
         if let model = resolvedModel(for: selection, catalog: catalog) {
-            let served = catalog.harnesses(forModel: model)
+            let served = withNativeHarnessIfFreeform(
+                catalog.harnesses(forModel: model),
+                provider: model.provider
+            )
             next.config.model = (served.contains(harness) && acceptsModel(forHarness: harness))
                 ? catalog.modelFlagValue(for: model, harness: harness)
                 : nil
@@ -578,16 +630,33 @@ enum AgentConfigAxes {
     }
 
     /// A generated fallback name when the operator leaves the name blank —
-    /// `<first word of display name> <model label>` (e.g. "Claude opus"),
-    /// falling back to the display name alone.
+    /// `<first word of display name> <model label> <effort>` (e.g. "Claude opus",
+    /// "Claude fable high"), falling back to the display name alone.
     static func autoName(for config: AgentLaunchConfig) -> String {
         let display = AgentRegistry.shared.manifest(forKind: config.harness)?.displayName
             ?? config.harness
         let firstWord = display.split(separator: " ").first.map(String.init) ?? display
         let label = modelLabel(config)
-        let composed = (label == "inherit") ? firstWord : "\(firstWord) \(label)"
-        let trimmed = composed.trimmingCharacters(in: .whitespaces)
+        var bits: [String] = [firstWord]
+        if label != "inherit" { bits.append(label) }
+        if let effort = config.effort?.trimmingCharacters(in: .whitespaces), !effort.isEmpty {
+            bits.append(effort)
+        }
+        let trimmed = bits.joined(separator: " ").trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? display : trimmed
+    }
+
+    /// Whether `name` is still the recipe-derived default (empty, or equal to
+    /// `autoName` of `config`). A customized title like "Fable High" does not
+    /// follow; a new config does.
+    static func followsAutoName(_ name: String, for config: AgentLaunchConfig) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty || trimmed == autoName(for: config)
+    }
+
+    /// Keep the name in lockstep with the recipe until the operator types one.
+    static func syncedName(_ name: String, from old: AgentLaunchConfig, to new: AgentLaunchConfig) -> String {
+        followsAutoName(name, for: old) ? autoName(for: new) : name
     }
 
     /// The "harness · model · effort" sub-line (prototype `describe`). Harness is

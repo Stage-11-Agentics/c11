@@ -56,8 +56,13 @@ final class AgentConfigEditorModelTests: XCTestCase {
         RawCatalogRecord(harness: "omp", rawID: "kimi/kimi-for-coding",
                          efforts: .values(["minimal", "low", "medium", "high"])),
 
-        // xAI, and a long-tail provider so the overflow tier has something in it.
+        // xAI. grok publishes 4.5; grok-build-0.1 is router-only — the trap that
+        // used to hide Grok Build the moment the operator picked an xAI model.
         RawCatalogRecord(harness: "grok", rawID: "grok-4.5", providerHint: "xai"),
+        RawCatalogRecord(harness: "grok", rawID: "grok-4.6", providerHint: "xai"),
+        RawCatalogRecord(harness: "opencode", rawID: "openrouter/x-ai/grok-build-0.1",
+                         displayName: "Grok Build"),
+        RawCatalogRecord(harness: "pi", rawID: "openrouter/x-ai/grok-build-0.1"),
         RawCatalogRecord(harness: "pi", rawID: "perplexity/sonar-pro"),
     ]
 
@@ -182,6 +187,39 @@ final class AgentConfigEditorModelTests: XCTestCase {
         let after = AgentConfigAxes.selectingModel(model("anthropic", "claude-opus-4-8"), in: before, catalog: catalog)
         XCTAssertEqual(after.config.harness, "opencode", "opencode serves it, so the operator's pick survives")
         XCTAssertEqual(after.config.model, "anthropic/claude-opus-4-8")
+    }
+
+    func testAnXAIRouterModelStillOffersGrokBuild() {
+        let routed = selection(provider: "xai", harness: "opencode", model: "openrouter/x-ai/grok-build-0.1")
+        XCTAssertEqual(
+            AgentConfigAxes.harnessOptions(for: routed, catalog: catalog).first,
+            "grok",
+            "Grok Build stays on the list even though grok models never published grok-build-0.1"
+        )
+        XCTAssertTrue(AgentConfigAxes.harnessOptions(for: routed, catalog: catalog).contains("opencode"))
+    }
+
+    func testPickingAnXAIRouterModelFromGrokKeepsGrokBuild() {
+        let before = selection(provider: "xai", harness: "grok")
+        let after = AgentConfigAxes.selectingModel(model("xai", "grok-build-0.1"), in: before, catalog: catalog)
+        XCTAssertEqual(after.config.harness, "grok")
+        XCTAssertEqual(after.config.model, "grok-build-0.1",
+                       "grok --model takes the bare id even when the grok catalog missed it")
+    }
+
+    func testAnyXAIModelDefaultsToGrokBuildEvenFromARouterHarness() {
+        let before = selection(provider: "openai", harness: "opencode", model: "openai/gpt-5.6-sol")
+        let after = AgentConfigAxes.selectingModel(model("xai", "grok-build-0.1"), in: before, catalog: catalog)
+        XCTAssertEqual(after.config.harness, "grok",
+                       "this machine has a grok.com account; Grok Build is the xAI default")
+        XCTAssertEqual(after.provider, "xai")
+        XCTAssertEqual(after.config.model, "grok-build-0.1")
+    }
+
+    func testXAIModelListLeadsWithGrokBuildsOwnIds() {
+        let ids = AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: catalog).map(\.id)
+        XCTAssertEqual(Array(ids.prefix(2)), ["grok-4.5", "grok-4.6"])
+        XCTAssertTrue(ids.contains("grok-build-0.1"))
     }
 
     func testAComingSoonModelIsNotSelectable() {
@@ -419,7 +457,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
     func testModelOptionsWithNoProviderSearchTheWholeCatalog() {
         XCTAssertTrue(AgentConfigAxes.modelOptions(provider: nil, query: "", catalog: catalog).isEmpty,
                       "no provider and no query is the Inherit case, not a 628-row dump")
-        let hits = AgentConfigAxes.modelOptions(provider: nil, query: "grok", catalog: catalog)
+        let hits = AgentConfigAxes.modelOptions(provider: nil, query: "grok-4.5", catalog: catalog)
         XCTAssertEqual(hits.map(\.id), ["grok-4.5"])
     }
 
@@ -498,8 +536,22 @@ final class AgentConfigEditorModelTests: XCTestCase {
     func testAutoName() {
         XCTAssertEqual(AgentConfigAxes.autoName(for: AgentLaunchConfig(harness: "claude-code", model: "opus")),
                        "Claude opus")
+        XCTAssertEqual(
+            AgentConfigAxes.autoName(for: AgentLaunchConfig(harness: "claude-code", model: "fable", effort: "high")),
+            "Claude fable high")
+        XCTAssertEqual(AgentConfigAxes.autoName(for: AgentLaunchConfig(harness: "grok", model: "grok-4.6")),
+                       "Grok grok-4.6")
         // inherit model → just the first word of the display name.
         XCTAssertEqual(AgentConfigAxes.autoName(for: AgentLaunchConfig(harness: "codex")), "Codex")
+    }
+
+    func testSyncedNameFollowsTheRecipeUntilTheOperatorTypesOne() {
+        let opus = AgentLaunchConfig(harness: "claude-code", model: "opus")
+        let fable = AgentLaunchConfig(harness: "claude-code", model: "fable", effort: "high")
+        XCTAssertEqual(AgentConfigAxes.syncedName("", from: opus, to: fable), "Claude fable high")
+        XCTAssertEqual(AgentConfigAxes.syncedName("Claude opus", from: opus, to: fable), "Claude fable high")
+        XCTAssertEqual(AgentConfigAxes.syncedName("Fable High", from: opus, to: fable), "Fable High",
+                       "a customized title is left alone")
     }
 
     func testDescribe() {

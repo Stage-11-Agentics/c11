@@ -51,10 +51,10 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        let baseline = loadJSON(atPath: keyequivPath)?["closePanelInvocations"].flatMap(Int.init) ?? 0
+        let baseline = loadJSON(atPath: keyequivPath)?["closeTabInvocations"].flatMap(Int.init) ?? 0
         app.typeKey("w", modifierFlags: [.command])
         XCTAssertTrue(
-            waitForKeyequivInt("closePanelInvocations", toBeAtLeast: baseline + 1, atPath: keyequivPath, timeout: 5.0),
+            waitForKeyequivInt("closeTabInvocations", toBeAtLeast: baseline + 1, atPath: keyequivPath, timeout: 5.0),
             "Expected Cmd+W to route through the close-current-tab action"
         )
 
@@ -127,7 +127,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(data["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(data["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(data["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (data["closedWorkspace"] ?? "") == "1"
             let timedOut = (data["timedOut"] ?? "") == "1"
 
@@ -158,7 +158,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             return
         }
 
-        let rightPanelId = ready["rightPanelId"] ?? ""
+        let rightPanelId = ready["rightTabId"] ?? ""
         guard !rightPanelId.isEmpty else {
             XCTFail("Missing rightPanelId in setup data. data=\(ready)")
             return
@@ -175,11 +175,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         }
 
         let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-        let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+        let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
         let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
         let timedOut = (done["timedOut"] ?? "") == "1"
-        let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-        let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+        let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+        let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
 
         XCTAssertFalse(timedOut, "Keyboard Ctrl+D test timed out. data=\(done)")
         XCTAssertFalse(closedWorkspace, "Ctrl+D should not close workspace/window when another pane remains. data=\(done)")
@@ -218,7 +218,7 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             return
         }
 
-        let rightPanelId = ready["rightPanelId"] ?? ""
+        let rightPanelId = ready["rightTabId"] ?? ""
         guard !rightPanelId.isEmpty else {
             XCTFail("Missing rightPanelId in setup data. data=\(ready)")
             return
@@ -230,11 +230,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         }
 
         let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-        let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+        let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
         let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
         let timedOut = (done["timedOut"] ?? "") == "1"
-        let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-        let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+        let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+        let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
 
         XCTAssertFalse(timedOut, "Keyboard Ctrl+D test timed out. data=\(done)")
         XCTAssertFalse(closedWorkspace, "Ctrl+D should not close workspace/window when multiple panes remain. data=\(done)")
@@ -281,8 +281,8 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 return
             }
 
-            let panelCountBefore = Int(ready["panelCountBeforeCtrlD"] ?? "") ?? -1
-            let exitPanelId = ready["exitPanelId"] ?? ""
+            let panelCountBefore = Int(ready["tabCountBeforeCtrlD"] ?? "") ?? -1
+            let exitPanelId = ready["exitTabId"] ?? ""
             XCTAssertEqual(
                 panelCountBefore,
                 2,
@@ -302,11 +302,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
             let timedOut = (done["timedOut"] ?? "") == "1"
-            let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-            let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+            let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+            let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
             let triggerMode = done["autoTriggerMode"] ?? ""
 
             XCTAssertFalse(timedOut, "Attempt \(attempt): keyboard Ctrl+D 2x2-right-close timed out. data=\(done)")
@@ -354,8 +354,8 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 return
             }
 
-            let panelCountBefore = Int(ready["panelCountBeforeCtrlD"] ?? "") ?? -1
-            let exitPanelId = ready["exitPanelId"] ?? ""
+            let panelCountBefore = Int(ready["tabCountBeforeCtrlD"] ?? "") ?? -1
+            let exitPanelId = ready["exitTabId"] ?? ""
             XCTAssertEqual(
                 panelCountBefore,
                 2,
@@ -375,11 +375,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
             let timedOut = (done["timedOut"] ?? "") == "1"
-            let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-            let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+            let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+            let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
             let triggerMode = done["autoTriggerMode"] ?? ""
 
             XCTAssertFalse(timedOut, "Attempt \(attempt): keyboard Ctrl+D 2x2-bottom-close timed out. data=\(done)")
@@ -426,8 +426,8 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 return
             }
 
-            let panelCountBefore = Int(ready["panelCountBeforeCtrlD"] ?? "") ?? -1
-            let exitPanelId = ready["exitPanelId"] ?? ""
+            let panelCountBefore = Int(ready["tabCountBeforeCtrlD"] ?? "") ?? -1
+            let exitPanelId = ready["exitTabId"] ?? ""
             XCTAssertEqual(
                 panelCountBefore,
                 2,
@@ -447,11 +447,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
             let timedOut = (done["timedOut"] ?? "") == "1"
-            let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-            let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+            let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+            let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
 
             XCTAssertFalse(timedOut, "Attempt \(attempt): real keyboard Ctrl+D timed out. data=\(done)")
             XCTAssertFalse(closedWorkspace, "Attempt \(attempt): real keyboard Ctrl+D should not close workspace/window when another pane remains. data=\(done)")
@@ -506,8 +506,8 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 return
             }
 
-            let panelCountBefore = Int(ready["panelCountBeforeCtrlD"] ?? "") ?? -1
-            let exitPanelId = ready["exitPanelId"] ?? ""
+            let panelCountBefore = Int(ready["tabCountBeforeCtrlD"] ?? "") ?? -1
+            let exitPanelId = ready["exitTabId"] ?? ""
             XCTAssertEqual(
                 panelCountBefore,
                 2,
@@ -527,11 +527,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
             let timedOut = (done["timedOut"] ?? "") == "1"
-            let focusedPanelAfter = done["focusedPanelAfter"] ?? ""
-            let firstResponderPanelAfter = done["firstResponderPanelAfter"] ?? ""
+            let focusedPanelAfter = done["focusedTabAfter"] ?? ""
+            let firstResponderPanelAfter = done["firstResponderTabAfter"] ?? ""
 
             XCTAssertFalse(timedOut, "Attempt \(attempt): real keyboard Ctrl+D timed out. data=\(done)")
             XCTAssertFalse(closedWorkspace, "Attempt \(attempt): real keyboard Ctrl+D should not close workspace/window when another pane remains. data=\(done)")
@@ -589,14 +589,14 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
             }
 
             let workspaceCountAfter = Int(done["workspaceCountAfter"] ?? "") ?? -1
-            let panelCountAfter = Int(done["panelCountAfter"] ?? "") ?? -1
+            let panelCountAfter = Int(done["tabCountAfter"] ?? "") ?? -1
             let closedWorkspace = (done["closedWorkspace"] ?? "") == "1"
             let timedOut = (done["timedOut"] ?? "") == "1"
             let triggerMode = done["autoTriggerMode"] ?? ""
-            let exitPanelId = done["exitPanelId"] ?? ""
+            let exitPanelId = done["exitTabId"] ?? ""
             let workspaceId = done["workspaceId"] ?? ""
-            let probeSurfaceId = done["probeShowChildExitedSurfaceId"] ?? ""
-            let probeTabId = done["probeShowChildExitedTabId"] ?? ""
+            let probeSurfaceId = done["probeShowChildExitedTabId"] ?? ""
+            let probeTabId = done["probeShowChildExitedWorkspaceId"] ?? ""
 
             XCTAssertFalse(timedOut, "Attempt \(attempt): early Ctrl+D timed out. data=\(done)")
             XCTAssertEqual(triggerMode, "strict_early_ctrl_d", "Attempt \(attempt): expected strict early Ctrl+D trigger mode. data=\(done)")
@@ -770,11 +770,11 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
         context: String
     ) {
         XCTAssertEqual(
-            data["focusedPanelBefore"],
+            data["focusedTabBefore"],
             expectedExitPanelId,
             "\(context): expected target exit pane to be focused before Ctrl+D. data=\(data)"
         )
-        let firstResponderPanelBefore = data["firstResponderPanelBefore"] ?? ""
+        let firstResponderPanelBefore = data["firstResponderTabBefore"] ?? ""
         if !firstResponderPanelBefore.isEmpty {
             XCTAssertEqual(
                 firstResponderPanelBefore,

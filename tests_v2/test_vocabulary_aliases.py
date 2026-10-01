@@ -342,6 +342,21 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
     print("PASS: notification.create_for_surface == notification.create_for_tab")
 
 
+def test_debug_method_aliases(c: cmux, f: Fixture) -> None:
+    # Old debug-only names stay accepted and reach the same handlers.
+    new_count = _call(c, "debug.empty_area.count")
+    old_count = _call(c, "debug.empty_panel.count")
+    _same(new_count.get("count"), old_count.get("count"), "empty_area.count vs empty_panel.count")
+    _call(c, "debug.empty_area.reset")
+    _call(c, "debug.empty_panel.reset")
+    for method in ("debug.tab_snapshot", "debug.panel_snapshot"):
+        snap = _call(c, method, {"tab_id": f.t1, "label": "vocab"})
+        _same(snap.get("tab_id"), f.t1, f"{method} tab_id")
+    for method in ("debug.tab_snapshot.reset", "debug.panel_snapshot.reset"):
+        _call(c, method, {"tab_id": f.t1})
+    print("PASS: debug.empty_panel / debug.panel_snapshot == debug.empty_area / debug.tab_snapshot")
+
+
 # ---------------------------------------------------------------------------
 # Dual-key JSON
 # ---------------------------------------------------------------------------
@@ -1036,6 +1051,7 @@ def main() -> int:
             test_old_param_names_address_the_same_tab(c, fixture)
             test_write_methods_cross_over(c, fixture)
             test_notification_create_aliases(c, fixture)
+            test_debug_method_aliases(c, fixture)
             test_tab_action_and_send_key_old_methods(c, fixture)
             test_old_tab_presentation_methods(c, fixture)
             test_old_ref_params_and_caller_keys(c, fixture)

@@ -27,8 +27,20 @@ enum LegacyWireAliases {
         if method == "notification.create_for_surface" {
             return "notification.create_for_tab"
         }
+        if let canonical = legacyDebugMethods[method] {
+            return canonical
+        }
         return method
     }
+
+    /// Old debug-only method names. `empty_panel` counts the Empty Area view, so
+    /// it becomes `empty_area`; `panel_snapshot` snapshots one tab.
+    nonisolated private static let legacyDebugMethods: [String: String] = [
+        "debug.empty_panel.count": "debug.empty_area.count",
+        "debug.empty_panel.reset": "debug.empty_area.reset",
+        "debug.panel_snapshot": "debug.tab_snapshot",
+        "debug.panel_snapshot.reset": "debug.tab_snapshot.reset",
+    ]
 
     /// The canonical spelling of a handler-side param key, for error text
     /// (`surface_id`/`panel_id` -> `tab_id`, `pane_id` -> `area_id`).

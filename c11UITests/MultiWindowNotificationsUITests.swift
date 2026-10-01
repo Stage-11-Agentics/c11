@@ -39,12 +39,12 @@ final class MultiWindowNotificationsUITests: XCTestCase {
                 "window1Id",
                 "window2Id",
                 "window2InitialSidebarSelection",
-                "tabId1",
-                "tabId2",
+                "workspaceId1",
+                "workspaceId2",
                 "notifId1",
                 "notifId2",
                 "expectedLatestWindowId",
-                "expectedLatestTabId",
+                "expectedLatestWorkspaceId",
             ], timeout: 15.0),
             "Expected multi-window notification setup data"
         )
@@ -55,10 +55,10 @@ final class MultiWindowNotificationsUITests: XCTestCase {
         }
 
         let expectedLatestWindowId = setup["expectedLatestWindowId"] ?? ""
-        let expectedLatestTabId = setup["expectedLatestTabId"] ?? ""
+        let expectedLatestTabId = setup["expectedLatestWorkspaceId"] ?? ""
         let window2Id = setup["window2Id"] ?? ""
         let window2InitialSidebarSelection = setup["window2InitialSidebarSelection"] ?? ""
-        let tabId2 = setup["tabId2"] ?? ""
+        let tabId2 = setup["workspaceId2"] ?? ""
         let notifId2 = setup["notifId2"] ?? ""
 
         XCTAssertFalse(expectedLatestWindowId.isEmpty)
@@ -84,7 +84,7 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             return
         }
         XCTAssertEqual(afterJump["focusedWindowId"], expectedLatestWindowId)
-        XCTAssertEqual(afterJump["focusedTabId"], expectedLatestTabId)
+        XCTAssertEqual(afterJump["focusedWorkspaceId"], expectedLatestTabId)
 
         // Open the notifications popover (Cmd+I) and click the notification belonging to window 2.
         let beforeClickToken = afterJump["focusToken"]
@@ -106,7 +106,7 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             return
         }
         XCTAssertEqual(afterClick["focusedWindowId"], window2Id)
-        XCTAssertEqual(afterClick["focusedTabId"], tabId2)
+        XCTAssertEqual(afterClick["focusedWorkspaceId"], tabId2)
         XCTAssertEqual(afterClick["focusedSidebarSelection"], "tabs")
     }
 
@@ -240,8 +240,8 @@ final class MultiWindowNotificationsUITests: XCTestCase {
         )
         XCTAssertTrue(
             waitForDataMatch(timeout: 20.0) { data in
-                let tabId2 = data["tabId2"] ?? ""
-                let surfaceId2 = data["surfaceId2"] ?? ""
+                let tabId2 = data["workspaceId2"] ?? ""
+                let surfaceId2 = data["tabId2"] ?? ""
                 let socketReady = data["socketReady"] ?? ""
                 let sourceTerminalReady = data["sourceTerminalReady"] ?? ""
                 return !tabId2.isEmpty &&
@@ -258,7 +258,7 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             XCTFail("Missing setup data")
             return
         }
-        guard let tabId2 = setup["tabId2"], !tabId2.isEmpty else {
+        guard let tabId2 = setup["workspaceId2"], !tabId2.isEmpty else {
             XCTFail("Missing setup workspace id")
             return
         }
@@ -279,7 +279,7 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             )
             return
         }
-        guard let surfaceId = setup["surfaceId2"], !surfaceId.isEmpty else {
+        guard let surfaceId = setup["tabId2"], !surfaceId.isEmpty else {
             XCTFail("Missing target surface id for workspace \(tabId2)")
             return
         }

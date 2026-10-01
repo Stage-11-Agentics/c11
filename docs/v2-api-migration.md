@@ -123,10 +123,10 @@ Debug / Test-only:
 - [x] render_stats -> `debug.terminal.render_stats`
 - [x] layout_debug -> `debug.layout`
 - [x] bonsplit_underflow_count/reset -> `debug.bonsplit_underflow.*`
-- [x] empty_panel_count/reset -> `debug.empty_panel.*`
+- [x] empty_panel_count/reset -> `debug.empty_area.*`
 - [x] focus_notification -> `debug.notification.focus`
 - [x] flash_count/reset -> `debug.flash.*`
-- [x] panel_snapshot/panel_snapshot_reset -> `debug.panel_snapshot.*`
+- [x] panel_snapshot/panel_snapshot_reset -> `debug.tab_snapshot.*`
 - [x] screenshot -> `debug.window.screenshot`
 
 ## Test Migration

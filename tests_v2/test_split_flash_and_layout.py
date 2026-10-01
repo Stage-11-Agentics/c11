@@ -45,31 +45,31 @@ def _rect_intersection_area(a: dict, b: dict) -> float:
 
 
 def _assert_selected_panels_healthy(payload: dict, *, min_wh: float = 80.0) -> None:
-    selected = payload.get("selectedPanels") or []
+    selected = payload.get("selectedTabs") or []
     if not selected:
-        raise cmuxError("layout_debug returned no selectedPanels")
+        raise cmuxError("layout_debug returned no selectedTabs")
 
     for i, row in enumerate(selected):
-        pane_id = row.get("paneId")
-        pane_frame = row.get("paneFrame")
+        pane_id = row.get("areaId")
+        pane_frame = row.get("areaFrame")
         view_frame = row.get("viewFrame")
 
-        panel_id = row.get("panelId")
+        panel_id = row.get("tabId")
         if not panel_id:
-            raise cmuxError(f"selectedPanels[{i}] missing panelId (pane={pane_id})")
+            raise cmuxError(f"selectedTabs[{i}] missing tabId (pane={pane_id})")
 
         if row.get("inWindow") is not True:
-            raise cmuxError(f"selectedPanels[{i}] panel not in window (pane={pane_id}, panel={panel_id})")
+            raise cmuxError(f"selectedTabs[{i}] panel not in window (pane={pane_id}, panel={panel_id})")
 
         if row.get("hidden") is True:
-            raise cmuxError(f"selectedPanels[{i}] panel is hidden (pane={pane_id}, panel={panel_id})")
+            raise cmuxError(f"selectedTabs[{i}] panel is hidden (pane={pane_id}, panel={panel_id})")
 
         if not view_frame:
-            raise cmuxError(f"selectedPanels[{i}] missing viewFrame (pane={pane_id}, panel={panel_id})")
+            raise cmuxError(f"selectedTabs[{i}] missing viewFrame (pane={pane_id}, panel={panel_id})")
 
         if float(view_frame.get("width", 0.0)) < min_wh or float(view_frame.get("height", 0.0)) < min_wh:
             raise cmuxError(
-                f"selectedPanels[{i}] viewFrame too small: {view_frame} (pane={pane_id}, panel={panel_id})"
+                f"selectedTabs[{i}] viewFrame too small: {view_frame} (pane={pane_id}, panel={panel_id})"
             )
 
         # Coordinate sanity: selected panel should substantially overlap its pane.
@@ -80,7 +80,7 @@ def _assert_selected_panels_healthy(payload: dict, *, min_wh: float = 80.0) -> N
             ratio = inter / denom if denom > 0 else 0.0
             if ratio < 0.50:
                 raise cmuxError(
-                    f"selectedPanels[{i}] bounds mismatch (overlap={ratio:.2f}). "
+                    f"selectedTabs[{i}] bounds mismatch (overlap={ratio:.2f}). "
                     f"pane={pane_frame} view={view_frame} area_id={pane_id} panel={panel_id}"
                 )
 
@@ -153,12 +153,12 @@ def main() -> int:
         time.sleep(0.2)
         drag_before = c.layout_debug()
         _assert_selected_panels_healthy(drag_before)
-        drag_selected = drag_before.get("selectedPanels") or []
+        drag_selected = drag_before.get("selectedTabs") or []
         if not drag_selected:
-            raise cmuxError("layout_debug returned no selectedPanels for drag split setup")
-        drag_panel_id = drag_selected[0].get("panelId")
+            raise cmuxError("layout_debug returned no selectedTabs for drag split setup")
+        drag_panel_id = drag_selected[0].get("tabId")
         if not drag_panel_id:
-            raise cmuxError("drag split setup selected panel has no panelId")
+            raise cmuxError("drag split setup selected panel has no tabId")
         drag_panes_before = len(drag_before.get("layout", {}).get("panes") or [])
 
         c.reset_empty_panel_count()

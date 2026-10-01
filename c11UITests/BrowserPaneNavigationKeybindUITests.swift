@@ -23,7 +23,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["terminalPaneId", "browserPaneId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["terminalAreaId", "browserAreaId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -34,7 +34,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
 
         XCTAssertEqual(setup["webViewFocused"], "true", "Expected WKWebView to be first responder for this test")
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -44,7 +44,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
 
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["lastMoveDirection"] == "left" && data["focusedPaneId"] == expectedTerminalPaneId
+                data["lastMoveDirection"] == "left" && data["focusedAreaId"] == expectedTerminalPaneId
             },
             "Expected Cmd+Ctrl+H to move focus to left pane (terminal)"
         )
@@ -99,7 +99,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["terminalPaneId", "browserPaneId", "webViewFocused", "ghosttyGotoSplitLeftShortcut"], timeout: 10.0),
+            waitForData(keys: ["terminalAreaId", "browserAreaId", "webViewFocused", "ghosttyGotoSplitLeftShortcut"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -111,7 +111,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertEqual(setup["webViewFocused"], "true", "Expected WKWebView to be first responder for this test")
         XCTAssertFalse((setup["ghosttyGotoSplitLeftShortcut"] ?? "").isEmpty, "Expected Ghostty trigger metadata to be present")
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -121,7 +121,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
 
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["lastMoveDirection"] == "left" && data["focusedPaneId"] == expectedTerminalPaneId
+                data["lastMoveDirection"] == "left" && data["focusedAreaId"] == expectedTerminalPaneId
             },
             "Expected Cmd+Ctrl+H to move focus to left pane (terminal) via Ghostty config trigger"
         )
@@ -136,7 +136,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["browserPanelId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["browserTabId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -183,7 +183,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForData(
                 keys: [
-                    "browserPanelId",
+                    "browserTabId",
                     "webViewFocused",
                     "webInputFocusSeeded",
                     "webInputFocusElementId",
@@ -328,7 +328,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["browserPanelId", "terminalPaneId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["browserTabId", "terminalAreaId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -337,12 +337,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        guard let originalBrowserPanelId = setup["browserPanelId"] else {
+        guard let originalBrowserPanelId = setup["browserTabId"] else {
             XCTFail("Missing browserPanelId in goto_split setup data")
             return
         }
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -351,7 +351,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         app.typeKey("h", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["lastMoveDirection"] == "left" && data["focusedPaneId"] == expectedTerminalPaneId
+                data["lastMoveDirection"] == "left" && data["focusedAreaId"] == expectedTerminalPaneId
             },
             "Expected Cmd+Ctrl+H to move focus to left pane (terminal)"
         )
@@ -361,7 +361,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["webViewFocusedAfterAddressBarFocus"] == "false" else { return false }
-                guard let focusedAddressPanelId = data["webViewFocusedAfterAddressBarFocusPanelId"] else { return false }
+                guard let focusedAddressPanelId = data["webViewFocusedAfterAddressBarFocusTabId"] else { return false }
                 return focusedAddressPanelId != originalBrowserPanelId
             },
             "Expected Cmd+L on terminal focus to open a new browser and focus omnibar"
@@ -377,7 +377,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["browserPanelId", "terminalPaneId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["browserTabId", "terminalAreaId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -386,12 +386,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        guard let expectedBrowserPanelId = setup["browserPanelId"] else {
+        guard let expectedBrowserPanelId = setup["browserTabId"] else {
             XCTFail("Missing browserPanelId in goto_split setup data")
             return
         }
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -400,7 +400,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         app.typeKey("h", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["lastMoveDirection"] == "left" && data["focusedPaneId"] == expectedTerminalPaneId
+                data["lastMoveDirection"] == "left" && data["focusedAreaId"] == expectedTerminalPaneId
             },
             "Expected Cmd+Ctrl+H to move focus to left pane (terminal)"
         )
@@ -417,7 +417,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["webViewFocusedAfterAddressBarFocus"] == "false" else { return false }
-                return data["webViewFocusedAfterAddressBarFocusPanelId"] == expectedBrowserPanelId
+                return data["webViewFocusedAfterAddressBarFocusTabId"] == expectedBrowserPanelId
             },
             "Expected omnibar click to focus browser panel so Cmd+L stays on that browser"
         )
@@ -432,7 +432,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["browserPanelId", "terminalPaneId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["browserTabId", "terminalAreaId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -441,12 +441,12 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        guard let expectedBrowserPanelId = setup["browserPanelId"] else {
+        guard let expectedBrowserPanelId = setup["browserTabId"] else {
             XCTFail("Missing browserPanelId in goto_split setup data")
             return
         }
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -455,7 +455,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         app.typeKey("h", modifierFlags: [.command, .control])
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["lastMoveDirection"] == "left" && data["focusedPaneId"] == expectedTerminalPaneId
+                data["lastMoveDirection"] == "left" && data["focusedAreaId"] == expectedTerminalPaneId
             },
             "Expected Cmd+Ctrl+H to move focus to left pane (terminal)"
         )
@@ -482,7 +482,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["webViewFocusedAfterAddressBarFocus"] == "false" else { return false }
-                return data["webViewFocusedAfterAddressBarFocusPanelId"] == expectedBrowserPanelId
+                return data["webViewFocusedAfterAddressBarFocusTabId"] == expectedBrowserPanelId
             },
             "Expected clicking browser content to dismiss the palette and keep focus on the existing browser pane"
         )
@@ -496,7 +496,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["webViewFocused", "initialPaneCount"], timeout: 10.0),
+            waitForData(keys: ["webViewFocused", "initialAreaCount"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -506,7 +506,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         XCTAssertEqual(setup["webViewFocused"], "true", "Expected WKWebView to be first responder for this test")
-        let initialPaneCount = Int(setup["initialPaneCount"] ?? "") ?? 0
+        let initialPaneCount = Int(setup["initialAreaCount"] ?? "") ?? 0
         XCTAssertGreaterThanOrEqual(initialPaneCount, 2, "Expected at least two panes before split. data=\(setup)")
 
         app.typeKey("d", modifierFlags: [.command])
@@ -514,7 +514,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["lastSplitDirection"] == "right" else { return false }
-                guard let paneCountAfter = Int(data["paneCountAfterSplit"] ?? "") else { return false }
+                guard let paneCountAfter = Int(data["areaCountAfterSplit"] ?? "") else { return false }
                 return paneCountAfter == initialPaneCount + 1
             },
             "Expected Cmd+D to split right while WKWebView is first responder"
@@ -529,7 +529,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["webViewFocused", "initialPaneCount"], timeout: 10.0),
+            waitForData(keys: ["webViewFocused", "initialAreaCount"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -539,7 +539,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         }
 
         XCTAssertEqual(setup["webViewFocused"], "true", "Expected WKWebView to be first responder for this test")
-        let initialPaneCount = Int(setup["initialPaneCount"] ?? "") ?? 0
+        let initialPaneCount = Int(setup["initialAreaCount"] ?? "") ?? 0
         XCTAssertGreaterThanOrEqual(initialPaneCount, 2, "Expected at least two panes before split. data=\(setup)")
 
         app.typeKey("d", modifierFlags: [.command, .shift])
@@ -547,7 +547,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["lastSplitDirection"] == "down" else { return false }
-                guard let paneCountAfter = Int(data["paneCountAfterSplit"] ?? "") else { return false }
+                guard let paneCountAfter = Int(data["areaCountAfterSplit"] ?? "") else { return false }
                 return paneCountAfter == initialPaneCount + 1
             },
             "Expected Cmd+Shift+D to split down while WKWebView is first responder"
@@ -562,7 +562,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["browserPanelId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["browserTabId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -571,7 +571,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        guard let browserPanelId = setup["browserPanelId"] else {
+        guard let browserPanelId = setup["browserTabId"] else {
             XCTFail("Missing browserPanelId in goto_split setup data")
             return
         }
@@ -654,7 +654,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["terminalPaneId", "browserPanelId", "webViewFocused"], timeout: 10.0),
+            waitForData(keys: ["terminalAreaId", "browserTabId", "webViewFocused"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -663,7 +663,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        guard let expectedTerminalPaneId = setup["terminalPaneId"] else {
+        guard let expectedTerminalPaneId = setup["terminalAreaId"] else {
             XCTFail("Missing terminalPaneId in goto_split setup data")
             return
         }
@@ -672,7 +672,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
 
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
-                data["focusedPaneId"] == expectedTerminalPaneId && data["focusedPanelKind"] == "terminal"
+                data["focusedAreaId"] == expectedTerminalPaneId && data["focusedTabKind"] == "terminal"
             },
             "Expected Cmd+Ctrl+H to focus the terminal pane before zoom. data=\(loadData() ?? [:])"
         )
@@ -706,7 +706,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["webViewFocused", "initialPaneCount"], timeout: 10.0),
+            waitForData(keys: ["webViewFocused", "initialAreaCount"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -715,7 +715,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        let initialPaneCount = Int(setup["initialPaneCount"] ?? "") ?? 0
+        let initialPaneCount = Int(setup["initialAreaCount"] ?? "") ?? 0
         XCTAssertGreaterThanOrEqual(initialPaneCount, 2, "Expected at least two panes before split. data=\(setup)")
 
         // Focus browser omnibar (WebKit no longer first responder).
@@ -732,7 +732,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["lastSplitDirection"] == "right" else { return false }
-                guard let paneCountAfter = Int(data["paneCountAfterSplit"] ?? "") else { return false }
+                guard let paneCountAfter = Int(data["areaCountAfterSplit"] ?? "") else { return false }
                 return paneCountAfter == initialPaneCount + 1
             },
             "Expected Cmd+D to split right while omnibar is first responder"
@@ -747,7 +747,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         launchAndEnsureForeground(app)
 
         XCTAssertTrue(
-            waitForData(keys: ["webViewFocused", "initialPaneCount"], timeout: 10.0),
+            waitForData(keys: ["webViewFocused", "initialAreaCount"], timeout: 10.0),
             "Expected goto_split setup data to be written"
         )
 
@@ -756,7 +756,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
             return
         }
 
-        let initialPaneCount = Int(setup["initialPaneCount"] ?? "") ?? 0
+        let initialPaneCount = Int(setup["initialAreaCount"] ?? "") ?? 0
         XCTAssertGreaterThanOrEqual(initialPaneCount, 2, "Expected at least two panes before split. data=\(setup)")
 
         // Focus browser omnibar (WebKit no longer first responder).
@@ -773,7 +773,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 5.0) { data in
                 guard data["lastSplitDirection"] == "down" else { return false }
-                guard let paneCountAfter = Int(data["paneCountAfterSplit"] ?? "") else { return false }
+                guard let paneCountAfter = Int(data["areaCountAfterSplit"] ?? "") else { return false }
                 return paneCountAfter == initialPaneCount + 1
             },
             "Expected Cmd+Shift+D to split down while omnibar is first responder"
@@ -843,7 +843,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         focusLeftPaneForFindScenario(app, route: route)
         XCTAssertTrue(
             waitForDataMatch(timeout: 6.0) { data in
-                data["focusedPanelKind"] == "terminal"
+                data["focusedTabKind"] == "terminal"
             },
             "Expected left terminal pane to be focused before terminal find. data=\(String(describing: loadData()))"
         )
@@ -855,7 +855,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 6.0) { data in
                 data["lastMoveDirection"] == "right"
-                    && data["focusedPanelKind"] == "browser"
+                    && data["focusedTabKind"] == "browser"
                     && data["terminalFindNeedle"] == "la"
             },
             "Expected terminal find query to persist as 'la' after focusing browser pane. data=\(String(describing: loadData()))"
@@ -875,7 +875,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 6.0) { data in
                 data["lastMoveDirection"] == "left"
-                    && data["focusedPanelKind"] == "terminal"
+                    && data["focusedTabKind"] == "terminal"
                     && data["browserFindNeedle"] == "am"
             },
             "Expected browser find query to persist as 'am' after returning left. data=\(String(describing: loadData()))"
@@ -887,7 +887,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 6.0) { data in
                 data["lastMoveDirection"] == "right"
-                    && data["focusedPanelKind"] == "browser"
+                    && data["focusedTabKind"] == "browser"
                     && data["terminalFindNeedle"] == "lafoo"
             },
             "Expected terminal find query to stay focused and become 'lafoo'. data=\(String(describing: loadData()))"
@@ -899,7 +899,7 @@ final class BrowserPaneNavigationKeybindUITests: XCTestCase {
         XCTAssertTrue(
             waitForDataMatch(timeout: 6.0) { data in
                 data["lastMoveDirection"] == "left"
-                    && data["focusedPanelKind"] == "terminal"
+                    && data["focusedTabKind"] == "terminal"
                     && data["browserFindNeedle"] == "amdo"
             },
             "Expected browser find query to stay focused and become 'amdo'. data=\(String(describing: loadData()))"

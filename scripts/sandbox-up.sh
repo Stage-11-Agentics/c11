@@ -16,7 +16,9 @@ Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
 clone headless, place one .app on the Tart host, copy it into the guest,
 and launch it with the automation socket. The golden image is never booted.
-A second running guest needs --allow-second. Two running guests is always refused.
+A second running guest needs --allow-second and is the only clone that gets
+a new serial. Two running guests is always refused. If this command is cut
+off, scripts/sandbox-down.sh <run-id> removes the clone.
 
 --app-source (or C11_SANDBOX_APP_SOURCE) names where the .app comes from.
 Every source leaves one bundle at ~/.c11-sandbox/apps/<run-id>/ on the Tart
@@ -152,6 +154,53 @@ golden_state="\$(vm_field "\$golden" || true)"
 [[ -n "\$golden_state" ]] || die "golden image \$golden is not on this host. See docs/c11-sandbox-research.md"
 [[ "\$golden_state" == stopped ]] || die "golden image \$golden is \$golden_state. It must stay stopped. Runs clone it; they do not boot it."
 [[ -f "\$key" ]] || die "missing \$key on the Tart host. Golden-image setup installs this key."
+lock="\$root/clone.lock"
+lock_held=0
+release_lock() {
+  (( lock_held )) || return 0
+  rm -rf "\$lock"
+  lock_held=0
+}
+acquire_lock() {
+  local i oldpid
+  for i in {1..120}; do
+    if mkdir "\$lock" 2>/dev/null; then
+      print -r -- \$\$ > "\$lock/pid"
+      print -r -- "\$run_id" > "\$lock/run"
+      lock_held=1
+      return 0
+    fi
+    oldpid="\$(cat "\$lock/pid" 2>/dev/null || true)"
+    if [[ -z "\$oldpid" ]] || ! kill -0 "\$oldpid" 2>/dev/null; then
+      rm -rf "\$lock"
+      continue
+    fi
+    sleep 1
+  done
+  die "timed out waiting for \$lock. If no sandbox-up is running, sandbox-down.sh <run-id> removes a clone left by a dropped session."
+}
+log="\$root/runs/\$run_id/tart.log"
+pidfile="\$root/runs/\$run_id/tart.pid"
+failed=1
+cleanup() {
+  release_lock
+  [[ "\$failed" == 1 ]] || return 0
+  print -u2 -- "sandbox: bringing the failed clone down"
+  if [[ -f "\$pidfile" ]]; then
+    kill "\$(cat "\$pidfile")" 2>/dev/null || true
+  fi
+  "\$tart" stop "\$vm" >/dev/null 2>&1 || true
+  "\$tart" delete "\$vm" >/dev/null 2>&1 || true
+  rm -rf "\$root/apps/\$run_id"
+  rm -f "\$(meta_path "\$run_id")"
+  if [[ -f "\$log" ]]; then
+    print -u2 -- "sandbox: last lines of \$log"
+    tail -n 40 "\$log" >&2 || true
+  fi
+}
+trap 'failed=1; exit 1' INT HUP TERM
+trap cleanup EXIT
+acquire_lock
 existing="\$(vm_field "\$vm" || true)"
 [[ -z "\$existing" ]] || die "\$vm already exists (\$existing). Run sandbox-down.sh \$run_id first."
 n="\$(running_count)"
@@ -162,31 +211,43 @@ if (( n >= 1 && allow_second != 1 )); then
   die "a guest is already running. Pass --allow-second to start another, or stop the one that is up."
 fi
 mkdir -p "\$root/runs/\$run_id" "\$root/out/\$run_id"
-log="\$root/runs/\$run_id/tart.log"
-pidfile="\$root/runs/\$run_id/tart.pid"
-failed=1
-cleanup() {
-  [[ "\$failed" == 1 ]] || return 0
-  print -u2 -- "sandbox: bringing the failed clone down"
-  if [[ -f "\$pidfile" ]]; then
-    kill "\$(cat "\$pidfile")" 2>/dev/null || true
-  fi
-  "\$tart" stop "\$vm" >/dev/null 2>&1 || true
-  "\$tart" delete "\$vm" >/dev/null 2>&1 || true
-  if [[ -f "\$log" ]]; then
-    print -u2 -- "sandbox: last lines of \$log"
-    tail -n 40 "\$log" >&2 || true
-  fi
-}
-trap cleanup EXIT
 clone_start="\$EPOCHSECONDS"
 "\$tart" clone "\$golden" "\$vm"
 clone_secs=\$((EPOCHSECONDS - clone_start))
-"\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial
-nohup "\$tart" run --no-graphics --no-audio --no-clipboard \
-  --dir "out:\${root}/out/\${run_id}" \
-  "\$vm" >"\$log" 2>&1 &
+# A single clone keeps the golden serial, so Setup Assistant stays done.
+# A second concurrent guest must not share that serial.
+if (( n >= 1 )); then
+  "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial
+else
+  "\$tart" set "\$vm" --cpu 4 --memory 8192 --display 1440x900 --random-mac
+fi
+# setsid, then drop the ssh session's stdin and stdout, so tart outlives this script.
+/usr/bin/python3 -c 'import os,sys
+tart, log, vm, directory = sys.argv[1:5]
+os.setsid()
+fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
+os.close(fd)
+null = os.open(os.devnull, os.O_RDONLY)
+os.dup2(null, 0)
+os.close(null)
+os.execv(tart, [tart, "run", "--no-graphics", "--no-audio", "--no-clipboard", "--dir", directory, vm])
+' "\$tart" "\$log" "\$vm" "out:\${root}/out/\${run_id}" &
 print -r -- \$! > "\$pidfile"
+disown 2>/dev/null || true
+seen=0
+visible_deadline=\$((SECONDS + 30))
+while (( SECONDS < visible_deadline )); do
+  state="\$(vm_field "\$vm" || true)"
+  if [[ -n "\$state" && "\$state" != stopped ]]; then
+    seen=1
+    break
+  fi
+  sleep 0.5
+done
+(( seen )) || die "tart run did not leave \$vm unstopped"
+release_lock
 boot_start="\$EPOCHSECONDS"
 ip=""
 deadline=\$((SECONDS + 360))

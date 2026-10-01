@@ -178,7 +178,7 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
   Schemes that build c11-unit (or `c11-ci`) without the `test` action are safe — they only compile.
 
-- **Python socket tests (`tests_v2/`)** — connect to a running c11 over its socket. Live runs go through `scripts/sandbox-tests-v2.sh` inside the guest from `scripts/sandbox-up.sh`, never against the operator's session. The suite is plain `python3` scripts, not pytest. The runner sets `C11_SOCKET`, `CMUX_SOCKET_PATH`, and `C11_CLI` to that guest.
+- **Python socket tests (`tests_v2/`)** — connect to a running c11 over its socket. Live runs go through `scripts/sandbox-tests-v2.sh` inside the guest from `scripts/sandbox-up.sh`, never against the operator's session. The suite is plain `python3` scripts, not pytest. The runner sets `C11_SOCKET`, `C11_SOCKET_PATH`, and `C11_CLI` to that guest.
 
 - **E2E / UI tests** — trigger via `gh workflow run test-e2e.yml`. Never run locally.
 

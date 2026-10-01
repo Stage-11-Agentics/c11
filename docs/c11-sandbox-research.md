@@ -54,8 +54,8 @@ Tart is the CLI in front of Apple's framework. Current docs: [tart.run quick sta
 - `tart run --dir=name:hostpath[:ro]` exposes a host directory over virtiofs. macOS guests mount it at `/Volumes/My Shared Files/<name>` (host and guest both need macOS 13 or newer; this host is 26).
 - `tart clone` is an APFS copy-on-write. Tart's own clone command says a clone does not claim the full disk until the guest writes. Deleting the clone throws the run away.
 - Default VM shape is 2 CPUs, 4 GB, and a 1024×768 display. That display is too small for the computer-use skill's readability bar. `tart set --cpu 4 --memory 8192 --display 1440x900` is the phase-2 default (display values are points for a macOS guest; the parser lives in Tart's `Set` command).
-- `tart set --random-mac` and `tart set --random-serial` issue a new MAC and a new `VZMacMachineIdentifier`. Apple treats two running guests that share a machine identifier as undefined. The script runs both flags on every clone before boot. The golden image stays stopped, so the default of one running clone never has two live copies of one identity anyway.
-- Base image: `ghcr.io/cirruslabs/macos-tahoe-base:latest`. tart.run says the pull is 25 GB. Credentials on the published images are `admin` / `admin`, and SSH works via `ssh admin@$(tart ip <name>)`. The golden image should replace password login with a key before any agent uses it. NAT is the default, so the guest is reachable from the host.
+- `tart set --random-mac` and `tart set --random-serial` issue a new MAC and a new `VZMacMachineIdentifier`. Apple treats two running guests that share a machine identifier as undefined. The default clone keeps the golden serial and only randomizes the MAC. The golden image is stopped, and the scanner VMs have their own identifiers, so one running clone is not a second copy of a live identity. `--allow-second` is what adds `--random-serial`, and only when another guest is already running.
+- Base image: `ghcr.io/cirruslabs/macos-tahoe-base:latest`. tart.run says the pull is 25 GB. The published images ship with a well-known account password. The golden image turns password login off, installs the sandbox key, and stores a random account password at `~/.c11-sandbox/guest-password` on the Tart host (mode 600). NAT is the default, so the guest is reachable from the host.
 - `tart exec` (guest agent, user launch agent) can run a command without SSH. Confirm the Tahoe base image actually ships that agent during golden-image setup. SSH is the documented path and the one the scripts should depend on.
 
 `tart run --suspendable` has existed since the Sonoma-era Tart 2.0 notes: resume a host-local encrypted snapshot instead of a cold boot, and `tart push` does not upload that snapshot. Cold-boot duration was not measured here. Disposable clones of a stopped golden are the right default, because a resumed snapshot is a dirty machine. If phase 2 times a cold boot and it is too slow, suspend becomes an optimization on top of the clone, not the source of truth.
@@ -135,10 +135,12 @@ The scripts run on the laptop (or wherever you invoke them) and talk to the Tart
 
 `--app-source` (or `C11_SANDBOX_APP_SOURCE`) selects the source. `local-app` is the default and takes the path above. `atlas-build` exits before SSH. The run metadata records `APP_SOURCE`.
 
+- Take a mkdir lock at `~/.c11-sandbox/clone.lock` around the running-guest count and the clone. A dead owner's lock is replaced. The lock is released once `tart list` shows the new guest as not stopped, so the SSH session is not held for the rest of boot.
 - Refuse if any guest is already running, unless `--allow-second` is passed, and refuse always if two are already not stopped. A suspended guest counts, because it can still hold a macOS VM slot.
 - `tart clone c11-sandbox-golden c11-sb-<run-id>`
-- `tart set c11-sb-<run-id> --cpu 4 --memory 8192 --display 1440x900 --random-mac --random-serial`
-- `tart run --no-graphics --no-audio --no-clipboard --dir=out:<artifact-dir>`, detached so the SSH session can return. The `.app` goes in over SSH, not through that share.
+- `tart set` always passes `--random-mac`. It passes `--random-serial` only when another guest was already running, which is the `--allow-second` path. A single clone keeps the golden serial, so Setup Assistant does not run again. A second concurrent clone may show it.
+- `tart run --no-graphics --no-audio --no-clipboard --dir=out:<artifact-dir>` is started in a new session with stdin closed and stdout on the run log, so the SSH session can exit while the VM keeps running. The `.app` goes in over SSH, not through that share.
+- On EXIT, INT, or HUP during a failed boot, the script stops and deletes the clone and removes the staged `.app`. If the session drops before that trap runs, `scripts/sandbox-down.sh <run-id>` is the recovery.
 - Wait until `tart ip` answers and SSH accepts the key.
 - Copy the `.app` into the guest with `tar` over SSH, strip quarantine, and launch the binary in the guest Aqua session. The app is not read from virtiofs: that share turns Sparkle and Sentry framework symlinks into loops and `ditto` fails. The `out` share stays virtiofs, for screenshots and logs. `launchctl asuser` has to run as root to enter that session, and it does not change uid, so the scripts then `sudo -u` the console user. Otherwise the process and its socket are root-owned and the CLI refuses the socket. Environment matches `launch-tagged-automation.sh`: inherited `C11_*` / `CMUX_*` removed, `C11_SOCKET_MODE=automation`, `C11_QA_LAUNCH=fresh`, `C11_ALLOW_SOCKET_OVERRIDE=1`, socket `/tmp/c11-sandbox-<run-id>.sock`. The golden image gives `admin` passwordless sudo. A password prompt would hang a run.
 - Print the run id, the guest IP, the guest socket, and the clone and boot times. Do not print the SSH private key.
@@ -153,11 +155,11 @@ The scripts run on the laptop (or wherever you invoke them) and talk to the Tart
 
 `scripts/sandbox-down.sh <run-id>`
 
-- `tart stop` the clone, then `tart delete c11-sb-<run-id>`. Refuse to delete `c11-sandbox-golden` or a `scanner-*` VM. Screenshots and logs under `~/.c11-sandbox/out/<run-id>` stay.
+- `tart stop` the clone, then `tart delete c11-sb-<run-id>`. Refuse to delete `c11-sandbox-golden` or a `scanner-*` VM. Removes the staged `.app` and, when the clone lock belongs to this run or its owner is gone, the lock. Screenshots and logs under `~/.c11-sandbox/out/<run-id>` stay. This is the recovery when `sandbox-up` is cut off.
 
 `scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]`
 
-- Requires `sandbox-up` to have launched the app. Copies `tests_v2/` (and `tests/fixtures` when that tree exists) into the guest and runs the python3 scripts there against the guest socket. With no file arguments, runs every `tests_v2/test_*.py` except `test_ctrl_interactive.py`. Flags such as `-k` are rejected: this suite is not pytest. The guest relaunches its c11 once before each file. Stdout streams back, and a copy of the log is left at `~/.c11-sandbox/out/<run-id>/tests-v2.log` on the Tart host.
+- Requires `sandbox-up` to have launched the app. Copies `tests_v2/` (and `tests/fixtures` when that tree exists) into the guest and runs the python3 scripts there against the guest socket. With no file arguments, runs every `tests_v2/test_*.py` except `test_ctrl_interactive.py`. Flags such as `-k` are rejected: this suite is not pytest. The guest relaunches its c11 once before each file. A failing file does not stop the rest. The run ends with `summary passed=N failed=M`. The suite has to match the app build: after #472 the tests address surfaces by area and tab names, so an older app fails those files for real. Stdout streams back, and a copy of the log is left at `~/.c11-sandbox/out/<run-id>/tests-v2.log` on the Tart host.
 
 `skills/c11-computer-use/SKILL.md` sends any click, drag, or activation through these scripts. The operator's own session stays on socket/CLI oracles and `screencapture -l`.
 
@@ -180,7 +182,7 @@ Done on Atlas for `c11-sandbox-golden`. A new host repeats this; the scripts do 
 5. SSH key `~/.ssh/c11-sandbox` on Atlas is installed in the guest. Password authentication, keyboard-interactive, and challenge-response are off. The account password is a random value in `~/.c11-sandbox/guest-password` on Atlas, mode 600. Auto-login reads the same password from `/etc/kcpassword`. The grant notes read the password from that Atlas file. Do not commit the key or the password.
 6. The base image already allows Accessibility, Screen Recording, and PostEvent for `/usr/libexec/sshd-keygen-wrapper`, `/usr/bin/osascript`, and the Tart guest agent. `cliclick` and a full-display `screencapture -x` work over SSH. `screencapture -l` raised a separate prompt for `com.apple.sshd-session`. That prompt was dismissed during the probe and did not add a TCC row, so a window-id capture may ask again. The default shot is full-display `-x`.
 7. The golden image is stopped. Runs clone it. Nobody boots it to do validation. After the password rotation the guest was rebooted once: the console user was `admin`, Finder was frontmost, and the golden image was stopped again.
-8. `--random-serial` makes macOS treat the clone as a new Mac, so Setup Assistant runs again (Software Update, Apple Account, FileVault) even though the golden desktop was already set up. `scripts/sandbox-skip-setup.mobileconfig` is the suppression payload (`SkipSetupItems`, including `FileVault`). It is not installed on the golden image: on this guest, `profiles install` is gone (`profiles tool no longer supports installs`), and opening the file only stages it for a System Settings click. The FileVault confirmation sheet ignored synthesized clicks. Do not `killall "Setup Assistant"`; that took the guest session down.
+8. The default clone keeps the golden serial, so Setup Assistant does not run. `--allow-second` gives that second guest a new serial, and Setup Assistant can come back, including the FileVault sheet, which ignores synthesized clicks. Do not `killall "Setup Assistant"`; that took a guest session down. There is no installed configuration profile for this. `profiles install` is gone on macOS 26.6.
 
 ## Tart on Atlas: source and license
 
@@ -212,6 +214,7 @@ Numbers below are the ones this phase actually observed.
 | Warm clone, tart run to socket | `sandbox-up` on a warm host reported `clone_secs=0` and `boot_secs=27` for `c11-sb-ghostty1`, through SSH and app launch to a live socket. A later Atlas-local `sandbox-up ghostty2` (app already staged on the host) reported `clone_secs=0` and `boot_secs=50`. |
 | Attached terminal | Once the process was the console user, `debug-terminals` showed `runtime=1` and a live `ghostty` pointer about 1 second after launch. The screenshot is above. |
 | tests_v2 in the guest | From the laptop, `sandbox-tests-v2.sh ghostty2 tests_v2/test_cli_id_format_defaults.py` copied the suite to Atlas, relaunched c11 in the guest, and passed both of that file's assertions against the guest socket. Wall time was about 17 seconds. |
+| Single clone, default SSH path | From the laptop with `C11_SANDBOX_HOST` unset, `sandbox-up repair1` of a released `.app` returned `clone_secs=0` and `boot_secs=29` while `tart run` stayed up after that SSH session closed. `docs/images/c11-244-no-setup.png` is the guest display: Aqua, Finder, c11, System Settings restored from the golden image, no Setup Assistant. One `cliclick` on the System Settings close button closed that window. `docs/images/c11-244-click.png` is the display after, with the four terminals in front. `sandbox-down repair1` then deleted the clone. The golden image and both scanner VMs stayed stopped. |
 
 ## Open risks
 
@@ -219,8 +222,8 @@ Numbers below are the ones this phase actually observed.
 - Two running guests is a hard cap. A stuck `VZError` slot after shutdown has been reported on macOS 26.5 on an M4 Max and is only cleared by rebooting the host.
 - `tart run` can fail while the host login keychain is locked.
 - Password SSH is off. The account password is in `~/.c11-sandbox/guest-password` on Atlas (mode 600), which is also what auto-login uses. The scripts use the SSH key, not the password. Do not commit that file.
-- A clone's new serial retriggers Setup Assistant. The FileVault confirmation sheet did not accept a synthesized click, so a run can boot with that sheet over the c11 window. The skip payload is `scripts/sandbox-skip-setup.mobileconfig`. Installing it is a System Settings step on the golden image; the `profiles` CLI on macOS 26.6 will not install it.
-- Duplicate machine identifiers if a future change runs two clones without `--random-serial`.
+- A second concurrent clone gets a new serial and can show Setup Assistant. The FileVault sheet did not accept a synthesized click. The default single clone keeps the golden serial and does not show it.
+- Two clones without `--random-serial` would share a machine identifier. The script only does that for the single running guest, while the golden image and the scanner VMs are stopped.
 - Second-user fallback is unverified on 26.6: localhost VNC as another user must not prompt or steal the console. Screen Sharing would be a new network service on the operator's Mac.
 - Guest macOS will drift from the host. Rebuild the golden image deliberately. Do not let a run update it.
 - Lightweight macOS guests still have App Store and some Apple-ID limits. c11 dev builds do not need those. iCloud sign-in is out of scope.

@@ -13,6 +13,7 @@ Usage: scripts/sandbox-down.sh <run-id>
 
 Stop c11-sb-<run-id>, delete that clone, and remove the copied .app.
 Screenshots and test logs under the host's .c11-sandbox/out/<run-id> stay.
+This is also the recovery when sandbox-up is cut off and its cleanup does not run.
 EOF
 }
 
@@ -48,5 +49,13 @@ if [[ -n "\$state" ]]; then
 fi
 rm -rf "\$root/apps/\$run_id"
 rm -f "\$(meta_path "\$run_id")"
+lock="\$root/clone.lock"
+if [[ -d "\$lock" ]]; then
+  owner="\$(cat "\$lock/run" 2>/dev/null || true)"
+  oldpid="\$(cat "\$lock/pid" 2>/dev/null || true)"
+  if [[ "\$owner" == "\$run_id" ]] || [[ -z "\$oldpid" ]] || ! kill -0 "\$oldpid" 2>/dev/null; then
+    rm -rf "\$lock"
+  fi
+fi
 printf 'deleted=%s\n' "\$vm"
 EOF

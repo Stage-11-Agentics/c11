@@ -16,8 +16,9 @@ Requires scripts/sandbox-up.sh to have launched the guest app. Copies tests_v2
 (and tests/fixtures when present) into that guest and runs the python3 scripts
 against the guest socket. With no file arguments, runs every tests_v2/test_*.py
 except test_ctrl_interactive.py. This suite is not pytest: flags such as -k or
---tb are rejected. The guest relaunches its c11 once before each test. Results
-stream here and are left on the Tart host at .c11-sandbox/out/<run-id>/tests-v2.log.
+--tb are rejected. The guest relaunches its c11 once before each test. A failing
+file does not stop the run. The end of the log is a passed/failed summary.
+Results stream here and are left on the Tart host at .c11-sandbox/out/<run-id>/tests-v2.log.
 EOF
 }
 
@@ -95,7 +96,8 @@ log="/Volumes/My Shared Files/out/tests-v2.log"
 : > "\$log"
 cd "\$dest"
 [[ -n "\${SANDBOX_SOCKET:-}" && -n "\${SANDBOX_GUEST_APP:-}" ]] || { print -u2 -- "run metadata has no guest app or socket. Run sandbox-up.sh first."; exit 1 }
-fail=0
+passed=0
+failed_files=()
 file_list="\$(/usr/bin/python3 -c 'import os,base64,sys; raw=base64.b64decode(os.environ["SANDBOX_FILES_B64"]); sys.stdout.write("\\n".join(p.decode() for p in raw.split(b"\\0") if p))')"
 while IFS= read -r rel; do
   [[ -n "\$rel" ]] || continue
@@ -115,11 +117,18 @@ while IFS= read -r rel; do
   set -e
   if (( rc != 0 )); then
     print -u2 -- "FAIL \$rel"
-    fail=1
-    break
+    failed_files+=("\$rel")
+  else
+    print -r -- "PASS \$rel"
+    passed=\$((passed + 1))
   fi
 done <<< "\$file_list"
-exit "\$fail"
+print -r -- "summary passed=\$passed failed=\${#failed_files}"
+if (( \${#failed_files} )); then
+  print -u2 -- "failed: \${(j:, :)failed_files}"
+  exit 1
+fi
+exit 0
 EOF
 status=$?
 set -e

@@ -20,6 +20,11 @@ public enum MetadataKey {
     public static let lifecycleState = "lifecycle_state"
     public static let flag = "flag"
     public static let flagCallerSurfaceId = "flag_caller_surface_id"
+    /// C11-248: canonical spelling of the flag caller key. Written beside the
+    /// legacy `flag_caller_surface_id` (both hold the same UUID) and read in
+    /// either spelling, for one release.
+    public static let flagCallerTabId = "flag_caller_tab_id"
+    static let flagCallerKeys = [flagCallerTabId, flagCallerSurfaceId]
     public static let suppressed = "suppressed"
 
     /// C11-104 — derived canonical keys. Written by the c11 runtime,
@@ -38,7 +43,7 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity, flag, flagCallerSurfaceId, suppressed
+        worktree, branch, activity, flag, flagCallerSurfaceId, flagCallerTabId, suppressed
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -193,6 +198,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "activity",
         "flag",
         "flag_caller_surface_id",
+        "flag_caller_tab_id",
         "suppressed",
         "claude.session_id",
         "claude.session_project_dir",
@@ -301,7 +307,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(key, "reason must be a single line")
             }
             return nil
-        case "flag_caller_surface_id":
+        case "flag_caller_surface_id", "flag_caller_tab_id":
             guard let value = value as? String, UUID(uuidString: value) != nil else {
                 return .reservedKeyInvalidType(key, "expected UUID string")
             }
@@ -528,6 +534,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// C11-248: the flag caller UUID string, read from either key spelling. The legacy key wins: both
+    /// are always written together, so a stale custom `flag_caller_tab_id` never outranks it.
+    static func flagCallerValue(_ blob: [String: Any]) -> String? {
+        (blob[MetadataKey.flagCallerSurfaceId] as? String) ?? (blob[MetadataKey.flagCallerTabId] as? String)
+    }
+
     /// Canonical attention read. The flag source timestamp is the original
     /// active-epoch timestamp; reason revisions deliberately preserve it.
     func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> SurfaceAttentionSnapshot {
@@ -539,7 +551,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: (blob[MetadataKey.flagCallerSurfaceId] as? String)
+                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -565,7 +577,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: (blob[MetadataKey.flagCallerSurfaceId] as? String)
+                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -579,7 +591,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     throw error
                 }
                 let priorReason = blob[MetadataKey.flag] as? String
-                let existingCaller = (blob[MetadataKey.flagCallerSurfaceId] as? String)
+                let existingCaller = SurfaceMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:))
                 let shouldSetCaller = existingCaller == nil && callerSurfaceId != nil
                 if priorReason != reason
@@ -590,11 +602,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
                     sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
                     if let callerSurfaceId, existingCaller == nil {
-                        blob[MetadataKey.flagCallerSurfaceId] = callerSurfaceId.uuidString
-                        sourceBlob[MetadataKey.flagCallerSurfaceId] = SourceRecord(
-                            source: .explicit,
-                            ts: epoch
-                        )
+                        for key in MetadataKey.flagCallerKeys {
+                            blob[key] = callerSurfaceId.uuidString
+                            sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
+                        }
                     }
                     result.applied[MetadataKey.flag] = true
                 } else {
@@ -605,10 +616,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 if let prior = blob.removeValue(forKey: MetadataKey.flag) {
                     result.priorValues[MetadataKey.flag] = prior
                     sourceBlob.removeValue(forKey: MetadataKey.flag)
-                    blob.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
-                    sourceBlob.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
+                    for key in MetadataKey.flagCallerKeys {
+                        blob.removeValue(forKey: key)
+                        sourceBlob.removeValue(forKey: key)
+                        result.removedKeys.insert(key)
+                    }
                     result.removedKeys.insert(MetadataKey.flag)
-                    result.removedKeys.insert(MetadataKey.flagCallerSurfaceId)
                     result.applied[MetadataKey.flag] = true
                 } else {
                     result.applied[MetadataKey.flag] = false
@@ -669,7 +682,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: (blob[MetadataKey.flagCallerSurfaceId] as? String)
+                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -685,10 +698,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
             var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
             blob.removeValue(forKey: MetadataKey.flag)
-            blob.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
+            for key in MetadataKey.flagCallerKeys {
+                blob.removeValue(forKey: key)
+                sourceBlob.removeValue(forKey: key)
+            }
             blob.removeValue(forKey: MetadataKey.suppressed)
             sourceBlob.removeValue(forKey: MetadataKey.flag)
-            sourceBlob.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
             sourceBlob.removeValue(forKey: MetadataKey.suppressed)
 
             if let reason = snapshot.flagReason,
@@ -701,11 +716,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     ts: epoch
                 )
                 if let callerSurfaceId = snapshot.flagCallerSurfaceId {
-                    blob[MetadataKey.flagCallerSurfaceId] = callerSurfaceId.uuidString
-                    sourceBlob[MetadataKey.flagCallerSurfaceId] = SourceRecord(
-                        source: .explicit,
-                        ts: epoch
-                    )
+                    for key in MetadataKey.flagCallerKeys {
+                        blob[key] = callerSurfaceId.uuidString
+                        sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
+                    }
                 }
             }
             if snapshot.suppressed {
@@ -736,6 +750,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             let attentionKeys: Set<String> = [
                 MetadataKey.flag,
                 MetadataKey.flagCallerSurfaceId,
+                MetadataKey.flagCallerTabId,
                 MetadataKey.suppressed,
             ]
             let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
@@ -890,22 +905,25 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 source: .explicit,
                 ts: flagTimestamp
             )
-            if let caller = values[MetadataKey.flagCallerSurfaceId] as? String,
-               validateReservedKey(MetadataKey.flagCallerSurfaceId, caller) == nil {
-                values[MetadataKey.flagCallerSurfaceId] = caller
-                sources[MetadataKey.flagCallerSurfaceId] = SourceRecord(
-                    source: .explicit,
-                    ts: flagTimestamp
-                )
+            if let caller = flagCallerValue(values),
+               validateReservedKey(MetadataKey.flagCallerTabId, caller) == nil {
+                for key in MetadataKey.flagCallerKeys {
+                    values[key] = caller
+                    sources[key] = SourceRecord(source: .explicit, ts: flagTimestamp)
+                }
             } else {
-                values.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
-                sources.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
+                for key in MetadataKey.flagCallerKeys {
+                    values.removeValue(forKey: key)
+                    sources.removeValue(forKey: key)
+                }
             }
         } else {
             values.removeValue(forKey: MetadataKey.flag)
             sources.removeValue(forKey: MetadataKey.flag)
-            values.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
-            sources.removeValue(forKey: MetadataKey.flagCallerSurfaceId)
+            for key in MetadataKey.flagCallerKeys {
+                values.removeValue(forKey: key)
+                sources.removeValue(forKey: key)
+            }
         }
 
         if values[MetadataKey.suppressed] as? Bool == true {
@@ -943,6 +961,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     ) -> Bool {
         guard key != MetadataKey.flag,
               key != MetadataKey.flagCallerSurfaceId,
+              key != MetadataKey.flagCallerTabId,
               key != MetadataKey.suppressed else {
             return false
         }
@@ -1005,6 +1024,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         let attentionKeys: Set<String> = [
             MetadataKey.flag,
             MetadataKey.flagCallerSurfaceId,
+            MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ]
         let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)

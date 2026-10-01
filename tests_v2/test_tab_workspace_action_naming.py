@@ -30,8 +30,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str], json_output: bool) -> str:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     cmd = [cli, "--socket", SOCKET_PATH]
     if json_output:
@@ -54,21 +56,21 @@ def _run_cli_json(cli: str, args: List[str]) -> Dict:
 
 
 def _focused_surface_ref(c: cmux, workspace_id: str) -> str:
-    current = c._call("surface.current", {"workspace_id": workspace_id}) or {}
-    surface_ref = str(current.get("surface_ref") or "")
-    if surface_ref.startswith("surface:"):
+    current = c._call("tab.current", {"workspace_id": workspace_id}) or {}
+    surface_ref = str(current.get("tab_ref") or "")
+    if surface_ref.startswith("tab:"):
         return surface_ref
 
-    listed = c._call("surface.list", {"workspace_id": workspace_id}) or {}
-    rows = listed.get("surfaces") or []
+    listed = c._call("tab.list", {"workspace_id": workspace_id}) or {}
+    rows = listed.get("tabs") or []
     for row in rows:
         if bool(row.get("focused")):
             ref = str(row.get("ref") or "")
-            if ref.startswith("surface:"):
+            if ref.startswith("tab:"):
                 return ref
     for row in rows:
         ref = str(row.get("ref") or "")
-        if ref.startswith("surface:"):
+        if ref.startswith("tab:"):
             return ref
 
     raise cmuxError(f"Unable to resolve focused surface ref in workspace {workspace_id}: {listed}")
@@ -79,13 +81,14 @@ def main() -> int:
 
     help_text = _run_cli(cli, ["tab-action", "--help"], json_output=False)
     _must("Target tab" in help_text, "tab-action --help should describe tab target naming")
-    _must("tab:<n>" in help_text, "tab-action --help should mention tab:<n> refs")
+    _must("--tab <id|ref|index>" in help_text, "tab-action --help should document --tab")
+    _must("surface" not in help_text.lower(), "tab-action --help should not use the old tab word")
     _must("--tab tab:" in help_text, "tab-action examples should use tab: refs")
 
     with cmux(SOCKET_PATH) as c:
         caps = c.capabilities() or {}
         methods = set(caps.get("methods") or [])
-        for method in ["workspace.action", "tab.action", "surface.action"]:
+        for method in ["workspace.action", "tab.action", "tab.action"]:
             _must(method in methods, f"Missing method in capabilities: {method}")
 
         created = c._call("workspace.create", {}) or {}

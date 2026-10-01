@@ -2,7 +2,7 @@
 """M8: each pane line in the text tree carries `size=`, `px=`, `split=` badges.
 
 Spec format:
-  pane pane:N size=W%×H% px=W×H split=H:left|H:right|V:top|V:bottom (chain)
+  pane area:N size=W%×H% px=W×H split=H:left|H:right|V:top|V:bottom (chain)
 or `split=none` for a root single pane.
 """
 

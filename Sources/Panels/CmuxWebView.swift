@@ -1363,7 +1363,7 @@ final class CmuxWebView: WKWebView {
             let manifestItem = NSMenuItem(
                 title: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Show surface manifest…"
+                    defaultValue: "Tab Details"
                 ),
                 action: #selector(contextMenuShowSurfaceManifest(_:)),
                 keyEquivalent: ""

@@ -14,7 +14,7 @@ final class SurfaceManifestViewerWindowController: NSWindowController, NSWindowD
             backing: .buffered,
             defer: false
         )
-        panel.title = String(localized: "surfaceManifest.windowTitle", defaultValue: "Surface Details")
+        panel.title = String(localized: "surfaceManifest.windowTitle", defaultValue: "Tab Details")
         panel.titleVisibility = .visible
         panel.isReleasedWhenClosed = false
         panel.identifier = NSUserInterfaceItemIdentifier("c11.surfaceManifestViewer.\(surfaceId.uuidString)")

@@ -18,6 +18,108 @@ struct CLIError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
+/// C11-248: version-skew fallback, remove after one release.
+/// A fresh CLI talking to an app that still speaks surface/pane: maps canonical methods and
+/// param keys back to the legacy spelling, and legacy result keys forward to the canonical ones.
+enum CLIVersionSkew {
+    /// canonical key -> legacy key (params, and result keys in reverse).
+    static let keyPairs: [(new: String, old: String, isRef: Bool)] = [
+        ("tab_id", "surface_id", false), ("tab_ref", "surface_ref", true),
+        ("tab_ids", "surface_ids", false), ("tab_refs", "surface_refs", true),
+        ("area_id", "pane_id", false), ("area_ref", "pane_ref", true),
+        ("target_area_id", "target_pane_id", false), ("target_area_ref", "target_pane_ref", true),
+        ("source_area_id", "source_pane_id", false), ("source_area_ref", "source_pane_ref", true),
+        ("source_tab_id", "source_surface_id", false), ("source_tab_ref", "source_surface_ref", true),
+        ("target_tab_id", "target_surface_id", false), ("target_tab_ref", "target_surface_ref", true),
+        ("before_tab_id", "before_surface_id", false), ("after_tab_id", "after_surface_id", false),
+        ("created_tab_id", "created_surface_id", false), ("created_tab_ref", "created_surface_ref", true),
+        ("selected_tab_id", "selected_surface_id", false), ("selected_tab_ref", "selected_surface_ref", true),
+        ("focused_tab_id", "focused_surface_id", false), ("focused_tab_ref", "focused_surface_ref", true),
+        ("caller_tab_id", "caller_surface_id", false),
+        ("tab_type", "surface_type", false), ("tab_title", "surface_title", false),
+        ("tab_index", "surface_index", false), ("tab_index_in_area", "surface_index_in_pane", false),
+        ("tab_selected_in_area", "surface_selected_in_pane", false),
+        ("index_in_area", "index_in_pane", false), ("selected_in_area", "selected_in_pane", false),
+        ("area_index", "pane_index", false), ("is_browser_tab", "is_browser_surface", false),
+        ("tab_pinned", "surface_pinned", false), ("tab_focused", "surface_focused", false),
+        ("tab_created_at", "surface_created_at", false), ("tab_age_seconds", "surface_age_seconds", false),
+        ("tab_context", "surface_context", false), ("tab_view_first_responder", "surface_view_first_responder", false),
+        ("runtime_tab_ready", "runtime_surface_ready", false),
+        ("runtime_tab_created_at", "runtime_surface_created_at", false),
+        ("runtime_tab_age_seconds", "runtime_surface_age_seconds", false),
+        ("tab_count", "surface_count", false), ("terminal_tabs", "terminal_panels", false),
+        ("tabRefs", "surfaceRefs", true), ("areaRefs", "paneRefs", true),
+        ("tabs", "surfaces", false), ("areas", "panes", false),
+    ]
+
+    static func legacyMethod(for method: String) -> String? {
+        if method == "tab.action" { return nil }
+        if method.hasPrefix("tab.") { return "surface." + method.dropFirst("tab.".count) }
+        if method == "area.tabs" { return "pane.surfaces" }
+        if method.hasPrefix("area.") { return "pane." + method.dropFirst("area.".count) }
+        if method == "notification.create_for_tab" { return "notification.create_for_surface" }
+        return nil
+    }
+
+    /// Param keys whose values are user data: never rewritten.
+    private static let opaqueParamKeys: Set<String> = ["metadata", "value", "payload", "env", "text", "body", "title", "prompt"]
+
+    private static func legacyHandle(_ value: String) -> String {
+        for (modern, legacy) in [("tab:", "surface:"), ("area:", "pane:")] where value.hasPrefix(modern) {
+            let rest = value.dropFirst(modern.count)
+            if !rest.isEmpty, rest.allSatisfy(\.isNumber) { return legacy + rest }
+        }
+        return value
+    }
+
+    /// Params for a legacy app: legacy keys at every depth and legacy ref values (`tab:N` -> `surface:N`).
+    static func legacyParams(_ params: [String: Any]) -> [String: Any] {
+        legacyParamValue(params) as? [String: Any] ?? params
+    }
+
+    private static func legacyParamValue(_ value: Any) -> Any {
+        if let string = value as? String { return legacyHandle(string) }
+        if let array = value as? [Any] { return array.map(legacyParamValue) }
+        guard let dict = value as? [String: Any] else { return value }
+        var out: [String: Any] = [:]
+        for (key, child) in dict {
+            let newKey = keyPairs.first(where: { $0.new == key && $0.new != "tabs" && $0.new != "areas" })?.old ?? key
+            out[newKey] = opaqueParamKeys.contains(key) ? child : legacyParamValue(child)
+        }
+        return out
+    }
+
+    private static func modernHandle(_ value: String) -> String {
+        if value.hasPrefix("surface:") { return "tab:" + value.dropFirst("surface:".count) }
+        if value.hasPrefix("pane:") { return "area:" + value.dropFirst("pane:".count) }
+        return value
+    }
+
+    private static func modernRef(_ value: Any) -> Any {
+        if let string = value as? String { return modernHandle(string) }
+        if let array = value as? [Any] { return array.map(modernRef) }
+        if let dict = value as? [String: Any] { return dict.mapValues(modernRef) }
+        return value
+    }
+
+    static func modernResult(_ value: [String: Any]) -> [String: Any] {
+        modernValue(value) as? [String: Any] ?? value
+    }
+
+    private static func modernValue(_ value: Any) -> Any {
+        if let array = value as? [Any] { return array.map(modernValue) }
+        guard var dict = value as? [String: Any] else { return value }
+        for (key, child) in dict where key != "metadata" && key != "value" { dict[key] = modernValue(child) }
+        for pair in keyPairs {
+            guard let old = dict[pair.old] else { continue }
+            if dict[pair.new] == nil { dict[pair.new] = pair.isRef ? modernRef(old) : old }
+        }
+        // Items carry a generic `ref`; give it the canonical prefix too.
+        if let ref = dict["ref"] as? String { dict["ref"] = modernHandle(ref) }
+        return dict
+    }
+}
+
 /// Returns true when a `CLIError` represents "c11 app isn't reachable on its
 /// control socket" — used by advisory pathways (like the claude-hook dispatch)
 /// that should no-op rather than surface an error when nothing is listening.
@@ -167,7 +269,7 @@ private final class CLISocketSentryTelemetry {
         self.socketPath = socketPath
         self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["C11_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
         self.workspaceId = processEnv["CMUX_WORKSPACE_ID"]
-        self.surfaceId = processEnv["CMUX_SURFACE_ID"]
+        self.surfaceId = CMUXCLI.callerTabEnv(processEnv)
         self.disabledByEnv =
             processEnv["CMUX_CLI_SENTRY_DISABLED"] == "1" ||
             processEnv["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] == "1"
@@ -246,7 +348,7 @@ private final class CLISocketSentryTelemetry {
             context["workspace_id"] = workspaceId
         }
         if let surfaceId {
-            context["surface_id"] = surfaceId
+            context["tab_id"] = surfaceId
         }
         return context
     }
@@ -1241,7 +1343,44 @@ final class SocketClient {
         return nil
     }
 
+    /// C11-248: version-skew fallback, remove after one release.
+    /// Whether the app speaks only the legacy surface/pane vocabulary. Probed once per
+    /// invocation via `system.capabilities` (the answer is cached on this client).
+    private var serverIsLegacy: Bool?
+
+    private func probeServerIsLegacy(deadline: SocketDeadline) -> Bool {
+        if let cached = serverIsLegacy { return cached }
+        var legacy = false
+        if let caps = try? sendV2Raw(method: "system.capabilities", params: [:], deadline: deadline),
+           let methods = caps["methods"] as? [String], !methods.isEmpty {
+            legacy = !methods.contains("tab.list")
+        }
+        serverIsLegacy = legacy
+        return legacy
+    }
+
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        if method == "system.capabilities" {
+            return try sendV2Raw(method: method, params: params, deadline: deadline)
+        }
+        // Modern app: send canonical names, never retry. Legacy app: legacy method, param keys
+        // and ref values for every request (unchanged-name methods included), canonical result.
+        if probeServerIsLegacy(deadline: deadline) {
+            let legacyResult = try sendV2Raw(
+                method: CLIVersionSkew.legacyMethod(for: method) ?? method,
+                params: CLIVersionSkew.legacyParams(params),
+                deadline: deadline
+            )
+            return CLIVersionSkew.modernResult(legacyResult)
+        }
+        return try sendV2Raw(method: method, params: params, deadline: deadline)
+    }
+
+    private func sendV2Raw(
+        method: String,
+        params: [String: Any],
+        deadline: SocketDeadline
+    ) throws -> [String: Any] {
         let effectiveTimeout: TimeInterval?
         switch deadline {
         case .default: effectiveTimeout = Self.configuredDefaultDeadlineSeconds
@@ -1348,9 +1487,8 @@ final class SocketClient {
     private func refTokens(from params: [String: Any]) -> [String] {
         var parts: [String] = []
         if let ws = params["workspace_id"] as? String { parts.append("workspace=\(ws)") }
-        if let surf = params["surface_id"] as? String { parts.append("surface=\(surf)") }
-        if let pane = params["pane_id"] as? String { parts.append("pane=\(pane)") }
-        if let panel = params["panel_id"] as? String { parts.append("panel=\(panel)") }
+        if let surf = params["tab_id"] as? String { parts.append("tab=\(surf)") }
+        if let pane = params["area_id"] as? String { parts.append("area=\(pane)") }
         return parts
     }
 
@@ -1623,7 +1761,7 @@ struct CMUXCLI {
             throw CLIError(message: "Missing command")
         }
 
-        let command = args[index]
+        let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
@@ -1838,7 +1976,7 @@ struct CMUXCLI {
             if includeCaller {
                 let idWsFlag = optionValue(commandArgs, name: "--workspace")
                 let workspaceArg = idWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-                let surfaceArg = optionValue(commandArgs, name: "--surface") ?? (idWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+                let surfaceArg = optionValue(commandArgs, name: "--surface") ?? (idWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
                 if workspaceArg != nil || surfaceArg != nil {
                     let workspaceId = try normalizeWorkspaceHandle(
                         workspaceArg,
@@ -1855,9 +1993,9 @@ struct CMUXCLI {
                             client: client,
                             workspaceHandle: workspaceId
                         ) else {
-                            throw CLIError(message: "Invalid surface handle")
+                            throw CLIError(message: "Invalid tab handle")
                         }
-                        caller["surface_id"] = surfaceId
+                        caller["tab_id"] = surfaceId
                     }
                     if !caller.isEmpty {
                         params["caller"] = caller
@@ -1928,10 +2066,10 @@ struct CMUXCLI {
             let payload = try client.sendV2(method: "workspace.move_to_window", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["workspace", "window"]))
 
-        case "move-surface":
+        case "move-tab":
             try runMoveSurface(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
-        case "reorder-surface":
+        case "reorder-tab":
             try runReorderSurface(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
         case "reorder-workspace":
@@ -2103,7 +2241,7 @@ struct CMUXCLI {
             if let commandText = commandOpt, !wsId.isEmpty {
                 let text = unescapeSendText(commandText + "\\n")
                 let sendParams: [String: Any] = ["text": text, "workspace_id": wsId]
-                _ = try client.sendV2(method: "surface.send_text", params: sendParams)
+                _ = try client.sendV2(method: "tab.send_text", params: sendParams)
             }
 
         case "new-split":
@@ -2113,7 +2251,7 @@ struct CMUXCLI {
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
             // The direction is the first non-flag token (so `--allow-undersized` can
             // appear on either side of it).
             guard let direction = rem4.first(where: { !$0.hasPrefix("-") }) else {
@@ -2123,7 +2261,7 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
+            if let sfId { params["tab_id"] = sfId }
             if let titleArg, !titleArg.isEmpty { params["title"] = titleArg }
             // --cwd <path> sets the new shell's working directory. `inherit`
             // (or omitting the flag) keeps the default: the workspace root,
@@ -2138,49 +2276,49 @@ struct CMUXCLI {
             if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
-            let payload = try client.sendV2(method: "surface.split", params: params)
+            let payload = try client.sendV2(method: "tab.split", params: params)
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
-        case "list-panes":
+        case "list-areas":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "pane.list", params: params)
+            let payload = try client.sendV2(method: "area.list", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
-                let panes = payload["panes"] as? [[String: Any]] ?? []
+                let panes = payload["areas"] as? [[String: Any]] ?? []
                 if panes.isEmpty {
-                    print("No panes")
+                    print("No areas")
                 } else {
                     for pane in panes {
                         let focused = (pane["focused"] as? Bool) == true
                         let handle = textHandle(pane, idFormat: idFormat)
-                        let count = pane["surface_count"] as? Int ?? 0
+                        let count = pane["tab_count"] as? Int ?? 0
                         let prefix = focused ? "* " : "  "
                         let focusTag = focused ? "  [focused]" : ""
-                        print("\(prefix)\(handle)  [\(count) surface\(count == 1 ? "" : "s")]\(focusTag)")
+                        print("\(prefix)\(handle)  [\(count) tab\(count == 1 ? "" : "s")]\(focusTag)")
                     }
                 }
             }
 
-        case "list-pane-surfaces":
+        case "list-area-tabs":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let paneRaw = optionValue(commandArgs, name: "--pane")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
-            if let paneId { params["pane_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.surfaces", params: params)
+            if let paneId { params["area_id"] = paneId }
+            let payload = try client.sendV2(method: "area.tabs", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
-                let surfaces = payload["surfaces"] as? [[String: Any]] ?? []
+                let surfaces = payload["tabs"] as? [[String: Any]] ?? []
                 if surfaces.isEmpty {
-                    print("No surfaces in pane")
+                    print("No tabs in area")
                 } else {
                     for surface in surfaces {
                         let selected = (surface["selected"] as? Bool) == true
@@ -2196,20 +2334,20 @@ struct CMUXCLI {
         case "tree":
             try runTreeCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
-        case "focus-pane":
+        case "focus-area":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             guard let paneRaw = optionValue(commandArgs, name: "--pane") ?? commandArgs.first else {
-                throw CLIError(message: "focus-pane requires --pane <id|ref>")
+                throw CLIError(message: "focus-area requires --area <id|ref>")
             }
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
-            if let paneId { params["pane_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.focus", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["pane", "workspace"]))
+            if let paneId { params["area_id"] = paneId }
+            let payload = try client.sendV2(method: "area.focus", params: params)
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area", "workspace"]))
 
-        case "new-pane":
+        case "new-area":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
             let direction = optionValue(commandArgs, name: "--direction") ?? "right"
@@ -2236,9 +2374,9 @@ struct CMUXCLI {
             if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
-            let payload = try client.sendV2(method: "pane.create", params: params)
+            let payload = try client.sendV2(method: "area.create", params: params)
             printSizeWarning(payload)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "launch-agent":
             // Typed-agent launch: one command that owns per-agent invocation
@@ -2251,7 +2389,7 @@ struct CMUXCLI {
             let launchPaneRaw = optionValue(commandArgs, name: "--pane")
             let launchWorkspaceRaw = optionValue(commandArgs, name: "--workspace")
             if launchNewWorkspace && (launchPaneRaw != nil || launchWorkspaceRaw != nil) {
-                throw CLIError(message: "launch-agent: --new-workspace is mutually exclusive with --pane/--workspace")
+                throw CLIError(message: "launch-agent: --new-workspace is mutually exclusive with --area/--workspace")
             }
             let launchPromptInline = optionValue(commandArgs, name: "--prompt")
             let launchPromptFile = optionValue(commandArgs, name: "--prompt-file")
@@ -2307,7 +2445,7 @@ struct CMUXCLI {
                 environment: ProcessInfo.processInfo.environment
             )
             if let callerSurfaceId {
-                params["caller_surface_id"] = callerSurfaceId
+                params["caller_tab_id"] = callerSurfaceId
             }
             if let flagReason = optionValue(commandArgs, name: "--flag") {
                 params["flag"] = flagReason
@@ -2318,7 +2456,7 @@ struct CMUXCLI {
                 params["by"] = actor
                 if actor == "agent", callerSurfaceId == nil {
                     throw CLIError(
-                        message: "launch-agent: agent-raised flags require C11_SURFACE_ID or CMUX_SURFACE_ID"
+                        message: "launch-agent: agent-raised flags require C11_TAB_ID"
                     )
                 }
             } else if optionValue(commandArgs, name: "--by") != nil {
@@ -2351,7 +2489,7 @@ struct CMUXCLI {
                 let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
                 if let wsId { params["workspace_id"] = wsId }
                 let paneId = try normalizePaneHandle(launchPaneRaw, client: client, workspaceHandle: wsId)
-                if let paneId { params["pane_id"] = paneId }
+                if let paneId { params["area_id"] = paneId }
             }
             if commandArgs.contains("--no-focus") { params["focus"] = false }
             let launchPayload = try client.sendV2(method: "agent.launch", params: params)
@@ -2375,14 +2513,14 @@ struct CMUXCLI {
                     FileHandle.standardError.c11SafeWrite(Data(("warning: " + warning + "\n").utf8))
                 }
             }
-            printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+            printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "raise-flag", "lower-flag", "suppress", "unsuppress":
             guard let rawSurface = optionValue(commandArgs, name: "--surface") else {
-                throw CLIError(message: "\(command) requires --surface <id|ref>")
+                throw CLIError(message: "\(command) requires --tab <id|ref>")
             }
             guard !rawSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw CLIError(message: "\(command): --surface received an empty value")
+                throw CLIError(message: "\(command): --tab received an empty value")
             }
             let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client)
@@ -2392,9 +2530,9 @@ struct CMUXCLI {
                 workspaceHandle: workspaceHandle,
                 allowFocused: false
             ) else {
-                throw CLIError(message: "\(command): surface not found")
+                throw CLIError(message: "\(command): tab not found")
             }
-            var params: [String: Any] = ["surface_id": surfaceHandle]
+            var params: [String: Any] = ["tab_id": surfaceHandle]
             if let workspaceHandle { params["workspace_id"] = workspaceHandle }
             let actor = optionValue(commandArgs, name: "--by") ?? "agent"
             guard ["operator", "agent"].contains(actor) else {
@@ -2410,7 +2548,7 @@ struct CMUXCLI {
                 var index = 0
                 while index < commandArgs.count {
                     let value = commandArgs[index]
-                    if ["--surface", "--workspace", "--window", "--by"].contains(value) {
+                    if ["--surface", "--tab", "--panel", "--workspace", "--window", "--by"].contains(value) {
                         index += 2
                     } else if value == "--json" {
                         index += 1
@@ -2428,11 +2566,11 @@ struct CMUXCLI {
                 )
                 if actor == "agent", callerSurfaceId == nil {
                     throw CLIError(
-                        message: "raise-flag: agent-raised flags require C11_SURFACE_ID or CMUX_SURFACE_ID"
+                        message: "raise-flag: agent-raised flags require C11_TAB_ID"
                     )
                 }
                 if let callerSurfaceId {
-                    params["caller_surface_id"] = callerSurfaceId
+                    params["caller_tab_id"] = callerSurfaceId
                 }
             case "lower-flag": method = "flag.lower"
             case "suppress": method = "flag.suppress"
@@ -2444,7 +2582,7 @@ struct CMUXCLI {
                 payload,
                 jsonOutput: attentionJSON,
                 idFormat: idFormat,
-                fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "workspace"])
+                fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "workspace"])
             )
 
         case "config":
@@ -2458,9 +2596,9 @@ struct CMUXCLI {
             let (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
             let cfgPayload = try client.sendV2(method: "config.launch", params: cfgParams)
             let cfgJSONOut = jsonOutput || cfgJSON
-            printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+            printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
-        case "new-surface":
+        case "new-tab":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
             let paneRaw = optionValue(commandArgs, name: "--pane")
@@ -2472,7 +2610,7 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
-            if let paneId { params["pane_id"] = paneId }
+            if let paneId { params["area_id"] = paneId }
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
@@ -2482,36 +2620,36 @@ struct CMUXCLI {
                 params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
             }
             if noFocus { params["focus"] = false }
-            let payload = try client.sendV2(method: "surface.create", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+            let payload = try client.sendV2(method: "tab.create", params: params)
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
-        case "close-surface":
+        case "close-tab":
             try rejectEmptyTargetFlags(commandArgs)
             let csWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = csWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (csWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (csWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.close", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.close", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
-        case "pane-confirm":
+        case "area-confirm":
             // Present a confirmation dialog anchored on a specific panel and wait for
             // the user's decision. Maps to the pane.confirm socket method (plan §3.6).
             guard let panelRaw = optionValue(commandArgs, name: "--panel") else {
-                throw CLIError(message: "pane-confirm requires --panel <id|ref>")
+                throw CLIError(message: "area-confirm requires --tab <id|ref>")
             }
             guard let title = optionValue(commandArgs, name: "--title") else {
-                throw CLIError(message: "pane-confirm requires --title <text>")
+                throw CLIError(message: "area-confirm requires --title <text>")
             }
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             let panelId = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: wsId)
             var params: [String: Any] = ["title": title]
-            if let panelId { params["panel_id"] = panelId }
+            if let panelId { params["tab_id"] = panelId }
             if let wsId { params["workspace_id"] = wsId }
             if let message = optionValue(commandArgs, name: "--message") {
                 params["message"] = message
@@ -2524,7 +2662,7 @@ struct CMUXCLI {
                 // the flag — "cmux pane-confirm ... --timeout abc" used to wait
                 // forever.
                 guard let timeout = Double(timeoutStr) else {
-                    throw CLIError(message: "pane-confirm: invalid --timeout '\(timeoutStr)' (expected a number in seconds)")
+                    throw CLIError(message: "area-confirm: invalid --timeout '\(timeoutStr)' (expected a number in seconds)")
                 }
                 params["timeout"] = timeout
             }
@@ -2534,7 +2672,7 @@ struct CMUXCLI {
             if let cancelLabel = optionValue(commandArgs, name: "--cancel-label") {
                 params["cancel_label"] = cancelLabel
             }
-            let payload = try client.sendV2(method: "pane.confirm", params: params, deadline: .none)
+            let payload = try client.sendV2(method: "area.confirm", params: params, deadline: .none)
             // Exit code maps to outcome: 0=ok, 2=cancel, 3=dismissed, 1=error.
             // Note: socket reports timeout as "dismissed" (exit 3); the user
             // cannot distinguish a timeout from a panel-teardown from the CLI.
@@ -2553,35 +2691,35 @@ struct CMUXCLI {
             default: exit(1)
             }
 
-        case "drag-surface-to-split":
+        case "drag-tab-to-split":
             let (surfaceArg, rem0) = parseOption(commandArgs, name: "--surface")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
             let surface = surfaceArg ?? panelArg
             guard let surface else {
-                throw CLIError(message: "drag-surface-to-split requires --surface <id|index>")
+                throw CLIError(message: "drag-tab-to-split requires --tab <id|index>")
             }
             guard let direction = rem1.first else {
-                throw CLIError(message: "drag-surface-to-split requires a direction")
+                throw CLIError(message: "drag-tab-to-split requires a direction")
             }
             let response = try sendV1Command("drag_surface_to_split \(surface) \(direction)", client: client)
             print(response)
 
-        case "refresh-surfaces":
+        case "refresh-tabs":
             let response = try sendV1Command("refresh_surfaces", client: client)
             print(response)
 
-        case "surface-health":
+        case "tab-health":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "surface.health", params: params)
+            let payload = try client.sendV2(method: "tab.health", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
-                let surfaces = payload["surfaces"] as? [[String: Any]] ?? []
+                let surfaces = payload["tabs"] as? [[String: Any]] ?? []
                 if surfaces.isEmpty {
-                    print("No surfaces")
+                    print("No tabs")
                 } else {
                     for surface in surfaces {
                         let handle = textHandle(surface, idFormat: idFormat)
@@ -2613,7 +2751,7 @@ struct CMUXCLI {
         case "trigger-flash":
             let tfWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = tfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (tfWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (tfWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
             let colorArg = optionValue(commandArgs, name: "--color")
             if let colorArg, !isValidFlashColorHex(colorArg) {
                 throw CLIError(message: "--color must be a hex value like #F5C518.")
@@ -2623,36 +2761,36 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
+            if let sfId { params["tab_id"] = sfId }
             if let colorArg { params["color"] = colorArg }
             if persistent { params["persistent"] = true }
-            let payload = try client.sendV2(method: "surface.trigger_flash", params: params)
+            let payload = try client.sendV2(method: "tab.trigger_flash", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "cancel-flash":
             let cfWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = cfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (cfWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (cfWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.cancel_flash", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.cancel_flash", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
-        case "list-panels":
+        case "list-tabs":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "surface.list", params: params)
+            let payload = try client.sendV2(method: "tab.list", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
-                let surfaces = payload["surfaces"] as? [[String: Any]] ?? []
+                let surfaces = payload["tabs"] as? [[String: Any]] ?? []
                 if surfaces.isEmpty {
-                    print("No surfaces")
+                    print("No tabs")
                 } else {
                     for surface in surfaces {
                         let focused = (surface["focused"] as? Bool) == true
@@ -2667,17 +2805,17 @@ struct CMUXCLI {
                 }
             }
 
-        case "focus-panel":
+        case "focus-tab":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             guard let panelRaw = optionValue(commandArgs, name: "--panel") else {
-                throw CLIError(message: "focus-panel requires --panel")
+                throw CLIError(message: "focus-tab requires --tab")
             }
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.focus", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.focus", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "close-workspace":
@@ -2755,7 +2893,7 @@ struct CMUXCLI {
                     ? "(none: adopts the first directory its shell visits other than ~ or /)"
                     : "(none)"
             } else if (payload["root_exists"] as? Bool) == false {
-                fallbackText = "\(root) (missing: new surfaces fall back to the focused surface)"
+                fallbackText = "\(root) (missing: new tabs fall back to the focused tab)"
             } else {
                 fallbackText = root
             }
@@ -2779,13 +2917,13 @@ struct CMUXCLI {
             }
 
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
 
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
+            if let sfId { params["tab_id"] = sfId }
 
             let includeScrollback = rem2.contains("--scrollback")
             if includeScrollback {
@@ -2799,7 +2937,7 @@ struct CMUXCLI {
                 params["scrollback"] = true
             }
 
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             if jsonOutput {
                 print(jsonString(payload))
             } else {
@@ -2812,7 +2950,7 @@ struct CMUXCLI {
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send")
             let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send")
-            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let envSurface = Self.callerTabEnv()
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
@@ -2820,7 +2958,7 @@ struct CMUXCLI {
             // --surface. The windowId path is excluded: --window without --surface still
             // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
             guard sfArg != nil || envSurface != nil else {
-                throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+                throw CLIError(message: "send requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
@@ -2829,8 +2967,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
                 jsonOutput: jsonOutput,
@@ -2843,13 +2981,13 @@ struct CMUXCLI {
             let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
             let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key")
             let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send-key")
-            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let envSurface = Self.callerTabEnv()
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting (same policy as send).
             // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
             guard sfArg != nil || envSurface != nil else {
-                throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+                throw CLIError(message: "send-key requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
             guard let key = keyArgs.first else { throw CLIError(message: "send-key requires a key") }
@@ -2857,28 +2995,28 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_key", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
-        case "send-panel":
+        case "send-tab":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
             let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-panel")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-tab")
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-panel") else {
-                throw CLIError(message: "send-panel requires --panel")
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-tab") else {
+                throw CLIError(message: "send-tab requires --tab")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
-            guard !rawText.isEmpty else { throw CLIError(message: "send-panel requires text") }
+            guard !rawText.isEmpty else { throw CLIError(message: "send-tab requires text") }
             let text = unescapeSendText(rawText)
             var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
                 jsonOutput: jsonOutput,
@@ -2886,23 +3024,23 @@ struct CMUXCLI {
                 fallbackText: sendTextSummary(payload, idFormat: idFormat)
             )
 
-        case "send-key-panel":
+        case "send-key-tab":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
             let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key-panel")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key-tab")
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-key-panel") else {
-                throw CLIError(message: "send-key-panel requires --panel")
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-key-tab") else {
+                throw CLIError(message: "send-key-tab requires --tab")
             }
             let skpArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
             let key = skpArgs.first ?? ""
-            guard !key.isEmpty else { throw CLIError(message: "send-key-panel requires a key") }
+            guard !key.isEmpty else { throw CLIError(message: "send-key-tab requires a key") }
             var params: [String: Any] = ["key": key]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_key", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "notify":
@@ -2912,7 +3050,7 @@ struct CMUXCLI {
 
             let notifyWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = notifyWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? (notifyWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? (notifyWsFlag == nil && windowId == nil ? Self.callerTabEnv() : nil)
 
             var params: [String: Any] = ["title": title, "subtitle": subtitle, "body": body]
             if let payload = nonEmptyEnv("C11_CODEX_NOTIFY_PAYLOAD_B64") {
@@ -2921,9 +3059,9 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
+            if let sfId { params["tab_id"] = sfId }
 
-            let method = sfId != nil ? "notification.create_for_surface" : "notification.create"
+            let method = sfId != nil ? "notification.create_for_tab" : "notification.create"
             let payload = try client.sendV2(method: method, params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
@@ -2940,7 +3078,8 @@ struct CMUXCLI {
                         "subtitle": item.subtitle,
                         "body": item.body
                     ]
-                    dict["surface_id"] = item.surfaceId ?? NSNull()
+                    dict["tab_id"] = item.surfaceId ?? NSNull()
+                    dict["surface_id"] = item.surfaceId ?? NSNull() // C11-248: legacy key, remove after one release
                     return dict
                 }
                 print(jsonString(payload))
@@ -3312,7 +3451,7 @@ struct CMUXCLI {
         case "workspace-color":
             try runWorkspaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
 
-        case "surface-color":
+        case "tab-color":
             try runSurfaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
 
         // C11-13 Stage 2: inter-agent mailbox (send/recv/trace/tail + helpers).
@@ -3449,11 +3588,11 @@ struct CMUXCLI {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
             let ref = (payload["workspaceRef"] as? String) ?? "?"
-            let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
-            let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+            let surfaceRefs = payload["tabRefs"] as? [String: String] ?? [:]
+            let paneRefs = payload["areaRefs"] as? [String: String] ?? [:]
             let warnings = payload["warnings"] as? [String] ?? []
             let failures = payload["failures"] as? [[String: Any]] ?? []
-            print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+            print("OK workspace=\(ref) tabs=\(surfaceRefs.count) areas=\(paneRefs.count)")
             if !warnings.isEmpty {
                 print("warnings: \(warnings.count)")
                 for w in warnings { print("  - \(w)") }
@@ -3526,11 +3665,11 @@ struct CMUXCLI {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
             let ref = (payload["workspaceRef"] as? String) ?? "?"
-            let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
-            let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+            let surfaceRefs = payload["tabRefs"] as? [String: String] ?? [:]
+            let paneRefs = payload["areaRefs"] as? [String: String] ?? [:]
             let warnings = payload["warnings"] as? [String] ?? []
             let failures = payload["failures"] as? [[String: Any]] ?? []
-            print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+            print("OK workspace=\(ref) tabs=\(surfaceRefs.count) areas=\(paneRefs.count)")
             if !warnings.isEmpty {
                 for w in warnings { print("  warning: \(w)") }
             }
@@ -3922,9 +4061,9 @@ struct CMUXCLI {
                 } else {
                     let id = (snap["snapshot_id"] as? String) ?? "?"
                     let path = (snap["path"] as? String) ?? "?"
-                    let count = (snap["surface_count"] as? Int) ?? 0
+                    let count = (snap["tab_count"] as? Int) ?? 0
                     let selected = (snap["selected"] as? Bool) == true ? " (selected)" : ""
-                    print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(path)\(selected)")
+                    print("OK snapshot=\(id) tabs=\(count) workspace=\(wsRef) path=\(path)\(selected)")
                 }
             }
             if let setId = payload["set_id"] as? String,
@@ -3952,7 +4091,7 @@ struct CMUXCLI {
         let payload = try client.sendV2(method: "snapshot.create", params: params)
         let id = (payload["snapshot_id"] as? String) ?? "?"
         var resolvedPath = (payload["path"] as? String) ?? "?"
-        let count = (payload["surface_count"] as? Int) ?? 0
+        let count = (payload["tab_count"] as? Int) ?? 0
         let wsRef = (payload["workspace_ref"] as? String) ?? "?"
         if let outRaw = outOpt {
             let src = URL(fileURLWithPath: resolvedPath)
@@ -3977,7 +4116,7 @@ struct CMUXCLI {
             print(jsonString(mutable))
             return
         }
-        print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(resolvedPath)")
+        print("OK snapshot=\(id) tabs=\(count) workspace=\(wsRef) path=\(resolvedPath)")
     }
 
     /// `c11 restore <snapshot-id-or-path> [--json]`. Reads
@@ -4093,7 +4232,7 @@ struct CMUXCLI {
                           let uuid = parseUUIDFromRef(ref) {
                     params["target_workspace_id"] = uuid.uuidString
                 } else {
-                    throw CLIError(message: "restore: --in-place could not resolve the target workspace (set CMUX_WORKSPACE_ID or invoke from a c11 surface)")
+                    throw CLIError(message: "restore: --in-place could not resolve the target workspace (set CMUX_WORKSPACE_ID or invoke from a c11 tab)")
                 }
             }
         }
@@ -4117,9 +4256,9 @@ struct CMUXCLI {
                 }
                 let snap = (entry["snapshot_id"] as? String) ?? "?"
                 let ref = (entry["workspaceRef"] as? String) ?? "?"
-                let surfaceRefs = entry["surfaceRefs"] as? [String: String] ?? [:]
+                let surfaceRefs = entry["tabRefs"] as? [String: String] ?? [:]
                 let isSel = (entry["selected"] as? Bool) == true ? " (selected)" : ""
-                print("  OK snapshot=\(snap) workspace=\(ref) surfaces=\(surfaceRefs.count)\(isSel)")
+                print("  OK snapshot=\(snap) workspace=\(ref) tabs=\(surfaceRefs.count)\(isSel)")
             }
             let warnings = payload["warnings"] as? [String] ?? []
             if !warnings.isEmpty {
@@ -4129,11 +4268,11 @@ struct CMUXCLI {
             return
         }
         let ref = (payload["workspaceRef"] as? String) ?? "?"
-        let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
-        let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+        let surfaceRefs = payload["tabRefs"] as? [String: String] ?? [:]
+        let paneRefs = payload["areaRefs"] as? [String: String] ?? [:]
         let warnings = payload["warnings"] as? [String] ?? []
         let failures = payload["failures"] as? [[String: Any]] ?? []
-        print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+        print("OK workspace=\(ref) tabs=\(surfaceRefs.count) areas=\(paneRefs.count)")
         if !warnings.isEmpty {
             print("warnings: \(warnings.count)")
             for w in warnings { print("  - \(w)") }
@@ -4401,7 +4540,7 @@ struct CMUXCLI {
                 return (id, created, truncate(unreadableLabel, max: 32), "?", origin, source)
             }
             let title = (entry["workspace_title"] as? String) ?? "(no title)"
-            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
+            let surfaces = (entry["tab_count"] as? Int).map(String.init) ?? "?"
             return (id, created, truncate(title, max: 32), surfaces, origin, source)
         }
         func pad(_ s: String, _ width: Int) -> String {
@@ -4412,7 +4551,7 @@ struct CMUXCLI {
             pad("SNAPSHOT_ID", 26) + "  "
             + pad("CREATED_AT", 24) + "  "
             + pad("WORKSPACE_TITLE", 32) + "  "
-            + pad("SURFACES", 8) + "  "
+            + pad("TABS", 8) + "  "
             + pad("ORIGIN", 12) + "  "
             + pad("SOURCE", 8)
         )
@@ -4543,7 +4682,7 @@ struct CMUXCLI {
             if let first = args.first, first.hasPrefix("-") {
                 throw CLIError(
                     message:
-                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--tab <id|ref|index>] [--window <id|ref|index>]"
                 )
             } else if let first = args.first, looksLikePath(first) || first.contains(".") {
                 subArgs = args
@@ -4561,13 +4700,13 @@ struct CMUXCLI {
         if let unknownFlag = trailingArgs.first(where: { $0.hasPrefix("-") }) {
             throw CLIError(
                 message:
-                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--tab <id|ref|index>] [--window <id|ref|index>]"
             )
         }
         if let extraArg = trailingArgs.first {
             throw CLIError(
                 message:
-                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--tab <id|ref|index>] [--window <id|ref|index>]"
             )
         }
 
@@ -4577,7 +4716,7 @@ struct CMUXCLI {
         var params: [String: Any] = ["path": absolutePath]
         if let surfaceRaw = surfaceOpt {
             if let surface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
-                params["surface_id"] = surface
+                params["tab_id"] = surface
             }
         }
         let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
@@ -4594,7 +4733,7 @@ struct CMUXCLI {
         if let paneRaw = paneOpt {
             let workspaceHandle = params["workspace_id"] as? String
             if let pane = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: workspaceHandle) {
-                params["pane_id"] = pane
+                params["area_id"] = pane
             }
         }
 
@@ -4603,10 +4742,10 @@ struct CMUXCLI {
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
-            let surfaceText = formatHandle(payload, kind: "surface", idFormat: idFormat) ?? "unknown"
-            let paneText = formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown"
+            let surfaceText = formatHandle(payload, kind: "tab", idFormat: idFormat) ?? "unknown"
+            let paneText = formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
-            print("OK surface=\(surfaceText) pane=\(paneText) path=\(filePath)")
+            print("OK tab=\(surfaceText) area=\(paneText) path=\(filePath)")
         }
     }
 
@@ -4619,14 +4758,14 @@ struct CMUXCLI {
         idFormat: CLIIDFormat
     ) throws {
         let (surfaceOpt, _) = parseOption(commandArgs, name: "--surface")
-        let surfaceArg = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceArg = surfaceOpt ?? Self.callerTabEnv()
         guard let surfaceArg else {
-            throw CLIError(message: "markdown-content requires --surface <handle> (or CMUX_SURFACE_ID env)")
+            throw CLIError(message: "markdown-content requires --tab <handle> (or C11_TAB_ID env)")
         }
         guard let surface = try normalizeSurfaceHandle(surfaceArg, client: client) else {
-            throw CLIError(message: "markdown-content: invalid surface handle")
+            throw CLIError(message: "markdown-content: invalid tab handle")
         }
-        let params: [String: Any] = ["surface_id": surface]
+        let params: [String: Any] = ["tab_id": surface]
         let payload = try client.sendV2(method: "markdown.get_content", params: params)
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -4957,7 +5096,7 @@ struct CMUXCLI {
         let pieces = value.split(separator: ":", omittingEmptySubsequences: false)
         guard pieces.count == 2 else { return false }
         let kind = String(pieces[0]).lowercased()
-        guard ["window", "workspace", "pane", "surface"].contains(kind) else { return false }
+        guard ["window", "workspace", "area", "tab", "pane", "surface"].contains(kind) else { return false }
         return Int(String(pieces[1])) != nil
     }
 
@@ -5040,7 +5179,7 @@ struct CMUXCLI {
             if !allowFocused { return nil }
             let ident = try client.sendV2(method: "system.identify")
             let focused = ident["focused"] as? [String: Any] ?? [:]
-            return (focused["pane_ref"] as? String) ?? (focused["pane_id"] as? String)
+            return (focused["area_ref"] as? String) ?? (focused["area_id"] as? String)
         }
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5049,19 +5188,19 @@ struct CMUXCLI {
             return trimmed
         }
         guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid pane handle: \(trimmed) (expected UUID, ref like pane:1, or index)")
+            throw CLIError(message: "Invalid area handle: \(trimmed) (expected UUID, ref like area:1, or index)")
         }
 
         var params: [String: Any] = [:]
         if let workspaceHandle {
             params["workspace_id"] = workspaceHandle
         }
-        let listed = try client.sendV2(method: "pane.list", params: params)
-        let items = listed["panes"] as? [[String: Any]] ?? []
+        let listed = try client.sendV2(method: "area.list", params: params)
+        let items = listed["areas"] as? [[String: Any]] ?? []
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
         }
-        throw CLIError(message: "Pane index not found")
+        throw CLIError(message: "Area index not found")
     }
 
     /// C11-173: an explicitly-passed but empty ref — `--surface "$REF"` where the
@@ -5074,7 +5213,7 @@ struct CMUXCLI {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. surface:2), or index.")
+            throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. tab:2), or index.")
         }
         return trimmed
     }
@@ -5086,7 +5225,7 @@ struct CMUXCLI {
         let base = v2OKSummary(payload, idFormat: idFormat)
         let queued = (payload["queued"] as? Bool) ?? false
         guard queued else { return base }
-        return base + " queued=1 (surface not attached yet; payload flushes on attach)"
+        return base + " queued=1 (tab not attached yet; payload flushes on attach)"
     }
 
     /// An exported-but-empty env var is not a target. Treat it as unset so the
@@ -5107,7 +5246,7 @@ struct CMUXCLI {
             if !allowFocused { return nil }
             let ident = try client.sendV2(method: "system.identify")
             let focused = ident["focused"] as? [String: Any] ?? [:]
-            return (focused["surface_ref"] as? String) ?? (focused["surface_id"] as? String)
+            return (focused["tab_ref"] as? String) ?? (focused["tab_id"] as? String)
         }
 
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5116,19 +5255,19 @@ struct CMUXCLI {
             return trimmed
         }
         guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid surface handle: \(trimmed) (expected UUID, ref like surface:1, or index)")
+            throw CLIError(message: "Invalid tab handle: \(trimmed) (expected UUID, ref like tab:1, or index)")
         }
 
         var params: [String: Any] = [:]
         if let workspaceHandle {
             params["workspace_id"] = workspaceHandle
         }
-        let listed = try client.sendV2(method: "surface.list", params: params)
-        let items = listed["surfaces"] as? [[String: Any]] ?? []
+        let listed = try client.sendV2(method: "tab.list", params: params)
+        let items = listed["tabs"] as? [[String: Any]] ?? []
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
         }
-        throw CLIError(message: "Surface index not found")
+        throw CLIError(message: "Tab index not found")
     }
 
     private func canonicalSurfaceHandleFromTabInput(_ value: String) -> String {
@@ -5139,7 +5278,7 @@ struct CMUXCLI {
               let ordinal = Int(String(pieces[1])) else {
             return trimmed
         }
-        return "surface:\(ordinal)"
+        return "tab:\(ordinal)"
     }
 
     private func normalizeTabHandle(
@@ -5195,8 +5334,8 @@ struct CMUXCLI {
     }
 
     private func formatTabHandle(_ payload: [String: Any], idFormat: CLIIDFormat) -> String? {
-        let id = (payload["tab_id"] as? String) ?? (payload["surface_id"] as? String)
-        let refRaw = (payload["tab_ref"] as? String) ?? (payload["surface_ref"] as? String)
+        let id = (payload["tab_id"] as? String)
+        let refRaw = (payload["tab_ref"] as? String)
         let ref = displayTabHandle(refRaw)
         switch idFormat {
         case .refs:
@@ -5212,8 +5351,8 @@ struct CMUXCLI {
     }
 
     private func formatCreatedTabHandle(_ payload: [String: Any], idFormat: CLIIDFormat) -> String? {
-        let id = (payload["created_tab_id"] as? String) ?? (payload["created_surface_id"] as? String)
-        let refRaw = (payload["created_tab_ref"] as? String) ?? (payload["created_surface_ref"] as? String)
+        let id = (payload["created_tab_id"] as? String)
+        let refRaw = (payload["created_tab_ref"] as? String)
         let ref = displayTabHandle(refRaw)
         switch idFormat {
         case .refs:
@@ -5316,18 +5455,18 @@ struct CMUXCLI {
 
     private func formatDebugTerminalsPayload(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
         let terminals = payload["terminals"] as? [[String: Any]] ?? []
-        guard !terminals.isEmpty else { return "No terminal surfaces" }
+        guard !terminals.isEmpty else { return "No terminal tabs" }
 
         return terminals.map { item in
             let index = intFromAny(item["index"]) ?? 0
-            let surface = formatHandle(item, kind: "surface", idFormat: idFormat) ?? "?"
+            let surface = formatHandle(item, kind: "tab", idFormat: idFormat) ?? "?"
             let window = formatHandle(item, kind: "window", idFormat: idFormat) ?? "nil"
             let workspace = formatHandle(item, kind: "workspace", idFormat: idFormat) ?? "nil"
-            let pane = formatHandle(item, kind: "pane", idFormat: idFormat) ?? "nil"
+            let pane = formatHandle(item, kind: "area", idFormat: idFormat) ?? "nil"
             let bonsplitTab = debugString(item["bonsplit_tab_id"]) ?? "nil"
             let lastKnownWorkspace = debugString(item["last_known_workspace_ref"]) ?? debugString(item["last_known_workspace_id"]) ?? "nil"
             let titleSuffix: String = {
-                guard let title = debugString(item["surface_title"]), !title.isEmpty else { return "" }
+                guard let title = debugString(item["tab_title"]), !title.isEmpty else { return "" }
                 let escaped = title.replacingOccurrences(of: "\"", with: "\\\"")
                 return " \"\(escaped)\""
             }()
@@ -5358,14 +5497,14 @@ struct CMUXCLI {
             let line1 =
                 "[\(index)] \(surface)\(titleSuffix) " +
                 "mapped=\(debugFlag(item["mapped"])) tree=\(debugFlag(item["tree_visible"])) " +
-                "window=\(window) workspace=\(workspace) pane=\(pane) bonsplitTab=\(bonsplitTab) " +
-                "ctx=\(debugString(item["surface_context"]) ?? "nil")"
+                "window=\(window) workspace=\(workspace) area=\(pane) bonsplitTab=\(bonsplitTab) " +
+                "ctx=\(debugString(item["tab_context"]) ?? "nil")"
 
             let line2 =
-                "    runtime=\(debugFlag(item["runtime_surface_ready"])) " +
-                "focused=\(debugFlag(item["surface_focused"])) " +
-                "selected=\(debugFlag(item["surface_selected_in_pane"])) " +
-                "pinned=\(debugFlag(item["surface_pinned"])) " +
+                "    runtime=\(debugFlag(item["runtime_tab_ready"])) " +
+                "focused=\(debugFlag(item["tab_focused"])) " +
+                "selected=\(debugFlag(item["tab_selected_in_area"])) " +
+                "pinned=\(debugFlag(item["tab_pinned"])) " +
                 "terminal=\(debugString(item["terminal_object_ptr"]) ?? "nil") " +
                 "hosted=\(debugString(item["hosted_view_ptr"]) ?? "nil") " +
                 "ghostty=\(debugString(item["ghostty_surface_ptr"]) ?? "nil") " +
@@ -5382,14 +5521,14 @@ struct CMUXCLI {
                 "superview=\(debugFlag(item["hosted_view_has_superview"])) " +
                 "hidden=\(debugFlag(item["hosted_view_hidden"])) " +
                 "ancestorHidden=\(debugFlag(item["hosted_view_hidden_or_ancestor_hidden"])) " +
-                "firstResponder=\(debugFlag(item["surface_view_first_responder"])) " +
+                "firstResponder=\(debugFlag(item["tab_view_first_responder"])) " +
                 "windowNum=\(debugString(item["window_number"]) ?? "nil") " +
                 "windowKey=\(debugFlag(item["window_key"])) " +
                 "frame=\(formatDebugRect(item["hosted_view_frame_in_window"]) ?? "nil")"
 
             let line4 =
-                "    created=\(formatDebugAge(item["surface_age_seconds"]) ?? "nil") " +
-                "runtimeCreated=\(formatDebugAge(item["runtime_surface_age_seconds"]) ?? "nil") " +
+                "    created=\(formatDebugAge(item["tab_age_seconds"]) ?? "nil") " +
+                "runtimeCreated=\(formatDebugAge(item["runtime_tab_age_seconds"]) ?? "nil") " +
                 "lastWorkspace=\(lastKnownWorkspace) " +
                 "initialCommand=\(debugString(item["initial_command"]) ?? "nil") " +
                 "portalHost=\(portalHostLabel)"
@@ -5411,7 +5550,7 @@ struct CMUXCLI {
     ) throws {
         let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? commandArgs.first
         guard let surfaceRaw else {
-            throw CLIError(message: "move-surface requires --surface <id|ref|index>")
+            throw CLIError(message: "move-tab requires --tab <id|ref|index>")
         }
 
         let workspaceRaw = optionValue(commandArgs, name: "--workspace")
@@ -5428,12 +5567,12 @@ struct CMUXCLI {
         let afterHandle = try normalizeSurfaceHandle(afterRaw, client: client, workspaceHandle: workspaceHandle)
 
         var params: [String: Any] = [:]
-        if let surfaceHandle { params["surface_id"] = surfaceHandle }
-        if let paneHandle { params["pane_id"] = paneHandle }
+        if let surfaceHandle { params["tab_id"] = surfaceHandle }
+        if let paneHandle { params["area_id"] = paneHandle }
         if let workspaceHandle { params["workspace_id"] = workspaceHandle }
         if let windowHandle { params["window_id"] = windowHandle }
-        if let beforeHandle { params["before_surface_id"] = beforeHandle }
-        if let afterHandle { params["after_surface_id"] = afterHandle }
+        if let beforeHandle { params["before_tab_id"] = beforeHandle }
+        if let afterHandle { params["after_tab_id"] = afterHandle }
 
         if let indexRaw = optionValue(commandArgs, name: "--index") {
             guard let index = Int(indexRaw) else {
@@ -5448,8 +5587,8 @@ struct CMUXCLI {
             params["focus"] = focus
         }
 
-        let payload = try client.sendV2(method: "surface.move", params: params)
-        let summary = "OK surface=\(formatHandle(payload, kind: "surface", idFormat: idFormat) ?? "unknown") pane=\(formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown") window=\(formatHandle(payload, kind: "window", idFormat: idFormat) ?? "unknown")"
+        let payload = try client.sendV2(method: "tab.move", params: params)
+        let summary = "OK tab=\(formatHandle(payload, kind: "tab", idFormat: idFormat) ?? "unknown") area=\(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown") window=\(formatHandle(payload, kind: "window", idFormat: idFormat) ?? "unknown")"
         printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
     }
 
@@ -5461,7 +5600,7 @@ struct CMUXCLI {
     ) throws {
         let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? commandArgs.first
         guard let surfaceRaw else {
-            throw CLIError(message: "reorder-surface requires --surface <id|ref|index>")
+            throw CLIError(message: "reorder-tab requires --tab <id|ref|index>")
         }
 
         let workspaceRaw = optionValue(commandArgs, name: "--workspace")
@@ -5474,9 +5613,9 @@ struct CMUXCLI {
         let afterHandle = try normalizeSurfaceHandle(afterRaw, client: client, workspaceHandle: workspaceHandle)
 
         var params: [String: Any] = [:]
-        if let surfaceHandle { params["surface_id"] = surfaceHandle }
-        if let beforeHandle { params["before_surface_id"] = beforeHandle }
-        if let afterHandle { params["after_surface_id"] = afterHandle }
+        if let surfaceHandle { params["tab_id"] = surfaceHandle }
+        if let beforeHandle { params["before_tab_id"] = beforeHandle }
+        if let afterHandle { params["after_tab_id"] = afterHandle }
         if let indexRaw = optionValue(commandArgs, name: "--index") {
             guard let index = Int(indexRaw) else {
                 throw CLIError(message: "--index must be an integer")
@@ -5484,8 +5623,8 @@ struct CMUXCLI {
             params["index"] = index
         }
 
-        let payload = try client.sendV2(method: "surface.reorder", params: params)
-        let summary = "OK surface=\(formatHandle(payload, kind: "surface", idFormat: idFormat) ?? "unknown") pane=\(formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown")"
+        let payload = try client.sendV2(method: "tab.reorder", params: params)
+        let summary = "OK tab=\(formatHandle(payload, kind: "tab", idFormat: idFormat) ?? "unknown") area=\(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown")"
         printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
     }
 
@@ -5624,7 +5763,7 @@ struct CMUXCLI {
         let tabArg = tabOpt
             ?? surfaceOpt
             ?? (workspaceOpt == nil && windowOverride == nil
-                ? (ProcessInfo.processInfo.environment["CMUX_TAB_ID"] ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"])
+                ? Self.callerTabEnv()
                 : nil)
 
         let workspaceId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
@@ -5653,7 +5792,7 @@ struct CMUXCLI {
             params["workspace_id"] = workspaceId
         }
         if let surfaceId {
-            params["surface_id"] = surfaceId
+            params["tab_id"] = surfaceId
         }
         if let title, !title.isEmpty {
             params["title"] = title
@@ -5805,7 +5944,7 @@ struct CMUXCLI {
             throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: c11 clear-metadata --key title")
         }
 
-        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
         let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
 
@@ -5822,13 +5961,13 @@ struct CMUXCLI {
         // operator-focused surface client-side — omit it so the server rejects
         // (missing_ref) instead of stomping a peer's surface.
         if let surfaceRaw {
-            params["surface_id"] = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+            params["tab_id"] = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
         }
         if key == "description" && !autoExpand {
             params["auto_expand"] = false
         }
 
-        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        let payload = try client.sendV2(method: "tab.set_metadata", params: params)
 
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -5858,23 +5997,23 @@ struct CMUXCLI {
             throw CLIError(message: "get-titlebar-state: unknown flag '\(unknown)'")
         }
 
-        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
         let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
         let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
 
         let params: [String: Any] = [
-            "surface_id": surfaceId,
+            "tab_id": surfaceId,
             "workspace_id": workspaceId
         ]
-        let payload = try client.sendV2(method: "surface.get_titlebar_state", params: params)
+        let payload = try client.sendV2(method: "tab.get_titlebar_state", params: params)
 
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
-            let surfaceStr = (payload["surface_id"] as? String) ?? surfaceId
-            var lines: [String] = ["surface=\(surfaceStr)"]
-            if let ref = payload["surface_ref"] as? String {
+            let surfaceStr = (payload["tab_id"] as? String) ?? surfaceId
+            var lines: [String] = ["tab=\(surfaceStr)"]
+            if let ref = payload["tab_ref"] as? String {
                 lines.append("ref=\(ref)")
             }
             if let title = payload["title"] as? String {
@@ -6577,7 +6716,7 @@ struct CMUXCLI {
             throw CLIError(message: "ssh-session-end requires --relay-port <port>")
         }
         let workspaceRaw = optionValue(commandArgs, name: "--workspace") ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
-        let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? Self.callerTabEnv()
         guard let workspaceRaw,
               let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client),
               !workspaceId.isEmpty else {
@@ -6586,11 +6725,11 @@ struct CMUXCLI {
         guard let surfaceRaw,
               let surfaceId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: workspaceId),
               !surfaceId.isEmpty else {
-            throw CLIError(message: "ssh-session-end requires --surface or CMUX_SURFACE_ID")
+            throw CLIError(message: "ssh-session-end requires --tab or C11_TAB_ID")
         }
         _ = try client.sendV2(method: "workspace.remote.terminal_session_end", params: [
             "workspace_id": workspaceId,
-            "surface_id": surfaceId,
+            "tab_id": surfaceId,
             "relay_port": relayPort,
         ])
     }
@@ -6919,10 +7058,10 @@ struct CMUXCLI {
 
         func requireSurface() throws -> String {
             guard let raw = surfaceRaw else {
-                throw CLIError(message: "browser \(subcommand) requires a surface handle (use: browser <surface> \(subcommand) ... or --surface)")
+                throw CLIError(message: "browser \(subcommand) requires a tab handle (use: browser <tab> \(subcommand) ... or --tab)")
             }
             guard let resolved = try normalizeSurfaceHandle(raw, client: client) else {
-                throw CLIError(message: "Invalid surface handle")
+                throw CLIError(message: "Invalid tab handle")
             }
             return resolved
         }
@@ -6956,7 +7095,7 @@ struct CMUXCLI {
                 lines.append("ready_state: \(readyState)")
             }
             if url.isEmpty || url == "about:blank" {
-                lines.append("hint: run 'c11 browser <surface> get url' to verify navigation")
+                lines.append("hint: run 'c11 browser <tab> get url' to verify navigation")
             }
 
             return lines.joined(separator: "\n")
@@ -7043,10 +7182,11 @@ struct CMUXCLI {
             let surface = try normalizeSurfaceHandle(surfaceRaw, client: client, allowFocused: true)
             var payload = try client.sendV2(method: "system.identify")
             if let surface {
-                let urlPayload = try client.sendV2(method: "browser.url.get", params: ["surface_id": surface])
-                let titlePayload = try client.sendV2(method: "browser.get.title", params: ["surface_id": surface])
+                let urlPayload = try client.sendV2(method: "browser.url.get", params: ["tab_id": surface])
+                let titlePayload = try client.sendV2(method: "browser.get.title", params: ["tab_id": surface])
                 var browser: [String: Any] = [:]
-                browser["surface"] = surface
+                browser["tab"] = surface
+                browser["surface"] = surface // C11-248: legacy key, remove after one release
                 browser["url"] = urlPayload["url"] ?? ""
                 browser["title"] = titlePayload["title"] ?? ""
                 payload["browser"] = browser
@@ -7077,9 +7217,9 @@ struct CMUXCLI {
                 // Treat `browser <surface> open <url>` as navigate for agent-browser ergonomics.
                 let sid = try requireSurface()
                 guard !url.isEmpty else {
-                    throw CLIError(message: "browser <surface> open requires a URL")
+                    throw CLIError(message: "browser <tab> open requires a URL")
                 }
-                var navigateParams: [String: Any] = ["surface_id": sid, "url": url]
+                var navigateParams: [String: Any] = ["tab_id": sid, "url": url]
                 if allowInsecureHTTP {
                     navigateParams["allow_insecure_http"] = true
                 }
@@ -7093,7 +7233,7 @@ struct CMUXCLI {
                 params["url"] = url
             }
             if let sourceSurface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
-                params["surface_id"] = sourceSurface
+                params["tab_id"] = sourceSurface
             }
             let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             if let workspaceRaw {
@@ -7113,10 +7253,10 @@ struct CMUXCLI {
                 }
             }
             let payload = try client.sendV2(method: "browser.open_split", params: params)
-            let surfaceText = formatHandle(payload, kind: "surface", idFormat: effectiveIDFormat) ?? "unknown"
-            let paneText = formatHandle(payload, kind: "pane", idFormat: effectiveIDFormat) ?? "unknown"
+            let surfaceText = formatHandle(payload, kind: "tab", idFormat: effectiveIDFormat) ?? "unknown"
+            let paneText = formatHandle(payload, kind: "area", idFormat: effectiveIDFormat) ?? "unknown"
             let placement = ((payload["created_split"] as? Bool) == true) ? "split" : "reuse"
-            let openFallback = "OK surface=\(surfaceText) pane=\(paneText) placement=\(placement)"
+            let openFallback = "OK tab=\(surfaceText) area=\(paneText) placement=\(placement)"
                 + browserInsecureHTTPPendingSuffix(payload)
             output(payload, fallback: openFallback)
             return
@@ -7130,7 +7270,7 @@ struct CMUXCLI {
             guard !url.isEmpty else {
                 throw CLIError(message: "browser \(subcommand) requires a URL")
             }
-            var params: [String: Any] = ["surface_id": sid, "url": url]
+            var params: [String: Any] = ["tab_id": sid, "url": url]
             if snapshotAfter {
                 params["snapshot_after"] = true
             }
@@ -7149,7 +7289,7 @@ struct CMUXCLI {
                 "forward": "browser.forward",
                 "reload": "browser.reload",
             ]
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if hasFlag(subArgs, name: "--snapshot-after") {
                 params["snapshot_after"] = true
             }
@@ -7160,7 +7300,7 @@ struct CMUXCLI {
 
         if subcommand == "url" || subcommand == "get-url" {
             let sid = try requireSurface()
-            let payload = try client.sendV2(method: "browser.url.get", params: ["surface_id": sid])
+            let payload = try client.sendV2(method: "browser.url.get", params: ["tab_id": sid])
             if effectiveJSONOutput {
                 print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
             } else {
@@ -7171,14 +7311,14 @@ struct CMUXCLI {
 
         if ["focus-webview", "focus_webview"].contains(subcommand) {
             let sid = try requireSurface()
-            let payload = try client.sendV2(method: "browser.focus_webview", params: ["surface_id": sid])
+            let payload = try client.sendV2(method: "browser.focus_webview", params: ["tab_id": sid])
             output(payload, fallback: "OK")
             return
         }
 
         if ["is-webview-focused", "is_webview_focused"].contains(subcommand) {
             let sid = try requireSurface()
-            let payload = try client.sendV2(method: "browser.is_webview_focused", params: ["surface_id": sid])
+            let payload = try client.sendV2(method: "browser.is_webview_focused", params: ["tab_id": sid])
             if effectiveJSONOutput {
                 print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
             } else {
@@ -7192,7 +7332,7 @@ struct CMUXCLI {
             let (selectorOpt, rem1) = parseOption(subArgs, name: "--selector")
             let (depthOpt, _) = parseOption(rem1, name: "--max-depth")
 
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if let selectorOpt {
                 params["selector"] = selectorOpt
             }
@@ -7228,7 +7368,7 @@ struct CMUXCLI {
             guard !trimmed.isEmpty else {
                 throw CLIError(message: "browser eval requires a script")
             }
-            let payload = try client.sendV2(method: "browser.eval", params: ["surface_id": sid, "script": trimmed])
+            let payload = try client.sendV2(method: "browser.eval", params: ["tab_id": sid, "script": trimmed])
             let fallback: String
             if let value = payload["value"] {
                 fallback = displayBrowserValue(value)
@@ -7241,7 +7381,7 @@ struct CMUXCLI {
 
         if subcommand == "wait" {
             let sid = try requireSurface()
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
 
             let (selectorOpt, rem1) = parseOption(subArgs, name: "--selector")
             let (textOpt, rem2) = parseOption(rem1, name: "--text")
@@ -7302,7 +7442,7 @@ struct CMUXCLI {
                 "scrollinto": "browser.scroll_into_view",
                 "scroll-into-view": "browser.scroll_into_view",
             ]
-            var params: [String: Any] = ["surface_id": sid, "selector": selector]
+            var params: [String: Any] = ["tab_id": sid, "selector": selector]
             if hasFlag(subArgs, name: "--snapshot-after") {
                 params["snapshot_after"] = true
             }
@@ -7335,7 +7475,7 @@ struct CMUXCLI {
             }
 
             let method = (subcommand == "type") ? "browser.type" : "browser.fill"
-            var params: [String: Any] = ["surface_id": sid, "selector": selector, "text": text]
+            var params: [String: Any] = ["tab_id": sid, "selector": selector, "text": text]
             if hasFlag(subArgs, name: "--snapshot-after") {
                 params["snapshot_after"] = true
             }
@@ -7357,7 +7497,7 @@ struct CMUXCLI {
                 "keydown": "browser.keydown",
                 "keyup": "browser.keyup",
             ]
-            var params: [String: Any] = ["surface_id": sid, "key": key]
+            var params: [String: Any] = ["tab_id": sid, "key": key]
             if hasFlag(subArgs, name: "--snapshot-after") {
                 params["snapshot_after"] = true
             }
@@ -7378,7 +7518,7 @@ struct CMUXCLI {
             guard let value else {
                 throw CLIError(message: "browser select requires a value")
             }
-            var params: [String: Any] = ["surface_id": sid, "selector": selector, "value": value]
+            var params: [String: Any] = ["tab_id": sid, "selector": selector, "value": value]
             if hasFlag(subArgs, name: "--snapshot-after") {
                 params["snapshot_after"] = true
             }
@@ -7393,7 +7533,7 @@ struct CMUXCLI {
             let (dxOpt, rem2) = parseOption(rem1, name: "--dx")
             let (dyOpt, rem3) = parseOption(rem2, name: "--dy")
 
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if let selectorOpt {
                 params["selector"] = selectorOpt
             }
@@ -7426,7 +7566,7 @@ struct CMUXCLI {
             let (outPathOpt, _) = parseOption(subArgs, name: "--out")
             let localJSONOutput = hasFlag(subArgs, name: "--json")
             let outputAsJSON = effectiveJSONOutput || localJSONOutput
-            var payload = try client.sendV2(method: "browser.screenshot", params: ["surface_id": sid])
+            var payload = try client.sendV2(method: "browser.screenshot", params: ["tab_id": sid])
 
             func fileURL(fromPath rawPath: String) -> URL {
                 let resolvedPath = resolvePath(rawPath)
@@ -7527,7 +7667,7 @@ struct CMUXCLI {
                         bestEffortPruneTemporaryFiles(in: outputDir)
                         let timestampMs = Int(Date().timeIntervalSince1970 * 1000)
                         let safeSid = sanitizedFilenameComponent(sid)
-                        let filename = "surface-\(safeSid)-\(timestampMs)-\(String(UUID().uuidString.prefix(8))).png"
+                        let filename = "tab-\(safeSid)-\(timestampMs)-\(String(UUID().uuidString.prefix(8))).png"
                         let outputURL = outputDir.appendingPathComponent(filename, isDirectory: false)
                         if (try? persistPayloadScreenshot(to: outputURL, allowFailure: true)) == true {
                             screenshotPath = outputURL.path
@@ -7572,10 +7712,10 @@ struct CMUXCLI {
 
             switch getVerb {
             case "url":
-                let payload = try client.sendV2(method: "browser.url.get", params: ["surface_id": sid])
+                let payload = try client.sendV2(method: "browser.url.get", params: ["tab_id": sid])
                 output(payload, fallback: (payload["url"] as? String) ?? "")
             case "title":
-                let payload = try client.sendV2(method: "browser.get.title", params: ["surface_id": sid])
+                let payload = try client.sendV2(method: "browser.get.title", params: ["tab_id": sid])
                 output(payload, fallback: (payload["title"] as? String) ?? "")
             case "text", "html", "value", "count", "box", "styles", "attr":
                 let (selectorOpt, rem1) = parseOption(getArgs, name: "--selector")
@@ -7585,7 +7725,7 @@ struct CMUXCLI {
                         throw CLIError(message: "browser get \(getVerb) requires a selector")
                     }
                 }
-                var params: [String: Any] = ["surface_id": sid]
+                var params: [String: Any] = ["tab_id": sid]
                 if let selector {
                     params["selector"] = selector
                 }
@@ -7653,7 +7793,7 @@ struct CMUXCLI {
             guard let method = methodMap[isVerb] else {
                 throw CLIError(message: "Unsupported browser is subcommand: \(isVerb)")
             }
-            let payload = try client.sendV2(method: method, params: ["surface_id": sid, "selector": selector])
+            let payload = try client.sendV2(method: method, params: ["tab_id": sid, "selector": selector])
             if effectiveJSONOutput {
                 print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
             } else if let value = payload["value"] {
@@ -7672,7 +7812,7 @@ struct CMUXCLI {
             }
             let locatorArgs = Array(subArgs.dropFirst())
 
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             let method: String
 
             switch locator {
@@ -7747,7 +7887,7 @@ struct CMUXCLI {
                 throw CLIError(message: "browser frame requires <selector|main>")
             }
             if frameVerb == "main" {
-                let payload = try client.sendV2(method: "browser.frame.main", params: ["surface_id": sid])
+                let payload = try client.sendV2(method: "browser.frame.main", params: ["tab_id": sid])
                 output(payload, fallback: "OK")
                 return
             }
@@ -7756,7 +7896,7 @@ struct CMUXCLI {
             guard let selector else {
                 throw CLIError(message: "browser frame requires a selector or 'main'")
             }
-            let payload = try client.sendV2(method: "browser.frame.select", params: ["surface_id": sid, "selector": selector])
+            let payload = try client.sendV2(method: "browser.frame.select", params: ["tab_id": sid, "selector": selector])
             output(payload, fallback: "OK")
             return
         }
@@ -7770,14 +7910,14 @@ struct CMUXCLI {
             switch dialogVerb {
             case "accept":
                 let text = remainder.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-                var params: [String: Any] = ["surface_id": sid]
+                var params: [String: Any] = ["tab_id": sid]
                 if !text.isEmpty {
                     params["text"] = text
                 }
                 let payload = try client.sendV2(method: "browser.dialog.accept", params: params)
                 output(payload, fallback: "OK")
             case "dismiss":
-                let payload = try client.sendV2(method: "browser.dialog.dismiss", params: ["surface_id": sid])
+                let payload = try client.sendV2(method: "browser.dialog.dismiss", params: ["tab_id": sid])
                 output(payload, fallback: "OK")
             default:
                 throw CLIError(message: "Unsupported browser dialog subcommand: \(dialogVerb)")
@@ -7798,7 +7938,7 @@ struct CMUXCLI {
             let (timeoutMsOpt, rem2) = parseOption(rem1, name: "--timeout-ms")
             let (timeoutSecOpt, rem3) = parseOption(rem2, name: "--timeout")
 
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if let path = pathOpt ?? nonFlagArgs(rem3).first {
                 params["path"] = path
             }
@@ -7831,7 +7971,7 @@ struct CMUXCLI {
             let (pathOpt, rem5) = parseOption(rem4, name: "--path")
             let (expiresOpt, _) = parseOption(rem5, name: "--expires")
 
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if let nameOpt { params["name"] = nameOpt }
             if let valueOpt { params["value"] = valueOpt }
             if let urlOpt { params["url"] = urlOpt }
@@ -7888,7 +8028,7 @@ struct CMUXCLI {
             let rest = storageArgs.count > 2 ? Array(storageArgs.dropFirst(2)) : []
             let positional = nonFlagArgs(rest)
 
-            var params: [String: Any] = ["surface_id": sid, "type": storageType]
+            var params: [String: Any] = ["tab_id": sid, "type": storageType]
             switch op {
             case "get":
                 if let key = positional.first {
@@ -7943,13 +8083,14 @@ struct CMUXCLI {
                 output(payload, fallback: "OK")
             case "switch", "close":
                 let method = (tabVerb == "switch") ? "browser.tab.switch" : "browser.tab.close"
+                // `surface_id` is the browsing context here; `tab_id` would mean the tab to act on.
                 var params: [String: Any] = ["surface_id": sid]
                 let target = tabArgs.first
                 if let target {
                     if let index = Int(target) {
                         params["index"] = index
                     } else {
-                        params["target_surface_id"] = target
+                        params["target_tab_id"] = target
                     }
                 }
                 let payload = try client.sendV2(method: method, params: params)
@@ -7967,7 +8108,7 @@ struct CMUXCLI {
             if consoleVerb != "list" && consoleVerb != "clear" {
                 throw CLIError(message: "Unsupported browser console subcommand: \(consoleVerb)")
             }
-            let payload = try client.sendV2(method: method, params: ["surface_id": sid])
+            let payload = try client.sendV2(method: method, params: ["tab_id": sid])
             if effectiveJSONOutput || consoleVerb == "clear" {
                 output(payload, fallback: "OK")
             } else {
@@ -7979,7 +8120,7 @@ struct CMUXCLI {
         if subcommand == "errors" {
             let sid = try requireSurface()
             let errorsVerb = subArgs.first?.lowercased() ?? "list"
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if errorsVerb == "clear" {
                 params["clear"] = true
             } else if errorsVerb != "list" {
@@ -8001,7 +8142,7 @@ struct CMUXCLI {
             guard let selector else {
                 throw CLIError(message: "browser highlight requires a selector")
             }
-            let payload = try client.sendV2(method: "browser.highlight", params: ["surface_id": sid, "selector": selector])
+            let payload = try client.sendV2(method: "browser.highlight", params: ["tab_id": sid, "selector": selector])
             output(payload, fallback: "OK")
             return
         }
@@ -8024,7 +8165,7 @@ struct CMUXCLI {
             default:
                 throw CLIError(message: "Unsupported browser state subcommand: \(stateVerb)")
             }
-            let payload = try client.sendV2(method: method, params: ["surface_id": sid, "path": path])
+            let payload = try client.sendV2(method: method, params: ["tab_id": sid, "path": path])
             output(payload, fallback: "OK")
             return
         }
@@ -8038,7 +8179,7 @@ struct CMUXCLI {
             guard !content.isEmpty else {
                 throw CLIError(message: "browser \(subcommand) requires content")
             }
-            let payload = try client.sendV2(method: "browser.\(subcommand)", params: ["surface_id": sid, field: content])
+            let payload = try client.sendV2(method: "browser.\(subcommand)", params: ["tab_id": sid, field: content])
             output(payload, fallback: "OK")
             return
         }
@@ -8050,7 +8191,7 @@ struct CMUXCLI {
                   let height = Int(subArgs[1]) else {
                 throw CLIError(message: "browser viewport requires: <width> <height>")
             }
-            let payload = try client.sendV2(method: "browser.viewport.set", params: ["surface_id": sid, "width": width, "height": height])
+            let payload = try client.sendV2(method: "browser.viewport.set", params: ["tab_id": sid, "width": width, "height": height])
             output(payload, fallback: "OK")
             return
         }
@@ -8062,7 +8203,7 @@ struct CMUXCLI {
                   let longitude = Double(subArgs[1]) else {
                 throw CLIError(message: "browser geolocation requires: <latitude> <longitude>")
             }
-            let payload = try client.sendV2(method: "browser.geolocation.set", params: ["surface_id": sid, "latitude": latitude, "longitude": longitude])
+            let payload = try client.sendV2(method: "browser.geolocation.set", params: ["tab_id": sid, "latitude": latitude, "longitude": longitude])
             output(payload, fallback: "OK")
             return
         }
@@ -8073,7 +8214,7 @@ struct CMUXCLI {
                   let enabled = parseBoolString(raw) else {
                 throw CLIError(message: "browser offline requires true|false")
             }
-            let payload = try client.sendV2(method: "browser.offline.set", params: ["surface_id": sid, "enabled": enabled])
+            let payload = try client.sendV2(method: "browser.offline.set", params: ["tab_id": sid, "enabled": enabled])
             output(payload, fallback: "OK")
             return
         }
@@ -8092,7 +8233,7 @@ struct CMUXCLI {
             default:
                 throw CLIError(message: "Unsupported browser trace subcommand: \(traceVerb)")
             }
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if subArgs.count >= 2 {
                 params["path"] = subArgs[1]
             }
@@ -8112,7 +8253,7 @@ struct CMUXCLI {
                 guard let pattern = networkArgs.first else {
                     throw CLIError(message: "browser network route requires a URL/pattern")
                 }
-                var params: [String: Any] = ["surface_id": sid, "url": pattern]
+                var params: [String: Any] = ["tab_id": sid, "url": pattern]
                 if hasFlag(networkArgs, name: "--abort") {
                     params["abort"] = true
                 }
@@ -8126,10 +8267,10 @@ struct CMUXCLI {
                 guard let pattern = networkArgs.first else {
                     throw CLIError(message: "browser network unroute requires a URL/pattern")
                 }
-                let payload = try client.sendV2(method: "browser.network.unroute", params: ["surface_id": sid, "url": pattern])
+                let payload = try client.sendV2(method: "browser.network.unroute", params: ["tab_id": sid, "url": pattern])
                 output(payload, fallback: "OK")
             case "requests":
-                let payload = try client.sendV2(method: "browser.network.requests", params: ["surface_id": sid])
+                let payload = try client.sendV2(method: "browser.network.requests", params: ["tab_id": sid])
                 output(payload, fallback: "OK")
             default:
                 throw CLIError(message: "Unsupported browser network subcommand: \(networkVerb)")
@@ -8151,7 +8292,7 @@ struct CMUXCLI {
             default:
                 throw CLIError(message: "Unsupported browser screencast subcommand: \(castVerb)")
             }
-            let payload = try client.sendV2(method: method, params: ["surface_id": sid])
+            let payload = try client.sendV2(method: method, params: ["tab_id": sid])
             output(payload, fallback: "OK")
             return
         }
@@ -8173,7 +8314,7 @@ struct CMUXCLI {
             default:
                 throw CLIError(message: "Unsupported browser input subcommand: \(inputVerb)")
             }
-            var params: [String: Any] = ["surface_id": sid]
+            var params: [String: Any] = ["tab_id": sid]
             if !remainder.isEmpty {
                 params["args"] = remainder
             }
@@ -8184,7 +8325,7 @@ struct CMUXCLI {
 
         if ["input_mouse", "input_keyboard", "input_touch"].contains(subcommand) {
             let sid = try requireSurface()
-            let payload = try client.sendV2(method: "browser.\(subcommand)", params: ["surface_id": sid])
+            let payload = try client.sendV2(method: "browser.\(subcommand)", params: ["tab_id": sid])
             output(payload, fallback: "OK")
             return
         }
@@ -8277,7 +8418,7 @@ struct CMUXCLI {
                 guard let windowId = window["id"] as? String else { continue }
                 let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
                 let items = listed["workspaces"] as? [[String: Any]] ?? []
-                for item in items where (item["ref"] as? String) == raw {
+                for item in items where (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw) {
                     if let id = item["id"] as? String { return id }
                 }
             }
@@ -8303,35 +8444,35 @@ struct CMUXCLI {
         // error, not a request for "focused surface". Fall through to focused
         // is reserved for the nil case where no flag was passed at all.
         if let raw, raw.isEmpty {
-            throw CLIError(message: "--surface received an empty value (likely from an unset shell variable, e.g. $C11_SURFACE_ID). Pass a real ref or omit the flag.")
+            throw CLIError(message: "--tab received an empty value (likely from an unset shell variable, e.g. $C11_TAB_ID). Pass a real ref or omit the flag.")
         }
         if let raw, isUUID(raw) {
             return raw
         }
         if let raw, isHandleRef(raw) {
-            let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
-            let items = listed["surfaces"] as? [[String: Any]] ?? []
-            for item in items where (item["ref"] as? String) == raw {
+            let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
+            let items = listed["tabs"] as? [[String: Any]] ?? []
+            for item in items where (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw) {
                 if let id = item["id"] as? String { return id }
             }
-            throw CLIError(message: "Surface ref not found: \(raw)")
+            throw CLIError(message: "Tab ref not found: \(raw)")
         }
 
-        let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
-        let items = listed["surfaces"] as? [[String: Any]] ?? []
+        let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
+        let items = listed["tabs"] as? [[String: Any]] ?? []
 
         if let raw, let index = Int(raw) {
             for item in items where intFromAny(item["index"]) == index {
                 if let id = item["id"] as? String { return id }
             }
-            throw CLIError(message: "Surface index not found")
+            throw CLIError(message: "Tab index not found")
         }
 
         if let focused = items.first(where: { ($0["focused"] as? Bool) == true }) {
             if let id = focused["id"] as? String { return id }
         }
 
-        throw CLIError(message: "Unable to resolve surface ID")
+        throw CLIError(message: "Unable to resolve tab ID")
     }
 
     /// Return the help/usage text for a subcommand, or nil if the command is
@@ -8339,7 +8480,7 @@ struct CMUXCLI {
     /// allowing two-level dispatch for commands like `workspace` that have
     /// their own subcommand surface (e.g. `c11 workspace new --help`).
     private func subcommandUsage(_ command: String, commandArgs: [String] = []) -> String? {
-        switch command {
+        switch Self.canonicalCommandName(command) {
         case "ping":
             return """
             Usage: c11 ping
@@ -8478,13 +8619,13 @@ struct CMUXCLI {
             """)
         case "identify":
             return """
-            Usage: c11 identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
+            Usage: c11 identify [--workspace <id|ref|index>] [--tab <id|ref|index>] [--no-caller]
 
             Print server identity and caller context details.
 
             Flags:
               --workspace <id|ref|index>   Caller workspace context (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref|index>     Caller surface context (default: $CMUX_SURFACE_ID)
+              --tab <id|ref|index>     Caller tab context (default: $C11_TAB_ID)
               --no-caller                  Omit caller context from the request
             """
         case "list-windows":
@@ -8547,50 +8688,50 @@ struct CMUXCLI {
             Example:
               c11 move-workspace-to-window --workspace workspace:2 --window window:1
             """
-        case "move-surface":
+        case "move-tab":
             return """
-            Usage: c11 move-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
+            Usage: c11 move-tab [--tab <id|ref|index> | <id|ref|index>] [flags]
 
-            Move a surface to a different pane, workspace, or window.
+            Move a tab to a different area, workspace, or window.
 
             Flags:
-              --surface <id|ref|index>   Surface to move (required unless passed positionally)
-              --pane <id|ref|index>      Target pane
+              --tab <id|ref|index>   Tab to move (required unless passed positionally)
+              --area <id|ref|index>      Target area
               --workspace <id|ref|index> Target workspace
               --window <id|ref|index>    Target window
-              --before <id|ref|index>    Place before this surface
-              --before-surface <id|ref|index>
+              --before <id|ref|index>    Place before this tab
+              --before-tab <id|ref|index>
                                        Alias for --before
-              --after <id|ref|index>     Place after this surface
-              --after-surface <id|ref|index>
+              --after <id|ref|index>     Place after this tab
+              --after-tab <id|ref|index>
                                        Alias for --after
               --index <n>                Place at this index
-              --focus <true|false>       Focus the surface after moving
+              --focus <true|false>       Focus the tab after moving
 
             Example:
-              c11 move-surface --surface surface:1 --workspace workspace:2
-              c11 move-surface surface:1 --pane pane:2 --index 0
+              c11 move-tab --tab tab:1 --workspace workspace:2
+              c11 move-tab tab:1 --area area:2 --index 0
             """
-        case "reorder-surface":
+        case "reorder-tab":
             return """
-            Usage: c11 reorder-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
+            Usage: c11 reorder-tab [--tab <id|ref|index> | <id|ref|index>] [flags]
 
-            Reorder a surface within its pane.
+            Reorder a tab within its area.
 
             Flags:
-              --surface <id|ref|index>   Surface to reorder (required unless passed positionally)
+              --tab <id|ref|index>   Tab to reorder (required unless passed positionally)
               --workspace <id|ref|index> Workspace context
-              --before <id|ref|index>    Place before this surface
-              --before-surface <id|ref|index>
+              --before <id|ref|index>    Place before this tab
+              --before-tab <id|ref|index>
                                        Alias for --before
-              --after <id|ref|index>     Place after this surface
-              --after-surface <id|ref|index>
+              --after <id|ref|index>     Place after this tab
+              --after-tab <id|ref|index>
                                        Alias for --after
               --index <n>                Place at this index
 
             Example:
-              c11 reorder-surface --surface surface:1 --index 0
-              c11 reorder-surface --surface surface:3 --after surface:1
+              c11 reorder-tab --tab tab:1 --index 0
+              c11 reorder-tab --tab tab:3 --after tab:1
             """
         case "reorder-workspace":
             return """
@@ -8652,8 +8793,7 @@ struct CMUXCLI {
 
             Flags:
               --action <name>              Action name (required if not positional)
-              --tab <id|ref|index>         Target tab (accepts tab:<n> or surface:<n>; default: $CMUX_TAB_ID, then $CMUX_SURFACE_ID, then focused tab)
-              --surface <id|ref|index>     Alias for --tab (backward compatibility)
+              --tab <id|ref|index>         Target tab (default: $C11_TAB_ID, then focused tab)
               --workspace <id|ref|index>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
               --title <text>               Title for rename (or pass trailing title text)
               --url <url>                  Optional URL for new-browser-right
@@ -8665,37 +8805,35 @@ struct CMUXCLI {
             """
         case "rename-tab":
             return """
-            Usage: c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] [--] <title>
+            Usage: c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--] <title>
 
             Compatibility alias for tab-action rename.
 
             Resolution order for target tab:
             1) --tab
-            2) --surface
-            3) $CMUX_TAB_ID / $CMUX_SURFACE_ID
-            4) currently focused tab (optionally within --workspace)
+            2) $C11_TAB_ID
+            3) currently focused tab (optionally within --workspace)
 
             Flags:
               --workspace <id|ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
-              --tab <id|ref>         Tab target (supports tab:<n> or surface:<n>)
-              --surface <id|ref>     Alias for --tab
+              --tab <id|ref>         Tab target (supports tab:<n>)
               --title <text>         Explicit title (or use trailing positional title)
 
             Examples:
               c11 rename-tab "build logs"
               c11 rename-tab --tab tab:3 "staging server"
-              c11 rename-tab --workspace workspace:2 --surface surface:5 --title "agent run"
+              c11 rename-tab --workspace workspace:2 --tab tab:5 --title "agent run"
             """
         case "set-title":
             return """
-            Usage: c11 set-title [--surface <ref>] [--workspace <ref>] [--source <src>] <title-text>
-                   c11 set-title [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
-                   c11 set-title [--surface <ref>] --json
+            Usage: c11 set-title [--tab <ref>] [--workspace <ref>] [--source <src>] <title-text>
+                   c11 set-title [--tab <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+                   c11 set-title [--tab <ref>] --json
 
-            Set the surface's canonical `title` metadata key (M7 + M2).
+            Set the tab's canonical `title` metadata key (M7 + M2).
 
             Flags:
-              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --tab <ref>     Target tab (default: $C11_TAB_ID, then focused)
               --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
               --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
               --from-file <path>  Read title text from file (use '-' for stdin)
@@ -8705,21 +8843,21 @@ struct CMUXCLI {
 
             Examples:
               c11 set-title "Running smoke tests"
-              c11 set-title --surface surface:3 "build logs"
+              c11 set-title --tab tab:3 "build logs"
               echo "Agent: gemini" | c11 set-title --source declare --from-file -
             """
         case "set-description":
             return """
-            Usage: c11 set-description [--surface <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
-                   c11 set-description [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+            Usage: c11 set-description [--tab <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
+                   c11 set-description [--tab <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
 
-            Set the surface's canonical `description` metadata key (M7 + M2).
+            Set the tab's canonical `description` metadata key (M7 + M2).
 
             Description supports inline Markdown: **bold**, *italic*, `inline code`.
             Block-level Markdown and links render as literal text.
 
             Flags:
-              --surface <ref>       Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --tab <ref>       Target tab (default: $C11_TAB_ID, then focused)
               --workspace <ref>     Workspace context (default: current/$CMUX_WORKSPACE_ID)
               --source <src>        Write source: explicit | declare | osc | heuristic (default: explicit)
               --from-file <path>    Read description text from file (use '-' for stdin)
@@ -8732,13 +8870,13 @@ struct CMUXCLI {
             """
         case "get-titlebar-state":
             return """
-            Usage: c11 get-titlebar-state [--surface <ref>] [--workspace <ref>] [--json]
+            Usage: c11 get-titlebar-state [--tab <ref>] [--workspace <ref>] [--json]
 
-            Read the title bar's current state for a surface: title, description, sources,
+            Read the title bar's current state for a tab: title, description, sources,
             collapsed flag, visibility flag, and the truncated `sidebar_label` projection.
 
             Flags:
-              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --tab <ref>     Target tab (default: $C11_TAB_ID, then focused)
               --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
               --json              Emit raw v2 socket result as JSON
 
@@ -8861,28 +8999,27 @@ struct CMUXCLI {
             return """
             Usage: c11 new-split <left|right|up|down> [flags]
 
-            Split the current pane in the given direction.
+            Split the current area in the given direction.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Surface to split from (default: $CMUX_SURFACE_ID)
-              --panel <id|ref>       Alias for --surface
-              --title <text>         Seed the new pane's title metadata atomically with creation
+              --tab <id|ref>     Tab to split from (default: $C11_TAB_ID)
+              --title <text>         Seed the new area's title metadata atomically with creation
               --cwd <path|inherit>   Working directory for the new shell. A path
                                      (absolute or relative to where the CLI ran,
                                      so `--cwd .` works) is validated and must be
                                      an existing directory. `inherit` (the
                                      default when omitted) uses the workspace
-                                     root, else the parent surface's cwd.
+                                     root, else the parent tab's cwd.
               --allow-undersized     Bypass the size-aware split policy for this
                                      call (alias: --force). Without it, c11 may
                                      flip the split axis, fall back to a tab, or
-                                     refuse a split that would leave a pane too
+                                     refuse a split that would leave an area too
                                      small to use.
 
-            Size-aware splits: c11 will not create a pane too small to be usable.
+            Size-aware splits: c11 will not create an area too small to be usable.
             If the requested direction would leave a child below the minimum for
-            its surface kind (coding-agent TUIs need more room than a shell), c11
+            its tab kind (coding-agent TUIs need more room than a shell), c11
             flips to the roomier axis, refuses with guidance, or — in `tab` mode —
             adds a tab instead. Tune via Settings (paneSizeMode) or the
             C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
@@ -8895,38 +9032,38 @@ struct CMUXCLI {
               c11 new-split down --cwd .
               c11 new-split down --allow-undersized
             """
-        case "list-panes":
+        case "list-areas":
             return """
-            Usage: c11 list-panes [--workspace <id|ref>]
+            Usage: c11 list-areas [--workspace <id|ref>]
 
-            List panes in a workspace.
+            List areas in a workspace.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 list-panes
-              c11 list-panes --workspace workspace:2
+              c11 list-areas
+              c11 list-areas --workspace workspace:2
             """
-        case "list-pane-surfaces":
+        case "list-area-tabs":
             return """
-            Usage: c11 list-pane-surfaces [--workspace <id|ref>] [--pane <id|ref>]
+            Usage: c11 list-area-tabs [--workspace <id|ref>] [--area <id|ref>]
 
-            List surfaces in a pane.
+            List tabs in an area.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
-              --pane <id|ref>        Restrict to a specific pane (default: focused pane)
+              --area <id|ref>        Restrict to a specific area (default: focused area)
 
             Example:
-              c11 list-pane-surfaces
-              c11 list-pane-surfaces --workspace workspace:2 --pane pane:1
+              c11 list-area-tabs
+              c11 list-area-tabs --workspace workspace:2 --area area:1
             """
         case "tree":
             return """
             Usage: c11 tree [flags]
 
-            Print the hierarchy of windows, workspaces, panes, and surfaces, with
+            Print the hierarchy of windows, workspaces, areas, and tabs, with
             spatial coordinates and an ASCII floor plan of the current workspace.
 
             Flags:
@@ -8937,7 +9074,7 @@ struct CMUXCLI {
               --no-layout                   Suppress the floor plan unconditionally
               --canvas-cols <N>             Override the floor-plan canvas width (default: auto, min 40)
               --json                        Structured JSON output (layout in `layout`/`content_area` keys)
-              --report                      Human-readable Markdown snapshot: layout + each surface's
+              --report                      Human-readable Markdown snapshot: layout + each tab's
                                             manifest (title, agent, status, description). Alias: --markdown.
                                             Defaults to every window/workspace; narrow with --window/--workspace.
               --out <path>                  With --report, write the Markdown to a file instead of stdout
@@ -8947,19 +9084,19 @@ struct CMUXCLI {
             (`--report` defaults to --all unless you pass an explicit scope.)
 
             Note: `layout.split_path` is recomputed on every call from the live
-            split tree — it is NOT a stable identifier. A pane's split_path will
-            change whenever the surrounding splits change. Use the pane ref/UUID
-            to track a pane across layout mutations.
+            split tree — it is NOT a stable identifier. An area's split_path will
+            change whenever the surrounding splits change. Use the area ref/UUID
+            to track an area across layout mutations.
 
             Output:
               Text mode prints the floor plan (single-workspace scope) followed
               by a box-drawing tree with markers:
-              - ◀ active (true focused window/workspace/pane/surface path)
-              - ◀ here (caller surface where `c11 tree` was invoked)
+              - ◀ active (true focused window/workspace/area/tab path)
+              - ◀ here (caller tab where `c11 tree` was invoked)
               - workspace [selected]
-              - pane [focused] size=W%×H% px=W×H split=H:left|...
-              - surface [selected]
-              Browser surfaces also include their current URL.
+              - area [focused] size=W%×H% px=W×H split=H:left|...
+              - tab [selected]
+              Browser tabs also include their current URL.
 
             Example:
               c11 tree
@@ -8970,61 +9107,61 @@ struct CMUXCLI {
               c11 tree --report
               c11 tree --report --out ~/c11-fleet-$(date +%F).md
             """
-        case "focus-pane":
+        case "focus-area":
             return """
-            Usage: c11 focus-pane [--pane <id|ref> | <id|ref>] [flags]
+            Usage: c11 focus-area [--area <id|ref> | <id|ref>] [flags]
 
-            Focus the specified pane.
+            Focus the specified area.
 
             Flags:
-              --pane <id|ref>          Pane to focus (required unless passed positionally)
+              --area <id|ref>          Area to focus (required unless passed positionally)
               --workspace <id|ref>     Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 focus-pane --pane pane:2
-              c11 focus-pane pane:1
-              c11 focus-pane --pane pane:1 --workspace workspace:2
+              c11 focus-area --area area:2
+              c11 focus-area area:1
+              c11 focus-area --area area:1 --workspace workspace:2
             """
-        case "new-pane":
+        case "new-area":
             return """
-            Usage: c11 new-pane [flags]
+            Usage: c11 new-area [flags]
 
-            Create a new pane in the workspace.
+            Create a new area in the workspace.
 
             Flags:
-              --type <terminal|browser|markdown>  Pane type (default: terminal)
+              --type <terminal|browser|markdown>  Area type (default: terminal)
               --direction <left|right|up|down>    Split direction (default: right)
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
-              --url <url>                         URL for browser panes
-              --file <path>                       File path for markdown panes
-              --title <text>                      Seed the new pane's title metadata atomically with creation
+              --url <url>                         URL for browser areas
+              --file <path>                       File path for markdown areas
+              --title <text>                      Seed the new area's title metadata atomically with creation
               --cwd <path|inherit>                Working directory for the new terminal. A path
                                                   (absolute or relative to the CLI's cwd) is
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the workspace root,
-                                                  else the parent surface's cwd.
+                                                  else the parent tab's cwd.
               --allow-undersized                  Bypass the size-aware split policy for this call
                                                   (alias: --force).
 
-            Size-aware splits: c11 will not create a pane too small to be usable.
+            Size-aware splits: c11 will not create an area too small to be usable.
             If the requested direction would leave a child below the minimum for its
-            surface kind, c11 flips to the roomier axis, refuses with guidance, or —
+            tab kind, c11 flips to the roomier axis, refuses with guidance, or —
             in `tab` mode — adds a tab instead. Tune via Settings (paneSizeMode) or
             the C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
 
             Example:
-              c11 new-pane
-              c11 new-pane --type browser --direction down --url https://example.com
-              c11 new-pane --type markdown --file ~/docs/README.md
-              c11 new-pane --title "Parent :: Code Review"
-              c11 new-pane --cwd /Users/me/project
-              c11 new-pane --allow-undersized
+              c11 new-area
+              c11 new-area --type browser --direction down --url https://example.com
+              c11 new-area --type markdown --file ~/docs/README.md
+              c11 new-area --title "Parent :: Code Review"
+              c11 new-area --cwd /Users/me/project
+              c11 new-area --allow-undersized
             """
         case "launch-agent":
             return """
             Usage: c11 launch-agent --type <kind> [flags]
 
-            Launch a typed coding agent into a new surface (or a fresh workspace):
+            Launch a typed coding agent into a new tab (or a fresh workspace):
             correct per-agent invocation, model/effort flags, identity stamped at
             birth (env + sidebar metadata + tab title), machine-readable refs back.
             Canonical reference: docs/launch-agent-reference.md.
@@ -9047,7 +9184,7 @@ struct CMUXCLI {
                                        (mutually exclusive with --system-prompt;
                                        an empty file is allowed = blank slate)
               --task <id>              Task identifier for sidebar telemetry
-              --pane <id|ref>          Target pane (default: focused pane)
+              --area <id|ref>          Target area (default: focused area)
               --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
               --new-workspace          Launch into a fresh workspace instead
               --cwd <path>             Working directory for the agent
@@ -9062,12 +9199,12 @@ struct CMUXCLI {
               --json                   Print the machine-readable result object
 
             Launches never steal focus or selection (socket focus policy) —
-            the new surface is created in the background.
+            the new tab is created in the background.
 
             Examples:
               c11 launch-agent --type claude-code --model opus --effort high
               c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
-              c11 launch-agent --type opencode --prompt-file /tmp/brief.md --pane pane:2
+              c11 launch-agent --type opencode --prompt-file /tmp/brief.md --area area:2
               c11 launch-agent --type codex --suppressed
               c11 launch-agent --type claude-code --flag 'Watch migration'
               c11 launch-agent --type claude-code --system-prompt-mode append \\
@@ -9078,87 +9215,85 @@ struct CMUXCLI {
         case "raise-flag", "lower-flag", "suppress", "unsuppress":
             return """
             Usage:
-              c11 raise-flag --surface <id|ref> "<reason>" [--by agent|operator]
-              c11 lower-flag --surface <id|ref> [--by agent|operator]
-              c11 suppress --surface <id|ref> [--by agent|operator]
-              c11 unsuppress --surface <id|ref> [--by agent|operator]
+              c11 raise-flag --tab <id|ref> "<reason>" [--by agent|operator]
+              c11 lower-flag --tab <id|ref> [--by agent|operator]
+              c11 suppress --tab <id|ref> [--by agent|operator]
+              c11 unsuppress --tab <id|ref> [--by agent|operator]
 
-            Attention mutations require an explicit surface and never focus,
+            Attention mutations require an explicit tab and never focus,
             select, or raise their target.
             """
-        case "new-surface":
+        case "new-tab":
             return """
-            Usage: c11 new-surface [flags]
+            Usage: c11 new-tab [flags]
 
-            Create a new surface (tab) in a pane.
+            Create a new tab in an area.
 
             Flags:
-              --type <terminal|browser|markdown>  Surface type (default: terminal)
-              --pane <id|ref>                     Target pane
+              --type <terminal|browser|markdown>  Tab type (default: terminal)
+              --area <id|ref>                     Target area
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
-              --url <url>                         URL for browser surfaces
-              --file <path>                       File path for markdown surfaces
-              --cwd <path|inherit>                Working directory for a terminal surface. A path
+              --url <url>                         URL for browser tabs
+              --file <path>                       File path for markdown tabs
+              --cwd <path|inherit>                Working directory for a terminal tab. A path
                                                   (absolute or relative to the CLI's cwd) is
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the workspace root,
-                                                  else the pane's terminal cwd.
-              --no-focus                          Create surface without stealing focus
+                                                  else the area's terminal cwd.
+              --no-focus                          Create tab without stealing focus
 
             Example:
-              c11 new-surface
-              c11 new-surface --type browser --pane pane:1 --url https://example.com
-              c11 new-surface --type markdown --file ~/docs/notes.md
-              c11 new-surface --cwd .
-              c11 new-surface --no-focus
+              c11 new-tab
+              c11 new-tab --type browser --area area:1 --url https://example.com
+              c11 new-tab --type markdown --file ~/docs/notes.md
+              c11 new-tab --cwd .
+              c11 new-tab --no-focus
             """
-        case "close-surface":
+        case "close-tab":
             return """
-            Usage: c11 close-surface [flags]
+            Usage: c11 close-tab [flags]
 
-            Close a surface. Defaults to the focused surface if none specified.
+            Close a tab. Defaults to the focused tab if none specified.
 
             Flags:
-              --surface <id|ref>     Surface to close (default: $CMUX_SURFACE_ID)
-              --panel <id|ref>       Alias for --surface
+              --tab <id|ref>     Tab to close (default: $C11_TAB_ID)
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 close-surface
-              c11 close-surface --surface surface:3
+              c11 close-tab
+              c11 close-tab --tab tab:3
             """
-        case "drag-surface-to-split":
+        case "drag-tab-to-split":
             return """
-            Usage: c11 drag-surface-to-split --surface <id|ref> <left|right|up|down>
+            Usage: c11 drag-tab-to-split --tab <id|ref> <left|right|up|down>
 
-            Drag a surface into a new split in the given direction.
+            Drag a tab into a new split in the given direction.
 
             Flags:
-              --surface <id|ref>   Surface to drag (required)
-              --panel <id|ref>     Alias for --surface
+              --tab <id|ref>   Tab to drag (required)
 
             Example:
-              c11 drag-surface-to-split --surface surface:1 right
-              c11 drag-surface-to-split --panel surface:2 down
+              c11 drag-tab-to-split --tab tab:1 right
+              c11 drag-tab-to-split --tab tab:2 down
             """
-        case "refresh-surfaces":
+        case "refresh-tabs":
             return """
-            Usage: c11 refresh-surfaces
+            Usage: c11 refresh-tabs
 
-            Refresh surface snapshots for the focused workspace.
+            Refresh tab snapshots for the focused workspace.
             """
-        case "surface-health":
+        case "tab-health":
             return """
-            Usage: c11 surface-health [--workspace <id|ref>]
+            Usage: c11 tab-health [--workspace <id|ref>]
 
-            List health details for surfaces in a workspace.
+            List health details for tabs in a workspace.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 surface-health
-              c11 surface-health --workspace workspace:2
+              c11 tab-health
+              c11 tab-health --workspace workspace:2
             """
         case "debug-terminals":
             return """
@@ -9169,73 +9304,71 @@ struct CMUXCLI {
             """
         case "trigger-flash":
             return """
-            Usage: c11 trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>] [--color <#hex>] [--persistent]
+            Usage: c11 trigger-flash [--workspace <id|ref>] [--tab <id|ref>] [--color <#hex>] [--persistent]
 
-            Trigger the unread flash indicator for a surface.
+            Trigger the unread flash indicator for a tab.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
-              --panel <id|ref>       Alias for --surface
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
               --color <#hex>         One-shot color override (e.g. "#F5C518" or "#F5C518FF").
                                      Defaults to the c11 yellow signal color. Tints the
-                                     terminal pane ring and the sidebar workspace-row pulse.
-                                     Browser and Markdown panel overlays and the Bonsplit
+                                     terminal area ring and the sidebar workspace-row pulse.
+                                     Browser and Markdown tab overlays and the Bonsplit
                                      tab pulse keep their default accent — color override
-                                     for those surfaces is a follow-up.
-              --persistent           Keep pulsing until the operator clicks the surface or
+                                     for those tabs is a follow-up.
+              --persistent           Keep pulsing until the operator clicks the tab or
                                      `c11 cancel-flash` is called. Auto-degrades to a single
-                                     one-shot when the target is the focused surface in the
+                                     one-shot when the target is the focused tab in the
                                      focused window.
 
             Example:
               c11 trigger-flash
-              c11 trigger-flash --workspace workspace:2 --surface surface:3
-              c11 trigger-flash --surface surface:3 --color "#FF00FF"
-              c11 trigger-flash --surface surface:3 --persistent
+              c11 trigger-flash --workspace workspace:2 --tab tab:3
+              c11 trigger-flash --tab tab:3 --color "#FF00FF"
+              c11 trigger-flash --tab tab:3 --persistent
             """
         case "cancel-flash":
             return """
-            Usage: c11 cancel-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>]
+            Usage: c11 cancel-flash [--workspace <id|ref>] [--tab <id|ref>]
 
-            Cancel any in-flight persistent flash on a surface. No-op for one-shot flashes
-            and for surfaces with no active persistent flash.
+            Cancel any in-flight persistent flash on a tab. No-op for one-shot flashes
+            and for tabs with no active persistent flash.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
-              --panel <id|ref>       Alias for --surface
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
 
             Example:
               c11 cancel-flash
-              c11 cancel-flash --workspace workspace:2 --surface surface:3
+              c11 cancel-flash --workspace workspace:2 --tab tab:3
             """
-        case "list-panels":
+        case "list-tabs":
             return """
-            Usage: c11 list-panels [--workspace <id|ref>]
+            Usage: c11 list-tabs [--workspace <id|ref>]
 
-            List surfaces (panels) in a workspace.
+            List tabs in a workspace.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 list-panels
-              c11 list-panels --workspace workspace:2
+              c11 list-tabs
+              c11 list-tabs --workspace workspace:2
             """
-        case "focus-panel":
+        case "focus-tab":
             return """
-            Usage: c11 focus-panel --panel <id|ref> [--workspace <id|ref>]
+            Usage: c11 focus-tab --tab <id|ref> [--workspace <id|ref>]
 
-            Focus a specific panel (surface).
+            Focus a specific tab.
 
             Flags:
-              --panel <id|ref>       Panel/surface to focus (required)
+              --tab <id|ref>       Tab to focus (required)
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 focus-panel --panel surface:2
-              c11 focus-panel --panel surface:5 --workspace workspace:2
+              c11 focus-tab --tab tab:2
+              c11 focus-tab --tab tab:5 --workspace workspace:2
             """
         case "close-workspace":
             return """
@@ -9281,10 +9414,10 @@ struct CMUXCLI {
             Usage: c11 set-workspace-root [--workspace <id|ref|index>] (<path> | --clear)
 
             Set or clear the workspace's stable root directory. Every new
-            terminal in the workspace (tab, split, agent button, new-surface,
-            new-split, new-pane, launch-agent) starts in the root unless it is
+            terminal in the workspace (tab, split, agent button, new-tab,
+            new-split, new-area, launch-agent) starts in the root unless it is
             given an explicit --cwd. With no root, new terminals start in the
-            source surface's cwd. Clearing also stops the workspace from
+            source tab's cwd. Clearing also stops the workspace from
             adopting its next shell cwd as a root.
 
             Examples:
@@ -9298,7 +9431,7 @@ struct CMUXCLI {
             Print the workspace's root directory, or "(none)". A root that no
             longer exists is marked "(missing)". --json adds root_exists,
             root_adoption_armed (a rootless workspace adopts the first shell cwd
-            other than ~ or /), and current_directory (the focused surface's cwd).
+            other than ~ or /), and current_directory (the focused tab's cwd).
 
             Examples:
               c11 get-workspace-root
@@ -9501,117 +9634,117 @@ struct CMUXCLI {
             return """
             Usage: c11 read-screen [flags]
 
-            Read terminal text from a surface as plain text.
+            Read terminal text from a tab as plain text.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
               --scrollback           Include scrollback (not just visible viewport)
               --lines <n>            Limit to the last n lines (implies --scrollback)
 
             Example:
               c11 read-screen
-              c11 read-screen --surface surface:2 --scrollback --lines 200
+              c11 read-screen --tab tab:2 --scrollback --lines 200
             """
         case "send":
             return """
             Usage: c11 send [flags] [--] <text>
 
-            Send text to a terminal surface. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
+            Send text to a terminal tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
 
             Example:
               c11 send "echo hello"
-              c11 send --surface surface:2 "ls -la\\n"
+              c11 send --tab tab:2 "ls -la\\n"
             """
         case "send-key":
             return """
             Usage: c11 send-key [flags] [--] <key>
 
-            Send a key event to a terminal surface.
+            Send a key event to a terminal tab.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
 
             Example:
               c11 send-key enter
-              c11 send-key --surface surface:2 ctrl+c
+              c11 send-key --tab tab:2 ctrl+c
             """
-        case "send-panel":
+        case "send-tab":
             return """
-            Usage: c11 send-panel --panel <id|ref> [flags] [--] <text>
+            Usage: c11 send-tab --tab <id|ref> [flags] [--] <text>
 
-            Send text to a specific panel (surface). Escape sequences: \\n and \\r send Enter, \\t sends Tab.
+            Send text to a specific tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
 
             Flags:
-              --panel <id|ref>       Target panel (required)
+              --tab <id|ref>       Target tab (required)
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 send-panel --panel surface:2 "echo hello\\n"
+              c11 send-tab --tab tab:2 "echo hello\\n"
             """
-        case "send-key-panel":
+        case "send-key-tab":
             return """
-            Usage: c11 send-key-panel --panel <id|ref> [flags] [--] <key>
+            Usage: c11 send-key-tab --tab <id|ref> [flags] [--] <key>
 
-            Send a key event to a specific panel (surface).
+            Send a key event to a specific tab.
 
             Flags:
-              --panel <id|ref>       Target panel (required)
+              --tab <id|ref>       Target tab (required)
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              c11 send-key-panel --panel surface:2 enter
-              c11 send-key-panel --panel surface:2 ctrl+c
+              c11 send-key-tab --tab tab:2 enter
+              c11 send-key-tab --tab tab:2 ctrl+c
             """
         case "notify":
             return """
             Usage: c11 notify [flags]
 
-            Send a notification to a workspace/surface.
+            Send a notification to a workspace/tab.
 
             Flags:
               --title <text>         Notification title (default: "Notification")
               --subtitle <text>      Notification subtitle
               --body <text>          Notification body
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
 
             Example:
               c11 notify --title "Build done" --body "All tests passed"
               c11 notify --title "Error" --subtitle "test.swift" --body "Line 42: syntax error"
             """
-        case "pane-confirm":
+        case "area-confirm":
             return """
-            Usage: c11 pane-confirm --panel <id|ref> --title <text> [flags]
+            Usage: c11 area-confirm --tab <id|ref> --title <text> [flags]
 
-            Present a modal confirmation dialog anchored on a specific panel and
-            wait for the user's decision. Card is scrim-bounded to the panel,
-            so other panes stay interactive.
+            Present a modal confirmation dialog anchored on a specific tab and
+            wait for the user's decision. Card is scrim-bounded to the tab,
+            so other areas stay interactive.
 
             Flags:
-              --panel <id|ref>        Target panel (required)
+              --tab <id|ref>        Target tab (required)
               --title <text>          Card title (required)
               --message <text>        Informative text below the title
               --destructive           Render the confirm button with destructive styling
               --timeout <seconds>     Cancel after N seconds (capped at 300; default: 300)
               --confirm-label <text>  Override the confirm-button label (default: "OK")
               --cancel-label <text>   Override the cancel-button label (default: "Cancel")
-              --workspace <id|ref>    Workspace context (optional; resolved from --panel)
+              --workspace <id|ref>    Workspace context (optional; resolved from --tab)
 
             Exit codes:
               0  user confirmed
               2  user cancelled
-              3  dialog dismissed (panel closed, workspace closed, or timeout)
+              3  dialog dismissed (tab closed, workspace closed, or timeout)
               1  error
 
             Example:
-              c11 pane-confirm --panel surface:1 --title "Deploy to prod?" --destructive
-              c11 pane-confirm --panel $CMUX_SURFACE_ID --title "Continue?" --timeout 60
+              c11 area-confirm --tab tab:1 --title "Deploy to prod?" --destructive
+              c11 area-confirm --tab $C11_TAB_ID --title "Continue?" --timeout 60
             """
         case "list-notifications":
             return """
@@ -9630,7 +9763,7 @@ struct CMUXCLI {
             Usage: c11 set-status <key> <value> [flags]
 
             Set a sidebar status entry for a workspace. Status entries appear as
-            pills in the sidebar tab row. Use a unique key so different tools
+            pills in the sidebar workspace row. Use a unique key so different tools
             (e.g. "claude_code", "build") can manage their own entries.
 
             Flags:
@@ -9753,11 +9886,11 @@ struct CMUXCLI {
             return """
             Usage: c11 set-agent --type <terminal_type>
                                   [--model <id>] [--task <id>] [--role <id>]
-                                  [--surface <id|ref>] [--workspace <id|ref>]
+                                  [--tab <id|ref>] [--workspace <id|ref>]
                                   [--json]
 
-            Declare agent identity for a surface. Writes through
-            surface.set_metadata with source=declare, mode=merge.
+            Declare agent identity for a tab. Writes through
+            tab.set_metadata with source=declare, mode=merge.
 
             Only flags present are written (omitting --model does not clear an
             existing declared model). --type is kebab-case, ≤ 32 chars.
@@ -9767,20 +9900,20 @@ struct CMUXCLI {
               --model <id>             Agent model (e.g. claude-opus-4-7)
               --task <id>              Opaque task identifier
               --role <id>              Opaque role identifier
-              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --tab <id|ref>       Target tab (default: $C11_TAB_ID / focused)
               --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
               --json                   Emit raw JSON-RPC result
 
             Examples:
               c11 set-agent --type claude-code --model claude-opus-4-7
-              c11 set-agent --type opencode --task task-42 --surface surface:1
+              c11 set-agent --type opencode --task task-42 --tab tab:1
             """
         case "default-agent":
             return """
             Usage: c11 default-agent {get | set <type> | launch [flags]}
 
             Read or change the operator's configured default agent, or launch
-            an agent surface programmatically. The launch path is the
+            an agent tab programmatically. The launch path is the
             recommended way to spawn sub-agents: c11 owns per-TUI prompt
             delivery, so the same call works whether the operator's default is
             claude-code, codex, opencode, kimi, or a custom agent.
@@ -9791,25 +9924,25 @@ struct CMUXCLI {
               launch [flags]                   Launch the default (or --agent <type>) agent.
 
             launch flags:
-              --in-surface <id|ref|index>      Launch into an existing surface's PTY. The
-                                               orchestrator pattern: create a surface with
-                                               `c11 new-split` or `c11 new-pane`, then
-                                               launch into it. A `surface:N` ref / index is
+              --in-tab <id|ref|index>      Launch into an existing tab's PTY. The
+                                               orchestrator pattern: create a tab with
+                                               `c11 new-split` or `c11 new-area`, then
+                                               launch into it. A `tab:N` ref / index is
                                                resolved across every workspace (not just the
                                                focused one); pass --workspace to scope it.
-              --workspace <id|ref|index>       Scope --in-surface ref/index resolution to a
+              --workspace <id|ref|index>       Scope --in-tab ref/index resolution to a
                                                single workspace. Defaults to searching all
                                                workspaces (or CMUX_WORKSPACE_ID from the env).
-              --pane <uuid|index>              Legacy A-button mimic: create a NEW agent
-                                               surface in the named pane (focused pane if
+              --area <uuid|index>              Legacy A-button mimic: create a NEW agent
+                                               tab in the named area (focused area if
                                                omitted). Mutually exclusive with
-                                               --in-surface.
+                                               --in-tab.
               --agent <type>                   Override the configured default for this
                                                call only.
               --cwd <path>                     Resolved relative to where the CLI ran. With
-                                               --in-surface: prepend `cd <path> && ` to the
+                                               --in-tab: prepend `cd <path> && ` to the
                                                launch line. Without it: start the new agent
-                                               surface there instead of the workspace root.
+                                               tab there instead of the workspace root.
               --prompt <text>                  Initial prompt to deliver to the agent. For
                                                claude-code: appended as a positional arg.
                                                For other agents: typed in after a fixed
@@ -9821,19 +9954,19 @@ struct CMUXCLI {
             Examples:
               c11 default-agent get
               c11 default-agent set codex
-              c11 default-agent launch --in-surface surface:5 --prompt-file /tmp/bootstrap.md
-              c11 default-agent launch --pane 0 --agent claude-code
+              c11 default-agent launch --in-tab:5 --prompt-file /tmp/bootstrap.md
+              c11 default-agent launch --area 0 --agent claude-code
             """
         case "set-metadata":
             return """
-            Usage: c11 set-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 set-metadata [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>]
                                      (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json])
                                      [--mode merge|replace] [--source explicit|declare|osc|heuristic]
                                      [--json]
 
-            Set one or more metadata keys on a surface (surface.set_metadata) or
-            pane (pane.set_metadata). Defaults: mode=merge, source=explicit.
-            --surface and --pane are mutually exclusive.
+            Set one or more metadata keys on a tab (tab.set_metadata) or
+            area (area.set_metadata). Defaults: mode=merge, source=explicit.
+            --tab and --area are mutually exclusive.
 
             Flags:
               --json '{...}'           Full JSON object of keys/values
@@ -9841,60 +9974,60 @@ struct CMUXCLI {
               --type <string|number|bool|json>   Value coercion (default: string)
               --mode <merge|replace>   Merge (default) or full replace (source=explicit only)
               --source <src>           Write source (default: explicit)
-              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
-              --pane <id|ref>          Target pane (routes to pane.set_metadata)
+              --tab <id|ref>       Target tab (default: $C11_TAB_ID / focused)
+              --area <id|ref>          Target area (routes to area.set_metadata)
               --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Examples:
-              c11 set-metadata --key title --value "My Surface"
+              c11 set-metadata --key title --value "My Tab"
               c11 set-metadata --json '{"title":"x","role":"review"}'
               c11 set-metadata --key progress --value 0.5 --type number
-              c11 set-metadata --pane pane:2 --key title --value "Pane :: Child"
+              c11 set-metadata --area area:2 --key title --value "Area :: Child"
             """
         case "get-metadata":
             return """
-            Usage: c11 get-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 get-metadata [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>]
                                      [--key <K> ...] [--sources] [--json]
 
-            Read metadata (and optional per-key sidecar) for a surface
-            (surface.get_metadata) or pane (pane.get_metadata). Repeat --key to
-            filter. --surface and --pane are mutually exclusive.
+            Read metadata (and optional per-key sidecar) for a tab
+            (tab.get_metadata) or area (area.get_metadata). Repeat --key to
+            filter. --tab and --area are mutually exclusive.
 
             Flags:
               --key <K>                Restrict to one key (repeatable)
               --sources                Include metadata_sources sidecar
-              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
-              --pane <id|ref>          Target pane (routes to pane.get_metadata)
+              --tab <id|ref>       Target tab (default: $C11_TAB_ID / focused)
+              --area <id|ref>          Target area (routes to area.get_metadata)
               --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
               --json                   Emit raw JSON result
 
             Examples:
               c11 get-metadata
               c11 get-metadata --key terminal_type --sources
-              c11 get-metadata --pane pane:2
+              c11 get-metadata --area area:2
             """
         case "clear-metadata":
             return """
-            Usage: c11 clear-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 clear-metadata [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>]
                                        [--key <K> ...] [--source explicit|declare|osc|heuristic]
                                        [--json]
 
-            Clear keys from a surface (surface.clear_metadata) or pane
-            (pane.clear_metadata). With no --key flags, clears the entire blob
-            (requires source=explicit). --surface and --pane are mutually exclusive.
+            Clear keys from a tab (tab.clear_metadata) or area
+            (area.clear_metadata). With no --key flags, clears the entire blob
+            (requires source=explicit). --tab and --area are mutually exclusive.
 
             Flags:
               --key <K>                Key to clear (repeatable)
               --source <src>           Precedence source (default: explicit)
-              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
-              --pane <id|ref>          Target pane (routes to pane.clear_metadata)
+              --tab <id|ref>       Target tab (default: $C11_TAB_ID / focused)
+              --area <id|ref>          Target area (routes to area.clear_metadata)
               --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
               --json                   Emit raw JSON result
 
             Examples:
               c11 clear-metadata --key terminal_type
-              c11 clear-metadata --surface surface:2
-              c11 clear-metadata --pane pane:2 --key title
+              c11 clear-metadata --tab tab:2
+              c11 clear-metadata --area area:2 --key title
             """
         case "set-workspace-metadata":
             return """
@@ -9971,8 +10104,8 @@ struct CMUXCLI {
             return """
             Usage: c11 conversation <subcommand> [flags]
 
-            Manage per-surface ConversationRefs (the C11-24 conversation
-            store). Each surface hosts at most one active ConversationRef
+            Manage per-tab ConversationRefs (the C11-24 conversation
+            store). Each tab hosts at most one active ConversationRef
             keyed by an opaque, per-kind id. The store survives c11
             restarts and is consulted at restore time to synthesise the
             resume command.
@@ -9992,22 +10125,22 @@ struct CMUXCLI {
                 --payload accepts inline JSON or @<path> (mirrors HOOKS_FILE
                 ergonomics in Resources/bin/claude).
               tombstone --kind <k> --id <id> [--reason <text>]
-                Mark the surface's active ref as tombstoned. Operator-
+                Mark the tab's active ref as tombstoned. Operator-
                 initiated; not auto-resumable.
-              list [--surface <id>] [--json]
+              list [--tab <id>] [--json]
                 List captured conversations. v1 stores process-wide;
-                no workspace partitioning. Filter with --surface.
-              get [--surface <id>] [--json]
+                no workspace partitioning. Filter with --tab.
+              get [--tab <id>] [--json]
                 Read the active ref + can_resume + diagnostic_reason for
-                the surface. Use this when debugging "why did this pane
+                the tab. Use this when debugging "why did this area
                 resume that session?" — diagnostic_reason explains the
                 strategy's decision.
-              clear [--surface <id>]
-                Wipe the surface's conversations. Forces a fresh launch
+              clear [--tab <id>]
+                Wipe the tab's conversations. Forces a fresh launch
                 on next workspace open.
 
-            Surface resolution: --surface flag, else $CMUX_SURFACE_ID env
-            var. There is NO focused-surface fallback (the silent-misroute
+            Tab resolution: --tab flag, else $C11_TAB_ID env
+            var. There is NO focused-tab fallback (the silent-misroute
             footgun the architecture exists to avoid).
             """
         case "claude-hook":
@@ -10027,7 +10160,7 @@ struct CMUXCLI {
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
 
             Example:
               echo '{"session_id":"abc"}' | c11 claude-hook session-start
@@ -10035,11 +10168,11 @@ struct CMUXCLI {
             """
         case "browser":
             return """
-            Usage: c11 browser [--surface <id|ref|index> | <surface>] <subcommand> [args]
+            Usage: c11 browser [--tab <id|ref|index> | <tab>] <subcommand> [args]
 
-            Browser automation commands. Most subcommands require a surface handle.
-            A surface can be passed as `--surface <handle>` or as the first positional token.
-            `open`/`open-split`/`new`/`identify` can run without an explicit surface.
+            Browser automation commands. Most subcommands require a tab handle.
+            A tab can be passed as `--tab <handle>` or as the first positional token.
+            `open`/`open-split`/`new`/`identify` can run without an explicit tab.
 
             Subcommands:
               open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--allow-insecure-http]
@@ -10091,12 +10224,12 @@ struct CMUXCLI {
               screencast <start|stop>
               input <mouse|keyboard|touch> [args...]
               input_mouse | input_keyboard | input_touch
-              identify [--surface <id|ref|index>]
+              identify [--tab <id|ref|index>]
 
             Example:
               c11 browser open https://example.com
-              c11 browser surface:1 navigate https://google.com
-              c11 browser --surface surface:1 snapshot --interactive
+              c11 browser tab:1 navigate https://google.com
+              c11 browser --tab tab:1 snapshot --interactive
             """
         // Legacy browser aliases — point users to `c11 browser --help`
         case "open-browser":
@@ -10120,13 +10253,13 @@ struct CMUXCLI {
             Usage: c11 markdown open <path> [options]
                    c11 markdown <path>       (shorthand for 'open')
 
-            Open a markdown file in a formatted viewer panel with live file watching.
+            Open a markdown file in a formatted viewer tab with live file watching.
             The file is rendered with rich formatting (headings, code blocks, tables,
             lists, blockquotes) and automatically updates when the file changes on disk.
 
             Options:
               --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref|index>     Source surface to split from (default: focused surface)
+              --tab <id|ref|index>     Source tab to split from (default: focused tab)
               --window <id|ref|index>      Target window
 
             Examples:
@@ -10209,7 +10342,7 @@ struct CMUXCLI {
             List snapshots under `~/.c11-snapshots/` merged with the legacy
             `~/.cmux-snapshots/` path. Newest first.
 
-            Columns: SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
+            Columns: SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, TABS, ORIGIN, SOURCE.
             SOURCE is `current` for `~/.c11-snapshots/`, `legacy` for the fallback.
 
             Flags:
@@ -10274,7 +10407,7 @@ struct CMUXCLI {
                                        blueprint name. Default: the picker's last layout.
                   --name <text>        With --dir: workspace title (default: directory name).
                   --agent              With --dir: launch the default coding agent in the
-                                       first pane (the picker's checkbox; off by default here).
+                                       first area (the picker's checkbox; off by default here).
 
                 Examples:
                   c11 workspace new
@@ -11174,7 +11307,7 @@ struct CMUXCLI {
 
     private func runSurfaceColor(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
         guard let first = commandArgs.first else {
-            throw CLIError(message: "surface-color requires a subcommand. Try: c11 surface-color get (operates on the surface tab in a pane)")
+            throw CLIError(message: "tab-color requires a subcommand. Try: c11 tab-color get (operates on the tab in a area)")
         }
         let sub = first.lowercased()
         let rest = Array(commandArgs.dropFirst())
@@ -11189,7 +11322,7 @@ struct CMUXCLI {
             // Shares the workspace-color palette — same list, same names.
             try runWorkspaceColorListPalette(client: client, jsonOutput: jsonOutput)
         default:
-            throw CLIError(message: "Unknown surface-color subcommand: \(first)")
+            throw CLIError(message: "Unknown tab-color subcommand: \(first)")
         }
     }
 
@@ -11198,25 +11331,25 @@ struct CMUXCLI {
         let (surfaceOpt, rest2) = parseOption(rest1, name: "--surface")
         let positional = rest2.filter { !$0.hasPrefix("-") }
         guard let hex = positional.first else {
-            throw CLIError(message: "surface-color set <hex> [--workspace <ref>] [--surface <ref>] (quote hex starting with '#': c11 surface-color set \"#RRGGBB\")")
+            throw CLIError(message: "tab-color set <hex> [--workspace <ref>] [--tab <ref>] (quote hex starting with '#': c11 tab-color set \"#RRGGBB\")")
         }
 
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
-        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRef = surfaceOpt ?? Self.callerTabEnv()
         let surfaceId = try resolveSurfaceId(
             surfaceRef,
             workspaceId: workspaceHandle ?? (try resolveCurrentWorkspaceId(client: client)),
             client: client
         )
 
-        var params: [String: Any] = ["hex": hex, "surface_id": surfaceId]
+        var params: [String: Any] = ["hex": hex, "tab_id": surfaceId]
         if let workspaceHandle { params["workspace_id"] = workspaceHandle }
-        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        let response = try client.sendV2(method: "tab.set_custom_color", params: params)
         if jsonOutput {
             print(jsonString(response))
         } else {
             let applied = response["custom_color"] as? String ?? hex
-            print("OK surface_color=\(applied)")
+            print("OK tab_color=\(applied)")
         }
     }
 
@@ -11225,23 +11358,23 @@ struct CMUXCLI {
         let (surfaceOpt, rest2) = parseOption(rest1, name: "--surface")
         let extras = rest2.filter { !$0.hasPrefix("-") }
         if !extras.isEmpty {
-            throw CLIError(message: "surface-color clear takes no positional arguments. Use 'surface-color set <hex>' to set a color.")
+            throw CLIError(message: "tab-color clear takes no positional arguments. Use 'tab-color set <hex>' to set a color.")
         }
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
-        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRef = surfaceOpt ?? Self.callerTabEnv()
         let surfaceId = try resolveSurfaceId(
             surfaceRef,
             workspaceId: workspaceHandle ?? (try resolveCurrentWorkspaceId(client: client)),
             client: client
         )
 
-        var params: [String: Any] = ["clear": true, "surface_id": surfaceId]
+        var params: [String: Any] = ["clear": true, "tab_id": surfaceId]
         if let workspaceHandle { params["workspace_id"] = workspaceHandle }
-        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        let response = try client.sendV2(method: "tab.set_custom_color", params: params)
         if jsonOutput {
             print(jsonString(response))
         } else {
-            print("OK surface color cleared")
+            print("OK tab color cleared")
         }
     }
 
@@ -11250,20 +11383,20 @@ struct CMUXCLI {
         let (surfaceOpt, _) = parseOption(rest1, name: "--surface")
         let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
         let resolvedWorkspaceId = try workspaceHandle ?? resolveCurrentWorkspaceId(client: client)
-        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceRef = surfaceOpt ?? Self.callerTabEnv()
         let surfaceId = try resolveSurfaceId(
             surfaceRef,
             workspaceId: resolvedWorkspaceId,
             client: client
         )
 
-        let response = try client.sendV2(method: "surface.list", params: ["workspace_id": resolvedWorkspaceId])
-        let items = (response["surfaces"] as? [[String: Any]]) ?? []
+        let response = try client.sendV2(method: "tab.list", params: ["workspace_id": resolvedWorkspaceId])
+        let items = (response["tabs"] as? [[String: Any]]) ?? []
         guard let match = items.first(where: { ($0["id"] as? String) == surfaceId }) else {
             // Match the v2 server's not_found semantics. resolveSurfaceId short-circuits
             // any UUID-shaped string without validating membership, so a stale or wrong
             // UUID would otherwise print 'color: (none)' and exit 0 — silently lying.
-            throw CLIError(message: "Surface not found: \(surfaceRef ?? surfaceId)")
+            throw CLIError(message: "Tab not found: \(surfaceRef ?? surfaceId)")
         }
 
         if jsonOutput {
@@ -11604,7 +11737,76 @@ struct CMUXCLI {
         return (remaining, found)
     }
 
+    // MARK: - C11-248 vocabulary aliases (workspace > area > tab)
+
+    /// Old command name -> canonical (new) name. Old names stay accepted
+    /// forever as hidden aliases: absent from help and usage text.
+    private static let legacyCommandAliases: [String: String] = [
+        "list-panes": "list-areas",
+        "list-pane-surfaces": "list-area-tabs",
+        "focus-pane": "focus-area",
+        "new-pane": "new-area",
+        "pane-confirm": "area-confirm",
+        "move-surface": "move-tab",
+        "reorder-surface": "reorder-tab",
+        "new-surface": "new-tab",
+        "close-surface": "close-tab",
+        "drag-surface-to-split": "drag-tab-to-split",
+        "refresh-surfaces": "refresh-tabs",
+        "surface-health": "tab-health",
+        "list-panels": "list-tabs",
+        "focus-panel": "focus-tab",
+        "send-panel": "send-tab",
+        "send-key-panel": "send-key-tab",
+        "surface-color": "tab-color",
+    ]
+
+    /// The calling tab's UUID from the environment: `C11_TAB_ID` first, then
+    /// the hidden aliases `C11_SURFACE_ID`, `CMUX_TAB_ID`, `CMUX_SURFACE_ID`.
+    static func callerTabEnv(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        for key in ["C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"] {
+            if let raw = environment[key] {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
+    }
+
+    static func canonicalCommandName(_ command: String) -> String {
+        legacyCommandAliases[command] ?? command
+    }
+
+    /// Flag spellings that mean the same thing. The option helpers (`parseOption`,
+    /// `parseRepeatedOption`, `optionValue`, `hasFlag`) match any spelling in a group, so
+    /// `--tab` / `--area` (canonical) work beside `--surface` / `--panel` / `--pane` (hidden
+    /// aliases) exactly where a command parses a flag, and free-text arguments are never rewritten.
+    /// tmux-compat flags (`--target-pane`, `%N`) are not aliased.
+    private static let flagAliasGroups: [[String]] = [
+        ["--surface", "--tab", "--panel"],
+        ["--pane", "--area"],
+        ["--before-surface", "--before-tab"],
+        ["--after-surface", "--after-tab"],
+        ["--in-surface", "--in-tab"],
+    ]
+
+    static func flagSpellings(_ name: String) -> [String] {
+        flagAliasGroups.first(where: { $0.contains(name) }) ?? [name]
+    }
+
+    /// `surface:N` -> `tab:N`, `pane:N` -> `area:N`; anything else unchanged.
+    /// Used wherever a user-typed handle is compared with a handle the app
+    /// returned, which always carries the canonical prefix.
+    static func canonicalHandle(_ handle: String) -> String {
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix("surface:") { return "tab:" + trimmed.dropFirst("surface:".count) }
+        if lowered.hasPrefix("pane:") { return "area:" + trimmed.dropFirst("pane:".count) }
+        return trimmed
+    }
+
     private func parseOption(_ args: [String], name: String) -> (String?, [String]) {
+        let spellings = Self.flagSpellings(name)
         var remaining: [String] = []
         var value: String?
         var skipNext = false
@@ -11619,7 +11821,7 @@ struct CMUXCLI {
                 remaining.append(arg)
                 continue
             }
-            if !pastTerminator, arg == name, idx + 1 < args.count {
+            if !pastTerminator, spellings.contains(arg), idx + 1 < args.count {
                 value = args[idx + 1]
                 skipNext = true
                 continue
@@ -11630,6 +11832,7 @@ struct CMUXCLI {
     }
 
     private func parseRepeatedOption(_ args: [String], name: String) -> ([String], [String]) {
+        let spellings = Self.flagSpellings(name)
         var remaining: [String] = []
         var values: [String] = []
         var skipNext = false
@@ -11644,7 +11847,7 @@ struct CMUXCLI {
                 remaining.append(arg)
                 continue
             }
-            if !pastTerminator, arg == name, idx + 1 < args.count {
+            if !pastTerminator, spellings.contains(arg), idx + 1 < args.count {
                 values.append(args[idx + 1])
                 skipNext = true
                 continue
@@ -11655,7 +11858,8 @@ struct CMUXCLI {
     }
 
     private func optionValue(_ args: [String], name: String) -> String? {
-        guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
+        let spellings = Self.flagSpellings(name)
+        guard let index = args.firstIndex(where: { spellings.contains($0) }), index + 1 < args.count else { return nil }
         return args[index + 1]
     }
 
@@ -11663,7 +11867,8 @@ struct CMUXCLI {
     /// always an unset shell variable) instead of letting it fall back to the
     /// focused target.
     private func rejectEmptyTargetFlags(_ args: [String]) throws {
-        for name in ["--window", "--workspace", "--pane", "--surface", "--panel", "--tab"] {
+        // Alias groups cover the hidden spellings (--pane, --surface, --panel).
+        for name in ["--window", "--workspace", "--area", "--tab"] {
             if let value = optionValue(args, name: name),
                value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw CLIError(message: "\(name) received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
@@ -11672,7 +11877,8 @@ struct CMUXCLI {
     }
 
     private func hasFlag(_ args: [String], name: String) -> Bool {
-        args.contains(name)
+        let spellings = Self.flagSpellings(name)
+        return args.contains(where: { spellings.contains($0) })
     }
 
     /// Extract a boolean flag, returning (present, remaining). Respects `--` terminator
@@ -11772,7 +11978,7 @@ struct CMUXCLI {
         let surfaceRaw = optionValue(commandArgs, name: "--surface")
             ?? optionValue(commandArgs, name: "--panel")
             ?? (explicitWorkspaceFlag == nil && windowOverride == nil
-                ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+                ? Self.callerTabEnv()
                 : nil)
         // C11-165 COR-1: writes pass allowFocused:false, so a ref-less external
         // caller (no --surface, no CMUX_SURFACE_ID) sends no surface_id and the
@@ -11807,7 +12013,7 @@ struct CMUXCLI {
         let paneRaw = optionValue(commandArgs, name: "--pane")
 
         if surfaceRaw != nil, paneRaw != nil {
-            throw CLIError(message: "usage: --surface and --pane are mutually exclusive")
+            throw CLIError(message: "usage: --tab and --area are mutually exclusive")
         }
 
         if let paneRaw {
@@ -11818,7 +12024,7 @@ struct CMUXCLI {
                 client: client,
                 workspaceHandle: workspaceId
             ) else {
-                throw CLIError(message: "Invalid pane handle: \(paneRaw)")
+                throw CLIError(message: "Invalid area handle: \(paneRaw)")
             }
             return .pane(workspaceId: workspaceId, paneId: paneId)
         }
@@ -11879,7 +12085,7 @@ struct CMUXCLI {
         let promptFileArg = optionValue(commandArgs, name: "--prompt-file")
 
         if inSurfaceRaw != nil && paneArg != nil {
-            throw CLIError(message: "default-agent launch: --in-surface and --pane are mutually exclusive")
+            throw CLIError(message: "default-agent launch: --in-tab and --area are mutually exclusive")
         }
         if promptArg != nil && promptFileArg != nil {
             throw CLIError(message: "default-agent launch: --prompt and --prompt-file are mutually exclusive")
@@ -11906,7 +12112,7 @@ struct CMUXCLI {
             } else {
                 let asIndex = Int(trimmed)
                 let matches: (_ item: [String: Any]) -> Bool = { item in
-                    if (item["ref"] as? String) == trimmed { return true }
+                    if (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(trimmed) { return true }
                     if let asIndex, intFromAny(item["index"]) == asIndex { return true }
                     return false
                 }
@@ -11932,15 +12138,15 @@ struct CMUXCLI {
                 }
 
                 for wsId in workspaceIds {
-                    let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": wsId])
-                    let items = listed["surfaces"] as? [[String: Any]] ?? []
+                    let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": wsId])
+                    let items = listed["tabs"] as? [[String: Any]] ?? []
                     if let hit = items.first(where: matches), let id = hit["id"] as? String {
                         inSurfaceUUID = id
                         break
                     }
                 }
                 if inSurfaceUUID == nil {
-                    throw CLIError(message: "Surface not found: \(raw)")
+                    throw CLIError(message: "Tab not found: \(raw)")
                 }
             }
         }
@@ -12020,9 +12226,9 @@ struct CMUXCLI {
             "source": "declare"
         ]
         if let workspaceId { params["workspace_id"] = workspaceId }
-        if let surfaceId { params["surface_id"] = surfaceId }
+        if let surfaceId { params["tab_id"] = surfaceId }
 
-        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        let payload = try client.sendV2(method: "tab.set_metadata", params: params)
         printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }
 
@@ -12099,12 +12305,12 @@ struct CMUXCLI {
         switch target {
         case .surface(let workspaceId, let surfaceId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            if let surfaceId { params["surface_id"] = surfaceId }
-            method = "surface.set_metadata"
+            if let surfaceId { params["tab_id"] = surfaceId }
+            method = "tab.set_metadata"
         case .pane(let workspaceId, let paneId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            params["pane_id"] = paneId
-            method = "pane.set_metadata"
+            params["area_id"] = paneId
+            method = "area.set_metadata"
         }
 
         let payload = try client.sendV2(method: method, params: params)
@@ -12135,12 +12341,12 @@ struct CMUXCLI {
         switch target {
         case .surface(let workspaceId, let surfaceId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            if let surfaceId { params["surface_id"] = surfaceId }
-            method = "surface.get_metadata"
+            if let surfaceId { params["tab_id"] = surfaceId }
+            method = "tab.get_metadata"
         case .pane(let workspaceId, let paneId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            params["pane_id"] = paneId
-            method = "pane.get_metadata"
+            params["area_id"] = paneId
+            method = "area.get_metadata"
         }
 
         let payload = try client.sendV2(method: method, params: params)
@@ -12191,12 +12397,12 @@ struct CMUXCLI {
         switch target {
         case .surface(let workspaceId, let surfaceId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            if let surfaceId { params["surface_id"] = surfaceId }
-            method = "surface.clear_metadata"
+            if let surfaceId { params["tab_id"] = surfaceId }
+            method = "tab.clear_metadata"
         case .pane(let workspaceId, let paneId):
             if let workspaceId { params["workspace_id"] = workspaceId }
-            params["pane_id"] = paneId
-            method = "pane.clear_metadata"
+            params["area_id"] = paneId
+            method = "area.clear_metadata"
         }
 
         let payload = try client.sendV2(method: method, params: params)
@@ -12403,7 +12609,7 @@ struct CMUXCLI {
         let applied = payload["applied"] as? [String: Any] ?? [:]
         let reasons = payload["reasons"] as? [String: Any] ?? [:]
         var parts = ["OK"]
-        if let handle = formatHandle(payload, kind: "surface", idFormat: idFormat) {
+        if let handle = formatHandle(payload, kind: "tab", idFormat: idFormat) {
             parts.append(handle)
         }
         print(parts.joined(separator: " "))
@@ -12468,11 +12674,11 @@ struct CMUXCLI {
                [--cwd <path>] [--reason <text>]
                [--payload <json> | --payload @<path>]
           tombstone --kind <k> --id <id> [--reason <text>]
-          list [--surface <id>] [--json]
-          get [--surface <id>] [--json]
-          clear [--surface <id>]
+          list [--tab <id>] [--json]
+          get [--tab <id>] [--json]
+          clear [--tab <id>]
 
-        --surface defaults to $CMUX_SURFACE_ID. There is NO focused-surface
+        --tab defaults to $C11_TAB_ID. There is NO focused-tab
         fallback; commands error out if the env var is missing and no flag
         was given.
         """
@@ -12483,26 +12689,26 @@ struct CMUXCLI {
     /// from its own tool subprocess, so identities must come from that
     /// subprocess's environment rather than caller-supplied arguments.
     private func resolveCallingSurface(environment: [String: String]) throws -> String? {
-        let canonical = environment["C11_SURFACE_ID"]?
+        let canonical = (environment["C11_TAB_ID"] ?? environment["C11_SURFACE_ID"])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let compat = environment["CMUX_SURFACE_ID"]?
+        let compat = (environment["CMUX_TAB_ID"] ?? environment["CMUX_SURFACE_ID"])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let canonicalValue = canonical.flatMap { $0.isEmpty ? nil : $0 }
         let compatValue = compat.flatMap { $0.isEmpty ? nil : $0 }
 
         if let canonicalValue, let compatValue, canonicalValue != compatValue {
-            throw CLIError(message: "surface_env_mismatch: C11_SURFACE_ID and CMUX_SURFACE_ID disagree")
+            throw CLIError(message: "surface_env_mismatch: C11_TAB_ID and CMUX_TAB_ID disagree")
         }
         guard let surface = canonicalValue ?? compatValue else { return nil }
         guard UUID(uuidString: surface) != nil else {
-            throw CLIError(message: "invalid_surface: runtime surface environment must contain a UUID")
+            throw CLIError(message: "invalid_surface: runtime tab environment must contain a UUID")
         }
         return surface
     }
 
     private func resolveRuntimeConversationSurface(environment: [String: String]) throws -> String {
         guard let surface = try resolveCallingSurface(environment: environment) else {
-            throw CLIError(message: "missing_surface: C11_SURFACE_ID or CMUX_SURFACE_ID required")
+            throw CLIError(message: "missing_surface: C11_TAB_ID required")
         }
         return surface
     }
@@ -12513,7 +12719,7 @@ struct CMUXCLI {
         jsonOutput: Bool
     ) throws {
         guard subArgs.isEmpty else {
-            throw CLIError(message: "capture-runtime accepts no arguments; identity, surface, and cwd come from the target subprocess")
+            throw CLIError(message: "capture-runtime accepts no arguments; identity, tab, and cwd come from the target subprocess")
         }
         let environment = ProcessInfo.processInfo.environment
         guard let rawThreadId = environment["CODEX_THREAD_ID"] else {
@@ -12531,7 +12737,7 @@ struct CMUXCLI {
         let response = try client.sendV2(
             method: "conversation.capture_runtime",
             params: [
-                "surface_id": surface,
+                "tab_id": surface,
                 "id": threadId,
                 "cwd": cwd
             ],
@@ -12540,7 +12746,7 @@ struct CMUXCLI {
         if jsonOutput {
             print(jsonString(response))
         } else {
-            print("OK conversation.capture-runtime kind=codex surface=\(surface)")
+            print("OK conversation.capture-runtime kind=codex tab=\(surface)")
         }
     }
 
@@ -12551,11 +12757,11 @@ struct CMUXCLI {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { return trimmed }
         }
-        if let envRaw = ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]?
+        if let envRaw = Self.callerTabEnv()?
             .trimmingCharacters(in: .whitespacesAndNewlines), !envRaw.isEmpty {
             return envRaw
         }
-        throw CLIError(message: "missing_surface: --surface flag or CMUX_SURFACE_ID env var required (no focused-fallback)")
+        throw CLIError(message: "missing_surface: --tab flag or C11_TAB_ID env var required (no focused-fallback)")
     }
 
     /// `--payload <json>` or `--payload @<path>` (mirrors HOOKS_FILE in
@@ -12596,7 +12802,7 @@ struct CMUXCLI {
         }
         let surface = try resolveConversationSurface(subArgs)
         var params: [String: Any] = [
-            "surface_id": surface,
+            "tab_id": surface,
             "kind": kind
         ]
         if let cwd = optionValue(subArgs, name: "--cwd") { params["cwd"] = cwd }
@@ -12622,7 +12828,7 @@ struct CMUXCLI {
         if jsonOutput {
             print(jsonString(payload))
         } else {
-            print("OK conversation.claim kind=\(kind) surface=\(surface)")
+            print("OK conversation.claim kind=\(kind) tab=\(surface)")
         }
     }
 
@@ -12651,7 +12857,7 @@ struct CMUXCLI {
         }
         let surface = try resolveConversationSurface(subArgs)
         var params: [String: Any] = [
-            "surface_id": surface,
+            "tab_id": surface,
             "kind": kind,
             "id": id,
             "source": source
@@ -12675,7 +12881,7 @@ struct CMUXCLI {
         if jsonOutput {
             print(jsonString(response))
         } else {
-            print("OK conversation.push kind=\(kind) surface=\(surface) source=\(source)")
+            print("OK conversation.push kind=\(kind) tab=\(surface) source=\(source)")
         }
     }
 
@@ -12694,7 +12900,7 @@ struct CMUXCLI {
         }
         let surface = try resolveConversationSurface(subArgs)
         var params: [String: Any] = [
-            "surface_id": surface,
+            "tab_id": surface,
             "kind": kind,
             "id": id
         ]
@@ -12703,7 +12909,7 @@ struct CMUXCLI {
         if jsonOutput {
             print(jsonString(response))
         } else {
-            print("OK conversation.tombstone kind=\(kind) surface=\(surface)")
+            print("OK conversation.tombstone kind=\(kind) tab=\(surface)")
         }
     }
 
@@ -12713,7 +12919,7 @@ struct CMUXCLI {
         jsonOutput: Bool
     ) throws {
         var params: [String: Any] = [:]
-        if let s = optionValue(subArgs, name: "--surface") { params["surface_id"] = s }
+        if let s = optionValue(subArgs, name: "--surface") { params["tab_id"] = s }
         // C11-24 review (I3): --workspace is not implemented in v1. The
         // store doesn't track per-workspace partitioning today; the
         // server has been silently ignoring `workspace_id` and returning
@@ -12721,7 +12927,7 @@ struct CMUXCLI {
         // rather than lying about the filter; revisit in v1.1 if the
         // store grows workspace partitioning.
         if optionValue(subArgs, name: "--workspace") != nil {
-            throw CLIError(message: "--workspace is not supported in v1; conversations are stored process-wide. Filter with --surface instead.")
+            throw CLIError(message: "--workspace is not supported in v1; conversations are stored process-wide. Filter with --tab instead.")
         }
         let response = try client.sendV2(method: "conversation.list", params: params)
         if jsonOutput || hasFlag(subArgs, name: "--json") {
@@ -12737,7 +12943,7 @@ struct CMUXCLI {
             let kind = entry["kind"] as? String ?? "?"
             let id = entry["id"] as? String ?? "?"
             let state = entry["state"] as? String ?? "?"
-            let surface = entry["surface_id"] as? String ?? "?"
+            let surface = entry["tab_id"] as? String ?? "?"
             print("\(surface)  \(kind)  \(id)  [\(state)]")
         }
     }
@@ -12748,14 +12954,14 @@ struct CMUXCLI {
         jsonOutput: Bool
     ) throws {
         let surface = try resolveConversationSurface(subArgs)
-        let params: [String: Any] = ["surface_id": surface]
+        let params: [String: Any] = ["tab_id": surface]
         let response = try client.sendV2(method: "conversation.get", params: params)
         if jsonOutput || hasFlag(subArgs, name: "--json") {
             print(jsonString(response))
             return
         }
         guard let active = response["active"] as? [String: Any] else {
-            print("(no conversation for surface)")
+            print("(no conversation for tab)")
             return
         }
         let kind = active["kind"] as? String ?? "?"
@@ -12776,12 +12982,12 @@ struct CMUXCLI {
         jsonOutput: Bool
     ) throws {
         let surface = try resolveConversationSurface(subArgs)
-        let params: [String: Any] = ["surface_id": surface]
+        let params: [String: Any] = ["tab_id": surface]
         let response = try client.sendV2(method: "conversation.clear", params: params)
         if jsonOutput {
             print(jsonString(response))
         } else {
-            print("OK conversation.clear surface=\(surface)")
+            print("OK conversation.clear tab=\(surface)")
         }
     }
 
@@ -12797,7 +13003,7 @@ struct CMUXCLI {
                                                snapshot path + counts.
           verify --mode <clean|dirty|no-resume> [<path>]
                                                Read-only resume-decision dry run.
-                                               Per terminal panel: kind, id,
+                                               Per terminal tab: kind, id,
                                                persisted state, transcript check,
                                                and whether it would resume.
                                                Exit 0 iff every ref would resume.
@@ -12845,12 +13051,12 @@ struct CMUXCLI {
         let path = response["snapshot_path"] as? String ?? "?"
         let windows = response["windows"] as? Int ?? 0
         let workspaces = response["workspaces"] as? Int ?? 0
-        let panels = response["terminal_panels"] as? Int ?? 0
+        let panels = response["terminal_tabs"] as? Int ?? 0
         let refs = response["refs"] as? Int ?? 0
         print("OK state save")
         print("  snapshot: \(path)")
         if let out = response["out_path"] as? String { print("  copy: \(out)") }
-        print("  windows=\(windows) workspaces=\(workspaces) terminal_panels=\(panels) refs=\(refs)")
+        print("  windows=\(windows) workspaces=\(workspaces) terminal_tabs=\(panels) refs=\(refs)")
     }
 
     /// Default canonical snapshot path for the production bundle. `state
@@ -12974,6 +13180,7 @@ struct CMUXCLI {
             let tm = window["tabManager"] as? [String: Any]
             let workspaces = tm?["workspaces"] as? [[String: Any]] ?? []
             for ws in workspaces {
+                // The session snapshot persists a workspace's tabs under the Codable key `panels`.
                 let wsPanels = ws["panels"] as? [[String: Any]] ?? []
                 for panel in wsPanels {
                     guard (panel["type"] as? String) == "terminal" else { continue }
@@ -13011,13 +13218,7 @@ struct CMUXCLI {
         let allResume = panels.allSatisfy { $0.wouldResume }
 
         if jsonOutput {
-            let payload: [String: Any] = [
-                "snapshot_path": path,
-                "mode": mode.rawValue,
-                "ref_panels": refPanels,
-                "would_resume": resumable,
-                "all_resume": allResume,
-                "panels": panels.map { p -> [String: Any] in
+            let tabNodes: [[String: Any]] = panels.map { p -> [String: Any] in
                     var d: [String: Any] = [
                         "kind": p.kind, "id": p.id, "state": p.state,
                         "ownership": p.ownership.rawValue,
@@ -13028,19 +13229,28 @@ struct CMUXCLI {
                     if let skipCode = p.skipCode { d["skip_code"] = skipCode }
                     return d
                 }
+            let payload: [String: Any] = [
+                "snapshot_path": path,
+                "mode": mode.rawValue,
+                "ref_tabs": refPanels,
+                "ref_panels": refPanels, // C11-248: legacy key, remove after one release
+                "would_resume": resumable,
+                "all_resume": allResume,
+                "tabs": tabNodes,
+                "panels": tabNodes // C11-248: legacy key, remove after one release
             ]
             print(jsonString(payload))
         } else {
             print("state verify: \(path)")
             print("  mode=\(mode.rawValue)")
             if panels.isEmpty {
-                print("  (no terminal panels with captured conversations)")
+                print("  (no terminal tabs with captured conversations)")
             }
             for p in panels {
                 let mark = p.wouldResume ? "RESUME" : "skip"
                 print("  [\(mark)] kind=\(p.kind) id=\(p.id) state=\(p.state) ownership=\(p.ownership.rawValue) transcript=\(p.transcriptEvidence.rawValue) — \(p.action)")
             }
-            print("  \(resumable)/\(refPanels) ref-bearing panels would resume")
+            print("  \(resumable)/\(refPanels) ref-bearing tabs would resume")
         }
         // Exit 0 iff every ref-bearing panel would resume (vacuously true when
         // there are no refs).
@@ -13342,7 +13552,7 @@ struct CMUXCLI {
                                   conversations, snapshot, promote the shutdown
                                   sentinel to clean, then relaunch. --no-resume
                                   restores layout without typing resume commands
-                                  into panes.
+                                  into tabs.
         """
     }
 
@@ -13411,6 +13621,8 @@ struct CMUXCLI {
         // C11-171: a raw (unresolved) surface ref carried through from the
         // command line, held until the workspace it resolves against is known.
         var pendingSurfaceRaw: String?
+        // True when the pending ref came from `--tab` (not `--surface` / `--panel`).
+        var pendingFromTabFlag = false
         var index = 0
 
         while index < commandArgs.count {
@@ -13435,23 +13647,54 @@ struct CMUXCLI {
             // C11-171: capture the surface/panel ref (do not forward it raw); it
             // is resolved to a uuid and re-emitted once the workspace is known so
             // the app can mirror canonical status/progress onto the right surface.
-            if arg == "--surface" || arg == "--panel", index + 1 < commandArgs.count {
+            if arg == "--surface" || arg == "--tab" || arg == "--panel", index + 1 < commandArgs.count {
                 pendingSurfaceRaw = commandArgs[index + 1]
+                pendingFromTabFlag = arg == "--tab"
                 index += 2
                 continue
             }
             if arg.hasPrefix("--surface=") {
                 pendingSurfaceRaw = String(arg.dropFirst("--surface=".count))
+                pendingFromTabFlag = false
+                index += 1
+                continue
+            }
+            if arg.hasPrefix("--tab=") {
+                pendingSurfaceRaw = String(arg.dropFirst("--tab=".count))
+                pendingFromTabFlag = true
                 index += 1
                 continue
             }
             if arg.hasPrefix("--panel=") {
                 pendingSurfaceRaw = String(arg.dropFirst("--panel=".count))
+                pendingFromTabFlag = false
                 index += 1
                 continue
             }
             forwardedArgs.append(arg)
             index += 1
+        }
+
+        // `--tab` once named a workspace on these commands. A workspace-shaped value
+        // (`workspace:N`, or the UUID of a workspace) keeps that meaning and is exactly
+        // `--workspace`; `tab:N`, `surface:N` and any other UUID stay a tab. A bare
+        // integer is ambiguous between the two, so it must be disambiguated.
+        if pendingFromTabFlag, !resolvedExplicitWorkspace, let rawTab = pendingSurfaceRaw {
+            let trimmed = rawTab.trimmingCharacters(in: .whitespacesAndNewlines)
+            var asWorkspace: String?
+            if trimmed.lowercased().hasPrefix("workspace:") {
+                asWorkspace = try resolveWorkspaceId(trimmed, client: client)
+            } else if isUUID(trimmed), try isWorkspaceUUID(trimmed, client: client) {
+                asWorkspace = trimmed
+            } else if Int(trimmed) != nil {
+                throw CLIError(message: "ambiguous --tab \(trimmed): use --workspace \(trimmed) or tab:\(trimmed)")
+            }
+            if let workspaceId = asWorkspace {
+                forwardedArgs.append("--tab=\(workspaceId)")
+                resolvedExplicitWorkspace = true
+                resolvedWorkspaceId = workspaceId
+                pendingSurfaceRaw = nil
+            }
         }
 
         if !resolvedExplicitWorkspace,
@@ -13464,7 +13707,12 @@ struct CMUXCLI {
         // C11-171: resolve an explicit surface ref against the resolved workspace
         // and forward it as a uuid, so the app mirrors the canonical key onto the
         // agent's own surface rather than falling back to the focused one.
-        if let pendingSurfaceRaw, let resolvedWorkspaceId {
+        if let pendingSurfaceRaw {
+            // A named tab is never dropped: without a workspace to resolve it in, the
+            // command would silently act on the operator's selected workspace.
+            guard let resolvedWorkspaceId else {
+                throw CLIError(message: "--tab <ref> needs a workspace; pass --workspace or run inside a c11 tab")
+            }
             let surfaceId = try resolveSurfaceId(pendingSurfaceRaw, workspaceId: resolvedWorkspaceId, client: client)
             insertArgumentBeforeSeparator("--surface=\(surfaceId)", into: &forwardedArgs)
         }
@@ -13473,6 +13721,19 @@ struct CMUXCLI {
             .map(shellQuote)
             .joined(separator: " ")
         return try sendV1Command(command, client: client)
+    }
+
+    /// True when `uuid` names a workspace in any window (as opposed to a tab).
+    private func isWorkspaceUUID(_ uuid: String, client: SocketClient) throws -> Bool {
+        let windows = try client.sendV2(method: "window.list")
+        for window in windows["windows"] as? [[String: Any]] ?? [] {
+            guard let windowId = window["id"] as? String else { continue }
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
+            for item in listed["workspaces"] as? [[String: Any]] ?? [] {
+                if let id = item["id"] as? String, id.caseInsensitiveCompare(uuid) == .orderedSame { return true }
+            }
+        }
+        return false
     }
 
     /// Pick the display handle for an item dict based on --id-format.
@@ -13486,7 +13747,7 @@ struct CMUXCLI {
         }
     }
 
-    private func v2OKSummary(_ payload: [String: Any], idFormat: CLIIDFormat, kinds: [String] = ["surface", "workspace"]) -> String {
+    private func v2OKSummary(_ payload: [String: Any], idFormat: CLIIDFormat, kinds: [String] = ["tab", "workspace"]) -> String {
         var parts = ["OK"]
         for kind in kinds {
             if let handle = formatHandle(payload, kind: kind, idFormat: idFormat) {
@@ -13585,12 +13846,12 @@ struct CMUXCLI {
         for win in (payload["windows"] as? [[String: Any]] ?? []) {
             for ws in (win["workspaces"] as? [[String: Any]] ?? []) {
                 let wsRef = ws["ref"] as? String
-                for pane in (ws["panes"] as? [[String: Any]] ?? []) {
-                    for surf in (pane["surfaces"] as? [[String: Any]] ?? []) {
+                for pane in (ws["areas"] as? [[String: Any]] ?? []) {
+                    for surf in (pane["tabs"] as? [[String: Any]] ?? []) {
                         guard let sRef = surf["ref"] as? String else { continue }
-                        var params: [String: Any] = ["surface_id": sRef]
+                        var params: [String: Any] = ["tab_id": sRef]
                         if let wsRef { params["workspace_id"] = wsRef }
-                        if let resp = try? client.sendV2(method: "surface.get_metadata", params: params),
+                        if let resp = try? client.sendV2(method: "tab.get_metadata", params: params),
                            let md = resp["metadata"] as? [String: Any] {
                             out[sRef] = md
                         }
@@ -13613,8 +13874,8 @@ struct CMUXCLI {
             let wss = win["workspaces"] as? [[String: Any]] ?? []
             wsCount += wss.count
             for ws in wss {
-                for pane in (ws["panes"] as? [[String: Any]] ?? []) {
-                    surfCount += (pane["surfaces"] as? [[String: Any]])?.count ?? 0
+                for pane in (ws["areas"] as? [[String: Any]] ?? []) {
+                    surfCount += (pane["tabs"] as? [[String: Any]])?.count ?? 0
                 }
             }
         }
@@ -13623,7 +13884,7 @@ struct CMUXCLI {
         out += "_Generated \(generatedAt) · "
         out += "\(windows.count) \(plural(windows.count, "window")) · "
         out += "\(wsCount) \(plural(wsCount, "workspace")) · "
-        out += "\(surfCount) \(plural(surfCount, "surface"))_\n"
+        out += "\(surfCount) \(plural(surfCount, "tab"))_\n"
 
         var summaryRows: [String] = []
         for (wi, win) in windows.enumerated() {
@@ -13632,17 +13893,17 @@ struct CMUXCLI {
             for ws in wss {
                 let wsTitle = (ws["title"] as? String) ?? "(untitled)"
                 let wsRef = (ws["ref"] as? String) ?? "?"
-                let panes = ws["panes"] as? [[String: Any]] ?? []
-                let sCount = panes.reduce(0) { $0 + (($1["surfaces"] as? [[String: Any]])?.count ?? 0) }
+                let panes = ws["areas"] as? [[String: Any]] ?? []
+                let sCount = panes.reduce(0) { $0 + (($1["tabs"] as? [[String: Any]])?.count ?? 0) }
                 out += "\n### \(wsTitle) (\(wsRef)) — "
-                out += "\(panes.count) \(plural(panes.count, "pane")), "
-                out += "\(sCount) \(plural(sCount, "surface"))\n"
+                out += "\(panes.count) \(plural(panes.count, "area")), "
+                out += "\(sCount) \(plural(sCount, "tab"))\n"
                 summaryRows.append("| \(wi + 1) | \(mdCell(wsTitle)) | \(panes.count) | \(sCount) |")
                 for pane in panes {
                     let pRef = (pane["ref"] as? String) ?? "?"
                     let pos = panePositionLabel(pane)
-                    out += "\n**Pane** \(pRef)\(pos.isEmpty ? "" : " — \(pos)")\n"
-                    for surf in (pane["surfaces"] as? [[String: Any]] ?? []) {
+                    out += "\n**Area** \(pRef)\(pos.isEmpty ? "" : " — \(pos)")\n"
+                    for surf in (pane["tabs"] as? [[String: Any]] ?? []) {
                         out += renderSurfaceLine(surf, metadata: metadata)
                     }
                 }
@@ -13650,7 +13911,7 @@ struct CMUXCLI {
         }
 
         out += "\n## Summary\n\n"
-        out += "| Window | Workspace | Panes | Surfaces |\n"
+        out += "| Window | Workspace | Areas | Tabs |\n"
         out += "|---|---|---|---|\n"
         out += summaryRows.joined(separator: "\n")
         out += "\n"
@@ -13999,14 +14260,15 @@ struct CMUXCLI {
     ) throws -> [String: Any] {
         var workspaceNode = workspace
         guard let workspaceHandle = treeItemHandle(workspace) else {
-            workspaceNode["panes"] = []
+            workspaceNode["areas"] = []
+            workspaceNode["panes"] = [] // C11-248: legacy key, remove after one release
             return workspaceNode
         }
 
-        let panePayload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceHandle])
-        let surfacePayload = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceHandle])
-        let panes = panePayload["panes"] as? [[String: Any]] ?? []
-        let surfaces = surfacePayload["surfaces"] as? [[String: Any]] ?? []
+        let panePayload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceHandle])
+        let surfacePayload = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceHandle])
+        let panes = panePayload["areas"] as? [[String: Any]] ?? []
+        let surfaces = surfacePayload["tabs"] as? [[String: Any]] ?? []
         let browserURLsByHandle = fetchTreeBrowserURLs(
             workspaceHandle: workspaceHandle,
             surfaces: surfaces,
@@ -14017,7 +14279,7 @@ struct CMUXCLI {
         for surface in surfaces {
             var surfaceNode = surface
             if surfaceNode["selected"] == nil {
-                surfaceNode["selected"] = (surfaceNode["selected_in_pane"] as? Bool) == true
+                surfaceNode["selected"] = (surfaceNode["selected_in_area"] as? Bool) == true
             }
             surfaceNode["active"] = treeItemMatchesHandle(surfaceNode, handle: activePath.surfaceHandle)
 
@@ -14030,7 +14292,7 @@ struct CMUXCLI {
                 surfaceNode["url"] = NSNull()
             }
 
-            guard let paneHandle = treeRelatedHandle(surfaceNode, refKey: "pane_ref", idKey: "pane_id") else {
+            guard let paneHandle = treeRelatedHandle(surfaceNode, refKey: "area_ref", idKey: "area_id") else {
                 continue
             }
             surfacesByPane[paneHandle, default: []].append(surfaceNode)
@@ -14038,8 +14300,8 @@ struct CMUXCLI {
 
         for paneHandle in surfacesByPane.keys {
             surfacesByPane[paneHandle]?.sort {
-                let lhs = intFromAny($0["index_in_pane"]) ?? intFromAny($0["index"]) ?? Int.max
-                let rhs = intFromAny($1["index_in_pane"]) ?? intFromAny($1["index"]) ?? Int.max
+                let lhs = intFromAny($0["index_in_area"]) ?? intFromAny($0["index"]) ?? Int.max
+                let rhs = intFromAny($1["index_in_area"]) ?? intFromAny($1["index"]) ?? Int.max
                 return lhs < rhs
             }
         }
@@ -14048,15 +14310,17 @@ struct CMUXCLI {
             var paneNode = pane
             paneNode["active"] = treeItemMatchesHandle(paneNode, handle: activePath.paneHandle)
             if let paneHandle = treeItemHandle(paneNode) {
-                paneNode["surfaces"] = surfacesByPane[paneHandle] ?? []
+                paneNode["tabs"] = surfacesByPane[paneHandle] ?? []
             } else {
-                paneNode["surfaces"] = []
+                paneNode["tabs"] = []
             }
+            paneNode["surfaces"] = paneNode["tabs"] // C11-248: legacy key, remove after one release
             return paneNode
         }
 
         workspaceNode["active"] = treeItemMatchesHandle(workspaceNode, handle: activePath.workspaceHandle)
-        workspaceNode["panes"] = paneNodes
+        workspaceNode["areas"] = paneNodes
+        workspaceNode["panes"] = paneNodes // C11-248: legacy key, remove after one release
         return workspaceNode
     }
 
@@ -14084,21 +14348,21 @@ struct CMUXCLI {
         return TreePath(
             windowHandle: treeRelatedHandle(payload, refKey: "window_ref", idKey: "window_id"),
             workspaceHandle: treeRelatedHandle(payload, refKey: "workspace_ref", idKey: "workspace_id"),
-            paneHandle: treeRelatedHandle(payload, refKey: "pane_ref", idKey: "pane_id"),
-            surfaceHandle: treeRelatedHandle(payload, refKey: "surface_ref", idKey: "surface_id")
+            paneHandle: treeRelatedHandle(payload, refKey: "area_ref", idKey: "area_id"),
+            surfaceHandle: treeRelatedHandle(payload, refKey: "tab_ref", idKey: "tab_id")
         )
     }
 
     private func treeCallerContextFromEnvironment() -> [String: Any]? {
         let env = ProcessInfo.processInfo.environment
         let workspaceRaw = env["CMUX_WORKSPACE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let surfaceRaw = env["CMUX_SURFACE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let surfaceRaw = Self.callerTabEnv(env)
         var caller: [String: Any] = [:]
         if let workspaceRaw, !workspaceRaw.isEmpty {
             caller["workspace_id"] = workspaceRaw
         }
         if let surfaceRaw, !surfaceRaw.isEmpty {
-            caller["surface_id"] = surfaceRaw
+            caller["tab_id"] = surfaceRaw
         }
         return caller.isEmpty ? nil : caller
     }
@@ -14136,22 +14400,25 @@ struct CMUXCLI {
                 var workspaceNode = workspace
                 workspaceNode["active"] = treeItemMatchesHandle(workspaceNode, handle: activePath.workspaceHandle)
 
-                let panes = workspace["panes"] as? [[String: Any]] ?? []
+                let panes = workspace["areas"] as? [[String: Any]] ?? []
                 let paneNodes = panes.map { pane in
                     var paneNode = pane
                     paneNode["active"] = treeItemMatchesHandle(paneNode, handle: activePath.paneHandle)
 
-                    let surfaces = pane["surfaces"] as? [[String: Any]] ?? []
-                    paneNode["surfaces"] = surfaces.map { surface in
+                    let surfaces = pane["tabs"] as? [[String: Any]] ?? []
+                    paneNode["tabs"] = surfaces.map { surface in
                         var surfaceNode = surface
                         surfaceNode["active"] = treeItemMatchesHandle(surfaceNode, handle: activePath.surfaceHandle)
                         surfaceNode["here"] = treeItemMatchesHandle(surfaceNode, handle: callerPath.surfaceHandle)
                         return surfaceNode
                     }
+                    paneNode["surfaces"] = paneNode["tabs"] // C11-248: legacy key, remove after one release
                     return paneNode
                 }
 
-                workspaceNode["panes"] = paneNodes
+                workspaceNode["areas"] = paneNodes
+
+                workspaceNode["panes"] = paneNodes // C11-248: legacy key, remove after one release
                 return workspaceNode
             }
 
@@ -14195,7 +14462,7 @@ struct CMUXCLI {
             guard let surfaceHandle = treeItemHandle(surface) else { continue }
             guard let payload = try? client.sendV2(
                 method: "browser.url.get",
-                params: ["workspace_id": workspaceHandle, "surface_id": surfaceHandle]
+                params: ["workspace_id": workspaceHandle, "tab_id": surfaceHandle]
             ),
             let url = payload["url"] as? String,
             !url.isEmpty else {
@@ -14229,7 +14496,7 @@ struct CMUXCLI {
         guard let handle = handle?.trimmingCharacters(in: .whitespacesAndNewlines), !handle.isEmpty else {
             return false
         }
-        return (item["id"] as? String) == handle || (item["ref"] as? String) == handle
+        return (item["id"] as? String) == handle || (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle)
     }
 
     /// Render `cmux tree` text output.
@@ -14279,14 +14546,14 @@ struct CMUXCLI {
                 let workspaceIndent = workspaceIsLast ? "    " : "│   "
                 treeLines.append("\(workspaceBranch)\(treeWorkspaceLabel(workspace, idFormat: idFormat))")
 
-                let panes = workspace["panes"] as? [[String: Any]] ?? []
+                let panes = workspace["areas"] as? [[String: Any]] ?? []
                 for (paneIndex, pane) in panes.enumerated() {
                     let paneIsLast = paneIndex == panes.count - 1
                     let paneBranch = paneIsLast ? "└── " : "├── "
                     let paneIndent = paneIsLast ? "    " : "│   "
                     treeLines.append("\(workspaceIndent)\(paneBranch)\(treePaneLabel(pane, idFormat: idFormat))")
 
-                    let surfaces = pane["surfaces"] as? [[String: Any]] ?? []
+                    let surfaces = pane["tabs"] as? [[String: Any]] ?? []
                     for (surfaceIndex, surface) in surfaces.enumerated() {
                         let surfaceIsLast = surfaceIndex == surfaces.count - 1
                         let surfaceBranch = surfaceIsLast ? "└── " : "├── "
@@ -14345,7 +14612,7 @@ struct CMUXCLI {
             ].joined(separator: "\n")
         }
 
-        let panes = workspace["panes"] as? [[String: Any]] ?? []
+        let panes = workspace["areas"] as? [[String: Any]] ?? []
         guard !panes.isEmpty else { return nil }
 
         // Canvas height: round(width * (h/w) * 0.5), floor 6, ceiling 60.
@@ -14494,8 +14761,8 @@ struct CMUXCLI {
 
         let paneRef = textHandle(pane, idFormat: idFormat)
         // Surface info for selected tab title (line 5) and tab count (line 4).
-        let surfaces = pane["surfaces"] as? [[String: Any]] ?? []
-        let surfaceCount = (pane["surface_count"] as? Int) ?? surfaces.count
+        let surfaces = pane["tabs"] as? [[String: Any]] ?? []
+        let surfaceCount = (pane["tab_count"] as? Int) ?? surfaces.count
         let selectedTitle: String = {
             for s in surfaces {
                 if (s["selected"] as? Bool) == true || (s["focused"] as? Bool) == true {
@@ -14640,7 +14907,7 @@ struct CMUXCLI {
     }
 
     private func treePaneLabel(_ pane: [String: Any], idFormat: CLIIDFormat) -> String {
-        var parts = ["pane \(textHandle(pane, idFormat: idFormat))"]
+        var parts = ["area \(textHandle(pane, idFormat: idFormat))"]
 
         // M8 badges: size=W%×H% px=W×H split=...
         // Render between the pane ref and the bracketed markers.
@@ -14694,7 +14961,7 @@ struct CMUXCLI {
     private func treeSurfaceLabel(_ surface: [String: Any], idFormat: CLIIDFormat) -> String {
         let rawType = ((surface["type"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let surfaceType = rawType.isEmpty ? "unknown" : rawType
-        var parts = ["surface \(textHandle(surface, idFormat: idFormat))", "[\(surfaceType)]"]
+        var parts = ["tab \(textHandle(surface, idFormat: idFormat))", "[\(surfaceType)]"]
         let title = (surface["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
             parts.append("\"\(title)\"")
@@ -14880,7 +15147,7 @@ struct CMUXCLI {
 
     private func tmuxWindowSelector(from raw: String?) -> String? {
         guard let trimmed = normalizedTmuxTarget(raw) else { return nil }
-        if trimmed.hasPrefix("%") || trimmed.hasPrefix("pane:") {
+        if trimmed.hasPrefix("%") || trimmed.hasPrefix("pane:") || trimmed.hasPrefix("area:") {
             return nil
         }
         if let dot = trimmed.lastIndex(of: ".") {
@@ -14894,7 +15161,7 @@ struct CMUXCLI {
         if trimmed.hasPrefix("%") {
             return String(trimmed.dropFirst())
         }
-        if trimmed.hasPrefix("pane:") {
+        if trimmed.hasPrefix("pane:") || trimmed.hasPrefix("area:") {
             return trimmed
         }
         if let dot = trimmed.lastIndex(of: ".") {
@@ -14921,7 +15188,7 @@ struct CMUXCLI {
     }
 
     private func tmuxCallerSurfaceHandle() -> String? {
-        normalizedTmuxTarget(ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"])
+        normalizedTmuxTarget(Self.callerTabEnv())
     }
 
     private func tmuxCanonicalPaneId(
@@ -14933,10 +15200,10 @@ struct CMUXCLI {
             return handle
         }
 
-        let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
-        let panes = payload["panes"] as? [[String: Any]] ?? []
+        let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
+        let panes = payload["areas"] as? [[String: Any]] ?? []
         for pane in panes {
-            if (pane["ref"] as? String) == handle || (pane["id"] as? String) == handle {
+            if (pane["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) || (pane["id"] as? String) == handle {
                 if let id = pane["id"] as? String {
                     return id
                 }
@@ -14951,7 +15218,7 @@ struct CMUXCLI {
             }
         }
 
-        throw CLIError(message: "Pane target not found")
+        throw CLIError(message: "Area target not found")
     }
 
     private func tmuxCanonicalSurfaceId(
@@ -14963,10 +15230,10 @@ struct CMUXCLI {
             return handle
         }
 
-        let payload = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
-        let surfaces = payload["surfaces"] as? [[String: Any]] ?? []
+        let payload = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
+        let surfaces = payload["tabs"] as? [[String: Any]] ?? []
         for surface in surfaces {
-            if (surface["ref"] as? String) == handle || (surface["id"] as? String) == handle {
+            if (surface["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) || (surface["id"] as? String) == handle {
                 if let id = surface["id"] as? String {
                     return id
                 }
@@ -14981,7 +15248,7 @@ struct CMUXCLI {
             }
         }
 
-        throw CLIError(message: "Surface target not found")
+        throw CLIError(message: "Tab target not found")
     }
 
     private func tmuxWorkspaceIdForPaneHandle(_ handle: String, client: SocketClient) throws -> String? {
@@ -14992,9 +15259,9 @@ struct CMUXCLI {
         let workspaces = try tmuxWorkspaceItems(client: client)
         for workspace in workspaces {
             guard let workspaceId = workspace["id"] as? String else { continue }
-            let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
-            let panes = payload["panes"] as? [[String: Any]] ?? []
-            if panes.contains(where: { ($0["id"] as? String) == handle || ($0["ref"] as? String) == handle }) {
+            let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
+            let panes = payload["areas"] as? [[String: Any]] ?? []
+            if panes.contains(where: { ($0["id"] as? String) == handle || ($0["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) }) {
                 return workspaceId
             }
         }
@@ -15003,14 +15270,14 @@ struct CMUXCLI {
     }
 
     private func tmuxFocusedPaneId(workspaceId: String, client: SocketClient) throws -> String {
-        let payload = try client.sendV2(method: "surface.current", params: ["workspace_id": workspaceId])
-        if let paneId = payload["pane_id"] as? String {
+        let payload = try client.sendV2(method: "tab.current", params: ["workspace_id": workspaceId])
+        if let paneId = payload["area_id"] as? String {
             return paneId
         }
-        if let paneRef = payload["pane_ref"] as? String {
+        if let paneRef = payload["area_ref"] as? String {
             return try tmuxCanonicalPaneId(paneRef, workspaceId: workspaceId, client: client)
         }
-        throw CLIError(message: "Pane target not found")
+        throw CLIError(message: "Area target not found")
     }
 
     private func tmuxResolveWorkspaceTarget(_ raw: String?, client: SocketClient) throws -> String {
@@ -15090,10 +15357,10 @@ struct CMUXCLI {
         client: SocketClient
     ) throws -> String {
         let payload = try client.sendV2(
-            method: "pane.surfaces",
-            params: ["workspace_id": workspaceId, "pane_id": paneId]
+            method: "area.tabs",
+            params: ["workspace_id": workspaceId, "area_id": paneId]
         )
-        let surfaces = payload["surfaces"] as? [[String: Any]] ?? []
+        let surfaces = payload["tabs"] as? [[String: Any]] ?? []
         if let selected = surfaces.first(where: { ($0["selected"] as? Bool) == true }),
            let id = selected["id"] as? String {
             return id
@@ -15101,7 +15368,7 @@ struct CMUXCLI {
         if let first = surfaces.first?["id"] as? String {
             return first
         }
-        throw CLIError(message: "Pane has no surface to target")
+        throw CLIError(message: "Area has no tab to target")
     }
 
     private func tmuxResolveSurfaceTarget(
@@ -15174,15 +15441,15 @@ struct CMUXCLI {
             }
         }
 
-        let currentPayload = try client.sendV2(method: "surface.current", params: ["workspace_id": canonicalWorkspaceId])
+        let currentPayload = try client.sendV2(method: "tab.current", params: ["workspace_id": canonicalWorkspaceId])
         let resolvedPaneId: String? = try {
             if let paneId {
                 return try tmuxCanonicalPaneId(paneId, workspaceId: canonicalWorkspaceId, client: client)
             }
-            if let currentPaneId = currentPayload["pane_id"] as? String {
+            if let currentPaneId = currentPayload["area_id"] as? String {
                 return currentPaneId
             }
-            if let currentPaneRef = currentPayload["pane_ref"] as? String {
+            if let currentPaneRef = currentPayload["area_ref"] as? String {
                 return try tmuxCanonicalPaneId(currentPaneRef, workspaceId: canonicalWorkspaceId, client: client)
             }
             return nil
@@ -15198,24 +15465,27 @@ struct CMUXCLI {
                     client: client
                 )
             }
-            return currentPayload["surface_id"] as? String
+            return currentPayload["tab_id"] as? String
         }()
 
         if let resolvedPaneId {
             context["pane_id"] = "%\(resolvedPaneId)"
             context["pane_uuid"] = resolvedPaneId
-            let panePayload = try client.sendV2(method: "pane.list", params: ["workspace_id": canonicalWorkspaceId])
-            let panes = panePayload["panes"] as? [[String: Any]] ?? []
+            context["area_id"] = "%\(resolvedPaneId)" // twin of pane_id
+            let panePayload = try client.sendV2(method: "area.list", params: ["workspace_id": canonicalWorkspaceId])
+            let panes = panePayload["areas"] as? [[String: Any]] ?? []
             if let pane = panes.first(where: { ($0["id"] as? String) == resolvedPaneId }),
                let index = intFromAny(pane["index"]) {
                 context["pane_index"] = String(index)
+                context["area_index"] = String(index)
             }
         }
 
         if let resolvedSurfaceId {
             context["surface_id"] = resolvedSurfaceId
-            let surfacePayload = try client.sendV2(method: "surface.list", params: ["workspace_id": canonicalWorkspaceId])
-            let surfaces = surfacePayload["surfaces"] as? [[String: Any]] ?? []
+            context["tab_id"] = resolvedSurfaceId // twin of surface_id
+            let surfacePayload = try client.sendV2(method: "tab.list", params: ["workspace_id": canonicalWorkspaceId])
+            let surfaces = surfacePayload["tabs"] as? [[String: Any]] ?? []
             if let surface = surfaces.first(where: { ($0["id"] as? String) == resolvedSurfaceId }) {
                 let title = ((surface["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if !title.isEmpty {
@@ -15364,8 +15634,8 @@ struct CMUXCLI {
 
             let workspaceId = (focused["workspace_id"] as? String)
                 ?? (focused["workspace_ref"] as? String)
-            let paneId = (focused["pane_id"] as? String)
-                ?? (focused["pane_ref"] as? String)
+            let paneId = (focused["area_id"] as? String)
+                ?? (focused["area_ref"] as? String)
 
             guard let workspaceId, let paneId else {
                 return nil
@@ -15378,15 +15648,15 @@ struct CMUXCLI {
 
             let windowId = (focused["window_id"] as? String)
                 ?? (focused["window_ref"] as? String)
-            let surfaceId = (focused["surface_id"] as? String)
-                ?? (focused["surface_ref"] as? String)
+            let surfaceId = (focused["tab_id"] as? String)
+                ?? (focused["tab_ref"] as? String)
 
             return ClaudeTeamsFocusedContext(
                 socketPath: socketPath,
                 workspaceId: workspaceId,
                 windowId: windowId,
                 paneHandle: paneHandle,
-                paneId: focused["pane_id"] as? String,
+                paneId: focused["area_id"] as? String,
                 surfaceId: surfaceId
             )
         } catch {
@@ -15469,6 +15739,7 @@ struct CMUXCLI {
             setenv("CMUX_WORKSPACE_ID", focusedContext.workspaceId, 1)
             if let surfaceId = focusedContext.surfaceId, !surfaceId.isEmpty {
                 setenv("CMUX_SURFACE_ID", surfaceId, 1)
+                setenv("C11_TAB_ID", surfaceId, 1)
             }
         }
     }
@@ -15589,9 +15860,9 @@ struct CMUXCLI {
             }
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
                 let surfaceId = try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": workspaceId,
-                    "surface_id": surfaceId,
+                    "tab_id": surfaceId,
                     "text": text
                 ])
             }
@@ -15626,9 +15897,9 @@ struct CMUXCLI {
             }
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
                 let surfaceId = try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": workspaceId,
-                    "surface_id": surfaceId,
+                    "tab_id": surfaceId,
                     "text": text
                 ])
             }
@@ -15650,20 +15921,20 @@ struct CMUXCLI {
             } else {
                 direction = parsed.hasFlag("-b") ? "up" : "down"
             }
-            let created = try client.sendV2(method: "surface.split", params: [
+            let created = try client.sendV2(method: "tab.split", params: [
                 "workspace_id": target.workspaceId,
-                "surface_id": target.surfaceId,
+                "tab_id": target.surfaceId,
                 "direction": direction
             ])
-            guard let surfaceId = created["surface_id"] as? String else {
-                throw CLIError(message: "surface.split did not return surface_id")
+            guard let surfaceId = created["tab_id"] as? String else {
+                throw CLIError(message: "tab.split did not return tab_id")
             }
-            let paneId = created["pane_id"] as? String
+            let paneId = created["area_id"] as? String
             // Keep the leader pane focused while Claude starts teammates beside it.
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": target.workspaceId,
-                    "surface_id": surfaceId,
+                    "tab_id": surfaceId,
                     "text": text
                 ])
             }
@@ -15689,9 +15960,9 @@ struct CMUXCLI {
                 return
             }
             let target = try tmuxResolvePaneTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "pane.focus", params: [
+            _ = try client.sendV2(method: "area.focus", params: [
                 "workspace_id": target.workspaceId,
-                "pane_id": target.paneId
+                "area_id": target.paneId
             ])
 
         case "kill-window", "killw":
@@ -15702,9 +15973,9 @@ struct CMUXCLI {
         case "kill-pane", "killp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "surface.close", params: [
+            _ = try client.sendV2(method: "tab.close", params: [
                 "workspace_id": target.workspaceId,
-                "surface_id": target.surfaceId
+                "tab_id": target.surfaceId
             ])
 
         case "send-keys", "send":
@@ -15712,9 +15983,9 @@ struct CMUXCLI {
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
             let text = tmuxSendKeysText(from: parsed.positional, literal: parsed.hasFlag("-l"))
             if !text.isEmpty {
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": target.workspaceId,
-                    "surface_id": target.surfaceId,
+                    "tab_id": target.surfaceId,
                     "text": text
                 ])
             }
@@ -15728,13 +15999,13 @@ struct CMUXCLI {
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
             var params: [String: Any] = [
                 "workspace_id": target.workspaceId,
-                "surface_id": target.surfaceId,
+                "tab_id": target.surfaceId,
                 "scrollback": true
             ]
             if let start = parsed.value("-S"), let lines = Int(start), lines < 0 {
                 params["lines"] = abs(lines)
             }
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             let text = (payload["text"] as? String) ?? ""
             if parsed.hasFlag("-p") {
                 print(text)
@@ -15775,8 +16046,8 @@ struct CMUXCLI {
         case "list-panes", "lsp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-F", "-t"], boolFlags: [])
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
-            let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
-            let panes = payload["panes"] as? [[String: Any]] ?? []
+            let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
+            let panes = payload["areas"] as? [[String: Any]] ?? []
             for pane in panes {
                 guard let paneId = pane["id"] as? String else { continue }
                 let context = try tmuxFormatContext(workspaceId: workspaceId, paneId: paneId, client: client)
@@ -15823,9 +16094,9 @@ struct CMUXCLI {
             let rawAmount = (parsed.value("-x") ?? parsed.value("-y") ?? "5")
                 .replacingOccurrences(of: "%", with: "")
             let amount = Int(rawAmount) ?? 5
-            _ = try client.sendV2(method: "pane.resize", params: [
+            _ = try client.sendV2(method: "area.resize", params: [
                 "workspace_id": target.workspaceId,
-                "pane_id": target.paneId,
+                "area_id": target.paneId,
                 "direction": direction,
                 "amount": max(1, amount)
             ])
@@ -15843,7 +16114,7 @@ struct CMUXCLI {
         case "last-pane":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "pane.last", params: ["workspace_id": workspaceId])
+            _ = try client.sendV2(method: "area.last", params: ["workspace_id": workspaceId])
 
         case "show-buffer", "showb":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-b"], boolFlags: [])
@@ -15959,13 +16230,13 @@ struct CMUXCLI {
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
             let (linesArg, rem2) = parseOption(rem1, name: "--lines")
             let workspaceArg = wsArg ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowOverride == nil ? Self.callerTabEnv() : nil)
 
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["surface_id"] = sfId }
+            if let sfId { params["tab_id"] = sfId }
 
             let includeScrollback = rem2.contains("--scrollback")
             if includeScrollback {
@@ -15979,7 +16250,7 @@ struct CMUXCLI {
                 params["scrollback"] = true
             }
 
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             if jsonOutput {
                 print(jsonString(payload))
             } else {
@@ -16007,8 +16278,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneArg, client: client, workspaceHandle: wsId, allowFocused: true)
-            if let paneId { params["pane_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.resize", params: params)
+            if let paneId { params["area_id"] = paneId }
+            let payload = try client.sendV2(method: "area.resize", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["pane"]))
 
         case "pipe-pane":
@@ -16028,8 +16299,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             let text = (payload["text"] as? String) ?? ""
             let shell = try runShellCommand(commandText, stdinText: text)
             if shell.status != 0 {
@@ -16091,9 +16362,9 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sourcePane = try normalizePaneHandle(sourcePaneRaw, client: client, workspaceHandle: wsId)
             let targetPane = try normalizePaneHandle(targetPaneRaw, client: client, workspaceHandle: wsId)
-            if let sourcePane { params["pane_id"] = sourcePane }
-            if let targetPane { params["target_pane_id"] = targetPane }
-            let payload = try client.sendV2(method: "pane.swap", params: params)
+            if let sourcePane { params["area_id"] = sourcePane }
+            if let targetPane { params["target_area_id"] = targetPane }
+            let payload = try client.sendV2(method: "area.swap", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "break-pane":
@@ -16104,10 +16375,10 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneArg, client: client, workspaceHandle: wsId)
-            if let paneId { params["pane_id"] = paneId }
+            if let paneId { params["area_id"] = paneId }
             let surfaceId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let surfaceId { params["surface_id"] = surfaceId }
-            let payload = try client.sendV2(method: "pane.break", params: params)
+            if let surfaceId { params["tab_id"] = surfaceId }
+            let payload = try client.sendV2(method: "area.break", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "join-pane":
@@ -16121,12 +16392,12 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sourcePaneId = try normalizePaneHandle(sourcePaneArg, client: client, workspaceHandle: wsId)
-            if let sourcePaneId { params["pane_id"] = sourcePaneId }
+            if let sourcePaneId { params["area_id"] = sourcePaneId }
             let targetPaneId = try normalizePaneHandle(targetPaneArg, client: client, workspaceHandle: wsId)
-            if let targetPaneId { params["target_pane_id"] = targetPaneId }
+            if let targetPaneId { params["target_area_id"] = targetPaneId }
             let surfaceId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
-            if let surfaceId { params["surface_id"] = surfaceId }
-            let payload = try client.sendV2(method: "pane.join", params: params)
+            if let surfaceId { params["tab_id"] = surfaceId }
+            let payload = try client.sendV2(method: "area.join", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "last-window":
@@ -16146,7 +16417,7 @@ struct CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "pane.last", params: params)
+            let payload = try client.sendV2(method: "area.last", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["pane"]))
 
         case "find-window":
@@ -16166,7 +16437,7 @@ struct CMUXCLI {
                 let titleMatch = query.isEmpty || title.localizedCaseInsensitiveContains(query)
                 var contentMatch = false
                 if includeContent && !query.isEmpty, let wsId = ws["id"] as? String {
-                    let textPayload = try? client.sendV2(method: "surface.read_text", params: ["workspace_id": wsId])
+                    let textPayload = try? client.sendV2(method: "tab.read_text", params: ["workspace_id": wsId])
                     let text = (textPayload?["text"] as? String) ?? ""
                     contentMatch = text.localizedCaseInsensitiveContains(query)
                 }
@@ -16200,8 +16471,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.clear_history", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.clear_history", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "set-hook":
@@ -16282,8 +16553,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "respawn-pane":
@@ -16296,8 +16567,8 @@ struct CMUXCLI {
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
-            if let sfId { params["surface_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            if let sfId { params["tab_id"] = sfId }
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "display-message":
@@ -16344,9 +16615,9 @@ struct CMUXCLI {
               UUID(uuidString: workspaceId) != nil else {
             throw CLIError(message: "\(commandName) requires a c11 workspace id")
         }
-        guard let surfaceId = environment["CMUX_SURFACE_ID"] ?? environment["C11_SURFACE_ID"],
+        guard let surfaceId = Self.callerTabEnv(environment),
               UUID(uuidString: surfaceId) != nil else {
-            throw CLIError(message: "\(commandName) requires a c11 surface id")
+            throw CLIError(message: "\(commandName) requires a c11 tab id")
         }
         let response = try sendV1Command(
             "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)",
@@ -16364,7 +16635,7 @@ struct CMUXCLI {
         let hookArgs = Array(commandArgs.dropFirst())
         let hookWsFlag = optionValue(hookArgs, name: "--workspace")
         let workspaceArg = hookWsFlag ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
-        let surfaceArg = optionValue(hookArgs, name: "--surface") ?? (hookWsFlag == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+        let surfaceArg = optionValue(hookArgs, name: "--surface") ?? (hookWsFlag == nil ? Self.callerTabEnv() : nil)
         let rawInput = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
         // C11-24 diagnostic: when CMUX_HOOK_DEBUG_PATH is set, dump the
         // raw stdin JSON to that path before parsing. Used to verify the
@@ -16434,7 +16705,7 @@ struct CMUXCLI {
                 let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedSessionId.isEmpty, !surfaceId.isEmpty {
                     var pushParams: [String: Any] = [
-                        "surface_id": surfaceId,
+                        "tab_id": surfaceId,
                         "kind": "claude-code",
                         "id": trimmedSessionId,
                         "source": "hook",
@@ -16471,7 +16742,7 @@ struct CMUXCLI {
             // claude with no per-agent config write. Advisory only: the hook
             // must never fail startup, and jsonString() degrades to "{}" on any
             // malformed input, so the worst case is a session with no nudge.
-            let orientation = "You are running inside a c11 surface: c11 is the terminal multiplexer hosting this session. Before other work, load the c11 skill. It owns tab naming, splits, surface targeting, sub-agent orchestration, the embedded browser, and sidebar telemetry. As your first action, name this tab so the operator can see your role: c11 rename-tab --surface \"$C11_SURFACE_ID\" \"<2-4 word role>\". A working agent must not sit under \"Awaiting first task\"."
+            let orientation = "You are running inside a c11 tab: c11 is the terminal multiplexer hosting this session. Before other work, load the c11 skill. It owns tab naming, splits, tab targeting, sub-agent orchestration, the embedded browser, and sidebar telemetry. As your first action, name this tab so the operator can see your role: c11 rename-tab --tab \"$C11_TAB_ID\" \"<2-4 word role>\". A working agent must not sit under \"Awaiting first task\"."
             let hookOutput: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "SessionStart",
@@ -16679,7 +16950,7 @@ struct CMUXCLI {
                     let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
                         var params: [String: Any] = [
-                            "surface_id": surfaceId,
+                            "tab_id": surfaceId,
                             "kind": "claude-code",
                             "id": trimmed,
                             "source": "hook",
@@ -16791,7 +17062,7 @@ struct CMUXCLI {
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--surface <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 
@@ -16930,7 +17201,7 @@ struct CMUXCLI {
             return raw
         }
         if let raw, !raw.isEmpty, let candidate = try? resolveWorkspaceId(raw, client: client) {
-            let probe = try? client.sendV2(method: "surface.list", params: ["workspace_id": candidate])
+            let probe = try? client.sendV2(method: "tab.list", params: ["workspace_id": candidate])
             if probe != nil {
                 return candidate
             }
@@ -17584,8 +17855,7 @@ struct CMUXCLI {
           c11 [global-options] <command> [options]
 
         Handle Inputs:
-          Use UUIDs, short refs (window:1/workspace:2/pane:3/surface:4), or indexes where commands accept window, workspace, pane, or surface inputs.
-          `tab-action` also accepts `tab:<n>` in addition to `surface:<n>`.
+          Use UUIDs, short refs (window:1/workspace:2/area:3/tab:4), or indexes where commands accept window, workspace, area, or tab inputs.
           Output defaults to refs; pass --id-format uuids or --id-format both to include UUIDs.
 
         Socket Path:
@@ -17607,7 +17877,7 @@ struct CMUXCLI {
           version
           capabilities
           brand [--json]
-          identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
+          identify [--workspace <id|ref|index>] [--tab <id|ref|index>] [--no-caller]
           list-windows
           current-window
           new-window
@@ -17624,30 +17894,30 @@ struct CMUXCLI {
           workspace export-blueprint --name <name> [--workspace <ref>] [--description <text>] [--out <path>] [--force]
           ssh <destination> [--name <title>] [--port <n>] [--identity <path>] [--ssh-option <opt>] [-- <remote-command-args>]
           remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
-          new-split <left|right|up|down> [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>] [--title <text>]
-          list-panes [--workspace <id|ref>]
-          list-pane-surfaces [--workspace <id|ref>] [--pane <id|ref>]
+          new-split <left|right|up|down> [--workspace <id|ref>] [--tab <id|ref>] [--title <text>]
+          list-areas [--workspace <id|ref>]
+          list-area-tabs [--workspace <id|ref>] [--area <id|ref>]
           tree [--all] [--workspace <id|ref|index>]
-          focus-pane --pane <id|ref> [--workspace <id|ref>]
-          new-pane [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
-          new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
-          close-surface [--surface <id|ref>] [--workspace <id|ref>]
-          move-surface --surface <id|ref|index> [--pane <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
-          reorder-surface --surface <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
-          tab-action --action <name> [--tab <id|ref|index>] [--surface <id|ref|index>] [--workspace <id|ref|index>] [--title <text>] [--url <url>]
-          rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] <title>
-          set-title [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] <title>
-          set-description [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] [--auto-expand=false] <text>
-          get-titlebar-state [--workspace <id|ref>] [--surface <id|ref>] [--json]
-          drag-surface-to-split --surface <id|ref> <left|right|up|down>
-          refresh-surfaces
-          surface-health [--workspace <id|ref>]
+          focus-area --area <id|ref> [--workspace <id|ref>]
+          new-area [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
+          new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
+          close-tab [--tab <id|ref>] [--workspace <id|ref>]
+          move-tab --tab <id|ref|index> [--area <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
+          reorder-tab --tab <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
+          tab-action --action <name> [--tab <id|ref|index>] [--workspace <id|ref|index>] [--title <text>] [--url <url>]
+          rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
+          set-title [--workspace <id|ref>] [--tab <id|ref>] [--source <src>] <title>
+          set-description [--workspace <id|ref>] [--tab <id|ref>] [--source <src>] [--auto-expand=false] <text>
+          get-titlebar-state [--workspace <id|ref>] [--tab <id|ref>] [--json]
+          drag-tab-to-split --tab <id|ref> <left|right|up|down>
+          refresh-tabs
+          tab-health [--workspace <id|ref>]
           health [--since <duration> | --since-boot] [--rail <name>] [--json]
           doctor [--json]
-          trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--color <#hex>] [--persistent]
-          cancel-flash [--workspace <id|ref>] [--surface <id|ref>]
-          list-panels [--workspace <id|ref>]
-          focus-panel --panel <id|ref> [--workspace <id|ref>]
+          trigger-flash [--workspace <id|ref>] [--tab <id|ref>] [--color <#hex>] [--persistent]
+          cancel-flash [--workspace <id|ref>] [--tab <id|ref>]
+          list-tabs [--workspace <id|ref>]
+          focus-tab --tab <id|ref> [--workspace <id|ref>]
           close-workspace --workspace <id|ref>
           select-workspace --workspace <id|ref>
           rename-workspace [--workspace <id|ref>] <title>
@@ -17655,27 +17925,27 @@ struct CMUXCLI {
           get-workspace-root [--workspace <id|ref>] [--json]
           rename-window [--workspace <id|ref>] <title>
           current-workspace
-          read-screen [--workspace <id|ref>] [--surface <id|ref>] [--scrollback] [--lines <n>]
-          send [--workspace <id|ref>] [--surface <id|ref>] <text>
-          send-key [--workspace <id|ref>] [--surface <id|ref>] <key>
-          send-panel --panel <id|ref> [--workspace <id|ref>] <text>
-          send-key-panel --panel <id|ref> [--workspace <id|ref>] <key>
-          notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--surface <id|ref>]
-          pane-confirm --panel <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
+          read-screen [--workspace <id|ref>] [--tab <id|ref>] [--scrollback] [--lines <n>]
+          send [--workspace <id|ref>] [--tab <id|ref>] <text>
+          send-key [--workspace <id|ref>] [--tab <id|ref>] <key>
+          send-tab --tab <id|ref> [--workspace <id|ref>] <text>
+          send-key-tab --tab <id|ref> [--workspace <id|ref>] <key>
+          notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--tab <id|ref>]
+          area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
           list-notifications
           clear-notifications
-          claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
-          set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
-          default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
-          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+          claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]
+          set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--tab <id|ref>] [--workspace <id|ref>]
+          default-agent {get | set <type> | launch [--in-tab <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
           model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
-          raise-flag --surface <id|ref> "<reason>"
-          lower-flag --surface <id|ref>
-          suppress --surface <id|ref>
-          unsuppress --surface <id|ref>
-          set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
-          get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
-          clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+          raise-flag --tab <id|ref> "<reason>"
+          lower-flag --tab <id|ref>
+          suppress --tab <id|ref>
+          unsuppress --tab <id|ref>
+          set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
+          get-metadata [--key <K> ...] [--sources] [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>]
+          clear-metadata [--key <K> ...] [--source <src>] [--tab <id|ref> | --area <id|ref>] [--workspace <id|ref>]
           set-workspace-metadata <key> <value> | --key <K> --value <V> | --json '{...}'  [--workspace <id|ref>]
           get-workspace-metadata [<key>] [--workspace <id|ref>]
           clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>]
@@ -17705,10 +17975,10 @@ struct CMUXCLI {
           respawn-pane [--workspace <id|ref>] [--surface <id|ref>] [--command <cmd>]
           display-message [-p|--print] <text>
 
-          markdown [open] <path>             (open markdown file in formatted viewer panel with live reload)
+          markdown [open] <path>             (open markdown file in formatted viewer tab with live reload)
 
-          browser [--surface <id|ref|index> | <surface>] <subcommand> ...
-          browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if surface supplied, behaves like navigate)
+          browser [--tab <id|ref|index> | <tab>] <subcommand> ...
+          browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if tab supplied, behaves like navigate)
           browser open-split [url] [--allow-insecure-http]
           browser goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
           browser back|forward|reload [--snapshot-after]
@@ -17739,15 +18009,15 @@ struct CMUXCLI {
           browser addinitscript <script>
           browser addscript <script>
           browser addstyle <css>
-          browser identify [--surface <id|ref|index>]
+          browser identify [--tab <id|ref|index>]
           events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
           help
 
         Environment:
           CMUX_WORKSPACE_ID   Auto-set in c11 terminals. Used as default --workspace for
-                              ALL commands (send, list-panels, new-split, notify, etc.).
-          CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
-          CMUX_SURFACE_ID     Auto-set in c11 terminals. Used as default --surface.
+                              ALL commands (send, list-tabs, new-split, notify, etc.).
+          C11_TAB_ID          Auto-set in c11 terminals. Used as default --tab.
+          CMUX_TAB_ID         Legacy alias for C11_TAB_ID.
           C11_SOCKET          Override the Unix socket path (preferred). Takes precedence over
                               CMUX_SOCKET_PATH and CMUX_SOCKET.
           CMUX_SOCKET_PATH    Legacy alias for C11_SOCKET. Still accepted; loses to C11_SOCKET when both set.
@@ -18348,7 +18618,7 @@ extension CMUXCLI {
             try runMailboxOutboxDirCommand(subArgs: rest, client: client)
         case "inbox-dir":
             try runMailboxInboxDirCommand(subArgs: rest, client: client)
-        case "surface-name":
+        case "tab-name", "surface-name":
             try runMailboxSurfaceNameCommand(subArgs: rest, client: client)
         case "new-id":
             print(MailboxULID.make())
@@ -18363,30 +18633,29 @@ extension CMUXCLI {
         """
         c11 mailbox — inter-agent messaging
 
-        Per-workspace messaging primitive for coordinating between c11 surfaces.
+        Per-workspace messaging primitive for coordinating between c11 tabs.
         Full guide: docs/c11-mailbox-guide.md (agent quick-reference: skills/c11/SKILL.md).
 
-          send       deliver an envelope to a surface in any workspace
+          send       deliver an envelope to a tab in any workspace
           recv       drain or peek the caller's inbox
           trace      pretty-print _dispatch.log lines for an envelope id
           tail       follow _dispatch.log
           outbox-dir print the caller's outbox directory (for raw-bash writers)
           inbox-dir  print the caller's inbox directory (for raw-bash readers)
-          surface-name
-                     print the caller's surface title (for `from` auto-fill)
+          tab-name   print the caller's tab title (for `from` auto-fill)
           new-id     print a fresh Crockford base32 ULID (26 chars)
 
         Send flags:
-          --to <surface>          recipient surface name (any workspace)
+          --to <tab>              recipient tab name (any workspace)
           --to-workspace <ref>    disambiguate a name shared across workspaces
           --topic <topic>         dotted topic token
           --body <text>           inline body (≤ 4096 bytes UTF-8)
           --body-ref <path>       absolute path to external body (body must be empty)
-          --reply-to <surface>    surface that should receive the reply
+          --reply-to <tab>        tab that should receive the reply
           --in-reply-to <ulid>    envelope id this is replying to
           --urgent                sender hint (handlers may ignore)
           --ttl-seconds <n>       advisory expiry
-          --from <surface>        override caller's resolved title
+          --from <tab>            override caller's resolved title
           --id <ulid>             pin envelope id (testing / replay)
           --ts <rfc3339>          pin timestamp (testing / replay)
           --content-type <mime>   MIME hint for body or body_ref
@@ -18394,17 +18663,17 @@ extension CMUXCLI {
         Recv flags:
           --drain                 default — list, print, unlink
           --peek                  list + print only
-          --surface <name>        override caller's resolved surface
+          --tab <name>            override caller's resolved tab
         """
     }
 
     // MARK: - Caller resolution
 
-    /// Returns the caller's workspace UUID and surface name. Workspace UUID
+    /// Returns the caller's workspace UUID and tab name. Workspace UUID
     /// comes from the CMUX_WORKSPACE_ID (or C11_WORKSPACE_ID alias) env var
-    /// that every surface shell inherits. Surface name is looked up via
-    /// `surface.get_metadata`. Pass an override when scripting without a
-    /// live c11 surface.
+    /// that every tab shell inherits. Tab name is looked up via
+    /// `tab.get_metadata`. Pass an override when scripting without a
+    /// live c11 tab.
     private func resolveMailboxCaller(
         client: SocketClient,
         fromOverride: String?,
@@ -18417,7 +18686,7 @@ extension CMUXCLI {
             let workspaceId = UUID(uuidString: workspaceIdStr)
         else {
             throw CLIError(
-                message: "CMUX_WORKSPACE_ID not set — run from inside a c11 surface or script with --from override and env"
+                message: "CMUX_WORKSPACE_ID not set — run from inside a c11 tab or script with --from override and env"
             )
         }
 
@@ -18425,16 +18694,16 @@ extension CMUXCLI {
             return (workspaceId, name)
         }
 
-        let surfaceIdStr = env["CMUX_SURFACE_ID"] ?? env["C11_SURFACE_ID"]
+        let surfaceIdStr = Self.callerTabEnv(env)
         guard let surfaceIdStr else {
-            throw CLIError(message: "CMUX_SURFACE_ID not set — pass --from <surface> to override")
+            throw CLIError(message: "C11_TAB_ID not set — pass --from <tab> to override")
         }
 
         let payload = try client.sendV2(
-            method: "surface.get_metadata",
+            method: "tab.get_metadata",
             params: [
                 "workspace_id": workspaceIdStr,
-                "surface_id": surfaceIdStr
+                "tab_id": surfaceIdStr
             ]
         )
         let metadata = (payload["metadata"] as? [String: Any]) ?? [:]
@@ -18442,7 +18711,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.surface-not-found",
-                    defaultValue: "No surface named %@ in this workspace."
+                    defaultValue: "No tab named %@ in this workspace."
                 ).replacingOccurrences(of: "%@", with: "(untitled)")
             )
         }
@@ -18488,7 +18757,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.topics-not-implemented",
-                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <surface-name> to send now."
+                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <tab-name> to send now."
                 )
             )
         }
@@ -18634,7 +18903,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.unresolved-recipient",
-                    defaultValue: "No live surface named \"%@\" in any workspace. Message not sent."
+                    defaultValue: "No live tab named \"%@\" in any workspace. Message not sent."
                 ).replacingOccurrences(of: "%@", with: to)
             )
         }
@@ -18651,7 +18920,7 @@ extension CMUXCLI {
         }
         let header = String(
             localized: "mailbox.cli.error.ambiguous-header",
-            defaultValue: "Surface \"%@\" exists in more than one workspace:"
+            defaultValue: "Tab \"%@\" exists in more than one workspace:"
         ).replacingOccurrences(of: "%@", with: to)
         let hint = String(
             localized: "mailbox.cli.error.ambiguous-hint",

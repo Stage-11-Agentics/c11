@@ -121,11 +121,11 @@ def main() -> int:
             "workspace.next",
             "workspace.previous",
             "workspace.last",
-            "pane.swap",
-            "pane.break",
-            "pane.join",
-            "pane.last",
-            "surface.clear_history",
+            "area.swap",
+            "area.break",
+            "area.join",
+            "area.last",
+            "tab.clear_history",
         ]:
             _must(method in methods, f"Missing capability {method!r}")
 
@@ -180,7 +180,10 @@ def main() -> int:
         _run_cli(cli, ["last-window"])
         _must(c.current_workspace() == ws, f"last-window should navigate history back to ws={ws}")
         _run_cli(cli, ["next-window"])
-        _must(c.current_workspace() == ws2, f"next-window should move to ws2={ws2}")
+        # New workspaces may be placed right after the current one, so "next" is whichever follows ws.
+        order = [row[1] for row in c.list_workspaces()]
+        expected_next = order[(order.index(ws) + 1) % len(order)]
+        _must(c.current_workspace() == expected_next, f"next-window should move to {expected_next} (ws2={ws2}, ws3={ws3})")
         _run_cli(cli, ["previous-window"])
         _must(c.current_workspace() == ws, f"previous-window should move back to ws={ws}")
         c.select_workspace(ws)

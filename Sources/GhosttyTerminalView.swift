@@ -3511,19 +3511,23 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_WORKSPACE_ID", tabId.uuidString)
-        // Backward-compatible shell integration keys used by existing scripts/tests.
-        // Both CMUX_PANEL_ID and CMUX_TAB_ID are legacy aliases for the surface UUID —
-        // the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py both expect
-        // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
+        // Canonical tab id is C11_TAB_ID (the C11_ twin of CMUX_TAB_ID). CMUX_PANEL_ID,
+        // CMUX_SURFACE_ID / C11_SURFACE_ID and C11_PANEL_ID hold the same UUID as hidden
+        // aliases; the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py expect
+        // CMUX_TAB_ID to resolve to a tab (accepts `tab:<n>` or `surface:<n>`).
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
-        // The integer N of this surface's `surface:N` handle — the number the
-        // tab bar displays when "Show surface IDs in tab titles" is on. C11_-only
-        // (no CMUX twin), like C11_SOCKET_PATH. Address yourself as
-        // `surface:$C11_SURFACE_NUM`; a bare integer is a positional index.
+        // The integer N of this tab's `tab:N` handle — the number the tab bar
+        // displays when "Show tab IDs in tab titles" is on. C11_-only (no CMUX
+        // twin), like C11_SOCKET_PATH. Address yourself as `tab:$C11_TAB_NUM`;
+        // a bare integer is a positional index. `C11_SURFACE_NUM` carries the
+        // same value as a hidden alias. (`C11_AREA_ID` is deliberately not
+        // set: a tab's area changes when it moves, so a launch-time value
+        // would go stale.)
         let surfaceNum = MainActor.assumeIsolated {
             TerminalController.shared.surfaceOrdinal(forSurfaceUUID: id)
         }
+        setManagedEnvironmentValue("C11_TAB_NUM", String(surfaceNum))
         setManagedEnvironmentValue("C11_SURFACE_NUM", String(surfaceNum))
         // Inject the *actually-bound* socket path (not the recomputed resolution
         // path) so a build that fell back to a safe alternate path (C11-155) still
@@ -6536,7 +6540,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let manifestItem = menu.addItem(
                 withTitle: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Surface Details"
+                    defaultValue: "Tab Details"
                 ),
                 action: #selector(showSurfaceManifest(_:)),
                 keyEquivalent: ""

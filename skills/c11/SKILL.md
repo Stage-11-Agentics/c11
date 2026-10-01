@@ -1,26 +1,26 @@
 ---
 name: c11
 version: 1
-description: c11 is a native macOS terminal multiplexer. Load this skill anytime any of the following attributes are hit: (1) session is inside c11 (`C11_SHELL_INTEGRATION=1`), (2) working with panes, surfaces, workspaces, splits, or tabs, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents, (5) declaring agent identity, setting title/description, or reporting sidebar status, (6) using the embedded browser or markdown surfaces, (7) any c11-specific command or troubleshooting question. When in doubt, load it.
+description: c11 is a native macOS terminal multiplexer. Load this skill anytime any of the following attributes are hit: (1) session is inside c11 (`C11_SHELL_INTEGRATION=1`), (2) working with workspaces, areas, tabs, or splits, (3) sending text or commands to another tab, (4) launching or orchestrating sub-agents, (5) declaring agent identity, setting title/description, or reporting sidebar status, (6) using the embedded browser or markdown tabs, (7) any c11-specific command or troubleshooting question. When in doubt, load it.
 ---
 
 # c11
 
-**c11** is a native macOS terminal multiplexer for the operator:agent pair. One operator runs many agents in parallel; c11 gives every terminal, browser, and markdown surface a handle so the whole field stays legible. Hierarchy: **window → workspace (a sidebar tab) → pane (a split region) → surface (a terminal, browser, or markdown viewer)**.
+**c11** is a native macOS terminal multiplexer for the operator:agent pair. One operator runs many agents in parallel; c11 gives every terminal, browser, and markdown tab a handle so the whole field stays legible. Hierarchy: **window → workspace (a sidebar entry) → area (a split region) → tab (a terminal, browser, or markdown viewer)**.
 
 This card is deliberately short. It covers **orientation** — the one thing every agent does on launch — and a **map** of everything else. Load the named reference when you reach for a capability; don't pull in depth you don't need.
 
 ## Detect c11
 
-`C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_SURFACE_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
+`C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_TAB_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
-Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`, `tab:1`. **A bare number from the operator is a surface ref.** With the "Show Surface IDs in Tab Titles" setting on, every tab displays `N: title` where N is its `surface:N` ordinal — so "send that to 292" means target `surface:292` (with its `--workspace`). Always write the `surface:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_SURFACE_NUM`.
+Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `tab:3`. **A bare number from the operator is a tab ref.** With the "Show Tab Numbers in Tab Titles" setting on, every tab displays `N: title` where N is its `tab:N` ordinal — so "send that to 292" means target `tab:292` (with its `--workspace`). Always write the `tab:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_TAB_NUM`.
 
-**Where new work goes:** a new **pane** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **surface** when a pane just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise. **Wanting agents isolated from each other is not a reason for a new workspace** — same-workspace agents are already separate processes with separate context; blindness between agents comes from their prompts, never from topology (see [references/orchestration.md](references/orchestration.md#isolation-is-a-prompt-rule-not-a-topology-rule)).
+**Where new work goes:** a new **area** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **tab** when an area just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise. **Wanting agents isolated from each other is not a reason for a new workspace** — same-workspace agents are already separate processes with separate context; blindness between agents comes from their prompts, never from topology (see [references/orchestration.md](references/orchestration.md#isolation-is-a-prompt-rule-not-a-topology-rule)).
 
 ## Boot fast, orient lazily
 
-**Codex: capture your exact thread before other orientation work.** From one of your own tool subprocesses, run `c11 conversation capture-runtime` with no arguments. It reads `CODEX_THREAD_ID`, the agreeing `C11_SURFACE_ID` / `CMUX_SURFACE_ID` aliases, and the subprocess's actual cwd itself. Never expand, copy, relay, or add those values as flags; an orchestrator cannot truthfully capture a child agent's runtime identity on its behalf.
+**Codex: capture your exact thread before other orientation work.** From one of your own tool subprocesses, run `c11 conversation capture-runtime` with no arguments. It reads `CODEX_THREAD_ID`, the agreeing `C11_TAB_ID` value, and the subprocess's actual cwd itself. Never expand, copy, relay, or add those values as flags; an orchestrator cannot truthfully capture a child agent's runtime identity on its behalf.
 
 The bundled Codex wrapper separately marks each interactive process boundary. Its internal `--expected-resume-id` claim intent preserves an existing exact ref only for the same explicit `codex resume <uuid>`; plain launches and mismatches invalidate the prior lifecycle until this target performs runtime capture. Agents and orchestrators must not call that internal option or treat argv as causal identity.
 
@@ -28,28 +28,28 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 
 **You'll usually load this skill because a task arrived** that touches the workspace (a split, a status report, a browser check). When that happens, orient in place and keep moving — at minimal effort, no per-command deliberation:
 
-- Refine the placeholder into your real role: `c11 rename-tab --surface "$C11_SURFACE_ID" "<2–4 word role>"`. The sidebar is the operator's only view into a room of parallel agents, so a working agent must not sit under "Awaiting first task".
-- Say why it's open right now: `c11 set-description --surface "$C11_SURFACE_ID" "<current context>"` — this is your live subtitle, the line the operator reads under your name (contract below).
-- If your model chip is blank (an unpinned launch c11 couldn't label), set it: `c11 set-agent --surface "$C11_SURFACE_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"` — substitute your own known type/model if those vars are empty.
+- Refine the placeholder into your real role: `c11 rename-tab --tab "$C11_TAB_ID" "<2–4 word role>"`. The sidebar is the operator's only view into a room of parallel agents, so a working agent must not sit under "Awaiting first task".
+- Say why it's open right now: `c11 set-description --tab "$C11_TAB_ID" "<current context>"` — this is your live subtitle, the line the operator reads under your name (contract below).
+- If your model chip is blank (an unpinned launch c11 couldn't label), set it: `c11 set-agent --tab "$C11_TAB_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"` — substitute your own known type/model if those vars are empty.
 - Reach for `c11 tree` / `c11 identify --json` only when you actually need layout or your refs (footgun below).
 - Read a reference (map below) only for the capability you're using — not preemptively.
-- **Declare a stable mailbox address** if peers will reach you: `c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Depth → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
+- **Declare a stable mailbox address** if peers will reach you: `c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Depth → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
 
 **Launched with only a hydrate message and no task yet?** An operator can configure a "load the skill" launch prompt, so your first turn may carry no real task. Don't invent a title — leave the placeholder, reply in one line that you're ready, and set your real title/description from the next real message, as your first action that turn.
 
-> **Pass `--surface` explicitly on surface- or tab-scoped writes.** Every surface exports `$C11_SURFACE_ID` (inherited by subprocesses), so `--surface "$C11_SURFACE_ID"` targets you correctly. As of C11-165 a surface-scoped write with a **missing or empty** ref no longer silently falls back to the operator-focused surface — it is **rejected** with a clear error (`missing_ref` / `empty_ref`), so an omitted or empty flag fails loudly instead of stomping a peer agent's tab. You must therefore still pass a valid ref: if `$C11_SURFACE_ID` reads empty, capture your refs once from `c11 identify --json` and pass the literal `surface:<n>` (robust on any build). Applies to every surface/tab write (`set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, `trigger-flash`) and to the tab-scoped sidebar writes (`set-status`, `set-progress`, `log`), which require `--workspace`/`--tab` (auto-supplied from `$C11_WORKSPACE_ID` inside a pane; a ref-less call from a bare shell or cron is now rejected rather than routed to the selected tab). Verify the first write with `c11 get-titlebar-state --surface <surface>` against the surface marked `◀ here` in `c11 tree --no-layout`.
+> **Pass `--tab` explicitly on tab-scoped writes.** Every tab exports `$C11_TAB_ID` (inherited by subprocesses), so `--tab "$C11_TAB_ID"` targets you correctly. A tab-scoped write with a **missing or empty** ref is **rejected** with a clear error (`missing_ref` / `empty_ref`) rather than falling back to the operator-focused tab, so an omitted or empty flag fails loudly instead of stomping a peer agent's tab. You must therefore still pass a valid ref: if `$C11_TAB_ID` reads empty, capture your refs once from `c11 identify --json` and pass the literal `tab:<n>`. Applies to every tab write (`set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, `trigger-flash`) The sidebar writes (`set-status`, `set-progress`, `log`) take `--workspace` (auto-supplied from `$C11_WORKSPACE_ID` inside an area; pass it explicitly from a bare shell or cron). On them `--tab <ref>` names a tab, mirrors the status onto it, and needs a workspace to resolve in; a bare number is rejected as ambiguous. Verify the first write with `c11 get-titlebar-state --tab <tab>` against the tab marked `◀ here` in `c11 tree --no-layout`.
 
 ### Title vs description: identity and the live subtitle
 
 - **Title = stable identity.** 2–3 words, role-first, DISTINCT from siblings — make the first word differ; the leading characters are all that survive sidebar truncation. A ticket ID is welcome (`C11-184 Attention`). No `Parent :: Child` chains, no shared prefixes. Rename only when your role or mission changes; check `c11 get-titlebar-state` first.
 - **Description = your live subtitle.** The operator reads it in three places: in the bar under the tabs (the bar shows only the description), as the subtitle row in the tab sheet, and flattened to one truncated line in the sidebar. First sentence carries what you are doing *now* and the next meaningful gate, present tense: `"Auditing retry admission against the shipped tests; next, verify cancellation."` — not "Reviewing the code."
-- **Plain English always.** A ticket number may appear in the subtitle, never *as* the subtitle — the operator should not need a tracker lookup to know what a surface is doing.
+- **Plain English always.** A ticket number may appear in the subtitle, never *as* the subtitle — the operator should not need a tracker lookup to know what a tab is doing.
 - **Refresh at transitions** (task start, phase change, blocker hit or cleared, handoff) — not after every command. The description never decays, so a stale one is a lie the operator cannot detect. A working agent must not sit under a stale subtitle; same register as tab naming.
 - **Lineage is the LAST line**: `Lineage: <parent> → <role>`. Arrow, never `::`. Ancestry is static; the line that survives truncation must be the live one. Preserve it on every update.
 
 ## Flags and suppression (the attention model)
 
-Your surface's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
+Your tab's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
 Two independent modifiers sit over it. A flag is **attention** priority, not scheduling
 priority; suppression reroutes routine attention, it never blocks escalation.
 
@@ -63,8 +63,8 @@ priority; suppression reroutes routine attention, it never blocks escalation.
 ### Flag
 
 ```bash
-c11 raise-flag --surface "$C11_SURFACE_ID" "Need a call on schema migration vs dual-write"
-c11 lower-flag --surface "$C11_SURFACE_ID"
+c11 raise-flag --tab "$C11_TAB_ID" "Need a call on schema migration vs dual-write"
+c11 lower-flag --tab "$C11_TAB_ID"
 c11 launch-agent ... --flag "Watch the migration" --by operator
 ```
 
@@ -79,7 +79,7 @@ as the sentence you would say if the operator walked over. Policy differs by ori
 
 A flag is **sticky** — it holds until dismissed or lowered, and if you are also stopped the
 mark strobes, the strongest signal c11 has. **Expect at least nine in ten agents to never
-carry one**; the tier's power is its scarcity. Typing into the flagged surface lowers the
+carry one**; the tier's power is its scarcity. Typing into the flagged tab lowers the
 flag immediately — an operator's first keystroke of a reply is the answer arriving — so a
 flag that vanishes mid-conversation was answered, not lost. Otherwise a dismissed flag was
 *seen*: `flag.lowered` carries `by`, and operator dismissal without an answer means seen
@@ -88,22 +88,22 @@ doesn't. All four attention verbs accept `--by agent|operator`, defaulting to `a
 `--by operator` only when acting on the operator's instruction, so the event trail stays
 honest.
 
-Every raise sent from inside c11 also records the calling surface UUID as
-`flag_caller_surface_id`; agent-originated raises are rejected when c11 cannot identify that
+Every raise sent from inside c11 also records the calling tab UUID as
+`flag_caller_tab_id`; agent-originated raises are rejected when c11 cannot identify that
 caller. An operator-originated raise outside c11 may omit it. This is attribution, not a copied
-display identity: resolve the UUID against current surface metadata or conversation state, and
+display identity: resolve the UUID against current tab metadata or conversation state, and
 fall back to the raw UUID after the caller closes. `flag.raised` events carry the same
-`caller_surface_id` plus `by`.
+`caller_tab_id` plus `by`.
 
 ### Suppression
 
 ```bash
-c11 suppress --surface "$C11_SURFACE_ID"
-c11 unsuppress --surface "$C11_SURFACE_ID"
+c11 suppress --tab "$C11_TAB_ID"
+c11 unsuppress --tab "$C11_TAB_ID"
 c11 launch-agent ... --suppressed     # set at dispatch by the parent
 ```
 
-A suppressed surface never enters needs-attention: on stop its mark reads idle, and it is
+A suppressed tab never enters needs-attention: on stop its mark reads idle, and it is
 excluded from waiting counts, ⌥V, and routine waiting-derived notifications. The notification
 record still lands in the store; the `flag.raise` notification is the deliberate exception,
 because a flag overrides suppression completely.
@@ -121,7 +121,7 @@ metadata key, a `send`) and put this contract in its prompt:
 ### Reading attention state
 
 ```bash
-c11 get-metadata --surface surface:12    # flag + flag_caller_surface_id / suppressed, when set
+c11 get-metadata --tab tab:12    # flag + flag_caller_tab_id / suppressed, when set
 ```
 
 `tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read.
@@ -132,30 +132,30 @@ c11 get-metadata --surface surface:12    # flag + flag_caller_surface_id / suppr
 
 | You want to… | Load |
 |---|---|
-| split / create / resize panes & surfaces, `tree`, `send`, `read-screen`, targeting, `--cwd` | [references/api.md](references/api.md) |
+| split / create / resize areas & tabs, `tree`, `send`, `read-screen`, targeting, `--cwd` | [references/api.md](references/api.md) |
 | launch a typed agent (`launch-agent`); save/list/launch reusable agent configs + read launch stats (`c11 config …`) | [references/api.md](references/api.md) |
 | launch sub-agents, the tab-naming convention, layout patterns, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
-| surface-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
+| tab-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
 | workspace persistence, snapshots, the conversation store & resume | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |
 | drive the embedded browser (validate UI without leaving c11) | [c11-browser skill](../c11-browser/SKILL.md) |
-| open markdown surfaces with live reload | [c11-markdown skill](../c11-markdown/SKILL.md) |
+| open markdown tabs with live reload | [c11-markdown skill](../c11-markdown/SKILL.md) |
 
 A few cross-cutting rules worth knowing before you reach for those:
 
-- **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-panes` / `list-pane-surfaces`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
-- **Per-tab `last_seen_at` says when the operator last looked at a tab.** Every surface in `c11 tree --json` / `surface.list` carries `last_seen_at` (ISO-8601, second precision, `null` = never seen) and `being_seen`. A tab is seen while it is the selected tab of the focused pane in the selected workspace of the key c11 window, with c11 frontmost, the window on the active Space and visible, and the screen unlocked. Because it follows what is on screen, a socket focus change while c11 is in the background stamps nothing; while c11 is frontmost it stamps the tab that left and marks the new one `being_seen`. Details: [references/api.md](references/api.md).
-- **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --surface <s> "npm test"`. Writing `--text "…"` types the literal string `--text` into the terminal.
-- **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--surface` *together* when the target isn't your own surface; `--window` alone is not enough. An empty or stale ref (`--surface ""`, a dead `surface:99`) is an error, not a quiet fallback to whatever pane is focused.
+- **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-areas` / `list-area-tabs`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
+- **Per-tab `last_seen_at` says when the operator last looked at a tab.** Every tab in `c11 tree --json` / `tab.list` carries `last_seen_at` (ISO-8601, second precision, `null` = never seen) and `being_seen`. A tab is seen while it is the selected tab of the focused area in the selected workspace of the key c11 window, with c11 frontmost, the window on the active Space and visible, and the screen unlocked. Because it follows what is on screen, a socket focus change while c11 is in the background stamps nothing; while c11 is frontmost it stamps the tab that left and marks the new one `being_seen`. Details: [references/api.md](references/api.md).
+- **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --tab <t> "npm test"`. Writing `--text "…"` types the literal string `--text` into the terminal.
+- **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.
 - **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
 
 ## Tab bar and tab sheet
 
-**The strip.** Tabs stay visible: when they overflow, the strip scrolls sideways (edge fades show more off either end; a vertical wheel or two-finger scroll over it scrolls it too) and folds into the solid block only when under about 150pt remain for tabs after the count cell and controls. With "Show Surface IDs in Tab Titles" on, each tab carries its number in mono, gold on the visible tab.
+**The strip.** Tabs stay visible: when they overflow, the strip scrolls sideways (edge fades show more off either end; a vertical wheel or two-finger scroll over it scrolls it too) and folds into the solid block only when under about 150pt remain for tabs after the count cell and controls. With "Show Tab Numbers in Tab Titles" on, each tab carries its number in mono, gold on the visible tab.
 
 **The count cell** (`● ⌄ N`: attention dot, chevron, number) is on every bar. In the default layout it opens the area's tab sheet, a drawer exactly as wide as its area (320pt minimum): one two-line row per tab with its number (`Tab171`) and, under it, the tab's lifecycle mark, agent (`Harness · model`; the model is the one the agent is actually using, read from its own session files: an agent's `set-agent --model` wins, then the detected model, then what `launch-agent` asked for), the state word with how long **that state** has held (`working 12m`, `waiting 6m`, `flagged 14m`, `idle 48m`), the live description as the subtitle (cwd, host or file path when there is none), and clocks. Columns drop by area width: 820+ everything, 600-819 the first clock only, 440-599 the agent moves to line 2 and clocks go, under 440 just number (with its mark), title and status. Hovering a row lights its tab in the strip and the reverse. **Active** is the time since something was *added* to the tab, per type: an agent tab, its last assistant message or tool result (from the transcript); a plain terminal, the later of output that scrolled the scrollback while the tab was visible and the last command start or finish (a hidden terminal sees command edges only); a markdown tab, its last content change (file mtime at load); a browser tab, its last page load. Operator input is never part of Active. **Launched** is the time since it opened; **Seen** is the time since the operator last looked at the tab (`now` while they are looking; `—` if never). Opt-in clocks, not in the default order (`active,seen,launched`), and with no signal a clock reads `—`: `touched` (last keystroke or click by the operator, including typing in the text box; keys `c11 send` synthesizes do not count), and for agent tabs `turn` (how long the current or last turn ran), `tools` (tool calls this turn) and `tokens` (fresh input + output tokens this turn; opencode shows its session total, and opencode/Grok/Kimi/Copilot have no turn data). The clock order is one ordered list, a user default read each time a sheet opens (unknown names ignored). Write it as a string, or as an array:
 
@@ -166,7 +166,7 @@ defaults write com.stage11.c11 c11.tabSheet.clocks -string "active,touched,turn,
 defaults delete com.stage11.c11 c11.tabSheet.clocks                           # back to active,seen,launched
 ```
 
-**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `TabN · title`, and each area remembers its rail open or closed across relaunch. It is also in Settings > General > Surfaces > Tab Layout. Change it in one command:
+**Tab layout** is a setting: `tabs` (default) or `rail`. In `rail` the count cell toggles a vertical tab list docked on the area's left edge (about 38% of the area, 200-300pt; it pushes the content over), the bar shows the visible tab's `TabN · title`, and each area remembers its rail open or closed across relaunch. It is also in Settings > General > Tabs & Areas > Tab Layout. Change it in one command:
 
 ```bash
 defaults write com.stage11.c11 tabLayoutMode -string rail     # or: tabs
@@ -175,7 +175,7 @@ defaults delete com.stage11.c11 tabLayoutMode                 # back to tabs
 
 A tagged dev build has its own domain, `com.stage11.c11.debug.<tag>` with the tag's dashes as dots (tag `tab-bar-round-five` is `com.stage11.c11.debug.tab.bar.round.five`).
 
-The bar under the tabs shows only the surface's description (`c11 set-description`); with no description it takes no height.
+The bar under the tabs shows only the tab's description (`c11 set-description`); with no description it takes no height.
 
 ## Editing this skill
 

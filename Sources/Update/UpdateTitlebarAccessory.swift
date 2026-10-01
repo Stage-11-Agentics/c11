@@ -1049,7 +1049,7 @@ private struct NotificationsPopoverView: View {
                         .foregroundColor(.secondary)
                     Text(String(localized: "notifications.empty.title", defaultValue: "It's quiet."))
                         .font(.headline)
-                    Text(String(localized: "notifications.empty.subtitle", defaultValue: "When a pane needs you, it rings here."))
+                    Text(String(localized: "notifications.empty.subtitle", defaultValue: "When an area needs you, it rings here."))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

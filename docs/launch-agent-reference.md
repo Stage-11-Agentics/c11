@@ -1,6 +1,6 @@
 # `c11 launch-agent` — launching typed agents
 
-The canonical reference for launching a typed coding agent into a c11 surface with
+The canonical reference for launching a typed coding agent into a c11 tab with
 one command: correct invocation for the agent's CLI, model/effort pinned, identity
 stamped at birth, machine-readable refs back to the caller.
 
@@ -10,7 +10,7 @@ c11 launch-agent --type <kind>
     [--system-prompt-mode inherit|append|replace]
     [--system-prompt <text> | --system-prompt-file <path>]
     [--task <id>]
-    [--pane <ref> | --workspace <ref> | --new-workspace] [--cwd <path>]
+    [--area <ref> | --workspace <ref> | --new-workspace] [--cwd <path>]
     [--prompt <text> | --prompt-file <path>]
     [--title <text>] [--flag <reason>] [--suppressed]
     [--env KEY=VALUE ...] [--json]
@@ -26,7 +26,7 @@ external controller (a Stream Deck, a MIDI deck, another agent) needs to say
 
 Hand-composing agent launches means re-implementing, per caller: the claude PATH
 wrapper + `--dangerously-skip-permissions`, codex `--yolo` (never `exec` for a
-visible surface), per-CLI model/effort flag syntax, `C11_AGENT_TYPE/MODEL/TASK`
+visible tab), per-CLI model/effort flag syntax, `C11_AGENT_TYPE/MODEL/TASK`
 env declaration, `set-agent` metadata, and tab naming. c11 already knows every one
 of these facts (`AgentRegistry`, `DefaultAgentConfigStore`,
 `DefaultAgentResolver`); `launch-agent` makes it own them at the launch site.
@@ -106,30 +106,30 @@ the axis for `claude-code` only**; every other built-in (and custom kinds) has n
 system-prompt axis, so a non-inherit request for them errors. The system-prompt
 flag renders after `--model`/`--effort` and before the positional prompt.
 
-### Placement (`--pane` | `--workspace` | `--new-workspace`)
+### Placement (`--area` | `--workspace` | `--new-workspace`)
 
-- Default: a new surface in the caller's pane (from `$C11_PANE`/focused pane of
-  the current workspace — same target the A button would hit).
-- `--pane <ref>`: a new surface in that pane.
-- `--workspace <ref>`: a new surface in that workspace's focused pane.
+- Default: a new tab in the caller's area (the focused area of the current
+  workspace — same target the A button would hit).
+- `--area <ref>`: a new tab in that area.
+- `--workspace <ref>`: a new tab in that workspace's focused area.
 - `--new-workspace`: a fresh workspace whose first terminal is the agent. The
   identity env rides workspace creation (present at PTY birth); the launch
   line is *typed* into the interactive shell (queue-until-ready), not baked as
   the ghostty spawn command — a spawn command execs over the shell, so agent
-  exit would kill the surface, and it skips shell rc.
+  exit would kill the tab, and it skips shell rc.
 
 The launch cwd resolves in this order:
 
 1. explicit `--cwd <path>` (resolved CLI-side relative to the caller and
    validated server-side),
 2. the target workspace's stable root directory, when set,
-3. the launching surface's cwd (the fallback for rootless workspaces, and for
+3. the launching tab's cwd (the fallback for rootless workspaces, and for
    a root that no longer exists),
 4. home.
 
 This is the same rule every new terminal in a workspace follows: tabs, splits,
-the tab-bar agent button, `default-agent launch`, `new-surface`, `new-split`,
-and `new-pane`. Set a root during creation with `c11 new-workspace --root
+the tab-bar agent button, `default-agent launch`, `new-tab`, `new-split`,
+and `new-area`. Set a root during creation with `c11 new-workspace --root
 <path>` (or `--cwd`, which establishes the same root by default); a workspace
 created without one starts in the selected workspace's root and adopts the
 first directory its focused shell reports, other than `~` or `/`. Read it with `c11 get-workspace-root`, edit or clear it
@@ -140,7 +140,7 @@ root stays cleared.
 Any resolved cwd inside a linked git worktree proceeds with one coded warning.
 The warning names the absolute worktree path and carries code
 `linked_worktree_cwd`. Explicit `--cwd` remains permitted; a configured
-workspace root also counts as explicit intent. A launching-surface cwd is
+workspace root also counts as explicit intent. A launching-tab cwd is
 marked inherited, but is warning-only because linked worktrees are the normal
 Lattice delegator shape.
 
@@ -154,13 +154,13 @@ overrides); trust gating is pre-existing and remains outside this change.
 
 Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
-the new surface is created unfocused regardless of flags (`--no-focus` is
-accepted as a no-op for symmetry with `new-surface`).
+the new tab is created unfocused regardless of flags (`--no-focus` is
+accepted as a no-op for symmetry with `new-tab`).
 
 ### Identity at birth
 
 The new PTY spawns with `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`
-(and their `CMUX_*` legacy aliases) in its environment, and the surface metadata
+in its environment, and the tab metadata
 is stamped server-side before the launch line is typed: `terminal_type`, `model`,
 `task` (source `declare`), plus the tab title (`--title`, else the standard
 launch placeholder). The sidebar chip, title bar, and `c11 tree` are correct with
@@ -172,7 +172,7 @@ operator's configured overrides (caller wins on collision).
 
 ### Attention at dispatch (`--flag`, `--suppressed`)
 
-Both apply to the new surface before command delivery, so the attention state is
+Both apply to the new tab before command delivery, so the attention state is
 correct from the first frame. `--flag <reason>` raises a sticky flag — reserved
 for operator-designated priority missions (pair with the caller relaying explicit
 operator intent). `--suppressed` marks the worker parent-owned: routine
@@ -208,8 +208,8 @@ Human-readable by default; `--json` prints one object:
   "command": "codex --yolo --model gpt-5.2 -c model_reasoning_effort=high",
   "window_ref": "window:1",
   "workspace_ref": "workspace:4",
-  "pane_ref": "pane:9",
-  "surface_ref": "surface:341",
+  "area_ref": "area:9",
+  "tab_ref": "tab:341",
   "cwd": "/path/to/project",
   "cwd_source": "workspace_root",
   "config_source": "/path/to/project/.c11/agents.json",
@@ -226,7 +226,7 @@ Human-readable by default; `--json` prints one object:
       "explicit_intent": true
     }
   }],
-  "workspace_id": "…", "pane_id": "…", "surface_id": "…"
+  "workspace_id": "…", "area_id": "…", "tab_id": "…"
 }
 ```
 
@@ -243,16 +243,16 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `model_flag_unsupported` / `effort_flag_unsupported` | `--model`/`--effort` passed for a kind whose template declares no syntax for it |
 | `system_prompt_unsupported` | a non-inherit `--system-prompt-mode` passed for a kind whose template declares no system-prompt syntax |
 | `invalid_effort` | value outside the template's declared allowed list |
-| `invalid_params` | bad `cwd`, or `new_workspace` combined with `pane_id`/`workspace_id` |
-| `not_found` | target workspace or pane doesn't resolve |
+| `invalid_params` | bad `cwd`, or `new_workspace` combined with `area_id`/`workspace_id` |
+| `not_found` | target workspace or area doesn't resolve |
 
 A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
 socket call. A launch binary that can't be found is a **warning**, not an
-error — the app-process PATH is poorer than the login-shell PATH a pane
+error — the app-process PATH is poorer than the login-shell PATH a tab
 actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
 and the launch proceeds (a truly missing binary shows the shell error in the
-pane). A linked-worktree cwd is also reported once in this legacy warnings
-array and as a structured `warning_details` entry with code
+tab). A linked-worktree cwd is also reported once in this string-only
+warnings array and as a structured `warning_details` entry with code
 `linked_worktree_cwd`. The CLI prints the coded warning once to stderr in both
 human and `--json` modes while the launch proceeds.
 
@@ -333,7 +333,7 @@ CLI `launch-agent` is a thin client over one v2 method, `agent.launch`:
   "params": { "type": "codex", "model": "gpt-5.2", "effort": "high",
               "system_prompt_mode": "append", "system_prompt": "…",
               "task": "sekhem-42", "prompt": "…", "title": "…",
-              "pane_id": "<uuid>" | "workspace_id": "<uuid>" | "new_workspace": true,
+              "area_id": "<uuid>" | "workspace_id": "<uuid>" | "new_workspace": true,
               "cwd": "/path", "env": {"K": "V"} } }
 ```
 
@@ -343,11 +343,11 @@ unparseable mode is treated as no override; the planner is the single validation
 authority (it emits `system_prompt_unsupported` for a non-inherit mode on a kind
 with no axis).
 
-`pane_id`/`workspace_id` take UUIDs — the CLI resolves `pane:N`/`workspace:N`
+`area_id`/`workspace_id` take UUIDs — the CLI resolves `area:N`/`workspace:N`
 short refs client-side before sending, and direct socket callers must do the
 same (resolve via `system.tree` or `c11 identify`).
 
-The handler performs resolution, surface creation, env injection, metadata
+The handler performs resolution, tab creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to
 sequence create → stamp → send itself. Response is the JSON object above;
 `config_source` is the matched `.c11/agents.json` path or null.
@@ -357,8 +357,8 @@ scheduled on main) and the no-focus-steal policy.
 ## Relationship to existing commands
 
 - `c11 default-agent launch` — still "launch the operator's default." Its
-  `--in-surface` rail now resolves project config from explicit `--cwd` or the
-  target surface's cwd, never the GUI app process cwd. Internally both share
+  `--in-tab` rail resolves project config from explicit `--cwd` or the
+  target tab's cwd, never the GUI app process cwd. Internally both share
   `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
 - The A button — unchanged; same resolver, same stamping.
 - `$C11_DEFAULT_AGENT_LAUNCH` — unchanged; the per-shell export still reflects

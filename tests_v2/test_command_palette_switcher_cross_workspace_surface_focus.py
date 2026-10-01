@@ -62,9 +62,9 @@ def _open_switcher(client: cmux, window_id: str) -> None:
 
 def _rename_surface(client: cmux, surface_id: str, title: str) -> None:
     client._call(
-        "surface.action",
+        "tab.action",
         {
-            "surface_id": surface_id,
+            "tab_id": surface_id,
             "action": "rename",
             "title": title,
         },
@@ -72,8 +72,8 @@ def _rename_surface(client: cmux, surface_id: str, title: str) -> None:
 
 
 def _current_surface_id(client: cmux, workspace_id: str) -> str:
-    payload = client._call("surface.current", {"workspace_id": workspace_id}) or {}
-    return str(payload.get("surface_id") or "")
+    payload = client._call("tab.current", {"workspace_id": workspace_id}) or {}
+    return str(payload.get("tab_id") or "")
 
 
 def main() -> int:
@@ -104,8 +104,8 @@ def main() -> int:
         right_surface_id = client.new_split("right")
         time.sleep(0.2)
 
-        payload = client._call("surface.list", {"workspace_id": ws_b}) or {}
-        rows = payload.get("surfaces") or []
+        payload = client._call("tab.list", {"workspace_id": ws_b}) or {}
+        rows = payload.get("tabs") or []
         if len(rows) < 2:
             raise cmuxError(f"expected at least two surfaces after split: {payload}")
 

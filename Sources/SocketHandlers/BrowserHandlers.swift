@@ -253,11 +253,11 @@ extension TerminalController {
             }
             let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused browser surface", data: nil)
+                result = .err(code: "not_found", message: "No focused browser tab", data: nil)
                 return
             }
             guard let browserPanel = ws.browserPanel(for: surfaceId) else {
-                result = .err(code: "invalid_params", message: "Surface is not a browser", data: ["surface_id": surfaceId.uuidString])
+                result = .err(code: "invalid_params", message: "Tab is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
             result = body(tabManager, ws, surfaceId, browserPanel)
@@ -288,12 +288,12 @@ extension TerminalController {
         }
         let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
         guard let surfaceId else {
-            return .result(.err(code: "not_found", message: "No focused browser surface", data: nil))
+            return .result(.err(code: "not_found", message: "No focused browser tab", data: nil))
         }
         guard let browserPanel = ws.browserPanel(for: surfaceId) else {
             return .result(.err(
                 code: "invalid_params",
-                message: "Surface is not a browser",
+                message: "Tab is not a browser",
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
@@ -353,7 +353,7 @@ extension TerminalController {
 
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var outcome: V2BrowserOffMainTargetOutcome = .result(
-            .err(code: "internal_error", message: "Failed to resolve browser surface", data: nil)
+            .err(code: "internal_error", message: "Failed to resolve browser tab", data: nil)
         )
         Task { @MainActor in
             defer { semaphore.signal() }
@@ -1171,11 +1171,11 @@ extension TerminalController {
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused surface to split", data: nil)
+                result = .err(code: "not_found", message: "No focused tab to split", data: nil)
                 return
             }
             guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source surface not found", data: ["surface_id": sourceSurfaceId.uuidString])
+                result = .err(code: "not_found", message: "Source tab not found", data: ["surface_id": sourceSurfaceId.uuidString])
                 return
             }
 
@@ -1245,7 +1245,7 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
         }
         guard let url = v2String(params, "url") else {
             return .err(code: "invalid_params", message: "Missing url", data: nil)
@@ -1253,7 +1253,7 @@ extension TerminalController {
 
         let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
 
-        var result: V2CallResult = .err(code: "not_found", message: "Surface not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }

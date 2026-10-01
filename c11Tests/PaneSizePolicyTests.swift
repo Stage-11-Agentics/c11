@@ -178,9 +178,9 @@ final class PaneSizePolicyTests: XCTestCase {
         let frame = CGSize(width: 700, height: 360)
         let min = CGSize(width: 640, height: 340)
         let d = PaneSizePolicy.decide(paneFrame: frame, requested: .horizontal, minPoints: min, mode: .balance, force: false)
-        let msg = PaneSizePolicy.refusalMessage(for: d, kindLabel: "claude-code", paneRefLabel: "pane:3")
-        XCTAssertTrue(msg.contains("pane:3"))
-        XCTAssertTrue(msg.contains("new-surface"))
+        let msg = PaneSizePolicy.refusalMessage(for: d, kindLabel: "claude-code", paneRefLabel: "area:3")
+        XCTAssertTrue(msg.contains("area:3"))
+        XCTAssertTrue(msg.contains("new-tab"))
         XCTAssertTrue(msg.contains("--allow-undersized"))
         XCTAssertTrue(msg.contains("claude-code"))
     }

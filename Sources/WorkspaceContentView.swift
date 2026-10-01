@@ -522,7 +522,7 @@ struct EmptyPanelView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
 
-            Text(String(localized: "workspace.emptyPane.title", defaultValue: "Empty Panel"))
+            Text(String(localized: "workspace.emptyPane.title", defaultValue: "Empty Area"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
 

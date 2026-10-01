@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: pane.swap and pane.break should not steal visible focus."""
+"""Regression: area.swap and area.break should not steal visible focus."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _focused_pane_id(client: cmux, workspace_id: str) -> str:
-    payload = client._call("pane.list", {"workspace_id": workspace_id}) or {}
-    for row in payload.get("panes") or []:
+    payload = client._call("area.list", {"workspace_id": workspace_id}) or {}
+    for row in payload.get("areas") or []:
         if bool(row.get("focused")):
             return str(row.get("id") or "")
     return ""
@@ -41,8 +41,8 @@ def main() -> int:
             _ = client.new_split("right")
             time.sleep(0.2)
 
-            panes_payload = client._call("pane.list", {"workspace_id": workspace_id}) or {}
-            panes = panes_payload.get("panes") or []
+            panes_payload = client._call("area.list", {"workspace_id": workspace_id}) or {}
+            panes = panes_payload.get("areas") or []
             _must(len(panes) == 2, f"expected two panes after split: {panes_payload}")
 
             focused_row = next((row for row in panes if bool(row.get("focused"))), None)
@@ -56,29 +56,29 @@ def main() -> int:
             time.sleep(0.2)
             _must(
                 _focused_pane_id(client, workspace_id) == other_pane_id,
-                "expected explicit pane focus before pane.swap regression check",
+                "expected explicit pane focus before area.swap regression check",
             )
 
-            client._call("pane.swap", {"pane_id": other_pane_id, "target_pane_id": focused_pane_id})
+            client._call("area.swap", {"area_id": other_pane_id, "target_area_id": focused_pane_id})
             time.sleep(0.2)
             _must(
                 _focused_pane_id(client, workspace_id) == other_pane_id,
-                "pane.swap should preserve the currently focused pane when invoked over the socket",
+                "area.swap should preserve the currently focused pane when invoked over the socket",
             )
             _must(
                 client.current_workspace() == workspace_id,
-                "pane.swap should not change the selected workspace",
+                "area.swap should not change the selected workspace",
             )
 
-            broken_payload = client._call("pane.break", {"pane_id": other_pane_id}) or {}
+            broken_payload = client._call("area.break", {"area_id": other_pane_id}) or {}
             broken_workspace_id = str(broken_payload.get("workspace_id") or "")
-            _must(bool(broken_workspace_id), f"pane.break returned no workspace_id: {broken_payload}")
+            _must(bool(broken_workspace_id), f"area.break returned no workspace_id: {broken_payload}")
             created_workspaces.append(broken_workspace_id)
             time.sleep(0.2)
 
             _must(
                 client.current_workspace() == workspace_id,
-                "pane.break should preserve the selected workspace when invoked over the socket",
+                "area.break should preserve the selected workspace when invoked over the socket",
             )
     finally:
         with cmux(SOCKET_PATH) as cleanup_client:
@@ -88,7 +88,7 @@ def main() -> int:
                 except Exception:
                     pass
 
-    print("PASS: pane.swap and pane.break preserve visible focus for socket callers")
+    print("PASS: area.swap and area.break preserve visible focus for socket callers")
     return 0
 
 

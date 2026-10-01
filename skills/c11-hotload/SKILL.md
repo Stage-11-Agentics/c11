@@ -25,6 +25,8 @@ Initializes submodules and builds GhosttyKit.
 
 A tagged build gets its own name, bundle ID, socket, and derived data path so it runs isolated alongside anything else.
 
+`reload.sh --tag` also repoints the machine-wide `c11` shims (`/tmp/c11-last-cli-path`) at the tagged build's CLI. When the tagged build speaks a different protocol than the running app, restore the path to the production CLI (`/Applications/c11.app/Contents/Resources/bin/c11`) so other agents keep working.
+
 ## Reload variants
 
 | Command | What it does |
@@ -34,7 +36,7 @@ A tagged build gets its own name, bundle ID, socket, and derived data path so it
 | `./scripts/reloads.sh` | Build and launch Release as "c11 STAGING" (isolated from production c11) |
 | `./scripts/reload2.sh --tag <tag>` | Reload both Debug and Release (tag required for Debug) |
 
-**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x c11`, which tears down every c11 pane — fatal if another agent is mid-task in a sibling pane, or if the current agent session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
+**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x c11`, which tears down every c11 area — fatal if another agent is mid-task in a sibling area, or if the current agent session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
 
 ```bash
 xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
@@ -42,7 +44,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -de
 
 macOS lets you overwrite a running app's bundle — the already-loaded binary stays in memory, and the rebuilt `.app` is picked up on the next manual launch (⌘Q then relaunch). Use this when collaborating with other agents or when the user explicitly asks to avoid session churn.
 
-**A rebuild-and-relaunch keeps agent resume only on a clean quit.** When a reload does restart the app over a running instance, let the script's clean quit drive the teardown — do **not** `pkill -9` / pre-kill it first. Browser and markdown surfaces restore either way, but agent terminals only resume their conversation when the prior process shut down cleanly; SIGKILL'd, they come back as bare shells.
+**A rebuild-and-relaunch keeps agent resume only on a clean quit.** When a reload does restart the app over a running instance, let the script's clean quit drive the teardown — do **not** `pkill -9` / pre-kill it first. Browser and markdown tabs restore either way, but agent terminals only resume their conversation when the prior process shut down cleanly; SIGKILL'd, they come back as bare shells.
 
 ## Build-only verification (no launch)
 
@@ -54,7 +56,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -dest
 
 ## Driving a Release/staging build over the socket
 
-A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching surface's C11/CMUX identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching tab's inherited c11 identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 ## QA / automation launch (suppress the startup dialogs)
 
@@ -81,7 +83,7 @@ C11_QA_LAUNCH=fresh ./scripts/reloads.sh --tag <tag>
 C11_QA_LAUNCH=resume ./scripts/reloads.sh --tag <tag>
 ```
 
-The launcher unsets any inherited `C11_QA_LAUNCH`/`CMUX_QA_LAUNCH` and only sets it when `--qa` is passed, so a stray value in your shell can't silently flip a normal run into QA mode.
+The launcher unsets any inherited `C11_QA_LAUNCH` and only sets it when `--qa` is passed, so a stray value in your shell can't silently flip a normal run into QA mode.
 
 ## Rebuilding GhosttyKit
 

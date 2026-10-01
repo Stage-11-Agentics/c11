@@ -120,25 +120,19 @@ struct SurfaceManifestView: View {
     }
 
     // The handle refs are the headline — always-visible, each copyable, with
-    // surface:N rendered extra-large since it's the number the operator most
+    // tab:N rendered extra-large since it's the number the operator most
     // often wants.
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             refRow(
-                label: String(localized: "surfaceManifest.ref.surface", defaultValue: "Surface"),
-                value: handle.surfaceRef,
-                field: "surface",
-                size: .extraLarge
-            )
-            refRow(
                 label: String(localized: "surfaceManifest.ref.tab", defaultValue: "Tab"),
                 value: handle.tabRef,
                 field: "tab",
-                size: .prominent
+                size: .extraLarge
             )
             if let pane = handle.paneRef {
                 refRow(
-                    label: String(localized: "surfaceManifest.ref.pane", defaultValue: "Pane"),
+                    label: String(localized: "surfaceManifest.ref.pane", defaultValue: "Area"),
                     value: pane,
                     field: "pane",
                     size: .normal
@@ -332,7 +326,7 @@ struct SurfaceManifestView: View {
     @ViewBuilder
     private var bodyJSON: some View {
         if snapshot.metadata.isEmpty {
-            Text(String(localized: "surfaceManifest.empty", defaultValue: "No metadata set on this surface."))
+            Text(String(localized: "surfaceManifest.empty", defaultValue: "No metadata set on this tab."))
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
         } else {
@@ -350,13 +344,13 @@ struct SurfaceManifestView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(
                     localized: "surfaceManifest.advanced.note",
-                    defaultValue: "Tip: copy the surface integer above (e.g. surface:75), not the UUID below."
+                    defaultValue: "Tip: copy the tab integer above (e.g. tab:75), not the UUID below."
                 ))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 row(
-                    label: String(localized: "surfaceManifest.ids.surfaceUUID", defaultValue: "Surface UUID"),
+                    label: String(localized: "surfaceManifest.ids.surfaceUUID", defaultValue: "Tab UUID"),
                     value: surfaceId.uuidString
                 )
                 row(

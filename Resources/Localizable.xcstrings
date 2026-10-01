@@ -149,43 +149,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "terminal command center for the operator:agent pair.\nmany surfaces. one workspace. one field of view."
+            "value": "terminal command center for the operator:agent pair.\nmany tabs. one workspace. one field of view."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作者・エージェントのためのターミナル司令室。\n多くのサーフェス。ひとつのワークスペース。ひとつの視界。"
+            "value": "操作者・エージェントのためのターミナル司令室。\n多くのタブ。ひとつのワークスペース。ひとつの視界。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为「操作员·代理」一体而设的终端指挥中枢。\n多个界面。一个工作区。一视同观。"
+            "value": "为「操作员·代理」一体而设的终端指挥中枢。\n多个标签页。一个工作区。一视同观。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "為「操作員·代理」一體而設的終端指揮中樞。\n面面有界,事事一區,同視一處。"
+            "value": "為「操作員·代理」一體而設的終端指揮中樞。\n眾分頁,一工作區,同視一處。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "오퍼레이터·에이전트 페어를 위한 터미널 커맨드 센터.\n여러 서피스. 하나의 워크스페이스. 하나의 시야."
+            "value": "오퍼레이터·에이전트 페어를 위한 터미널 커맨드 센터.\n여러 탭. 하나의 워크스페이스. 하나의 시야."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "терминальный командный центр для пары оператор–агент.\nмного поверхностей. одно рабочее пространство. одно поле зрения."
+            "value": "терминальный командный центр для пары оператор–агент.\nмного вкладок. одно рабочее пространство. одно поле зрения."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "термінальний командний центр для пари оператор–агент.\nбагато поверхонь. один робочий простір. одне поле зору."
+            "value": "термінальний командний центр для пари оператор–агент.\nбагато вкладок. один робочий простір. одне поле зору."
           }
         }
       }
@@ -1010,7 +1010,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't open a terminal surface for the agent — try again, or use a different pane."
+            "value": "Couldn't open a terminal tab for the agent — try again, or use a different area."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント用のターミナルタブを開けませんでした — もう一度試すか、別のエリアを使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트를 위한 터미널 탭을 열 수 없습니다. 다시 시도하거나 다른 영역을 사용해 보세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось открыть терминальную вкладку для агента — повторите попытку или используйте другую область."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося відкрити термінальну вкладку для агента — спробуйте ще раз або скористайтеся іншою областю."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为代理打开终端标签页，请重试，或换一个区域。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法為代理開啟終端機分頁，請再試一次，或改用其他區域。"
           }
         }
       }
@@ -3097,43 +3133,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The skill is how it learns. One file in %@. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
+            "value": "The skill is how it learns. One file in %@. After that, your agent splits areas, drives the browser, opens markdown tabs, and reports progress to the sidebar — without you in the loop for routine moves."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スキルが、エージェントの学び方です。%@ にひとつのファイル。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
+            "value": "スキルが、エージェントの学び方です。%@ にひとつのファイル。そのあと、エージェントはエリアを分割し、ブラウザを操作し、Markdown タブを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навичка — це як він вчиться. Один файл у %@. Далі ваш агент ділить панелі, керує браузером, відкриває Markdown-поверхні та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
+            "value": "Навичка — це як він вчиться. Один файл у %@. Далі ваш агент ділить області, керує браузером, відкриває вкладки Markdown та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "스킬이 에이전트의 학습 방식이에요. %@에 파일 하나. 그 뒤로 에이전트는 페인을 분할하고, 브라우저를 조작하고, 마크다운 서피스를 열고, 사이드바에 진행을 보고합니다 — 일상적인 동작에 당신은 필요 없어요."
+            "value": "스킬이 에이전트의 학습 방식이에요. %@에 파일 하나. 그 뒤로 에이전트는 영역을 분할하고, 브라우저를 조작하고, 마크다운 탭을 열고, 사이드바에 진행을 보고합니다 — 일상적인 동작에 당신은 필요 없어요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "技能,就是它学习的方式。一个文件放进 %@。之后,你的代理便会分割面板、操控浏览器、打开 Markdown 界面、向侧边栏报告进度 — 日常事务,无需你过问。"
+            "value": "技能,就是它学习的方式。一个文件放进 %@。之后,你的代理便会分割区域、操控浏览器、打开 Markdown 标签页、向侧边栏报告进度 — 日常事务,无需你过问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "skill 就是代理學會的途徑。一個檔案放進 %@。之後,代理會分割面板、驅動瀏覽器、開啟 markdown 介面、向側邊欄回報進度 — 例行動作,你不必在場。"
+            "value": "skill 就是代理學會的途徑。一個檔案放進 %@。之後,代理會分割區域、驅動瀏覽器、開啟 markdown 分頁、向側邊欄回報進度 — 例行動作,你不必在場。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навык — это как он учится. Один файл в %@. После этого ваш агент делит панели, управляет браузером, открывает Markdown-поверхности и сообщает о прогрессе в боковую панель — без вашего участия в рутинных действиях."
+            "value": "Навык — это как он учится. Один файл в %@. После этого ваш агент делит области, управляет браузером, открывает Markdown-вкладки и сообщает о прогрессе в боковую панель — без вашего участия в рутинных действиях."
           }
         }
       }
@@ -3144,43 +3180,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The skill is how it learns. One file. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
+            "value": "The skill is how it learns. One file. After that, your agent splits areas, drives the browser, opens markdown tabs, and reports progress to the sidebar — without you in the loop for routine moves."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スキルが、エージェントの学び方です。ファイルはひとつ。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
+            "value": "スキルが、エージェントの学び方です。ファイルはひとつ。そのあと、エージェントはエリアを分割し、ブラウザを操作し、Markdown タブを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навичка — це як він вчиться. Один файл. Далі ваш агент ділить панелі, керує браузером, відкриває Markdown-поверхні та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
+            "value": "Навичка — це як він вчиться. Один файл. Далі ваш агент ділить області, керує браузером, відкриває вкладки Markdown та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "스킬이 에이전트의 학습 방식이에요. 파일 하나. 그 뒤로 에이전트는 페인을 분할하고, 브라우저를 조작하고, 마크다운 서피스를 열고, 사이드바에 진행을 보고합니다 — 일상적인 동작에 당신은 필요 없어요."
+            "value": "스킬이 에이전트의 학습 방식이에요. 파일 하나. 그 뒤로 에이전트는 영역을 분할하고, 브라우저를 조작하고, 마크다운 탭을 열고, 사이드바에 진행을 보고합니다 — 일상적인 동작에 당신은 필요 없어요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "技能,就是它学习的方式。一个文件。之后,你的代理便会分割面板、操控浏览器、打开 Markdown 界面、向侧边栏报告进度 — 日常事务,无需你过问。"
+            "value": "技能,就是它学习的方式。一个文件。之后,你的代理便会分割区域、操控浏览器、打开 Markdown 标签页、向侧边栏报告进度 — 日常事务,无需你过问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "skill 就是代理學會的途徑。只要一個檔案。之後,代理會分割面板、驅動瀏覽器、開啟 markdown 介面、向側邊欄回報進度 — 例行動作,你不必在場。"
+            "value": "skill 就是代理學會的途徑。只要一個檔案。之後,代理會分割區域、驅動瀏覽器、開啟 markdown 分頁、向側邊欄回報進度 — 例行動作,你不必在場。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Навык — это как он учится. Один файл. После этого ваш агент делит панели, управляет браузером, открывает Markdown-поверхности и сообщает о прогрессе в боковую панель — без вашего участия в рутинных действиях."
+            "value": "Навык — это как он учится. Один файл. После этого ваш агент делит области, управляет браузером, открывает Markdown-вкладки и сообщает о прогрессе в боковую панель — без вашего участия в рутинных действиях."
           }
         }
       }
@@ -15693,43 +15729,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Next Tab in Pane"
+            "value": "Next Tab in Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペイン内の次のタブ"
+            "value": "エリア内の次のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一个面板标签页"
+            "value": "区域中的下一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板中的下一個標籤頁"
+            "value": "區域中的下一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "패널 내 다음 탭"
+            "value": "영역 내 다음 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Следующая вкладка в панели"
+            "value": "Следующая вкладка в области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наступна вкладка в панелі"
+            "value": "Наступна вкладка в області"
           }
         }
       }
@@ -16210,43 +16246,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previous Tab in Pane"
+            "value": "Previous Tab in Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペイン内の前のタブ"
+            "value": "エリア内の前のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一个面板标签页"
+            "value": "区域中的上一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板中的上一個標籤頁"
+            "value": "區域中的上一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "패널 내 이전 탭"
+            "value": "영역 내 이전 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Предыдущая вкладка в панели"
+            "value": "Предыдущая вкладка в области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Попередня вкладка в панелі"
+            "value": "Попередня вкладка в області"
           }
         }
       }
@@ -17573,43 +17609,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Pane Zoom"
+            "value": "Toggle Area Zoom"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインズームの切り替え"
+            "value": "エリアズームの切り替え"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换面板缩放"
+            "value": "切换区域缩放"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "切換面板縮放"
+            "value": "切換區域縮放"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "패널 확대/축소 전환"
+            "value": "영역 확대/축소 전환"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Масштаб панели"
+            "value": "Масштаб области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Масштаб панелі"
+            "value": "Масштаб області"
           }
         }
       }
@@ -17667,43 +17703,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flash Focused Pane"
+            "value": "Flash Focused Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "フォーカスペインを強調"
+            "value": "フォーカスエリアを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "闪烁聚焦面板"
+            "value": "闪烁聚焦区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "閃爍聚焦窗格"
+            "value": "閃爍聚焦區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "포커스된 페인 깜빡이기"
+            "value": "포커스된 영역 깜빡이기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Мигнуть активной панелью"
+            "value": "Мигнуть активной областью"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блимнути фокусованою панеллю"
+            "value": "Блимнути фокусованою областю"
           }
         }
       }
@@ -18842,43 +18878,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No workspaces or surfaces match."
+            "value": "No workspaces or tabs match."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "該当するワークスペースまたはサーフェスはありません。"
+            "value": "該当するワークスペースまたはタブはありません。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "일치하는 작업 공간 또는 서피스가 없습니다."
+            "value": "일치하는 작업 공간 또는 탭이 없습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有匹配的工作区或表面。"
+            "value": "没有匹配的工作区或标签页。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有符合的工作區或介面。"
+            "value": "沒有符合的工作區或分頁。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Нет подходящих рабочих пространств или поверхностей."
+            "value": "Нет подходящих рабочих пространств или вкладок."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Немає відповідних робочих просторів чи поверхонь."
+            "value": "Немає відповідних робочих просторів чи вкладок."
           }
         }
       }
@@ -18936,43 +18972,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search workspaces and surfaces"
+            "value": "Search workspaces and tabs"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペースとサーフェスを検索"
+            "value": "ワークスペースとタブを検索"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Пошук робочих просторів і поверхонь"
+            "value": "Пошук робочих просторів і вкладок"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 공간과 서피스 검색"
+            "value": "작업 공간과 탭 검색"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜索工作区和界面"
+            "value": "搜索工作区和标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜尋工作區與介面"
+            "value": "搜尋工作區與分頁"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поиск рабочих пространств и поверхностей"
+            "value": "Поиск рабочих пространств и вкладок"
           }
         }
       }
@@ -20628,43 +20664,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suspends browser surfaces in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+            "value": "Suspends browser tabs in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このワークスペース内のブラウザサーフェスを一時停止します。ターミナルは自動スロットルのまま動作します（ワークスペースが非フォーカス時はすでに低CPU使用率）。"
+            "value": "このワークスペース内のブラウザタブを一時停止します。ターミナルは自動スロットルのまま動作します（ワークスペースが非フォーカス時はすでに低CPU使用率）。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂停此工作区中的浏览器界面。终端保持自动节流（工作区未聚焦时 CPU 占用已较低）。"
+            "value": "暂停此工作区中的浏览器标签页。终端保持自动节流（工作区未聚焦时 CPU 占用已较低）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "暫停此工作區中的瀏覽器介面。終端機維持自動節流（工作區未聚焦時 CPU 佔用已較低）。"
+            "value": "暫停此工作區中的瀏覽器分頁。終端機維持自動節流（工作區未聚焦時 CPU 佔用已較低）。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 작업 공간의 브라우저 서피스를 일시 중단합니다. 터미널은 자동 스로틀 상태를 유지합니다(작업 공간에 포커스가 없을 때 이미 CPU 사용량이 낮음)."
+            "value": "이 작업 공간의 브라우저 탭을 일시 중단합니다. 터미널은 자동 스로틀 상태를 유지합니다(작업 공간에 포커스가 없을 때 이미 CPU 사용량이 낮음)."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Приостанавливает поверхности браузера в этом рабочем пространстве. Терминалы остаются на автодросселировании (уже с низким потреблением ЦП, когда рабочее пространство не в фокусе)."
+            "value": "Приостанавливает вкладки браузера в этом рабочем пространстве. Терминалы остаются на автодросселировании (уже с низким потреблением ЦП, когда рабочее пространство не в фокусе)."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Призупиняє браузерні поверхні в цьому робочому просторі. Термінали залишаються на автодроселюванні (вже з низьким завантаженням ЦП, коли робочий простір не у фокусі)."
+            "value": "Призупиняє браузерні вкладки в цьому робочому просторі. Термінали залишаються на автодроселюванні (вже з низьким завантаженням ЦП, коли робочий простір не у фокусі)."
           }
         }
       }
@@ -22038,43 +22074,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Saved pane and surface layouts you can launch a workspace from."
+            "value": "Saved area and tab layouts you can launch a workspace from."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペースの起動に使える、保存されたペインとサーフェスのレイアウトです。"
+            "value": "ワークスペースの起動に使える、保存されたエリアとタブのレイアウトです。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Збережені компонування панелей і поверхонь, з яких можна запустити робочий простір."
+            "value": "Збережені компонування областей і вкладок, з яких можна запустити робочий простір."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "워크스페이스를 시작할 수 있는 저장된 패널 및 서피스 레이아웃입니다."
+            "value": "워크스페이스를 시작할 수 있는 저장된 영역 및 탭 레이아웃입니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可用于启动工作区的已保存窗格和表面布局。"
+            "value": "可用于启动工作区的已保存区域和标签页布局。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "可用於啟動工作區的已儲存窗格和表面版面。"
+            "value": "可用於啟動工作區的已儲存區域和分頁版面。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сохранённые компоновки панелей и поверхностей, из которых можно запустить рабочее пространство."
+            "value": "Сохранённые компоновки областей и вкладок, из которых можно запустить рабочее пространство."
           }
         }
       }
@@ -22602,43 +22638,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Launch your default coding agent in the first pane"
+            "value": "Launch your default coding agent in the first area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最初のペインでデフォルトのコーディングエージェントを起動"
+            "value": "最初のエリアでデフォルトのコーディングエージェントを起動"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запустити вашого стандартного агента програмування на першій панелі"
+            "value": "Запустити вашого стандартного агента програмування в першій області"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "첫 번째 패널에서 기본 코딩 에이전트 실행"
+            "value": "첫 번째 영역에서 기본 코딩 에이전트 실행"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在第一个窗格中启动你的默认编码代理"
+            "value": "在第一个区域中启动你的默认编码代理"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在第一個窗格中啟動你的預設編碼代理"
+            "value": "在第一個區域中啟動你的預設編碼代理"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Запустить вашего стандартного агента-программиста в первой панели"
+            "value": "Запустить вашего стандартного агента-программиста в первой области"
           }
         }
       }
@@ -24623,43 +24659,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Four terminal panes in a 2 × 2 grid. Agent in the top-left."
+            "value": "Four terminal areas in a 2 × 2 grid. Agent in the top-left."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル 4 つを 2 × 2 グリッドで。左上にエージェント。"
+            "value": "ターミナルエリア 4 つを 2 × 2 グリッドで。左上にエージェント。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Чотири термінальні панелі в сітці 2 × 2. Агент у верхньому лівому куті."
+            "value": "Чотири термінальні області в сітці 2 × 2. Агент у верхньому лівому куті."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 4개를 2 × 2 격자로. 왼쪽 상단에 에이전트."
+            "value": "터미널 영역 4개를 2 × 2 격자로. 왼쪽 상단에 에이전트."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "四个终端窗格，2 × 2 网格。代理在左上角。"
+            "value": "四个终端区域，2 × 2 网格。代理在左上角。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "四個終端機窗格，2 × 2 格線。代理在左上角。"
+            "value": "四個終端機區域，2 × 2 格線。代理在左上角。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Четыре терминальные панели в сетке 2 × 2. Агент в левом верхнем углу."
+            "value": "Четыре терминальные области в сетке 2 × 2. Агент в левом верхнем углу."
           }
         }
       }
@@ -24717,43 +24753,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "One terminal pane filling the workspace."
+            "value": "One terminal area filling the workspace."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペース全体を埋めるターミナルペイン 1 つ。"
+            "value": "ワークスペース全体を埋めるターミナルエリア 1 つ。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Одна термінальна панель, що заповнює робочий простір."
+            "value": "Одна термінальна область, що заповнює робочий простір."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "워크스페이스를 채우는 터미널 패널 하나."
+            "value": "워크스페이스를 채우는 터미널 영역 하나."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一个填满工作区的终端窗格。"
+            "value": "一个填满工作区的终端区域。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一個填滿工作區的終端機窗格。"
+            "value": "一個填滿工作區的終端機區域。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Одна терминальная панель, заполняющая рабочее пространство."
+            "value": "Одна терминальная область, заполняющая рабочее пространство."
           }
         }
       }
@@ -24999,43 +25035,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Six terminal panes in 2 columns, 3 rows. External 27-inch+ monitor suggested."
+            "value": "Six terminal areas in 2 columns, 3 rows. External 27-inch+ monitor suggested."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル 6 つを 2 カラム 3 行で。27 インチ以上の外部モニター推奨。"
+            "value": "ターミナルエリア 6 つを 2 カラム 3 行で。27 インチ以上の外部モニター推奨。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шість термінальних панелей у 2 колонки, 3 рядки. Рекомендовано зовнішній монітор 27 дюймів і більше."
+            "value": "Шість термінальних областей у 2 колонки, 3 рядки. Рекомендовано зовнішній монітор 27 дюймів і більше."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 6개를 2열 3행으로. 27인치 이상 외부 모니터 권장."
+            "value": "터미널 영역 6개를 2열 3행으로. 27인치 이상 외부 모니터 권장."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "六个终端窗格，2 列 3 行。建议使用 27 英寸以上的外部显示器。"
+            "value": "六个终端区域，2 列 3 行。建议使用 27 英寸以上的外部显示器。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "六個終端機窗格，2 欄 3 列。建議使用 27 吋以上的外接顯示器。"
+            "value": "六個終端機區域，2 欄 3 列。建議使用 27 吋以上的外接顯示器。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шесть терминальных панелей в 2 колонки, 3 строки. Рекомендуется внешний монитор 27 дюймов и больше."
+            "value": "Шесть терминальных областей в 2 колонки, 3 строки. Рекомендуется внешний монитор 27 дюймов и больше."
           }
         }
       }
@@ -26550,43 +26586,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This closes 1 tab in this pane:\n%@"
+            "value": "This closes 1 tab in this area:\n%@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このペインの 1 個のタブを閉じます:\n%@"
+            "value": "このエリアの 1 個のタブを閉じます:\n%@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这会关闭此面板中的 1 个标签页：\n%@"
+            "value": "这会关闭此区域中的 1 个标签页：\n%@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此舉關閉此窗格中 1 個標籤頁：\n%@"
+            "value": "此舉關閉此區域中 1 個分頁：\n%@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 페인에서 탭 1개를 닫습니다:\n%@"
+            "value": "이 영역에서 탭 1개를 닫습니다:\n%@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закроется 1 вкладка в этой панели:\n%@"
+            "value": "Закроется 1 вкладка в этой области:\n%@"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Це закриє 1 вкладку у цій панелі:\n%@"
+            "value": "Це закриє 1 вкладку в цій області:\n%@"
           }
         }
       }
@@ -26597,43 +26633,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This closes %1$lld tabs in this pane:\n%2$@"
+            "value": "This closes %1$lld tabs in this area:\n%2$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このペインの %1$lld 個のタブを閉じます:\n%2$@"
+            "value": "このエリアの %1$lld 個のタブを閉じます:\n%2$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这会关闭此面板中的 %1$lld 个标签页：\n%2$@"
+            "value": "这会关闭此区域中的 %1$lld 个标签页：\n%2$@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此舉關閉此窗格中 %1$lld 個標籤頁：\n%2$@"
+            "value": "此舉關閉此區域中 %1$lld 個分頁：\n%2$@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 페인에서 탭 %1$lld개를 닫습니다:\n%2$@"
+            "value": "이 영역에서 탭 %1$lld개를 닫습니다:\n%2$@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закроется вкладок в этой панели: %1$lld\n%2$@"
+            "value": "Закроется вкладок в этой области: %1$lld\n%2$@"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Це закриє %1$lld вкладок у цій панелі:\n%2$@"
+            "value": "Це закриє %1$lld вкладок в цій області:\n%2$@"
           }
         }
       }
@@ -27020,43 +27056,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the workspace and all of its panes."
+            "value": "This will close the workspace and all of its areas."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ワークスペースと、そのすべてのペインを閉じます。"
+            "value": "ワークスペースと、そのすべてのエリアを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此举关闭整个工作区,连同所有面板。"
+            "value": "此举关闭整个工作区,连同所有区域。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此舉關閉整個工作區,連同所有窗格。"
+            "value": "此舉關閉整個工作區,連同所有區域。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "워크스페이스와 모든 페인을 닫아요."
+            "value": "워크스페이스와 모든 영역을 닫아요."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закроется рабочее пространство и все его панели."
+            "value": "Закроется рабочее пространство и все его области."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Це закриє робочий простір та всі його панелі."
+            "value": "Це закриє робочий простір та всі його області."
           }
         }
       }
@@ -27114,43 +27150,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close %1$lld workspaces and all of their panes:\n%2$@"
+            "value": "This will close %1$lld workspaces and all of their areas:\n%2$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
+            "value": "%1$lld 個のワークスペースと、それぞれのすべてのエリアを閉じます:\n%2$@"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Це закриє %1$lld робочих просторів та всі їхні панелі:\n%2$@"
+            "value": "Це закриє %1$lld робочих просторів та всі їхні області:\n%2$@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld개의 작업 공간과 해당 페인을 모두 닫습니다:\n%2$@"
+            "value": "%1$lld개의 작업 공간과 해당 영역을 모두 닫습니다:\n%2$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将关闭 %1$lld 个工作区及其所有面板：\n%2$@"
+            "value": "将关闭 %1$lld 个工作区及其所有区域：\n%2$@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此舉會關閉 %1$lld 個工作區與其所有面板：\n%2$@"
+            "value": "此舉會關閉 %1$lld 個工作區與其所有區域：\n%2$@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Это закроет %1$lld рабочих пространств и все их панели:\n%2$@"
+            "value": "Это закроет %1$lld рабочих пространств и все их области:\n%2$@"
           }
         }
       }
@@ -27208,43 +27244,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the current window, its %1$lld workspaces, and all of their panes:\n%2$@"
+            "value": "This will close the current window, its %1$lld workspaces, and all of their areas:\n%2$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在のウインドウと、その %1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
+            "value": "現在のウインドウと、その %1$lld 個のワークスペースと、それぞれのすべてのエリアを閉じます:\n%2$@"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Це закриє поточне вікно, його %1$lld робочих просторів та всі їхні панелі:\n%2$@"
+            "value": "Це закриє поточне вікно, його %1$lld робочих просторів та всі їхні області:\n%2$@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 윈도우와 그 안의 %1$lld개 작업 공간, 해당 페인을 모두 닫습니다:\n%2$@"
+            "value": "현재 윈도우와 그 안의 %1$lld개 작업 공간, 해당 영역을 모두 닫습니다:\n%2$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将关闭当前窗口、其 %1$lld 个工作区及所有面板：\n%2$@"
+            "value": "将关闭当前窗口、其 %1$lld 个工作区及所有区域：\n%2$@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此舉會關閉目前視窗、其中的 %1$lld 個工作區,以及所有面板：\n%2$@"
+            "value": "此舉會關閉目前視窗、其中的 %1$lld 個工作區,以及所有區域：\n%2$@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Это закроет текущее окно, его %1$lld рабочих пространств и все их панели:\n%2$@"
+            "value": "Это закроет текущее окно, его %1$lld рабочих пространств и все их области:\n%2$@"
           }
         }
       }
@@ -27255,43 +27291,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifications are off for c11. Enable them in System Settings so c11 can ring you when a pane needs attention."
+            "value": "Notifications are off for c11. Enable them in System Settings so c11 can ring you when an area needs attention."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 の通知がオフです。システム設定で有効にすれば、ペインがあなたを必要とするときに c11 が呼びかけます。"
+            "value": "c11 の通知がオフです。システム設定で有効にすれば、エリアがあなたを必要とするときに c11 が呼びかけます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 的通知已关。到「系统设置」里开启,面板有事时,c11 才叩得到你。"
+            "value": "c11 的通知已关。到「系统设置」里开启,区域有事时,c11 才叩得到你。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 的通知已關。到「系統設定」裡開啟,窗格有事時,c11 才叩得到你。"
+            "value": "c11 的通知已關。到「系統設定」裡開啟,區域有事時,c11 才叩得到你。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11의 알림이 꺼져 있어요. 시스템 설정에서 켜면 페인에 주의가 필요할 때 c11이 울려요."
+            "value": "c11의 알림이 꺼져 있어요. 시스템 설정에서 켜면 영역에 주의가 필요할 때 c11이 울려요."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Уведомления для c11 выключены. Включите их в Системных настройках, чтобы c11 мог звенеть, когда панели нужно внимание."
+            "value": "Уведомления для c11 выключены. Включите их в Системных настройках, чтобы c11 мог звенеть, когда области нужно внимание."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сповіщення для c11 вимкнені. Увімкніть їх у Системних налаштуваннях, щоб c11 міг гукати вас, коли панель потребує уваги."
+            "value": "Сповіщення для c11 вимкнені. Увімкніть їх у Системних налаштуваннях, щоб c11 міг гукати вас, коли область потребує уваги."
           }
         }
       }
@@ -29699,43 +29735,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reopen Closed Browser Pane"
+            "value": "Reopen Closed Browser Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "閉じたブラウザペインを再度開く"
+            "value": "閉じたブラウザタブを再度開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新打开已关闭的浏览器面板"
+            "value": "重新打开已关闭的浏览器标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新開啟已關閉的瀏覽器窗格"
+            "value": "重新開啟已關閉的瀏覽器分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "닫은 브라우저 페인 다시 열기"
+            "value": "닫은 브라우저 탭 다시 열기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Открыть последнюю закрытую панель браузера"
+            "value": "Открыть последнюю закрытую вкладку браузера"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Знову відкрити закриту панель браузера"
+            "value": "Знову відкрити закриту вкладку браузера"
           }
         }
       }
@@ -30921,43 +30957,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close Other Tabs in Pane"
+            "value": "Close Other Tabs in Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペイン内の他のタブを閉じる"
+            "value": "エリア内の他のタブを閉じる"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭面板中的其他标签页"
+            "value": "关闭区域中的其他标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關閉面板中的其他標籤頁"
+            "value": "關閉區域中的其他分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "패널의 다른 탭 닫기"
+            "value": "영역의 다른 탭 닫기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрыть другие вкладки в панели"
+            "value": "Закрыть другие вкладки в области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрити інші вкладки в панелі"
+            "value": "Закрити інші вкладки в області"
           }
         }
       }
@@ -31720,43 +31756,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Next Surface"
+            "value": "Next Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次のサーフェス"
+            "value": "次のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一个 Surface"
+            "value": "下一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一個 Surface"
+            "value": "下一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다음 화면"
+            "value": "다음 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Следующая поверхность"
+            "value": "Следующая вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наступна поверхня"
+            "value": "Наступна вкладка"
           }
         }
       }
@@ -31814,43 +31850,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previous Surface"
+            "value": "Previous Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "前のサーフェス"
+            "value": "前のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一个 Surface"
+            "value": "上一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一個 Surface"
+            "value": "上一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이전 화면"
+            "value": "이전 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Предыдущая поверхность"
+            "value": "Предыдущая вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Попередня поверхня"
+            "value": "Попередня вкладка"
           }
         }
       }
@@ -32942,43 +32978,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When a pane needs you, it rings here. Tap one to jump to its pane."
+            "value": "When an area needs you, it rings here. Tap one to jump to its area."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインがあなたを必要とするとき、ここで呼びかけます。クリックするとそのペインに移動します。"
+            "value": "エリアがあなたを必要とするとき、ここで呼びかけます。クリックするとそのエリアに移動します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板有事,便在此叩你。点一下即刻跳过去。"
+            "value": "区域有事,便在此叩你。点一下即刻跳到该区域。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗格有事,便在此叩你。點一下即刻跳過去。"
+            "value": "區域有事,便在此叩你。點一下即刻跳到該區域。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인이 당신을 필요로 할 때 여기서 울려요. 알림을 클릭하면 해당 페인으로 이동해요."
+            "value": "영역이 당신을 필요로 할 때 여기서 울려요. 알림을 클릭하면 해당 영역으로 이동해요."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Когда панели нужно ваше внимание, она звенит здесь. Нажмите, чтобы перейти к ней."
+            "value": "Когда области нужно ваше внимание, она звенит здесь. Нажмите, чтобы перейти к ней."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Коли панель потребує вас, вона гукає сюди. Натисніть, щоб перейти до неї."
+            "value": "Коли область потребує вас, вона гукає сюди. Натисніть, щоб перейти до неї."
           }
         }
       }
@@ -32989,43 +33025,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When a pane needs you, it rings here."
+            "value": "When an area needs you, it rings here."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインがあなたを必要とするとき、ここで呼びかけます。"
+            "value": "エリアがあなたを必要とするとき、ここで呼びかけます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板有事,便在此叩你。"
+            "value": "区域有事,便在此叩你。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗格有事,便在此叩你。"
+            "value": "區域有事,便在此叩你。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인이 당신을 필요로 할 때 여기서 울려요."
+            "value": "영역이 당신을 필요로 할 때 여기서 울려요."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Когда панели нужно ваше внимание, она звенит здесь."
+            "value": "Когда области нужно ваше внимание, она звенит здесь."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Коли панель потребує вас, вона гукає сюди."
+            "value": "Коли область потребує вас, вона гукає сюди."
           }
         }
       }
@@ -33929,43 +33965,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The \"A\" button in each pane's tab bar spawns a new terminal and runs this agent."
+            "value": "The \"A\" button in each area's tab bar spawns a new terminal and runs this agent."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "各ペインのタブバーにある「A」ボタンで新しいターミナルが生成され、このエージェントが実行されます。"
+            "value": "各エリアのタブバーにある「A」ボタンで新しいターミナルが生成され、このエージェントが実行されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个窗格标签栏上的 “A” 按钮会新建终端并运行此代理。"
+            "value": "每个区域标签栏上的 “A” 按钮会新建终端并运行此代理。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "每個窗格分頁列上的「A」按鈕會開啟新終端機並執行此代理。"
+            "value": "每個區域分頁列上的「A」按鈕會開啟新終端機並執行此代理。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "각 창의 탭 바에 있는 \"A\" 버튼은 새 터미널을 생성하고 이 에이전트를 실행합니다."
+            "value": "각 영역의 탭 바에 있는 \"A\" 버튼은 새 터미널을 생성하고 이 에이전트를 실행합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка «A» на панели вкладок каждой панели открывает новый терминал и запускает этого агента."
+            "value": "Кнопка «A» на панели вкладок каждой области открывает новый терминал и запускает этого агента."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка «A» на панелі вкладок кожної панелі відкриває новий термінал і запускає цього агента."
+            "value": "Кнопка «A» на панелі вкладок кожної області відкриває новий термінал і запускає цього агента."
           }
         }
       }
@@ -34164,43 +34200,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep Workspace When Last Surface Closes"
+            "value": "Keep Workspace When Last Tab Closes"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最後のサーフェスを閉じてもワークスペースを残す"
+            "value": "最後のタブを閉じてもワークスペースを残す"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "마지막 서피스가 닫힐 때 작업 공간 유지"
+            "value": "마지막 탭이 닫힐 때 작업 공간 유지"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭最后一个界面时保留工作区"
+            "value": "关闭最后一个标签页时保留工作区"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關閉最後一個介面時保留工作區"
+            "value": "關閉最後一個分頁時保留工作區"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сохранять рабочее пространство при закрытии последней поверхности"
+            "value": "Сохранять рабочее пространство при закрытии последней вкладки"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Залишати робочий простір при закритті останньої поверхні"
+            "value": "Залишати робочий простір при закритті останньої вкладки"
           }
         }
       }
@@ -34211,43 +34247,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If the focused surface is the last one, the close-surface shortcut also closes the workspace."
+            "value": "If the focused tab is the last one, the close-tab shortcut also closes the workspace."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つなら、サーフェスを閉じるショートカットはワークスペースも閉じます。"
+            "value": "フォーカス中のタブがそのワークスペースの最後の1つなら、タブを閉じるショートカットはワークスペースも閉じます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Якщо фокусована поверхня — остання, скорочення «закрити поверхню» також закриває робочий простір."
+            "value": "Якщо фокусована вкладка — остання, скорочення «закрити вкладку» також закриває робочий простір."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "포커스된 서피스가 마지막이면, 서피스 닫기 단축키가 작업 공간도 닫습니다."
+            "value": "포커스된 탭이 마지막이면, 탭 닫기 단축키가 작업 공간도 닫습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "若聚焦的界面是工作区的最后一个,关闭界面的快捷键也会关闭该工作区。"
+            "value": "若聚焦的标签页是工作区的最后一个,关闭标签页的快捷键也会关闭该工作区。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "若聚焦中的介面是工作區最後一個,關閉介面的快捷鍵也會關閉該工作區。"
+            "value": "若聚焦中的分頁是工作區最後一個,關閉分頁的快捷鍵也會關閉該工作區。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Если активная поверхность — последняя, сочетание «закрыть поверхность» закрывает и рабочее пространство."
+            "value": "Если активная вкладка — последняя, сочетание «закрыть вкладку» закрывает и рабочее пространство."
           }
         }
       }
@@ -34258,43 +34294,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If the focused surface is the last one, the close-surface shortcut still closes only the surface. Close the workspace explicitly with the close-workspace shortcut."
+            "value": "If the focused tab is the last one, the close-tab shortcut still closes only the tab. Close the workspace explicitly with the close-workspace shortcut."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つでも、サーフェスを閉じるショートカットはサーフェスだけを閉じ、ワークスペースは残します。ワークスペースを閉じるショートカットを使うと明示的に閉じられます。"
+            "value": "フォーカス中のタブがそのワークスペースの最後の1つでも、タブを閉じるショートカットはタブだけを閉じ、ワークスペースは残します。ワークスペースを閉じるショートカットを使うと明示的に閉じられます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Якщо фокусована поверхня — остання, скорочення «закрити поверхню» все одно закриває тільки поверхню. Закрийте робочий простір явно скороченням «закрити робочий простір»."
+            "value": "Якщо фокусована вкладка — остання, скорочення «закрити вкладку» все одно закриває тільки вкладку. Закрийте робочий простір явно скороченням «закрити робочий простір»."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "포커스된 서피스가 마지막이어도, 서피스 닫기 단축키는 서피스만 닫습니다. 작업 공간은 작업 공간 닫기 단축키로 명시적으로 닫으세요."
+            "value": "포커스된 탭이 마지막이어도, 탭 닫기 단축키는 탭만 닫습니다. 작업 공간은 작업 공간 닫기 단축키로 명시적으로 닫으세요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "即便聚焦的界面是工作区的最后一个,关闭界面的快捷键仍只关闭界面。关闭工作区请使用关闭工作区的快捷键。"
+            "value": "即便聚焦的标签页是工作区的最后一个,关闭标签页的快捷键仍只关闭标签页。关闭工作区请使用关闭工作区的快捷键。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "即使聚焦中的介面是工作區最後一個,關閉介面的快捷鍵也只會關閉介面,保留工作區。用關閉工作區的快捷鍵才會明確關閉。"
+            "value": "即使聚焦中的分頁是工作區最後一個,關閉分頁的快捷鍵也只會關閉分頁,保留工作區。用關閉工作區的快捷鍵才會明確關閉。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Если активная поверхность — последняя, сочетание «закрыть поверхность» всё равно закрывает только поверхность. Рабочее пространство закройте явно сочетанием «закрыть рабочее пространство»."
+            "value": "Если активная вкладка — последняя, сочетание «закрыть вкладку» всё равно закрывает только вкладку. Рабочее пространство закройте явно сочетанием «закрыть рабочее пространство»."
           }
         }
       }
@@ -34305,43 +34341,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Command Palette Searches All Surfaces"
+            "value": "Command Palette Searches All Tabs"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "コマンドパレットですべてのサーフェスを検索"
+            "value": "コマンドパレットですべてのタブを検索"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Палітра команд шукає по всіх поверхнях"
+            "value": "Палітра команд шукає по всіх вкладках"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "명령어 팔레트에서 모든 서피스 검색"
+            "value": "명령어 팔레트에서 모든 탭 검색"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "命令面板搜索所有界面"
+            "value": "命令面板搜索所有标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "指令面板搜尋所有介面"
+            "value": "指令面板搜尋所有分頁"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Палитра команд ищет по всем поверхностям"
+            "value": "Палитра команд ищет по всем вкладкам"
           }
         }
       }
@@ -34399,43 +34435,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P also matches terminal, browser, and markdown surfaces across workspaces."
+            "value": "Cmd+P also matches terminal, browser, and markdown tabs across workspaces."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Pでワークスペースをまたいだターミナル、ブラウザ、Markdownのサーフェスも検索できます。"
+            "value": "Cmd+Pでワークスペースをまたいだターミナル、ブラウザ、Markdownのタブも検索できます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P також шукає по термінальних, браузерних і Markdown-поверхнях у всіх робочих просторах."
+            "value": "Cmd+P також шукає по термінальних, браузерних і Markdown-вкладках у всіх робочих просторах."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P는 작업 공간 전반의 터미널, 브라우저, 마크다운 서피스도 일치시킵니다."
+            "value": "Cmd+P는 작업 공간 전반의 터미널, 브라우저, 마크다운 탭도 일치시킵니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P 同时跨工作区匹配终端、浏览器和 Markdown 界面。"
+            "value": "Cmd+P 同时跨工作区匹配终端、浏览器和 Markdown 标签页。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P 也會跨工作區比對終端機、瀏覽器與 markdown 介面。"
+            "value": "Cmd+P 也會跨工作區比對終端機、瀏覽器與 markdown 分頁。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+P также ищет по терминальным, браузерным и Markdown-поверхностям во всех рабочих пространствах."
+            "value": "Cmd+P также ищет по терминальным, браузерным и Markdown-вкладкам во всех рабочих пространствах."
           }
         }
       }
@@ -34869,43 +34905,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow creating internal browser surfaces. Open browser surfaces keep running when turned off."
+            "value": "Allow creating internal browser tabs. Open browser tabs keep running when turned off."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "内蔵ブラウザのサーフェスを作成できます。オフにしても、開いているブラウザのサーフェスはそのまま動作します。"
+            "value": "内蔵ブラウザのタブを作成できます。オフにしても、開いているブラウザのタブはそのまま動作します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许创建内置浏览器界面。关闭后，已打开的浏览器界面继续运行。"
+            "value": "允许创建内置浏览器标签页。关闭后，已打开的浏览器标签页继续运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "允許建立內建瀏覽器介面。關閉後，已開啟的瀏覽器介面仍會繼續運作。"
+            "value": "允許建立內建瀏覽器分頁。關閉後，已開啟的瀏覽器分頁仍會繼續運作。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "내장 브라우저 서피스를 만들 수 있습니다. 끄더라도 열려 있는 브라우저 서피스는 계속 실행됩니다."
+            "value": "내장 브라우저 탭을 만들 수 있습니다. 끄더라도 열려 있는 브라우저 탭은 계속 실행됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Разрешает создавать поверхности встроенного браузера. При отключении уже открытые поверхности браузера продолжают работать."
+            "value": "Разрешает создавать вкладки встроенного браузера. При отключении уже открытые вкладки браузера продолжают работать."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Дозволяє створювати поверхні вбудованого браузера. Після вимкнення вже відкриті поверхні браузера продовжують працювати."
+            "value": "Дозволяє створювати вкладки вбудованого браузера. Після вимкнення вже відкриті вкладки браузера продовжують працювати."
           }
         }
       }
@@ -34916,43 +34952,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Block new internal browser surfaces. The Browser spawn button is hidden and CLI/socket creation is rejected."
+            "value": "Block new internal browser tabs. The Browser spawn button is hidden and CLI/socket creation is rejected."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しい内蔵ブラウザのサーフェスをブロックします。ブラウザの作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
+            "value": "新しい内蔵ブラウザのタブをブロックします。ブラウザの作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "阻止新建内置浏览器界面。浏览器创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
+            "value": "阻止新建内置浏览器标签页。浏览器创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "封鎖新的內建瀏覽器介面。瀏覽器建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
+            "value": "封鎖新的內建瀏覽器分頁。瀏覽器建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 내장 브라우저 서피스를 차단합니다. 브라우저 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
+            "value": "새 내장 브라우저 탭을 차단합니다. 브라우저 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блокирует новые поверхности встроенного браузера. Кнопка создания браузера скрыта, а создание через CLI/сокет отклоняется."
+            "value": "Блокирует новые вкладки встроенного браузера. Кнопка создания браузера скрыта, а создание через CLI/сокет отклоняется."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блокує нові поверхні вбудованого браузера. Кнопку створення браузера приховано, а створення через CLI/сокет відхиляється."
+            "value": "Блокує нові вкладки вбудованого браузера. Кнопку створення браузера приховано, а створення через CLI/сокет відхиляється."
           }
         }
       }
@@ -35198,43 +35234,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown Surfaces"
+            "value": "Markdown Tabs"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown サーフェス"
+            "value": "Markdown タブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 界面"
+            "value": "Markdown 标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 介面"
+            "value": "Markdown 分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 서피스"
+            "value": "Markdown 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхности Markdown"
+            "value": "Вкладки Markdown"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхні Markdown"
+            "value": "Вкладки Markdown"
           }
         }
       }
@@ -35245,43 +35281,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow creating markdown surfaces. Open markdown surfaces keep running when turned off."
+            "value": "Allow creating markdown tabs. Open markdown tabs keep running when turned off."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown のサーフェスを作成できます。オフにしても、開いている Markdown のサーフェスはそのまま動作します。"
+            "value": "Markdown のタブを作成できます。オフにしても、開いている Markdown のタブはそのまま動作します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许创建 Markdown 界面。关闭后，已打开的 Markdown 界面继续运行。"
+            "value": "允许创建 Markdown 标签页。关闭后，已打开的 Markdown 标签页继续运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "允許建立 Markdown 介面。關閉後，已開啟的 Markdown 介面仍會繼續運作。"
+            "value": "允許建立 Markdown 分頁。關閉後，已開啟的 Markdown 分頁仍會繼續運作。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 서피스를 만들 수 있습니다. 끄더라도 열려 있는 Markdown 서피스는 계속 실행됩니다."
+            "value": "Markdown 탭을 만들 수 있습니다. 끄더라도 열려 있는 Markdown 탭은 계속 실행됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Разрешает создавать поверхности Markdown. При отключении уже открытые поверхности Markdown продолжают работать."
+            "value": "Разрешает создавать вкладки Markdown. При отключении уже открытые вкладки Markdown продолжают работать."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Дозволяє створювати поверхні Markdown. Після вимкнення вже відкриті поверхні Markdown продовжують працювати."
+            "value": "Дозволяє створювати вкладки Markdown. Після вимкнення вже відкриті вкладки Markdown продовжують працювати."
           }
         }
       }
@@ -35292,43 +35328,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Block new markdown surfaces. The Markdown spawn button is hidden and CLI/socket creation is rejected."
+            "value": "Block new markdown tabs. The Markdown spawn button is hidden and CLI/socket creation is rejected."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しい Markdown のサーフェスをブロックします。Markdown の作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
+            "value": "新しい Markdown のタブをブロックします。Markdown の作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "阻止新建 Markdown 界面。Markdown 创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
+            "value": "阻止新建 Markdown 标签页。Markdown 创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "封鎖新的 Markdown 介面。Markdown 建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
+            "value": "封鎖新的 Markdown 分頁。Markdown 建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 Markdown 서피스를 차단합니다. Markdown 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
+            "value": "새 Markdown 탭을 차단합니다. Markdown 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блокирует новые поверхности Markdown. Кнопка создания Markdown скрыта, а создание через CLI/сокет отклоняется."
+            "value": "Блокирует новые вкладки Markdown. Кнопка создания Markdown скрыта, а создание через CLI/сокет отклоняется."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блокує нові поверхні Markdown. Кнопку створення Markdown приховано, а створення через CLI/сокет відхиляється."
+            "value": "Блокує нові вкладки Markdown. Кнопку створення Markdown приховано, а створення через CLI/сокет відхиляється."
           }
         }
       }
@@ -36749,43 +36785,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show Surface IDs in Tab Titles"
+            "value": "Show Tab Numbers in Tab Titles"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブのタイトルにサーフェスIDを表示"
+            "value": "タブのタイトルにタブ番号を表示"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在标签页标题中显示界面 ID"
+            "value": "在标签页标题中显示标签页编号"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在標籤頁標題中顯示介面 ID"
+            "value": "在分頁標題中顯示分頁編號"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "탭 제목에 서피스 ID 표시"
+            "value": "탭 제목에 탭 번호 표시"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Показывать ID поверхностей в заголовках вкладок"
+            "value": "Показывать номера вкладок в заголовках вкладок"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Показувати ID поверхонь у заголовках вкладок"
+            "value": "Показувати номери вкладок у заголовках вкладок"
           }
         }
       }
@@ -36796,43 +36832,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tabs display their title only. Turn on to prefix every tab with its addressable surface number."
+            "value": "Tabs display their title only. Turn on to prefix every tab with its addressable tab number."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブにはタイトルのみが表示されます。オンにすると、各タブの先頭にアドレス指定可能なサーフェス番号が付きます。"
+            "value": "タブにはタイトルのみが表示されます。オンにすると、各タブの先頭にアドレス指定可能なタブ番号が付きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标签页仅显示其标题。开启后，会在每个标签页前面加上可寻址的界面编号。"
+            "value": "标签页仅显示其标题。开启后，会在每个标签页前面加上可寻址的标签页编号。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "標籤頁僅顯示其標題。開啟後，會在每個標籤頁前面加上可定址的介面編號。"
+            "value": "分頁僅顯示其標題。開啟後，會在每個分頁前面加上可定址的分頁編號。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "탭에는 제목만 표시됩니다. 켜면 모든 탭 앞에 주소로 지정할 수 있는 서피스 번호가 붙습니다."
+            "value": "탭에는 제목만 표시됩니다. 켜면 모든 탭 앞에 주소로 지정할 수 있는 탭 번호가 붙습니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вкладки показывают только заголовок. Включите, чтобы добавить в начало каждой вкладки её адресуемый номер поверхности."
+            "value": "Вкладки показывают только заголовок. Включите, чтобы добавить в начало каждой вкладки её адресуемый номер."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вкладки показують лише заголовок. Увімкніть, щоб додати на початок кожної вкладки її адресований номер поверхні."
+            "value": "Вкладки показують лише заголовок. Увімкніть, щоб додати на початок кожної вкладки її адресований номер."
           }
         }
       }
@@ -36843,43 +36879,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tabs display their surface number (\"292: Build agent\"). Say the number to address a surface; agents target it as surface:N."
+            "value": "Tabs display their tab number (\"292: Build agent\"). Say the number to address a tab; agents target it as tab:N."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブにサーフェス番号が表示されます（「292: Build agent」）。番号を伝えてサーフェスを指定できます。エージェントは surface:N として指定します。"
+            "value": "タブにタブ番号が表示されます（「292: Build agent」）。番号を伝えてタブを指定できます。エージェントは tab:N として指定します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标签页会显示其界面编号（“292: Build agent”）。说出编号即可指定某个界面；代理以 surface:N 定位它。"
+            "value": "标签页会显示其标签页编号（“292: Build agent”）。说出编号即可指定某个标签页；代理以 tab:N 定位它。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "標籤頁會顯示其介面編號（「292: Build agent」）。說出編號即可指定某個介面；代理以 surface:N 定位它。"
+            "value": "分頁會顯示其分頁編號（「292: Build agent」）。說出編號即可指定某個分頁；代理以 tab:N 定位它。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "탭에 서피스 번호가 표시됩니다(\"292: Build agent\"). 번호를 말해 서피스를 지정하세요. 에이전트는 surface:N으로 대상을 지정합니다."
+            "value": "탭에 탭 번호가 표시됩니다(\"292: Build agent\"). 번호를 말해 탭을 지정하세요. 에이전트는 tab:N으로 대상을 지정합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вкладки показывают номер своей поверхности («292: Build agent»). Назовите номер, чтобы указать поверхность; агенты обращаются к ней как surface:N."
+            "value": "Вкладки показывают свой номер («292: Build agent»). Назовите номер, чтобы указать вкладку; агенты обращаются к ней как tab:N."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Вкладки показують номер своєї поверхні («292: Build agent»). Назвіть номер, щоб указати поверхню; агенти звертаються до неї як surface:N."
+            "value": "Вкладки показують свій номер («292: Build agent»). Назвіть номер, щоб указати вкладку; агенти звертаються до неї як tab:N."
           }
         }
       }
@@ -36937,43 +36973,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide the folder and active title above pane tabs."
+            "value": "Hide the folder and active title above area tabs."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインタブの上にあるフォルダ名と現在のタイトルを隠します。"
+            "value": "エリアタブの上にあるフォルダ名と現在のタイトルを隠します。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Приховати теку та активний заголовок над вкладками панелей."
+            "value": "Приховати теку та активний заголовок над вкладками областей."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인 탭 위의 폴더와 현재 제목을 숨깁니다."
+            "value": "영역 탭 위의 폴더와 현재 제목을 숨깁니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "隐藏面板标签上方的文件夹和当前标题。"
+            "value": "隐藏区域标签栏上方的文件夹和当前标题。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "隱藏面板標籤上方的資料夾與目前標題。"
+            "value": "隱藏區域分頁上方的資料夾與目前標題。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Скрыть папку и активный заголовок над вкладками панелей."
+            "value": "Скрыть папку и активный заголовок над вкладками областей."
           }
         }
       }
@@ -36984,43 +37020,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show the folder and active title above pane tabs."
+            "value": "Show the folder and active title above area tabs."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインタブの上にフォルダ名と現在のタイトルを表示します。"
+            "value": "エリアタブの上にフォルダ名と現在のタイトルを表示します。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Показувати теку та активний заголовок над вкладками панелей."
+            "value": "Показувати теку та активний заголовок над вкладками областей."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인 탭 위에 폴더와 현재 제목을 표시합니다."
+            "value": "영역 탭 위에 폴더와 현재 제목을 표시합니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在面板标签上方显示文件夹和当前标题。"
+            "value": "在区域标签栏上方显示文件夹和当前标题。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在面板標籤上方顯示資料夾與目前標題。"
+            "value": "在區域分頁上方顯示資料夾與目前標題。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Показывать папку и активный заголовок над вкладками панелей."
+            "value": "Показывать папку и активный заголовок над вкладками областей."
           }
         }
       }
@@ -41872,43 +41908,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scale c11 sidebar text and surface tab strip without changing terminal font size."
+            "value": "Scale c11 sidebar text and tab strip without changing terminal font size."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナルのフォントサイズを変更せずに、c11サイドバーのテキストとサーフェスのタブストリップをスケーリングします。"
+            "value": "ターミナルのフォントサイズを変更せずに、c11サイドバーのテキストとタブストリップをスケーリングします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在不更改终端字体大小的情况下,缩放 c11 侧边栏文本和 surface 标签栏。"
+            "value": "在不更改终端字体大小的情况下,缩放 c11 侧边栏文本和标签栏。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在不更改終端字型大小的情況下,縮放 c11 側邊欄文字和 surface 標籤列。"
+            "value": "在不更改終端字型大小的情況下,縮放 c11 側邊欄文字和分頁列。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 글꼴 크기를 변경하지 않고 c11 사이드바 텍스트와 surface 탭 스트립을 스케일링합니다."
+            "value": "터미널 글꼴 크기를 변경하지 않고 c11 사이드바 텍스트와 탭 스트립을 스케일링합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Масштабирует текст боковой панели c11 и полосу вкладок surface без изменения размера шрифта терминала."
+            "value": "Масштабирует текст боковой панели c11 и полосу вкладок без изменения размера шрифта терминала."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Масштабує текст бічної панелі c11 та смугу вкладок surface без зміни розміру шрифту терміналу."
+            "value": "Масштабує текст бічної панелі c11 та смугу вкладок без зміни розміру шрифту терміналу."
           }
         }
       }
@@ -42295,43 +42331,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inherit from parent pane"
+            "value": "Inherit from parent area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "親ペインから継承"
+            "value": "親エリアから継承"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Успадковано від батьківської панелі"
+            "value": "Успадковано від батьківської області"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "상위 패널에서 상속"
+            "value": "상위 영역에서 상속"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "继承自父窗格"
+            "value": "继承自父区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "由父窗格繼承"
+            "value": "由父區域繼承"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Унаследовать от родительской панели"
+            "value": "Унаследовать от родительской области"
           }
         }
       }
@@ -43517,43 +43553,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "the A button on every pane launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
+            "value": "the A button on every area launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "各ペインの A ボタンはこれを起動します。新規ターミナルは引き続き bash を開きます。これらの設定をリポジトリ単位で上書きするには `.c11/agents.json` を置きます。"
+            "value": "各エリアの A ボタンはこれを起動します。新規ターミナルは引き続き bash を開きます。これらの設定をリポジトリ単位で上書きするには `.c11/agents.json` を置きます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка A на кожній панелі запускає це. Новий термінал, як і раніше, відкриває bash. Покладіть `.c11/agents.json` у будь-який репозиторій, щоб перевизначити ці налаштування для терміналів, відкритих у ньому."
+            "value": "Кнопка A у кожній області запускає це. Новий термінал, як і раніше, відкриває bash. Покладіть `.c11/agents.json` у будь-який репозиторій, щоб перевизначити ці налаштування для терміналів, відкритих у ньому."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "각 패널의 A 버튼이 이것을 실행합니다. 새 터미널은 여전히 bash를 엽니다. 그곳에서 열리는 터미널의 설정을 재정의하려면 어떤 저장소에든 `.c11/agents.json`을 넣으세요."
+            "value": "각 영역의 A 버튼이 이것을 실행합니다. 새 터미널은 여전히 bash를 엽니다. 그곳에서 열리는 터미널의 설정을 재정의하려면 어떤 저장소에든 `.c11/agents.json`을 넣으세요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个窗格上的 A 按钮启动它。新建终端仍打开 bash。在任意仓库放入 `.c11/agents.json` 即可覆盖在该处打开的终端的设置。"
+            "value": "每个区域上的 A 按钮启动它。新建终端仍打开 bash。在任意仓库放入 `.c11/agents.json` 即可覆盖在该处打开的终端的设置。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "每個窗格上的 A 按鈕啟動它。新增終端機仍開啟 bash。在任一儲存庫放入 `.c11/agents.json` 即可覆寫在該處開啟的終端機的設定。"
+            "value": "每個區域上的 A 按鈕啟動它。新增終端機仍開啟 bash。在任一儲存庫放入 `.c11/agents.json` 即可覆寫在該處開啟的終端機的設定。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка A на каждой панели запускает его. Новый терминал по-прежнему открывает bash. Положите `.c11/agents.json` в любой репозиторий, чтобы переопределить эти настройки для терминалов, открытых там."
+            "value": "Кнопка A на каждой области запускает его. Новый терминал по-прежнему открывает bash. Положите `.c11/agents.json` в любой репозиторий, чтобы переопределить эти настройки для терминалов, открытых там."
           }
         }
       }
@@ -44128,43 +44164,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applied to every new terminal surface (menu, keyboard, socket). Use “New Bash Terminal” to bypass for a single surface. Per-project overrides live in `.c11/agents.json`; per-workspace override is the metadata key `default_agent_use_bash` (set with `c11 set-metadata`). Distinct from the per-pane “A” launcher button below."
+            "value": "Applied to every new terminal tab (menu, keyboard, socket). Use “New Bash Terminal” to bypass for a single tab. Per-project overrides live in `.c11/agents.json`; per-workspace override is the metadata key `default_agent_use_bash` (set with `c11 set-metadata`). Distinct from the per-area “A” launcher button below."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "すべての新規ターミナル面 (メニュー、キーボード、ソケット) に適用されます。1 つの面だけ回避するには「新規 Bash ターミナル」を使用してください。プロジェクト単位の上書きは `.c11/agents.json` に、ワークスペース単位の上書きはメタデータキー `default_agent_use_bash` (`c11 set-metadata` で設定) を使用します。下の「A」ペイン起動ボタンとは別物です。"
+            "value": "すべての新規ターミナルタブ (メニュー、キーボード、ソケット) に適用されます。1 つのタブだけ回避するには「新規 Bash ターミナル」を使用してください。プロジェクト単位の上書きは `.c11/agents.json` に、ワークスペース単位の上書きはメタデータキー `default_agent_use_bash` (`c11 set-metadata` で設定) を使用します。下の「A」エリア起動ボタンとは別物です。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Застосовується до кожного нового термінала (меню, клавіатура, сокет). Використайте «Новий Bash-термінал», щоб обійти лише для одного. Перевизначення для проєкту — у `.c11/agents.json`; для робочої області — ключ метаданих `default_agent_use_bash` (встановлюйте через `c11 set-metadata`). Окремо від кнопки «A» нижче."
+            "value": "Застосовується до кожної нової термінальної вкладки (меню, клавіатура, сокет). Використайте «Новий Bash-термінал», щоб обійти лише для однієї вкладки. Перевизначення для проєкту — у `.c11/agents.json`; для робочої області — ключ метаданих `default_agent_use_bash` (встановлюйте через `c11 set-metadata`). Окремо від кнопки «A» кожної області нижче."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "모든 새 터미널 표면(메뉴, 키보드, 소켓)에 적용됩니다. 한 표면만 우회하려면 “새 Bash 터미널”을 사용하세요. 프로젝트별 재정의는 `.c11/agents.json`, 워크스페이스별 재정의는 메타데이터 키 `default_agent_use_bash` (`c11 set-metadata`로 설정)입니다. 아래의 패널별 “A” 런처 버튼과는 별개입니다."
+            "value": "모든 새 터미널 탭(메뉴, 키보드, 소켓)에 적용됩니다. 한 탭만 우회하려면 “새 Bash 터미널”을 사용하세요. 프로젝트별 재정의는 `.c11/agents.json`, 워크스페이스별 재정의는 메타데이터 키 `default_agent_use_bash` (`c11 set-metadata`로 설정)입니다. 아래의 영역별 “A” 런처 버튼과는 별개입니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "应用于每个新终端表面（菜单、键盘、套接字）。使用“新建 Bash 终端”可对单个表面绕过。项目级覆盖位于 `.c11/agents.json`；工作区级覆盖是元数据键 `default_agent_use_bash`（用 `c11 set-metadata` 设置）。与下方每窗格的“A”启动按钮不同。"
+            "value": "应用于每个新终端标签页（菜单、键盘、套接字）。使用“新建 Bash 终端”可对单个标签页绕过。项目级覆盖位于 `.c11/agents.json`；工作区级覆盖是元数据键 `default_agent_use_bash`（用 `c11 set-metadata` 设置）。与下方每区域的“A”启动按钮不同。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "套用到每個新的終端機介面（選單、鍵盤、Socket）。使用「新增 Bash 終端機」可針對單一介面繞過。專案層級覆寫位於 `.c11/agents.json`；工作區層級覆寫是中繼資料鍵 `default_agent_use_bash`（用 `c11 set-metadata` 設定）。與下方每窗格的「A」啟動按鈕不同。"
+            "value": "套用到每個新的終端機分頁（選單、鍵盤、Socket）。使用「新增 Bash 終端機」可針對單一分頁繞過。專案層級覆寫位於 `.c11/agents.json`；工作區層級覆寫是中繼資料鍵 `default_agent_use_bash`（用 `c11 set-metadata` 設定）。與下方每區域的「A」啟動按鈕不同。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Применяется к каждому новому терминалу (меню, клавиатура, сокет). Используйте «Новый Bash-терминал», чтобы обойти для одного. Переопределения уровня проекта — в `.c11/agents.json`; уровня рабочей области — ключ метаданных `default_agent_use_bash` (задаётся через `c11 set-metadata`). Отдельно от кнопки «A» под этим разделом."
+            "value": "Применяется к каждой новой терминальной вкладке (меню, клавиатура, сокет). Используйте «Новый Bash-терминал», чтобы обойти для одной вкладки. Переопределения уровня проекта — в `.c11/agents.json`; уровня рабочего пространства — ключ метаданных `default_agent_use_bash` (задаётся через `c11 set-metadata`). Отдельно от кнопки «A» каждой области ниже."
           }
         }
       }
@@ -45491,43 +45527,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flashes a blue outline when c11 highlights a pane."
+            "value": "Flashes a blue outline when c11 highlights an area."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 がペインを強調表示するとき、青いアウトラインを点滅させます。"
+            "value": "c11 がエリアを強調表示するとき、青いアウトラインを点滅させます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11이 페인을 강조할 때 파란 윤곽선을 깜빡입니다."
+            "value": "c11이 영역을 강조할 때 파란 윤곽선을 깜빡입니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 高亮面板时闪现蓝色轮廓。"
+            "value": "c11 高亮区域时闪现蓝色轮廓。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 強調窗格時閃爍藍色外框。"
+            "value": "c11 強調區域時閃爍藍色外框。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Мигает синим контуром, когда c11 выделяет панель."
+            "value": "Мигает синим контуром, когда c11 выделяет область."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блимає синім контуром, коли c11 підсвічує панель."
+            "value": "Блимає синім контуром, коли c11 підсвічує область."
           }
         }
       }
@@ -45538,43 +45574,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pane Flash"
+            "value": "Area Flash"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインフラッシュ"
+            "value": "エリアフラッシュ"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блимання панелі"
+            "value": "Блимання області"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인 깜빡임"
+            "value": "영역 깜빡임"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板闪烁"
+            "value": "区域闪烁"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板閃爍"
+            "value": "區域閃爍"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Мигание панели"
+            "value": "Мигание области"
           }
         }
       }
@@ -45585,43 +45621,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rings unread panes in blue."
+            "value": "Rings unread areas in blue."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未読ペインに青で呼びかけます。"
+            "value": "未読エリアに青で呼びかけます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "읽지 않은 페인을 파랗게 울립니다."
+            "value": "읽지 않은 영역을 파랗게 울립니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为未读面板叩上蓝环。"
+            "value": "为未读区域叩上蓝环。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "以藍環叩響未讀窗格。"
+            "value": "以藍環叩響未讀區域。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Звенит синим на непрочитанных панелях."
+            "value": "Звенит синим на непрочитанных областях."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Гукає непрочитані панелі синім кільцем."
+            "value": "Гукає непрочитані області синім кільцем."
           }
         }
       }
@@ -45632,43 +45668,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unread Pane Ring"
+            "value": "Unread Area Ring"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未読ペインリング"
+            "value": "未読エリアリング"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Дзвінок непрочитаної панелі"
+            "value": "Дзвінок непрочитаної області"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "읽지 않은 페인 울림"
+            "value": "읽지 않은 영역 울림"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未读面板叩环"
+            "value": "未读区域叩环"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "未讀面板叩響"
+            "value": "未讀區域叩響"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Звон непрочитанной панели"
+            "value": "Звон непрочитанной области"
           }
         }
       }
@@ -46478,43 +46514,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "the A button on every pane launches an agent. shape what runs and what it knows about c11."
+            "value": "the A button on every area launches an agent. shape what runs and what it knows about c11."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "各ペインの A ボタンはエージェントを起動します。何が実行され、c11 について何を知っているかを形作ります。"
+            "value": "各エリアの A ボタンはエージェントを起動します。何が実行され、c11 について何を知っているかを形作ります。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка A на кожній панелі запускає агента. Визначте, що запускається і що він знає про c11."
+            "value": "Кнопка A у кожній області запускає агента. Визначте, що запускається і що він знає про c11."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "각 패널의 A 버튼이 에이전트를 실행합니다. 무엇이 실행되고 에이전트가 c11에 대해 무엇을 아는지 정합니다."
+            "value": "각 영역의 A 버튼이 에이전트를 실행합니다. 무엇이 실행되고 에이전트가 c11에 대해 무엇을 아는지 정합니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个窗格上的 A 按钮启动一个代理。决定运行什么以及它对 c11 了解什么。"
+            "value": "每个区域上的 A 按钮启动一个代理。决定运行什么以及它对 c11 了解什么。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "每個窗格上的 A 按鈕啟動一個代理。決定執行什麼以及它對 c11 了解什麼。"
+            "value": "每個區域上的 A 按鈕啟動一個代理。決定執行什麼以及它對 c11 了解什麼。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка A на каждой панели запускает агента. Определите, что запускается и что он знает о c11."
+            "value": "Кнопка A на каждой области запускает агента. Определите, что запускается и что он знает о c11."
           }
         }
       }
@@ -47136,43 +47172,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "shape command input before it reaches a surface."
+            "value": "shape command input before it reaches a tab."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "コマンド入力がサーフェスへ届く前に整えます。"
+            "value": "コマンド入力がタブへ届く前に整えます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "формуйте введення команди, перш ніж воно досягне поверхні."
+            "value": "формуйте введення команди, перш ніж воно досягне вкладки."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "명령 입력이 서피스에 닿기 전에 다듬습니다."
+            "value": "명령 입력이 탭에 닿기 전에 다듬습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在命令输入抵达界面前,先予塑形。"
+            "value": "在命令输入抵达标签页前,先予塑形。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在指令輸入抵達介面之前,先將其成形。"
+            "value": "在指令輸入抵達分頁之前,先將其成形。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "формируйте командный ввод до того, как он достигнет поверхности."
+            "value": "формируйте командный ввод до того, как он достигнет вкладки."
           }
         }
       }
@@ -49685,43 +49721,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surfaces"
+            "value": "Tabs & Areas"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェス"
+            "value": "タブとエリア"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面"
+            "value": "标签页和区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面"
+            "value": "分頁與區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스"
+            "value": "탭 및 영역"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхности"
+            "value": "Вкладки и области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхні"
+            "value": "Вкладки та області"
           }
         }
       }
@@ -50155,43 +50191,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Panes"
+            "value": "Areas"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペイン"
+            "value": "エリア"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панелі"
+            "value": "Області"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인"
+            "value": "영역"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板"
+            "value": "区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板"
+            "value": "區域"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панели"
+            "value": "Области"
           }
         }
       }
@@ -50484,43 +50520,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (pane tabs) reveals shortcut hints."
+            "value": "Holding Cmd (sidebar/titlebar) or Ctrl/Cmd (area tabs) reveals shortcut hints."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd（サイドバー/タイトルバー）またはCtrl/Cmd（ペインタブ）を長押しするとショートカットヒントが表示されます。"
+            "value": "Cmd（サイドバー/タイトルバー）またはCtrl/Cmd（エリアタブ）を長押しするとショートカットヒントが表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按住 Cmd（侧边栏/标题栏）或 Ctrl/Cmd（面板标签页）显示快捷键提示。"
+            "value": "按住 Cmd（侧边栏/标题栏）或 Ctrl/Cmd（区域标签页）显示快捷键提示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "按住 Cmd（側邊欄/標題列）或 Ctrl/Cmd（面板標籤頁）顯示快速鍵提示。"
+            "value": "按住 Cmd（側邊欄/標題列）或 Ctrl/Cmd（區域分頁）顯示快速鍵提示。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd(사이드바/제목 표시줄) 또는 Ctrl/Cmd(패널 탭)를 누르면 단축키 힌트가 표시됩니다."
+            "value": "Cmd(사이드바/제목 표시줄) 또는 Ctrl/Cmd(영역 탭)를 누르면 단축키 힌트가 표시됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Удержание Cmd (боковая панель/заголовок) или Ctrl/Cmd (вкладки панели) показывает подсказки сочетаний."
+            "value": "Удержание Cmd (боковая панель/заголовок) или Ctrl/Cmd (вкладки области) показывает подсказки сочетаний."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Утримання Cmd (бічна панель/смуга заголовка) або Ctrl/Cmd (вкладки панелей) показує підказки скорочень."
+            "value": "Утримання Cmd (бічна панель/смуга заголовка) або Ctrl/Cmd (вкладки областей) показує підказки скорочень."
           }
         }
       }
@@ -52317,43 +52353,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flash Focused Pane"
+            "value": "Flash Focused Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "フォーカスペインを強調"
+            "value": "フォーカスエリアを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "闪烁聚焦面板"
+            "value": "闪烁聚焦区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "閃爍聚焦窗格"
+            "value": "閃爍聚焦區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "포커스된 페인 깜빡이기"
+            "value": "포커스된 영역 깜빡이기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Мигнуть активной панелью"
+            "value": "Мигнуть активной областью"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Блимнути фокусованою панеллю"
+            "value": "Блимнути фокусованою областю"
           }
         }
       }
@@ -52364,43 +52400,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focus Pane Down"
+            "value": "Focus Area Down"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "下のペインにフォーカス"
+            "value": "下のエリアにフォーカス"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦下方面板"
+            "value": "聚焦下方区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦下方面板"
+            "value": "聚焦下方區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아래쪽 패널로 포커스"
+            "value": "아래쪽 영역으로 포커스"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель снизу"
+            "value": "Фокус на область снизу"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель знизу"
+            "value": "Фокус на область знизу"
           }
         }
       }
@@ -52411,43 +52447,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focus Pane Left"
+            "value": "Focus Area Left"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "左のペインにフォーカス"
+            "value": "左のエリアにフォーカス"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦左侧面板"
+            "value": "聚焦左侧区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦左側面板"
+            "value": "聚焦左側區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "왼쪽 패널로 포커스"
+            "value": "왼쪽 영역으로 포커스"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель слева"
+            "value": "Фокус на область слева"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель ліворуч"
+            "value": "Фокус на область ліворуч"
           }
         }
       }
@@ -52458,43 +52494,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focus Pane Right"
+            "value": "Focus Area Right"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "右のペインにフォーカス"
+            "value": "右のエリアにフォーカス"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦右侧面板"
+            "value": "聚焦右侧区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦右側面板"
+            "value": "聚焦右側區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "오른쪽 패널로 포커스"
+            "value": "오른쪽 영역으로 포커스"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель справа"
+            "value": "Фокус на область справа"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель праворуч"
+            "value": "Фокус на область праворуч"
           }
         }
       }
@@ -52505,43 +52541,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focus Pane Up"
+            "value": "Focus Area Up"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "上のペインにフォーカス"
+            "value": "上のエリアにフォーカス"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦上方面板"
+            "value": "聚焦上方区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦上方面板"
+            "value": "聚焦上方區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "위쪽 패널로 포커스"
+            "value": "위쪽 영역으로 포커스"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель сверху"
+            "value": "Фокус на область сверху"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Фокус на панель зверху"
+            "value": "Фокус на область зверху"
           }
         }
       }
@@ -52740,43 +52776,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Surface"
+            "value": "New Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新規サーフェス"
+            "value": "新規タブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新建 Surface"
+            "value": "新建标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "新增 Surface"
+            "value": "新增分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 화면"
+            "value": "새 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Новая поверхность"
+            "value": "Новая вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Нова поверхня"
+            "value": "Нова вкладка"
           }
         }
       }
@@ -52881,43 +52917,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Next Surface"
+            "value": "Next Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次のサーフェス"
+            "value": "次のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一个 Surface"
+            "value": "下一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一個 Surface"
+            "value": "下一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다음 화면"
+            "value": "다음 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Следующая поверхность"
+            "value": "Следующая вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Наступна поверхня"
+            "value": "Наступна вкладка"
           }
         }
       }
@@ -53116,43 +53152,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previous Surface"
+            "value": "Previous Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "前のサーフェス"
+            "value": "前のタブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一个 Surface"
+            "value": "上一个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一個 Surface"
+            "value": "上一個分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이전 화면"
+            "value": "이전 탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Предыдущая поверхность"
+            "value": "Предыдущая вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Попередня поверхня"
+            "value": "Попередня вкладка"
           }
         }
       }
@@ -53633,43 +53669,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toggle Pane Zoom"
+            "value": "Toggle Area Zoom"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインズームを切替"
+            "value": "エリアズームを切替"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "切换面板缩放"
+            "value": "切换区域缩放"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "切換面板縮放"
+            "value": "切換區域縮放"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "패널 확대/축소 전환"
+            "value": "영역 확대/축소 전환"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Масштаб панели"
+            "value": "Масштаб области"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перемкнути масштаб панелі"
+            "value": "Перемкнути масштаб області"
           }
         }
       }
@@ -57040,43 +57076,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No surfaces"
+            "value": "No tabs"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェスなし"
+            "value": "タブなし"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无界面"
+            "value": "无标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無介面"
+            "value": "無分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 없음"
+            "value": "탭 없음"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Нет поверхностей"
+            "value": "Нет вкладок"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Немає поверхонь"
+            "value": "Немає вкладок"
           }
         }
       }
@@ -57489,43 +57525,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Terminals only · no agent surfaces"
+            "value": "Terminals only · no agent tabs"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナルのみ · エージェントサーフェスなし"
+            "value": "ターミナルのみ · エージェントタブなし"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅终端 · 无代理界面"
+            "value": "仅终端 · 无代理标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "僅終端 · 無代理介面"
+            "value": "僅終端 · 無代理分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널만 · 에이전트 서피스 없음"
+            "value": "터미널만 · 에이전트 탭 없음"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Только терминалы · нет поверхностей агентов"
+            "value": "Только терминалы · нет вкладок агентов"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Лише термінали · немає поверхонь агентів"
+            "value": "Лише термінали · немає вкладок агентів"
           }
         }
       }
@@ -58852,43 +58888,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No metadata set on this surface."
+            "value": "No metadata set on this tab."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このサーフェスにはメタデータが設定されていません。"
+            "value": "このタブにはメタデータが設定されていません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此界面未设置元数据。"
+            "value": "此标签页未设置元数据。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此介面未設定中繼資料。"
+            "value": "此分頁未設定中繼資料。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 서피스에는 설정된 메타데이터가 없습니다."
+            "value": "이 탭에는 설정된 메타데이터가 없습니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "На этой поверхности метаданные не заданы."
+            "value": "На этой вкладке метаданные не заданы."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Для цієї поверхні метаданих не задано."
+            "value": "Для цієї вкладки метаданих не задано."
           }
         }
       }
@@ -58993,43 +59029,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface"
+            "value": "Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェス"
+            "value": "タブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面"
+            "value": "标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面"
+            "value": "分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스"
+            "value": "탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхность"
+            "value": "Вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхня"
+            "value": "Вкладка"
           }
         }
       }
@@ -59228,43 +59264,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface Details"
+            "value": "Tab Details"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェスの詳細"
+            "value": "タブの詳細"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面详情"
+            "value": "标签页详情"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面詳細資訊"
+            "value": "分頁詳細資訊"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 세부 정보"
+            "value": "탭 세부 정보"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сведения о поверхности"
+            "value": "Сведения о вкладке"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Відомості про поверхню"
+            "value": "Відомості про вкладку"
           }
         }
       }
@@ -59604,43 +59640,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface Details"
+            "value": "Tab Details"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェスの詳細"
+            "value": "タブの詳細"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面详情"
+            "value": "标签页详情"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面詳細資訊"
+            "value": "分頁詳細資訊"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 세부 정보"
+            "value": "탭 세부 정보"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сведения о поверхности"
+            "value": "Сведения о вкладке"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Відомості про поверхню"
+            "value": "Відомості про вкладку"
           }
         }
       }
@@ -64915,43 +64951,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This pane will be removed from the workspace. This cannot be undone."
+            "value": "This area will be removed from the workspace. This cannot be undone."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このペインはワークスペースから削除されます。この操作は取り消せません。"
+            "value": "このエリアはワークスペースから削除されます。この操作は取り消せません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此窗格将从工作区中移除。此操作无法撤销。"
+            "value": "此区域将从工作区中移除。此操作无法撤销。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此窗格將從工作區中移除。此操作無法復原。"
+            "value": "此區域將從工作區中移除。此操作無法復原。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 창이 작업 공간에서 제거됩니다. 이 작업은 되돌릴 수 없습니다."
+            "value": "이 영역이 작업 공간에서 제거됩니다. 이 작업은 되돌릴 수 없습니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Эта панель будет удалена из рабочего пространства. Действие нельзя отменить."
+            "value": "Эта область будет удалена из рабочего пространства. Действие нельзя отменить."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Цю панель буде видалено з робочого простору. Дію не можна скасувати."
+            "value": "Цю область буде видалено з робочого простору. Дію не можна скасувати."
           }
         }
       }
@@ -65103,43 +65139,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close Pane"
+            "value": "Close Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインを閉じる"
+            "value": "エリアを閉じる"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭窗格"
+            "value": "关闭区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關閉窗格"
+            "value": "關閉區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "창 닫기"
+            "value": "영역 닫기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрыть панель"
+            "value": "Закрыть область"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрити панель"
+            "value": "Закрити область"
           }
         }
       }
@@ -65150,43 +65186,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close this pane?"
+            "value": "Close this area?"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このペインを閉じますか？"
+            "value": "このエリアを閉じますか？"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭此窗格？"
+            "value": "关闭此区域？"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關閉此窗格？"
+            "value": "關閉此區域？"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 창을 닫으시겠습니까?"
+            "value": "이 영역을 닫으시겠습니까?"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрыть эту панель?"
+            "value": "Закрыть эту область?"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрити цю панель?"
+            "value": "Закрити цю область?"
           }
         }
       }
@@ -65385,43 +65421,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Empty Panel"
+            "value": "Empty Area"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Порожня панель"
+            "value": "Порожня область"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "空のパネル"
+            "value": "空のエリア"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "빈 패널"
+            "value": "빈 영역"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "空面板"
+            "value": "空区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "空面板"
+            "value": "空區域"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Пустая панель"
+            "value": "Пустая область"
           }
         }
       }
@@ -65714,43 +65750,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Close Pane"
+            "value": "Close Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペインを閉じる"
+            "value": "エリアを閉じる"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭窗格"
+            "value": "关闭区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關閉窗格"
+            "value": "關閉區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "창 닫기"
+            "value": "영역 닫기"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрыть панель"
+            "value": "Закрыть область"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Закрити панель"
+            "value": "Закрити область"
           }
         }
       }
@@ -66419,43 +66455,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld surface(s)"
+            "value": "%lld tab(s)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェス %lld 件"
+            "value": "タブ %lld 件"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхонь: %lld"
+            "value": "Вкладок: %lld"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 %lld개"
+            "value": "탭 %lld개"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 个界面"
+            "value": "%lld 个标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 個介面"
+            "value": "%lld 個分頁"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхностей: %lld"
+            "value": "Вкладок: %lld"
           }
         }
       }
@@ -66560,43 +66596,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface"
+            "value": "Tab"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェス"
+            "value": "タブ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面"
+            "value": "标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面"
+            "value": "分頁"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스"
+            "value": "탭"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхность"
+            "value": "Вкладка"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поверхня"
+            "value": "Вкладка"
           }
         }
       }
@@ -66654,43 +66690,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pane"
+            "value": "Area"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ペイン"
+            "value": "エリア"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面板"
+            "value": "区域"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗格"
+            "value": "區域"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "페인"
+            "value": "영역"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панель"
+            "value": "Область"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панель"
+            "value": "Область"
           }
         }
       }
@@ -67876,43 +67912,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tip: copy the surface integer above (e.g. surface:75), not the UUID below."
+            "value": "Tip: copy the tab integer above (e.g. tab:75), not the UUID below."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ヒント: 下の UUID ではなく、上のサーフェス整数(例: surface:75)をコピーしてください。"
+            "value": "ヒント: 下の UUID ではなく、上のタブ整数(例: tab:75)をコピーしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "提示：复制上方的界面整数（例如 surface:75），而不是下方的 UUID。"
+            "value": "提示：复制上方的标签页整数（例如 tab:75），而不是下方的 UUID。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "提示：複製上方的介面整數（例如 surface:75），而非下方的 UUID。"
+            "value": "提示：複製上方的分頁整數（例如 tab:75），而非下方的 UUID。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "팁: 아래의 UUID가 아니라 위의 서피스 정수(예: surface:75)를 복사하세요."
+            "value": "팁: 아래의 UUID가 아니라 위의 탭 정수(예: tab:75)를 복사하세요."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Подсказка: копируйте целочисленный идентификатор поверхности выше (например, surface:75), а не UUID ниже."
+            "value": "Подсказка: копируйте целочисленный идентификатор вкладки выше (например, tab:75), а не UUID ниже."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Порада: копіюйте ціле число поверхні вище (напр., surface:75), а не UUID нижче."
+            "value": "Порада: копіюйте ціле число вкладки вище (напр., tab:75), а не UUID нижче."
           }
         }
       }
@@ -67923,43 +67959,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface UUID"
+            "value": "Tab UUID"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェス UUID"
+            "value": "タブ UUID"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面 UUID"
+            "value": "标签页 UUID"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面 UUID"
+            "value": "分頁 UUID"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 UUID"
+            "value": "탭 UUID"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "UUID поверхности"
+            "value": "UUID вкладки"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "UUID поверхні"
+            "value": "UUID вкладки"
           }
         }
       }
@@ -68017,43 +68053,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Surface Details"
+            "value": "Tab Details"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーフェスの詳細"
+            "value": "タブの詳細"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面详情"
+            "value": "标签页详情"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "介面詳細資訊"
+            "value": "分頁詳細資訊"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "서피스 세부 정보"
+            "value": "탭 세부 정보"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сведения о поверхности"
+            "value": "Сведения о вкладке"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Відомості про поверхню"
+            "value": "Відомості про вкладку"
           }
         }
       }
@@ -68205,43 +68241,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown surfaces stay available via the CLI and command palette."
+            "value": "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown tabs stay available via the CLI and command palette."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブバーにマークダウン作成ボタンが表示されます。オフにするとその分のスペースを取り戻せます。マークダウンのサーフェスはCLIとコマンドパレットから引き続き利用できます。"
+            "value": "タブバーにマークダウン作成ボタンが表示されます。オフにするとその分のスペースを取り戻せます。マークダウンのタブはCLIとコマンドパレットから引き続き利用できます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панель вкладок показує кнопку створення Markdown. Вимкніть, щоб звільнити місце; поверхні Markdown залишаються доступними через CLI та палітру команд."
+            "value": "Панель вкладок показує кнопку створення Markdown. Вимкніть, щоб звільнити місце; вкладки Markdown залишаються доступними через CLI та палітру команд."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "탭 바에 마크다운 생성 버튼이 표시됩니다. 끄면 그 자리를 되찾을 수 있습니다. 마크다운 서피스는 CLI와 명령어 팔레트를 통해 계속 사용할 수 있습니다."
+            "value": "탭 바에 마크다운 생성 버튼이 표시됩니다. 끄면 그 자리를 되찾을 수 있습니다. 마크다운 탭은 CLI와 명령어 팔레트를 통해 계속 사용할 수 있습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标签栏显示 Markdown 生成按钮。关闭可腾出该位置；Markdown 界面仍可通过 CLI 和命令面板使用。"
+            "value": "标签栏显示 Markdown 生成按钮。关闭可腾出该位置；Markdown 标签页仍可通过 CLI 和命令面板使用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "標籤列顯示 Markdown 建立按鈕。關閉可騰出該位置；Markdown 介面仍可透過 CLI 和指令面板使用。"
+            "value": "分頁列顯示 Markdown 建立按鈕。關閉可騰出該位置；Markdown 分頁仍可透過 CLI 和指令面板使用。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Панель вкладок показывает кнопку создания Markdown. Отключите, чтобы освободить место; поверхности Markdown остаются доступны через CLI и палитру команд."
+            "value": "Панель вкладок показывает кнопку создания Markdown. Отключите, чтобы освободить место; вкладки Markdown остаются доступны через CLI и палитру команд."
           }
         }
       }
@@ -68252,43 +68288,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The Markdown spawn button is hidden. Markdown surfaces remain fully available via the CLI and command palette."
+            "value": "The Markdown spawn button is hidden. Markdown tabs remain fully available via the CLI and command palette."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "マークダウン作成ボタンは非表示になります。マークダウンのサーフェスはCLIとコマンドパレットから引き続き完全に利用できます。"
+            "value": "マークダウン作成ボタンは非表示になります。マークダウンのタブはCLIとコマンドパレットから引き続き完全に利用できます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопку створення Markdown приховано. Поверхні Markdown залишаються повністю доступними через CLI та палітру команд."
+            "value": "Кнопку створення Markdown приховано. Вкладки Markdown залишаються повністю доступними через CLI та палітру команд."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "마크다운 생성 버튼이 숨겨집니다. 마크다운 서피스는 CLI와 명령어 팔레트를 통해 계속 완전히 사용할 수 있습니다."
+            "value": "마크다운 생성 버튼이 숨겨집니다. 마크다운 탭은 CLI와 명령어 팔레트를 통해 계속 완전히 사용할 수 있습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 生成按钮已隐藏。Markdown 界面仍可通过 CLI 和命令面板完全使用。"
+            "value": "Markdown 生成按钮已隐藏。Markdown 标签页仍可通过 CLI 和命令面板完全使用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markdown 建立按鈕已隱藏。Markdown 介面仍可透過 CLI 和指令面板完全使用。"
+            "value": "Markdown 建立按鈕已隱藏。Markdown 分頁仍可透過 CLI 和指令面板完全使用。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Кнопка создания Markdown скрыта. Поверхности Markdown остаются полностью доступны через CLI и палитру команд."
+            "value": "Кнопка создания Markdown скрыта. Вкладки Markdown остаются полностью доступны через CLI и палитру команд."
           }
         }
       }
@@ -68487,43 +68523,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This folder no longer exists. New terminals start in the focused surface's directory."
+            "value": "This folder no longer exists. New terminals start in the focused tab's directory."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このフォルダは既に存在しません。新しいターミナルはフォーカスされたサーフェスのディレクトリで開始します。"
+            "value": "このフォルダは既に存在しません。新しいターミナルはフォーカスされたタブのディレクトリで開始します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此文件夹已不存在。新终端将在聚焦界面所在目录中启动。"
+            "value": "此文件夹已不存在。新终端将在聚焦标签页所在目录中启动。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "此資料夾已不存在。新終端機將在聚焦介面所在目錄中啟動。"
+            "value": "此資料夾已不存在。新終端機將在聚焦分頁所在目錄中啟動。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 폴더는 더 이상 존재하지 않습니다. 새 터미널은 포커스된 서피스의 디렉터리에서 시작됩니다."
+            "value": "이 폴더는 더 이상 존재하지 않습니다. 새 터미널은 포커스된 탭의 디렉터리에서 시작됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Эта папка больше не существует. Новые терминалы будут запускаться в каталоге активной поверхности."
+            "value": "Эта папка больше не существует. Новые терминалы будут запускаться в каталоге активной вкладки."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ця папка більше не існує. Нові термінали запускатимуться в каталозі активної поверхні."
+            "value": "Ця папка більше не існує. Нові термінали запускатимуться в каталозі активної вкладки."
           }
         }
       }
@@ -68534,43 +68570,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New terminals start in the focused surface's directory until a root is set."
+            "value": "New terminals start in the focused tab's directory until a root is set."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ルートが設定されるまで、新しいターミナルはフォーカスされたサーフェスのディレクトリで開始します。"
+            "value": "ルートが設定されるまで、新しいターミナルはフォーカスされたタブのディレクトリで開始します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在设置根目录之前，新终端将在聚焦界面所在目录中启动。"
+            "value": "在设置根目录之前，新终端将在聚焦标签页所在目录中启动。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在設定根目錄之前，新終端機將在聚焦介面所在目錄中啟動。"
+            "value": "在設定根目錄之前，新終端機將在聚焦分頁所在目錄中啟動。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "루트가 설정되기 전까지 새 터미널은 포커스된 서피스의 디렉터리에서 시작됩니다."
+            "value": "루트가 설정되기 전까지 새 터미널은 포커스된 탭의 디렉터리에서 시작됩니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Пока корень не задан, новые терминалы запускаются в каталоге активной поверхности."
+            "value": "Пока корень не задан, новые терминалы запускаются в каталоге активной вкладки."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Поки корінь не задано, нові термінали запускаються в каталозі активної поверхні."
+            "value": "Поки корінь не задано, нові термінали запускаються в каталозі активної вкладки."
           }
         }
       }
@@ -68628,43 +68664,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focused surface: %@"
+            "value": "Focused tab: %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "フォーカスされたサーフェス: %@"
+            "value": "フォーカスされたタブ: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦界面：%@"
+            "value": "聚焦标签页：%@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "聚焦介面：%@"
+            "value": "聚焦分頁：%@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "포커스된 서피스: %@"
+            "value": "포커스된 탭: %@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Активная поверхность: %@"
+            "value": "Активная вкладка: %@"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Активна поверхня: %@"
+            "value": "Активна вкладка: %@"
           }
         }
       }

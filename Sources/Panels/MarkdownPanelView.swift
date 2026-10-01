@@ -33,7 +33,7 @@ struct MarkdownPanelView: View {
         .contextMenu {
             Button(String(
                 localized: "surfaceManifest.menuItem",
-                defaultValue: "Show surface manifest…"
+                defaultValue: "Tab Details"
             )) {
                 SurfaceManifestViewerWindowController.show(
                     workspaceId: panel.workspaceId,

@@ -32,7 +32,7 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _screen(c: cmux, ws: str, surface: str) -> str:
-    payload = c._call("surface.read_text", {"workspace_id": ws, "surface_id": surface}) or {}
+    payload = c._call("tab.read_text", {"workspace_id": ws, "tab_id": surface}) or {}
     return str(payload.get("text") or "")
 
 
@@ -59,10 +59,10 @@ def _new_shell_surface(c: cmux) -> tuple[str, str]:
     ws = str((c._call("workspace.create") or {}).get("workspace_id") or "")
     _must(bool(ws), "workspace.create returned no workspace_id")
     time.sleep(0.3)
-    surfaces = (c._call("surface.list", {"workspace_id": ws}) or {}).get("surfaces") or []
+    surfaces = (c._call("tab.list", {"workspace_id": ws}) or {}).get("tabs") or []
     _must(bool(surfaces), f"No surfaces in workspace {ws}")
     surface = str(surfaces[0].get("id") or "")
-    _must(bool(surface), "surface.list returned surface without id")
+    _must(bool(surface), "tab.list returned surface without id")
     return ws, surface
 
 
@@ -70,8 +70,8 @@ def test_send_with_submit_executes_via_separate_return(c: cmux) -> None:
     ws, surface = _new_shell_surface(c)
     try:
         # Result (62675) never appears in the typed source text.
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "expr 62674 + 1", "submit": True,
         })
         _wait_for(c, ws, surface, "62675", timeout_s=6.0)
@@ -86,8 +86,8 @@ def test_send_with_submit_executes_via_separate_return(c: cmux) -> None:
 def test_no_submit_holds_text_until_explicit_enter(c: cmux) -> None:
     ws, surface = _new_shell_surface(c)
     try:
-        c._call("surface.send_text", {
-            "workspace_id": ws, "surface_id": surface,
+        c._call("tab.send_text", {
+            "workspace_id": ws, "tab_id": surface,
             "text": "expr 73736 + 1", "submit": False,
         })
         # The typed text must land in the composer/prompt...
@@ -95,7 +95,7 @@ def test_no_submit_holds_text_until_explicit_enter(c: cmux) -> None:
         # ...but must NOT execute (no result) without a Return.
         _absent_after(c, ws, surface, "73737", window_s=1.5)
         # An explicit send-key enter then submits it.
-        c._call("surface.send_key", {"workspace_id": ws, "surface_id": surface, "key": "enter"})
+        c._call("tab.send_key", {"workspace_id": ws, "tab_id": surface, "key": "enter"})
         _wait_for(c, ws, surface, "73737", timeout_s=6.0)
         print("PASS: --no-submit held the line; explicit enter submitted it")
     finally:

@@ -152,6 +152,9 @@ final class EventEmitter {
             surface: surface,
             payload: [
                 "reason": reason,
+                // C11-248: `caller_tab_id` is canonical; `caller_surface_id` carries the
+                // same UUID for v1 consumers (remove after one release).
+                "caller_tab_id": callerSurfaceId?.uuidString ?? NSNull(),
                 "caller_surface_id": callerSurfaceId?.uuidString ?? NSNull(),
                 "by": actor.rawValue,
             ]

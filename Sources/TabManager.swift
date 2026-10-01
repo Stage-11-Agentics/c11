@@ -2719,9 +2719,18 @@ class TabManager: ObservableObject {
 
         let count = plan.panelIds.count
         let titleLines = plan.titles.map { "• \($0)" }.joined(separator: "\n")
-        let message = "This is about to close \(count) tab\(count == 1 ? "" : "s") in this pane:\n\(titleLines)"
+        let message = count == 1
+            ? String(
+                format: String(localized: "dialog.closeOtherTabs.message.one", defaultValue: "This closes 1 tab in this area:\n%@"),
+                titleLines
+            )
+            : String(
+                format: String(localized: "dialog.closeOtherTabs.message.other", defaultValue: "This closes %1$lld tabs in this area:\n%2$@"),
+                count,
+                titleLines
+            )
         guard confirmClose(
-            title: "Close other tabs?",
+            title: String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other tabs?"),
             message: message,
             acceptCmdD: false
         ) else { return }
@@ -2916,11 +2925,11 @@ class TabManager: ObservableObject {
         let format = willCloseWindow
             ? String(
                 localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panes:\n%2$@"
+                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their areas:\n%2$@"
             )
             : String(
                 localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panes:\n%2$@"
+                defaultValue: "This will close %1$lld workspaces and all of their areas:\n%2$@"
             )
         let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
         return CloseWorkspacesPlan(
@@ -2950,7 +2959,7 @@ class TabManager: ObservableObject {
             let displayName = closeWorkspaceDisplayTitle(workspace.title)
             let format = String(
                 localized: "dialog.closeWorkspace.messageNamed",
-                defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its panes."
+                defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its areas."
             )
             let message = String(format: format, locale: .current, displayName)
             // Off-screen workspaces are isHidden=true (perf #127), so their anchor

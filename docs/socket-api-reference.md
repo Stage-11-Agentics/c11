@@ -1,6 +1,6 @@
 # c11 Socket API Reference
 
-The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix domain socket. Every surface, pane, workspace, browser, and theme is addressable from outside the process, so agents can compose their own environment without the operator in the loop.
+The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix domain socket. Every workspace, area, tab, browser, and theme is addressable from outside the process, so agents can compose their own environment without the operator in the loop.
 
 > This reference is generated against the v2 method dispatch in `Sources/TerminalController.swift`. The **method index** below lists every dotted v2 method the running app accepts. Cross-check a live instance with `c11 capabilities`.
 
@@ -74,7 +74,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 ### Agents (`agent.*`) — 1
 
-- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
+- `agent.launch` — launch a typed coding agent into a new tab or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
 
 ### System (`system.*`) — 5
 
@@ -122,49 +122,49 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 - `workspace.set_metadata`
 - `workspace.set_root`
 
-### Surfaces (`surface.*`) — 25
+### Tabs (`tab.*`) — 25
 
-- `surface.action`
-- `surface.cancel_flash`
-- `surface.clear_history`
-- `surface.clear_metadata`
-- `surface.close`
-- `surface.create`
-- `surface.current`
-- `surface.drag_to_split`
-- `surface.focus`
-- `surface.get_metadata`
-- `surface.get_titlebar_state`
-- `surface.health`
-- `surface.list`
-- `surface.move`
-- `surface.read_text`
-- `surface.refresh`
-- `surface.reorder`
-- `surface.send_key`
-- `surface.send_text`
-- `surface.set_custom_color`
-- `surface.set_metadata`
-- `surface.set_titlebar_collapsed`
-- `surface.set_titlebar_visibility`
-- `surface.split`
-- `surface.trigger_flash`
+- `tab.action`
+- `tab.cancel_flash`
+- `tab.clear_history`
+- `tab.clear_metadata`
+- `tab.close`
+- `tab.create`
+- `tab.current`
+- `tab.drag_to_split`
+- `tab.focus`
+- `tab.get_metadata`
+- `tab.get_titlebar_state`
+- `tab.health`
+- `tab.list`
+- `tab.move`
+- `tab.read_text`
+- `tab.refresh`
+- `tab.reorder`
+- `tab.send_key`
+- `tab.send_text`
+- `tab.set_custom_color`
+- `tab.set_metadata`
+- `tab.set_titlebar_collapsed`
+- `tab.set_titlebar_visibility`
+- `tab.split`
+- `tab.trigger_flash`
 
-### Panes (`pane.*`) — 13
+### Areas (`area.*`) — 13
 
-- `pane.break`
-- `pane.clear_metadata`
-- `pane.confirm`
-- `pane.create`
-- `pane.focus`
-- `pane.get_metadata`
-- `pane.join`
-- `pane.last`
-- `pane.list`
-- `pane.resize`
-- `pane.set_metadata`
-- `pane.surfaces`
-- `pane.swap`
+- `area.break`
+- `area.clear_metadata`
+- `area.confirm`
+- `area.create`
+- `area.focus`
+- `area.get_metadata`
+- `area.join`
+- `area.last`
+- `area.list`
+- `area.resize`
+- `area.set_metadata`
+- `area.tabs`
+- `area.swap`
 
 ### Browser (`browser.*`) — 84
 
@@ -283,11 +283,11 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `notification.clear`
 - `notification.create`
-- `notification.create_for_surface`
+- `notification.create_for_tab`
 - `notification.create_for_target`
 - `notification.list`
 
-### Markdown surfaces (`markdown.*`) — 2
+### Markdown tabs (`markdown.*`) — 2
 
 - `markdown.get_content`
 - `markdown.open`
@@ -304,10 +304,6 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `feedback.open`
 - `feedback.submit`
-
-### Tabs (`tab.*`) — 1
-
-- `tab.action`
 
 ### Sidebar (`sidebar.*`) — 1
 

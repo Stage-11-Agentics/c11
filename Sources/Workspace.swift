@@ -5679,7 +5679,7 @@ final class Workspace: Identifiable, ObservableObject {
                 String(localized: "workspace.tooltip.splitDown", defaultValue: "Split Down")
             ),
             newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Tab"),
-            closePane: String(localized: "workspace.tooltip.closePane", defaultValue: "Close Pane")
+            closePane: String(localized: "workspace.tooltip.closePane", defaultValue: "Close Area")
         )
     }
 
@@ -12736,7 +12736,7 @@ extension Workspace: BonsplitDelegate {
             case .surfaceCreationFailed:
                 return String(
                     localized: "agentLaunch.decline.surfaceFailed",
-                    defaultValue: "Couldn't open a terminal surface for the agent — try again, or use a different pane."
+                    defaultValue: "Couldn't open a terminal tab for the agent — try again, or use a different area."
                 )
             case .unresolvableRecipe(let harness):
                 return String(
@@ -13277,12 +13277,12 @@ extension Workspace: BonsplitDelegate {
         if isOnlyPane {
             return String(
                 localized: "workspace.closePane.alert.title.only",
-                defaultValue: "Reset entire pane?"
+                defaultValue: "Reset entire area?"
             )
         }
         return String(
             localized: "workspace.closePane.alert.title",
-            defaultValue: "Close entire pane?"
+            defaultValue: "Close this area?"
         )
     }
 
@@ -13291,12 +13291,12 @@ extension Workspace: BonsplitDelegate {
         if isOnlyPane {
             return String(
                 localized: "workspace.closePane.alert.confirm.only",
-                defaultValue: "Reset Entire Pane"
+                defaultValue: "Reset Entire Area"
             )
         }
         return String(
             localized: "workspace.closePane.alert.confirm",
-            defaultValue: "Close Entire Pane"
+            defaultValue: "Close Area"
         )
     }
 
@@ -13305,7 +13305,7 @@ extension Workspace: BonsplitDelegate {
             if tabCount <= 0 {
                 return String(
                     localized: "workspace.closePane.alert.body.only.empty",
-                    defaultValue: "This pane has no tabs. A new terminal will replace it."
+                    defaultValue: "This area has no tabs. A new terminal will replace it."
                 )
             }
             if tabCount == 1 {
@@ -13323,7 +13323,7 @@ extension Workspace: BonsplitDelegate {
         if tabCount <= 0 {
             return String(
                 localized: "workspace.closePane.alert.body.empty",
-                defaultValue: "This pane will be removed from the workspace. This cannot be undone."
+                defaultValue: "This area will be removed from the workspace. This cannot be undone."
             )
         }
         if tabCount == 1 {

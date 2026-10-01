@@ -24,6 +24,8 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+from fake_server_env import fake_server_env
+
 
 class BoundUnixSocket:
     def __init__(self, path: Path) -> None:
@@ -313,9 +315,8 @@ def _run_case(base: Path, *, shell: str, shell_args: list[str], script: Path, sc
     _write_executable(bindir / "git", _git_stub())
     _write_executable(bindir / "gh", _gh_stub())
 
-    env = dict(os.environ)
+    env = fake_server_env(str(socket_path))
     env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
-    env["CMUX_SOCKET_PATH"] = str(socket_path)
     env["CMUX_TAB_ID"] = "00000000-0000-0000-0000-000000000001"
     env["CMUX_PANEL_ID"] = "00000000-0000-0000-0000-000000000002"
     env["CMUX_TEST_SCRIPT"] = str(script)

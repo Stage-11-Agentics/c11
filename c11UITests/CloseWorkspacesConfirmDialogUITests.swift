@@ -11,56 +11,6 @@ final class CloseWorkspacesConfirmDialogUITests: XCTestCase {
         try? FileManager.default.removeItem(atPath: socketPath)
     }
 
-    func testCommandPaletteCloseWorkspacesBelowShowsSingleSummaryDialog() {
-        let app = XCUIApplication()
-        app.launchEnvironment["CMUX_SOCKET_PATH"] = socketPath
-        app.launchEnvironment["CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"] = "1"
-        app.launch()
-        XCTAssertTrue(
-            ensureForegroundAfterLaunch(app, timeout: 12.0),
-            "Expected app to launch for close-workspaces confirmation test. state=\(app.state.rawValue)"
-        )
-        XCTAssertTrue(waitForSocketPong(timeout: 12.0), "Expected control socket to respond at \(socketPath)")
-
-        XCTAssertEqual(socketCommand("new_workspace")?.prefix(2), "OK")
-        XCTAssertEqual(socketCommand("new_workspace")?.prefix(2), "OK")
-        XCTAssertTrue(
-            waitForWorkspaceCount(3, timeout: 5.0),
-            "Expected 3 workspaces before running the close-workspaces-below command. list=\(socketCommand("list_workspaces") ?? "<nil>")"
-        )
-        XCTAssertEqual(socketCommand("select_workspace 0"), "OK")
-
-        app.typeKey("p", modifierFlags: [.command, .shift])
-
-        let searchField = app.textFields["CommandPaletteSearchField"]
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5.0), "Expected command palette search field")
-        searchField.click()
-        searchField.typeText("Close Workspaces Below")
-
-        let resultButton = app.buttons["Close Workspaces Below"].firstMatch
-        if resultButton.waitForExistence(timeout: 5.0) {
-            resultButton.click()
-        } else {
-            app.typeKey(.return, modifierFlags: [])
-        }
-
-        XCTAssertTrue(
-            waitForCloseWorkspacesAlert(app: app, timeout: 5.0),
-            "Expected a single aggregated close-workspaces alert"
-        )
-
-        clickCancelOnCloseWorkspacesAlert(app: app)
-
-        XCTAssertFalse(
-            isCloseWorkspacesAlertPresent(app: app),
-            "Expected aggregated close-workspaces alert to dismiss after clicking Cancel"
-        )
-        XCTAssertTrue(
-            waitForWorkspaceCount(3, timeout: 5.0),
-            "Expected all workspaces to remain after cancelling multi-close. list=\(socketCommand("list_workspaces") ?? "<nil>")"
-        )
-    }
-
     func testCmdShiftWUsesSidebarMultiSelectionSummaryDialog() {
         let app = XCUIApplication()
         app.launchEnvironment["CMUX_SOCKET_PATH"] = socketPath

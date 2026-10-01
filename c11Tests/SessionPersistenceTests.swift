@@ -1286,6 +1286,36 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNotNil(manager["workspaces"])
     }
 
+    func testRenamedTabPropertiesKeepTheirOnDiskKeysAcrossDecodeAndEncode() throws {
+        func collectKeys(_ value: Any, into keys: inout Set<String>) {
+            if let dict = value as? [String: Any] {
+                for (key, child) in dict {
+                    keys.insert(key)
+                    collectKeys(child, into: &keys)
+                }
+            } else if let array = value as? [Any] {
+                for child in array { collectKeys(child, into: &keys) }
+            }
+        }
+
+        let encoded = try JSONEncoder().encode(makeSnapshot(version: SessionSnapshotSchema.currentVersion))
+        var originalKeys = Set<String>()
+        collectKeys(try JSONSerialization.jsonObject(with: encoded), into: &originalKeys)
+
+        // The tab properties were persisted as panels; those keys are the on-disk contract.
+        for onDisk in ["panels", "panelIds"] {  // non-optional, so always encoded
+            XCTAssertTrue(originalKeys.contains(onDisk), "missing on-disk key \(onDisk)")
+        }
+        for renamed in ["tabs", "tabIds"] {
+            XCTAssertFalse(originalKeys.contains(renamed), "renamed property leaked into the file as \(renamed)")
+        }
+
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
+        var reencodedKeys = Set<String>()
+        collectKeys(try JSONSerialization.jsonObject(with: try JSONEncoder().encode(decoded)), into: &reencodedKeys)
+        XCTAssertEqual(reencodedKeys, originalKeys)
+    }
+
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
         let workspace = SessionWorkspaceSnapshot(
             id: UUID(),

@@ -1294,9 +1294,9 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
         let destinationStore = destinationBrowser.webView.configuration.websiteDataStore
         XCTAssertFalse(destinationStore === WKWebsiteDataStore.default())
 
-        let detached = try XCTUnwrap(source.detachSurface(panelId: sourceBrowser.id))
+        let detached = try XCTUnwrap(source.detachTab(panelId: sourceBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedSurface(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
         )
         let movedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
 
@@ -1329,9 +1329,9 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
 
         let destination = Workspace()
         let destinationPaneId = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
-        let detached = try XCTUnwrap(source.detachSurface(panelId: movedBrowser.id))
+        let detached = try XCTUnwrap(source.detachTab(panelId: movedBrowser.id))
         let attachedPanelId = try XCTUnwrap(
-            destination.attachDetachedSurface(detached, inPane: destinationPaneId, focus: false)
+            destination.attachDetachedTab(detached, inPane: destinationPaneId, focus: false)
         )
         let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserPanel)
 

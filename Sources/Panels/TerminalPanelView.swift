@@ -80,7 +80,7 @@ struct TerminalPanelView: View {
     /// the surface; `TextBoxAppDetection` falls back to title regex in
     /// that case.
     private var terminalTypeFromMetadata: String? {
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+        let snapshot = TabMetadataStore.shared.getMetadata(
             workspaceId: panel.workspaceId, surfaceId: panel.id
         )
         return snapshot.metadata[MetadataKey.terminalType] as? String

@@ -20,11 +20,11 @@ import Foundation
 /// environment override (`C11_DISABLE_BROWSER` / `C11_DISABLE_MARKDOWN`) for
 /// headless runs and tests. The environment override only ever *disables* a
 /// type; it never force-enables one the operator turned off.
-enum SurfaceTypeAvailability {
+enum TabTypeAvailability {
     /// `@AppStorage` key — `true` (or unset) means the internal browser can be spawned.
     static let internalBrowserEnabledKey = "internalBrowserEnabled"
     /// `@AppStorage` key — `true` (or unset) means markdown surfaces can be spawned.
-    static let markdownSurfacesEnabledKey = "markdownSurfacesEnabled"
+    static let markdownTabsEnabledKey = "markdownSurfacesEnabled"
     /// `@AppStorage` key — `true` (or unset) shows the Markdown spawn button in
     /// the tab bar. Distinct from `markdownSurfacesEnabledKey`: hiding the
     /// button keeps markdown surfaces fully available to the CLI, socket, and
@@ -57,7 +57,7 @@ enum SurfaceTypeAvailability {
             )
         case .markdown:
             return resolve(
-                storageKey: markdownSurfacesEnabledKey,
+                storageKey: markdownTabsEnabledKey,
                 disableEnvKey: disableMarkdownEnvKey,
                 defaults: defaults,
                 environment: environment
@@ -111,12 +111,12 @@ enum SurfaceTypeAvailability {
 /// Mirrors `ChromeScaleObserver`: observe the two `@AppStorage` keys, hop to
 /// the main actor, invoke the callback (which rebuilds the Bonsplit config so
 /// the spawn buttons appear/disappear).
-final class SurfaceAvailabilityObserver: NSObject {
+final class TabAvailabilityObserver: NSObject {
     private let onChange: () -> Void
     private static let observedKeys = [
-        SurfaceTypeAvailability.internalBrowserEnabledKey,
-        SurfaceTypeAvailability.markdownSurfacesEnabledKey,
-        SurfaceTypeAvailability.markdownSpawnButtonVisibleKey,
+        TabTypeAvailability.internalBrowserEnabledKey,
+        TabTypeAvailability.markdownTabsEnabledKey,
+        TabTypeAvailability.markdownSpawnButtonVisibleKey,
     ]
     private let defaults: UserDefaults
 

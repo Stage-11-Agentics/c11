@@ -1516,10 +1516,10 @@ final class WorkspaceAgentPresentationTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -1542,10 +1542,10 @@ final class WorkspaceAgentPresentationTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -1638,7 +1638,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let baselineFocusReconcileDuringDetach = workspace.debugFocusReconcileScheduledDuringDetachCount
 #endif
 
-        guard let detached = workspace.detachSurface(panelId: panelId) else {
+        guard let detached = workspace.detachTab(panelId: panelId) else {
             XCTFail("Expected detach of last surface to succeed")
             return
         }
@@ -1661,7 +1661,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
 #endif
 
-        let restoredPanelId = workspace.attachDetachedSurface(detached, inPane: paneId, focus: false)
+        let restoredPanelId = workspace.attachDetachedTab(detached, inPane: paneId, focus: false)
         XCTAssertEqual(restoredPanelId, panelId)
         XCTAssertEqual(workspace.panels.count, 1)
     }
@@ -1680,7 +1680,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let baselineFocusReconcileDuringDetach = workspace.debugFocusReconcileScheduledDuringDetachCount
 #endif
 
-        guard let detached = workspace.detachSurface(panelId: movedPanel.id) else {
+        guard let detached = workspace.detachTab(panelId: movedPanel.id) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -1709,7 +1709,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
 
         XCTAssertTrue(source.updatePanelTitle(panelId: panelId, title: "detached-runtime-title"))
 
-        guard let detached = source.detachSurface(panelId: panelId) else {
+        guard let detached = source.detachTab(panelId: panelId) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -1728,7 +1728,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        let attachedPanelId = destination.attachDetachedSurface(
+        let attachedPanelId = destination.attachDetachedTab(
             detached,
             inPane: destinationPane,
             focus: false
@@ -1754,17 +1754,17 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: source.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
             mode: .merge,
             source: .explicit
         )
-        _ = SurfaceMetadataStore.shared.setInternal(
+        _ = TabMetadataStore.shared.setInternal(
             workspaceId: source.id,
             surfaceId: panelId,
             key: MetadataKey.activity,
@@ -1774,25 +1774,25 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         source.setDerivedActivity(.working, forSurface: panelId)
         XCTAssertEqual(source.bonsplitController.tab(sourceBonsplitTabId)?.activityState, .running)
 
-        let detached = try XCTUnwrap(source.detachSurface(panelId: panelId))
-        XCTAssertNil(source.derivedActivityBySurface[panelId])
+        let detached = try XCTUnwrap(source.detachTab(panelId: panelId))
+        XCTAssertNil(source.derivedActivityByTab[panelId])
 
         let destination = Workspace()
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: destination.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: destination.id, surfaceId: panelId)
         }
         let destinationPane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
         XCTAssertEqual(
-            destination.attachDetachedSurface(detached, inPane: destinationPane, focus: false),
+            destination.attachDetachedTab(detached, inPane: destinationPane, focus: false),
             panelId
         )
 
         let destinationBonsplitTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
         XCTAssertEqual(destination.surfaceTerminalKind(panelId: panelId), "codex")
-        XCTAssertEqual(destination.derivedActivityBySurface[panelId], .working)
+        XCTAssertEqual(destination.derivedActivityByTab[panelId], .working)
         XCTAssertEqual(destination.bonsplitController.tab(destinationBonsplitTabId)?.activityState, .running)
         XCTAssertEqual(
-            SurfaceMetadataStore.shared.getSource(
+            TabMetadataStore.shared.getSource(
                 workspaceId: destination.id,
                 surfaceId: panelId,
                 key: MetadataKey.terminalType
@@ -1800,7 +1800,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             .explicit
         )
         XCTAssertEqual(
-            SurfaceMetadataStore.shared.getSource(
+            TabMetadataStore.shared.getSource(
                 workspaceId: destination.id,
                 surfaceId: panelId,
                 key: MetadataKey.activity
@@ -1811,15 +1811,15 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         destination.setDerivedActivity(nil, forSurface: panelId)
         XCTAssertEqual(destination.bonsplitController.tab(destinationBonsplitTabId)?.activityState, .idle)
 
-        let rollbackTransfer = try XCTUnwrap(destination.detachSurface(panelId: panelId))
+        let rollbackTransfer = try XCTUnwrap(destination.detachTab(panelId: panelId))
         XCTAssertEqual(
-            source.attachDetachedSurface(rollbackTransfer, inPane: sourcePane, focus: false),
+            source.attachDetachedTab(rollbackTransfer, inPane: sourcePane, focus: false),
             panelId
         )
 
         let rollbackBonsplitTabId = try XCTUnwrap(source.bonsplitTabIdFromTabId(panelId))
         XCTAssertEqual(source.surfaceTerminalKind(panelId: panelId), "codex")
-        XCTAssertNil(source.derivedActivityBySurface[panelId])
+        XCTAssertNil(source.derivedActivityByTab[panelId])
         XCTAssertEqual(source.bonsplitController.tab(rollbackBonsplitTabId)?.activityState, .idle)
     }
 
@@ -1829,11 +1829,11 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
         func seedAgentState() throws {
-            _ = try SurfaceMetadataStore.shared.setMetadata(
+            _ = try TabMetadataStore.shared.setMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
                 partial: [MetadataKey.terminalType: "codex"],
@@ -1845,7 +1845,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         }
 
         try seedAgentState()
-        let clearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let clearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: nil,
@@ -1863,7 +1863,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
         try seedAgentState()
-        let keyedClearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let keyedClearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: [MetadataKey.terminalType],
@@ -1881,7 +1881,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
         try seedAgentState()
-        let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
+        let replaceResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.description: "replacement metadata"],
@@ -1904,17 +1904,17 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let source = Workspace()
         let panelId = try XCTUnwrap(source.focusedPanelId)
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: source.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
             mode: .merge,
             source: .explicit
         )
-        _ = SurfaceMetadataStore.shared.setInternal(
+        _ = TabMetadataStore.shared.setInternal(
             workspaceId: source.id,
             surfaceId: panelId,
             key: MetadataKey.activity,
@@ -1926,12 +1926,12 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let snapshot = source.sessionSnapshot(includeScrollback: false)
         let restored = Workspace()
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
         }
         restored.restoreSessionSnapshot(snapshot)
 
         let restoredBonsplitTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
-        XCTAssertEqual(restored.derivedActivityBySurface[panelId], .working)
+        XCTAssertEqual(restored.derivedActivityByTab[panelId], .working)
         XCTAssertEqual(restored.bonsplitController.tab(restoredBonsplitTabId)?.activityState, .running)
     }
 
@@ -1941,10 +1941,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        func apply(_ result: SurfaceMetadataStore.WriteResult) {
+        func apply(_ result: TabMetadataStore.WriteResult) {
             TerminalController.shared.applyTitleDescriptionSideEffects(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
@@ -1955,7 +1955,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             )
         }
 
-        let runningResult = try SurfaceMetadataStore.shared.setMetadata(
+        let runningResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [
@@ -1966,30 +1966,30 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             source: .explicit
         )
         apply(runningResult)
-        XCTAssertEqual(workspace.derivedActivityBySurface[panelId], .working)
+        XCTAssertEqual(workspace.derivedActivityByTab[panelId], .working)
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .running)
 
-        let keyedClearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let keyedClearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: [MetadataKey.activity],
             source: .explicit
         )
         apply(keyedClearResult)
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
 
-        let clearAllResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let clearAllResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: nil,
             source: .explicit
         )
         apply(clearAllResult)
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
-        let idleResult = try SurfaceMetadataStore.shared.setMetadata(
+        let idleResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [
@@ -2000,10 +2000,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             source: .explicit
         )
         apply(idleResult)
-        XCTAssertEqual(workspace.derivedActivityBySurface[panelId], .idle)
+        XCTAssertEqual(workspace.derivedActivityByTab[panelId], .idle)
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
 
-        let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
+        let replaceResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -2012,7 +2012,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
         apply(replaceResult)
         XCTAssertTrue(replaceResult.removedKeys.contains(MetadataKey.activity))
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
     }
 
@@ -2667,7 +2667,7 @@ final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
     /// The targeted reads exist to keep the sidebar off the whole-source-map
     /// conversion; they are only worth having if they agree with it.
     func testTargetedReadsMatchTheFullSnapshot() throws {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let surfaceId = UUID()
         _ = try store.setMetadata(
             workspaceId: workspaceId,
@@ -2720,7 +2720,7 @@ final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
     }
 
     func testTargetedReadsOnUnknownSurfaceAreEmpty() {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let missing = UUID()
         XCTAssertNil(store.metadataValue(workspaceId: workspaceId, surfaceId: missing, key: MetadataKey.terminalType))
         let subset = store.getMetadata(workspaceId: workspaceId, surfaceId: missing, keys: [MetadataKey.title])
@@ -2790,7 +2790,7 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
             workspace.newBrowserSurface(inPane: paneId, focus: false)
         )
         let markdown = try XCTUnwrap(
-            workspace.newMarkdownSurface(inPane: paneId, focus: false)
+            workspace.newMarkdownTab(inPane: paneId, focus: false)
         )
 
         let expected = [
@@ -3070,7 +3070,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
 
         source.setPanelCustomColor(panelId: panelId, color: "#7B3F00")
 
-        guard let detached = source.detachSurface(panelId: panelId) else {
+        guard let detached = source.detachTab(panelId: panelId) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -3090,7 +3090,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        let attachedPanelId = destination.attachDetachedSurface(
+        let attachedPanelId = destination.attachDetachedTab(
             detached,
             inPane: destinationPane,
             focus: false

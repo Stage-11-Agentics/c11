@@ -62,7 +62,7 @@ final class TerminalPanel: Panel, ObservableObject {
     /// `lifecycle_state` metadata mirror and dispatches occlusion to
     /// libghostty on state transitions. Visibility is driven from
     /// `TerminalPanelView` via `applyVisibility(_:)`.
-    let lifecycle: SurfaceLifecycleController
+    let lifecycle: TabLifecycleController
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -100,7 +100,7 @@ final class TerminalPanel: Panel, ObservableObject {
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
-        self.lifecycle = SurfaceLifecycleController(
+        self.lifecycle = TabLifecycleController(
             workspaceId: workspaceId,
             surfaceId: surface.id,
             initial: .active
@@ -122,7 +122,7 @@ final class TerminalPanel: Panel, ObservableObject {
         // every couple of seconds to track the foreground process.
         // Until that report lands, the surface is registered without
         // a pid and the sidebar renders `—`.
-        SurfaceMetricsSampler.shared.register(surfaceId: surface.id)
+        TabMetricsSampler.shared.register(surfaceId: surface.id)
 
         // Subscribe to surface's search state changes
         surface.$searchState
@@ -260,7 +260,7 @@ final class TerminalPanel: Panel, ObservableObject {
         unfocus()
         hostedView.setVisibleInUI(false)
         TerminalWindowPortalRegistry.detach(hostedView: hostedView)
-        SurfaceMetricsSampler.shared.unregister(surfaceId: id)
+        TabMetricsSampler.shared.unregister(surfaceId: id)
 #if DEBUG
         dlog(
             "surface.panel.close.end panel=\(id.uuidString.prefix(5)) " +

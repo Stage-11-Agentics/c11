@@ -259,11 +259,11 @@ extension TerminalController {
                 let portalState = hostedView.portalBindingGuardState()
                 let portalHostLease = terminalSurface.debugPortalHostLease()
                 let gitBranchState = workspace?.panelGitBranches[panelId]
-                let listeningPorts = (workspace?.surfaceListeningPorts[panelId] ?? []).sorted()
+                let listeningPorts = (workspace?.tabListeningPorts[panelId] ?? []).sorted()
                 let title = workspace?.panelTitle(panelId: panelId)
                 let paneId = mapped?.paneId
                 let treeVisible = mapped?.bonsplitTabId != nil && paneId != nil
-                let ttyName = workspace?.surfaceTTYNames[panelId]
+                let ttyName = workspace?.tabTTYNames[panelId]
                 let currentDirectory = nonEmpty(workspace?.panelDirectories[panelId] ?? mapped?.terminalPanel.directory)
                 let teardownRequest = terminalSurface.debugTeardownRequest()
                 let lastKnownWorkspaceId = terminalSurface.debugLastKnownWorkspaceId()

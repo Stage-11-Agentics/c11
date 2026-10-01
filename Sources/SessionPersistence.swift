@@ -306,7 +306,7 @@ struct SessionBrowserPanelSnapshot: Codable, Sendable {
     var forwardHistoryURLStrings: [String]?
     /// Durable browser-to-agent association. Optional so pre-companion
     /// session-v1 snapshots continue to decode unchanged.
-    var linkedAgent: AgentSurfaceLink? = nil
+    var linkedAgent: AgentTabLink? = nil
 }
 
 struct SessionMarkdownPanelSnapshot: Codable, Sendable {
@@ -360,7 +360,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
     ///
     /// `history: []` is written explicitly as an empty array (not omitted)
     /// for stable JSON output across v1/v2.
-    var surfaceConversations: SurfaceConversations? = nil
+    var surfaceConversations: TabConversations? = nil
 
     /// C11-164 (RES-2): persisted `SurfaceActivityTracker.lastActivity` floor
     /// for this surface. The Codex/pi/omp scrape filters use "candidate mtime

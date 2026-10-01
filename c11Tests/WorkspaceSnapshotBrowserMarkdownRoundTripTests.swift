@@ -49,8 +49,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .terminal),
-                SurfaceSpec(id: "s2", kind: .browser, url: "https://example.com")
+                TabSpec(id: "s1", kind: .terminal),
+                TabSpec(id: "s2", kind: .browser, url: "https://example.com")
             ]
         )
 
@@ -99,7 +99,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .markdown, filePath: fixturePath)
+                TabSpec(id: "s1", kind: .markdown, filePath: fixturePath)
             ]
         )
 
@@ -143,9 +143,9 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 ))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .terminal),
-                SurfaceSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
-                SurfaceSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
+                TabSpec(id: "s1", kind: .terminal),
+                TabSpec(id: "s2", kind: .browser, url: "https://docs.example.com"),
+                TabSpec(id: "s3", kind: .markdown, filePath: "/tmp/notes.md")
             ]
         )
 
@@ -181,8 +181,8 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
                 second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s2"]))
             )),
             surfaces: [
-                SurfaceSpec(id: "s1", kind: .browser),
-                SurfaceSpec(id: "s2", kind: .markdown)
+                TabSpec(id: "s1", kind: .browser),
+                TabSpec(id: "s2", kind: .markdown)
             ]
         )
 

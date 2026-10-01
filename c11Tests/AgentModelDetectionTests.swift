@@ -414,7 +414,7 @@ final class AgentModelDetectionTests: XCTestCase {
 
     func testSnapshotsFromBeforeTheTieringRestoreLaunchStampsAtTheLaunchTier() {
         var values: [String: Any] = ["model": "claude-opus-4-7", "model_label": "gpt-5.2", "task": "x"]
-        var sources: [String: SurfaceMetadataStore.SourceRecord] = [
+        var sources: [String: TabMetadataStore.SourceRecord] = [
             "model": .init(source: .declare, ts: 5),
             "model_label": .init(source: .declare, ts: 6),
             "task": .init(source: .declare, ts: 7),
@@ -428,7 +428,7 @@ final class AgentModelDetectionTests: XCTestCase {
 
     func testSnapshotsWrittenWithTheMarkerRestoreVerbatimAndDropTheMarker() {
         var values: [String: Any] = ["model": "claude-haiku-4-5", Workspace.modelTieringMarkerKey: "2"]
-        var sources: [String: SurfaceMetadataStore.SourceRecord] = ["model": .init(source: .declare, ts: 5)]
+        var sources: [String: TabMetadataStore.SourceRecord] = ["model": .init(source: .declare, ts: 5)]
         Workspace.migrateLaunchStampTiers(values: &values, sources: &sources)
         XCTAssertEqual(sources["model"]?.source, .declare, "an agent's own set-agent --model stays declared")
         XCTAssertNil(values[Workspace.modelTieringMarkerKey])

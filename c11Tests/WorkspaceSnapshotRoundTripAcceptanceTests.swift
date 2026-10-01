@@ -292,7 +292,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     private func runMixedFirstFixtureRoundTrip(
         fixtureName: String,
         firstSurfaceId: String,
-        firstSurfaceKind: SurfaceSpecKind,
+        firstSurfaceKind firstTabKind: TabSpecKind,
         distinguishingValue: String,
         trailingTerminalId: String
     ) throws {
@@ -345,10 +345,10 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // exactly one non-terminal first surface + one trailing terminal,
         // so `kind` is unique enough to identify the right one.
         let firstSurfaceInRoundTrip = try XCTUnwrap(
-            convertedPlan.surfaces.first { $0.kind == firstSurfaceKind }
+            convertedPlan.surfaces.first { $0.kind == firstTabKind }
         )
-        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstSurfaceKind)
-        switch firstSurfaceKind {
+        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstTabKind)
+        switch firstTabKind {
         case .browser:
             XCTAssertEqual(firstSurfaceInRoundTrip.url, distinguishingValue)
         case .markdown:

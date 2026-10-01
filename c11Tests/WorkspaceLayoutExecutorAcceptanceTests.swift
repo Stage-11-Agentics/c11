@@ -92,13 +92,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "browser before agent"),
             layout: .pane(.init(surfaceIds: ["browser", "agent"])),
             surfaces: [
-                SurfaceSpec(
+                TabSpec(
                     id: "browser",
                     kind: .browser,
                     url: "https://example.com",
                     linkedAgentSurfacePlanId: "agent"
                 ),
-                SurfaceSpec(
+                TabSpec(
                     id: "agent",
                     kind: .terminal,
                     declaredAgentKind: "codex"
@@ -133,12 +133,12 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "invalid target"),
             layout: .pane(.init(surfaceIds: ["browser", "terminal"])),
             surfaces: [
-                SurfaceSpec(
+                TabSpec(
                     id: "browser",
                     kind: .browser,
                     linkedAgentSurfacePlanId: "terminal"
                 ),
-                SurfaceSpec(id: "terminal", kind: .terminal)
+                TabSpec(id: "terminal", kind: .terminal)
             ]
         )
         var mutationCount = 0
@@ -184,8 +184,8 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "capture remap"),
             layout: .pane(.init(surfaceIds: ["browser", "agent"])),
             surfaces: [
-                SurfaceSpec(id: "browser", kind: .browser, url: "https://example.com"),
-                SurfaceSpec(id: "agent", kind: .terminal)
+                TabSpec(id: "browser", kind: .browser, url: "https://example.com"),
+                TabSpec(id: "agent", kind: .terminal)
             ]
         )
         let seed = WorkspaceLayoutExecutor.apply(
@@ -206,7 +206,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: workspace,
             companionBridge: WorkspacePlanCompanionCaptureBridge(
                 linkedAgentForBrowser: { id in
-                    id == browserID ? AgentSurfaceLink(
+                    id == browserID ? AgentTabLink(
                         surfaceID: agentID,
                         lastKnownName: "Agent"
                     ) : nil
@@ -222,7 +222,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let missingAgentID = UUID()
         let orphanBridge = WorkspacePlanCompanionCaptureBridge(
             linkedAgentForBrowser: { id in
-                id == browserID ? AgentSurfaceLink(
+                id == browserID ? AgentTabLink(
                     surfaceID: missingAgentID,
                     lastKnownName: "Gone"
                 ) : nil
@@ -245,7 +245,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
         let declassifiedBridge = WorkspacePlanCompanionCaptureBridge(
             linkedAgentForBrowser: { id in
-                id == browserID ? AgentSurfaceLink(
+                id == browserID ? AgentTabLink(
                     surfaceID: agentID,
                     lastKnownName: "Former Agent"
                 ) : nil
@@ -305,7 +305,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "b4 whitespace"),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
             surfaces: [
-                SurfaceSpec(
+                TabSpec(
                     id: "t",
                     kind: .terminal,
                     title: "whitespace terminal",
@@ -365,7 +365,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: WorkspaceSpec(title: "submit opt-in"),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
             surfaces: [
-                SurfaceSpec(
+                TabSpec(
                     id: "t",
                     kind: .terminal,
                     title: "launcher",
@@ -544,7 +544,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             version: 99,
             workspace: WorkspaceSpec(title: "bad-version"),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
-            surfaces: [SurfaceSpec(id: "s", kind: .terminal)]
+            surfaces: [TabSpec(id: "s", kind: .terminal)]
         )
         let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
             plan,
@@ -567,7 +567,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(title: title),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
-            surfaces: [SurfaceSpec(id: "s", kind: .terminal, title: title)]
+            surfaces: [TabSpec(id: "s", kind: .terminal, title: title)]
         )
     }
 
@@ -881,7 +881,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             let paneUUID = workspace.paneIdForPanel(panelId)?.id
 
             // Surface-level metadata.
-            let (surfaceMetadata, _) = SurfaceMetadataStore.shared.getMetadata(
+            let (surfaceMetadata, _) = TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId
             )

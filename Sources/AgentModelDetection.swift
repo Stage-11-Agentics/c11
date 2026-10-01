@@ -782,7 +782,7 @@ final class AgentModelDetector: @unchecked Sendable {
     }
 
     private func publish(_ result: AgentModelDetection, target: Target) {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         var changed = false
         switch result {
         case .model(let id):
@@ -800,7 +800,7 @@ final class AgentModelDetector: @unchecked Sendable {
     }
 
     private func clearDerived(workspaceId: UUID, surfaceId: UUID) {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let snapshot = store.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId,
                                          keys: [MetadataKeys.detected, MetadataKeys.detection])
         guard !snapshot.metadata.isEmpty else { return }

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum SurfaceManifestKind: String {
+enum TabManifestKind: String {
     case terminal
     case browser
     case markdown
@@ -23,7 +23,7 @@ enum SurfaceManifestKind: String {
 /// This is the data the operator opens Surface Details to find — chiefly the
 /// `surface:N` / `tab:N` numbers, which are otherwise only reachable via the
 /// CLI.
-struct SurfaceHandleInfo {
+struct TabHandleInfo {
     let surfaceRef: String
     let tabRef: String
     let paneRef: String?
@@ -36,26 +36,26 @@ struct SurfaceHandleInfo {
     let filePath: String?
 }
 
-struct SurfaceManifestSnapshot {
+struct TabManifestSnapshot {
     let metadata: [String: Any]
     let sources: [String: [String: Any]]
-    let activity: SurfaceActivityDetailsSnapshot
+    let activity: TabActivityDetailsSnapshot
     let capturedAt: Date
 
     @MainActor
-    static func capture(workspaceId: UUID, surfaceId: UUID) -> SurfaceManifestSnapshot {
-        let result = SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+    static func capture(workspaceId: UUID, surfaceId: UUID) -> TabManifestSnapshot {
+        let result = TabMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
         let workspace = AppDelegate.shared?
             .workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces
             .first(where: { $0.id == workspaceId })
-        let activity = workspace?.surfaceActivityDetailsSnapshot(panelId: surfaceId)
-            ?? SurfaceActivityDetailsSnapshot(
+        let activity = workspace?.tabActivityDetailsSnapshot(panelId: surfaceId)
+            ?? TabActivityDetailsSnapshot(
                 activityHelp: nil,
                 createdAt: nil,
                 lastActivityAt: nil
             )
-        return SurfaceManifestSnapshot(
+        return TabManifestSnapshot(
             metadata: result.metadata,
             sources: result.sources,
             activity: activity,
@@ -75,24 +75,24 @@ struct SurfaceManifestSnapshot {
     }
 }
 
-struct SurfaceManifestView: View {
+struct TabManifestView: View {
     let workspaceId: UUID
     let surfaceId: UUID
-    let kind: SurfaceManifestKind
-    let handle: SurfaceHandleInfo
+    let kind: TabManifestKind
+    let handle: TabHandleInfo
 
-    @State private var snapshot: SurfaceManifestSnapshot
+    @State private var snapshot: TabManifestSnapshot
     // Which field's Copy button most recently fired — flips that one button to
     // "Copied" briefly. Only one row shows the confirmation at a time.
     @State private var copiedField: String?
     @State private var copyResetWorkItem: DispatchWorkItem?
 
-    init(workspaceId: UUID, surfaceId: UUID, kind: SurfaceManifestKind, handle: SurfaceHandleInfo) {
+    init(workspaceId: UUID, surfaceId: UUID, kind: TabManifestKind, handle: TabHandleInfo) {
         self.workspaceId = workspaceId
         self.surfaceId = surfaceId
         self.kind = kind
         self.handle = handle
-        _snapshot = State(initialValue: SurfaceManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId))
+        _snapshot = State(initialValue: TabManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId))
     }
 
     var body: some View {
@@ -479,7 +479,7 @@ struct SurfaceManifestView: View {
     }
 
     private func refresh() {
-        snapshot = SurfaceManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId)
+        snapshot = TabManifestSnapshot.capture(workspaceId: workspaceId, surfaceId: surfaceId)
     }
 
     private static let timestampFormatter: DateFormatter = {

@@ -325,8 +325,8 @@ enum WorkspaceLayoutExecutor {
                 usedRegistry = false
             } else if let registry = options.restartRegistry {
                 let surfaceMeta = stringMetadata(surfaceSpec.metadata)
-                let terminalType = surfaceMeta[SurfaceMetadataKeyName.terminalType]
-                let sessionId = surfaceMeta[SurfaceMetadataKeyName.claudeSessionId]
+                let terminalType = surfaceMeta[TabMetadataKeyName.terminalType]
+                let sessionId = surfaceMeta[TabMetadataKeyName.claudeSessionId]
                 let synthesized = registry.resolveCommand(
                     terminalType: terminalType,
                     sessionId: sessionId,
@@ -687,7 +687,7 @@ enum WorkspaceLayoutExecutor {
         case seedTerminal(TerminalPanel)
         /// A panel returned by `newXSplit`. Type is matched to the first leaf
         /// of the subtree by construction — no replacement needed.
-        case anyExisting(panelId: UUID, kind: SurfaceSpecKind)
+        case anyExisting(panelId: UUID, kind: TabSpecKind)
 
         var panelId: UUID {
             switch self {
@@ -696,7 +696,7 @@ enum WorkspaceLayoutExecutor {
             }
         }
 
-        var kind: SurfaceSpecKind {
+        var kind: TabSpecKind {
             switch self {
             case .seedTerminal: return .terminal
             case .anyExisting(_, let kind): return kind
@@ -710,7 +710,7 @@ enum WorkspaceLayoutExecutor {
     @MainActor
     fileprivate struct WalkState {
         let workspace: Workspace
-        let surfacesById: [String: SurfaceSpec]
+        let surfacesById: [String: TabSpec]
         var warnings: [String]
         var failures: [ApplyFailure]
         var timings: [StepTiming]
@@ -928,7 +928,7 @@ enum WorkspaceLayoutExecutor {
         private mutating func splitFromPanel(
             _ panelId: UUID,
             orientation: SplitOrientation,
-            spec: SurfaceSpec
+            spec: TabSpec
         ) -> UUID? {
             switch spec.kind {
             case .terminal:
@@ -972,7 +972,7 @@ enum WorkspaceLayoutExecutor {
         /// shell has already launched). Keeps cwd loss non-silent per
         /// review cycle 1 I1.
         mutating func reportWorkingDirectoryNotApplicable(
-            _ spec: SurfaceSpec,
+            _ spec: TabSpec,
             context: String
         ) {
             let cwd = spec.workingDirectory ?? ""
@@ -990,7 +990,7 @@ enum WorkspaceLayoutExecutor {
         /// during creation (not post-hoc), all with source `.explicit`.
         /// The `mailbox.*` namespace in pane metadata is enforced
         /// strings-only per docs/c11-13-cmux-37-alignment.md.
-        mutating func writeSurfaceMetadata(_ spec: SurfaceSpec, panelId: UUID) {
+        mutating func writeSurfaceMetadata(_ spec: TabSpec, panelId: UUID) {
             let surfaceClock = StepClock()
             let workspaceId = workspace.id
 
@@ -998,7 +998,7 @@ enum WorkspaceLayoutExecutor {
             if let raw = spec.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !raw.isEmpty {
                 do {
-                    _ = try SurfaceMetadataStore.shared.setMetadata(
+                    _ = try TabMetadataStore.shared.setMetadata(
                         workspaceId: workspaceId,
                         surfaceId: panelId,
                         partial: ["description": raw],
@@ -1046,7 +1046,7 @@ enum WorkspaceLayoutExecutor {
                     // model outranks it.
                     let isLaunchModel = key == MetadataKey.model || key == MetadataKey.modelLabel
                     do {
-                        _ = try SurfaceMetadataStore.shared.setMetadata(
+                        _ = try TabMetadataStore.shared.setMetadata(
                             workspaceId: workspaceId,
                             surfaceId: panelId,
                             partial: decoded,
@@ -1146,7 +1146,7 @@ enum WorkspaceLayoutExecutor {
         /// (cycle 2: R3 left this in-pane path silent; split path was
         /// already covered).
         private mutating func createSurface(
-            _ spec: SurfaceSpec,
+            _ spec: TabSpec,
             inPane paneId: PaneID,
             focus: Bool
         ) -> UUID? {
@@ -1172,7 +1172,7 @@ enum WorkspaceLayoutExecutor {
                 if spec.workingDirectory != nil {
                     reportWorkingDirectoryNotApplicable(spec, context: "markdown in-pane creation")
                 }
-                return workspace.newMarkdownSurface(
+                return workspace.newMarkdownTab(
                     inPane: paneId,
                     filePath: spec.filePath,
                     focus: focus
@@ -1296,12 +1296,12 @@ enum WorkspaceLayoutExecutor {
     /// `spec.url` before being re-hibernated. Returning `false` keeps the
     /// legacy spin-up + `restoreLifecycleStateFromMetadata` fallback for
     /// any panel kind whose construction path doesn't yet honor the flag.
-    fileprivate nonisolated static func specRequestsHibernated(_ spec: SurfaceSpec) -> Bool {
+    fileprivate nonisolated static func specRequestsHibernated(_ spec: TabSpec) -> Bool {
         guard let metadata = spec.metadata,
               case .string(let raw)? = metadata[MetadataKey.lifecycleState] else {
             return false
         }
-        return raw == SurfaceLifecycleState.hibernated.rawValue
+        return raw == TabLifecycleState.hibernated.rawValue
     }
 
     // MARK: - Timing helper

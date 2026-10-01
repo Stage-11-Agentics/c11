@@ -119,7 +119,7 @@ struct AgentActivityHelpProjection: Equatable {
     }
 }
 
-struct SurfaceActivityDetailsSnapshot: Equatable {
+struct TabActivityDetailsSnapshot: Equatable {
     let activityHelp: AgentActivityHelpProjection?
     let createdAt: Date?
     let lastActivityAt: Date?
@@ -166,7 +166,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     /// modifiers are present. The stored `state` remains the source truth for
     /// C11-184; renderers and summary counts consume this presented value.
     var presentedState: WorkspacePulseState {
-        SurfaceAttentionSnapshot.presentedState(
+        TabAttentionSnapshot.presentedState(
             state,
             flagged: flagged,
             suppressed: suppressed

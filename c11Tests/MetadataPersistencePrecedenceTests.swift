@@ -10,10 +10,10 @@ import XCTest
 /// snapshot IS the prior session's source of truth — but post-restore
 /// writes must still respect precedence against the restored record.
 final class MetadataPersistencePrecedenceTests: XCTestCase {
-    private func makeStore() -> SurfaceMetadataStore {
+    private func makeStore() -> TabMetadataStore {
         // Use the shared store but key off fresh UUIDs per test so parallel
         // tests don't collide on a single shared (workspace, surface) pair.
-        return SurfaceMetadataStore.shared
+        return TabMetadataStore.shared
     }
 
     func testRestoreInstallsExplicitAboveExistingDeclare() throws {
@@ -37,7 +37,7 @@ final class MetadataPersistencePrecedenceTests: XCTestCase {
             surfaceId: surfaceId,
             values: ["title": "From Snapshot"],
             sources: [
-                "title": SurfaceMetadataStore.SourceRecord(
+                "title": TabMetadataStore.SourceRecord(
                     source: .explicit,
                     ts: 123.0
                 )
@@ -60,7 +60,7 @@ final class MetadataPersistencePrecedenceTests: XCTestCase {
             surfaceId: surfaceId,
             values: ["title": "Explicit Title"],
             sources: [
-                "title": SurfaceMetadataStore.SourceRecord(source: .explicit, ts: 100.0)
+                "title": TabMetadataStore.SourceRecord(source: .explicit, ts: 100.0)
             ]
         )
 
@@ -90,7 +90,7 @@ final class MetadataPersistencePrecedenceTests: XCTestCase {
             surfaceId: surfaceId,
             values: ["status": "idle"],
             sources: [
-                "status": SurfaceMetadataStore.SourceRecord(source: .heuristic, ts: 42.0)
+                "status": TabMetadataStore.SourceRecord(source: .heuristic, ts: 42.0)
             ]
         )
         let src = store.getSource(workspaceId: wsId, surfaceId: surfaceId, key: "status")
@@ -107,7 +107,7 @@ final class MetadataPersistencePrecedenceTests: XCTestCase {
             surfaceId: surfaceId,
             values: ["status": "running"],
             sources: [
-                "status": SurfaceMetadataStore.SourceRecord(source: .heuristic, ts: 1.0)
+                "status": TabMetadataStore.SourceRecord(source: .heuristic, ts: 1.0)
             ]
         )
 

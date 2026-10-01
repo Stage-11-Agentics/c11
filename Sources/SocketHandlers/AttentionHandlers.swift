@@ -20,9 +20,9 @@ extension TerminalController {
         guard !trimmedSurface.isEmpty else {
             return .err(code: "empty_ref", message: "tab_id must not be empty", data: nil)
         }
-        let actor: SurfaceAttentionActor
+        let actor: TabAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = SurfaceAttentionActor(rawValue: rawActor) else {
+            guard let parsed = TabAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -35,9 +35,9 @@ extension TerminalController {
         }
 
         var validatedReason: String?
-        var callerSurfaceId: UUID?
+        var callerTabId: UUID?
         if method == "flag.raise" {
-            switch SurfaceAttentionReason.validate(params["reason"]) {
+            switch TabAttentionReason.validate(params["reason"]) {
             case .success(let reason):
                 validatedReason = reason
             case .failure(let error):
@@ -52,7 +52,7 @@ extension TerminalController {
                         data: nil
                     )
                 }
-                callerSurfaceId = parsed
+                callerTabId = parsed
             } else if params["caller_surface_id"] != nil {
                 return .err(
                     code: "invalid_params",
@@ -60,7 +60,7 @@ extension TerminalController {
                     data: nil
                 )
             }
-            if actor == .agent, callerSurfaceId == nil {
+            if actor == .agent, callerTabId == nil {
                 return .err(
                     code: "missing_caller_surface",
                     message: "agent-raised flags require caller_tab_id",
@@ -79,9 +79,9 @@ extension TerminalController {
                     )
                 }
                 let preferredWorkspaceId = self.v2UUIDAny(params["workspace_id"])
-                if let callerSurfaceId,
+                if let callerTabId,
                    AppDelegate.shared?.workspaceContainingPanel(
-                       panelId: callerSurfaceId,
+                       panelId: callerTabId,
                        preferredWorkspaceId: nil
                    ) == nil {
                     return .err(
@@ -98,32 +98,32 @@ extension TerminalController {
                 }
                 let workspace = located.workspace
                 do {
-                    let write: SurfaceMetadataStore.WriteResult
+                    let write: TabMetadataStore.WriteResult
                     switch method {
                     case "flag.raise":
-                        write = try SurfaceAttentionService.shared.raise(
+                        write = try TabAttentionService.shared.raise(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             reason: validatedReason!,
-                            callerSurfaceId: callerSurfaceId,
+                            callerTabId: callerTabId,
                             by: actor,
                             title: workspace.panelTitle(panelId: surfaceId)
                                 ?? workspace.panels[surfaceId]?.displayTitle
                         )
                     case "flag.lower":
-                        write = try SurfaceAttentionService.shared.lower(
+                        write = try TabAttentionService.shared.lower(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             by: actor
                         )
                     case "flag.suppress":
-                        write = try SurfaceAttentionService.shared.suppress(
+                        write = try TabAttentionService.shared.suppress(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             by: actor
                         )
                     case "flag.unsuppress":
-                        write = try SurfaceAttentionService.shared.unsuppress(
+                        write = try TabAttentionService.shared.unsuppress(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             by: actor
@@ -131,7 +131,7 @@ extension TerminalController {
                     default:
                         return .err(code: "method_not_found", message: "Unknown method", data: nil)
                     }
-                    let snapshot = SurfaceMetadataStore.shared.attentionSnapshot(
+                    let snapshot = TabMetadataStore.shared.attentionSnapshot(
                         workspaceId: workspace.id,
                         surfaceId: surfaceId
                     )
@@ -143,12 +143,12 @@ extension TerminalController {
                         "flag": self.v2OrNull(snapshot.flagReason),
                         "flag_raised_at": self.v2OrNull(snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp)),
                         "caller_surface_id": self.v2OrNull(
-                            snapshot.flagCallerSurfaceId?.uuidString
+                            snapshot.flagCallerTabId?.uuidString
                         ),
                         "suppressed": snapshot.suppressed,
                         "applied": write.applied
                     ])
-                } catch let error as SurfaceMetadataStore.WriteError {
+                } catch let error as TabMetadataStore.WriteError {
                     return .err(code: "invalid_params", message: error.message, data: error.detailData)
                 } catch {
                     return .err(code: "internal_error", message: "\(error)", data: nil)
@@ -166,7 +166,7 @@ extension TerminalController {
     nonisolated private func v2FlagListWorker() -> V2CallResult {
         let commit = FailClosedCommitGate<V2CallResult> {
             MainActor.assumeIsolated {
-                let flags = SurfaceAttentionIndex.shared.oldestFlags.map { snapshot in
+                let flags = TabAttentionIndex.shared.oldestFlags.map { snapshot in
                     [
                         "workspace_id": snapshot.workspaceId.uuidString,
                         "workspace_ref": self.v2Ref(kind: .workspace, uuid: snapshot.workspaceId),
@@ -175,7 +175,7 @@ extension TerminalController {
                         "reason": snapshot.flagReason ?? "",
                         "raised_at": snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp) ?? "",
                         "caller_surface_id": self.v2OrNull(
-                            snapshot.flagCallerSurfaceId?.uuidString
+                            snapshot.flagCallerTabId?.uuidString
                         ),
                         "suppressed": snapshot.suppressed
                     ]

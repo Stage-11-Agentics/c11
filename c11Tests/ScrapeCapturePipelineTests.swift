@@ -164,7 +164,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
             kind: "claude-code", id: claudeId, placeholder: false, cwd: "/work/proj",
             capturedAt: Date(), capturedVia: .hook, state: .suspended
         )
-        let existing = [surfaceId: SurfaceConversations(active: hookRef, history: [])]
+        let existing = [surfaceId: TabConversations(active: hookRef, history: [])]
         // Scraper would surface a DIFFERENT (stale) top-by-mtime transcript.
         let scrapers = ConversationScraperRegistry(scrapers: [
             MockScraper(kind: "claude-code", preset: [candidate(codexId, mtime: Date())])
@@ -235,7 +235,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         // Codex terminal panel: extracted.
         let codexPanel = makeTerminalPanel(
             id: codexPanelId, directory: "/work/proj",
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+            metadata: [TabMetadataKeyName.terminalType: .string("codex")]
         )
         // Terminal panel with no terminal_type metadata: skipped.
         let kindlessPanel = makeTerminalPanel(id: kindlessPanelId, directory: "/tmp", metadata: nil)
@@ -261,7 +261,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let floor = Date(timeIntervalSince1970: 1_700_000_000)
         var codexPanel = makeTerminalPanel(
             id: codexPanelId, directory: "/work/proj",
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+            metadata: [TabMetadataKeyName.terminalType: .string("codex")]
         )
         codexPanel.lastActivityAt = floor
         let snapshot = makeSnapshot(panels: [codexPanel])
@@ -512,13 +512,13 @@ final class ScrapeCapturePipelineTests: XCTestCase {
             makeTerminalPanel(
                 id: typed,
                 directory: "/tmp/typed",
-                metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+                metadata: [TabMetadataKeyName.terminalType: .string("codex")]
             ),
             makeTerminalPanel(id: missingType, directory: nil, metadata: nil),
             makeTerminalPanel(
                 id: emptyType,
                 directory: nil,
-                metadata: [SurfaceMetadataKeyName.terminalType: .string("   ")]
+                metadata: [TabMetadataKeyName.terminalType: .string("   ")]
             ),
             makeBrowserPanel(id: browser),
         ])
@@ -551,7 +551,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
             id: id, type: .browser, title: "B", customTitle: nil, directory: nil,
             isPinned: false, isManuallyUnread: false, gitBranch: nil, listeningPorts: [],
             ttyName: nil, terminal: nil, browser: nil, markdown: nil,
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")],
+            metadata: [TabMetadataKeyName.terminalType: .string("codex")],
             metadataSources: nil, surfaceConversations: nil
         )
     }

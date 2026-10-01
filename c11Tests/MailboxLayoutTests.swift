@@ -65,7 +65,7 @@ final class MailboxLayoutTests: XCTestCase {
         let url = try MailboxLayout.inboxURL(
             state: stateURL,
             workspaceId: ws,
-            surfaceName: "builder"
+            tabName: "builder"
         )
         XCTAssertEqual(
             url.path,
@@ -80,7 +80,7 @@ final class MailboxLayoutTests: XCTestCase {
         let url = try MailboxLayout.inboxURL(
             state: stateURL,
             workspaceId: ws,
-            surfaceName: "build watcher"
+            tabName: "build watcher"
         )
         XCTAssertEqual(url.lastPathComponent, "build watcher")
     }
@@ -90,7 +90,7 @@ final class MailboxLayoutTests: XCTestCase {
         let url = try MailboxLayout.inboxURL(
             state: stateURL,
             workspaceId: ws,
-            surfaceName: "ビルダー"
+            tabName: "ビルダー"
         )
         XCTAssertEqual(url.lastPathComponent, "ビルダー")
     }
@@ -191,7 +191,7 @@ final class MailboxLayoutTests: XCTestCase {
     func testInboxRejectsInvalidName() {
         let ws = stubWorkspace()
         XCTAssertThrowsError(
-            try MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, surfaceName: "../escape")
+            try MailboxLayout.inboxURL(state: stateURL, workspaceId: ws, tabName: "../escape")
         )
     }
 }

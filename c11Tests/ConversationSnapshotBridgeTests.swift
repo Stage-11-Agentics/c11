@@ -29,8 +29,8 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             browser: nil,
             markdown: nil,
             metadata: [
-                SurfaceMetadataKeyName.claudeSessionId: .string(claudeSessionId),
-                SurfaceMetadataKeyName.terminalType: .string("claude-code")
+                TabMetadataKeyName.claudeSessionId: .string(claudeSessionId),
+                TabMetadataKeyName.terminalType: .string("claude-code")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -84,7 +84,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             browser: nil,
             markdown: nil,
             metadata: [
-                SurfaceMetadataKeyName.claudeSessionId: .string("not-a-uuid")
+                TabMetadataKeyName.claudeSessionId: .string("not-a-uuid")
             ],
             metadataSources: nil,
             surfaceConversations: nil
@@ -114,7 +114,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: TabConversations(
                 active: ConversationRef(
                     kind: "claude-code",
                     id: claudeSessionId,
@@ -151,7 +151,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: TabConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-3333-4444-555566667777",
@@ -191,7 +191,7 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
             markdown: nil,
             metadata: nil,
             metadataSources: nil,
-            surfaceConversations: SurfaceConversations(
+            surfaceConversations: TabConversations(
                 active: ConversationRef(
                     kind: "codex",
                     id: "ddd11111-2222-4333-8444-555566667777",

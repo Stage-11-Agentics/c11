@@ -291,7 +291,7 @@ extension Workspace {
     /// metadata/activity events, never on a timer.
     func tabSheetDetail(panelId: UUID) -> BonsplitTabDetail? {
         guard let panel = panels[panelId] else { return nil }
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+        let snapshot = TabMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
             keys: [MetadataKey.description, MetadataKey.model, MetadataKey.modelLabel, AgentModelDetector.MetadataKeys.detected]
@@ -323,7 +323,7 @@ extension Workspace {
         )
         let signals = tabSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
         let legacyActivityAt = help?.lastActivityAt
-            ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+            ?? TabActivityTracker.shared.lastActivity(for: panelId.uuidString)
         return TabSheetDetailBuilder.build(.init(
             panelType: panel.panelType,
             title: fullTitle,
@@ -343,8 +343,8 @@ extension Workspace {
             createdAt: panel.createdAt,
             activeAt: signals.activeAt,
             touchedAt: signals.touchedAt,
-            seenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
-            isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId),
+            seenAt: TabSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: TabSeenTracker.shared.isBeingSeen(panelId: panelId),
             turnStartedAt: signals.turnStartedAt,
             turnToolCalls: signals.turnToolCalls,
             tokens: signals.tokens,
@@ -431,7 +431,7 @@ extension Workspace {
             at = TabSheetDetailBuilder.seededEnteredAt(
                 kind: kind,
                 now: now,
-                lastActivityAt: SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
+                lastActivityAt: TabActivityTracker.shared.lastActivity(for: panelId.uuidString),
                 exactStart: kind == .waiting || kind == .cold
                     ? resolvedAgentActivityHelp(panelId: panelId, activityState: activity)?.stateStartedAt
                     : nil

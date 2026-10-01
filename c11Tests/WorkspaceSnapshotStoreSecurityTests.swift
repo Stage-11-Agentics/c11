@@ -49,7 +49,7 @@ final class WorkspaceSnapshotStoreSecurityTests: XCTestCase {
             workspace: workspace,
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s1"])),
             surfaces: [
-                SurfaceSpec(
+                TabSpec(
                     id: "s1",
                     kind: .terminal,
                     title: "t",

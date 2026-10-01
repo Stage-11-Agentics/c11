@@ -2619,7 +2619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // sidebar reads samples via `SurfaceMetricsSampler.shared.sample(...)`
         // during body eval. Idempotent — safe across UI tests that
         // re-init the app delegate.
-        SurfaceMetricsSampler.shared.start()
+        TabMetricsSampler.shared.start()
 
         // Start watching the user themes directory for hot-reload.
         ThemeManager.shared.startWatchingUserThemes()
@@ -2762,7 +2762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.start()
         windowDecorationsController.start()
         installMainWindowKeyObserver()
-        SurfaceSeenTracker.shared.install()
+        TabSeenTracker.shared.install()
         refreshGhosttyGotoSplitShortcuts()
         installGhosttyConfigObserver()
         installWindowResponderSwizzles()
@@ -3451,7 +3451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         if !activityFloor.isEmpty {
-            SurfaceActivityTracker.shared.seed(from: activityFloor)
+            TabActivityTracker.shared.seed(from: activityFloor)
         }
 
         let captureScope = ConversationSnapshotCaptureScope(snapshot: snapshot)
@@ -4251,7 +4251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func sessionAutosaveFingerprint(
         includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+        conversationsByPanelId injectedConversations: [String: TabConversations]? = nil
     ) -> Int? {
         guard !includeScrollback else { return nil }
 
@@ -4311,7 +4311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// that conversation activity — wrapper-claim / hook-push / tombstone —
     /// forces an autosave write).
     nonisolated static func hashConversationState(
-        _ conversations: [String: SurfaceConversations],
+        _ conversations: [String: TabConversations],
         into hasher: inout Hasher
     ) {
         for surfaceId in conversations.keys.sorted() {
@@ -4333,7 +4333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         includeScrollback: Bool,
         suspendAlive: Bool,
         timeout: TimeInterval = 5.0
-    ) -> [String: SurfaceConversations]? {
+    ) -> [String: TabConversations]? {
         guard !ConversationStorePolicy.isDisabled else { return [:] }
 
         // Capture live surface/cwd/type context on the main actor without a
@@ -4466,7 +4466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func saveSessionSnapshot(
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
-        conversationsByPanelId: [String: SurfaceConversations]? = nil,
+        conversationsByPanelId: [String: TabConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
         // While the resume picker is open, the file on disk is the only copy
@@ -4622,7 +4622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // wait, this never blocks main and never times out to a partial map
         // (the C11-170 "drops under load" class), so the injected snapshot
         // still carries full `surface_conversations` (C11-24).
-        let conversations: [String: SurfaceConversations]
+        let conversations: [String: TabConversations]
         if ConversationStorePolicy.isDisabled {
             conversations = [:]
         } else {
@@ -4804,7 +4804,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func buildSessionSnapshot(
         includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+        conversationsByPanelId injectedConversations: [String: TabConversations]? = nil
     ) -> AppSessionSnapshot? {
         let contexts = sessionSnapshotOrderedWindowContexts()
 
@@ -4955,7 +4955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // workspace so the only surviving data path is "loaded from
                 // disk".
                 for panelId in workspace.panels.keys {
-                    SurfaceMetadataStore.shared.removeSurface(
+                    TabMetadataStore.shared.removeSurface(
                         workspaceId: workspace.id,
                         surfaceId: panelId
                     )
@@ -4977,13 +4977,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let sources = PersistedMetadataBridge.decodeSources(
                         panelSnapshot.metadataSources ?? [:]
                     )
-                    SurfaceMetadataStore.shared.restoreFromSnapshot(
+                    TabMetadataStore.shared.restoreFromSnapshot(
                         workspaceId: workspace.id,
                         surfaceId: panelSnapshot.id,
                         values: values,
                         sources: sources
                     )
-                    SurfaceAttentionService.shared.syncFromMetadata(
+                    TabAttentionService.shared.syncFromMetadata(
                         workspaceId: workspace.id,
                         surfaceId: panelSnapshot.id
                     )
@@ -5093,7 +5093,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = saveSessionSnapshot(includeScrollback: false)
         }
         // C11-243: a fresh window's first tab is seen without any selection event.
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
     }
 
     struct MainWindowSummary {
@@ -5256,12 +5256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ///
     /// Main-thread only: it enumerates each workspace's `@Published panels`.
     /// Callers on the socket queue must hop to main first.
-    func mailboxAddressableSurfaces() -> [MailboxGlobalResolver.Surface] {
-        var result: [MailboxGlobalResolver.Surface] = []
+    func mailboxAddressableSurfaces() -> [MailboxGlobalResolver.TabRecord] {
+        var result: [MailboxGlobalResolver.TabRecord] = []
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
                 for surfaceId in workspace.panels.keys {
-                    let (metadata, _) = SurfaceMetadataStore.shared.getMetadata(
+                    let (metadata, _) = TabMetadataStore.shared.getMetadata(
                         workspaceId: workspace.id,
                         surfaceId: surfaceId
                     )
@@ -5274,7 +5274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let address = metadata["mailbox.address"] as? String
                     let role = metadata["mailbox.role"] as? String
                     result.append(
-                        MailboxGlobalResolver.Surface(
+                        MailboxGlobalResolver.TabRecord(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             name: name,
@@ -5412,7 +5412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let detachStart = ProcessInfo.processInfo.systemUptime
 #endif
 
-        guard let detached = sourceWorkspace.detachSurface(panelId: panelId) else {
+        guard let detached = sourceWorkspace.detachTab(panelId: panelId) else {
 #if DEBUG
             dlog(
                 "surface.move.fail panel=\(panelId.uuidString.prefix(5)) reason=detachFailed " +
@@ -5425,7 +5425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let detachMs = elapsedMs(since: detachStart)
         let attachStart = ProcessInfo.processInfo.systemUptime
 #endif
-        guard destinationWorkspace.attachDetachedSurface(
+        guard destinationWorkspace.attachDetachedTab(
             detached,
             inPane: resolvedTargetPane,
             atIndex: targetIndex,
@@ -5462,7 +5462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     movingTab: movedBonsplitTabId,
                     insertFirst: splitTarget.insertFirst
                   ) != nil else {
-                if let detachedFromDestination = destinationWorkspace.detachSurface(panelId: panelId) {
+                if let detachedFromDestination = destinationWorkspace.detachTab(panelId: panelId) {
                     rollbackDetachedSurface(
                         detachedFromDestination,
                         to: sourceWorkspace,
@@ -6280,7 +6280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func rollbackDetachedSurface(
-        _ detached: Workspace.DetachedSurfaceTransfer,
+        _ detached: Workspace.DetachedTabTransfer,
         to workspace: Workspace,
         sourcePane: PaneID?,
         sourceIndex: Int?,
@@ -6291,7 +6291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } ?? workspace.bonsplitController.focusedPaneId
             ?? workspace.bonsplitController.allPaneIds.first
         guard let rollbackPane else { return }
-        _ = workspace.attachDetachedSurface(
+        _ = workspace.attachDetachedTab(
             detached,
             inPane: rollbackPane,
             atIndex: sourceIndex,
@@ -8270,7 +8270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
               let pane = workspace.bonsplitController.focusedPaneId else {
             return .noWorkspace
         }
-        switch workspace.attemptAgentSurfaceLaunch(
+        switch workspace.attemptAgentTabLaunch(
             inPane: pane,
             explicitConfig: saved,
             source: .configEditor
@@ -8591,7 +8591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "loadFailures=\(loadStats.failedPanels) totalMs=\(String(format: "%.2f", totalElapsedMs)) " +
                 "workspaceAvgMs=\(String(format: "%.2f", avgWorkspaceMs)) workspaceWorstMs=\(String(format: "%.2f", worstWorkspaceMs)) " +
                 "workspaceSlowCount=\(slowWorkspaceCount) waitAttempts=\(loadStats.attempts) " +
-                "pendingSurfaces=\(loadStats.pendingSurfaces) expectedSurfaces=\(expectedSurfaceCount)"
+                "pendingSurfaces=\(loadStats.pendingTabs) expectedSurfaces=\(expectedSurfaceCount)"
             )
 
             NSLog(
@@ -8601,7 +8601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self.debugStressTabsPerPane,
                 expectedSurfaceCount,
                 layoutFailures,
-                loadStats.pendingSurfaces,
+                loadStats.pendingTabs,
                 creationElapsedMs,
                 loadStats.elapsedMs,
                 loadStats.loadedPanels,
@@ -8670,8 +8670,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    private struct DebugStressSurfaceLoadStats {
-        let pendingSurfaces: Int
+    private struct DebugStressTabLoadStats {
+        let pendingTabs: Int
         let loadedPanels: Int
         let failedPanels: Int
         let attempts: Int
@@ -8732,10 +8732,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func loadAllDebugStressWorkspacesForTerminalSurfaceReadiness(
         _ workspaces: [Workspace],
         workspaceManager: WorkspaceManager
-    ) async -> DebugStressSurfaceLoadStats {
+    ) async -> DebugStressTabLoadStats {
         guard !workspaces.isEmpty else {
-            return DebugStressSurfaceLoadStats(
-                pendingSurfaces: 0,
+            return DebugStressTabLoadStats(
+                pendingTabs: 0,
                 loadedPanels: 0,
                 failedPanels: 0,
                 attempts: 0,
@@ -8798,8 +8798,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let elapsedMs = (ProcessInfo.processInfo.systemUptime - loadStart) * 1000.0
-        return DebugStressSurfaceLoadStats(
-            pendingSurfaces: pendingDebugTerminalSurfaceCount(in: workspaces),
+        return DebugStressTabLoadStats(
+            pendingTabs: pendingDebugTerminalSurfaceCount(in: workspaces),
             loadedPanels: loadedPanels,
             failedPanels: failedPanels,
             attempts: attempts,
@@ -10826,7 +10826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ])
         }
 #endif
-        for flag in SurfaceAttentionIndex.shared.oldestFlags {
+        for flag in TabAttentionIndex.shared.oldestFlags {
             if openNotification(
                 workspaceId: flag.workspaceId,
                 surfaceId: flag.surfaceId,
@@ -13204,10 +13204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let surfaceId: UUID? = {
-            guard let surfaceIdString = response.notification.request.content.userInfo["surfaceId"] as? String else {
+            guard let tabIdString = response.notification.request.content.userInfo["surfaceId"] as? String else {
                 return nil
             }
-            return UUID(uuidString: surfaceIdString)
+            return UUID(uuidString: tabIdString)
         }()
 
         switch response.actionIdentifier {
@@ -13301,7 +13301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState = context.sidebarSelectionState
         TerminalController.shared.setActiveWorkspaceManager(context.workspaceManager)
         // C11-243: the key window's context is now resolvable.
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
 #if DEBUG
         dlog(
             "mainWindow.active window={\(debugWindowToken(window))} context={\(debugContextToken(context))} beforeMgr=\(beforeManagerToken) afterMgr=\(debugManagerToken(workspaceManager)) \(debugShortcutRouteSnapshot())"
@@ -13347,10 +13347,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // are no longer in `removed.tabManager.tabs`.
         for workspace in removed.workspaceManager.workspaces {
             for panelId in workspace.panels.keys {
-                SurfaceSeenTracker.shared.forget(panelId: panelId)
+                TabSeenTracker.shared.forget(panelId: panelId)
             }
         }
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
 
         if workspaceManager === removed.workspaceManager {
             // Repoint "active" pointers to any remaining main terminal window.

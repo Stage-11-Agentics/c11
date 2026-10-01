@@ -1785,10 +1785,10 @@ struct ContentView: View {
         let id: UUID
         let displayName: String
         let metadata: CommandPaletteSwitcherSearchMetadata
-        let surfaces: [CommandPaletteSwitcherFingerprintSurface]
+        let surfaces: [CommandPaletteSwitcherFingerprintTab]
     }
 
-    struct CommandPaletteSwitcherFingerprintSurface: Sendable {
+    struct CommandPaletteSwitcherFingerprintTab: Sendable {
         let id: UUID
         let displayName: String
         let kindLabel: String
@@ -4651,7 +4651,7 @@ struct ContentView: View {
                         surfaces: includeSurfaces
                             ? commandPaletteOrderedSwitcherPanels(for: workspace).compactMap { panelId in
                                 guard let panel = workspace.panels[panelId] else { return nil }
-                                return CommandPaletteSwitcherFingerprintSurface(
+                                return CommandPaletteSwitcherFingerprintTab(
                                     id: panelId,
                                     displayName: panelDisplayName(
                                         workspace: workspace,
@@ -4777,7 +4777,7 @@ struct ContentView: View {
 
                 for panelId in commandPaletteOrderedSwitcherPanels(for: workspace) {
                     guard let panel = workspace.panels[panelId] else { continue }
-                    let surfaceName = panelDisplayName(
+                    let tabName = panelDisplayName(
                         workspace: workspace,
                         panelId: panelId,
                         fallback: panel.displayTitle
@@ -4791,7 +4791,7 @@ struct ContentView: View {
                             "switch",
                             "go",
                             "open",
-                            surfaceName,
+                            tabName,
                             workspaceName
                         ] + commandPaletteSurfaceKeywords(for: panel.panelType) + windowKeywords,
                         metadata: commandPaletteSurfaceSearchMetadata(for: workspace, panelId: panelId),
@@ -4801,7 +4801,7 @@ struct ContentView: View {
                         CommandPaletteCommand(
                             id: surfaceCommandId,
                             rank: nextRank,
-                            title: surfaceName,
+                            title: tabName,
                             subtitle: commandPaletteSwitcherSubtitle(base: workspaceName, windowLabel: context.windowLabel),
                             shortcutHint: nil,
                             kindLabel: surfaceKindLabel,
@@ -4957,7 +4957,7 @@ struct ContentView: View {
     ) -> CommandPaletteSwitcherSearchMetadata {
         let directories = [workspace.panelDirectories[panelId]].compactMap { $0 }
         let branches = [workspace.panelGitBranches[panelId]?.branch].compactMap { $0 }
-        let ports = workspace.surfaceListeningPorts[panelId] ?? []
+        let ports = workspace.tabListeningPorts[panelId] ?? []
         return CommandPaletteSwitcherSearchMetadata(
             directories: directories,
             branches: branches,
@@ -8611,7 +8611,7 @@ struct WorkspaceSidebar: View {
                                         case .cold: pulseState = .cold
                                         case nil: continue
                                         }
-                                        let titleBarState = ws.surfaceTitleBarState(panelId: panelId)
+                                        let titleBarState = ws.tabTitleBarState(panelId: panelId)
                                         let reportedTitle = titleBarState.title?
                                             .trimmingCharacters(in: .whitespacesAndNewlines)
                                         let context = WorkspacePulseAgentContextProjector.project(
@@ -10876,7 +10876,7 @@ private struct SidebarHelpMenuButton: View {
 
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
-    @ObservedObject private var attentionIndex = SurfaceAttentionIndex.shared
+    @ObservedObject private var attentionIndex = TabAttentionIndex.shared
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
@@ -11871,8 +11871,8 @@ enum SidebarWorkspaceShortcutHintMetrics {
 /// 2. `TabItemView`'s body no longer re-evaluates twice a second just
 ///    because a digit moved, which is what tore down an open workspace
 ///    context menu while the operator was still reading it.
-private struct SidebarSurfaceMetricsReadout: View {
-    @ObservedObject private var sampler = SurfaceMetricsSampler.shared
+private struct SidebarTabMetricsReadout: View {
+    @ObservedObject private var sampler = TabMetricsSampler.shared
 
     /// Focused surface for the workspace, or nil when the workspace has no
     /// focused panel. Either way the slot renders.
@@ -11887,7 +11887,7 @@ private struct SidebarSurfaceMetricsReadout: View {
     /// Render a Sample as a compact "<cpu>% <mem>" string.
     /// CPU is integer percent (0%–800% on multi-core spikes); memory is
     /// integer MB up to 1024, otherwise 1-decimal GB.
-    nonisolated static func format(_ sample: SurfaceMetricsSampler.Sample) -> String {
+    nonisolated static func format(_ sample: TabMetricsSampler.Sample) -> String {
         let cpu = "\(Int(sample.cpuPct.rounded()))%"
         let mem: String
         if sample.rssMb >= 1024 {
@@ -12828,7 +12828,7 @@ private struct WorkspaceRowView: View, Equatable {
             // and its own observation of the sampler, so the card's structure
             // is identical whether or not a sample exists. See
             // `SidebarSurfaceMetricsReadout`.
-            SidebarSurfaceMetricsReadout(
+            SidebarTabMetricsReadout(
                 surfaceId: workspace.focusedPanelId,
                 valueColor: activeSecondaryColor(0.55),
                 // `activeSecondaryColor` collapses to `.secondary` on the

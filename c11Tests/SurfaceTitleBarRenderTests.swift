@@ -18,8 +18,8 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
 
     private static let testWidth: CGFloat = 400
 
-    private func measure(state: SurfaceTitleBarState) -> CGFloat {
-        let host = NSHostingView(rootView: SurfaceTitleBarView(state: state))
+    private func measure(state: TabTitleBarState) -> CGFloat {
+        let host = NSHostingView(rootView: TabTitleBarView(state: state))
         host.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 10_000)
         host.layoutSubtreeIfNeeded()
         let target = CGSize(width: Self.testWidth, height: NSView.noIntrinsicMetric)
@@ -29,8 +29,8 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
     func testExpandedMultiLineDescriptionTallerThanCollapsed() {
         let description = "First line of the description.\n\nSecond paragraph that adds height."
 
-        let collapsed = SurfaceTitleBarState(title: "Ignored", description: description, collapsed: true)
-        let expanded = SurfaceTitleBarState(title: "Ignored", description: description, collapsed: false)
+        let collapsed = TabTitleBarState(title: "Ignored", description: description, collapsed: true)
+        let expanded = TabTitleBarState(title: "Ignored", description: description, collapsed: false)
 
         let collapsedHeight = measure(state: collapsed)
         let expandedHeight = measure(state: expanded)
@@ -45,7 +45,7 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
     func testNoDescriptionTakesNoHeight() {
         for collapsed in [true, false] {
             for description in [nil, "", "   \n "] as [String?] {
-                let state = SurfaceTitleBarState(
+                let state = TabTitleBarState(
                     title: "A perfectly good title",
                     description: description,
                     collapsed: collapsed
@@ -62,8 +62,8 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
     func testTitleIsNeverRepeatedInTheBar() {
         // The bar shows only the description: a long title must not change its height.
         let description = "Short live description."
-        let shortTitle = SurfaceTitleBarState(title: "zsh", description: description, collapsed: true)
-        let longTitle = SurfaceTitleBarState(
+        let shortTitle = TabTitleBarState(title: "zsh", description: description, collapsed: true)
+        let longTitle = TabTitleBarState(
             title: String(repeating: "very long title ", count: 20),
             description: description,
             collapsed: true
@@ -72,7 +72,7 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
     }
 
     func testHiddenTitleBarNeverRenders() {
-        let state = SurfaceTitleBarState(title: "t", description: "d", visible: false, collapsed: true)
+        let state = TabTitleBarState(title: "t", description: "d", visible: false, collapsed: true)
         XCTAssertFalse(state.rendersBar)
         XCTAssertEqual(measure(state: state), 0, accuracy: 0.5)
     }
@@ -82,7 +82,7 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
         let longDescription = (0..<50)
             .map { "- item \($0)" }
             .joined(separator: "\n")
-        let state = SurfaceTitleBarState(
+        let state = TabTitleBarState(
             title: "Short title",
             description: longDescription,
             collapsed: false
@@ -100,15 +100,15 @@ final class SurfaceTitleBarRenderTests: XCTestCase {
 
     func testSingleLineFlattensNewlinesAndBlankRuns() {
         XCTAssertEqual(
-            SurfaceTitleBarView.singleLine("Working on it.\n\n  Next: verify.  \n"),
+            TabTitleBarView.singleLine("Working on it.\n\n  Next: verify.  \n"),
             "Working on it. Next: verify."
         )
     }
 
     func testRenderingNeverFiresTheToggle() {
         var fireCount = 0
-        let state = SurfaceTitleBarState(title: "t", description: "Some description", collapsed: false)
-        let host = NSHostingView(rootView: SurfaceTitleBarView(state: state) { fireCount += 1 })
+        let state = TabTitleBarState(title: "t", description: "Some description", collapsed: false)
+        let host = NSHostingView(rootView: TabTitleBarView(state: state) { fireCount += 1 })
         host.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 200)
         host.layoutSubtreeIfNeeded()
         XCTAssertEqual(fireCount, 0, "Mounting the view must not invoke the toggle closure")

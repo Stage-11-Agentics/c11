@@ -53,7 +53,7 @@ final class MailboxDispatcherTests: XCTestCase {
         if let delivery {
             partial["mailbox.delivery"] = delivery
         }
-        _ = try? SurfaceMetadataStore.shared.setMetadata(
+        _ = try? TabMetadataStore.shared.setMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             partial: partial,
@@ -64,9 +64,9 @@ final class MailboxDispatcherTests: XCTestCase {
     }
 
     private func makeDispatcher(surfaces: [UUID]) -> MailboxDispatcher {
-        let resolver = MailboxSurfaceResolver(
+        let resolver = MailboxTabResolver(
             workspaceId: workspaceId,
-            liveSurfaces: { surfaces }
+            liveTabs: { surfaces }
         )
         let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,
@@ -95,7 +95,7 @@ final class MailboxDispatcherTests: XCTestCase {
         let inbox = try MailboxLayout.inboxURL(
             state: tempState,
             workspaceId: workspaceId,
-            surfaceName: surface
+            tabName: surface
         )
         return try Data(
             contentsOf: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))

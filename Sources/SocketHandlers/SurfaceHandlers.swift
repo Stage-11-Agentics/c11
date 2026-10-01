@@ -14,7 +14,7 @@ extension TerminalController {
     /// seen, null if never seen) and `being_seen` on a surface item. Main-actor
     /// read; formats one timestamp string per surface, with a shared formatter.
     func v2SetSeenFields(_ item: inout [String: Any], panelId: UUID) {
-        let tracker = SurfaceSeenTracker.shared
+        let tracker = TabSeenTracker.shared
         item["last_seen_at"] = tracker.lastSeenAt(panelId: panelId)
             .map { Self.seenTimestampFormatter.string(from: $0) } ?? NSNull()
         item["being_seen"] = tracker.isBeingSeen(panelId: panelId)
@@ -108,7 +108,7 @@ extension TerminalController {
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
                     "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
-                    "tty": v2OrNull(ws.surfaceTTYNames[panel.id]),
+                    "tty": v2OrNull(ws.tabTTYNames[panel.id]),
                     "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
@@ -128,7 +128,7 @@ extension TerminalController {
                 // converges (~one tick after pid registration).
                 switch panel.panelType {
                 case .terminal, .browser:
-                    let sample = SurfaceMetricsSampler.shared.sample(forSurfaceId: panel.id)
+                    let sample = TabMetricsSampler.shared.sample(forSurfaceId: panel.id)
                     var metrics: [String: Any] = [
                         "cpu_pct": v2OrNull(sample?.cpuPct),
                         "rss_mb": v2OrNull(sample?.rssMb)
@@ -442,7 +442,7 @@ extension TerminalController {
             case .browser:
                 newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: focus)?.id
             case .markdown:
-                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
+                newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
                 newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride)?.id
             }
@@ -664,18 +664,18 @@ extension TerminalController {
                 return
             }
 
-            guard let transfer = sourceWorkspace.detachSurface(panelId: surfaceId) else {
+            guard let transfer = sourceWorkspace.detachTab(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach tab", data: nil)
                 return
             }
 
-            if targetWorkspace.attachDetachedSurface(transfer, inPane: destinationPane, atIndex: targetIndex, focus: focus) == nil {
+            if targetWorkspace.attachDetachedTab(transfer, inPane: destinationPane, atIndex: targetIndex, focus: focus) == nil {
                 // Roll back to source workspace if attach fails.
                 let rollbackPane = sourcePane.flatMap { sp in sourceWorkspace.bonsplitController.allPaneIds.first(where: { $0 == sp }) }
                     ?? sourceWorkspace.bonsplitController.focusedPaneId
                     ?? sourceWorkspace.bonsplitController.allPaneIds.first
                 if let rollbackPane {
-                    _ = sourceWorkspace.attachDetachedSurface(transfer, inPane: rollbackPane, atIndex: sourceIndex, focus: focus)
+                    _ = sourceWorkspace.attachDetachedTab(transfer, inPane: rollbackPane, atIndex: sourceIndex, focus: focus)
                 }
                 result = .err(code: "internal_error", message: "Failed to attach tab to destination", data: nil)
                 return
@@ -858,14 +858,14 @@ extension TerminalController {
         let submit = v2Bool(params, "submit") ?? true
 
         let phaseASema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var phaseAOutcome: SurfaceSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
+        nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
         Task { @MainActor in
             defer { phaseASema.signal() }
             phaseAOutcome = resolveSurfaceSendTargets(params: params)
         }
         phaseASema.wait()
 
-        let resolved: SurfaceSendPhaseAResolved
+        let resolved: TabSendPhaseAResolved
         switch phaseAOutcome {
         case .err(let err):
             return err
@@ -969,7 +969,7 @@ extension TerminalController {
         #if DEBUG
         let sendMs = (ProcessInfo.processInfo.systemUptime - sendStart) * 1000.0
         dlog(
-            "socket.surface.send_text workspace=\(resolved.workspaceIdString.prefix(8)) surface=\(resolved.surfaceIdString.prefix(8)) queued=\(queued ? 1 : 0) chars=\(text.count) ms=\(String(format: "%.2f", sendMs))"
+            "socket.surface.send_text workspace=\(resolved.workspaceIdString.prefix(8)) surface=\(resolved.tabIdString.prefix(8)) queued=\(queued ? 1 : 0) chars=\(text.count) ms=\(String(format: "%.2f", sendMs))"
         )
         #endif
 
@@ -990,14 +990,14 @@ extension TerminalController {
         }
 
         let phaseASema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var phaseAOutcome: SurfaceSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send key", data: nil))
+        nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send key", data: nil))
         Task { @MainActor in
             defer { phaseASema.signal() }
             phaseAOutcome = resolveSurfaceSendTargets(params: params)
         }
         phaseASema.wait()
 
-        let resolved: SurfaceSendPhaseAResolved
+        let resolved: TabSendPhaseAResolved
         switch phaseAOutcome {
         case .err(let err):
             return err
@@ -1012,7 +1012,7 @@ extension TerminalController {
             resolvedSurface = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0)
         }
         guard resolvedSurface != nil else {
-            return .err(code: "internal_error", message: "Tab not ready", data: ["surface_id": resolved.surfaceIdString])
+            return .err(code: "internal_error", message: "Tab not ready", data: ["surface_id": resolved.tabIdString])
         }
 
         enum PhaseBOutcome {
@@ -1046,7 +1046,7 @@ extension TerminalController {
         case .unknownKey:
             return .err(code: "invalid_params", message: "Unknown key", data: ["key": key])
         case .surfaceNotReady:
-            return .err(code: "internal_error", message: "Tab not ready", data: ["surface_id": resolved.surfaceIdString])
+            return .err(code: "internal_error", message: "Tab not ready", data: ["surface_id": resolved.tabIdString])
         }
     }
 
@@ -1394,7 +1394,7 @@ extension TerminalController {
         }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
-        guard let mode = SurfaceMetadataStore.WriteMode(rawValue: modeStr) else {
+        guard let mode = TabMetadataStore.WriteMode(rawValue: modeStr) else {
             return .err(code: "invalid_mode", message: "mode must be 'merge' or 'replace'", data: nil)
         }
 
@@ -1438,7 +1438,7 @@ extension TerminalController {
             MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])
-        let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
+        let existingAttention = TabMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1452,7 +1452,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try SurfaceMetadataStore.shared.setMetadata(
+            let result = try TabMetadataStore.shared.setMetadata(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
                 partial: metadataObj,
@@ -1473,7 +1473,7 @@ extension TerminalController {
                 workspaceManager: resolved.workspaceManager,
                 result: result
             ))
-        } catch let err as SurfaceMetadataStore.WriteError {
+        } catch let err as TabMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
@@ -1496,7 +1496,7 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Tab not found", data: nil)
         }
 
-        let (fullMetadata, fullSources) = SurfaceMetadataStore.shared.getMetadata(
+        let (fullMetadata, fullSources) = TabMetadataStore.shared.getMetadata(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1573,7 +1573,7 @@ extension TerminalController {
             MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])
-        let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
+        let existingAttention = TabMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
@@ -1587,7 +1587,7 @@ extension TerminalController {
         }
 
         do {
-            let result = try SurfaceMetadataStore.shared.clearMetadata(
+            let result = try TabMetadataStore.shared.clearMetadata(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
                 keys: keys,
@@ -1607,7 +1607,7 @@ extension TerminalController {
                 workspaceManager: resolved.workspaceManager,
                 result: result
             ))
-        } catch let err as SurfaceMetadataStore.WriteError {
+        } catch let err as TabMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)

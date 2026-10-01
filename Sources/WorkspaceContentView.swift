@@ -173,7 +173,7 @@ struct WorkspaceContentView: View {
         .onChange(of: workspace.manualUnreadPanelIds) { _, _ in
             syncBonsplitNotificationBadges()
         }
-        .onChange(of: workspace.derivedActivityBySurface) { _, _ in
+        .onChange(of: workspace.derivedActivityByTab) { _, _ in
             syncBonsplitNotificationBadges()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidReload)) { _ in

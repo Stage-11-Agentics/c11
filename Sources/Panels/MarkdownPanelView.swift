@@ -35,7 +35,7 @@ struct MarkdownPanelView: View {
                 localized: "surfaceManifest.menuItem",
                 defaultValue: "Tab Details"
             )) {
-                SurfaceManifestViewerWindowController.show(
+                TabManifestViewerWindowController.show(
                     workspaceId: panel.workspaceId,
                     surfaceId: panel.id,
                     kind: .markdown

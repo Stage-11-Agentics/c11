@@ -254,13 +254,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: rootThreadId,
             cwd: nil
         )
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+        TabLivenessDeriver.onAgentLifecycleChanged(
             surfaceId: terminalPanel.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: terminalPanel.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
@@ -279,7 +279,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
         XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: terminalPanel.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
@@ -328,13 +328,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: rootThreadId,
             cwd: nil
         )
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+        TabLivenessDeriver.onAgentLifecycleChanged(
             surfaceId: terminalPanel.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: terminalPanel.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
@@ -354,7 +354,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertEqual(waitingEdges, [true])
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: terminalPanel.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.idle.rawValue

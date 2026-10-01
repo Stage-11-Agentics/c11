@@ -102,7 +102,7 @@ final class AgentDetector: @unchecked Sendable {
             // work. Decays stale `working` surfaces to `idle` as a backstop
             // for missed prompt reports.
             for key in self.ttyNames.keys {
-                SurfaceLivenessDeriver.reconcile(
+                TabLivenessDeriver.reconcile(
                     surfaceId: key.panelId,
                     workspaceId: key.workspaceId,
                     detectedTerminalType: self.detectedTerminalTypes[key]
@@ -157,7 +157,7 @@ final class AgentDetector: @unchecked Sendable {
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
             }
-            let changed = SurfaceMetadataStore.shared.setInternal(
+            let changed = TabMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
                 key: "terminal_type",

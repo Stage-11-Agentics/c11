@@ -15,7 +15,7 @@ private extension NSView {
     }
 }
 
-struct SurfaceSearchOverlay: View {
+struct TabSearchOverlay: View {
     let workspaceId: UUID
     let surfaceId: UUID
     @ObservedObject var searchState: TerminalSurface.SearchState

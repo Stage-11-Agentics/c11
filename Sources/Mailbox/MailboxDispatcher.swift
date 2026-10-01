@@ -41,7 +41,7 @@ final class MailboxDispatcher {
 
     let workspaceId: UUID
     let stateURL: URL
-    let resolver: MailboxSurfaceResolver
+    let resolver: MailboxTabResolver
     let log: MailboxDispatchLog
     let queue: DispatchQueue
 
@@ -60,7 +60,7 @@ final class MailboxDispatcher {
     init(
         workspaceId: UUID,
         stateURL: URL,
-        resolver: MailboxSurfaceResolver,
+        resolver: MailboxTabResolver,
         queue: DispatchQueue = DispatchQueue(
             label: "com.stage11.c11.mailbox.dispatcher",
             qos: .utility
@@ -342,9 +342,9 @@ final class MailboxDispatcher {
 
     private func resolveRecipients(
         envelope: MailboxEnvelope
-    ) -> [MailboxSurfaceResolver.SurfaceMetadata] {
+    ) -> [MailboxTabResolver.TabMetadata] {
         guard let to = envelope.to else { return [] }
-        let all = resolver.surfacesWithMailboxMetadata()
+        let all = resolver.tabsWithMailboxMetadata()
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
         // address > role > title; `surface:`/`role:` qualifiers honored).
@@ -359,14 +359,14 @@ final class MailboxDispatcher {
 
     private func copyToInbox(
         envelope: MailboxEnvelope,
-        recipient: MailboxSurfaceResolver.SurfaceMetadata,
+        recipient: MailboxTabResolver.TabMetadata,
         envelopeBytes: Data
     ) {
         do {
             let inbox = try MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                surfaceName: recipient.name
+                tabName: recipient.name
             )
             try FileManager.default.createDirectory(
                 at: inbox,
@@ -406,7 +406,7 @@ final class MailboxDispatcher {
 
     private func runHandlers(
         envelope: MailboxEnvelope,
-        recipients: [MailboxSurfaceResolver.SurfaceMetadata]
+        recipients: [MailboxTabResolver.TabMetadata]
     ) {
         for recipient in recipients {
             for handlerName in recipient.delivery {
@@ -447,7 +447,7 @@ final class MailboxDispatcher {
         handler: @escaping HandlerFunction,
         name: String,
         envelope: MailboxEnvelope,
-        recipient: MailboxSurfaceResolver.SurfaceMetadata
+        recipient: MailboxTabResolver.TabMetadata
     ) {
         let semaphore = DispatchSemaphore(value: 0)
         var result = HandlerInvocationResult(outcome: .timeout)

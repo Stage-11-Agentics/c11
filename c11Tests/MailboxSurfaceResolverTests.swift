@@ -9,14 +9,14 @@ import XCTest
 final class MailboxSurfaceResolverTests: XCTestCase {
 
     private var workspaceId: UUID!
-    private var store: SurfaceMetadataStore!
+    private var store: TabMetadataStore!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         // Fresh workspace UUID per test keeps us isolated from the shared
         // SurfaceMetadataStore singleton — no other tests use our UUIDs.
         workspaceId = UUID()
-        store = SurfaceMetadataStore.shared
+        store = TabMetadataStore.shared
     }
 
     // MARK: - Helpers
@@ -38,11 +38,11 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         return surfaceId
     }
 
-    private func makeResolver(candidates: [UUID]) -> MailboxSurfaceResolver {
-        MailboxSurfaceResolver(
+    private func makeResolver(candidates: [UUID]) -> MailboxTabResolver {
+        MailboxTabResolver(
             workspaceId: workspaceId,
             metadataStore: store,
-            liveSurfaces: { candidates }
+            liveTabs: { candidates }
         )
     }
 
@@ -84,13 +84,13 @@ final class MailboxSurfaceResolverTests: XCTestCase {
     func testSurfaceNameReturnsTitle() {
         let surfaceId = seedSurface(name: "my-agent")
         let resolver = makeResolver(candidates: [surfaceId])
-        XCTAssertEqual(resolver.surfaceName(for: surfaceId), "my-agent")
+        XCTAssertEqual(resolver.tabName(for: surfaceId), "my-agent")
     }
 
     func testSurfaceNameReturnsNilWhenNoTitle() {
         let surfaceId = seedSurface(name: nil)
         let resolver = makeResolver(candidates: [surfaceId])
-        XCTAssertNil(resolver.surfaceName(for: surfaceId))
+        XCTAssertNil(resolver.tabName(for: surfaceId))
     }
 
     // MARK: - Mailbox metadata enumeration
@@ -111,7 +111,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         let untitled = seedSurface(name: nil)
 
         let resolver = makeResolver(candidates: [watcher, silent, untitled])
-        let rows = resolver.surfacesWithMailboxMetadata()
+        let rows = resolver.tabsWithMailboxMetadata()
         let byName = Dictionary(uniqueKeysWithValues: rows.map { ($0.name, $0) })
 
         XCTAssertEqual(rows.count, 2, "untitled surfaces are filtered out")
@@ -137,7 +137,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
             ]
         )
         let resolver = makeResolver(candidates: [s])
-        let row = resolver.surfacesWithMailboxMetadata().first
+        let row = resolver.tabsWithMailboxMetadata().first
         XCTAssertEqual(row?.mailboxKeys.keys.sorted(), ["mailbox.delivery"])
     }
 
@@ -151,7 +151,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
                 "mailbox.role": "builder",
             ]
         )
-        let row = makeResolver(candidates: [s]).surfacesWithMailboxMetadata().first
+        let row = makeResolver(candidates: [s]).tabsWithMailboxMetadata().first
         XCTAssertEqual(row?.address, "01HSTABLEADDR")
         XCTAssertEqual(row?.role, "builder")
         XCTAssertEqual(
@@ -162,7 +162,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
 
     func testSurfaceMetadataAddressAndRoleNilWhenUnset() {
         let s = seedSurface(name: "title-only")
-        let row = makeResolver(candidates: [s]).surfacesWithMailboxMetadata().first
+        let row = makeResolver(candidates: [s]).tabsWithMailboxMetadata().first
         XCTAssertNil(row?.address)
         XCTAssertNil(row?.role)
         XCTAssertEqual(row?.identity, MailboxIdentity(title: "title-only", address: nil, role: nil))
@@ -172,7 +172,7 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         // Canonical `role` is NOT a mailbox.* key — role addressing is opt-in
         // via mailbox.role so bare-name resolution stays title-stable.
         let s = seedSurface(name: "agent", extraMailbox: ["role": "reviewer"])
-        let row = makeResolver(candidates: [s]).surfacesWithMailboxMetadata().first
+        let row = makeResolver(candidates: [s]).tabsWithMailboxMetadata().first
         XCTAssertNil(row?.role)
     }
 }
@@ -185,8 +185,8 @@ final class MailboxGlobalResolverTests: XCTestCase {
     private let wsB = UUID()
     private let wsC = UUID()
 
-    private func surface(_ ws: UUID, _ name: String) -> MailboxGlobalResolver.Surface {
-        MailboxGlobalResolver.Surface(workspaceId: ws, surfaceId: UUID(), name: name)
+    private func surface(_ ws: UUID, _ name: String) -> MailboxGlobalResolver.TabRecord {
+        MailboxGlobalResolver.TabRecord(workspaceId: ws, surfaceId: UUID(), name: name)
     }
 
     private func surface(
@@ -194,8 +194,8 @@ final class MailboxGlobalResolverTests: XCTestCase {
         title: String,
         address: String? = nil,
         role: String? = nil
-    ) -> MailboxGlobalResolver.Surface {
-        MailboxGlobalResolver.Surface(
+    ) -> MailboxGlobalResolver.TabRecord {
+        MailboxGlobalResolver.TabRecord(
             workspaceId: ws,
             surfaceId: UUID(),
             name: title,
@@ -204,7 +204,7 @@ final class MailboxGlobalResolverTests: XCTestCase {
         )
     }
 
-    private func resolver(_ surfaces: [MailboxGlobalResolver.Surface]) -> MailboxGlobalResolver {
+    private func resolver(_ surfaces: [MailboxGlobalResolver.TabRecord]) -> MailboxGlobalResolver {
         MailboxGlobalResolver(surfaces: { surfaces })
     }
 

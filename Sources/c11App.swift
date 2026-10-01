@@ -1283,7 +1283,7 @@ struct cmuxApp: App {
             NSSound.beep()
             return
         }
-        _ = workspace.newMarkdownSurface(inPane: paneId, focus: true)
+        _ = workspace.newMarkdownTab(inPane: paneId, focus: true)
     }
 
     private var notificationMenuSnapshot: NotificationMenuSnapshot {
@@ -1573,7 +1573,7 @@ struct cmuxApp: App {
 
         do {
             try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
-            if workspace.newMarkdownSurface(inPane: paneId, filePath: fileURL.path, focus: true) == nil {
+            if workspace.newMarkdownTab(inPane: paneId, filePath: fileURL.path, focus: true) == nil {
                 ThemeDiagnostics.engine("debug dump active theme failed: unable to open markdown surface")
             }
         } catch {
@@ -4424,12 +4424,12 @@ struct SettingsView: View {
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
-    @AppStorage(SurfaceTypeAvailability.internalBrowserEnabledKey)
-    private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
-    @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
-    private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
-    @AppStorage(SurfaceTypeAvailability.markdownSpawnButtonVisibleKey)
-    private var markdownSpawnButtonVisible = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.internalBrowserEnabledKey)
+    private var internalBrowserEnabled = TabTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.markdownTabsEnabledKey)
+    private var markdownSurfacesEnabled = TabTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.markdownSpawnButtonVisibleKey)
+    private var markdownSpawnButtonVisible = TabTypeAvailability.defaultEnabled
     @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(TabLayoutSettings.modeKey)
@@ -4468,8 +4468,8 @@ struct SettingsView: View {
     @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey)
     private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
     @AppStorage(WorkspacePlacementSettings.placementKey) private var newWorkspacePlacement = WorkspacePlacementSettings.defaultPlacement.rawValue
-    @AppStorage(LastSurfaceCloseShortcutSettings.key)
-    private var closeWorkspaceOnLastSurfaceShortcut = LastSurfaceCloseShortcutSettings.defaultValue
+    @AppStorage(LastTabCloseShortcutSettings.key)
+    private var closeWorkspaceOnLastSurfaceShortcut = LastTabCloseShortcutSettings.defaultValue
     @AppStorage(WorkspaceAutoReorderSettings.key) private var workspaceAutoReorder = WorkspaceAutoReorderSettings.defaultValue
     @AppStorage(ActivityMarkSettings.staticMarksKey)
     private var staticActivityMarks = ActivityMarkSettings.defaultStaticMarks
@@ -6564,8 +6564,8 @@ struct SettingsView: View {
             showLanguageRestartAlert = true
         }
         socketControlMode = SocketControlSettings.defaultMode.rawValue
-        internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
-        markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+        internalBrowserEnabled = TabTypeAvailability.defaultEnabled
+        markdownSurfacesEnabled = TabTypeAvailability.defaultEnabled
         showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
         tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
@@ -6603,7 +6603,7 @@ struct SettingsView: View {
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.modeKey)
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.legacyTitlebarControlsVisibilityModeKey)
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.legacyPaneTabBarControlsVisibilityModeKey)
-        closeWorkspaceOnLastSurfaceShortcut = LastSurfaceCloseShortcutSettings.defaultValue
+        closeWorkspaceOnLastSurfaceShortcut = LastTabCloseShortcutSettings.defaultValue
         workspaceAutoReorder = WorkspaceAutoReorderSettings.defaultValue
         sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
         sidebarShowNotificationMessage = SidebarWorkspaceDetailSettings.defaultShowNotificationMessage

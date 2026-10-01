@@ -175,7 +175,7 @@ extension TerminalController {
                     return
                 }
 
-                let createdPanel = ws.newMarkdownSurface(
+                let createdPanel = ws.newMarkdownTab(
                     inPane: targetPaneId,
                     filePath: filePath,
                     focus: v2FocusAllowed()

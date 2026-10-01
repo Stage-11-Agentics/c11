@@ -94,8 +94,8 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
 /// The store is *in-memory only*. Consumers that need durability persist
 /// externally. Entries are pruned when surfaces close (see
 /// `Workspace.pruneSurfaceMetadata`).
-final class SurfaceMetadataStore: @unchecked Sendable {
-    static let shared = SurfaceMetadataStore()
+final class TabMetadataStore: @unchecked Sendable {
+    static let shared = TabMetadataStore()
 
     // MARK: - Constants
 
@@ -249,13 +249,13 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             guard let s = value as? String else {
                 return .reservedKeyInvalidType(key, "expected string")
             }
-            if s.count > SurfaceLifecycleState.metadataMaxLength {
+            if s.count > TabLifecycleState.metadataMaxLength {
                 return .reservedKeyInvalidType(
                     key,
-                    "exceeds max length \(SurfaceLifecycleState.metadataMaxLength)"
+                    "exceeds max length \(TabLifecycleState.metadataMaxLength)"
                 )
             }
-            guard let parsed = SurfaceLifecycleState(rawValue: s) else {
+            guard let parsed = TabLifecycleState(rawValue: s) else {
                 return .reservedKeyInvalidType(
                     key,
                     "must be one of: active, throttled, hibernated"
@@ -297,10 +297,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             guard reason == trimmed else {
                 return .reservedKeyInvalidType(key, "reason must not have leading or trailing whitespace")
             }
-            guard reason.count <= SurfaceAttentionReason.maxLength else {
+            guard reason.count <= TabAttentionReason.maxLength else {
                 return .reservedKeyInvalidType(
                     key,
-                    "exceeds max length \(SurfaceAttentionReason.maxLength)"
+                    "exceeds max length \(TabAttentionReason.maxLength)"
                 )
             }
             guard !reason.contains("\n"), !reason.contains("\r") else {
@@ -542,16 +542,16 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
     /// Canonical attention read. The flag source timestamp is the original
     /// active-epoch timestamp; reason revisions deliberately preserve it.
-    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> SurfaceAttentionSnapshot {
+    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> TabAttentionSnapshot {
         queue.sync {
             let blob = metadata[workspaceId]?[surfaceId] ?? [:]
             let source = sources[workspaceId]?[surfaceId]?[MetadataKey.flag]
-            return SurfaceAttentionSnapshot(
+            return TabAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -564,20 +564,20 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     func mutateAttention(
         workspaceId: UUID,
         surfaceId: UUID,
-        flag: SurfaceAttentionFlagMutation = .unchanged,
-        suppression: SurfaceAttentionSuppressionMutation = .unchanged,
-        callerSurfaceId: UUID? = nil,
+        flag: TabAttentionFlagMutation = .unchanged,
+        suppression: TabAttentionSuppressionMutation = .unchanged,
+        callerTabId: UUID? = nil,
         now: Date = Date()
-    ) throws -> (result: WriteResult, before: SurfaceAttentionSnapshot, after: SurfaceAttentionSnapshot) {
+    ) throws -> (result: WriteResult, before: TabAttentionSnapshot, after: TabAttentionSnapshot) {
         try queue.sync {
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sourceBlob = sources[workspaceId]?[surfaceId] ?? [:]
-            let before = SurfaceAttentionSnapshot(
+            let before = TabAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -591,9 +591,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     throw error
                 }
                 let priorReason = blob[MetadataKey.flag] as? String
-                let existingCaller = SurfaceMetadataStore.flagCallerValue(blob)
+                let existingCaller = TabMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:))
-                let shouldSetCaller = existingCaller == nil && callerSurfaceId != nil
+                let shouldSetCaller = existingCaller == nil && callerTabId != nil
                 if priorReason != reason
                     || sourceBlob[MetadataKey.flag]?.source != .explicit
                     || shouldSetCaller {
@@ -601,9 +601,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     blob[MetadataKey.flag] = reason
                     let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
                     sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
-                    if let callerSurfaceId, existingCaller == nil {
+                    if let callerTabId, existingCaller == nil {
                         for key in MetadataKey.flagCallerKeys {
-                            blob[key] = callerSurfaceId.uuidString
+                            blob[key] = callerTabId.uuidString
                             sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                         }
                     }
@@ -668,7 +668,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
                 throw WriteError.encodeFailed
             }
-            if encoded.count > SurfaceMetadataStore.payloadCapBytes {
+            if encoded.count > TabMetadataStore.payloadCapBytes {
                 throw WriteError.payloadTooLarge
             }
             metadata[workspaceId, default: [:]][surfaceId] = blob
@@ -677,12 +677,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             result.metadata = blob
             result.sources = sourceBlob.mapValues { $0.toJSON() }
 
-            let after = SurfaceAttentionSnapshot(
+            let after = TabAttentionSnapshot(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
-                flagCallerSurfaceId: SurfaceMetadataStore.flagCallerValue(blob)
+                flagCallerTabId: TabMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
                 suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
             )
@@ -693,7 +693,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     /// Canonical lifecycle restore used when a live surface crosses workspace
     /// ownership. This preserves the active flag epoch without emitting a new
     /// raise or notification.
-    func restoreAttention(_ snapshot: SurfaceAttentionSnapshot) {
+    func restoreAttention(_ snapshot: TabAttentionSnapshot) {
         queue.sync {
             var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
             var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
@@ -715,9 +715,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     source: .explicit,
                     ts: epoch
                 )
-                if let callerSurfaceId = snapshot.flagCallerSurfaceId {
+                if let callerTabId = snapshot.flagCallerTabId {
                     for key in MetadataKey.flagCallerKeys {
-                        blob[key] = callerSurfaceId.uuidString
+                        blob[key] = callerTabId.uuidString
                         sourceBlob[key] = SourceRecord(source: .explicit, ts: epoch)
                     }
                 }
@@ -972,7 +972,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             if let cur = sblob[key], source.precedence < cur.source.precedence {
                 return false
             }
-            if SurfaceMetadataStore.validateReservedKey(key, value) != nil {
+            if TabMetadataStore.validateReservedKey(key, value) != nil {
                 return false
             }
             // Avoid churn on no-op same-source same-value writes.
@@ -985,7 +985,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
-               encoded.count > SurfaceMetadataStore.payloadCapBytes {
+               encoded.count > TabMetadataStore.payloadCapBytes {
                 return false
             }
 
@@ -1036,8 +1036,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         // Pre-validate every reserved key *before* taking the mutation path so
         // a single bad value aborts the whole write (matches M2 spec).
         for (k, v) in partial {
-            if SurfaceMetadataStore.reservedKeys.contains(k) {
-                if let err = SurfaceMetadataStore.validateReservedKey(k, v) {
+            if TabMetadataStore.reservedKeys.contains(k) {
+                if let err = TabMetadataStore.validateReservedKey(k, v) {
                     throw err
                 }
             }
@@ -1106,7 +1106,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
             throw WriteError.encodeFailed
         }
-        if encoded.count > SurfaceMetadataStore.payloadCapBytes {
+        if encoded.count > TabMetadataStore.payloadCapBytes {
             throw WriteError.payloadTooLarge
         }
 

@@ -159,7 +159,7 @@ extension Workspace {
 
     func sessionSnapshot(
         includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+        conversationsByPanelId injectedConversations: [String: TabConversations]? = nil
     ) -> SessionWorkspaceSnapshot {
         let tree = bonsplitController.treeSnapshot()
         let layout = sessionLayoutSnapshot(from: tree)
@@ -411,8 +411,8 @@ extension Workspace {
         for panelSnapshot in snapshot.panels {
             guard panelSnapshot.type == .terminal else { continue }
             let meta = Workspace.stringValues(from: panelSnapshot.metadata)
-            let terminalType = meta[SurfaceMetadataKeyName.terminalType]
-            let sessionId = meta[SurfaceMetadataKeyName.claudeSessionId]
+            let terminalType = meta[TabMetadataKeyName.terminalType]
+            let sessionId = meta[TabMetadataKeyName.claudeSessionId]
             guard let command = registry.resolveCommand(
                 terminalType: terminalType,
                 sessionId: sessionId,
@@ -456,10 +456,10 @@ extension Workspace {
     /// the normal way.
     nonisolated static func readConversationsByPanelIdSync(
         timeout: TimeInterval = 2.0
-    ) -> [String: SurfaceConversations] {
+    ) -> [String: TabConversations] {
         guard !ConversationStorePolicy.isDisabled else { return [:] }
         let sema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var captured: [String: SurfaceConversations] = [:]
+        nonisolated(unsafe) var captured: [String: TabConversations] = [:]
         Task.detached(priority: .userInitiated) {
             captured = await ConversationStore.shared.snapshot()
             sema.signal()
@@ -496,7 +496,7 @@ extension Workspace {
             guard let surface = storeSnapshot[key], let ref = surface.active else {
                 let persistedRef = panelSnapshot.surfaceConversations?.active
                 let metadataKind = Self.stringValues(from: panelSnapshot.metadata)[
-                    SurfaceMetadataKeyName.terminalType
+                    TabMetadataKeyName.terminalType
                 ]?.trimmingCharacters(in: .whitespacesAndNewlines)
                 if let kind = persistedRef?.kind ?? metadataKind,
                    !kind.isEmpty,
@@ -783,12 +783,12 @@ extension Workspace {
     }
 
     private func sessionSurfaceUUID(for bonsplitTabId: TabID) -> UUID? {
-        struct EncodedSurfaceID: Decodable {
+        struct EncodedTabID: Decodable {
             let id: UUID
         }
 
         guard let data = try? JSONEncoder().encode(bonsplitTabId),
-              let decoded = try? JSONDecoder().decode(EncodedSurfaceID.self, from: data) else {
+              let decoded = try? JSONDecoder().decode(EncodedTabID.self, from: data) else {
             return nil
         }
         return decoded.id
@@ -797,7 +797,7 @@ extension Workspace {
     private func sessionPanelSnapshot(
         panelId: UUID,
         includeScrollback: Bool,
-        conversationsByPanelId: [String: SurfaceConversations]
+        conversationsByPanelId: [String: TabConversations]
     ) -> SessionPanelSnapshot? {
         guard let panel = panels[panelId] else { return nil }
 
@@ -809,8 +809,8 @@ extension Workspace {
         let branchSnapshot = panelGitBranches[panelId].map {
             SessionGitBranchSnapshot(branch: $0.branch, isDirty: $0.isDirty)
         }
-        let listeningPorts = (surfaceListeningPorts[panelId] ?? []).sorted()
-        let ttyName = surfaceTTYNames[panelId]
+        let listeningPorts = (tabListeningPorts[panelId] ?? []).sorted()
+        let ttyName = tabTTYNames[panelId]
 
         let terminalSnapshot: SessionTerminalPanelSnapshot?
         let browserSnapshot: SessionBrowserPanelSnapshot?
@@ -865,7 +865,7 @@ extension Workspace {
         var persistedMetadata: [String: PersistedJSONValue]?
         let persistedMetadataSources: [String: PersistedMetadataSource]?
         do {
-            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            let snapshot = TabMetadataStore.shared.getMetadata(
                 workspaceId: id,
                 surfaceId: panelId
             )
@@ -907,9 +907,9 @@ extension Workspace {
         // (`active: nil, history: []`) is still written for terminal
         // surfaces with no captured conversation — the empty shape is part
         // of the v1 JSON contract.
-        var surfaceConversations: SurfaceConversations? = nil
+        var tabConversations: TabConversations? = nil
         if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
-            surfaceConversations = conversationsByPanelId[panelId.uuidString] ?? .empty
+            tabConversations = conversationsByPanelId[panelId.uuidString] ?? .empty
         }
         // C11-164 (RES-2): persist the surface's live activity floor so the
         // Codex/pi/omp scrape disambiguation survives a crash. Only terminal
@@ -917,7 +917,7 @@ extension Workspace {
         // synchronous queue read (no main-thread hot-path work).
         var lastActivityAt: Date? = nil
         if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
-            lastActivityAt = SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+            lastActivityAt = TabActivityTracker.shared.lastActivity(for: panelId.uuidString)
         }
         return SessionPanelSnapshot(
             id: panelId,
@@ -937,9 +937,9 @@ extension Workspace {
             markdown: markdownSnapshot,
             metadata: persistedMetadata,
             metadataSources: persistedMetadataSources,
-            surfaceConversations: surfaceConversations,
+            surfaceConversations: tabConversations,
             lastActivityAt: lastActivityAt,
-            lastSeenAt: SurfaceSeenTracker.shared.lastSeenAt(panelId: panelId)
+            lastSeenAt: TabSeenTracker.shared.lastSeenAt(panelId: panelId)
         )
     }
 
@@ -1119,7 +1119,7 @@ extension Workspace {
             applySessionPanelMetadata(snapshot, toPanelId: browserPanel.id)
             return browserPanel.id
         case .markdown:
-            guard let markdownPanel = newMarkdownSurface(
+            guard let markdownPanel = newMarkdownTab(
                 inPane: paneId,
                 filePath: snapshot.markdown?.filePath,
                 focus: false,
@@ -1146,13 +1146,13 @@ extension Workspace {
               case .string(let raw)? = metadata[MetadataKey.lifecycleState] else {
             return false
         }
-        return raw == SurfaceLifecycleState.hibernated.rawValue
+        return raw == TabLifecycleState.hibernated.rawValue
     }
 
     private func applySessionPanelMetadata(_ snapshot: SessionPanelSnapshot, toPanelId panelId: UUID) {
         // C11-243: restore the persisted last-seen stamp onto the created panel id.
         if let lastSeenAt = snapshot.lastSeenAt {
-            SurfaceSeenTracker.shared.seed(panelId: panelId, at: lastSeenAt)
+            TabSeenTracker.shared.seed(panelId: panelId, at: lastSeenAt)
         }
         if let title = snapshot.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             panelTitles[panelId] = title
@@ -1178,12 +1178,12 @@ extension Workspace {
             panelGitBranches.removeValue(forKey: panelId)
         }
 
-        surfaceListeningPorts[panelId] = Array(Set(snapshot.listeningPorts)).sorted()
+        tabListeningPorts[panelId] = Array(Set(snapshot.listeningPorts)).sorted()
 
         if let ttyName = snapshot.ttyName?.trimmingCharacters(in: .whitespacesAndNewlines), !ttyName.isEmpty {
-            surfaceTTYNames[panelId] = ttyName
+            tabTTYNames[panelId] = ttyName
         } else {
-            surfaceTTYNames.removeValue(forKey: panelId)
+            tabTTYNames.removeValue(forKey: panelId)
         }
 
         if let browserSnapshot = snapshot.browser,
@@ -5301,7 +5301,7 @@ struct ClosedBrowserPanelRestoreSnapshot {
 }
 
 /// C11-134: per-type surface counts carried by `surface.shape` breadcrumbs.
-struct SurfaceShapeCounts: Equatable {
+struct TabShapeCounts: Equatable {
     var terminals = 0
     var browsers = 0
     var markdown = 0
@@ -5344,7 +5344,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// persisted surface-availability toggles for any writer (Settings UI,
     /// `defaults write`). Same composed-NSObject KVO pattern as
     /// `chromeScaleObserver`.
-    private var surfaceAvailabilityObserver: SurfaceAvailabilityObserver?
+    private var tabAvailabilityObserver: TabAvailabilityObserver?
 
     /// Keeps the Bonsplit "N: " tab-ordinal prefix in sync with the persisted
     /// "Show surface IDs in tab titles" toggle for any writer (Settings UI,
@@ -5540,17 +5540,17 @@ final class Workspace: Identifiable, ObservableObject {
     /// `SurfaceLivenessDeriver` calls from the derived-liveness backend) and
     /// pruned alongside the other per-surface metadata. Absence of a key means
     /// "no derived signal yet."
-    @Published var derivedActivityBySurface: [UUID: SidebarActivityState] = [:]
+    @Published var derivedActivityByTab: [UUID: SidebarActivityState] = [:]
     /// Main-actor render cache for canonical attention metadata. The metadata
     /// store remains authoritative; views consume this immutable projection.
-    @Published private(set) var attentionBySurface: [UUID: SurfaceAttentionSnapshot] = [:]
+    @Published private(set) var attentionByTab: [UUID: TabAttentionSnapshot] = [:]
     /// Live-agent dormancy is a reversible presentation projection, kept
     /// separate from the durable working/idle metadata truth.
     @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
     /// Foreground-process classifications from `AgentDetector`. Durable
     /// `terminal_type` metadata describes resumable identity; this live map
     /// decides whether that identity is currently an agent or a plain shell.
-    @Published private(set) var detectedTerminalTypesBySurface: [UUID: String] = [:]
+    @Published private(set) var detectedTerminalTypesByTab: [UUID: String] = [:]
     @Published var gitBranch: SidebarGitBranchState?
     @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
     /// C11-104 — per-panel resolved worktree+branch context for the
@@ -5559,7 +5559,7 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var panelGitContexts: [UUID: ResolvedGitContext?] = [:]
     @Published var pullRequest: SidebarPullRequestState?
     @Published var panelPullRequests: [UUID: SidebarPullRequestState] = [:]
-    @Published var surfaceListeningPorts: [UUID: [Int]] = [:]
+    @Published var tabListeningPorts: [UUID: [Int]] = [:]
     @Published var remoteConfiguration: WorkspaceRemoteConfiguration?
     @Published var remoteConnectionState: WorkspaceRemoteConnectionState = .disconnected
     @Published var remoteConnectionDetail: String?
@@ -5572,7 +5572,7 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var remoteLastHeartbeatAt: Date?
     @Published var listeningPorts: [Int] = []
     @Published private(set) var activeRemoteTerminalSessionCount: Int = 0
-    var surfaceTTYNames: [UUID: String] = [:]
+    var tabTTYNames: [UUID: String] = [:]
     private var remoteSessionController: WorkspaceRemoteSessionController?
     fileprivate var activeRemoteSessionControllerID: UUID?
     private var remoteLastErrorFingerprint: String?
@@ -5620,7 +5620,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     var focusedSurfaceId: UUID? { focusedPanelId }
-    var surfaceDirectories: [UUID: String] {
+    var tabDirectories: [UUID: String] {
         get { panelDirectories }
         set { panelDirectories = newValue }
     }
@@ -5628,7 +5628,7 @@ final class Workspace: Identifiable, ObservableObject {
     private var processTitle: String
     private var stableDefaultTitle: String?
 
-    private enum SurfaceKind {
+    private enum TabKind {
         static let terminal = "terminal"
         static let browser = "browser"
         static let markdown = "markdown"
@@ -5862,8 +5862,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// change so redundant toggles don't churn the configuration. Existing
     /// surfaces are untouched — this only governs the spawn affordances.
     func applySurfaceAvailability() {
-        let browserOn = SurfaceTypeAvailability.isEnabled(.browser)
-        let markdownOn = SurfaceTypeAvailability.isMarkdownSpawnButtonVisible()
+        let browserOn = TabTypeAvailability.isEnabled(.browser)
+        let markdownOn = TabTypeAvailability.isMarkdownSpawnButtonVisible()
         var next = bonsplitController.configuration
         guard next.showsBrowserSpawnButton != browserOn
             || next.showsMarkdownSpawnButton != markdownOn else { return }
@@ -6064,8 +6064,8 @@ final class Workspace: Identifiable, ObservableObject {
             // Hide the Browser / Markdown spawn buttons when the operator has
             // disabled those surface types. `applySurfaceAvailability()` keeps
             // these live as the toggles change.
-            showsBrowserSpawnButton: SurfaceTypeAvailability.isEnabled(.browser),
-            showsMarkdownSpawnButton: SurfaceTypeAvailability.isMarkdownSpawnButtonVisible(),
+            showsBrowserSpawnButton: TabTypeAvailability.isEnabled(.browser),
+            showsMarkdownSpawnButton: TabTypeAvailability.isMarkdownSpawnButtonVisible(),
             appearance: appearance
         )
         self.bonsplitController = BonsplitController(configuration: config)
@@ -6084,7 +6084,7 @@ final class Workspace: Identifiable, ObservableObject {
         // Mirror the chrome-scale observer: react to surface-availability
         // toggles so the Browser / Markdown spawn buttons appear/disappear
         // live, without an app restart.
-        self.surfaceAvailabilityObserver = SurfaceAvailabilityObserver { [weak self] in
+        self.tabAvailabilityObserver = TabAvailabilityObserver { [weak self] in
             self?.applySurfaceAvailability()
         }
 
@@ -6141,7 +6141,7 @@ final class Workspace: Identifiable, ObservableObject {
         if let bonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: title),
             icon: "terminal.fill",
-            kind: SurfaceKind.terminal,
+            kind: TabKind.terminal,
             isDirty: false,
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
@@ -6195,8 +6195,8 @@ final class Workspace: Identifiable, ObservableObject {
         // URLs. removeDuplicates keeps it to genuine state changes; debounce
         // coalesces bulk transitions like session restore.
         surfaceShapeBreadcrumbCancellable = $panels
-            .map { panels -> SurfaceShapeCounts in
-                var counts = SurfaceShapeCounts()
+            .map { panels -> TabShapeCounts in
+                var counts = TabShapeCounts()
                 for panel in panels.values {
                     switch panel.panelType {
                     case .terminal: counts.terminals += 1
@@ -6298,7 +6298,7 @@ final class Workspace: Identifiable, ObservableObject {
         } catch {
             return
         }
-        let resolver = MailboxSurfaceResolver(workspaceId: self.id) { [weak self] in
+        let resolver = MailboxTabResolver(workspaceId: self.id) { [weak self] in
             guard let self else { return [] }
             // `panels` is @Published. Read it from main to avoid the SwiftUI/Combine
             // non-main warning under Swift 5.10+; dispatch volume is low enough
@@ -6484,7 +6484,7 @@ final class Workspace: Identifiable, ObservableObject {
         let splitPanelId: UUID
     }
 
-    struct DetachedSurfaceTransfer {
+    struct DetachedTabTransfer {
         let panelId: UUID
         let panel: any Panel
         let title: String
@@ -6505,7 +6505,7 @@ final class Workspace: Identifiable, ObservableObject {
         let isAgentCold: Bool
         let detectedTerminalType: String?
         let activityState: BonsplitTabActivityState?
-        let attention: SurfaceAttentionSnapshot
+        let attention: TabAttentionSnapshot
         /// When the surface entered its sheet-visible state, so a moved tab keeps its clock.
         let tabSheetStatusEntered: TabSheetStatusEntry?
         /// The last command start/finish, so a moved terminal keeps its `active` clock.
@@ -6513,7 +6513,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private var detachingBonsplitTabIds: Set<TabID> = []
-    private var pendingDetachedSurfaces: [TabID: DetachedSurfaceTransfer] = [:]
+    private var pendingDetachedSurfaces: [TabID: DetachedTabTransfer] = [:]
     private var activeDetachCloseTransactions: Int = 0
     private var isDetachingCloseTransaction: Bool { activeDetachCloseTransactions > 0 }
 
@@ -6656,7 +6656,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let path = markdownPanel.filePath, !path.isEmpty else { return }
         let title = markdownPanel.displayTitle
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        _ = try? SurfaceMetadataStore.shared.setMetadata(
+        _ = try? TabMetadataStore.shared.setMetadata(
             workspaceId: id,
             surfaceId: markdownPanel.id,
             partial: ["title": title],
@@ -6684,7 +6684,7 @@ final class Workspace: Identifiable, ObservableObject {
                 // `.declare` yields to an explicit `cmux set-title`.
                 if markdownPanel.filePath != nil,
                    !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    _ = try? SurfaceMetadataStore.shared.setMetadata(
+                    _ = try? TabMetadataStore.shared.setMetadata(
                         workspaceId: self.id,
                         surfaceId: markdownPanel.id,
                         partial: ["title": newTitle],
@@ -6767,12 +6767,12 @@ final class Workspace: Identifiable, ObservableObject {
     func restoreLifecycleStateFromMetadata() {
         var anyHibernated = false
         for (panelId, panel) in panels {
-            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            let snapshot = TabMetadataStore.shared.getMetadata(
                 workspaceId: id,
                 surfaceId: panelId
             )
             guard let stateStr = snapshot.metadata[MetadataKey.lifecycleState] as? String,
-                  let state = SurfaceLifecycleState(rawValue: stateStr) else {
+                  let state = TabLifecycleState(rawValue: stateStr) else {
                 continue
             }
             if state == .hibernated {
@@ -6817,14 +6817,14 @@ final class Workspace: Identifiable, ObservableObject {
         panels[panelId] as? MarkdownPanel
     }
 
-    private func surfaceKind(for panel: any Panel) -> String {
+    private func tabKind(for panel: any Panel) -> String {
         switch panel.panelType {
         case .terminal:
-            return SurfaceKind.terminal
+            return TabKind.terminal
         case .browser:
-            return SurfaceKind.browser
+            return TabKind.browser
         case .markdown:
-            return SurfaceKind.markdown
+            return TabKind.markdown
         }
     }
 
@@ -6843,7 +6843,7 @@ final class Workspace: Identifiable, ObservableObject {
         if let panel = panels[panelId] {
             bonsplitController.updateTab(
                 bonsplitTabId,
-                kind: .some(surfaceKind(for: panel)),
+                kind: .some(tabKind(for: panel)),
                 isPinned: isPinned
             )
         } else {
@@ -6855,9 +6855,9 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forWorkspaceId: id, surfaceId: panelId) ?? false
     }
 
-    func attentionSnapshot(panelId: UUID) -> SurfaceAttentionSnapshot {
-        attentionBySurface[panelId]
-            ?? SurfaceAttentionSnapshot(
+    func attentionSnapshot(panelId: UUID) -> TabAttentionSnapshot {
+        attentionByTab[panelId]
+            ?? TabAttentionSnapshot(
                 workspaceId: id,
                 surfaceId: panelId,
                 flagReason: nil,
@@ -6866,13 +6866,13 @@ final class Workspace: Identifiable, ObservableObject {
             )
     }
 
-    func setAttentionSnapshot(_ snapshot: SurfaceAttentionSnapshot?, forSurface surfaceId: UUID) {
+    func setAttentionSnapshot(_ snapshot: TabAttentionSnapshot?, forSurface surfaceId: UUID) {
         if let snapshot, snapshot.isFlagged || snapshot.suppressed {
-            if attentionBySurface[surfaceId] != snapshot {
-                attentionBySurface[surfaceId] = snapshot
+            if attentionByTab[surfaceId] != snapshot {
+                attentionByTab[surfaceId] = snapshot
             }
         } else {
-            attentionBySurface.removeValue(forKey: surfaceId)
+            attentionByTab.removeValue(forKey: surfaceId)
         }
         syncSurfaceTabActivityStateForPanel(surfaceId)
         (panels[surfaceId] as? TerminalPanel)?.surface.hostedView.updateFlagBanner()
@@ -6887,9 +6887,9 @@ final class Workspace: Identifiable, ObservableObject {
         terminalKind: String?? = nil
     ) -> BonsplitTabActivityState? {
         let attention = attentionSnapshot(panelId: panelId)
-        return SurfaceTabActivityResolver.resolve(
+        return TabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
-            derivedActivity: derivedActivityBySurface[panelId],
+            derivedActivity: derivedActivityByTab[panelId],
             isCold: coldAgentSurfaceIds.contains(panelId),
             terminalType: terminalKind ?? surfaceActivityTerminalKind(panelId: panelId),
             flagged: attention.isFlagged,
@@ -6936,7 +6936,7 @@ final class Workspace: Identifiable, ObservableObject {
         case nil: return nil
         }
         let attention = attentionSnapshot(panelId: panelId)
-        let lastActivityAt = SurfaceActivityTracker.shared.lastActivity(
+        let lastActivityAt = TabActivityTracker.shared.lastActivity(
             for: panelId.uuidString
         )
         let waitingStartedAt = state == .waiting
@@ -6956,21 +6956,21 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
-    func surfaceActivityDetailsSnapshot(
+    func tabActivityDetailsSnapshot(
         panelId: UUID
-    ) -> SurfaceActivityDetailsSnapshot {
+    ) -> TabActivityDetailsSnapshot {
         let activityState = resolvedSurfaceTabActivityState(panelId: panelId)
         let activityHelp = resolvedAgentActivityHelp(
             panelId: panelId,
             activityState: activityState
         )
-        return SurfaceActivityDetailsSnapshot(
+        return TabActivityDetailsSnapshot(
             activityHelp: activityHelp,
             createdAt: panels[panelId]?.createdAt,
             lastActivityAt: activityHelp?.lastActivityAt
-                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString),
-            lastSeenAt: SurfaceSeenTracker.shared.storedLastSeenAt(panelId: panelId),
-            isBeingSeen: SurfaceSeenTracker.shared.isBeingSeen(panelId: panelId)
+                ?? TabActivityTracker.shared.lastActivity(for: panelId.uuidString),
+            lastSeenAt: TabSeenTracker.shared.storedLastSeenAt(panelId: panelId),
+            isBeingSeen: TabSeenTracker.shared.isBeingSeen(panelId: panelId)
         )
     }
 
@@ -7058,7 +7058,7 @@ final class Workspace: Identifiable, ObservableObject {
             if previous != nil {
                 panelCustomTitles.removeValue(forKey: panelId)
             }
-            _ = try? SurfaceMetadataStore.shared.clearMetadata(
+            _ = try? TabMetadataStore.shared.clearMetadata(
                 workspaceId: id,
                 surfaceId: panelId,
                 keys: ["title"],
@@ -7068,7 +7068,7 @@ final class Workspace: Identifiable, ObservableObject {
             if previous != trimmed {
                 panelCustomTitles[panelId] = trimmed
             }
-            _ = try? SurfaceMetadataStore.shared.setMetadata(
+            _ = try? TabMetadataStore.shared.setMetadata(
                 workspaceId: id,
                 surfaceId: panelId,
                 partial: ["title": trimmed],
@@ -7117,7 +7117,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func panelKind(panelId: UUID) -> String? {
         guard let panel = panels[panelId] else { return nil }
-        return surfaceKind(for: panel)
+        return tabKind(for: panel)
     }
 
     func requestBackgroundTerminalSurfaceStartIfNeeded() {
@@ -7385,7 +7385,7 @@ final class Workspace: Identifiable, ObservableObject {
         // TEL-3: feed the shell-activity transition into the derived-liveness
         // backend, which resolves it (with its own debounce/heuristics) back
         // into `derivedActivityBySurface` via `setDerivedActivity`.
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: panelId,
             workspaceId: id,
             state: state,
@@ -7402,14 +7402,14 @@ final class Workspace: Identifiable, ObservableObject {
     func setDerivedActivity(_ state: SidebarActivityState?, forSurface surfaceId: UUID) {
         let changed: Bool
         if let state {
-            if derivedActivityBySurface[surfaceId] != state {
-                derivedActivityBySurface[surfaceId] = state
+            if derivedActivityByTab[surfaceId] != state {
+                derivedActivityByTab[surfaceId] = state
                 changed = true
             } else {
                 changed = false
             }
-        } else if derivedActivityBySurface[surfaceId] != nil {
-            derivedActivityBySurface.removeValue(forKey: surfaceId)
+        } else if derivedActivityByTab[surfaceId] != nil {
+            derivedActivityByTab.removeValue(forKey: surfaceId)
             changed = true
         } else {
             changed = false
@@ -7441,14 +7441,14 @@ final class Workspace: Identifiable, ObservableObject {
         let value = normalized?.isEmpty == false ? normalized : nil
         let changed: Bool
         if let value {
-            if detectedTerminalTypesBySurface[surfaceId] != value {
-                detectedTerminalTypesBySurface[surfaceId] = value
+            if detectedTerminalTypesByTab[surfaceId] != value {
+                detectedTerminalTypesByTab[surfaceId] = value
                 changed = true
             } else {
                 changed = false
             }
         } else {
-            changed = detectedTerminalTypesBySurface.removeValue(forKey: surfaceId) != nil
+            changed = detectedTerminalTypesByTab.removeValue(forKey: surfaceId) != nil
         }
         if changed {
             syncSurfaceTabActivityStateForPanel(surfaceId)
@@ -7460,7 +7460,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// `nil` when there are no derived signals at all.
     var aggregatedDerivedActivity: SidebarActivityState? {
         var sawIdle = false
-        for state in derivedActivityBySurface.values {
+        for state in derivedActivityByTab.values {
             switch state {
             case .working:
                 return .working
@@ -7595,7 +7595,7 @@ final class Workspace: Identifiable, ObservableObject {
         panelGitContexts.removeAll()
         pullRequest = nil
         panelPullRequests.removeAll()
-        surfaceListeningPorts.removeAll()
+        tabListeningPorts.removeAll()
         listeningPorts.removeAll()
         metadataBlocks.removeAll()
         resetBrowserPanelsForContextChange(reason: reason)
@@ -7824,7 +7824,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// that touched `title`.
     func syncPanelTitleFromMetadata(panelId: UUID) {
         let resolvedTitle: String
-        let metadataTitle = SurfaceMetadataStore.shared
+        let metadataTitle = TabMetadataStore.shared
             .getMetadata(workspaceId: id, surfaceId: panelId)
             .metadata[MetadataKey.title] as? String
         if let meta = metadataTitle,
@@ -7876,18 +7876,18 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// Read the current M7 title-bar state for a surface as a SwiftUI view state.
-    func surfaceTitleBarState(panelId: UUID) -> SurfaceTitleBarState {
+    func tabTitleBarState(panelId: UUID) -> TabTitleBarState {
         // Sidebar-hot: called for every agent surface of every workspace on
         // each sidebar body evaluation. Ask for the two keys it reads rather
         // than a whole converted source map.
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+        let snapshot = TabMetadataStore.shared.getMetadata(
             workspaceId: id,
             surfaceId: panelId,
             keys: [MetadataKey.title, MetadataKey.description]
         )
         let title = snapshot.metadata[MetadataKey.title] as? String
         let description = snapshot.metadata[MetadataKey.description] as? String
-        return SurfaceTitleBarState(
+        return TabTitleBarState(
             title: title,
             description: description,
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
@@ -7912,7 +7912,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read the current M7 title-bar state for a surface as a socket-ready dict.
     func titleBarStatePayload(panelId: UUID) -> [String: Any] {
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
+        let snapshot = TabMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
         var payload: [String: Any] = [:]
         payload["surface_id"] = panelId.uuidString
         let descriptionString = snapshot.metadata[MetadataKey.description] as? String
@@ -7955,14 +7955,14 @@ final class Workspace: Identifiable, ObservableObject {
     /// stays `declare`).
     nonisolated static func migrateLaunchStampTiers(
         values: inout [String: Any],
-        sources: inout [String: SurfaceMetadataStore.SourceRecord]
+        sources: inout [String: TabMetadataStore.SourceRecord]
     ) {
         let migrated = values.removeValue(forKey: modelTieringMarkerKey) != nil
         sources.removeValue(forKey: modelTieringMarkerKey)
         guard !migrated else { return }
         for key in [MetadataKey.model, MetadataKey.modelLabel] {
             if let record = sources[key], record.source == .declare {
-                sources[key] = SurfaceMetadataStore.SourceRecord(source: .heuristic, ts: record.ts)
+                sources[key] = TabMetadataStore.SourceRecord(source: .heuristic, ts: record.ts)
             }
         }
     }
@@ -7984,21 +7984,21 @@ final class Workspace: Identifiable, ObservableObject {
             values.removeValue(forKey: FlashState.metadataKey)
             sources.removeValue(forKey: FlashState.metadataKey)
             Self.migrateLaunchStampTiers(values: &values, sources: &sources)
-            SurfaceMetadataStore.shared.restoreFromSnapshot(
+            TabMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 surfaceId: panelId,
                 values: values,
                 sources: sources
             )
-            SurfaceAttentionService.shared.syncFromMetadata(
+            TabAttentionService.shared.syncFromMetadata(
                 workspaceId: id,
                 surfaceId: panelId
             )
             if let rawActivity = values[MetadataKey.activity] as? String,
                let activity = SidebarActivityState(rawValue: rawActivity) {
-                derivedActivityBySurface[panelId] = activity
+                derivedActivityByTab[panelId] = activity
             } else {
-                derivedActivityBySurface.removeValue(forKey: panelId)
+                derivedActivityByTab.removeValue(forKey: panelId)
             }
         }
     }
@@ -8062,21 +8062,21 @@ final class Workspace: Identifiable, ObservableObject {
         panelGitBranches = panelGitBranches.filter { validSurfaceIds.contains($0.key) }
         panelGitContexts = panelGitContexts.filter { validSurfaceIds.contains($0.key) }
         manualUnreadMarkedAt = manualUnreadMarkedAt.filter { validSurfaceIds.contains($0.key) }
-        surfaceListeningPorts = surfaceListeningPorts.filter { validSurfaceIds.contains($0.key) }
-        surfaceTTYNames = surfaceTTYNames.filter { validSurfaceIds.contains($0.key) }
+        tabListeningPorts = tabListeningPorts.filter { validSurfaceIds.contains($0.key) }
+        tabTTYNames = tabTTYNames.filter { validSurfaceIds.contains($0.key) }
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
         panelShellEdgeAt = panelShellEdgeAt.filter { validSurfaceIds.contains($0.key) }
         // TEL-4: drop derived-activity for surfaces that no longer exist so the
         // @Published map doesn't leak stale liveness for pruned surfaces.
-        derivedActivityBySurface = derivedActivityBySurface.filter { validSurfaceIds.contains($0.key) }
-        attentionBySurface = attentionBySurface.filter { validSurfaceIds.contains($0.key) }
+        derivedActivityByTab = derivedActivityByTab.filter { validSurfaceIds.contains($0.key) }
+        attentionByTab = attentionByTab.filter { validSurfaceIds.contains($0.key) }
         coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
-        detectedTerminalTypesBySurface = detectedTerminalTypesBySurface.filter {
+        detectedTerminalTypesByTab = detectedTerminalTypesByTab.filter {
             validSurfaceIds.contains($0.key)
         }
         mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
-        SurfaceAttentionService.shared.prune(
+        TabAttentionService.shared.prune(
             workspaceId: id,
             validSurfaceIds: validSurfaceIds
         )
@@ -8087,7 +8087,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func recomputeListeningPorts() {
-        let unique = Set(surfaceListeningPorts.values.flatMap { $0 }).union(remoteForwardedPorts)
+        let unique = Set(tabListeningPorts.values.flatMap { $0 }).union(remoteForwardedPorts)
         let next = unique.sorted()
         if listeningPorts != next {
             listeningPorts = next
@@ -8696,7 +8696,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read a surface's declared `terminal_type` (canonical metadata key), if any.
     func surfaceTerminalKind(panelId: UUID) -> String? {
-        SurfaceMetadataStore.shared.metadataValue(
+        TabMetadataStore.shared.metadataValue(
             workspaceId: id,
             surfaceId: panelId,
             key: MetadataKey.terminalType
@@ -8710,8 +8710,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// retained. A recognized agent classification wins. Unknown child
     /// commands fall back to the durable declaration to avoid roster flicker.
     func surfaceActivityTerminalKind(panelId: UUID) -> String? {
-        SurfaceActivityTerminalKindResolver.resolve(
-            detectedTerminalType: detectedTerminalTypesBySurface[panelId],
+        TabActivityTerminalKindResolver.resolve(
+            detectedTerminalType: detectedTerminalTypesByTab[panelId],
             declaredTerminalType: surfaceTerminalKind(panelId: panelId)
         )
     }
@@ -8719,7 +8719,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// Optional per-surface minimum override (`min_cols` / `min_rows` metadata) —
     /// lets a status strip or log tail declare itself usable smaller than its kind default.
     private func surfaceMinCellsOverride(panelId: UUID) -> (cols: Int?, rows: Int?) {
-        let md = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
+        let md = TabMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
         func intVal(_ key: String) -> Int? {
             if let i = md[key] as? Int { return i }
             if let n = md[key] as? NSNumber { return n.intValue }
@@ -8855,7 +8855,7 @@ final class Workspace: Identifiable, ObservableObject {
         let newBonsplitTab = Bonsplit.Tab(
             title: newPanel.displayTitle,
             icon: newPanel.displayIcon,
-            kind: SurfaceKind.terminal,
+            kind: TabKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
@@ -8956,7 +8956,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
-            kind: SurfaceKind.terminal,
+            kind: TabKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
@@ -9022,7 +9022,7 @@ final class Workspace: Identifiable, ObservableObject {
         let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
             explicitCwd: explicit,
             workspaceRoot: usableRoot,
-            launchingSurfaceCwd: hasExplicit ? nil : inheritedCwdForAgentLaunch(callerSurfaceId: sourcePanelId)
+            launchingSurfaceCwd: hasExplicit ? nil : inheritedCwdForAgentLaunch(callerTabId: sourcePanelId)
         )
         return (
             resolution.path ?? FileManager.default.homeDirectoryForCurrentUser.path,
@@ -9044,8 +9044,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// surface when the CLI supplied its runtime identity; otherwise use the
     /// focused terminal. Shell-reported cwd wins over the requested startup cwd,
     /// with the workspace's last-known directory as the compatibility fallback.
-    func inheritedCwdForAgentLaunch(callerSurfaceId: UUID?) -> String? {
-        let candidateId = callerSurfaceId ?? focusedPanelId
+    func inheritedCwdForAgentLaunch(callerTabId: UUID?) -> String? {
+        let candidateId = callerTabId ?? focusedPanelId
         if let candidateId {
             if let reported = panelDirectories[candidateId]?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -9102,7 +9102,7 @@ final class Workspace: Identifiable, ObservableObject {
         let newBonsplitTab = Bonsplit.Tab(
             title: browserPanel.displayTitle,
             icon: browserPanel.displayIcon,
-            kind: SurfaceKind.browser,
+            kind: TabKind.browser,
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
             isPinned: false,
@@ -9191,7 +9191,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: browserPanel.displayTitle),
             icon: browserPanel.displayIcon,
-            kind: SurfaceKind.browser,
+            kind: TabKind.browser,
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
             isPinned: false,
@@ -9248,7 +9248,7 @@ final class Workspace: Identifiable, ObservableObject {
         let newBonsplitTab = Bonsplit.Tab(
             title: markdownPanel.displayTitle,
             icon: markdownPanel.displayIcon,
-            kind: SurfaceKind.markdown,
+            kind: TabKind.markdown,
             isDirty: markdownPanel.isDirty,
             isLoading: false,
             isPinned: false,
@@ -9286,7 +9286,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     @discardableResult
-    func newMarkdownSurface(
+    func newMarkdownTab(
         inPane paneId: PaneID,
         filePath: String? = nil,
         focus: Bool? = nil,
@@ -9309,7 +9309,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: markdownPanel.displayTitle),
             icon: markdownPanel.displayIcon,
-            kind: SurfaceKind.markdown,
+            kind: TabKind.markdown,
             isDirty: markdownPanel.isDirty,
             isLoading: false,
             isPinned: false,
@@ -9366,7 +9366,7 @@ final class Workspace: Identifiable, ObservableObject {
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
             panel.close()
             // C11-243: workspace teardown; these panels are gone.
-            SurfaceSeenTracker.shared.forget(panelId: panelId)
+            TabSeenTracker.shared.forget(panelId: panelId)
         }
 
         panels.removeAll(keepingCapacity: false)
@@ -9753,7 +9753,7 @@ final class Workspace: Identifiable, ObservableObject {
         return true
     }
 
-    func detachSurface(panelId: UUID) -> DetachedSurfaceTransfer? {
+    func detachTab(panelId: UUID) -> DetachedTabTransfer? {
         guard let bonsplitTabId = bonsplitTabIdFromTabId(panelId) else { return nil }
         guard panels[panelId] != nil else { return nil }
 #if DEBUG
@@ -9794,8 +9794,8 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     @discardableResult
-    func attachDetachedSurface(
-        _ detached: DetachedSurfaceTransfer,
+    func attachDetachedTab(
+        _ detached: DetachedTabTransfer,
         inPane paneId: PaneID,
         atIndex index: Int? = nil,
         focus: Bool = true
@@ -9867,7 +9867,7 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
         }
         if let terminalType = detached.terminalType {
-            _ = SurfaceMetadataStore.shared.setInternal(
+            _ = TabMetadataStore.shared.setInternal(
                 workspaceId: id,
                 surfaceId: detached.panelId,
                 key: MetadataKey.terminalType,
@@ -9882,8 +9882,8 @@ final class Workspace: Identifiable, ObservableObject {
             panelShellEdgeAt[detached.panelId] = edge
         }
         if let derivedActivity = detached.derivedActivity {
-            derivedActivityBySurface[detached.panelId] = derivedActivity
-            _ = SurfaceMetadataStore.shared.setInternal(
+            derivedActivityByTab[detached.panelId] = derivedActivity
+            _ = TabMetadataStore.shared.setInternal(
                 workspaceId: id,
                 surfaceId: detached.panelId,
                 key: MetadataKey.activity,
@@ -9891,25 +9891,25 @@ final class Workspace: Identifiable, ObservableObject {
                 source: detached.derivedActivitySource ?? .derived
             )
         } else {
-            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+            derivedActivityByTab.removeValue(forKey: detached.panelId)
         }
-        let restoredAttention = SurfaceAttentionSnapshot(
+        let restoredAttention = TabAttentionSnapshot(
             workspaceId: id,
             surfaceId: detached.panelId,
             flagReason: detached.attention.flagReason,
             flagRaisedAt: detached.attention.flagRaisedAt,
             suppressed: detached.attention.suppressed
         )
-        SurfaceAttentionService.shared.restore(restoredAttention)
+        TabAttentionService.shared.restore(restoredAttention)
         if detached.isAgentCold {
             coldAgentSurfaceIds.insert(detached.panelId)
         } else {
             coldAgentSurfaceIds.remove(detached.panelId)
         }
         if let detectedTerminalType = detached.detectedTerminalType {
-            detectedTerminalTypesBySurface[detached.panelId] = detectedTerminalType
+            detectedTerminalTypesByTab[detached.panelId] = detectedTerminalType
         } else {
-            detectedTerminalTypesBySurface.removeValue(forKey: detached.panelId)
+            detectedTerminalTypesByTab.removeValue(forKey: detached.panelId)
         }
 
         guard let newBonsplitTabId = bonsplitController.createTab(
@@ -9939,10 +9939,10 @@ final class Workspace: Identifiable, ObservableObject {
             pinnedPanelIds.remove(detached.panelId)
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
-            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+            derivedActivityByTab.removeValue(forKey: detached.panelId)
             coldAgentSurfaceIds.remove(detached.panelId)
-            detectedTerminalTypesBySurface.removeValue(forKey: detached.panelId)
-            SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
+            detectedTerminalTypesByTab.removeValue(forKey: detached.panelId)
+            TabAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
             dlog(
@@ -10430,7 +10430,7 @@ final class Workspace: Identifiable, ObservableObject {
         // manifest contract is briefly out of sync, so log instead of
         // silently swallowing.
         do {
-            try SurfaceMetadataStore.shared.setMetadata(
+            try TabMetadataStore.shared.setMetadata(
                 workspaceId: id,
                 surfaceId: panelId,
                 partial: [FlashState.metadataKey: FlashState.persistent.rawValue],
@@ -10450,7 +10450,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let state = persistentFlashPanels.removeValue(forKey: panelId) else { return }
         state.timer.invalidate()
         do {
-            try SurfaceMetadataStore.shared.clearMetadata(
+            try TabMetadataStore.shared.clearMetadata(
                 workspaceId: id,
                 surfaceId: panelId,
                 keys: [FlashState.metadataKey],
@@ -10567,7 +10567,7 @@ final class Workspace: Identifiable, ObservableObject {
         if let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
-            kind: SurfaceKind.terminal,
+            kind: TabKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
@@ -11729,7 +11729,7 @@ extension Workspace: BonsplitDelegate {
         }
 
         // C11-243: tab switch / pane focus changes what the operator is seeing.
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
     }
 
     private func applyTabSelectionNow(
@@ -12183,13 +12183,13 @@ extension Workspace: BonsplitDelegate {
             let browserPanel = panel as? BrowserPanel
             let cachedTitle = panelTitles[panelId]
             let transferFallbackTitle = cachedTitle ?? panel.displayTitle
-            pendingDetachedSurfaces[bonsplitTabId] = DetachedSurfaceTransfer(
+            pendingDetachedSurfaces[bonsplitTabId] = DetachedTabTransfer(
                 panelId: panelId,
                 panel: panel,
                 title: resolvedPanelTitle(panelId: panelId, fallback: transferFallbackTitle),
                 icon: panel.displayIcon,
                 iconImageData: browserPanel?.faviconPNGData,
-                kind: surfaceKind(for: panel),
+                kind: tabKind(for: panel),
                 isLoading: browserPanel?.isLoading ?? false,
                 isPinned: pinnedPanelIds.contains(panelId),
                 directory: panelDirectories[panelId],
@@ -12198,19 +12198,19 @@ extension Workspace: BonsplitDelegate {
                 customColor: panelCustomColors[panelId],
                 manuallyUnread: manualUnreadPanelIds.contains(panelId),
                 terminalType: surfaceTerminalKind(panelId: panelId),
-                terminalTypeSource: SurfaceMetadataStore.shared.getSource(
+                terminalTypeSource: TabMetadataStore.shared.getSource(
                     workspaceId: id,
                     surfaceId: panelId,
                     key: MetadataKey.terminalType
                 ),
-                derivedActivity: derivedActivityBySurface[panelId],
-                derivedActivitySource: SurfaceMetadataStore.shared.getSource(
+                derivedActivity: derivedActivityByTab[panelId],
+                derivedActivitySource: TabMetadataStore.shared.getSource(
                     workspaceId: id,
                     surfaceId: panelId,
                     key: MetadataKey.activity
                 ),
                 isAgentCold: coldAgentSurfaceIds.contains(panelId),
-                detectedTerminalType: detectedTerminalTypesBySurface[panelId],
+                detectedTerminalType: detectedTerminalTypesByTab[panelId],
                 activityState: resolvedSurfaceTabActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: false
@@ -12225,7 +12225,7 @@ extension Workspace: BonsplitDelegate {
             }
             panel?.close()
             // C11-243: the panel is gone for good (detach keeps its id and the stamp).
-            SurfaceSeenTracker.shared.forget(panelId: panelId)
+            TabSeenTracker.shared.forget(panelId: panelId)
         }
 
         // Resolve any pending pane interactions on this panel with .dismissed so
@@ -12254,17 +12254,17 @@ extension Workspace: BonsplitDelegate {
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
         panelShellEdgeAt.removeValue(forKey: panelId)
-        derivedActivityBySurface.removeValue(forKey: panelId)
-        attentionBySurface.removeValue(forKey: panelId)
+        derivedActivityByTab.removeValue(forKey: panelId)
+        attentionByTab.removeValue(forKey: panelId)
         coldAgentSurfaceIds.remove(panelId)
-        detectedTerminalTypesBySurface.removeValue(forKey: panelId)
+        detectedTerminalTypesByTab.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
-        surfaceTTYNames.removeValue(forKey: panelId)
+        tabTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
         tabSheetStatusEntered.removeValue(forKey: panelId)
-        SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
+        TabAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
         terminalInheritanceFontPointsByPanelId.removeValue(forKey: panelId)
@@ -12433,7 +12433,7 @@ extension Workspace: BonsplitDelegate {
                 panels.removeValue(forKey: panelId)
                 // C11-243: pane closed for good; a detaching transaction keeps ids.
                 if !isDetachingCloseTransaction {
-                    SurfaceSeenTracker.shared.forget(panelId: panelId)
+                    TabSeenTracker.shared.forget(panelId: panelId)
                 }
                 untrackRemoteTerminalSurface(panelId)
                 panelDirectories.removeValue(forKey: panelId)
@@ -12447,12 +12447,12 @@ extension Workspace: BonsplitDelegate {
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
                 panelShellEdgeAt.removeValue(forKey: panelId)
-                derivedActivityBySurface.removeValue(forKey: panelId)
+                derivedActivityByTab.removeValue(forKey: panelId)
                 coldAgentSurfaceIds.remove(panelId)
-                detectedTerminalTypesBySurface.removeValue(forKey: panelId)
+                detectedTerminalTypesByTab.removeValue(forKey: panelId)
                 mailboxStdinBuffer.removeSurface(panelId)
-                surfaceTTYNames.removeValue(forKey: panelId)
-                surfaceListeningPorts.removeValue(forKey: panelId)
+                tabTTYNames.removeValue(forKey: panelId)
+                tabListeningPorts.removeValue(forKey: panelId)
                 restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
                 PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
@@ -12597,7 +12597,7 @@ extension Workspace: BonsplitDelegate {
                         title: TitleFormatting.sidebarLabel(from: replacementPanel.displayTitle),
                         icon: .some(replacementPanel.displayIcon),
                         iconImageData: .some(nil),
-                        kind: .some(SurfaceKind.terminal),
+                        kind: .some(TabKind.terminal),
                         hasCustomTitle: false,
                         isDirty: replacementPanel.isDirty,
                         showsNotificationBadge: false,
@@ -12662,7 +12662,7 @@ extension Workspace: BonsplitDelegate {
         guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
-            kind: SurfaceKind.terminal,
+            kind: TabKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
@@ -12712,11 +12712,11 @@ extension Workspace: BonsplitDelegate {
             // Defense in depth: the spawn button is already hidden when the
             // internal browser is disabled, but no-op safely if the request
             // reaches us anyway.
-            guard SurfaceTypeAvailability.isEnabled(.browser) else { return }
+            guard TabTypeAvailability.isEnabled(.browser) else { return }
             _ = newBrowserSurface(inPane: pane)
         case "markdown":
-            guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
-            _ = newMarkdownSurface(inPane: pane)
+            guard TabTypeAvailability.isEnabled(.markdown) else { return }
+            _ = newMarkdownTab(inPane: pane)
         case "agent":
             launchDefaultAgentFromTabBar(inPane: pane)
         case "newTab":
@@ -12770,7 +12770,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     /// The outcome of an agent-surface launch attempt (C11-203 A1).
-    enum AgentSurfaceLaunchOutcome: Equatable {
+    enum AgentTabLaunchOutcome: Equatable {
         case launched
         case declined(AgentLaunchDecline)
 
@@ -12789,7 +12789,7 @@ extension Workspace: BonsplitDelegate {
     /// new-surface path) that already report their own errors.
     @discardableResult
     func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, workingDirectory: String? = nil, source: AgentLaunchSource = .aButton) -> Bool {
-        attemptAgentSurfaceLaunch(
+        attemptAgentTabLaunch(
             inPane: pane,
             explicitAgent: explicitAgent,
             explicitConfig: explicitConfig,
@@ -12819,13 +12819,13 @@ extension Workspace: BonsplitDelegate {
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
     ///   are honestly distinguished in the stats rail.
-    func attemptAgentSurfaceLaunch(
+    func attemptAgentTabLaunch(
         inPane pane: PaneID,
         explicitAgent: AgentType? = nil,
         explicitConfig: SavedAgentConfig? = nil,
         workingDirectory: String? = nil,
         source: AgentLaunchSource = .aButton
-    ) -> AgentSurfaceLaunchOutcome {
+    ) -> AgentTabLaunchOutcome {
         let launchCwd = agentLaunchWorkingDirectory(inPane: pane, explicit: workingDirectory)
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: launchCwd)
@@ -12996,7 +12996,7 @@ extension Workspace: BonsplitDelegate {
                 defaultValue: "Awaiting first task"
             )
         ]
-        _ = try? SurfaceMetadataStore.shared.setMetadata(
+        _ = try? TabMetadataStore.shared.setMetadata(
             workspaceId: id,
             surfaceId: surfaceId,
             partial: partial,
@@ -13010,7 +13010,7 @@ extension Workspace: BonsplitDelegate {
         // the session files or declared by the agent outranks it.
         let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !model.isEmpty {
-            _ = try? SurfaceMetadataStore.shared.setMetadata(
+            _ = try? TabMetadataStore.shared.setMetadata(
                 workspaceId: id,
                 surfaceId: surfaceId,
                 partial: [MetadataKey.model: model],
@@ -13061,7 +13061,7 @@ extension Workspace: BonsplitDelegate {
         if let task = task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
             partial[MetadataKey.task] = String(task.prefix(128))
         }
-        _ = try? SurfaceMetadataStore.shared.setMetadata(
+        _ = try? TabMetadataStore.shared.setMetadata(
             workspaceId: id,
             surfaceId: surfaceId,
             partial: partial,
@@ -13069,7 +13069,7 @@ extension Workspace: BonsplitDelegate {
             source: .declare
         )
         if !launchModel.isEmpty {
-            _ = try? SurfaceMetadataStore.shared.setMetadata(
+            _ = try? TabMetadataStore.shared.setMetadata(
                 workspaceId: id,
                 surfaceId: surfaceId,
                 partial: launchModel,
@@ -13087,7 +13087,7 @@ extension Workspace: BonsplitDelegate {
     /// operator sees *why* nothing launched and is already standing in the one
     /// surface that can fix it (pick another row, or Edit Launch Agents).
     private func launchDefaultAgentFromTabBar(inPane pane: PaneID) {
-        let outcome = attemptAgentSurfaceLaunch(inPane: pane)
+        let outcome = attemptAgentTabLaunch(inPane: pane)
         guard let decline = outcome.decline else { return }
         presentAgentPicker(
             inPane: pane,
@@ -13138,7 +13138,7 @@ extension Workspace: BonsplitDelegate {
             self.bonsplitController.focusPane(pane)
             // A decline keeps the popover open and returns its reason; the
             // controller renders it in the notice bar (C11-203 A1).
-            return self.attemptAgentSurfaceLaunch(
+            return self.attemptAgentTabLaunch(
                 inPane: pane, explicitConfig: config, source: .aButton
             ).decline?.message
         }
@@ -13365,10 +13365,10 @@ extension Workspace: BonsplitDelegate {
         let selectedPanelId = effectiveSelectedPanelId(inPane: pane)
         let panel = selectedPanelId.flatMap { panels[$0] }
         switch panel?.panelType {
-        case .browser where SurfaceTypeAvailability.isEnabled(.browser):
+        case .browser where TabTypeAvailability.isEnabled(.browser):
             _ = newBrowserSurface(inPane: pane)
-        case .markdown where SurfaceTypeAvailability.isEnabled(.markdown):
-            _ = newMarkdownSurface(inPane: pane)
+        case .markdown where TabTypeAvailability.isEnabled(.markdown):
+            _ = newMarkdownTab(inPane: pane)
         case .terminal, .browser, .markdown, .none:
             // Terminal kinds, and any disabled non-terminal kind whose surface
             // is still open, fall back to a terminal so "+" stays useful.
@@ -13464,7 +13464,7 @@ extension Workspace: BonsplitDelegate {
     /// Open the Surface Details panel for a specific panel. Routed from the
     /// command palette (which targets the focused panel directly).
     func showSurfaceDetails(for panel: any Panel) {
-        let kind: SurfaceManifestKind
+        let kind: TabManifestKind
         switch panel.panelType {
         case .terminal:
             kind = .terminal
@@ -13473,7 +13473,7 @@ extension Workspace: BonsplitDelegate {
         case .markdown:
             kind = .markdown
         }
-        SurfaceManifestViewerWindowController.show(
+        TabManifestViewerWindowController.show(
             workspaceId: id,
             surfaceId: panel.id,
             kind: kind

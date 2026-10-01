@@ -1365,7 +1365,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             defer: false
         )
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             window.orderOut(nil)
         }
@@ -1383,8 +1383,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(outsideResponder))
         let before = hostedView.debugFlagBannerState()
 
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need a schema decision",
@@ -1413,7 +1413,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
         let hostedView = surface.hostedView
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             hostedView.setSearchOverlay(searchState: nil)
         }
@@ -1423,8 +1423,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             searchState: TerminalSurface.SearchState(needle: "operator")
         )
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need operator input",

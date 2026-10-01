@@ -2122,12 +2122,12 @@ final class BrowserPanel: Panel, ObservableObject {
     ///
     /// IUO because it's set at the end of `init` once all other stored
     /// properties are assigned, so the handler can capture `[weak self]`.
-    private(set) var lifecycle: SurfaceLifecycleController!
+    private(set) var lifecycle: TabLifecycleController!
 
     /// Published mirror of `lifecycle.state` so SwiftUI can re-render
     /// (e.g. swap the live WKWebView for a placeholder NSImage when
     /// hibernated). Updated by the lifecycle controller's handler.
-    @Published private(set) var lifecycleState: SurfaceLifecycleState = .active
+    @Published private(set) var lifecycleState: TabLifecycleState = .active
 
     @Published private(set) var profileID: UUID
     @Published private(set) var historyStore: BrowserHistoryStore
@@ -2776,7 +2776,7 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         webView.onShowSurfaceManifest = { [weak self] in
             guard let self else { return }
-            SurfaceManifestViewerWindowController.show(
+            TabManifestViewerWindowController.show(
                 workspaceId: self.workspaceId,
                 surfaceId: self.id,
                 kind: .browser
@@ -2803,7 +2803,7 @@ final class BrowserPanel: Panel, ObservableObject {
     @MainActor
     func refreshCachedWebContentPid() {
         let pid = webView.c11_webProcessIdentifier
-        SurfaceMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
+        TabMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
     }
 
     /// Tab sheet `active`: when a page last finished loading. Plain store, not
@@ -3025,8 +3025,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // attached. `lifecycleState` is set explicitly because the
         // controller's initial-state assignment does not fire the
         // transition handler (handler runs on real transitions only).
-        let initialLifecycle: SurfaceLifecycleState = pendingHibernate ? .hibernated : .active
-        self.lifecycle = SurfaceLifecycleController(
+        let initialLifecycle: TabLifecycleState = pendingHibernate ? .hibernated : .active
+        self.lifecycle = TabLifecycleController(
             workspaceId: workspaceId,
             surfaceId: self.id,
             initial: initialLifecycle
@@ -3045,7 +3045,7 @@ final class BrowserPanel: Panel, ObservableObject {
         // scalar by the sampler's `tick()`. The sampler never touches
         // `WKWebView` itself off-main — that would be a `@MainActor`
         // isolation violation against an AppKit/WebKit object.
-        SurfaceMetricsSampler.shared.register(surfaceId: self.id)
+        TabMetricsSampler.shared.register(surfaceId: self.id)
 
         // Navigate to initial URL if provided.
         //
@@ -3188,8 +3188,8 @@ final class BrowserPanel: Panel, ObservableObject {
     ///   no extra dispatch needed here.
     /// - `* → .suspended`: not entered in C11-25.
     private func dispatchLifecycleTransition(
-        from: SurfaceLifecycleState,
-        to target: SurfaceLifecycleState
+        from: TabLifecycleState,
+        to target: TabLifecycleState
     ) {
         switch (from, target) {
         case (let prior, .hibernated) where prior != .hibernated:
@@ -3667,7 +3667,7 @@ final class BrowserPanel: Panel, ObservableObject {
         webViewCancellables.removeAll()
         faviconTask?.cancel()
         faviconTask = nil
-        SurfaceMetricsSampler.shared.unregister(surfaceId: self.id)
+        TabMetricsSampler.shared.unregister(surfaceId: self.id)
         // C11-25 review fix I2: drop any cached hibernate snapshot. Without
         // this, an operator who closes a hibernated panel without resuming
         // first leaks the captured NSImage indefinitely (snapshots are 2-8

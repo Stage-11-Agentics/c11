@@ -1788,7 +1788,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
                 timestamp: Date()
             )
         )
-        workspace.surfaceListeningPorts[contextPanelId] = [3000]
+        workspace.tabListeningPorts[contextPanelId] = [3000]
         workspace.recomputeListeningPorts()
 
         XCTAssertTrue(browser.shouldRenderWebView)
@@ -1816,7 +1816,7 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertTrue(workspace.panelGitBranches.isEmpty)
         XCTAssertNil(workspace.pullRequest)
         XCTAssertTrue(workspace.panelPullRequests.isEmpty)
-        XCTAssertTrue(workspace.surfaceListeningPorts.isEmpty)
+        XCTAssertTrue(workspace.tabListeningPorts.isEmpty)
         XCTAssertTrue(workspace.listeningPorts.isEmpty)
         XCTAssertFalse(browser.shouldRenderWebView)
         XCTAssertNil(browser.preferredURLStringForOmnibar())

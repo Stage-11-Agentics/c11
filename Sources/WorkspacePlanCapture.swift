@@ -7,7 +7,7 @@ import Bonsplit
 /// integrator supplies live link and identity reads without changing capture.
 @MainActor
 struct WorkspacePlanCompanionCaptureBridge {
-    var linkedAgentForBrowser: @MainActor (UUID) -> AgentSurfaceLink?
+    var linkedAgentForBrowser: @MainActor (UUID) -> AgentTabLink?
     var declaredAgentKindForTerminal: @MainActor (UUID) -> String?
 
     static let none = WorkspacePlanCompanionCaptureBridge(
@@ -25,7 +25,7 @@ struct WorkspacePlanCompanionCaptureBridge {
                      .aligned(let linked),
                      .veiled(let linked, _),
                      .revealed(let linked, _):
-                    return AgentSurfaceLink(
+                    return AgentTabLink(
                         surfaceID: linked.identity.surfaceID,
                         lastKnownName: linked.identity.displayName
                     )
@@ -88,7 +88,7 @@ enum WorkspacePlanCapture {
     private struct Walker {
         let workspace: Workspace
         let companionBridge: WorkspacePlanCompanionCaptureBridge
-        var surfaces: [SurfaceSpec] = []
+        var surfaces: [TabSpec] = []
         var warnings: [CompanionPlanDiagnostic] = []
         private var planIDByPanelID: [UUID: String] = [:]
         private var nextIdCounter: Int = 1
@@ -187,7 +187,7 @@ enum WorkspacePlanCapture {
                         ? AgentIdentityPolicy.normalizedKind($0)
                         : nil
                     }
-                let surface = SurfaceSpec(
+                let surface = TabSpec(
                     id: planId,
                     kind: kind,
                     title: title,
@@ -220,7 +220,7 @@ enum WorkspacePlanCapture {
 
         // MARK: Kind + panel accessors
 
-        private func kind(for panel: any Panel) -> SurfaceSpecKind {
+        private func kind(for panel: any Panel) -> TabSpecKind {
             switch panel.panelType {
             case .terminal: return .terminal
             case .browser:  return .browser
@@ -277,7 +277,7 @@ enum WorkspacePlanCapture {
         }
 
         private func surfaceMetadata(for panelId: UUID) -> [String: PersistedJSONValue] {
-            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            let snapshot = TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId
             )

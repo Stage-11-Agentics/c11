@@ -48,7 +48,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let markdownPanel = try XCTUnwrap(
-            workspace.newMarkdownSurface(inPane: paneId, filePath: markdownURL.path, focus: true)
+            workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: true)
         )
         let expectedIds = Set(workspace.panels.keys)
         XCTAssertTrue(expectedIds.contains(markdownPanel.id))
@@ -110,7 +110,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
             )
         )
         let markdownPanel = try XCTUnwrap(
-            workspace.newMarkdownSurface(inPane: paneId, filePath: markdownURL.path, focus: false)
+            workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: false)
         )
 
         let expected = Set(workspace.panels.keys)

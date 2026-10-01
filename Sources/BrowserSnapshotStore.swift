@@ -15,7 +15,7 @@ import WebKit
 ///   `load(URLRequest:)` on resume.
 /// - `scrollY` is read via `evaluateJavaScript("window.scrollY")` and is
 ///   replayed via JS on the resumed page's `didFinish` callback.
-struct BrowserSurfaceSnapshot {
+struct BrowserTabSnapshot {
     let image: NSImage?
     let url: URL?
     let scrollY: CGFloat?
@@ -40,7 +40,7 @@ struct BrowserSurfaceSnapshot {
 final class BrowserSnapshotStore {
     static let shared = BrowserSnapshotStore()
 
-    private var snapshots: [UUID: BrowserSurfaceSnapshot] = [:]
+    private var snapshots: [UUID: BrowserTabSnapshot] = [:]
 
     private init() {}
 
@@ -63,7 +63,7 @@ final class BrowserSnapshotStore {
         surfaceId: UUID,
         webView: WKWebView,
         fallbackURL: URL? = nil,
-        completion: @escaping (BrowserSurfaceSnapshot) -> Void
+        completion: @escaping (BrowserTabSnapshot) -> Void
     ) {
         let url = webView.url ?? fallbackURL
         let group = DispatchGroup()
@@ -87,7 +87,7 @@ final class BrowserSnapshotStore {
         }
 
         group.notify(queue: .main) { [weak self] in
-            let snapshot = BrowserSurfaceSnapshot(
+            let snapshot = BrowserTabSnapshot(
                 image: capturedImage,
                 url: url,
                 scrollY: capturedScrollY,
@@ -104,7 +104,7 @@ final class BrowserSnapshotStore {
     /// Stores a metadata-only snapshot so the placeholder path renders a
     /// neutral background instead of the empty webview.
     func storeMetadataOnly(surfaceId: UUID, url: URL?) {
-        snapshots[surfaceId] = BrowserSurfaceSnapshot(
+        snapshots[surfaceId] = BrowserTabSnapshot(
             image: nil,
             url: url,
             scrollY: nil,
@@ -115,7 +115,7 @@ final class BrowserSnapshotStore {
     /// Look up a snapshot for a given surface. Returns nil when no
     /// hibernate has been performed (or when the cache was cleared on
     /// resume).
-    func snapshot(forSurfaceId id: UUID) -> BrowserSurfaceSnapshot? {
+    func snapshot(forSurfaceId id: UUID) -> BrowserTabSnapshot? {
         return snapshots[id]
     }
 

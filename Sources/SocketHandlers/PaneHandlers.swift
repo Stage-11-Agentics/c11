@@ -57,7 +57,7 @@ extension TerminalController {
                 let bonsplitTabs = ws.bonsplitController.tabs(inPane: paneId)
                 let surfaceUUIDs: [UUID] = bonsplitTabs.compactMap { ws.tabIdFromBonsplitTabId($0.id) }
                 let selectedBonsplitTab = ws.bonsplitController.selectedTab(inPane: paneId)
-                let selectedSurfaceUUID = selectedBonsplitTab.flatMap { ws.tabIdFromBonsplitTabId($0.id) }
+                let selectedTabUUID = selectedBonsplitTab.flatMap { ws.tabIdFromBonsplitTabId($0.id) }
                 return [
                     "id": paneId.id.uuidString,
                     "ref": v2Ref(kind: .pane, uuid: paneId.id),
@@ -65,8 +65,8 @@ extension TerminalController {
                     "focused": paneId == focusedPaneId,
                     "surface_ids": surfaceUUIDs.map { $0.uuidString },
                     "surface_refs": surfaceUUIDs.map { v2Ref(kind: .surface, uuid: $0) },
-                    "selected_surface_id": v2OrNull(selectedSurfaceUUID?.uuidString),
-                    "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedSurfaceUUID),
+                    "selected_surface_id": v2OrNull(selectedTabUUID?.uuidString),
+                    "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedTabUUID),
                     "surface_count": surfaceUUIDs.count
                 ]
             }
@@ -247,7 +247,7 @@ extension TerminalController {
                 case .browser:
                     newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: self.v2FocusAllowed())?.id
                 case .markdown:
-                    newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                    newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
                     newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride)?.id
                 }
@@ -461,8 +461,8 @@ extension TerminalController {
 
             guard let selectedSourceBonsplitTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
                   let selectedTargetBonsplitTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
-                  let sourceSurfaceId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
-                  let targetSurfaceId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
+                  let sourceTabId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
+                  let targetTabId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
                 result = .err(code: "invalid_state", message: "Both areas must have a selected tab", data: nil)
                 return
             }
@@ -485,11 +485,11 @@ extension TerminalController {
                 }
             }
 
-            guard workspace.moveSurface(panelId: sourceSurfaceId, toPane: targetPane, focus: false) else {
+            guard workspace.moveSurface(panelId: sourceTabId, toPane: targetPane, focus: false) else {
                 result = .err(code: "internal_error", message: "Failed moving source tab into target area", data: nil)
                 return
             }
-            guard workspace.moveSurface(panelId: targetSurfaceId, toPane: sourcePane, focus: false) else {
+            guard workspace.moveSurface(panelId: targetTabId, toPane: sourcePane, focus: false) else {
                 result = .err(code: "internal_error", message: "Failed moving target tab into source area", data: nil)
                 return
             }
@@ -514,10 +514,10 @@ extension TerminalController {
                 "pane_ref": v2Ref(kind: .pane, uuid: sourcePane.id),
                 "target_pane_id": targetPane.id.uuidString,
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPane.id),
-                "source_surface_id": sourceSurfaceId.uuidString,
-                "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
-                "target_surface_id": targetSurfaceId.uuidString,
-                "target_surface_ref": v2Ref(kind: .surface, uuid: targetSurfaceId)
+                "source_surface_id": sourceTabId.uuidString,
+                "source_surface_ref": v2Ref(kind: .surface, uuid: sourceTabId),
+                "target_surface_id": targetTabId.uuidString,
+                "target_surface_ref": v2Ref(kind: .surface, uuid: targetTabId)
             ])
         }
         return result
@@ -563,7 +563,7 @@ extension TerminalController {
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
             let sourcePaneForRollback = sourceWorkspace.paneId(forPanelId: surfaceId)
 
-            guard let detached = sourceWorkspace.detachSurface(panelId: surfaceId) else {
+            guard let detached = sourceWorkspace.detachTab(panelId: surfaceId) else {
                 result = .err(code: "internal_error", message: "Failed to detach source tab", data: nil)
                 return
             }
@@ -572,7 +572,7 @@ extension TerminalController {
             guard let destinationPane = destinationWorkspace.bonsplitController.focusedPaneId
                 ?? destinationWorkspace.bonsplitController.allPaneIds.first else {
                 if let sourcePaneForRollback {
-                    _ = sourceWorkspace.attachDetachedSurface(
+                    _ = sourceWorkspace.attachDetachedTab(
                         detached,
                         inPane: sourcePaneForRollback,
                         atIndex: sourceIndex,
@@ -583,9 +583,9 @@ extension TerminalController {
                 return
             }
 
-            guard destinationWorkspace.attachDetachedSurface(detached, inPane: destinationPane, focus: focus) != nil else {
+            guard destinationWorkspace.attachDetachedTab(detached, inPane: destinationPane, focus: focus) != nil else {
                 if let sourcePaneForRollback {
-                    _ = sourceWorkspace.attachDetachedSurface(
+                    _ = sourceWorkspace.attachDetachedTab(
                         detached,
                         inPane: sourcePaneForRollback,
                         atIndex: sourceIndex,
@@ -683,7 +683,7 @@ extension TerminalController {
         }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
-        guard let mode = SurfaceMetadataStore.WriteMode(rawValue: modeStr) else {
+        guard let mode = TabMetadataStore.WriteMode(rawValue: modeStr) else {
             return .err(code: "invalid_mode", message: "mode must be 'merge' or 'replace'", data: nil)
         }
 
@@ -736,7 +736,7 @@ extension TerminalController {
                 result: result,
                 includePriorValues: true
             ))
-        } catch let err as SurfaceMetadataStore.WriteError {
+        } catch let err as TabMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
@@ -847,7 +847,7 @@ extension TerminalController {
                 result: result,
                 includePriorValues: false
             ))
-        } catch let err as SurfaceMetadataStore.WriteError {
+        } catch let err as TabMetadataStore.WriteError {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)

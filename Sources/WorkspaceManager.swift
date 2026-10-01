@@ -90,7 +90,7 @@ enum WorkspaceAutoReorderSettings {
     }
 }
 
-enum LastSurfaceCloseShortcutSettings {
+enum LastTabCloseShortcutSettings {
     static let key = "closeWorkspaceOnLastSurfaceShortcut"
     // Keep the legacy stored meaning so existing values still map to the same
     // behavior. The default is flipped to preserve current Cmd+W behavior.
@@ -931,7 +931,7 @@ class WorkspaceManager: ObservableObject {
         didSet {
             guard selectedWorkspaceId != oldValue else { return }
             // C11-243: workspace switch changes what the operator is looking at.
-            SurfaceSeenTracker.shared.refresh()
+            TabSeenTracker.shared.refresh()
             TabRailTipCenter.shared.scheduleRefresh()
             // C11-163: workspace selected → events stream. Fires on every
             // selection route (socket, keyboard, click, close-fallback) since
@@ -2503,7 +2503,7 @@ class WorkspaceManager: ObservableObject {
         surfaceId: UUID,
         context: ResolvedGitContext?
     ) {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
 
         guard let context else {
             store.setInternal(
@@ -2603,7 +2603,7 @@ class WorkspaceManager: ObservableObject {
     /// into lifecycle breadcrumbs so Sentry hang reports carry workspace
     /// shape. Counts only — never titles or URLs.
     private func surfaceShapeSummary(tabCount: Int) -> [String: Any] {
-        var counts = SurfaceShapeCounts()
+        var counts = TabShapeCounts()
         for workspace in workspaces {
             for panel in workspace.panels.values {
                 switch panel.panelType {
@@ -3012,7 +3012,7 @@ class WorkspaceManager: ObservableObject {
     }
 
     private func shouldCloseWorkspaceOnLastSurfaceShortcut(_ workspace: Workspace, panelId: UUID) -> Bool {
-        LastSurfaceCloseShortcutSettings.closesWorkspace() &&
+        LastTabCloseShortcutSettings.closesWorkspace() &&
             workspace.panels.count <= 1 &&
             workspace.panels[panelId] != nil
     }
@@ -3484,7 +3484,7 @@ class WorkspaceManager: ObservableObject {
         var applied = false
         if title.isEmpty {
             do {
-                let outcome = try SurfaceMetadataStore.shared.clearMetadata(
+                let outcome = try TabMetadataStore.shared.clearMetadata(
                     workspaceId: workspace.id,
                     surfaceId: panelId,
                     keys: ["title"],
@@ -3496,7 +3496,7 @@ class WorkspaceManager: ObservableObject {
             }
         } else {
             do {
-                let outcome = try SurfaceMetadataStore.shared.setMetadata(
+                let outcome = try TabMetadataStore.shared.setMetadata(
                     workspaceId: workspace.id,
                     surfaceId: panelId,
                     partial: ["title": title],
@@ -5567,7 +5567,7 @@ extension WorkspaceManager {
         // from SurfaceMetadataStore so metadata-only changes (which never
         // touch workspace/panel counts or titles) still flip the fingerprint
         // and trigger an autosave at the next 8s tick.
-        hasher.combine(SurfaceMetadataStore.shared.currentRevision())
+        hasher.combine(TabMetadataStore.shared.currentRevision())
         // CMUX-11 Phase 3: same trick for the pane store. Pane-only metadata
         // mutations (`pane.set_metadata`, --title seed on new-split) bump the
         // pane revision; including it here ensures those writes hit disk on
@@ -5599,7 +5599,7 @@ extension WorkspaceManager {
             hasher.combine(workspace.panelTitles.count)
             hasher.combine(workspace.panelPullRequests.count)
             hasher.combine(workspace.panelGitBranches.count)
-            hasher.combine(workspace.surfaceListeningPorts.count)
+            hasher.combine(workspace.tabListeningPorts.count)
             // Round five: which areas have their tab rail open.
             for railPane in workspace.bonsplitController.railOpenPaneIds.map({ $0.id.uuidString }).sorted() {
                 hasher.combine(railPane)
@@ -5626,7 +5626,7 @@ extension WorkspaceManager {
 
     func sessionSnapshot(
         includeScrollback: Bool,
-        conversationsByPanelId: [String: SurfaceConversations]? = nil
+        conversationsByPanelId: [String: TabConversations]? = nil
     ) -> SessionWorkspaceManagerSnapshot {
         let restorableTabs = workspaces
             .filter { !$0.isRemoteWorkspace }

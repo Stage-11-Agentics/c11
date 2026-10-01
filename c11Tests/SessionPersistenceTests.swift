@@ -21,7 +21,7 @@ final class SessionPersistenceTests: XCTestCase {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         let panel = try XCTUnwrap(
-            workspace.newMarkdownSurface(
+            workspace.newMarkdownTab(
                 inPane: paneId,
                 filePath: markdownURL.path,
                 focus: true
@@ -537,7 +537,7 @@ final class SessionPersistenceTests: XCTestCase {
             backHistoryURLStrings: nil,
             forwardHistoryURLStrings: nil
         )
-        source.linkedAgent = AgentSurfaceLink(
+        source.linkedAgent = AgentTabLink(
             surfaceID: linkedID,
             lastKnownName: "Build agent"
         )

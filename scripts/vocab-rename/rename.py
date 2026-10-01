@@ -17,7 +17,8 @@ Table format (one entry per line, `#` comments and blank lines ignored):
                                         alone and reported as COLLISION. Flag
                                         `noimplicit` skips enum case declarations and
                                         leading-dot implicit members (`.tabs`);
-                                        `recvmgr` renames only on a receiver named
+                                        `labelonly` renames only call-site argument
+                                        labels; `recvmgr` renames only on a receiver named
                                         like a manager (`workspaceManager.tabs`).
   @path<TAB>old<TAB>new                 file or directory rename (git mv, then
                                         project.pbxproj path edits)
@@ -512,8 +513,11 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         pre = src[max(0, a - 20):a]
         if pre.endswith(VENDOR_RECEIVERS):
             continue
-        if "recvmgr" in flags and not RECV_MGR.search(src[max(0, a - 80):a]):
-            continue  # only renamed when accessed on a manager-like receiver
+        if "labelonly" in flags or "recvmgr" in flags:
+            ok = ("labelonly" in flags and is_call_label(src, a, b) and not vendor_callee(src, a)) or (
+                "recvmgr" in flags and RECV_MGR.search(src[max(0, a - 80):a]) is not None)
+            if not ok:
+                continue  # leaf file: only call labels / manager-receiver members follow the rename
         if "noimplicit" in flags and a in case_decl:
             continue  # enum case declaration: keep, its `.case` uses are kept too
         if "noimplicit" in flags and is_implicit_member(src, a):

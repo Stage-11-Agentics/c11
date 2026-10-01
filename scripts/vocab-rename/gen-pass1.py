@@ -104,8 +104,13 @@ def main():
         fb = GENERIC.get(old, (None, ""))[1] if old in GENERIC else ""
         flags = "noimplicit" if old in NOIMPLICIT else ""
         out.append("\t".join([old, new, ",".join(globs), fb, flags]))
+        lf = []
+        if old in ID_FAMILY and old in universe:
+            lf.append("labelonly")
         if old in ("tabs", "selectedTab", "selectedTabId"):
-            out.append("\t".join([old, new, leaf_positive, "", "recvmgr"]))
+            lf.append("recvmgr")
+        if lf:
+            out.append("\t".join([old, new, leaf_positive, "", ",".join(lf)]))
     with open(os.path.join(HERE, "pass-1.tsv"), "w") as fh:
         fh.write("\n".join(out) + "\n")
     print(len(rows), "entries")

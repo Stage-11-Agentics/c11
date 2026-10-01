@@ -149,6 +149,7 @@ class Lexer:
         self.n = len(src)
         self.idents = []  # (start, end)
         self.events = []  # (pos, "{" | "}" | ";") in code regions
+        self.parens = []  # (pos, "(" | ")") in code regions
 
     def scan(self, i, in_interp):
         s, n = self.s, self.n
@@ -177,12 +178,14 @@ class Lexer:
                 continue
             if c == "(":
                 depth += 1
+                self.parens.append((i, "("))
                 i += 1
                 continue
             if c == ")":
                 if in_interp and depth == 0:
                     return i + 1
                 depth -= 1
+                self.parens.append((i, ")"))
                 i += 1
                 continue
             if c.isdigit():
@@ -569,13 +572,14 @@ CLOSURE_PARAMS = re.compile(r"\s*(?:\[[^\]]*\]\s*)?(?:\(([^)]*)\)|([\w, ]+?))(?:
 
 
 class Block:
-    __slots__ = ("open", "close", "parent", "header", "header_start", "own", "children", "is_type", "_desc")
+    __slots__ = ("open", "close", "parent", "header", "header_start", "own", "children", "is_type", "_desc", "inparen")
 
     def __init__(self, open_, parent, header, header_start, seg=""):
         self.open, self.close, self.parent = open_, None, parent
         self.header, self.header_start = header, header_start
         self.own, self.children = set(), []
         self.is_type = bool(TYPE_HEAD.search("\n".join(seg.split("\n")[-6:])))
+        self.inparen = False
         self._desc = None
 
 
@@ -585,7 +589,29 @@ class Scopes:
     def __init__(self, src, lx):
         self.src = src
         self.blocks, stack, last = [], [], -1
-        for pos, ch in lx.events:
+        pdepth = 0
+        merged = sorted(lx.events + lx.parens)
+        for pos, ch in merged:
+            if ch == "(":
+                pdepth += 1
+                continue
+            if ch == ")":
+                pdepth -= 1
+                continue
+            if ch == "{" and pdepth > 0:
+                # a closure argument: not a statement boundary, keeps the surrounding statement's header
+                blk = Block(pos, stack[-1] if stack else None, "", pos, "")
+                if stack:
+                    stack[-1].children.append(blk)
+                self.blocks.append(blk)
+                stack.append(blk)
+                blk.inparen = True
+                continue
+            if ch == "}" and stack and getattr(stack[-1], "inparen", False):
+                blk = stack.pop()
+                blk.close = pos
+                self._bind(blk)
+                continue
             if ch == "{":
                 seg_start = last + 1
                 seg = src[seg_start:pos]

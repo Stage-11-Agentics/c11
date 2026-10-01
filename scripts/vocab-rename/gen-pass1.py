@@ -23,7 +23,10 @@ LEAF_FILES = [
 BONSPLIT_SIGNAL = r"bonsplitController\.|\bTabID\b|Bonsplit\.Tab\b|BonsplitTab|\bTabInfo\b|inPane:|splitTabBar"
 # Callees whose argument labels follow (rename) or ignore (keep) the rename: from compile errors.
 CALLEES = {"BrowserPaneDragTransfer": "keep", "move": "keep", "equalizeSplits": "rename",
-           "matchesCurrentTerminalFocusTarget": "rename", "resolveSurfaceId": "rename"}
+           "matchesCurrentTerminalFocusTarget": "rename", "resolveSurfaceId": "rename",
+           "preloadTerminalPanelForDebugStress": "keep", "DebugStressTerminalLoadTarget": "keep", "ScriptTab": "keep",
+           "moveBonsplitTab": "keep", "locateBonsplitSurface": "keep",
+           "newSplit": "rename", "clearNotifications": "rename"}
 NOIMPLICIT = {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}
 
 SUBSTRING_RULES = [  # (old substring, new substring), applied to whole identifiers

@@ -25,6 +25,10 @@ Table format (one entry per line, `#` comments and blank lines ignored):
   @keep<TAB>glob<TAB>regex<TAB>name,name  in files matching glob, members whose source
                                         text matches regex keep those old names
                                         (vendor/leaf use that shares a generic name)
+  @taint<TAB>glob<TAB>rhs-regex<TAB>name=target,...
+                                        in matching files, names whose binding site
+                                        (let/for/guard/param) derives from the regex
+                                        (a bonsplit value) are renamed per member
   @delete<TAB>file<TAB>exact line       delete that whole line (stripped compare)
                                         from the file, if present
 
@@ -60,12 +64,18 @@ def load_table(path):
     deletes = []
     keeps = []
     callees = {}  # callee/type name -> "keep" | "rename"
+    taints = []  # (glob, regex, {name: target})
     with open(path, encoding="utf-8") as fh:
         for ln, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             cols = line.split("\t")
+            if cols[0] == "@taint":
+                if len(cols) != 4:
+                    sys.exit(f"{path}:{ln}: @taint needs glob, rhs-regex, name=target,...")
+                taints.append((cols[1], cols[2], dict(x.split("=") for x in cols[3].split(","))))
+                continue
             if cols[0] == "@callee":
                 if len(cols) != 3 or cols[2] not in ("keep", "rename"):
                     sys.exit(f"{path}:{ln}: @callee needs name and keep|rename")
@@ -92,7 +102,7 @@ def load_table(path):
             fallback = cols[3] if len(cols) > 3 and cols[3] else None
             flags = set(cols[4].split(",")) if len(cols) > 4 and cols[4] else set()
             renames.setdefault(cols[0], []).append((cols[1], globs, fallback, flags))
-    return renames, paths, deletes, keeps, callees
+    return renames, paths, deletes, keeps, callees, taints
 
 
 def glob_match(rel, globs):
@@ -609,6 +619,86 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
     return "".join(out), count
 
 
+
+TAINT_TYPE = r"(?:TabID|\[TabID\]|Set<TabID>|Bonsplit\.Tab|\[Bonsplit\.Tab\]|\(TabID\) ->)"
+
+
+def taint_pass(src, rel, taint_rules, report=None):
+    """Rename names that are bound to bonsplit leaf values (by their binding site), per member.
+
+    A binding site is `let/var/guard let/if let/for NAME ... = <rhs>` whose rhs matches the rule's
+    regex, a parameter/variable annotated with a bonsplit type, or a closure parameter in a
+    statement that mentions an already-tainted name.
+    """
+    rules = [(re.compile(rx), mp) for g, rx, mp in taint_rules if any(fnmatch.fnmatch(rel, gg) for gg in g.split(","))]
+    if not rules:
+        return src, 0
+    lx = Lexer(src)
+    lx.scan(0, False)
+    reg, spans = regions(src, lx)
+    edits = []
+    by_region = {}
+    for (a, b), r in zip(lx.idents, reg):
+        by_region.setdefault(r, []).append((a, b))
+    for r, toks in by_region.items():
+        a0, b0 = spans[r]
+        text = src[a0:b0]
+        for rx, mp in rules:
+            tainted = set()
+            for name in mp:
+                n = re.escape(name)
+                pats = [
+                    rf"\b(?:let|var)\s+{n}\b[^=\n]*=\s*[^\n]*(?:\n\s*\.[^\n]*){{0,3}}",
+                    rf"\b(?:guard|if)\s+(?:let|var)\s+{n}\b[^=\n]*=\s*[^\n]*(?:\n\s*\.[^\n]*){{0,3}}",
+                    rf"\bfor\s+(?:\(?[\w, ]*\b)?{n}\b[\w, ]*\)?\s+in\s+[^\n{{]*",
+                ]
+                for pt in pats:
+                    for m in re.finditer(pt, text):
+                        if rx.search(m.group(0)):
+                            tainted.add(name)
+                if re.search(rf"\b{n}\s*:\s*{TAINT_TYPE}", text) or re.search(rf"\b(?:let|var)\s+{n}\s*:\s*{TAINT_TYPE}", text):
+                    tainted.add(name)
+            # closure params following a tainted name in the same statement
+            changed = True
+            while changed:
+                changed = False
+                for name in mp:
+                    if name in tainted:
+                        continue
+                    n = re.escape(name)
+                    for m in re.finditer(rf"\{{\s*(?:\[[^\]]*\]\s*)?\(?[\w, ]*\b{n}\b[\w, ]*\)?\s+in\b", text):
+                        line_start = text.rfind("\n", 0, m.start()) + 1
+                        stmt = text[max(0, line_start - 200):m.start()]
+                        if any(re.search(rf"\b{re.escape(t)}\b", stmt) for t in tainted):
+                            tainted.add(name)
+                            changed = True
+                            break
+            if not tainted:
+                continue
+            present = {src[a:b] for a, b in toks}
+            for a, b in toks:
+                tok = src[a:b]
+                if tok in tainted and not (a >= 1 and src[a - 1] == ".") and not is_call_label(src, a, b):
+                    tgt = mp[tok]
+                    if tgt in present and tgt != tok:
+                        if report is not None:
+                            report.append(f"TAINT-COLLISION {rel}:{src.count(chr(10), 0, a) + 1} {tok} -> {tgt}")
+                        continue
+                    edits.append((a, b, tgt))
+    if not edits:
+        return src, 0
+    edits.sort()
+    out, last = [], 0
+    for a, b, t in edits:
+        if a < last:
+            continue
+        out.append(src[last:a])
+        out.append(t)
+        last = b
+    out.append(src[last:])
+    return "".join(out), len(edits)
+
+
 def swift_files(root):
     for d in SCAN_DIRS:
         base = os.path.join(root, d)
@@ -662,7 +752,7 @@ def main(argv):
     use_git = "--no-git" not in argv
     if "--root" in argv:
         root = argv[argv.index("--root") + 1]
-    renames, paths, deletes, keeps, callees = load_table(table)
+    renames, paths, deletes, keeps, callees, taints = load_table(table)
     validate(renames)
     for rel, text in deletes:
         full = os.path.join(root, rel)
@@ -679,7 +769,9 @@ def main(argv):
     for full in sorted(swift_files(root)):
         rel = os.path.relpath(full, root)
         src = open(full, encoding="utf-8").read()
+        src, nt = taint_pass(src, rel, taints, report)
         new, n = rewrite(src, rel, renames, report, keeps, callees)
+        n += nt
         if n:
             total_files += 1
             total_hits += n

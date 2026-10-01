@@ -11533,8 +11533,8 @@ extension Workspace: BonsplitDelegate {
             )
         }
 
-        // Legacy NSAlert path — kept as a rollback/fallback. It closes one tab,
-        // so Return closes and Escape keeps the tab.
+        // Legacy NSAlert path — kept as a rollback/fallback. Cancel is the
+        // first button, so Return and Escape keep the tab; closing takes a click.
         let alert = NSAlert()
         alert.messageText = String(localized: "dialog.closeTab.title", defaultValue: "Close tab?")
         alert.informativeText = String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab.")
@@ -11542,7 +11542,6 @@ extension Workspace: BonsplitDelegate {
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
         alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
             .hasDestructiveAction = true
-        alert.makeSecondButtonDefault()
 
         if let window = NSApp.keyWindow ?? NSApp.mainWindow {
             return await withCheckedContinuation { continuation in

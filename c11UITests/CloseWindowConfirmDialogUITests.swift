@@ -42,8 +42,6 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
             "Expected app to launch for close-window confirmation test. state=\(app.state.rawValue)"
         )
 
-        // A second tab makes this a close of more than one tab.
-        app.typeKey("t", modifierFlags: [.command])
         app.typeKey("w", modifierFlags: [.command, .control])
 
         XCTAssertTrue(
@@ -51,7 +49,7 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
             "Expected Cmd+Ctrl+W to show the close window confirmation alert"
         )
 
-        // Cancel is the default for more than one tab: a reflexive Return must keep the window.
+        // Cancel is the default: a reflexive Return must keep the window.
         app.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(
@@ -59,31 +57,6 @@ final class CloseWindowConfirmDialogUITests: XCTestCase {
             "Expected Return to dismiss the close window confirmation alert"
         )
         XCTAssertTrue(app.windows.firstMatch.exists, "Expected Return to cancel, keeping the window open")
-    }
-
-    func testReturnClosesSingleTabWindow() {
-        let app = XCUIApplication()
-        app.launchEnvironment["CMUX_TAG"] = launchTag
-        app.launch()
-        XCTAssertTrue(
-            ensureForegroundAfterLaunch(app, timeout: 12.0),
-            "Expected app to launch for close-window confirmation test. state=\(app.state.rawValue)"
-        )
-
-        app.typeKey("w", modifierFlags: [.command, .control])
-
-        XCTAssertTrue(
-            waitForCloseWindowAlert(app: app, timeout: 5.0),
-            "Expected Cmd+Ctrl+W to show the close window confirmation alert"
-        )
-
-        // A window holding one tab defaults to Close.
-        app.typeKey(.return, modifierFlags: [])
-
-        XCTAssertTrue(
-            waitForMainWindowToClose(app: app, timeout: 5.0),
-            "Expected Return to close a window holding one tab"
-        )
     }
 
     func testClickingCloseConfirmsCloseWindowDialog() {

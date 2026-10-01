@@ -32,6 +32,8 @@ FIXES = [
      "        case workspaceManager = \"tabManager\"\n        case sidebar\n    }\n}\n"),
     ("Sources/AppDelegate.swift",
      "target.workspace.panel(for: target.workspaceId)", "target.workspace.panel(for: target.tabId)"),
+    ("Sources/WorkspaceContentView.swift",
+     ".filter { $0.tabId == workspace.id && !$0.isRead }", ".filter { $0.workspaceId == workspace.id && !$0.isRead }"),
 ]
 CALLEES = {"BrowserPaneDragTransfer": "keep", "move": "keep", "equalizeSplits": "rename",
            "matchesCurrentTerminalFocusTarget": "rename", "resolveSurfaceId": "rename",

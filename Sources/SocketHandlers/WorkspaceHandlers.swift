@@ -753,27 +753,16 @@ extension TerminalController {
             }
             relayPort = parsedRelayPort
         }
-        let relayID = v2RawString(params, "relay_id")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let relayToken = v2RawString(params, "relay_token")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let localSocketPath = v2RawString(params, "local_socket_path")
+        // relay_port remains an opaque terminal-session identifier for older clients.
+        // Credentials and local socket paths no longer enable a command relay.
         let terminalStartupCommand = v2RawString(params, "terminal_startup_command")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if relayPort != nil {
-            guard let relayID, !relayID.isEmpty else {
-                return .err(code: "invalid_params", message: "relay_id is required when relay_port is set", data: nil)
-            }
-            guard let relayToken,
-                  relayToken.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
-                return .err(code: "invalid_params", message: "relay_token must be 64 lowercase hex characters when relay_port is set", data: nil)
-            }
-        }
 
 #if DEBUG
         dlog(
             "workspace.remote.configure.request workspace=\(workspaceId.uuidString.prefix(8)) " +
             "target=\(destination) port=\(sshPort.map(String.init) ?? "nil") " +
             "autoConnect=\(autoConnect ? 1 : 0) relayPort=\(relayPort.map(String.init) ?? "nil") " +
-            "localSocket=\(localSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? localSocketPath! : "nil") " +
             "sshOptions=\(sshOptions.joined(separator: "|"))"
         )
 #endif
@@ -796,9 +785,9 @@ extension TerminalController {
                 sshOptions: sshOptions,
                 localProxyPort: localProxyPort,
                 relayPort: relayPort,
-                relayID: relayID?.isEmpty == true ? nil : relayID,
-                relayToken: relayToken?.isEmpty == true ? nil : relayToken,
-                localSocketPath: localSocketPath,
+                relayID: nil,
+                relayToken: nil,
+                localSocketPath: nil,
                 terminalStartupCommand: terminalStartupCommand?.isEmpty == true ? nil : terminalStartupCommand
             )
             workspace.configureRemoteConnection(config, autoConnect: autoConnect)

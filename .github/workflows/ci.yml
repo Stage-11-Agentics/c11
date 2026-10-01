@@ -198,6 +198,13 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
 
+      - name: SSH shell command availability
+        run: |
+          set -euo pipefail
+          CLI_BINARY="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug/c11' -type f -print -quit)"
+          test -x "$CLI_BINARY"
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
         # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)

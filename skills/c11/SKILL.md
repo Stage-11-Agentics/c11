@@ -128,6 +128,13 @@ c11 get-metadata --tab tab:12    # flag + flag_caller_tab_id / suppressed, when 
 `flag` and its caller UUID are absent rather than empty when unset. Parent-side monitoring patterns:
 [references/orchestration.md](references/orchestration.md).
 
+## SSH workspaces
+
+`c11 ssh <host>` opens a remote shell in a workspace. Remote-to-local c11 commands
+are disabled in this version as a hardening change. Running `c11 <cmd>` or the
+`cmux` alias inside that shell fails with "c11 commands are not available over
+c11 ssh in this version". Use the local CLI to operate the workspace.
+
 ## What c11 can do — load the reference when you need it
 
 | You want to… | Load |

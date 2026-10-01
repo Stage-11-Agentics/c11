@@ -1,4 +1,5 @@
 import XCTest
+import Network
 
 #if canImport(c11)
 @testable import c11
@@ -125,24 +126,67 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
         XCTAssertFalse(fileManager.fileExists(atPath: daemonPathURL.path))
     }
 
-    func testReverseRelayStartupFailureDetailCapturesImmediateForwardingFailure() throws {
-        let process = Process()
-        let stderrPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "echo 'remote port forwarding failed for listen port 64009' >&2; exit 1"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = stderrPipe
+    func testRemoteCommandRelayDoesNotStartListener() {
+        XCTAssertThrowsError(try WorkspaceRemoteCLIRelayServer().start()) { error in
+            XCTAssertEqual(error.localizedDescription, "c11 commands are not available over c11 ssh in this version")
+        }
+    }
 
-        try process.run()
-
-        let detail = WorkspaceRemoteSessionController.reverseRelayStartupFailureDetail(
-            process: process,
-            stderrPipe: stderrPipe,
-            gracePeriod: 1.0
+    func testRemoteCommandIsRefusedAfterSuccessfulHandshake() throws {
+        // Exercise the retained refusal handler using a test-owned transport.
+        // Production cannot create a relay listener.
+        let queue = DispatchQueue(label: "c11.tests.remote-command-refusal")
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        let listener = try NWListener(using: parameters)
+        let ready = expectation(description: "test transport ready")
+        var session: WorkspaceRemoteCLIRelayServer.Session?
+        listener.newConnectionHandler = { connection in
+            let accepted = WorkspaceRemoteCLIRelayServer.Session(
+                connection: connection,
+                relayID: "test-session",
+                relayToken: Data(repeating: 0x61, count: 32),
+                queue: queue,
+                onClose: {}
+            )
+            session = accepted
+            accepted.start()
+        }
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { ready.fulfill() }
+        }
+        listener.start(queue: queue)
+        defer {
+            listener.cancel()
+            queue.sync { session?.stop() }
+        }
+        wait(for: [ready], timeout: 10)
+        let port = try XCTUnwrap(listener.port).rawValue
+        let script = """
+        import hashlib, hmac, json, socket, sys
+        with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=5) as sock:
+            stream = sock.makefile('rwb', buffering=0)
+            challenge = json.loads(stream.readline())
+            message = 'relay_id={}\\nnonce={}\\nversion={}'.format(challenge['relay_id'], challenge['nonce'], challenge['version'])
+            mac = hmac.new(b'a' * 32, message.encode(), hashlib.sha256).hexdigest()
+            stream.write(json.dumps({'relay_id': challenge['relay_id'], 'mac': mac}).encode() + b'\\n')
+            assert json.loads(stream.readline()) == {'ok': True}
+            print('handshake accepted')
+            stream.write(b'ping\\n')
+            result = json.loads(stream.readline())
+            assert result['ok'] is False, result
+            assert result['error']['code'] == 'remote_commands_disabled', result
+            print(result['error']['message'])
+            assert stream.readline() == b''
+        """
+        let result = runProcess(
+            executablePath: "/usr/bin/env",
+            arguments: ["python3", "-c", script, String(port)],
+            timeout: 15
         )
-
-        XCTAssertEqual(detail, "remote port forwarding failed for listen port 64009")
+        XCTAssertFalse(result.timedOut, result.stderr)
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertEqual(result.stdout, "handshake accepted\nc11 commands are not available over c11 ssh in this version\n")
     }
 
     func testSSHAgentEnvVarsPropagateToSpawnedProcess() throws {

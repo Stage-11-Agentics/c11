@@ -72,31 +72,16 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didResignKeyNotification, object: nil)
+        center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
         center.addObserver(self, selector: #selector(calendarDayChanged(_:)), name: .NSCalendarDayChanged, object: nil)
-        // `defaults write` is another process, so didChangeNotification never
-        // arrives. KVO on these keys does, as it does for tabLayoutMode.
-        for key in Self.observedTipKeys {
-            UserDefaults.standard.addObserver(self, forKeyPath: key, options: [.new], context: nil)
-        }
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        for key in Self.observedTipKeys {
-            UserDefaults.standard.removeObserver(self, forKeyPath: key)
-        }
         if let escapeMonitor {
             NSEvent.removeMonitor(escapeMonitor)
         }
     }
-
-    /// Keys a `defaults write` from outside this process must be able to change
-    /// while the app is open. Not `overflowDays`: that one is recorded here.
-    nonisolated private static let observedTipKeys = [
-        TabRailTipPolicy.forceOfferKey,
-        TabRailTipPolicy.dismissedKey,
-        TabRailTipPolicy.lastOfferedKey,
-    ]
 
     // MARK: Signals from a workspace
 
@@ -236,16 +221,6 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     @objc nonisolated private func windowKeyChanged(_ notification: Notification) {
-        scheduleRefresh()
-    }
-
-    nonisolated override func observeValue(
-        forKeyPath keyPath: String?,
-        of object: Any?,
-        change: [NSKeyValueChangeKey: Any]?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        guard let keyPath, Self.observedTipKeys.contains(keyPath) else { return }
         scheduleRefresh()
     }
 

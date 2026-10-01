@@ -57,7 +57,7 @@ def test_send_without_surface_fails(cli: str) -> None:
     _must(proc.returncode != 0, "c11 send without --tab should exit non-zero, but exited 0")
     merged = (proc.stdout + proc.stderr).lower()
     _must(
-        "tab" in merged or "surface" in merged or "target" in merged or "required" in merged,
+        "--tab" in merged and "requires" in merged,
         f"c11 send without --tab expected error mentioning surface/target/required, got: {merged!r}",
     )
     print("PASS: test_send_without_surface_fails")
@@ -69,7 +69,7 @@ def test_send_key_without_surface_fails(cli: str) -> None:
     _must(proc.returncode != 0, "c11 send-key without --tab should exit non-zero, but exited 0")
     merged = (proc.stdout + proc.stderr).lower()
     _must(
-        "tab" in merged or "surface" in merged or "target" in merged or "required" in merged,
+        "--tab" in merged and "requires" in merged,
         f"c11 send-key without --tab expected error mentioning surface/target/required, got: {merged!r}",
     )
     print("PASS: test_send_key_without_surface_fails")

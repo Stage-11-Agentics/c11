@@ -101,7 +101,7 @@ V2 success envelope gains:
 - `size_outcome`: `split` | `flipped` | `tab`
 - `size_warning`: string | null
 
-Refusal returns `.err(code: "area_too_small", message: <actionable>, data: { resulting,
+Refusal returns `.err(code: "pane_too_small", message: <actionable>, data: { resulting,
 minimum, area_ref })`. Message names the offending size, the minimum, the kind, and the
 remedies (add a tab with `new-tab --area …`, close a sibling, or `--allow-undersized`).
 

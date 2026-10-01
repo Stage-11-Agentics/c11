@@ -54,7 +54,7 @@ def main() -> int:
     for args in cases:
         proc = _run_scrubbed(cli, sock, args)
         out = (proc.stdout + proc.stderr).lower()
-        rejected = proc.returncode != 0 and ("missing_ref" in out or "no tab" in out or "no surface" in out
+        rejected = proc.returncode != 0 and ("missing_ref" in out or "no tab" in out
                                              or "missing" in out or "empty_ref" in out)
         if not rejected:
             failures.append(f"{args[0]}: expected rejection, got rc={proc.returncode} out={out[:160]!r}")

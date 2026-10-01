@@ -28,7 +28,7 @@ Commands accept UUIDs, short refs, or indexes:
 window:1   workspace:1   area:2   tab:3   tab:1
 ```
 
-**Operator-spoken tab numbers are tab refs.** With the "Show Tab Numbers in Tab Titles" setting on (Settings → Tabs), every tab renders as `N: title` where N is its `tab:N` ordinal. When the operator says "send this to 292", target `tab:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth tab in list order), which is a different tab. Your own number is `$C11_TAB_NUM`.
+**Operator-spoken tab numbers are tab refs.** With the "Show Tab Numbers in Tab Titles" setting on (Settings → Tabs & Areas), every tab renders as `N: title` where N is its `tab:N` ordinal. When the operator says "send this to 292", target `tab:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth tab in list order), which is a different tab. Your own number is `$C11_TAB_NUM`.
 
 **`--workspace` AND `--tab` must be used together** when targeting a remote tab. Either flag alone fails or targets the wrong thing.
 

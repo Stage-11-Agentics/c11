@@ -86,7 +86,7 @@ A recursive union: either an area leaf (`"type": "pane"`) or a `split` node.
 
 | Field | Kind | Notes |
 |-------|------|-------|
-| `id` | all | Plan-local stable id. Appears in `ApplyResult.surfaceRefs` |
+| `id` | all | Plan-local stable id. Appears in `ApplyResult.tabRefs` |
 | `kind` | all | `"terminal"`, `"browser"`, or `"markdown"` |
 | `title` | all | Written via `setPanelCustomTitle` |
 | `description` | all | Written to tab metadata under `description` key |
@@ -105,8 +105,8 @@ values on the reserved `mailbox.*` area namespace are dropped with a warning.
 ```json
 {
   "workspaceRef": "workspace:<uuid>",
-  "surfaceRefs": { "s1": "tab:<uuid>", "s2": "tab:<uuid>" },
-  "paneRefs": { "s1": "area:<uuid>" },
+  "tabRefs": { "s1": "tab:<uuid>", "s2": "tab:<uuid>" },
+  "areaRefs": { "s1": "area:<uuid>" },
   "warnings": [],
   "failures": []
 }

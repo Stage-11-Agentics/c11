@@ -85,7 +85,7 @@ def main() -> int:
             )
             raise cmuxError("expected surface_not_found for closed surface")
         except cmuxError as exc:
-            if "tab_not_found" not in str(exc) and "surface_not_found" not in str(exc):
+            if "surface_not_found" not in str(exc):
                 raise
 
         client.close_workspace(workspace_id)

@@ -37,7 +37,7 @@ c11 conversation clear [--tab <id>]
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a tab. The debugging entry point. |
 | `clear` | Wipe the tab's conversations. Forces a fresh launch on next workspace open. |
 
-**Tab resolution.** Every verb resolves `--tab` from `C11_TAB_ID` if unset. **No focused-tab fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_tab`.
+**Tab resolution.** Every verb resolves `--tab` from `C11_TAB_ID` if unset. **No focused-tab fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_surface`.
 
 **`--payload`** accepts inline JSON or `@<path>` to read JSON from a file (mirrors the `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not have to shell-quote JSON).
 

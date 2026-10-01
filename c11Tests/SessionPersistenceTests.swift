@@ -1268,6 +1268,24 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(legacyDecoded.windows[0].workspaceManager.workspaces[0].rootDirectory)
     }
 
+    func testWindowSnapshotKeepsOnDiskTabManagerKeyAcrossDecodeAndEncode() throws {
+        let encoded = try JSONEncoder().encode(makeSnapshot(version: SessionSnapshotSchema.currentVersion))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let windows = try XCTUnwrap(json["windows"] as? [[String: Any]])
+        let originalKeys = Set(windows[0].keys)
+        XCTAssertTrue(originalKeys.contains("tabManager"))
+        XCTAssertFalse(originalKeys.contains("workspaceManager"))
+
+        // A file written by an older build carries the same keys; decoding then re-encoding keeps them.
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded)
+        let reencoded = try JSONEncoder().encode(decoded)
+        let rejson = try XCTUnwrap(JSONSerialization.jsonObject(with: reencoded) as? [String: Any])
+        let rewindows = try XCTUnwrap(rejson["windows"] as? [[String: Any]])
+        XCTAssertEqual(Set(rewindows[0].keys), originalKeys)
+        let manager = try XCTUnwrap(rewindows[0]["tabManager"] as? [String: Any])
+        XCTAssertNotNil(manager["workspaces"])
+    }
+
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
         let workspace = SessionWorkspaceSnapshot(
             id: UUID(),

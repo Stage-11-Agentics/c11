@@ -240,7 +240,7 @@ enum PaneSizePolicy {
         switch decision.outcome {
         case .proceed:
             if decision.flipped {
-                var msg = "requested a \(axisWord(decision.requestedAxis)) split, but it would leave a pane below the \(dims(decision.minPoints)) minimum for a \(kindLabel) surface; split \(axisWord(decision.appliedAxis ?? decision.requestedAxis)) instead"
+                var msg = "requested a \(axisWord(decision.requestedAxis)) split, but it would leave an area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) tab; split \(axisWord(decision.appliedAxis ?? decision.requestedAxis)) instead"
                 if decision.status == .near {
                     msg += " (still close to the minimum)"
                 }
@@ -250,20 +250,20 @@ enum PaneSizePolicy {
             case .ok:
                 return nil
             case .near:
-                return "the new \(kindLabel) pane (\(dims(decision.resultingChild))) is close to the \(dims(decision.minPoints)) minimum usable size"
+                return "the new \(kindLabel) area (\(dims(decision.resultingChild))) is close to the \(dims(decision.minPoints)) minimum usable size"
             case .undersized:
-                return "the new \(kindLabel) pane (\(dims(decision.resultingChild))) is below the \(dims(decision.minPoints)) minimum usable size for a \(kindLabel) surface"
+                return "the new \(kindLabel) area (\(dims(decision.resultingChild))) is below the \(dims(decision.minPoints)) minimum usable size for a \(kindLabel) tab"
             }
         case .addTab:
-            return "too small to split usably; added a tab to the target pane instead"
+            return "too small to split usably; added a tab to the target area instead"
         case .refuse:
             return nil
         }
     }
 
-    /// The actionable refusal message. `paneRefLabel` is something like `pane:3`.
+    /// The actionable refusal message. `paneRefLabel` is something like `area:3`.
     static func refusalMessage(for decision: Decision, kindLabel: String, paneRefLabel: String) -> String {
-        "won't split \(paneRefLabel): a split would leave a \(dims(decision.resultingChild)) pane below the \(dims(decision.minPoints)) minimum for a \(kindLabel) surface. Add a tab instead (c11 new-surface --pane \(paneRefLabel)), close a sibling pane, or pass --allow-undersized to force."
+        "won't split \(paneRefLabel): a split would leave a \(dims(decision.resultingChild)) area below the \(dims(decision.minPoints)) minimum for a \(kindLabel) tab. Add a tab instead (c11 new-tab --area \(paneRefLabel)), close a sibling area, or pass --allow-undersized to force."
     }
 }
 

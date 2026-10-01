@@ -397,6 +397,7 @@ final class MailboxAddressTests: XCTestCase {
 
     func testParseSurfaceQualifier() {
         XCTAssertEqual(MailboxAddress.parse("surface:01HABC"), .surface("01HABC"))
+        XCTAssertEqual(MailboxAddress.parse("tab:01HABC"), .surface("01HABC"))
     }
 
     func testParseRoleQualifier() {

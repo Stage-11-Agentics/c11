@@ -18,6 +18,100 @@ struct CLIError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
+/// C11-248: version-skew fallback, remove after one release.
+/// A fresh CLI talking to an app that still speaks surface/pane: maps canonical methods and
+/// param keys back to the legacy spelling, and legacy result keys forward to the canonical ones.
+enum CLIVersionSkew {
+    /// canonical key -> legacy key (params, and result keys in reverse).
+    static let keyPairs: [(new: String, old: String, isRef: Bool)] = [
+        ("tab_id", "surface_id", false), ("tab_ref", "surface_ref", true),
+        ("tab_ids", "surface_ids", false), ("tab_refs", "surface_refs", true),
+        ("area_id", "pane_id", false), ("area_ref", "pane_ref", true),
+        ("target_area_id", "target_pane_id", false), ("target_area_ref", "target_pane_ref", true),
+        ("source_area_id", "source_pane_id", false), ("source_area_ref", "source_pane_ref", true),
+        ("source_tab_id", "source_surface_id", false), ("source_tab_ref", "source_surface_ref", true),
+        ("target_tab_id", "target_surface_id", false), ("target_tab_ref", "target_surface_ref", true),
+        ("before_tab_id", "before_surface_id", false), ("after_tab_id", "after_surface_id", false),
+        ("created_tab_id", "created_surface_id", false), ("created_tab_ref", "created_surface_ref", true),
+        ("selected_tab_id", "selected_surface_id", false), ("selected_tab_ref", "selected_surface_ref", true),
+        ("focused_tab_id", "focused_surface_id", false), ("focused_tab_ref", "focused_surface_ref", true),
+        ("caller_tab_id", "caller_surface_id", false),
+        ("tab_type", "surface_type", false), ("tab_title", "surface_title", false),
+        ("tab_index", "surface_index", false), ("tab_index_in_area", "surface_index_in_pane", false),
+        ("tab_selected_in_area", "surface_selected_in_pane", false),
+        ("index_in_area", "index_in_pane", false), ("selected_in_area", "selected_in_pane", false),
+        ("area_index", "pane_index", false), ("is_browser_tab", "is_browser_surface", false),
+        ("tab_pinned", "surface_pinned", false), ("tab_focused", "surface_focused", false),
+        ("tab_created_at", "surface_created_at", false), ("tab_age_seconds", "surface_age_seconds", false),
+        ("tab_context", "surface_context", false), ("tab_view_first_responder", "surface_view_first_responder", false),
+        ("runtime_tab_ready", "runtime_surface_ready", false),
+        ("runtime_tab_created_at", "runtime_surface_created_at", false),
+        ("runtime_tab_age_seconds", "runtime_surface_age_seconds", false),
+        ("tab_count", "surface_count", false), ("terminal_tabs", "terminal_panels", false),
+        ("tabRefs", "surfaceRefs", true), ("areaRefs", "paneRefs", true),
+        ("tabs", "surfaces", false), ("areas", "panes", false),
+    ]
+
+    static func legacyMethod(for method: String) -> String? {
+        if method == "tab.action" { return nil }
+        if method.hasPrefix("tab.") { return "surface." + method.dropFirst("tab.".count) }
+        if method == "area.tabs" { return "pane.surfaces" }
+        if method.hasPrefix("area.") { return "pane." + method.dropFirst("area.".count) }
+        if method == "notification.create_for_tab" { return "notification.create_for_surface" }
+        return nil
+    }
+
+    static func retry(method: String, params: [String: Any], errorCode: String) -> (method: String, params: [String: Any])? {
+        let legacy = legacyParams(params)
+        let paramsChanged = legacy.count != params.count || Set(legacy.keys) != Set(params.keys)
+        if errorCode == "method_not_found", let legacyName = legacyMethod(for: method) {
+            return (legacyName, legacy)
+        }
+        if paramsChanged, errorCode == "invalid_params" || errorCode == "missing_ref" {
+            return (method, legacy)
+        }
+        return nil
+    }
+
+    static func legacyParams(_ params: [String: Any]) -> [String: Any] {
+        var out = params
+        for pair in keyPairs where out[pair.old] == nil {
+            if let value = params[pair.new] { out[pair.old] = value; out.removeValue(forKey: pair.new) }
+        }
+        return out
+    }
+
+    private static func modernHandle(_ value: String) -> String {
+        if value.hasPrefix("surface:") { return "tab:" + value.dropFirst("surface:".count) }
+        if value.hasPrefix("pane:") { return "area:" + value.dropFirst("pane:".count) }
+        return value
+    }
+
+    private static func modernRef(_ value: Any) -> Any {
+        if let string = value as? String { return modernHandle(string) }
+        if let array = value as? [Any] { return array.map(modernRef) }
+        if let dict = value as? [String: Any] { return dict.mapValues(modernRef) }
+        return value
+    }
+
+    static func modernResult(_ value: [String: Any]) -> [String: Any] {
+        modernValue(value) as? [String: Any] ?? value
+    }
+
+    private static func modernValue(_ value: Any) -> Any {
+        if let array = value as? [Any] { return array.map(modernValue) }
+        guard var dict = value as? [String: Any] else { return value }
+        for (key, child) in dict where key != "metadata" && key != "value" { dict[key] = modernValue(child) }
+        for pair in keyPairs {
+            guard let old = dict[pair.old] else { continue }
+            if dict[pair.new] == nil { dict[pair.new] = pair.isRef ? modernRef(old) : old }
+        }
+        // Items carry a generic `ref`; give it the canonical prefix too.
+        if let ref = dict["ref"] as? String { dict["ref"] = modernHandle(ref) }
+        return dict
+    }
+}
+
 /// Returns true when a `CLIError` represents "c11 app isn't reachable on its
 /// control socket" — used by advisory pathways (like the claude-hook dispatch)
 /// that should no-op rather than surface an error when nothing is listening.
@@ -1242,6 +1336,15 @@ final class SocketClient {
     }
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        try sendV2(method: method, params: params, deadline: deadline, isVersionSkewRetry: false)
+    }
+
+    private func sendV2(
+        method: String,
+        params: [String: Any],
+        deadline: SocketDeadline,
+        isVersionSkewRetry: Bool
+    ) throws -> [String: Any] {
         let effectiveTimeout: TimeInterval?
         switch deadline {
         case .default: effectiveTimeout = Self.configuredDefaultDeadlineSeconds
@@ -1314,7 +1417,10 @@ final class SocketClient {
         }
 
         if let ok = response["ok"] as? Bool, ok {
-            return (response["result"] as? [String: Any]) ?? [:]
+            // C11-248: version-skew fallback, remove after one release. An older app answers
+            // unchanged-name methods (system.tree, workspace.*) with legacy keys only; fill the
+            // canonical ones. A no-op against a current app (it only adds missing keys).
+            return CLIVersionSkew.modernResult((response["result"] as? [String: Any]) ?? [:])
         }
 
         if let error = response["error"] as? [String: Any] {
@@ -1328,6 +1434,22 @@ final class SocketClient {
                 traceStatus = "timeout"
                 let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
                 throw CLIError(message: timeoutMessage(method: method, params: params, elapsedMs: elapsedMs))
+            }
+            // C11-248: version-skew fallback, remove after one release.
+            // An app that predates the tab/area vocabulary answers method_not_found; retry
+            // once under the legacy method and param names, then give the result the new keys.
+            // An unchanged-name method on such an app rejects the canonical param keys instead
+            // (invalid_params / missing_ref), so those retry with legacy params under the same method.
+            if !isVersionSkewRetry,
+               let retry = CLIVersionSkew.retry(method: method, params: params, errorCode: code) {
+                traceStatus = "skew-retry"
+                let legacyResult = try sendV2(
+                    method: retry.method,
+                    params: retry.params,
+                    deadline: deadline,
+                    isVersionSkewRetry: true
+                )
+                return CLIVersionSkew.modernResult(legacyResult)
             }
             traceStatus = "error"
             // Structured `data` is otherwise dropped on the floor, so surface
@@ -1624,7 +1746,7 @@ struct CMUXCLI {
         }
 
         let command = Self.canonicalCommandName(args[index])
-        let commandArgs = Self.canonicalizeFlags(Array(args[(index + 1)...]), command: command)
+        let commandArgs = Array(args[(index + 1)...])
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -2100,7 +2222,7 @@ struct CMUXCLI {
             if let commandText = commandOpt, !wsId.isEmpty {
                 let text = unescapeSendText(commandText + "\\n")
                 let sendParams: [String: Any] = ["text": text, "workspace_id": wsId]
-                _ = try client.sendV2(method: "surface.send_text", params: sendParams)
+                _ = try client.sendV2(method: "tab.send_text", params: sendParams)
             }
 
         case "new-split":
@@ -2135,7 +2257,7 @@ struct CMUXCLI {
             if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
-            let payload = try client.sendV2(method: "surface.split", params: params)
+            let payload = try client.sendV2(method: "tab.split", params: params)
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
@@ -2144,7 +2266,7 @@ struct CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "pane.list", params: params)
+            let payload = try client.sendV2(method: "area.list", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -2171,7 +2293,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
             if let paneId { params["area_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.surfaces", params: params)
+            let payload = try client.sendV2(method: "area.tabs", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -2203,7 +2325,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
             if let paneId { params["area_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.focus", params: params)
+            let payload = try client.sendV2(method: "area.focus", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area", "workspace"]))
 
         case "new-area":
@@ -2233,7 +2355,7 @@ struct CMUXCLI {
             if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
-            let payload = try client.sendV2(method: "pane.create", params: params)
+            let payload = try client.sendV2(method: "area.create", params: params)
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
@@ -2407,7 +2529,7 @@ struct CMUXCLI {
                 var index = 0
                 while index < commandArgs.count {
                     let value = commandArgs[index]
-                    if ["--surface", "--workspace", "--window", "--by"].contains(value) {
+                    if ["--surface", "--tab", "--panel", "--workspace", "--window", "--by"].contains(value) {
                         index += 2
                     } else if value == "--json" {
                         index += 1
@@ -2479,7 +2601,7 @@ struct CMUXCLI {
                 params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
             }
             if noFocus { params["focus"] = false }
-            let payload = try client.sendV2(method: "surface.create", params: params)
+            let payload = try client.sendV2(method: "tab.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "close-tab":
@@ -2491,7 +2613,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.close", params: params)
+            let payload = try client.sendV2(method: "tab.close", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "area-confirm":
@@ -2530,7 +2652,7 @@ struct CMUXCLI {
             if let cancelLabel = optionValue(commandArgs, name: "--cancel-label") {
                 params["cancel_label"] = cancelLabel
             }
-            let payload = try client.sendV2(method: "pane.confirm", params: params, deadline: .none)
+            let payload = try client.sendV2(method: "area.confirm", params: params, deadline: .none)
             // Exit code maps to outcome: 0=ok, 2=cancel, 3=dismissed, 1=error.
             // Note: socket reports timeout as "dismissed" (exit 3); the user
             // cannot distinguish a timeout from a panel-teardown from the CLI.
@@ -2571,7 +2693,7 @@ struct CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "surface.health", params: params)
+            let payload = try client.sendV2(method: "tab.health", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -2622,7 +2744,7 @@ struct CMUXCLI {
             if let sfId { params["tab_id"] = sfId }
             if let colorArg { params["color"] = colorArg }
             if persistent { params["persistent"] = true }
-            let payload = try client.sendV2(method: "surface.trigger_flash", params: params)
+            let payload = try client.sendV2(method: "tab.trigger_flash", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "cancel-flash":
@@ -2634,7 +2756,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.cancel_flash", params: params)
+            let payload = try client.sendV2(method: "tab.cancel_flash", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "list-tabs":
@@ -2642,7 +2764,7 @@ struct CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "surface.list", params: params)
+            let payload = try client.sendV2(method: "tab.list", params: params)
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -2673,7 +2795,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.focus", params: params)
+            let payload = try client.sendV2(method: "tab.focus", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "close-workspace":
@@ -2794,7 +2916,7 @@ struct CMUXCLI {
                 params["scrollback"] = true
             }
 
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             if jsonOutput {
                 print(jsonString(payload))
             } else {
@@ -2825,7 +2947,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
                 jsonOutput: jsonOutput,
@@ -2853,7 +2975,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_key", params: params)
+            let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "send-tab":
@@ -2873,7 +2995,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(
                 payload,
                 jsonOutput: jsonOutput,
@@ -2897,7 +3019,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_key", params: params)
+            let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "notify":
@@ -2918,7 +3040,7 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["tab_id"] = sfId }
 
-            let method = sfId != nil ? "notification.create_for_surface" : "notification.create"
+            let method = sfId != nil ? "notification.create_for_tab" : "notification.create"
             let payload = try client.sendV2(method: method, params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
@@ -5051,7 +5173,7 @@ struct CMUXCLI {
         if let workspaceHandle {
             params["workspace_id"] = workspaceHandle
         }
-        let listed = try client.sendV2(method: "pane.list", params: params)
+        let listed = try client.sendV2(method: "area.list", params: params)
         let items = listed["areas"] as? [[String: Any]] ?? []
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
@@ -5118,7 +5240,7 @@ struct CMUXCLI {
         if let workspaceHandle {
             params["workspace_id"] = workspaceHandle
         }
-        let listed = try client.sendV2(method: "surface.list", params: params)
+        let listed = try client.sendV2(method: "tab.list", params: params)
         let items = listed["tabs"] as? [[String: Any]] ?? []
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
@@ -5443,7 +5565,7 @@ struct CMUXCLI {
             params["focus"] = focus
         }
 
-        let payload = try client.sendV2(method: "surface.move", params: params)
+        let payload = try client.sendV2(method: "tab.move", params: params)
         let summary = "OK tab=\(formatHandle(payload, kind: "tab", idFormat: idFormat) ?? "unknown") area=\(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown") window=\(formatHandle(payload, kind: "window", idFormat: idFormat) ?? "unknown")"
         printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
     }
@@ -5479,7 +5601,7 @@ struct CMUXCLI {
             params["index"] = index
         }
 
-        let payload = try client.sendV2(method: "surface.reorder", params: params)
+        let payload = try client.sendV2(method: "tab.reorder", params: params)
         let summary = "OK tab=\(formatHandle(payload, kind: "tab", idFormat: idFormat) ?? "unknown") area=\(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown") workspace=\(formatHandle(payload, kind: "workspace", idFormat: idFormat) ?? "unknown")"
         printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
     }
@@ -5823,7 +5945,7 @@ struct CMUXCLI {
             params["auto_expand"] = false
         }
 
-        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        let payload = try client.sendV2(method: "tab.set_metadata", params: params)
 
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -5862,7 +5984,7 @@ struct CMUXCLI {
             "tab_id": surfaceId,
             "workspace_id": workspaceId
         ]
-        let payload = try client.sendV2(method: "surface.get_titlebar_state", params: params)
+        let payload = try client.sendV2(method: "tab.get_titlebar_state", params: params)
 
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -6581,7 +6703,7 @@ struct CMUXCLI {
         guard let surfaceRaw,
               let surfaceId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: workspaceId),
               !surfaceId.isEmpty else {
-            throw CLIError(message: "ssh-session-end requires --surface or CMUX_SURFACE_ID")
+            throw CLIError(message: "ssh-session-end requires --tab or C11_TAB_ID")
         }
         _ = try client.sendV2(method: "workspace.remote.terminal_session_end", params: [
             "workspace_id": workspaceId,
@@ -8306,7 +8428,7 @@ struct CMUXCLI {
             return raw
         }
         if let raw, isHandleRef(raw) {
-            let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
+            let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
             let items = listed["tabs"] as? [[String: Any]] ?? []
             for item in items where (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw) {
                 if let id = item["id"] as? String { return id }
@@ -8314,7 +8436,7 @@ struct CMUXCLI {
             throw CLIError(message: "Tab ref not found: \(raw)")
         }
 
-        let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
+        let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
         let items = listed["tabs"] as? [[String: Any]] ?? []
 
         if let raw, let index = Int(raw) {
@@ -11200,7 +11322,7 @@ struct CMUXCLI {
 
         var params: [String: Any] = ["hex": hex, "tab_id": surfaceId]
         if let workspaceHandle { params["workspace_id"] = workspaceHandle }
-        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        let response = try client.sendV2(method: "tab.set_custom_color", params: params)
         if jsonOutput {
             print(jsonString(response))
         } else {
@@ -11226,7 +11348,7 @@ struct CMUXCLI {
 
         var params: [String: Any] = ["clear": true, "tab_id": surfaceId]
         if let workspaceHandle { params["workspace_id"] = workspaceHandle }
-        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        let response = try client.sendV2(method: "tab.set_custom_color", params: params)
         if jsonOutput {
             print(jsonString(response))
         } else {
@@ -11246,7 +11368,7 @@ struct CMUXCLI {
             client: client
         )
 
-        let response = try client.sendV2(method: "surface.list", params: ["workspace_id": resolvedWorkspaceId])
+        let response = try client.sendV2(method: "tab.list", params: ["workspace_id": resolvedWorkspaceId])
         let items = (response["tabs"] as? [[String: Any]]) ?? []
         guard let match = items.first(where: { ($0["id"] as? String) == surfaceId }) else {
             // Match the v2 server's not_found semantics. resolveSurfaceId short-circuits
@@ -11633,44 +11755,21 @@ struct CMUXCLI {
         legacyCommandAliases[command] ?? command
     }
 
-    /// New flag spelling -> the spelling the command bodies read. Applied once
-    /// at entry (before `--`), so every command accepts `--tab` / `--area`
-    /// (canonical) beside `--surface` / `--panel` / `--pane` (hidden aliases).
-    /// tmux-compat flags (`--target-pane`, `%N`) are not touched.
-    private static let flagAliasesToInternal: [String: String] = [
-        "--tab": "--surface",
-        "--area": "--pane",
-        "--before-tab": "--before-surface",
-        "--after-tab": "--after-surface",
-        "--in-tab": "--in-surface",
+    /// Flag spellings that mean the same thing. The option helpers (`parseOption`,
+    /// `parseRepeatedOption`, `optionValue`, `hasFlag`) match any spelling in a group, so
+    /// `--tab` / `--area` (canonical) work beside `--surface` / `--panel` / `--pane` (hidden
+    /// aliases) exactly where a command parses a flag, and free-text arguments are never rewritten.
+    /// tmux-compat flags (`--target-pane`, `%N`) are not aliased.
+    private static let flagAliasGroups: [[String]] = [
+        ["--surface", "--tab", "--panel"],
+        ["--pane", "--area"],
+        ["--before-surface", "--before-tab"],
+        ["--after-surface", "--after-tab"],
+        ["--in-surface", "--in-tab"],
     ]
 
-    static func canonicalizeFlags(_ args: [String], command: String) -> [String] {
-        // Pass-through commands forward their arguments to another program.
-        if command == "claude-teams" || command == "__tmux-compat" { return args }
-        // These commands read their target from `--panel`; `--tab` / `--surface` land there too.
-        let readsPanelFlag = ["focus-tab", "send-tab", "send-key-tab", "area-confirm"].contains(command)
-        func internalName(_ name: String) -> String? {
-            if readsPanelFlag, name == "--tab" || name == "--surface" { return "--panel" }
-            return flagAliasesToInternal[name]
-        }
-        var out: [String] = []
-        out.reserveCapacity(args.count)
-        var pastTerminator = false
-        for arg in args {
-            if pastTerminator { out.append(arg); continue }
-            if arg == "--" { pastTerminator = true; out.append(arg); continue }
-            if let mapped = internalName(arg) { out.append(mapped); continue }
-            if let eq = arg.firstIndex(of: "="), arg.hasPrefix("--") {
-                let name = String(arg[..<eq])
-                if let mapped = internalName(name) {
-                    out.append(mapped + arg[eq...])
-                    continue
-                }
-            }
-            out.append(arg)
-        }
-        return out
+    static func flagSpellings(_ name: String) -> [String] {
+        flagAliasGroups.first(where: { $0.contains(name) }) ?? [name]
     }
 
     /// `surface:N` -> `tab:N`, `pane:N` -> `area:N`; anything else unchanged.
@@ -11685,6 +11784,7 @@ struct CMUXCLI {
     }
 
     private func parseOption(_ args: [String], name: String) -> (String?, [String]) {
+        let spellings = Self.flagSpellings(name)
         var remaining: [String] = []
         var value: String?
         var skipNext = false
@@ -11699,7 +11799,7 @@ struct CMUXCLI {
                 remaining.append(arg)
                 continue
             }
-            if !pastTerminator, arg == name, idx + 1 < args.count {
+            if !pastTerminator, spellings.contains(arg), idx + 1 < args.count {
                 value = args[idx + 1]
                 skipNext = true
                 continue
@@ -11710,6 +11810,7 @@ struct CMUXCLI {
     }
 
     private func parseRepeatedOption(_ args: [String], name: String) -> ([String], [String]) {
+        let spellings = Self.flagSpellings(name)
         var remaining: [String] = []
         var values: [String] = []
         var skipNext = false
@@ -11724,7 +11825,7 @@ struct CMUXCLI {
                 remaining.append(arg)
                 continue
             }
-            if !pastTerminator, arg == name, idx + 1 < args.count {
+            if !pastTerminator, spellings.contains(arg), idx + 1 < args.count {
                 values.append(args[idx + 1])
                 skipNext = true
                 continue
@@ -11735,12 +11836,14 @@ struct CMUXCLI {
     }
 
     private func optionValue(_ args: [String], name: String) -> String? {
-        guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
+        let spellings = Self.flagSpellings(name)
+        guard let index = args.firstIndex(where: { spellings.contains($0) }), index + 1 < args.count else { return nil }
         return args[index + 1]
     }
 
     private func hasFlag(_ args: [String], name: String) -> Bool {
-        args.contains(name)
+        let spellings = Self.flagSpellings(name)
+        return args.contains(where: { spellings.contains($0) })
     }
 
     /// Extract a boolean flag, returning (present, remaining). Respects `--` terminator
@@ -12000,7 +12103,7 @@ struct CMUXCLI {
                 }
 
                 for wsId in workspaceIds {
-                    let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": wsId])
+                    let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": wsId])
                     let items = listed["tabs"] as? [[String: Any]] ?? []
                     if let hit = items.first(where: matches), let id = hit["id"] as? String {
                         inSurfaceUUID = id
@@ -12090,7 +12193,7 @@ struct CMUXCLI {
         if let workspaceId { params["workspace_id"] = workspaceId }
         if let surfaceId { params["tab_id"] = surfaceId }
 
-        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        let payload = try client.sendV2(method: "tab.set_metadata", params: params)
         printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }
 
@@ -12918,7 +13021,7 @@ struct CMUXCLI {
         print("OK state save")
         print("  snapshot: \(path)")
         if let out = response["out_path"] as? String { print("  copy: \(out)") }
-        print("  windows=\(windows) workspaces=\(workspaces) terminal_panels=\(panels) refs=\(refs)")
+        print("  windows=\(windows) workspaces=\(workspaces) terminal_tabs=\(panels) refs=\(refs)")
     }
 
     /// Default canonical snapshot path for the production bundle. `state
@@ -13503,13 +13606,18 @@ struct CMUXCLI {
             // C11-171: capture the surface/panel ref (do not forward it raw); it
             // is resolved to a uuid and re-emitted once the workspace is known so
             // the app can mirror canonical status/progress onto the right surface.
-            if arg == "--surface" || arg == "--panel", index + 1 < commandArgs.count {
+            if arg == "--surface" || arg == "--tab" || arg == "--panel", index + 1 < commandArgs.count {
                 pendingSurfaceRaw = commandArgs[index + 1]
                 index += 2
                 continue
             }
             if arg.hasPrefix("--surface=") {
                 pendingSurfaceRaw = String(arg.dropFirst("--surface=".count))
+                index += 1
+                continue
+            }
+            if arg.hasPrefix("--tab=") {
+                pendingSurfaceRaw = String(arg.dropFirst("--tab=".count))
                 index += 1
                 continue
             }
@@ -13658,7 +13766,7 @@ struct CMUXCLI {
                         guard let sRef = surf["ref"] as? String else { continue }
                         var params: [String: Any] = ["tab_id": sRef]
                         if let wsRef { params["workspace_id"] = wsRef }
-                        if let resp = try? client.sendV2(method: "surface.get_metadata", params: params),
+                        if let resp = try? client.sendV2(method: "tab.get_metadata", params: params),
                            let md = resp["metadata"] as? [String: Any] {
                             out[sRef] = md
                         }
@@ -13691,7 +13799,7 @@ struct CMUXCLI {
         out += "_Generated \(generatedAt) · "
         out += "\(windows.count) \(plural(windows.count, "window")) · "
         out += "\(wsCount) \(plural(wsCount, "workspace")) · "
-        out += "\(surfCount) \(plural(surfCount, "surface"))_\n"
+        out += "\(surfCount) \(plural(surfCount, "tab"))_\n"
 
         var summaryRows: [String] = []
         for (wi, win) in windows.enumerated() {
@@ -13703,8 +13811,8 @@ struct CMUXCLI {
                 let panes = ws["areas"] as? [[String: Any]] ?? []
                 let sCount = panes.reduce(0) { $0 + (($1["tabs"] as? [[String: Any]])?.count ?? 0) }
                 out += "\n### \(wsTitle) (\(wsRef)) — "
-                out += "\(panes.count) \(plural(panes.count, "pane")), "
-                out += "\(sCount) \(plural(sCount, "surface"))\n"
+                out += "\(panes.count) \(plural(panes.count, "area")), "
+                out += "\(sCount) \(plural(sCount, "tab"))\n"
                 summaryRows.append("| \(wi + 1) | \(mdCell(wsTitle)) | \(panes.count) | \(sCount) |")
                 for pane in panes {
                     let pRef = (pane["ref"] as? String) ?? "?"
@@ -14072,8 +14180,8 @@ struct CMUXCLI {
             return workspaceNode
         }
 
-        let panePayload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceHandle])
-        let surfacePayload = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceHandle])
+        let panePayload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceHandle])
+        let surfacePayload = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceHandle])
         let panes = panePayload["areas"] as? [[String: Any]] ?? []
         let surfaces = surfacePayload["tabs"] as? [[String: Any]] ?? []
         let browserURLsByHandle = fetchTreeBrowserURLs(
@@ -15007,7 +15115,7 @@ struct CMUXCLI {
             return handle
         }
 
-        let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
+        let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
         let panes = payload["areas"] as? [[String: Any]] ?? []
         for pane in panes {
             if (pane["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) || (pane["id"] as? String) == handle {
@@ -15037,7 +15145,7 @@ struct CMUXCLI {
             return handle
         }
 
-        let payload = try client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId])
+        let payload = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
         let surfaces = payload["tabs"] as? [[String: Any]] ?? []
         for surface in surfaces {
             if (surface["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) || (surface["id"] as? String) == handle {
@@ -15066,7 +15174,7 @@ struct CMUXCLI {
         let workspaces = try tmuxWorkspaceItems(client: client)
         for workspace in workspaces {
             guard let workspaceId = workspace["id"] as? String else { continue }
-            let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
+            let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
             let panes = payload["areas"] as? [[String: Any]] ?? []
             if panes.contains(where: { ($0["id"] as? String) == handle || ($0["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(handle) }) {
                 return workspaceId
@@ -15077,7 +15185,7 @@ struct CMUXCLI {
     }
 
     private func tmuxFocusedPaneId(workspaceId: String, client: SocketClient) throws -> String {
-        let payload = try client.sendV2(method: "surface.current", params: ["workspace_id": workspaceId])
+        let payload = try client.sendV2(method: "tab.current", params: ["workspace_id": workspaceId])
         if let paneId = payload["area_id"] as? String {
             return paneId
         }
@@ -15164,7 +15272,7 @@ struct CMUXCLI {
         client: SocketClient
     ) throws -> String {
         let payload = try client.sendV2(
-            method: "pane.surfaces",
+            method: "area.tabs",
             params: ["workspace_id": workspaceId, "area_id": paneId]
         )
         let surfaces = payload["tabs"] as? [[String: Any]] ?? []
@@ -15248,7 +15356,7 @@ struct CMUXCLI {
             }
         }
 
-        let currentPayload = try client.sendV2(method: "surface.current", params: ["workspace_id": canonicalWorkspaceId])
+        let currentPayload = try client.sendV2(method: "tab.current", params: ["workspace_id": canonicalWorkspaceId])
         let resolvedPaneId: String? = try {
             if let paneId {
                 return try tmuxCanonicalPaneId(paneId, workspaceId: canonicalWorkspaceId, client: client)
@@ -15278,7 +15386,7 @@ struct CMUXCLI {
         if let resolvedPaneId {
             context["area_id"] = "%\(resolvedPaneId)"
             context["pane_uuid"] = resolvedPaneId
-            let panePayload = try client.sendV2(method: "pane.list", params: ["workspace_id": canonicalWorkspaceId])
+            let panePayload = try client.sendV2(method: "area.list", params: ["workspace_id": canonicalWorkspaceId])
             let panes = panePayload["areas"] as? [[String: Any]] ?? []
             if let pane = panes.first(where: { ($0["id"] as? String) == resolvedPaneId }),
                let index = intFromAny(pane["index"]) {
@@ -15288,7 +15396,7 @@ struct CMUXCLI {
 
         if let resolvedSurfaceId {
             context["tab_id"] = resolvedSurfaceId
-            let surfacePayload = try client.sendV2(method: "surface.list", params: ["workspace_id": canonicalWorkspaceId])
+            let surfacePayload = try client.sendV2(method: "tab.list", params: ["workspace_id": canonicalWorkspaceId])
             let surfaces = surfacePayload["tabs"] as? [[String: Any]] ?? []
             if let surface = surfaces.first(where: { ($0["id"] as? String) == resolvedSurfaceId }) {
                 let title = ((surface["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -15664,7 +15772,7 @@ struct CMUXCLI {
             }
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
                 let surfaceId = try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": workspaceId,
                     "tab_id": surfaceId,
                     "text": text
@@ -15701,7 +15809,7 @@ struct CMUXCLI {
             }
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
                 let surfaceId = try resolveSurfaceId(nil, workspaceId: workspaceId, client: client)
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": workspaceId,
                     "tab_id": surfaceId,
                     "text": text
@@ -15725,7 +15833,7 @@ struct CMUXCLI {
             } else {
                 direction = parsed.hasFlag("-b") ? "up" : "down"
             }
-            let created = try client.sendV2(method: "surface.split", params: [
+            let created = try client.sendV2(method: "tab.split", params: [
                 "workspace_id": target.workspaceId,
                 "tab_id": target.surfaceId,
                 "direction": direction
@@ -15736,7 +15844,7 @@ struct CMUXCLI {
             let paneId = created["area_id"] as? String
             // Keep the leader pane focused while Claude starts teammates beside it.
             if let text = tmuxShellCommandText(commandTokens: parsed.positional, cwd: parsed.value("-c")) {
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": target.workspaceId,
                     "tab_id": surfaceId,
                     "text": text
@@ -15764,7 +15872,7 @@ struct CMUXCLI {
                 return
             }
             let target = try tmuxResolvePaneTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "pane.focus", params: [
+            _ = try client.sendV2(method: "area.focus", params: [
                 "workspace_id": target.workspaceId,
                 "area_id": target.paneId
             ])
@@ -15777,7 +15885,7 @@ struct CMUXCLI {
         case "kill-pane", "killp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "surface.close", params: [
+            _ = try client.sendV2(method: "tab.close", params: [
                 "workspace_id": target.workspaceId,
                 "tab_id": target.surfaceId
             ])
@@ -15787,7 +15895,7 @@ struct CMUXCLI {
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
             let text = tmuxSendKeysText(from: parsed.positional, literal: parsed.hasFlag("-l"))
             if !text.isEmpty {
-                _ = try client.sendV2(method: "surface.send_text", params: [
+                _ = try client.sendV2(method: "tab.send_text", params: [
                     "workspace_id": target.workspaceId,
                     "tab_id": target.surfaceId,
                     "text": text
@@ -15809,7 +15917,7 @@ struct CMUXCLI {
             if let start = parsed.value("-S"), let lines = Int(start), lines < 0 {
                 params["lines"] = abs(lines)
             }
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             let text = (payload["text"] as? String) ?? ""
             if parsed.hasFlag("-p") {
                 print(text)
@@ -15850,7 +15958,7 @@ struct CMUXCLI {
         case "list-panes", "lsp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-F", "-t"], boolFlags: [])
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
-            let payload = try client.sendV2(method: "pane.list", params: ["workspace_id": workspaceId])
+            let payload = try client.sendV2(method: "area.list", params: ["workspace_id": workspaceId])
             let panes = payload["areas"] as? [[String: Any]] ?? []
             for pane in panes {
                 guard let paneId = pane["id"] as? String else { continue }
@@ -15898,7 +16006,7 @@ struct CMUXCLI {
             let rawAmount = (parsed.value("-x") ?? parsed.value("-y") ?? "5")
                 .replacingOccurrences(of: "%", with: "")
             let amount = Int(rawAmount) ?? 5
-            _ = try client.sendV2(method: "pane.resize", params: [
+            _ = try client.sendV2(method: "area.resize", params: [
                 "workspace_id": target.workspaceId,
                 "area_id": target.paneId,
                 "direction": direction,
@@ -15918,7 +16026,7 @@ struct CMUXCLI {
         case "last-pane":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
-            _ = try client.sendV2(method: "pane.last", params: ["workspace_id": workspaceId])
+            _ = try client.sendV2(method: "area.last", params: ["workspace_id": workspaceId])
 
         case "show-buffer", "showb":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-b"], boolFlags: [])
@@ -16054,7 +16162,7 @@ struct CMUXCLI {
                 params["scrollback"] = true
             }
 
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             if jsonOutput {
                 print(jsonString(payload))
             } else {
@@ -16083,7 +16191,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let paneId { params["area_id"] = paneId }
-            let payload = try client.sendV2(method: "pane.resize", params: params)
+            let payload = try client.sendV2(method: "area.resize", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area"]))
 
         case "pipe-pane":
@@ -16104,7 +16212,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.read_text", params: params)
+            let payload = try client.sendV2(method: "tab.read_text", params: params)
             let text = (payload["text"] as? String) ?? ""
             let shell = try runShellCommand(commandText, stdinText: text)
             if shell.status != 0 {
@@ -16168,7 +16276,7 @@ struct CMUXCLI {
             let targetPane = try normalizePaneHandle(targetPaneRaw, client: client, workspaceHandle: wsId)
             if let sourcePane { params["area_id"] = sourcePane }
             if let targetPane { params["target_area_id"] = targetPane }
-            let payload = try client.sendV2(method: "pane.swap", params: params)
+            let payload = try client.sendV2(method: "area.swap", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "break-pane":
@@ -16182,7 +16290,7 @@ struct CMUXCLI {
             if let paneId { params["area_id"] = paneId }
             let surfaceId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let surfaceId { params["tab_id"] = surfaceId }
-            let payload = try client.sendV2(method: "pane.break", params: params)
+            let payload = try client.sendV2(method: "area.break", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "join-pane":
@@ -16201,7 +16309,7 @@ struct CMUXCLI {
             if let targetPaneId { params["target_area_id"] = targetPaneId }
             let surfaceId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let surfaceId { params["tab_id"] = surfaceId }
-            let payload = try client.sendV2(method: "pane.join", params: params)
+            let payload = try client.sendV2(method: "area.join", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "last-window":
@@ -16221,7 +16329,7 @@ struct CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "pane.last", params: params)
+            let payload = try client.sendV2(method: "area.last", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area"]))
 
         case "find-window":
@@ -16241,7 +16349,7 @@ struct CMUXCLI {
                 let titleMatch = query.isEmpty || title.localizedCaseInsensitiveContains(query)
                 var contentMatch = false
                 if includeContent && !query.isEmpty, let wsId = ws["id"] as? String {
-                    let textPayload = try? client.sendV2(method: "surface.read_text", params: ["workspace_id": wsId])
+                    let textPayload = try? client.sendV2(method: "tab.read_text", params: ["workspace_id": wsId])
                     let text = (textPayload?["text"] as? String) ?? ""
                     contentMatch = text.localizedCaseInsensitiveContains(query)
                 }
@@ -16275,7 +16383,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.clear_history", params: params)
+            let payload = try client.sendV2(method: "tab.clear_history", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "set-hook":
@@ -16357,7 +16465,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "respawn-pane":
@@ -16371,7 +16479,7 @@ struct CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let sfId { params["tab_id"] = sfId }
-            let payload = try client.sendV2(method: "surface.send_text", params: params)
+            let payload = try client.sendV2(method: "tab.send_text", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK")
 
         case "display-message":
@@ -17004,7 +17112,7 @@ struct CMUXCLI {
             return raw
         }
         if let raw, !raw.isEmpty, let candidate = try? resolveWorkspaceId(raw, client: client) {
-            let probe = try? client.sendV2(method: "surface.list", params: ["workspace_id": candidate])
+            let probe = try? client.sendV2(method: "tab.list", params: ["workspace_id": candidate])
             if probe != nil {
                 return candidate
             }
@@ -18504,7 +18612,7 @@ extension CMUXCLI {
         }
 
         let payload = try client.sendV2(
-            method: "surface.get_metadata",
+            method: "tab.get_metadata",
             params: [
                 "workspace_id": workspaceIdStr,
                 "tab_id": surfaceIdStr

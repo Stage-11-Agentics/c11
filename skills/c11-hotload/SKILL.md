@@ -25,6 +25,8 @@ Initializes submodules and builds GhosttyKit.
 
 A tagged build gets its own name, bundle ID, socket, and derived data path so it runs isolated alongside anything else.
 
+`reload.sh --tag` also repoints the machine-wide `c11` shims (`/tmp/c11-last-cli-path`) at the tagged build's CLI. When the tagged build speaks a different protocol than the running app, restore the path to the production CLI (`/Applications/c11.app/Contents/Resources/bin/c11`) so other agents keep working.
+
 ## Reload variants
 
 | Command | What it does |

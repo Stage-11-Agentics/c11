@@ -267,7 +267,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         })
 
         let response = controller.v2DispatchNotification(
-            "notification.create_for_surface",
+            "notification.create_for_tab",
             id: 1,
             params: [
                 "workspace_id": workspace.id.uuidString,
@@ -341,7 +341,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         })
 
         let response = controller.v2DispatchNotification(
-            "notification.create_for_surface",
+            "notification.create_for_tab",
             id: 2,
             params: [
                 "workspace_id": workspace.id.uuidString,
@@ -397,7 +397,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         let response = controller.v2DispatchNotification(
-            "notification.create_for_surface",
+            "notification.create_for_tab",
             id: 3,
             params: [
                 "workspace_id": workspace.id.uuidString,

@@ -160,11 +160,11 @@ def main() -> int:
                 if rb.get("in_window") is not True:
                     failures.append(f"Remaining browser not in window: {rb}")
 
-            selected_panels = after_layout.get("selectedPanels") or []
+            selected_panels = after_layout.get("selectedTabs") or []
             if len(selected_panels) != 1:
                 failures.append(f"Expected one selected panel after close, got {selected_panels}")
             else:
-                selected_id = str(selected_panels[0].get("panelId", "")).lower()
+                selected_id = str(selected_panels[0].get("tabId", "")).lower()
                 if selected_id != browser_id.lower():
                     failures.append(
                         f"Selected panel mismatch after close: expected browser {browser_id}, got {selected_id}"

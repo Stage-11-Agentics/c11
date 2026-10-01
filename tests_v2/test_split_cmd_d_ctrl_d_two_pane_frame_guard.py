@@ -44,7 +44,7 @@ def _pane_count(layout_payload: dict) -> int:
 
 
 def _largest_split_frame(layout_payload: dict) -> dict:
-    selected = layout_payload.get("selectedPanels") or []
+    selected = layout_payload.get("selectedTabs") or []
     best = None
     best_area = -1.0
     for row in selected:
@@ -154,9 +154,9 @@ def _assert_two_panes_left_right(layout_payload: dict, *, workspace_index: int, 
 
 def _selected_panel_by_pane(layout_payload: dict) -> dict[str, str]:
     out: dict[str, str] = {}
-    for row in layout_payload.get("selectedPanels") or []:
-        pane_id = str(row.get("paneId") or "")
-        panel_id = str(row.get("panelId") or "")
+    for row in layout_payload.get("selectedTabs") or []:
+        pane_id = str(row.get("areaId") or "")
+        panel_id = str(row.get("tabId") or "")
         if pane_id and panel_id:
             out[pane_id] = panel_id
     return out

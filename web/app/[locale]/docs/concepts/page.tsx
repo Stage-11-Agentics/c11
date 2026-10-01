@@ -22,9 +22,8 @@ export default function ConceptsPage() {
       <h2>{t("hierarchy")}</h2>
       <CodeBlock lang="text">{`Window
   └── Workspace (sidebar entry)
-        └── Pane (split region)
-              └── Surface (tab within pane)
-                    └── Panel (terminal or browser content)`}</CodeBlock>
+        └── Area (split region)
+              └── Tab (terminal, browser, or markdown)`}</CodeBlock>
 
       <h3>{t("windowTitle")}</h3>
       <p>
@@ -33,39 +32,6 @@ export default function ConceptsPage() {
 
       <h3>{t("workspaceTitle")}</h3>
       <p>{t("workspaceDesc")}</p>
-      <p>{t("workspaceNote")}</p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>{t("contextHeader")}</th>
-            <th>{t("termUsedHeader")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{t("sidebarUI")}</td>
-            <td>{t("tab")}</td>
-          </tr>
-          <tr>
-            <td>{t("keyboardShortcuts")}</td>
-            <td>{t("workspaceOrTab")}</td>
-          </tr>
-          <tr>
-            <td>{t("socketAPI")}</td>
-            <td>
-              <code>workspace</code>
-            </td>
-          </tr>
-          <tr>
-            <td>{t("environmentVariable")}</td>
-            <td>
-              <code>C11_WORKSPACE_ID</code>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
       <p>
         <strong>
           {t("workspaceShortcuts", {
@@ -77,38 +43,26 @@ export default function ConceptsPage() {
         </strong>
       </p>
 
-      <h3>{t("paneTitle")}</h3>
+      <h3>{t("areaTitle")}</h3>
       <p>
-        {t("paneDesc", {
+        {t("areaDesc", {
           right: "⌘D",
           down: "⌘⇧D",
           nav: "⌥⌘",
         })}
       </p>
-      <p>{t("paneNote")}</p>
+      <p>{t("areaNote")}</p>
 
-      <h3>{t("surfaceTitle")}</h3>
+      <h3>{t("tabTitle")}</h3>
       <p>
-        {t("surfaceDesc", {
+        {t("tabDesc", {
           new: "⌘T",
           prev: "⌘[",
           next: "⌘]",
           jump: "⌃1–⌃9",
         })}
       </p>
-      <p>{t("surfaceNote")}</p>
-
-      <h3>{t("panelTitle")}</h3>
-      <p>{t("panelDesc")}</p>
-      <ul>
-        <li>
-          <strong>{t("panelTerminal")}</strong>
-        </li>
-        <li>
-          <strong>{t("panelBrowser")}</strong>
-        </li>
-      </ul>
-      <p>{t("panelNote")}</p>
+      <p>{t("tabNote")}</p>
 
       <h2>{t("visualExample")}</h2>
       <CodeBlock variant="ascii">{`┌──────────────────────────────────────────────────────┐
@@ -116,8 +70,8 @@ export default function ConceptsPage() {
 │ │ Sidebar  │ │ Workspace "dev"                     │ │
 │ │          │ │                                     │ │
 │ │          │ │ ┌───────────────┬─────────────────┐ │ │
-│ │ > dev    │ │ │ Pane 1        │ Pane 2          │ │ │
-│ │   server │ │ │ [S1] [S2]     │ [S1]            │ │ │
+│ │ > dev    │ │ │ Area 1        │ Area 2          │ │ │
+│ │   server │ │ │ [T1] [T2]     │ [T1]            │ │ │
 │ │   logs   │ │ │               │                 │ │ │
 │ │          │ │ │  Terminal     │  Terminal       │ │ │
 │ │          │ │ │               │                 │ │ │
@@ -130,7 +84,6 @@ export default function ConceptsPage() {
         <li>{t("visualItem2")}</li>
         <li>{t("visualItem3")}</li>
         <li>{t("visualItem4")}</li>
-        <li>{t("visualItem5")}</li>
       </ul>
 
       <h2>{t("summary")}</h2>
@@ -163,28 +116,22 @@ export default function ConceptsPage() {
             </td>
           </tr>
           <tr>
-            <td>{t("paneTitle")}</td>
+            <td>{t("areaTitle")}</td>
             <td>{t("splitRegion")}</td>
             <td>
               <code>⌘D</code> / <code>⌘⇧D</code>
             </td>
-            <td>{t("paneIdSocket")}</td>
+            <td>{t("areaIdSocket")}</td>
           </tr>
           <tr>
-            <td>{t("surfaceTitle")}</td>
-            <td>{t("tabWithinPane")}</td>
+            <td>{t("tabTitle")}</td>
+            <td>{t("tabWithinArea")}</td>
             <td>
               <code>⌘T</code>
             </td>
             <td>
-              <code>C11_SURFACE_ID</code>
+              <code>C11_TAB_ID</code>
             </td>
-          </tr>
-          <tr>
-            <td>{t("panelTitle")}</td>
-            <td>{t("terminalOrBrowser")}</td>
-            <td>{t("automatic")}</td>
-            <td>{t("panelIdInternal")}</td>
           </tr>
         </tbody>
       </table>

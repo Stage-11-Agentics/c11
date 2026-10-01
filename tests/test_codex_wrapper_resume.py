@@ -104,7 +104,11 @@ exit 0
         return self.events.read_text().splitlines() if self.events.exists() else []
 
     def argv_lines(self) -> list[str]:
-        return self.argv.read_text().splitlines() if self.argv.exists() else []
+        """Argv the real Codex saw, minus the wrapper's leading notify override."""
+        lines = self.argv.read_text().splitlines() if self.argv.exists() else []
+        if len(lines) >= 2 and lines[0] == "-c" and lines[1].startswith("notify="):
+            return lines[2:]
+        return lines
 
     def boundary_file(self) -> Path:
         return Path(
@@ -151,6 +155,36 @@ def main() -> int:
                 )
         finally:
             fixture.close()
+
+        # c11's own resume rail puts the auto-approve flag before the id
+        # (`codex resume --yolo <uuid>`, CodexStrategy.resume). The intent must
+        # survive it, or every c11-driven resume invalidates the exact ref and
+        # the next restart skips the tab.
+        resume_id = "01a0ef16-0c34-7200-9fa9-e8663a2fdd1a"
+        other_id = "54b30d2f-2371-4dc0-9294-35dc75e55de3"
+        intent_cases = [
+            (["resume", "--yolo", resume_id], resume_id),
+            (["resume", "--yolo", "-m", "gpt-6", resume_id, "--search"], resume_id),
+            (["resume", "--yolo", "--last"], ""),
+            (["resume", "--last", resume_id], ""),
+            (["resume", resume_id, other_id], ""),
+            (["--search", resume_id], ""),
+        ]
+        for index, (argv, expected) in enumerate(intent_cases):
+            fixture = Fixture(tmp / f"intent-{index}")
+            try:
+                proc = fixture.run(argv)
+                expect(proc.returncode == 0 and fixture.argv_lines() == argv, f"{argv}: launch failed or argv changed: {proc.stderr}", failures)
+                claim_line = next((line for line in fixture.event_lines() if line.startswith("claim-start")), "")
+                if expected:
+                    expect(f"--expected-resume-id {expected}" in claim_line, f"{argv}: resume intent not forwarded: {claim_line}", failures)
+                else:
+                    expect("--expected-resume-id" not in claim_line, f"{argv}: forged resume intent: {claim_line}", failures)
+                marker = fixture.boundary_file()
+                marker_lines = marker.read_text().splitlines() if marker.exists() else []
+                expect(len(marker_lines) >= 2 and marker_lines[1] == expected, f"{argv}: marker intent {marker_lines} != {expected!r}", failures)
+            finally:
+                fixture.close()
 
         fixture = Fixture(tmp / "failure")
         try:

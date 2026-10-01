@@ -24,20 +24,20 @@ def surface_ids_from_layout(layout: dict):
     Bonsplit's pane frames use a top-left origin (flipped) coordinate system,
     so smaller y = higher on screen = top pane.
     """
-    panels = layout.get("selectedPanels", [])
+    panels = layout.get("selectedTabs", [])
     if len(panels) < 2:
         return None, None
 
     def y_origin(p):
-        frame = p.get("paneFrame")
+        frame = p.get("areaFrame")
         if frame is None:
             return 0
         return frame.get("y", 0)
 
     # Sort ascending by y: smallest y = top pane visually
     sorted_panels = sorted(panels, key=y_origin)
-    top_id = sorted_panels[0].get("panelId")
-    bottom_id = sorted_panels[1].get("panelId")
+    top_id = sorted_panels[0].get("tabId")
+    bottom_id = sorted_panels[1].get("tabId")
     return top_id, bottom_id
 
 
@@ -96,15 +96,15 @@ def main() -> int:
         # Verify the mapping is not inverted: the top hit should correspond to
         # the top pane and the bottom hit to the bottom pane.
         # Cross-check via layout_debug pane frames (flipped coords: smaller y = top).
-        panels = layout.get("selectedPanels", [])
+        panels = layout.get("selectedTabs", [])
         panel_to_y = {}
         for p in panels:
-            pid = p.get("panelId")
-            frame = p.get("paneFrame")
+            pid = p.get("tabId")
+            frame = p.get("areaFrame")
             if pid and frame:
                 panel_to_y[pid] = frame.get("y", 0)
 
-        # drop_hit_test returns uppercase UUIDs; panelId may differ in case.
+        # drop_hit_test returns uppercase UUIDs; tabId may differ in case.
         def normalise(uuid_str):
             return uuid_str.upper() if uuid_str else ""
 

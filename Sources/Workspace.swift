@@ -11558,6 +11558,7 @@ extension Workspace: BonsplitDelegate {
     /// user's decision. Returns `true` only on explicit accept — .cancelled and
     /// .dismissed both map to `false` so callers don't fire close actions on a
     /// panel whose state may have drifted (§2 acceptance-time revalidation).
+    /// It closes one tab, so the card starts on Close.
     @MainActor
     func presentConfirmClose(
         panelId: UUID,
@@ -11573,6 +11574,7 @@ extension Workspace: BonsplitDelegate {
                 confirmLabel: String(localized: "dialog.pane.confirm.close", defaultValue: "Close"),
                 cancelLabel: String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel"),
                 role: .destructive,
+                defaultSelection: .confirm,
                 source: source,
                 completion: { result in
                     cont.resume(returning: result == .confirmed)
@@ -11594,11 +11596,13 @@ extension Workspace: BonsplitDelegate {
     /// The overlay is anchored on this workspace's content area (sidebar
     /// stays visible). At most one workspace-close interaction can be active
     /// per workspace; re-presenting while one is live dismisses the existing
-    /// one with `.dismissed`.
+    /// one with `.dismissed`. The card starts on Cancel unless
+    /// `defaultsToClose`, which callers pass when the close takes one tab.
     @MainActor
     func presentConfirmCloseWorkspace(
         title: String,
         message: String,
+        defaultsToClose: Bool = false,
         source: InteractionSource,
         dedupeToken: String? = nil
     ) async -> Bool {
@@ -11616,6 +11620,7 @@ extension Workspace: BonsplitDelegate {
                 ),
                 role: .destructive,
                 style: .standard,
+                defaultSelection: defaultsToClose ? .confirm : nil,
                 source: source,
                 completion: { result in
                     cont.resume(returning: result == .confirmed)
@@ -13232,6 +13237,7 @@ extension Workspace: BonsplitDelegate {
                     cancelLabel: cancelLabel,
                     role: .destructive,
                     style: .criticalDestructive,
+                    defaultSelection: bonsplitTabs.count == 1 ? .confirm : nil,
                     source: .local,
                     completion: { result in
                         cont.resume(returning: result == .confirmed)

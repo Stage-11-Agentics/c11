@@ -57,8 +57,8 @@ def main() -> int:
 
             layout = client.layout_debug()
             top_panel, bottom_panel = pick_top_bottom_terminal_panels(layout)
-            top_id = top_panel["panelId"]
-            bottom_id = bottom_panel["panelId"]
+            top_id = top_panel["tabId"]
+            bottom_id = bottom_panel["tabId"]
 
             client.focus_surface_by_panel(top_id)
             time.sleep(0.2)

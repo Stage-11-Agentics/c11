@@ -65,9 +65,9 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugBonsplitUnderflowCount())
         case "debug.bonsplit_underflow.reset":
             return v2Result(id: id, self.v2DebugResetBonsplitUnderflowCount())
-        case "debug.empty_panel.count":
+        case "debug.empty_area.count":
             return v2Result(id: id, self.v2DebugEmptyPanelCount())
-        case "debug.empty_panel.reset":
+        case "debug.empty_area.reset":
             return v2Result(id: id, self.v2DebugResetEmptyPanelCount())
         case "debug.notification.focus":
             return v2Result(id: id, self.v2DebugFocusNotification(params: params))
@@ -75,9 +75,9 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugFlashCount(params: params))
         case "debug.flash.reset":
             return v2Result(id: id, self.v2DebugResetFlashCounts())
-        case "debug.panel_snapshot":
+        case "debug.tab_snapshot":
             return v2Result(id: id, self.v2DebugPanelSnapshot(params: params))
-        case "debug.panel_snapshot.reset":
+        case "debug.tab_snapshot.reset":
             return v2Result(id: id, self.v2DebugPanelSnapshotReset(params: params))
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))

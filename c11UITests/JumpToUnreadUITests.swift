@@ -19,7 +19,7 @@ final class JumpToUnreadUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(
-            waitForJumpUnreadData(keys: ["expectedTabId", "expectedSurfaceId"], timeout: 6.0),
+            waitForJumpUnreadData(keys: ["expectedWorkspaceId", "expectedTabId"], timeout: 6.0),
             "Expected test setup data to be written"
         )
 
@@ -28,15 +28,15 @@ final class JumpToUnreadUITests: XCTestCase {
             return
         }
 
-        let expectedTabId = setupData["expectedTabId"]
-        let expectedSurfaceId = setupData["expectedSurfaceId"]
+        let expectedTabId = setupData["expectedWorkspaceId"]
+        let expectedSurfaceId = setupData["expectedTabId"]
         XCTAssertNotNil(expectedTabId)
         XCTAssertNotNil(expectedSurfaceId)
 
         app.typeKey("u", modifierFlags: [.command, .shift])
 
         XCTAssertTrue(
-            waitForJumpUnreadData(keys: ["focusedTabId", "focusedSurfaceId"], timeout: 6.0),
+            waitForJumpUnreadData(keys: ["focusedWorkspaceId", "focusedTabId"], timeout: 6.0),
             "Expected jump-to-unread focus to be recorded"
         )
 
@@ -45,8 +45,8 @@ final class JumpToUnreadUITests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(focusedData["focusedTabId"], expectedTabId)
-        XCTAssertEqual(focusedData["focusedSurfaceId"], expectedSurfaceId)
+        XCTAssertEqual(focusedData["focusedWorkspaceId"], expectedTabId)
+        XCTAssertEqual(focusedData["focusedTabId"], expectedSurfaceId)
     }
 
     private func waitForJumpUnreadData(keys: [String], timeout: TimeInterval) -> Bool {

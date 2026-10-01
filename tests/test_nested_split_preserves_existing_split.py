@@ -28,7 +28,7 @@ SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
 
 
 def _layout_obj(payload: dict) -> dict:
-    # layout_debug returns {"layout": {...}, "selectedPanels": [...], ...}
+    # layout_debug returns {"layout": {...}, "selectedTabs": [...], ...}
     # but allow passing the inner layout object directly.
     if isinstance(payload.get("layout"), dict):
         return payload["layout"]
@@ -43,8 +43,8 @@ def _sorted_panes_by_x(payload: dict) -> list[dict]:
 
 def _selected_panels_by_pane(payload: dict) -> dict[str, dict]:
     out: dict[str, dict] = {}
-    for row in payload.get("selectedPanels") or []:
-        pid = row.get("paneId")
+    for row in payload.get("selectedTabs") or []:
+        pid = row.get("areaId")
         if pid:
             out[str(pid)] = row
     return out
@@ -57,7 +57,7 @@ def _assert_stable_layout(payload: dict, *, expected_panes: int, min_wh: float =
 
     selected_by_pane = _selected_panels_by_pane(payload)
     if len(selected_by_pane) < expected_panes:
-        raise cmuxError(f"layout_debug missing selectedPanels (got {len(selected_by_pane)} for {expected_panes} panes)")
+        raise cmuxError(f"layout_debug missing selectedTabs (got {len(selected_by_pane)} for {expected_panes} panes)")
 
     for p in panes:
         pid = str(p.get("paneId"))
@@ -69,23 +69,23 @@ def _assert_stable_layout(payload: dict, *, expected_panes: int, min_wh: float =
 
         row = selected_by_pane.get(pid)
         if not row:
-            raise cmuxError(f"missing selectedPanels entry for paneId={pid}")
+            raise cmuxError(f"missing selectedTabs entry for paneId={pid}")
 
-        panel_id = row.get("panelId")
+        panel_id = row.get("tabId")
         if not panel_id:
-            raise cmuxError(f"missing panelId for paneId={pid}")
+            raise cmuxError(f"missing tabId for paneId={pid}")
 
         if row.get("inWindow") is not True:
-            raise cmuxError(f"panel not in window: paneId={pid} panelId={panel_id} inWindow={row.get('inWindow')}")
+            raise cmuxError(f"panel not in window: paneId={pid} tabId={panel_id} inWindow={row.get('inWindow')}")
 
         if row.get("hidden") is True:
-            raise cmuxError(f"panel hidden: paneId={pid} panelId={panel_id}")
+            raise cmuxError(f"panel hidden: paneId={pid} tabId={panel_id}")
 
         view_frame = row.get("viewFrame") or {}
         vw = float(view_frame.get("width", 0.0))
         vh = float(view_frame.get("height", 0.0))
         if vw < min_wh or vh < min_wh:
-            raise cmuxError(f"panel viewFrame collapsed: paneId={pid} panelId={panel_id} viewFrame={view_frame}")
+            raise cmuxError(f"panel viewFrame collapsed: paneId={pid} tabId={panel_id} viewFrame={view_frame}")
 
 
 def _take_screenshot(c: cmux, label: str) -> str:

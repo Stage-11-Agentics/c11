@@ -99,7 +99,7 @@ export default async function LocaleLayout({
     downloadUrl:
       "https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg",
     description:
-      "Native macOS terminal built on Ghostty. Works with Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, and any CLI tool. Vertical tabs, notification rings, split panes, and a socket API.",
+      "Native macOS terminal built on Ghostty. Works with Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, and any CLI tool. A workspace sidebar, notification rings, split areas, and a socket API.",
     keywords:
       "terminal, macOS, Claude Code, Codex, OpenCode, Gemini CLI, Kiro, Aider, AI coding agents, Ghostty",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

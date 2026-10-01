@@ -6064,13 +6064,14 @@ class TerminalController {
         let viewFrame: PixelRect?
         let splitViews: [LayoutDebugSplitView]?
 
-        // C11-248: persisted keys keep their on-disk names.
+        // C11-248: the debug payload speaks workspace > area > tab. Only in-repo test
+        // harnesses read it, so there are no legacy twins.
         enum CodingKeys: String, CodingKey {
-            case paneId
-            case paneFrame
-            case selectedBonsplitTabId = "selectedTabId"
-            case panelId
-            case panelType
+            case paneId = "areaId"
+            case paneFrame = "areaFrame"
+            case selectedBonsplitTabId
+            case panelId = "tabId"
+            case panelType = "tabType"
             case inWindow
             case hidden
             case viewFrame
@@ -6092,6 +6093,13 @@ class TerminalController {
         let selectedPanels: [LayoutDebugSelectedTab]
         let mainWindowNumber: Int?
         let keyWindowNumber: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case layout
+            case selectedPanels = "selectedTabs"
+            case mainWindowNumber
+            case keyWindowNumber
+        }
     }
 
     func layoutDebug() -> String {

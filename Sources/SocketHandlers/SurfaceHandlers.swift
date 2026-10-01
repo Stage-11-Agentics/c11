@@ -72,13 +72,13 @@ extension TerminalController {
     }
 
     private func v2SurfaceList(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var payload: [String: Any]?
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
 
             // Map panel_id -> pane_id and index/selection within that pane.
             var paneByPanelId: [UUID: UUID] = [:]
@@ -158,26 +158,26 @@ extension TerminalController {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
         var out = payload
-        let windowId = v2ResolveWindowId(tabManager: tabManager)
+        let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
         out["window_id"] = v2OrNull(windowId?.uuidString)
         out["window_ref"] = v2Ref(kind: .window, uuid: windowId)
         return .ok(out)
     }
 
     private func v2SurfaceCurrent(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var payload: [String: Any]?
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
 
             // Focus can be transiently nil during startup/reparenting; fall back to first
             // ordered panel so callers always get a usable current surface.
             let surfaceId = ws.focusedPanelId ?? orderedPanels(in: ws).first?.id
             let paneId = surfaceId.flatMap { ws.paneId(forPanelId: $0)?.id }
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
 
             payload = [
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -200,7 +200,7 @@ extension TerminalController {
     }
 
     private func v2SurfaceSetCustomColor(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
@@ -216,7 +216,7 @@ extension TerminalController {
         if clear && hex != nil {
             return .err(code: "invalid_params", message: "'clear' and 'hex' are mutually exclusive", data: nil)
         }
-        if !clear, let hex, WorkspaceTabColorSettings.normalizedHex(hex) == nil {
+        if !clear, let hex, WorkspaceColorSettings.normalizedHex(hex) == nil {
             return .err(code: "invalid_params", message: "Invalid hex color (use #RRGGBB)", data: ["hex": hex])
         }
 
@@ -224,7 +224,7 @@ extension TerminalController {
         var workspaceUUID: UUID? = nil
         var found = false
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
             guard workspace.panels[surfaceId] != nil else { return }
             workspaceUUID = workspace.id
             found = true
@@ -255,7 +255,7 @@ extension TerminalController {
     }
 
     private func v2SurfaceFocus(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
@@ -264,19 +264,19 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
 
-            if let windowId = v2ResolveWindowId(tabManager: tabManager) {
+            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveTabManager(tabManager)
+                setActiveWorkspaceManager(workspaceManager)
             }
 
             // Make sure the workspace is selected so focus effects apply to the visible UI.
-            if tabManager.selectedTabId != ws.id {
-                tabManager.selectWorkspace(ws)
+            if workspaceManager.selectedWorkspaceId != ws.id {
+                workspaceManager.selectWorkspace(ws)
             }
 
             guard ws.panels[surfaceId] != nil else {
@@ -285,13 +285,13 @@ extension TerminalController {
             }
 
             ws.focusPanel(surfaceId)
-            result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))])
+            result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
         }
         return result
     }
 
     func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let directionStr = v2String(params, "direction"),
@@ -310,7 +310,7 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create split", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -324,8 +324,8 @@ extension TerminalController {
                 return
             }
 
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            v2MaybeFocusWindow(for: workspaceManager)
+            v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
 
             // new-split always creates a terminal.
             let plan = self.planSizeAwareSplit(ws: ws, sourcePanelId: targetSurfaceId, requested: direction, newIsTerminal: true, force: force)
@@ -339,7 +339,7 @@ extension TerminalController {
                     return
                 }
                 self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneId.id, title: titleSeed)
-                let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+                let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
                 var ok: [String: Any] = [
                     "window_id": self.v2OrNull(windowId?.uuidString),
                     "window_ref": self.v2Ref(kind: .window, uuid: windowId),
@@ -355,11 +355,11 @@ extension TerminalController {
                 result = .ok(ok)
 
             case .split(let actualDirection, let requested, let warning):
-                if let newId = tabManager.newSplit(tabId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride) {
+                if let newId = workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride) {
                     let paneUUID = ws.paneId(forPanelId: newId)?.id
                     // Seed pane title atomic with pane id becoming valid.
                     self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
-                    let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+                    let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
                     var ok: [String: Any] = [
                         "window_id": self.v2OrNull(windowId?.uuidString),
                         "window_ref": self.v2Ref(kind: .window, uuid: windowId),
@@ -382,7 +382,7 @@ extension TerminalController {
     }
 
     private func v2SurfaceCreate(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -410,7 +410,7 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create surface", data: nil)
         guard v2MainSyncWithDeadline({
-            guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -421,8 +421,8 @@ extension TerminalController {
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
             if focus {
-                self.v2MaybeFocusWindow(for: tabManager)
-                self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
+                self.v2MaybeFocusWindow(for: workspaceManager)
+                self.v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
             }
 
             let paneUUID = self.v2UUID(params, "pane_id")
@@ -453,7 +453,7 @@ extension TerminalController {
                 return
             }
 
-            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+            let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
@@ -472,13 +472,13 @@ extension TerminalController {
     }
 
     private func v2SurfaceClose(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to close surface", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -501,13 +501,13 @@ extension TerminalController {
 
             // Socket API must be non-interactive: bypass close-confirmation gating.
             ws.closePanel(surfaceId, force: true)
-            result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))])
+            result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
         }
         return result
     }
 
     private func v2SurfaceDragToSplit(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
@@ -523,7 +523,7 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to move surface", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -539,7 +539,7 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "Failed to split pane", data: nil)
                 return
             }
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -580,7 +580,7 @@ extension TerminalController {
             }
 
             guard let source = app.locateSurface(surfaceId: surfaceId),
-                  let sourceWorkspace = source.tabManager.tabs.first(where: { $0.id == source.workspaceId }) else {
+                  let sourceWorkspace = source.workspaceManager.workspaces.first(where: { $0.id == source.workspaceId }) else {
                 result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
@@ -589,21 +589,21 @@ extension TerminalController {
             let sourceIndex = sourceWorkspace.indexInPane(forPanelId: surfaceId)
 
             var targetWindowId = source.windowId
-            var targetTabManager = source.tabManager
+            var targetWorkspaceManager = source.workspaceManager
             var targetWorkspace = sourceWorkspace
             var targetPane = sourcePane ?? sourceWorkspace.bonsplitController.focusedPaneId ?? sourceWorkspace.bonsplitController.allPaneIds.first
             var targetIndex = explicitIndex
 
             if let anchorSurfaceId = beforeSurfaceId ?? afterSurfaceId {
                 guard let anchor = app.locateSurface(surfaceId: anchorSurfaceId),
-                      let anchorWorkspace = anchor.tabManager.tabs.first(where: { $0.id == anchor.workspaceId }),
+                      let anchorWorkspace = anchor.workspaceManager.workspaces.first(where: { $0.id == anchor.workspaceId }),
                       let anchorPane = anchorWorkspace.paneId(forPanelId: anchorSurfaceId),
                       let anchorIndex = anchorWorkspace.indexInPane(forPanelId: anchorSurfaceId) else {
                     result = .err(code: "not_found", message: "Anchor surface not found", data: ["surface_id": anchorSurfaceId.uuidString])
                     return
                 }
                 targetWindowId = anchor.windowId
-                targetTabManager = anchor.tabManager
+                targetWorkspaceManager = anchor.workspaceManager
                 targetWorkspace = anchorWorkspace
                 targetPane = anchorPane
                 targetIndex = (beforeSurfaceId != nil) ? anchorIndex : (anchorIndex + 1)
@@ -613,28 +613,28 @@ extension TerminalController {
                     return
                 }
                 targetWindowId = located.windowId
-                targetTabManager = located.tabManager
+                targetWorkspaceManager = located.workspaceManager
                 targetWorkspace = located.workspace
                 targetPane = located.paneId
             } else if let workspaceUUID = requestedWorkspaceUUID {
-                guard let tm = app.tabManagerFor(tabId: workspaceUUID),
-                      let ws = tm.tabs.first(where: { $0.id == workspaceUUID }) else {
+                guard let tm = app.workspaceManagerFor(workspaceId: workspaceUUID),
+                      let ws = tm.workspaces.first(where: { $0.id == workspaceUUID }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: ["workspace_id": workspaceUUID.uuidString])
                     return
                 }
-                targetTabManager = tm
+                targetWorkspaceManager = tm
                 targetWorkspace = ws
                 targetWindowId = app.windowId(for: tm) ?? targetWindowId
                 targetPane = ws.bonsplitController.focusedPaneId ?? ws.bonsplitController.allPaneIds.first
             } else if let windowUUID = requestedWindowUUID {
-                guard let tm = app.tabManagerFor(windowId: windowUUID) else {
+                guard let tm = app.workspaceManagerFor(windowId: windowUUID) else {
                     result = .err(code: "not_found", message: "Window not found", data: ["window_id": windowUUID.uuidString])
                     return
                 }
                 targetWindowId = windowUUID
-                targetTabManager = tm
-                guard let selectedWorkspaceId = tm.selectedTabId,
-                      let ws = tm.tabs.first(where: { $0.id == selectedWorkspaceId }) else {
+                targetWorkspaceManager = tm
+                guard let selectedWorkspaceId = tm.selectedWorkspaceId,
+                      let ws = tm.workspaces.first(where: { $0.id == selectedWorkspaceId }) else {
                     result = .err(code: "not_found", message: "Target window has no selected workspace", data: ["window_id": windowUUID.uuidString])
                     return
                 }
@@ -684,8 +684,8 @@ extension TerminalController {
 
             if focus {
                 _ = app.focusMainWindow(windowId: targetWindowId)
-                setActiveTabManager(targetTabManager)
-                targetTabManager.selectWorkspace(targetWorkspace)
+                setActiveWorkspaceManager(targetWorkspaceManager)
+                targetWorkspaceManager.selectWorkspace(targetWorkspace)
             }
 
             result = .ok([
@@ -720,7 +720,7 @@ extension TerminalController {
         v2MainSync {
             guard let app = AppDelegate.shared,
                   let located = app.locateSurface(surfaceId: surfaceId),
-                  let ws = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }),
+                  let ws = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }),
                   let sourcePane = ws.paneId(forPanelId: surfaceId) else {
                 result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
                 return
@@ -771,12 +771,12 @@ extension TerminalController {
     }
 
     private func v2SurfaceRefresh(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var result: V2CallResult = .ok(["refreshed": 0])
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -787,20 +787,20 @@ extension TerminalController {
                     refreshedCount += 1
                 }
             }
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok(["window_id": v2OrNull(windowId?.uuidString), "window_ref": v2Ref(kind: .window, uuid: windowId), "workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "refreshed": refreshedCount])
         }
         return result
     }
 
     private func v2SurfaceHealth(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var payload: [String: Any]?
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
             let panels = orderedPanels(in: ws)
             let items: [[String: Any]] = panels.enumerated().map { index, panel in
                 var inWindow: Any = NSNull()
@@ -817,7 +817,7 @@ extension TerminalController {
                     "in_window": inWindow
                 ]
             }
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -1064,11 +1064,11 @@ extension TerminalController {
             // resolveSurfaceSendTargets for the full rationale.
             v2RefreshKnownRefs()
 
-            guard let tabManager = v2ResolveTabManager(params: params) else {
+            guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
                 result = .err(code: "unavailable", message: "TabManager not available", data: nil)
                 return
             }
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -1088,7 +1088,7 @@ extension TerminalController {
             }
 
             terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceClearHistory")
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -1122,11 +1122,11 @@ extension TerminalController {
             // resolveSurfaceSendTargets for the full rationale.
             v2RefreshKnownRefs()
 
-            guard let tabManager = v2ResolveTabManager(params: params) else {
+            guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
                 result = .err(code: "unavailable", message: "TabManager not available", data: nil)
                 return
             }
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -1156,7 +1156,7 @@ extension TerminalController {
                 return
             }
 
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             result = .ok([
                 "text": text,
                 "base64": base64,
@@ -1175,17 +1175,17 @@ extension TerminalController {
     /// Resolve `(Workspace, surfaceId)` for M7 title bar handlers from the generic
     /// `surface_id` / `workspace_id` / focused-surface fallback.
     private func v2ResolveWorkspaceForTitleBar(params: [String: Any]) -> (Workspace, UUID)? {
-        guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
         var located: (Workspace, UUID)?
         v2MainSync {
             if let surfaceId = v2UUID(params, "surface_id") {
-                if let ws = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) {
+                if let ws = workspaceManager.workspaces.first(where: { $0.panels[surfaceId] != nil }) {
                     located = (ws, surfaceId)
                     return
                 }
                 return
             }
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let focused = ws.focusedPanelId else { return }
             located = (ws, focused)
         }
@@ -1247,15 +1247,15 @@ extension TerminalController {
     /// Must be called on the main actor (reads TabManager/Workspace state).
     private func v2ResolveTargetSurface(
         params: [String: Any],
-        tabManager: TabManager
+        workspaceManager: WorkspaceManager
     ) -> (workspace: Workspace, surfaceId: UUID)? {
         if let surfaceId = v2UUID(params, "surface_id") {
-            guard let owner = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) else {
+            guard let owner = workspaceManager.workspaces.first(where: { $0.panels[surfaceId] != nil }) else {
                 return nil
             }
             return (owner, surfaceId)
         }
-        guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+        guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
               let focused = ws.focusedPanelId else {
             return nil
         }
@@ -1273,7 +1273,7 @@ extension TerminalController {
     }
 
     private func v2SurfaceTriggerFlash(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -1308,13 +1308,13 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to trigger flash", data: nil)
         v2MainSync {
-            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, tabManager: tabManager) else {
+            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, workspaceManager: workspaceManager) else {
                 result = v2SurfaceTargetNotFound(params: params)
                 return
             }
 
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            v2MaybeFocusWindow(for: workspaceManager)
+            v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
 
             ws.triggerFocusFlash(panelId: surfaceId, appearance: appearance, persistent: persistent)
             result = .ok([
@@ -1322,8 +1322,8 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager)),
+                "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager)),
                 "persistent": persistent
             ])
         }
@@ -1334,13 +1334,13 @@ extension TerminalController {
     /// Idempotent — succeeds even when no flash is registered (the operator
     /// or agent doesn't need to know the current state to cancel).
     private func v2SurfaceCancelFlash(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to cancel flash", data: nil)
         v2MainSync {
-            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, tabManager: tabManager) else {
+            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, workspaceManager: workspaceManager) else {
                 result = v2SurfaceTargetNotFound(params: params)
                 return
             }
@@ -1362,23 +1362,23 @@ extension TerminalController {
     /// the v2 metadata handlers reach this from a main-sync hop today.)
     private func v2ResolveSurfaceForMetadata(
         params: [String: Any]
-    ) -> (workspaceId: UUID, surfaceId: UUID, tabManager: TabManager)? {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+    ) -> (workspaceId: UUID, surfaceId: UUID, workspaceManager: WorkspaceManager)? {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return nil
         }
         return v2MainSync {
             let ws: Workspace?
             if let surfaceId = v2UUID(params, "surface_id") {
-                ws = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil })
+                ws = workspaceManager.workspaces.first(where: { $0.panels[surfaceId] != nil })
                 guard let workspace = ws else { return nil }
-                return (workspace.id, surfaceId, tabManager)
+                return (workspace.id, surfaceId, workspaceManager)
             }
             // Fallback: explicit workspace_id, then default to focused.
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 return nil
             }
             if let focused = workspace.focusedPanelId {
-                return (workspace.id, focused, tabManager)
+                return (workspace.id, focused, workspaceManager)
             }
             return nil
         }
@@ -1457,7 +1457,7 @@ extension TerminalController {
             applyTitleDescriptionSideEffects(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
-                tabManager: resolved.tabManager,
+                workspaceManager: resolved.workspaceManager,
                 applied: result.applied,
                 removedKeys: result.removedKeys,
                 autoExpand: (params["auto_expand"] as? Bool) ?? true
@@ -1465,7 +1465,7 @@ extension TerminalController {
             return .ok(buildMetadataOkPayload(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
-                tabManager: resolved.tabManager,
+                workspaceManager: resolved.workspaceManager,
                 result: result
             ))
         } catch let err as SurfaceMetadataStore.WriteError {
@@ -1590,7 +1590,7 @@ extension TerminalController {
             applyTitleDescriptionSideEffects(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
-                tabManager: resolved.tabManager,
+                workspaceManager: resolved.workspaceManager,
                 applied: result.applied,
                 removedKeys: result.removedKeys,
                 autoExpand: false
@@ -1598,7 +1598,7 @@ extension TerminalController {
             return .ok(buildMetadataOkPayload(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
-                tabManager: resolved.tabManager,
+                workspaceManager: resolved.workspaceManager,
                 result: result
             ))
         } catch let err as SurfaceMetadataStore.WriteError {

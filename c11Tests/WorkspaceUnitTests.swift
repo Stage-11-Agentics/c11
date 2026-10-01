@@ -130,19 +130,19 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 
     func testNextPreviousWorkspaceShortcutDefaultsAndMetadata() {
-        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarTab.label, "Next Workspace")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarTab.label, "Previous Workspace")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarTab.defaultsKey, "shortcut.nextSidebarTab")
-        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarTab.defaultsKey, "shortcut.prevSidebarTab")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarWorkspace.label, "Next Workspace")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarWorkspace.label, "Previous Workspace")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultsKey, "shortcut.nextSidebarTab")
+        XCTAssertEqual(KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultsKey, "shortcut.prevSidebarTab")
 
-        let nextShortcut = KeyboardShortcutSettings.Action.nextSidebarTab.defaultShortcut
+        let nextShortcut = KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultShortcut
         XCTAssertEqual(nextShortcut.key, "]")
         XCTAssertTrue(nextShortcut.command)
         XCTAssertFalse(nextShortcut.shift)
         XCTAssertFalse(nextShortcut.option)
         XCTAssertTrue(nextShortcut.control)
 
-        let prevShortcut = KeyboardShortcutSettings.Action.prevSidebarTab.defaultShortcut
+        let prevShortcut = KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultShortcut
         XCTAssertEqual(prevShortcut.key, "[")
         XCTAssertTrue(prevShortcut.command)
         XCTAssertFalse(prevShortcut.shift)
@@ -151,13 +151,13 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 
     func testNextPreviousWorkspaceShortcutsConvertToMenuShortcut() {
-        let nextShortcut = KeyboardShortcutSettings.Action.nextSidebarTab.defaultShortcut
+        let nextShortcut = KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultShortcut
         XCTAssertNotNil(nextShortcut.keyEquivalent)
         XCTAssertEqual(nextShortcut.menuItemKeyEquivalent, "]")
         XCTAssertTrue(nextShortcut.eventModifiers.contains(.command))
         XCTAssertTrue(nextShortcut.eventModifiers.contains(.control))
 
-        let prevShortcut = KeyboardShortcutSettings.Action.prevSidebarTab.defaultShortcut
+        let prevShortcut = KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultShortcut
         XCTAssertNotNil(prevShortcut.keyEquivalent)
         XCTAssertEqual(prevShortcut.menuItemKeyEquivalent, "[")
         XCTAssertTrue(prevShortcut.eventModifiers.contains(.command))
@@ -223,8 +223,8 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
     }
 
     func testNewManagerWorkspacesUseStableWorkspaceDefaultTitles() {
-        let manager = TabManager()
-        let first = manager.tabs[0]
+        let manager = WorkspaceManager()
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
 
         XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(1))
@@ -249,7 +249,7 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
     }
 
     func testStableDefaultTitleRoundTripsThroughSessionSnapshot() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let second = manager.addWorkspace()
         second.applyProcessTitle("agent-title")
 
@@ -258,7 +258,7 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
         XCTAssertEqual(secondSnapshot.processTitle, "agent-title")
         XCTAssertEqual(secondSnapshot.stableDefaultTitle, expectedDefaultWorkspaceTitle(2))
 
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
         let restoredSecond = try XCTUnwrap(restored.tabs.first { $0.id == second.id })
         XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(2))
@@ -355,35 +355,35 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         let currentPlacement = WorkspacePlacementSettings.current()
 
         let defaultManager = makeManagerWithThreeWorkspaces()
-        let defaultBaselineOrder = defaultManager.tabs.map(\.id)
+        let defaultBaselineOrder = defaultManager.workspaces.map(\.id)
         let defaultInserted = defaultManager.addWorkspace()
-        guard let defaultInsertedIndex = defaultManager.tabs.firstIndex(where: { $0.id == defaultInserted.id }) else {
+        guard let defaultInsertedIndex = defaultManager.workspaces.firstIndex(where: { $0.id == defaultInserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
-        XCTAssertEqual(defaultManager.tabs.map(\.id).filter { $0 != defaultInserted.id }, defaultBaselineOrder)
+        XCTAssertEqual(defaultManager.workspaces.map(\.id).filter { $0 != defaultInserted.id }, defaultBaselineOrder)
 
         let explicitManager = makeManagerWithThreeWorkspaces()
-        let explicitBaselineOrder = explicitManager.tabs.map(\.id)
+        let explicitBaselineOrder = explicitManager.workspaces.map(\.id)
         let explicitInserted = explicitManager.addWorkspace(placementOverride: currentPlacement)
-        guard let explicitInsertedIndex = explicitManager.tabs.firstIndex(where: { $0.id == explicitInserted.id }) else {
+        guard let explicitInsertedIndex = explicitManager.workspaces.firstIndex(where: { $0.id == explicitInserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
-        XCTAssertEqual(explicitManager.tabs.map(\.id).filter { $0 != explicitInserted.id }, explicitBaselineOrder)
+        XCTAssertEqual(explicitManager.workspaces.map(\.id).filter { $0 != explicitInserted.id }, explicitBaselineOrder)
         XCTAssertEqual(defaultInsertedIndex, explicitInsertedIndex)
     }
 
     func testAddWorkspaceEndOverrideAlwaysAppends() {
         let manager = makeManagerWithThreeWorkspaces()
-        let baselineCount = manager.tabs.count
+        let baselineCount = manager.workspaces.count
         guard baselineCount >= 3 else {
             XCTFail("Expected at least three workspaces for placement regression test")
             return
         }
 
         let inserted = manager.addWorkspace(placementOverride: .end)
-        guard let insertedIndex = manager.tabs.firstIndex(where: { $0.id == inserted.id }) else {
+        guard let insertedIndex = manager.workspaces.firstIndex(where: { $0.id == inserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
@@ -391,11 +391,11 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         XCTAssertEqual(insertedIndex, baselineCount)
     }
 
-    private func makeManagerWithThreeWorkspaces() -> TabManager {
-        let manager = TabManager()
+    private func makeManagerWithThreeWorkspaces() -> WorkspaceManager {
+        let manager = WorkspaceManager()
         _ = manager.addWorkspace()
         _ = manager.addWorkspace()
-        if let first = manager.tabs.first {
+        if let first = manager.workspaces.first {
             manager.selectWorkspace(first)
         }
         return manager
@@ -405,10 +405,10 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
 
 final class WorkspaceTabColorSettingsTests: XCTestCase {
     func testNormalizedHexAcceptsAndNormalizesValidInput() {
-        XCTAssertEqual(WorkspaceTabColorSettings.normalizedHex("#abc123"), "#ABC123")
-        XCTAssertEqual(WorkspaceTabColorSettings.normalizedHex("  aBcDeF "), "#ABCDEF")
-        XCTAssertNil(WorkspaceTabColorSettings.normalizedHex("#1234"))
-        XCTAssertNil(WorkspaceTabColorSettings.normalizedHex("#GG1234"))
+        XCTAssertEqual(WorkspaceColorSettings.normalizedHex("#abc123"), "#ABC123")
+        XCTAssertEqual(WorkspaceColorSettings.normalizedHex("  aBcDeF "), "#ABCDEF")
+        XCTAssertNil(WorkspaceColorSettings.normalizedHex("#1234"))
+        XCTAssertNil(WorkspaceColorSettings.normalizedHex("#GG1234"))
     }
 
     func testBuiltInPaletteMatchesOriginalPRPalette() {
@@ -419,7 +419,7 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let palette = WorkspaceTabColorSettings.defaultPaletteWithOverrides(defaults: defaults)
+        let palette = WorkspaceColorSettings.defaultPaletteWithOverrides(defaults: defaults)
         XCTAssertEqual(palette.count, 16)
         XCTAssertEqual(palette.first?.name, "Red")
         XCTAssertEqual(palette.first?.hex, "#C0392B")
@@ -435,21 +435,21 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let first = WorkspaceTabColorSettings.defaultPalette[0]
+        let first = WorkspaceColorSettings.defaultPalette[0]
         XCTAssertEqual(
-            WorkspaceTabColorSettings.defaultColorHex(named: first.name, defaults: defaults),
+            WorkspaceColorSettings.defaultColorHex(named: first.name, defaults: defaults),
             first.hex
         )
 
-        WorkspaceTabColorSettings.setDefaultColor(named: first.name, hex: "#00aa33", defaults: defaults)
+        WorkspaceColorSettings.setDefaultColor(named: first.name, hex: "#00aa33", defaults: defaults)
         XCTAssertEqual(
-            WorkspaceTabColorSettings.defaultColorHex(named: first.name, defaults: defaults),
+            WorkspaceColorSettings.defaultColorHex(named: first.name, defaults: defaults),
             "#00AA33"
         )
 
-        WorkspaceTabColorSettings.setDefaultColor(named: first.name, hex: first.hex, defaults: defaults)
+        WorkspaceColorSettings.setDefaultColor(named: first.name, hex: first.hex, defaults: defaults)
         XCTAssertEqual(
-            WorkspaceTabColorSettings.defaultColorHex(named: first.name, defaults: defaults),
+            WorkspaceColorSettings.defaultColorHex(named: first.name, defaults: defaults),
             first.hex
         )
     }
@@ -463,21 +463,21 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         XCTAssertEqual(
-            WorkspaceTabColorSettings.addCustomColor(" #00aa33 ", defaults: defaults),
+            WorkspaceColorSettings.addCustomColor(" #00aa33 ", defaults: defaults),
             "#00AA33"
         )
         XCTAssertEqual(
-            WorkspaceTabColorSettings.addCustomColor("#112233", defaults: defaults),
+            WorkspaceColorSettings.addCustomColor("#112233", defaults: defaults),
             "#112233"
         )
         XCTAssertEqual(
-            WorkspaceTabColorSettings.addCustomColor("#00AA33", defaults: defaults),
+            WorkspaceColorSettings.addCustomColor("#00AA33", defaults: defaults),
             "#00AA33"
         )
-        XCTAssertNil(WorkspaceTabColorSettings.addCustomColor("nope", defaults: defaults))
+        XCTAssertNil(WorkspaceColorSettings.addCustomColor("nope", defaults: defaults))
 
         XCTAssertEqual(
-            WorkspaceTabColorSettings.customColors(defaults: defaults),
+            WorkspaceColorSettings.customColors(defaults: defaults),
             ["#00AA33", "#112233"]
         )
     }
@@ -490,28 +490,28 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let first = WorkspaceTabColorSettings.defaultPalette[0]
-        WorkspaceTabColorSettings.setDefaultColor(named: first.name, hex: "#334455", defaults: defaults)
-        _ = WorkspaceTabColorSettings.addCustomColor("#778899", defaults: defaults)
+        let first = WorkspaceColorSettings.defaultPalette[0]
+        WorkspaceColorSettings.setDefaultColor(named: first.name, hex: "#334455", defaults: defaults)
+        _ = WorkspaceColorSettings.addCustomColor("#778899", defaults: defaults)
 
-        let paletteBeforeReset = WorkspaceTabColorSettings.palette(defaults: defaults)
-        XCTAssertEqual(paletteBeforeReset.count, WorkspaceTabColorSettings.defaultPalette.count + 1)
+        let paletteBeforeReset = WorkspaceColorSettings.palette(defaults: defaults)
+        XCTAssertEqual(paletteBeforeReset.count, WorkspaceColorSettings.defaultPalette.count + 1)
         XCTAssertEqual(paletteBeforeReset[0].hex, "#334455")
         XCTAssertEqual(paletteBeforeReset.last?.name, "Custom 1")
         XCTAssertEqual(paletteBeforeReset.last?.hex, "#778899")
 
-        WorkspaceTabColorSettings.reset(defaults: defaults)
+        WorkspaceColorSettings.reset(defaults: defaults)
 
-        XCTAssertEqual(WorkspaceTabColorSettings.customColors(defaults: defaults), [])
+        XCTAssertEqual(WorkspaceColorSettings.customColors(defaults: defaults), [])
         XCTAssertEqual(
-            WorkspaceTabColorSettings.defaultColorHex(named: first.name, defaults: defaults),
+            WorkspaceColorSettings.defaultColorHex(named: first.name, defaults: defaults),
             first.hex
         )
     }
 
     func testDisplayColorLightModeKeepsOriginalHex() {
         let originalHex = "#1A5276"
-        let rendered = WorkspaceTabColorSettings.displayNSColor(
+        let rendered = WorkspaceColorSettings.displayNSColor(
             hex: originalHex,
             colorScheme: .light
         )
@@ -522,7 +522,7 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
     func testDisplayColorDarkModeBrightensColor() {
         let originalHex = "#1A5276"
         guard let base = NSColor(hex: originalHex),
-              let rendered = WorkspaceTabColorSettings.displayNSColor(
+              let rendered = WorkspaceColorSettings.displayNSColor(
                   hex: originalHex,
                   colorScheme: .dark
               ) else {
@@ -537,7 +537,7 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
     func testDisplayColorDarkModeKeepsGrayscaleNeutral() {
         let originalHex = "#808080"
         guard let base = NSColor(hex: originalHex),
-              let rendered = WorkspaceTabColorSettings.displayNSColor(
+              let rendered = WorkspaceColorSettings.displayNSColor(
                   hex: originalHex,
                   colorScheme: .dark
               ),
@@ -554,7 +554,7 @@ final class WorkspaceTabColorSettingsTests: XCTestCase {
     func testDisplayColorForceBrightensInLightMode() {
         let originalHex = "#1A5276"
         guard let base = NSColor(hex: originalHex),
-              let rendered = WorkspaceTabColorSettings.displayNSColor(
+              let rendered = WorkspaceColorSettings.displayNSColor(
                   hex: originalHex,
                   colorScheme: .light,
                   forceBright: true
@@ -698,60 +698,60 @@ final class SidebarWorkspaceAuxiliaryDetailVisibilityTests: XCTestCase {
 final class WorkspaceReorderTests: XCTestCase {
     @MainActor
     func testReorderWorkspaceMovesWorkspaceToRequestedIndex() {
-        let manager = TabManager()
-        let first = manager.tabs[0]
+        let manager = WorkspaceManager()
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
         let third = manager.addWorkspace()
 
         manager.selectWorkspace(second)
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: second.id, toIndex: 0))
-        XCTAssertEqual(manager.tabs.map(\.id), [second.id, first.id, third.id])
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.workspaces.map(\.id), [second.id, first.id, third.id])
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
     }
 
     @MainActor
     func testReorderWorkspaceClampsOutOfRangeTargetIndex() {
-        let manager = TabManager()
-        let first = manager.tabs[0]
+        let manager = WorkspaceManager()
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
         let third = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: first.id, toIndex: 999))
-        XCTAssertEqual(manager.tabs.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [second.id, third.id, first.id])
     }
 
     @MainActor
     func testReorderWorkspaceReturnsFalseForUnknownWorkspace() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         XCTAssertFalse(manager.reorderWorkspace(tabId: UUID(), toIndex: 0))
     }
 
     @MainActor
     func testReorderWorkspaceKeepsUnpinnedWorkspaceBelowPinnedSegment() {
-        let manager = TabManager()
-        let firstPinned = manager.tabs[0]
+        let manager = WorkspaceManager()
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: unpinned.id, toIndex: 0))
-        XCTAssertEqual(manager.tabs.map(\.id), [firstPinned.id, secondPinned.id, unpinned.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [firstPinned.id, secondPinned.id, unpinned.id])
     }
 
     @MainActor
     func testReorderWorkspaceKeepsPinnedWorkspaceInsidePinnedSegment() {
-        let manager = TabManager()
-        let firstPinned = manager.tabs[0]
+        let manager = WorkspaceManager()
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: firstPinned.id, toIndex: 999))
-        XCTAssertEqual(manager.tabs.map(\.id), [secondPinned.id, firstPinned.id, unpinned.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [secondPinned.id, firstPinned.id, unpinned.id])
     }
 }
 
@@ -760,10 +760,10 @@ final class WorkspaceReorderTests: XCTestCase {
 final class WorkspaceNotificationReorderTests: XCTestCase {
     func testNotificationAutoReorderDoesNotMovePinnedWorkspace() {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let notificationStore = TerminalNotificationStore.shared
 
-        let originalTabManager = appDelegate.tabManager
+        let originalWorkspaceManager = appDelegate.workspaceManager
         let originalNotificationStore = appDelegate.notificationStore
         let defaults = UserDefaults.standard
         let originalAutoReorderSetting = defaults.object(forKey: WorkspaceAutoReorderSettings.key)
@@ -771,7 +771,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
 
         notificationStore.replaceNotificationsForTesting([])
         notificationStore.configureNotificationDeliveryHandlerForTesting { _, _ in }
-        appDelegate.tabManager = manager
+        appDelegate.workspaceManager = manager
         appDelegate.notificationStore = notificationStore
         defaults.set(true, forKey: WorkspaceAutoReorderSettings.key)
         AppFocusState.overrideIsFocused = false
@@ -779,7 +779,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
         defer {
             notificationStore.replaceNotificationsForTesting([])
             notificationStore.resetNotificationDeliveryHandlerForTesting()
-            appDelegate.tabManager = originalTabManager
+            appDelegate.workspaceManager = originalWorkspaceManager
             appDelegate.notificationStore = originalNotificationStore
             AppFocusState.overrideIsFocused = originalAppFocusOverride
             if let originalAutoReorderSetting {
@@ -789,7 +789,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
             }
         }
 
-        let firstPinned = manager.tabs[0]
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
@@ -804,7 +804,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
             body: "Pinned workspaces should stay put"
         )
 
-        XCTAssertEqual(manager.tabs.map(\.id), expectedOrder)
+        XCTAssertEqual(manager.workspaces.map(\.id), expectedOrder)
     }
 }
 
@@ -1042,7 +1042,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
     /// Drift never becomes a root: a new workspace starts in the selected
     /// workspace's root, and only falls back to its focused cwd without one.
     func testNewWorkspaceStartsInSelectedWorkspaceRootNotItsDrift() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let root = makeDirectory("root")
         let drift = makeDirectory("drift")
         let selected = manager.addWorkspace(workingDirectory: root, select: true, autoWelcomeIfNeeded: false)
@@ -1058,7 +1058,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
     }
 
     func testAddWorkspaceEstablishesRootFromCreationDirectory() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let dirA = makeDirectory("a")
         let rootR = makeDirectory("r")
 
@@ -1083,7 +1083,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
     }
 
     func testRootlessWorkspaceAdoptsFirstFocusedProjectDirectoryOnce() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let project = makeDirectory("project")
         let later = makeDirectory("later")
@@ -1113,7 +1113,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
     }
 
     func testClearAndExplicitHomeRootAreNeverOverriddenByAdoption() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let project = makeDirectory("project")
         guard let focused = workspace.focusedPanelId else { return XCTFail("Expected a focused panel") }
@@ -1129,7 +1129,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
     }
 
     func testSessionRestoreKeepsRootAndClearedState() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let root = makeDirectory("root")
         let rooted = manager.addWorkspace(workingDirectory: root, select: false, autoWelcomeIfNeeded: false)
         let cleared = manager.addWorkspace(workingDirectory: root, select: false, autoWelcomeIfNeeded: false)
@@ -1139,7 +1139,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         )
 
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
         let byId = Dictionary(uniqueKeysWithValues: restored.tabs.map { ($0.id, $0) })
 
@@ -1309,7 +1309,7 @@ final class WorkspaceTerminalFocusRecoveryTests: XCTestCase {
 @MainActor
 final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
     func testPrefersSelectedTerminalInTargetPaneOverFocusedTerminalElsewhere() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let leftPanelId = workspace.focusedPanelId,
               let rightPanel = workspace.newTerminalSplit(from: leftPanelId, orientation: .horizontal),
@@ -1330,7 +1330,7 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
     }
 
     func testFallsBackToAnotherTerminalInPaneWhenSelectedTabIsBrowser() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let terminalPanelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: terminalPanelId),
@@ -1350,7 +1350,7 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
     }
 
     func testPreferredTerminalPanelWinsWhenProvided() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let terminalPanelId = workspace.focusedPanelId else {
             XCTFail("Expected selected workspace with a terminal panel")
@@ -1362,7 +1362,7 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
     }
 
     func testPrefersLastFocusedTerminalWhenBrowserFocusedInDifferentPane() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let leftTerminalPanelId = workspace.focusedPanelId,
               let rightTerminalPanel = workspace.newTerminalSplit(from: leftTerminalPanelId, orientation: .horizontal),
@@ -1824,7 +1824,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
     }
 
     func testRemovingTerminalTypeMetadataClearsAgentSurfaceActivityState() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let tabId = try XCTUnwrap(workspace.surfaceIdFromPanelId(panelId))
@@ -1854,7 +1854,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         TerminalController.shared.applyTitleDescriptionSideEffects(
             workspaceId: workspace.id,
             surfaceId: panelId,
-            tabManager: manager,
+            workspaceManager: manager,
             applied: clearResult.applied,
             removedKeys: clearResult.removedKeys,
             autoExpand: false
@@ -1872,7 +1872,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         TerminalController.shared.applyTitleDescriptionSideEffects(
             workspaceId: workspace.id,
             surfaceId: panelId,
-            tabManager: manager,
+            workspaceManager: manager,
             applied: keyedClearResult.applied,
             removedKeys: keyedClearResult.removedKeys,
             autoExpand: false
@@ -1891,7 +1891,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         TerminalController.shared.applyTitleDescriptionSideEffects(
             workspaceId: workspace.id,
             surfaceId: panelId,
-            tabManager: manager,
+            workspaceManager: manager,
             applied: replaceResult.applied,
             removedKeys: replaceResult.removedKeys,
             autoExpand: false
@@ -1936,7 +1936,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
     }
 
     func testActivityMetadataMutationsRehydrateLiveTabProjection() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let tabId = try XCTUnwrap(workspace.surfaceIdFromPanelId(panelId))
@@ -1948,7 +1948,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             TerminalController.shared.applyTitleDescriptionSideEffects(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
-                tabManager: manager,
+                workspaceManager: manager,
                 applied: result.applied,
                 removedKeys: result.removedKeys,
                 autoExpand: false

@@ -8618,12 +8618,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                           workspace.panel(for: tab.id) is TerminalPanel else {
                         continue
                     }
-                    if workspace.preloadTerminalPanelForDebugStress(workspaceId: tab.id, inPane: paneId) != nil {
+                    if workspace.preloadTerminalPanelForDebugStress(tabId: tab.id, inPane: paneId) != nil {
                         queuedTargets.append(
                             DebugStressTerminalLoadTarget(
                                 workspace: workspace,
                                 paneId: paneId,
-                                workspaceId: tab.id,
+                                tabId: tab.id,
                                 panelId: panelId
                             )
                         )

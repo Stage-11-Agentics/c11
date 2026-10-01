@@ -6836,7 +6836,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func hasUnreadNotification(panelId: UUID) -> Bool {
-        AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
+        AppDelegate.shared?.notificationStore?.hasUnreadNotification(forWorkspaceId: id, surfaceId: panelId) ?? false
     }
 
     func attentionSnapshot(panelId: UUID) -> SurfaceAttentionSnapshot {
@@ -6925,7 +6925,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         let waitingStartedAt = state == .waiting
             ? AppDelegate.shared?.notificationStore?.unreadNotificationCreatedAt(
-                forTabId: id,
+                forWorkspaceId: id,
                 surfaceId: panelId
             )
             : nil
@@ -7177,7 +7177,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func markPanelRead(_ panelId: UUID) {
         guard panels[panelId] != nil else { return }
-        AppDelegate.shared?.notificationStore?.markRead(forTabId: id, surfaceId: panelId)
+        AppDelegate.shared?.notificationStore?.markRead(forWorkspaceId: id, surfaceId: panelId)
         clearManualUnread(panelId: panelId)
     }
 
@@ -8411,7 +8411,7 @@ final class Workspace: Identifiable, ObservableObject {
                     source: logSource
                 )
                 AppDelegate.shared?.notificationStore?.addNotification(
-                    tabId: id,
+                    workspaceId: id,
                     surfaceId: nil,
                     title: notificationTitle,
                     subtitle: target,
@@ -10174,7 +10174,7 @@ final class Workspace: Identifiable, ObservableObject {
             return false
         }
 
-        if let manager = app.workspaceManagerFor(tabId: id),
+        if let manager = app.workspaceManagerFor(workspaceId: id),
            let windowId = app.windowId(for: manager),
            let window = app.mainWindow(for: windowId),
            app.isCommandPaletteVisible(for: window) {
@@ -11347,7 +11347,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard let panelId = panelIdFromSurfaceId(tabId),
               let app = AppDelegate.shared else { return }
 
-        let currentWindowId = app.workspaceManagerFor(tabId: id).flatMap { app.windowId(for: $0) }
+        let currentWindowId = app.workspaceManagerFor(workspaceId: id).flatMap { app.windowId(for: $0) }
         let workspaceTargets = app.workspaceMoveTargets(
             excludingWorkspaceId: id,
             referenceWindowId: currentWindowId
@@ -11380,7 +11380,7 @@ final class Workspace: Identifiable, ObservableObject {
         let moved: Bool
         switch destination {
         case .newWorkspaceInCurrentWindow:
-            guard let manager = app.workspaceManagerFor(tabId: id) else { return }
+            guard let manager = app.workspaceManagerFor(workspaceId: id) else { return }
             let workspace = manager.addWorkspace(select: true)
             moved = app.moveSurface(
                 panelId: panelId,
@@ -11485,7 +11485,7 @@ final class Workspace: Identifiable, ObservableObject {
 extension Workspace: BonsplitDelegate {
     @MainActor
     private func shouldCloseWorkspaceOnLastSurface(for tabId: TabID) -> Bool {
-        let manager = owningWorkspaceManager ?? AppDelegate.shared?.workspaceManagerFor(tabId: id) ?? AppDelegate.shared?.workspaceManager
+        let manager = owningWorkspaceManager ?? AppDelegate.shared?.workspaceManagerFor(workspaceId: id) ?? AppDelegate.shared?.workspaceManager
         guard panels.count <= 1,
               panelIdFromSurfaceId(tabId) != nil,
               let manager,
@@ -11877,7 +11877,7 @@ extension Workspace: BonsplitDelegate {
             name: .ghosttyDidFocusSurface,
             object: nil,
             userInfo: [
-                GhosttyNotificationKey.tabId: self.id,
+                GhosttyNotificationKey.workspaceId: self.id,
                 GhosttyNotificationKey.surfaceId: panelId
             ]
         )

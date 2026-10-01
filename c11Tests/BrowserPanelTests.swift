@@ -1747,9 +1747,9 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
             panelId: UUID(),
             paneId: paneId
         )
-        let tabId = UUID()
+        let workspaceId = UUID()
         let transfer = BrowserPaneDragTransfer(
-            tabId: tabId,
+            tabId: workspaceId,
             sourcePaneId: UUID(),
             sourceProcessId: Int32(ProcessInfo.processInfo.processIdentifier)
         )
@@ -1757,7 +1757,7 @@ final class BrowserPaneDropRoutingTests: XCTestCase {
         XCTAssertEqual(
             BrowserPaneDropRouting.action(for: transfer, target: target, zone: .right),
             .move(
-                tabId: tabId,
+                tabId: workspaceId,
                 targetWorkspaceId: target.workspaceId,
                 targetPane: paneId,
                 splitTarget: BrowserPaneSplitTarget(orientation: .horizontal, insertFirst: false)

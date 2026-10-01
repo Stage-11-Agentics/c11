@@ -2779,7 +2779,7 @@ class WorkspaceManager: ObservableObject {
         // unit tests can exercise the multi-close path without a window.
         if let handler = workspaceCloseConfirmationHandler {
             guard handler(plan.title, plan.message) else { return }
-            for workspace in plan.workspaces where workspaceList.contains(where: { $0.id == workspace.id }) {
+            for workspace in plan.workspaces where self.workspaces.contains(where: { $0.id == workspace.id }) {
                 closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
             }
             return
@@ -2920,7 +2920,7 @@ class WorkspaceManager: ObservableObject {
     }
 
     private func closeWorkspacesPlan(for workspaces: [Workspace]) -> CloseWorkspacesPlan {
-        let willCloseWindow = workspaces.count == workspaceList.count
+        let willCloseWindow = workspaces.count == self.workspaces.count
         let title = willCloseWindow
             ? String(localized: "dialog.closeWindow.title", defaultValue: "Close window?")
             : String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
@@ -5657,7 +5657,7 @@ extension WorkspaceManager {
     }
 
     func restoreSessionSnapshot(_ snapshot: SessionWorkspaceManagerSnapshot) {
-        for ws in workspaceList {
+        for ws in workspaces {
             unwireClosedBrowserTracking(for: ws)
         }
         let existingProbeKeys = Set(workspaceGitProbeGenerationByKey.keys)
@@ -5729,7 +5729,7 @@ extension WorkspaceManager {
 
         // Single atomic assignment of @Published properties so SwiftUI observers
         // never see an intermediate state with empty tabs or nil selection.
-        workspaceList = newTabs
+        workspaces = newTabs
         selectedWorkspaceId = newSelectedId
         for workspace in newTabs {
             let terminalPanels = workspace.panels.values.compactMap { $0 as? TerminalPanel }

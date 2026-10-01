@@ -2194,7 +2194,7 @@ struct BrowserPanelView: View {
         }
 
         func addMatch(
-            workspaceId tabId: UUID,
+            workspaceId: UUID,
             panelId: UUID,
             url: String,
             title: String?,
@@ -2202,12 +2202,12 @@ struct BrowserPanelView: View {
             matches: inout [OmnibarOpenTabMatch],
             seenKeys: inout Set<String>
         ) {
-            let key = "\(tabId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
+            let key = "\(workspaceId.uuidString.lowercased())|\(panelId.uuidString.lowercased())|\(url.lowercased())"
             guard !seenKeys.contains(key) else { return }
             seenKeys.insert(key)
             matches.append(
                 OmnibarOpenTabMatch(
-                    workspaceId: tabId,
+                    workspaceId: workspaceId,
                     panelId: panelId,
                     url: url,
                     title: title,

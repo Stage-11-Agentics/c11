@@ -8597,13 +8597,13 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            guard let ws = resolveWorkspaceForReport(args) else {
+            guard let workspace = resolveWorkspaceForReport(args) else {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }
 
-            let validSurfaceIds = Set(ws.panels.keys)
-            ws.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+            let validSurfaceIds = Set(workspace.panels.keys)
+            workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
 
             let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
             let surfaceId: UUID
@@ -8618,7 +8618,7 @@ class TerminalController {
                 }
                 surfaceId = parsedId
             } else {
-                guard let focused = ws.focusedPanelId else {
+                guard let focused = workspace.focusedPanelId else {
                     result = "ERROR: Missing panel id (no focused surface)"
                     return
                 }
@@ -8630,7 +8630,7 @@ class TerminalController {
                 return
             }
 
-            workspaceManager.updateSurfaceShellActivity(workspaceId: ws.id, surfaceId: surfaceId, state: state)
+            workspaceManager.updateSurfaceShellActivity(workspaceId: workspace.id, surfaceId: surfaceId, state: state)
         }
         return result
     }
@@ -8669,19 +8669,19 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            guard let ws = resolveWorkspaceForReport(args) else {
+            guard let workspace = resolveWorkspaceForReport(args) else {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }
             let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
             let surfaceId: UUID
             if let panelArg {
-                guard let parsedId = UUID(uuidString: panelArg), ws.panels[parsedId] != nil else {
+                guard let parsedId = UUID(uuidString: panelArg), workspace.panels[parsedId] != nil else {
                     result = "ERROR: Panel not found '\(panelArg)'"
                     return
                 }
                 surfaceId = parsedId
-            } else if let focused = ws.focusedPanelId {
+            } else if let focused = workspace.focusedPanelId {
                 surfaceId = focused
             } else {
                 result = "ERROR: Missing panel id (no focused surface)"
@@ -8689,7 +8689,7 @@ class TerminalController {
             }
             SurfaceLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: surfaceId,
-                workspaceId: ws.id,
+                workspaceId: workspace.id,
                 activity: activity
             )
         }
@@ -8754,12 +8754,12 @@ class TerminalController {
                       ) else {
                     return
                 }
-                let ws = located.workspace
-                let workspaceId = ws.id
-                let validSurfaceIds = Set(ws.panels.keys)
-                ws.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                let workspace = located.workspace
+                let workspaceId = workspace.id
+                let validSurfaceIds = Set(workspace.panels.keys)
+                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
-                ws.surfaceTTYNames[scope.panelId] = ttyName
+                workspace.surfaceTTYNames[scope.panelId] = ttyName
                 PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
                 AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
                 // C11-25 fix DoD #5: install a Sendable PID provider so
@@ -8776,7 +8776,7 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            guard let ws = resolveWorkspaceForReport(args) else {
+            guard let workspace = resolveWorkspaceForReport(args) else {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }
@@ -8794,22 +8794,22 @@ class TerminalController {
                 }
                 surfaceId = parsedId
             } else {
-                guard let focused = ws.focusedPanelId else {
+                guard let focused = workspace.focusedPanelId else {
                     result = "ERROR: Missing panel id (no focused surface)"
                     return
                 }
                 surfaceId = focused
             }
 
-            let validSurfaceIds = Set(ws.panels.keys)
+            let validSurfaceIds = Set(workspace.panels.keys)
             guard validSurfaceIds.contains(surfaceId) else {
                 result = "ERROR: Panel not found '\(surfaceId.uuidString)'"
                 return
             }
 
-            ws.surfaceTTYNames[surfaceId] = ttyName
-            PortScanner.shared.registerTTY(workspaceId: ws.id, panelId: surfaceId, ttyName: ttyName)
-            AgentDetector.shared.registerTTY(workspaceId: ws.id, panelId: surfaceId, ttyName: ttyName)
+            workspace.surfaceTTYNames[surfaceId] = ttyName
+            PortScanner.shared.registerTTY(workspaceId: workspace.id, panelId: surfaceId, ttyName: ttyName)
+            AgentDetector.shared.registerTTY(workspaceId: workspace.id, panelId: surfaceId, ttyName: ttyName)
             // C11-25 fix DoD #5: install a Sendable PID provider so the
             // per-surface CPU/MEM sampler can attribute usage to the
             // foreground process running on this tty.

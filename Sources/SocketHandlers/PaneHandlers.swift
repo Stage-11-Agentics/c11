@@ -140,16 +140,16 @@ extension TerminalController {
             let selectedWorkspace = ws.bonsplitController.selectedTab(inPane: paneId)
             let workspaces = ws.bonsplitController.tabs(inPane: paneId)
 
-            let surfaces: [[String: Any]] = workspaces.enumerated().map { index, tab in
-                let panelId = ws.panelIdFromSurfaceId(tab.id)
+            let surfaces: [[String: Any]] = workspaces.enumerated().map { index, workspace in
+                let panelId = ws.panelIdFromSurfaceId(workspace.id)
                 let panel = panelId.flatMap { ws.panels[$0] }
                 return [
                     "id": v2OrNull(panelId?.uuidString),
                     "ref": v2Ref(kind: .surface, uuid: panelId),
                     "index": index,
-                    "title": tab.title,
+                    "title": workspace.title,
                     "type": v2OrNull(panel?.panelType.rawValue),
-                    "selected": tab.id == selectedWorkspace?.id
+                    "selected": workspace.id == selectedWorkspace?.id
                 ]
             }
 

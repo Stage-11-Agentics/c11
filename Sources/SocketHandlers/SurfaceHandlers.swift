@@ -87,11 +87,11 @@ extension TerminalController {
             for paneId in ws.bonsplitController.allPaneIds {
                 let workspaces = ws.bonsplitController.tabs(inPane: paneId)
                 let selected = ws.bonsplitController.selectedTab(inPane: paneId)
-                for (idx, tab) in workspaces.enumerated() {
-                    guard let panelId = ws.panelIdFromSurfaceId(tab.id) else { continue }
+                for (idx, workspace) in workspaces.enumerated() {
+                    guard let panelId = ws.panelIdFromSurfaceId(workspace.id) else { continue }
                     paneByPanelId[panelId] = paneId.id
                     indexInPaneByPanelId[panelId] = idx
-                    selectedInPaneByPanelId[panelId] = (tab.id == selected?.id)
+                    selectedInPaneByPanelId[panelId] = (workspace.id == selected?.id)
                 }
             }
 

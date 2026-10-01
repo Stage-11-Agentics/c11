@@ -797,7 +797,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
         let expectedOrder = [firstPinned.id, secondPinned.id, unpinned.id]
 
         notificationStore.addNotification(
-            tabId: secondPinned.id,
+            workspaceId: secondPinned.id,
             surfaceId: nil,
             title: "Build finished",
             subtitle: "",

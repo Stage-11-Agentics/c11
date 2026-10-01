@@ -6547,7 +6547,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     @objc private func showSurfaceManifest(_ sender: Any?) {
-        guard let workspaceId = tabId,
+        guard let workspaceId = self.workspaceId,
               let surfaceId = terminalSurface?.id else { return }
         SurfaceManifestViewerWindowController.show(
             workspaceId: workspaceId,

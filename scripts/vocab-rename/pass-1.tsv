@@ -4,18 +4,25 @@
 @delete	Sources/TabManager.swift	var selectedTab: Workspace? { selectedWorkspace }
 @fix	Sources/SessionPersistence.swift	    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n}\n	    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n\n    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.\n    enum CodingKeys: String, CodingKey {\n        case frame\n        case display\n        case workspaceManager = "tabManager"\n        case sidebar\n    }\n}\n
 @fix	Sources/AppDelegate.swift	target.workspace.panel(for: target.workspaceId)	target.workspace.panel(for: target.tabId)
+@receiver	GhosttyNotificationKey.
 @callee	BrowserPaneDragTransfer	keep
 @callee	DebugStressTerminalLoadTarget	keep
 @callee	ScriptTab	keep
+@callee	addNotification	rename
 @callee	clearNotifications	rename
 @callee	equalizeSplits	rename
+@callee	hasUnreadNotification	rename
 @callee	locateBonsplitSurface	keep
+@callee	markRead	rename
 @callee	matchesCurrentTerminalFocusTarget	rename
 @callee	move	keep
 @callee	moveBonsplitTab	keep
 @callee	newSplit	rename
 @callee	preloadTerminalPanelForDebugStress	keep
 @callee	resolveSurfaceId	rename
+@callee	tabManagerFor	rename
+@callee	unreadNotificationCreatedAt	rename
+@callee	workspaceManagerFor	rename
 @keep	Sources/TerminalController.swift	LayoutDebugSelectedPanel|splitViews: \[LayoutDebugSplitView\]	selectedTabId
 ScriptTab	ScriptWorkspace	!CLI/**		
 SessionTabManagerSnapshot	SessionWorkspaceManagerSnapshot	!CLI/**		

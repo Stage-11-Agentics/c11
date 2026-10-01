@@ -13815,7 +13815,7 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func promptCustomColor(targetIds: [UUID]) {
-        let seed = ws.customColor ?? WorkspaceColorSettings.customColors().first ?? ""
+        let seed = self.workspace.customColor ?? WorkspaceColorSettings.customColors().first ?? ""
 
         // Anchor on the first target workspace's focused panel. Plan §4.12.
         // Falls back to NSAlert when no anchor is resolvable (rare: targets
@@ -13928,7 +13928,7 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func promptRename() {
-        let currentTitle = ws.customTitle ?? ws.title
+        let currentTitle = self.workspace.customTitle ?? self.workspace.title
 
         // Anchor the overlay on the workspace's focused panel so the card visually
         // sits over the pane the user is renaming "from". If the workspace has
@@ -13941,11 +13941,11 @@ private struct WorkspaceRowView: View, Equatable {
         // Presenting the overlay on a background workspace produces an
         // invisible prompt, so when `tab` isn't the selected workspace, fall
         // back to the NSAlert path.
-        let isSelectedWorkspace = workspaceManager.selectedWorkspaceId == ws.id
-        if PaneInteractionFeatureFlag.isEnabled, isSelectedWorkspace, let panelId = ws.focusedPanelId {
-            let workspaceId = ws.id
+        let isSelectedWorkspace = workspaceManager.selectedWorkspaceId == self.workspace.id
+        if PaneInteractionFeatureFlag.isEnabled, isSelectedWorkspace, let panelId = self.workspace.focusedPanelId {
+            let workspaceId = self.workspace.id
             let manager = workspaceManager
-            let workspace = ws
+            let workspace = self.workspace
             Task { @MainActor in
                 let value = await workspace.presentTextInput(
                     panelId: panelId,
@@ -13998,7 +13998,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
-        workspaceManager.setCustomTitle(workspaceId: ws.id, title: input.stringValue)
+        workspaceManager.setCustomTitle(workspaceId: self.workspace.id, title: input.stringValue)
     }
 }
 

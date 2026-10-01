@@ -5238,7 +5238,7 @@ struct SettingsView: View {
             ) {
                 Picker("", selection: $tabLayoutMode) {
                     Text(String(localized: "settings.app.tabLayout.tabs", defaultValue: "Tabs"))
-                        .tag(TabLayoutSettings.Mode.workspaces.rawValue)
+                        .tag(TabLayoutSettings.Mode.tabs.rawValue)
                     Text(String(localized: "settings.app.tabLayout.rail", defaultValue: "Rail"))
                         .tag(TabLayoutSettings.Mode.rail.rawValue)
                 }

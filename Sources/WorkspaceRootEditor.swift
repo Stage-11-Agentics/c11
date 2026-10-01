@@ -11,7 +11,7 @@ enum WorkspaceRootActions {
     /// when the focused panel has not reported one).
     static func focusedDirectory(of workspace: Workspace) -> String? {
         if let focusedPanelId = workspace.focusedPanelId,
-           let reported = workspace.panelDirectories[focusedPanelId]?
+           let reported = workspace.tabDirectories[focusedPanelId]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !reported.isEmpty {
             return reported

@@ -9,7 +9,7 @@ enum KeyboardShortcutSettings {
     enum Action: String, CaseIterable, Identifiable {
         // Titlebar / primary UI
         case toggleSidebar
-        case newTab
+        case newWorkspace = "newTab"
         case newWindow
         case closeWindow
         case openFolder
@@ -58,7 +58,7 @@ enum KeyboardShortcutSettings {
         var label: String {
             switch self {
             case .toggleSidebar: return String(localized: "shortcut.toggleSidebar.label", defaultValue: "Toggle Sidebar")
-            case .newTab: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
+            case .newWorkspace: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
             case .newWindow: return String(localized: "shortcut.newWindow.label", defaultValue: "New Window")
             case .closeWindow: return String(localized: "shortcut.closeWindow.label", defaultValue: "Close Window")
             case .openFolder: return String(localized: "shortcut.openFolder.label", defaultValue: "Open Folder")
@@ -97,7 +97,7 @@ enum KeyboardShortcutSettings {
         var defaultsKey: String {
             switch self {
             case .toggleSidebar: return "shortcut.toggleSidebar"
-            case .newTab: return "shortcut.newTab"
+            case .newWorkspace: return "shortcut.newTab"
             case .newWindow: return "shortcut.newWindow"
             case .closeWindow: return "shortcut.closeWindow"
             case .openFolder: return "shortcut.openFolder"
@@ -137,7 +137,7 @@ enum KeyboardShortcutSettings {
             switch self {
             case .toggleSidebar:
                 return StoredShortcut(key: "b", command: true, shift: false, option: false, control: false)
-            case .newTab:
+            case .newWorkspace:
                 return StoredShortcut(key: "n", command: true, shift: false, option: false, control: false)
             case .newWindow:
                 return StoredShortcut(key: "n", command: true, shift: true, option: false, control: false)

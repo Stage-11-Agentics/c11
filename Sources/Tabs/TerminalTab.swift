@@ -6,10 +6,10 @@ import Bonsplit
 /// TerminalPanel wraps an existing TerminalSurface and conforms to the Panel protocol.
 /// This allows TerminalSurface to be used within the bonsplit-based layout system.
 @MainActor
-final class TerminalPanel: Panel, ObservableObject {
+final class TerminalTab: TabContent, ObservableObject {
     let id: UUID
     let createdAt: Date?
-    let panelType: PanelType = .terminal
+    let panelType: TabContentType = .terminal
 
     /// The underlying terminal surface
     let surface: TerminalSurface
@@ -62,7 +62,7 @@ final class TerminalPanel: Panel, ObservableObject {
     /// `lifecycle_state` metadata mirror and dispatches occlusion to
     /// libghostty on state transitions. Visibility is driven from
     /// `TerminalPanelView` via `applyVisibility(_:)`.
-    let lifecycle: SurfaceLifecycleController
+    let lifecycle: TabLifecycleController
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -100,7 +100,7 @@ final class TerminalPanel: Panel, ObservableObject {
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
-        self.lifecycle = SurfaceLifecycleController(
+        self.lifecycle = TabLifecycleController(
             workspaceId: workspaceId,
             surfaceId: surface.id,
             initial: .active
@@ -122,7 +122,7 @@ final class TerminalPanel: Panel, ObservableObject {
         // every couple of seconds to track the foreground process.
         // Until that report lands, the surface is registered without
         // a pid and the sidebar renders `—`.
-        SurfaceMetricsSampler.shared.register(surfaceId: surface.id)
+        TabMetricsSampler.shared.register(surfaceId: surface.id)
 
         // Subscribe to surface's search state changes
         surface.$searchState
@@ -260,7 +260,7 @@ final class TerminalPanel: Panel, ObservableObject {
         unfocus()
         hostedView.setVisibleInUI(false)
         TerminalWindowPortalRegistry.detach(hostedView: hostedView)
-        SurfaceMetricsSampler.shared.unregister(surfaceId: id)
+        TabMetricsSampler.shared.unregister(surfaceId: id)
 #if DEBUG
         dlog(
             "surface.panel.close.end panel=\(id.uuidString.prefix(5)) " +
@@ -318,21 +318,21 @@ final class TerminalPanel: Panel, ObservableObject {
         surface.applyWindowBackgroundIfActive()
     }
 
-    func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent {
+    func captureFocusIntent(in window: NSWindow?) -> TabFocusIntent {
         .terminal(hostedView.capturePanelFocusIntent(in: window))
     }
 
-    func preferredFocusIntentForActivation() -> PanelFocusIntent {
+    func preferredFocusIntentForActivation() -> TabFocusIntent {
         .terminal(hostedView.preferredPanelFocusIntentForActivation())
     }
 
-    func prepareFocusIntentForActivation(_ intent: PanelFocusIntent) {
+    func prepareFocusIntentForActivation(_ intent: TabFocusIntent) {
         guard case .terminal(let target) = intent else { return }
         hostedView.preparePanelFocusIntentForActivation(target)
     }
 
     @discardableResult
-    func restoreFocusIntent(_ intent: PanelFocusIntent) -> Bool {
+    func restoreFocusIntent(_ intent: TabFocusIntent) -> Bool {
         switch intent {
         case .panel:
             focus()
@@ -344,14 +344,14 @@ final class TerminalPanel: Panel, ObservableObject {
         }
     }
 
-    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent? {
+    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> TabFocusIntent? {
         _ = window
         guard let intent = hostedView.ownedPanelFocusIntent(for: responder) else { return nil }
         return .terminal(intent)
     }
 
     @discardableResult
-    func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool {
+    func yieldFocusIntent(_ intent: TabFocusIntent, in window: NSWindow) -> Bool {
         guard case .terminal(let target) = intent else { return false }
         return hostedView.yieldPanelFocusIntent(target, in: window)
     }

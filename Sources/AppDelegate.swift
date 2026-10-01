@@ -2619,7 +2619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // sidebar reads samples via `SurfaceMetricsSampler.shared.sample(...)`
         // during body eval. Idempotent — safe across UI tests that
         // re-init the app delegate.
-        SurfaceMetricsSampler.shared.start()
+        TabMetricsSampler.shared.start()
 
         // Start watching the user themes directory for hot-reload.
         ThemeManager.shared.startWatchingUserThemes()
@@ -2762,7 +2762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.start()
         windowDecorationsController.start()
         installMainWindowKeyObserver()
-        SurfaceSeenTracker.shared.install()
+        TabSeenTracker.shared.install()
         refreshGhosttyGotoSplitShortcuts()
         installGhosttyConfigObserver()
         installWindowResponderSwizzles()
@@ -2967,21 +2967,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return nil
         }
 
-        let terminalPanel: TerminalPanel? = {
+        let terminalTab: TerminalTab? = {
             if let focusedPanelId = workspace.focusedPanelId,
-               let terminalPanel = workspace.terminalPanel(for: focusedPanelId) {
-                return terminalPanel
+               let terminalTab = workspace.terminalPanel(for: focusedPanelId) {
+                return terminalTab
             }
-            if let focusedTerminalPanel = workspace.focusedTerminalPanel {
-                return focusedTerminalPanel
+            if let focusedTerminalTab = workspace.focusedTerminalTab {
+                return focusedTerminalTab
             }
-            return workspace.panels.values.compactMap { $0 as? TerminalPanel }.first
+            return workspace.panels.values.compactMap { $0 as? TerminalTab }.first
         }()
 
-        guard let terminalPanel else { return nil }
-        let stats = terminalPanel.hostedView.debugRenderStats()
+        guard let terminalTab else { return nil }
+        let stats = terminalTab.hostedView.debugRenderStats()
         return UITestRenderDiagnosticsSnapshot(
-            panelId: terminalPanel.id,
+            panelId: terminalTab.id,
             drawCount: stats.drawCount,
             presentCount: stats.presentCount,
             lastPresentTime: stats.lastPresentTime,
@@ -3451,7 +3451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         if !activityFloor.isEmpty {
-            SurfaceActivityTracker.shared.seed(from: activityFloor)
+            TabActivityTracker.shared.seed(from: activityFloor)
         }
 
         let captureScope = ConversationSnapshotCaptureScope(snapshot: snapshot)
@@ -4251,7 +4251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func sessionAutosaveFingerprint(
         includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+        conversationsByPanelId injectedConversations: [String: TabConversations]? = nil
     ) -> Int? {
         guard !includeScrollback else { return nil }
 
@@ -4296,7 +4296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // blocks main on `readConversationsByPanelIdSync`'s semaphore.
             // Synchronous callers pass nil and fall back to the sync bridge.
             let conversations = injectedConversations
-                ?? Workspace.readConversationsByPanelIdSync(timeout: 0.5)
+                ?? Workspace.readConversationsByTabIdSync(timeout: 0.5)
             Self.hashConversationState(conversations, into: &hasher)
         }
 
@@ -4311,7 +4311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// that conversation activity — wrapper-claim / hook-push / tombstone —
     /// forces an autosave write).
     nonisolated static func hashConversationState(
-        _ conversations: [String: SurfaceConversations],
+        _ conversations: [String: TabConversations],
         into hasher: inout Hasher
     ) {
         for surfaceId in conversations.keys.sorted() {
@@ -4333,7 +4333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         includeScrollback: Bool,
         suspendAlive: Bool,
         timeout: TimeInterval = 5.0
-    ) -> [String: SurfaceConversations]? {
+    ) -> [String: TabConversations]? {
         guard !ConversationStorePolicy.isDisabled else { return [:] }
 
         // Capture live surface/cwd/type context on the main actor without a
@@ -4466,7 +4466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func saveSessionSnapshot(
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
-        conversationsByPanelId: [String: SurfaceConversations]? = nil,
+        conversationsByPanelId conversationsByTabId: [String: TabConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
         // While the resume picker is open, the file on disk is the only copy
@@ -4505,7 +4505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         guard let snapshot = buildSessionSnapshot(
             includeScrollback: includeScrollback,
-            conversationsByPanelId: conversationsByPanelId
+            conversationsByPanelId: conversationsByTabId
         ) else {
             _ = persistSessionSnapshot(
                 nil,
@@ -4622,7 +4622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // wait, this never blocks main and never times out to a partial map
         // (the C11-170 "drops under load" class), so the injected snapshot
         // still carries full `surface_conversations` (C11-24).
-        let conversations: [String: SurfaceConversations]
+        let conversations: [String: TabConversations]
         if ConversationStorePolicy.isDisabled {
             conversations = [:]
         } else {
@@ -4804,7 +4804,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func buildSessionSnapshot(
         includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+        conversationsByPanelId injectedConversations: [String: TabConversations]? = nil
     ) -> AppSessionSnapshot? {
         let contexts = sessionSnapshotOrderedWindowContexts()
 
@@ -4827,7 +4827,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // window unregister) pass nil and keep the sync bridge — blocking is
         // acceptable there (rare, one-shot, correct when the app is dying).
         let conversationsByPanelId = injectedConversations
-            ?? Workspace.readConversationsByPanelIdSync()
+            ?? Workspace.readConversationsByTabIdSync()
 
         let windows: [SessionWindowSnapshot] = contexts
             .prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)
@@ -4955,7 +4955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // workspace so the only surviving data path is "loaded from
                 // disk".
                 for panelId in workspace.panels.keys {
-                    SurfaceMetadataStore.shared.removeSurface(
+                    TabMetadataStore.shared.removeSurface(
                         workspaceId: workspace.id,
                         surfaceId: panelId
                     )
@@ -4977,13 +4977,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let sources = PersistedMetadataBridge.decodeSources(
                         panelSnapshot.metadataSources ?? [:]
                     )
-                    SurfaceMetadataStore.shared.restoreFromSnapshot(
+                    TabMetadataStore.shared.restoreFromSnapshot(
                         workspaceId: workspace.id,
                         surfaceId: panelSnapshot.id,
                         values: values,
                         sources: sources
                     )
-                    SurfaceAttentionService.shared.syncFromMetadata(
+                    TabAttentionService.shared.syncFromMetadata(
                         workspaceId: workspace.id,
                         surfaceId: panelSnapshot.id
                     )
@@ -5093,7 +5093,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = saveSessionSnapshot(includeScrollback: false)
         }
         // C11-243: a fresh window's first tab is seen without any selection event.
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
     }
 
     struct MainWindowSummary {
@@ -5198,7 +5198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if sourceManager === destinationManager {
             if focus {
-                destinationManager.focusTab(workspaceId, suppressFlash: true)
+                destinationManager.focusWorkspace(workspaceId, suppressFlash: true)
                 _ = focusMainWindow(windowId: windowId)
                 TerminalController.shared.setActiveWorkspaceManager(destinationManager)
             }
@@ -5236,12 +5236,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return windowId
     }
 
-    func locateBonsplitSurface(tabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
-        let bonsplitTabId = TabID(uuid: tabId)
+    func locateBonsplitSurface(bonsplitTabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
+        let leafId = TabID(uuid: bonsplitTabId)
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
-                if let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) {
-                    return (context.windowId, workspace.id, panelId, context.workspaceManager)
+                if let tabId = workspace.tabIdFromBonsplitTabId(leafId) {
+                    return (context.windowId, workspace.id, tabId, context.workspaceManager)
                 }
             }
         }
@@ -5256,12 +5256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ///
     /// Main-thread only: it enumerates each workspace's `@Published panels`.
     /// Callers on the socket queue must hop to main first.
-    func mailboxAddressableSurfaces() -> [MailboxGlobalResolver.Surface] {
-        var result: [MailboxGlobalResolver.Surface] = []
+    func mailboxAddressableSurfaces() -> [MailboxGlobalResolver.TabRecord] {
+        var result: [MailboxGlobalResolver.TabRecord] = []
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
                 for surfaceId in workspace.panels.keys {
-                    let (metadata, _) = SurfaceMetadataStore.shared.getMetadata(
+                    let (metadata, _) = TabMetadataStore.shared.getMetadata(
                         workspaceId: workspace.id,
                         surfaceId: surfaceId
                     )
@@ -5274,7 +5274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let address = metadata["mailbox.address"] as? String
                     let role = metadata["mailbox.role"] as? String
                     result.append(
-                        MailboxGlobalResolver.Surface(
+                        MailboxGlobalResolver.TabRecord(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             name: name,
@@ -5362,11 +5362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if destinationWorkspace.id == sourceWorkspace.id {
             if let splitTarget {
-                guard let sourceTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
+                guard let sourceBonsplitTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
                       sourceWorkspace.bonsplitController.splitPane(
                         resolvedTargetPane,
                         orientation: splitTarget.orientation,
-                        movingTab: sourceTabId,
+                        movingTab: sourceBonsplitTabId,
                         insertFirst: splitTarget.insertFirst
                       ) != nil else {
 #if DEBUG
@@ -5379,7 +5379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     return false
                 }
                 if focus {
-                    source.workspaceManager.focusTab(sourceWorkspace.id, surfaceId: panelId, suppressFlash: true)
+                    source.workspaceManager.focusWorkspace(sourceWorkspace.id, surfaceId: panelId, suppressFlash: true)
                 }
 #if DEBUG
                 dlog(
@@ -5412,7 +5412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let detachStart = ProcessInfo.processInfo.systemUptime
 #endif
 
-        guard let detached = sourceWorkspace.detachSurface(panelId: panelId) else {
+        guard let detached = sourceWorkspace.detachTab(panelId: panelId) else {
 #if DEBUG
             dlog(
                 "surface.move.fail panel=\(panelId.uuidString.prefix(5)) reason=detachFailed " +
@@ -5425,7 +5425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let detachMs = elapsedMs(since: detachStart)
         let attachStart = ProcessInfo.processInfo.systemUptime
 #endif
-        guard destinationWorkspace.attachDetachedSurface(
+        guard destinationWorkspace.attachDetachedTab(
             detached,
             inPane: resolvedTargetPane,
             atIndex: targetIndex,
@@ -5455,14 +5455,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
             let splitStart = ProcessInfo.processInfo.systemUptime
 #endif
-            guard let movedTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
+            guard let movedBonsplitTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
                   destinationWorkspace.bonsplitController.splitPane(
                     resolvedTargetPane,
                     orientation: splitTarget.orientation,
-                    movingTab: movedTabId,
+                    movingTab: movedBonsplitTabId,
                     insertFirst: splitTarget.insertFirst
                   ) != nil else {
-                if let detachedFromDestination = destinationWorkspace.detachSurface(panelId: panelId) {
+                if let detachedFromDestination = destinationWorkspace.detachTab(panelId: panelId) {
                     rollbackDetachedSurface(
                         detachedFromDestination,
                         to: sourceWorkspace,
@@ -5502,7 +5502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let destinationWindowId {
                 _ = focusMainWindow(windowId: destinationWindowId)
             }
-            destinationManager.focusTab(targetWorkspaceId, surfaceId: panelId, suppressFlash: true)
+            destinationManager.focusWorkspace(targetWorkspaceId, surfaceId: panelId, suppressFlash: true)
             if let destinationWindowId {
                 reassertCrossWindowSurfaceMoveFocusIfNeeded(
                     destinationWindowId: destinationWindowId,
@@ -5529,7 +5529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func moveBonsplitTab(
-        tabId: UUID,
+        bonsplitTabId: UUID,
         toWorkspace targetWorkspaceId: UUID,
         targetPane: PaneID? = nil,
         targetIndex: Int? = nil,
@@ -5544,14 +5544,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return String(format: "%.2f", ms)
         }
         dlog(
-            "surface.moveBonsplit.begin tab=\(tabId.uuidString.prefix(5)) targetWs=\(targetWorkspaceId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.begin tab=\(bonsplitTabId.uuidString.prefix(5)) targetWs=\(targetWorkspaceId.uuidString.prefix(5)) " +
             "targetPane=\(targetPane?.id.uuidString.prefix(5) ?? "auto") targetIndex=\(targetIndex.map(String.init) ?? "nil")"
         )
 #endif
-        guard let located = locateBonsplitSurface(tabId: tabId) else {
+        guard let located = locateBonsplitSurface(bonsplitTabId: bonsplitTabId) else {
 #if DEBUG
             dlog(
-                "surface.moveBonsplit.fail tab=\(tabId.uuidString.prefix(5)) reason=tabNotFound " +
+                "surface.moveBonsplit.fail tab=\(bonsplitTabId.uuidString.prefix(5)) reason=tabNotFound " +
                 "targetWs=\(targetWorkspaceId.uuidString.prefix(5)) elapsedMs=\(elapsedMs(since: moveStart))"
             )
 #endif
@@ -5559,7 +5559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #if DEBUG
         dlog(
-            "surface.moveBonsplit.located tab=\(tabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.located tab=\(bonsplitTabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
             "sourceWs=\(located.workspaceId.uuidString.prefix(5)) sourceWin=\(located.windowId.uuidString.prefix(5))"
         )
 #endif
@@ -5574,7 +5574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
 #if DEBUG
         dlog(
-            "surface.moveBonsplit.end tab=\(tabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.end tab=\(bonsplitTabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
             "moved=\(moved ? 1 : 0) elapsedMs=\(elapsedMs(since: moveStart))"
         )
 #endif
@@ -6082,7 +6082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for ctx in mainWindowContexts.values {
             for ws in ctx.workspaceManager.workspaces {
                 for (panelId, panel) in ws.panels {
-                    guard let terminal = panel as? TerminalPanel else { continue }
+                    guard let terminal = panel as? TerminalTab else { continue }
                     if terminal.surface.surface == surface {
                         return (ctx.windowId, ws.id, panelId, ctx.workspaceManager)
                     }
@@ -6104,7 +6104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
     }
 
-    private func forEachTerminalPanel(_ body: (TerminalPanel) -> Void) {
+    private func forEachTerminalPanel(_ body: (TerminalTab) -> Void) {
         var seenManagers: Set<ObjectIdentifier> = []
 
         func visitManager(_ manager: WorkspaceManager?) {
@@ -6113,8 +6113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard seenManagers.insert(managerId).inserted else { return }
             for workspace in manager.workspaces {
                 for panel in workspace.panels.values {
-                    guard let terminalPanel = panel as? TerminalPanel else { continue }
-                    body(terminalPanel)
+                    guard let terminalTab = panel as? TerminalTab else { continue }
+                    body(terminalTab)
                 }
             }
         }
@@ -6280,7 +6280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func rollbackDetachedSurface(
-        _ detached: Workspace.DetachedSurfaceTransfer,
+        _ detached: Workspace.DetachedTabTransfer,
         to workspace: Workspace,
         sourcePane: PaneID?,
         sourceIndex: Int?,
@@ -6291,7 +6291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } ?? workspace.bonsplitController.focusedPaneId
             ?? workspace.bonsplitController.allPaneIds.first
         guard let rollbackPane else { return }
-        _ = workspace.attachDetachedSurface(
+        _ = workspace.attachDetachedTab(
             detached,
             inPane: rollbackPane,
             atIndex: sourceIndex,
@@ -6336,7 +6336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
 
             self.bringToFront(destinationWindow)
-            destinationManager.focusTab(
+            destinationManager.focusWorkspace(
                 destinationWorkspaceId,
                 surfaceId: destinationPanelId,
                 suppressFlash: true
@@ -7965,11 +7965,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func runWhenInitialTerminalReady(
         in workspace: Workspace,
-        _ action: @escaping (TerminalPanel) -> Void
+        _ action: @escaping (TerminalTab) -> Void
     ) {
-        if let terminalPanel = workspace.focusedTerminalPanel,
-           terminalPanel.surface.surface != nil {
-            action(terminalPanel)
+        if let terminalTab = workspace.focusedTerminalTab,
+           terminalTab.surface.surface != nil {
+            action(terminalTab)
             return
         }
 
@@ -7979,14 +7979,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func finishIfReady() {
             guard !resolved,
-                  let terminalPanel = workspace.focusedTerminalPanel,
-                  terminalPanel.surface.surface != nil else { return }
+                  let terminalTab = workspace.focusedTerminalTab,
+                  terminalTab.surface.surface != nil else { return }
             resolved = true
             if let readyObserver {
                 NotificationCenter.default.removeObserver(readyObserver)
             }
             panelsCancellable?.cancel()
-            action(terminalPanel)
+            action(terminalTab)
         }
 
         panelsCancellable = workspace.$panels
@@ -8270,7 +8270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
               let pane = workspace.bonsplitController.focusedPaneId else {
             return .noWorkspace
         }
-        switch workspace.attemptAgentSurfaceLaunch(
+        switch workspace.attemptAgentTabLaunch(
             inPane: pane,
             explicitConfig: saved,
             source: .configEditor
@@ -8403,9 +8403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func sendTextWhenReady(_ text: String, to workspace: Workspace, beforeSend: (() -> Void)? = nil) {
-        if let terminalPanel = workspace.focusedTerminalPanel, terminalPanel.surface.surface != nil {
+        if let terminalTab = workspace.focusedTerminalTab, terminalTab.surface.surface != nil {
             beforeSend?()
-            terminalPanel.sendText(text)
+            terminalTab.sendText(text)
             return
         }
 
@@ -8415,15 +8415,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func finishIfReady() {
             guard !resolved,
-                  let terminalPanel = workspace.focusedTerminalPanel,
-                  terminalPanel.surface.surface != nil else { return }
+                  let terminalTab = workspace.focusedTerminalTab,
+                  terminalTab.surface.surface != nil else { return }
             resolved = true
             if let readyObserver {
                 NotificationCenter.default.removeObserver(readyObserver)
             }
             panelsCancellable?.cancel()
             beforeSend?()
-            terminalPanel.sendText(text)
+            terminalTab.sendText(text)
         }
 
         panelsCancellable = workspace.$panels
@@ -8498,14 +8498,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         for entry in palette {
             let title = "\(debugColorWorkspaceTitlePrefix)\(entry.name)"
-            let targetTab: Workspace
+            let targetWorkspace: Workspace
             if let existing = existingByTitle[title] {
-                targetTab = existing
+                targetWorkspace = existing
             } else {
-                targetTab = workspaceManager.addTab()
+                targetWorkspace = workspaceManager.addTab()
             }
-            workspaceManager.setCustomTitle(workspaceId: targetTab.id, title: title)
-            workspaceManager.setWorkspaceColor(workspaceId: targetTab.id, color: entry.hex)
+            workspaceManager.setCustomTitle(workspaceId: targetWorkspace.id, title: title)
+            workspaceManager.setWorkspaceColor(workspaceId: targetWorkspace.id, color: entry.hex)
         }
     }
 
@@ -8587,11 +8587,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
             dlog(
                 "stress.setup.done createMs=\(String(format: "%.2f", creationElapsedMs)) " +
-                "loadMs=\(String(format: "%.2f", loadStats.elapsedMs)) loadedPanels=\(loadStats.loadedPanels) " +
-                "loadFailures=\(loadStats.failedPanels) totalMs=\(String(format: "%.2f", totalElapsedMs)) " +
+                "loadMs=\(String(format: "%.2f", loadStats.elapsedMs)) loadedPanels=\(loadStats.loadedTabs) " +
+                "loadFailures=\(loadStats.failedTabs) totalMs=\(String(format: "%.2f", totalElapsedMs)) " +
                 "workspaceAvgMs=\(String(format: "%.2f", avgWorkspaceMs)) workspaceWorstMs=\(String(format: "%.2f", worstWorkspaceMs)) " +
                 "workspaceSlowCount=\(slowWorkspaceCount) waitAttempts=\(loadStats.attempts) " +
-                "pendingSurfaces=\(loadStats.pendingSurfaces) expectedSurfaces=\(expectedSurfaceCount)"
+                "pendingSurfaces=\(loadStats.pendingTabs) expectedSurfaces=\(expectedSurfaceCount)"
             )
 
             NSLog(
@@ -8601,11 +8601,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self.debugStressTabsPerPane,
                 expectedSurfaceCount,
                 layoutFailures,
-                loadStats.pendingSurfaces,
+                loadStats.pendingTabs,
                 creationElapsedMs,
                 loadStats.elapsedMs,
-                loadStats.loadedPanels,
-                loadStats.failedPanels,
+                loadStats.loadedTabs,
+                loadStats.failedTabs,
                 totalElapsedMs,
                 avgWorkspaceMs,
                 worstWorkspaceMs,
@@ -8619,11 +8619,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         paneCount: Int,
         tabsPerPane: Int
     ) async -> Bool {
-        guard let topLeftPanelId = workspace.focusedTerminalPanel?.id ?? workspace.focusedPanelId else {
+        guard let topLeftTabId = workspace.focusedTerminalTab?.id ?? workspace.focusedPanelId else {
             return false
         }
         guard let topRight = workspace.newTerminalSplit(
-            from: topLeftPanelId,
+            from: topLeftTabId,
             orientation: .horizontal,
             focus: false
         ) else {
@@ -8631,7 +8631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         await Task.yield()
         guard workspace.newTerminalSplit(
-            from: topLeftPanelId,
+            from: topLeftTabId,
             orientation: .vertical,
             focus: false
         ) != nil else {
@@ -8670,10 +8670,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    private struct DebugStressSurfaceLoadStats {
-        let pendingSurfaces: Int
-        let loadedPanels: Int
-        let failedPanels: Int
+    private struct DebugStressTabLoadStats {
+        let pendingTabs: Int
+        let loadedTabs: Int
+        let failedTabs: Int
         let attempts: Int
         let elapsedMs: Double
     }
@@ -8732,12 +8732,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func loadAllDebugStressWorkspacesForTerminalSurfaceReadiness(
         _ workspaces: [Workspace],
         workspaceManager: WorkspaceManager
-    ) async -> DebugStressSurfaceLoadStats {
+    ) async -> DebugStressTabLoadStats {
         guard !workspaces.isEmpty else {
-            return DebugStressSurfaceLoadStats(
-                pendingSurfaces: 0,
-                loadedPanels: 0,
-                failedPanels: 0,
+            return DebugStressTabLoadStats(
+                pendingTabs: 0,
+                loadedTabs: 0,
+                failedTabs: 0,
                 attempts: 0,
                 elapsedMs: 0
             )
@@ -8762,7 +8762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             for paneId in workspace.bonsplitController.allPaneIds {
                 for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
                     guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id),
-                          workspace.panel(for: bonsplitTab.id) is TerminalPanel else {
+                          workspace.panel(for: bonsplitTab.id) is TerminalTab else {
                         continue
                     }
                     if workspace.preloadTerminalPanelForDebugStress(bonsplitTabId: bonsplitTab.id, inPane: paneId) != nil {
@@ -8788,8 +8788,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let waitResult = await waitForDebugStressTerminalPanelSurfaces(queuedTargets)
         attempts += waitResult.attempts
-        let failedPanels = waitResult.pendingTargets.count
-        let loadedPanels = max(0, queuedTargets.count - failedPanels)
+        let failedTabs = waitResult.pendingTargets.count
+        let loadedTabs = max(0, queuedTargets.count - failedTabs)
         for target in waitResult.pendingTargets {
             dlog(
                 "stress.setup.surfaceTimeout workspace=\(target.workspace.id.uuidString.prefix(5)) " +
@@ -8798,10 +8798,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let elapsedMs = (ProcessInfo.processInfo.systemUptime - loadStart) * 1000.0
-        return DebugStressSurfaceLoadStats(
-            pendingSurfaces: pendingDebugTerminalSurfaceCount(in: workspaces),
-            loadedPanels: loadedPanels,
-            failedPanels: failedPanels,
+        return DebugStressTabLoadStats(
+            pendingTabs: pendingDebugTerminalSurfaceCount(in: workspaces),
+            loadedTabs: loadedTabs,
+            failedTabs: failedTabs,
             attempts: attempts,
             elapsedMs: elapsedMs
         )
@@ -8822,8 +8822,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     workspace.requestBackgroundTerminalSurfaceStartIfNeeded()
                 }
                 if workspace.panels.values.contains(where: { panel in
-                    guard let terminalPanel = panel as? TerminalPanel else { return false }
-                    return terminalPanel.hostedView.superview != nil || terminalPanel.surface.surface != nil
+                    guard let terminalTab = panel as? TerminalTab else { return false }
+                    return terminalTab.hostedView.superview != nil || terminalTab.surface.surface != nil
                 }) {
                     mountedWorkspaceCount += 1
                 }
@@ -8886,7 +8886,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             var startedThisPass = 0
 
             for target in pendingTargets {
-                guard let terminalPanel = target.workspace.panel(for: target.bonsplitTabId) as? TerminalPanel else {
+                guard let terminalPanel = target.workspace.panel(for: target.bonsplitTabId) as? TerminalTab else {
                     nextPending.append(target)
                     continue
                 }
@@ -8978,8 +8978,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var pending = 0
         for workspace in workspaces {
             for panel in workspace.panels.values {
-                guard let terminalPanel = panel as? TerminalPanel else { continue }
-                if terminalPanel.surface.surface == nil {
+                guard let terminalTab = panel as? TerminalTab else { continue }
+                if terminalTab.surface.surface == nil {
                     pending += 1
                 }
             }
@@ -9000,9 +9000,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var loadedSurfaceCount = 0
         for workspace in workspaceManager.workspaces {
             for panel in workspace.panels.values {
-                guard let terminalPanel = panel as? TerminalPanel else { continue }
+                guard let terminalTab = panel as? TerminalTab else { continue }
                 terminalPanelCount += 1
-                if terminalPanel.surface.surface != nil {
+                if terminalTab.surface.surface != nil {
                     loadedSurfaceCount += 1
                 }
             }
@@ -9107,7 +9107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         "expectedSurfaceId": targetPanelId.uuidString
                     ])
 
-                    workspaceManager.selectTab(at: initialIndex)
+                    workspaceManager.selectWorkspace(at: initialIndex)
                 }
             }
         }
@@ -9314,7 +9314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let alphaTitle = "UITest Alpha"
             let betaTitle = "UITest Beta"
             workspaceManager.setCustomTitle(workspaceId: workspace.id, title: workspaceTitle)
-            workspace.setPanelCustomTitle(panelId: alphaPanelId, title: alphaTitle)
+            workspace.setTabCustomTitle(panelId: alphaPanelId, title: alphaTitle)
             workspaceManager.newSurface()
 
             guard let betaPanelId = workspace.focusedPanelId, betaPanelId != alphaPanelId else {
@@ -9322,7 +9322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return
             }
 
-            workspace.setPanelCustomTitle(panelId: betaPanelId, title: betaTitle)
+            workspace.setTabCustomTitle(panelId: betaPanelId, title: betaTitle)
             if startWithHiddenSidebar {
                 self.sidebarState?.isVisible = false
             }
@@ -9398,11 +9398,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let titles: [String] = workspace.bonsplitController.tabs(inPane: trackedPaneId).compactMap { bonsplitTab in
             guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { return nil }
-            return workspace.panelTitle(panelId: panelId)
+            return workspace.tabTitle(panelId: panelId)
         }
         let selectedTitle = workspace.bonsplitController.selectedTab(inPane: trackedPaneId)
             .flatMap { workspace.tabIdFromBonsplitTabId($0.id) }
-            .flatMap { workspace.panelTitle(panelId: $0) } ?? ""
+            .flatMap { workspace.tabTitle(panelId: $0) } ?? ""
 
         writeBonsplitTabDragUITestData([
             "trackedPaneId": trackedPaneId.description,
@@ -9469,13 +9469,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         let terminalWithFind = workspace.panels.values
-            .compactMap { $0 as? TerminalPanel }
+            .compactMap { $0 as? TerminalTab }
             .first(where: { $0.searchState != nil })
         updates["terminalFindPanelId"] = terminalWithFind?.id.uuidString ?? ""
         updates["terminalFindNeedle"] = terminalWithFind?.searchState?.needle ?? ""
 
         let browserWithFind = workspace.panels.values
-            .compactMap { $0 as? BrowserPanel }
+            .compactMap { $0 as? BrowserTab }
             .first(where: { $0.searchState != nil })
         updates["browserFindPanelId"] = browserWithFind?.id.uuidString ?? ""
         updates["browserFindNeedle"] = browserWithFind?.searchState?.needle ?? ""
@@ -9576,7 +9576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         recordFocusedState()
     }
 
-    private func isWebViewFocused(_ panel: BrowserPanel) -> Bool {
+    private func isWebViewFocused(_ panel: BrowserTab) -> Bool {
         guard let window = panel.webView.window else { return false }
         guard let fr = window.firstResponder as? NSView else { return false }
         return fr.isDescendant(of: panel.webView)
@@ -9590,8 +9590,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var terminalPane: PaneID?
         for paneId in paneIds {
             guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId),
-                  let panelId = workspace.tabIdFromBonsplitTabId(selected.id) else { continue }
-            if panelId == browserPanelId {
+                  let tabId = workspace.tabIdFromBonsplitTabId(selected.id) else { continue }
+            if tabId == browserPanelId {
                 browserPane = paneId
             } else if terminalPane == nil {
                 terminalPane = paneId
@@ -9725,7 +9725,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return String(arrayLiteral.dropFirst().dropLast())
     }
 
-    private func setupFocusedInputForGotoSplitUITest(panel: BrowserPanel) {
+    private func setupFocusedInputForGotoSplitUITest(panel: BrowserTab) {
         let script = """
         (() => {
           const snapshot = () => {
@@ -10014,7 +10014,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func evaluateGotoSplitUITestActiveElement(
-        panel: BrowserPanel,
+        panel: BrowserTab,
         awaitingInputId: String? = nil,
         completion: @escaping ([String: String]) -> Void
     ) {
@@ -10186,16 +10186,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let workspace = workspaceManager?.selectedWorkspace else { return }
 
         func snapshot(for workspace: Workspace) -> ([String: String], Bool) {
-            let browserPanel = workspace.panels.values.compactMap { $0 as? BrowserPanel }.first
-            let otherTerminal = workspace.panels.values.compactMap { $0 as? TerminalPanel }.first
-            let browserSnapshot = browserPanel.flatMap {
+            let browserTab = workspace.panels.values.compactMap { $0 as? BrowserTab }.first
+            let otherTerminal = workspace.panels.values.compactMap { $0 as? TerminalTab }.first
+            let browserSnapshot = browserTab.flatMap {
                 BrowserWindowPortalRegistry.debugSnapshot(for: $0.webView)
             }
 
             var updates = self.gotoSplitFindStateSnapshot(for: workspace)
             updates["splitZoomedAfterToggle"] = workspace.bonsplitController.isSplitZoomed ? "true" : "false"
             updates["zoomedPaneIdAfterToggle"] = workspace.bonsplitController.zoomedPaneId?.description ?? ""
-            updates["browserPanelIdAfterToggle"] = browserPanel?.id.uuidString ?? ""
+            updates["browserPanelIdAfterToggle"] = browserTab?.id.uuidString ?? ""
             updates["browserContainerHiddenAfterToggle"] = browserSnapshot.map { $0.containerHidden ? "true" : "false" } ?? ""
             updates["browserVisibleFlagAfterToggle"] = browserSnapshot.map { $0.visibleInUI ? "true" : "false" } ?? ""
             updates["browserFrameAfterToggle"] = browserSnapshot.map {
@@ -10372,29 +10372,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func waitForSurfaceId(
             on workspaceManager: WorkspaceManager,
-            workspaceId tabId: UUID,
+            workspaceId watchedWorkspaceId: UUID,
             timeout: TimeInterval = 8.0,
             _ completion: @escaping (UUID) -> Void
         ) {
             func resolvedSurfaceId() -> UUID? {
-                if let surfaceId = workspaceManager.focusedPanelId(for: tabId) {
+                if let surfaceId = workspaceManager.focusedPanelId(for: watchedWorkspaceId) {
                     return surfaceId
                 }
 
-                guard let workspace = workspaceManager.workspaces.first(where: { $0.id == tabId }) else {
+                guard let workspace = workspaceManager.workspaces.first(where: { $0.id == watchedWorkspaceId }) else {
                     return nil
                 }
 
-                if let terminalPanelId = workspace.focusedTerminalPanel?.id {
-                    return terminalPanelId
+                if let terminalTabId = workspace.focusedTerminalTab?.id {
+                    return terminalTabId
                 }
 
-                if let terminalPanelId = workspace.terminalPanelForConfigInheritance()?.id {
-                    return terminalPanelId
+                if let terminalTabId = workspace.terminalTabForConfigInheritance()?.id {
+                    return terminalTabId
                 }
 
                 return workspace.panels.values
-                    .compactMap { ($0 as? TerminalPanel)?.id }
+                    .compactMap { ($0 as? TerminalTab)?.id }
                     .sorted(by: { $0.uuidString < $1.uuidString })
                     .first
             }
@@ -10424,7 +10424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
             func attemptResolve() {
                 guard !resolved else { return }
-                if let workspace = workspaceManager.workspaces.first(where: { $0.id == tabId }),
+                if let workspace = workspaceManager.workspaces.first(where: { $0.id == watchedWorkspaceId }),
                    observedWorkspaceId != workspace.id {
                     observedWorkspaceId = workspace.id
                     panelsCancellable?.cancel()
@@ -10448,7 +10448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 queue: .main
             ) { note in
                 guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
-                      candidateWorkspaceId == tabId else { return }
+                      candidateWorkspaceId == watchedWorkspaceId else { return }
                 attemptResolve()
             }
             surfaceReadyObserver = NotificationCenter.default.addObserver(
@@ -10457,7 +10457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 queue: .main
             ) { note in
                 guard let workspaceId = note.userInfo?["workspaceId"] as? UUID,
-                      workspaceId == tabId else { return }
+                      workspaceId == watchedWorkspaceId else { return }
                 attemptResolve()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
@@ -10534,7 +10534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         at path: String,
         windowId: UUID,
         workspaceManager: WorkspaceManager,
-        workspaceId tabId: UUID,
+        workspaceId watchedWorkspaceId: UUID,
         surfaceId: UUID
     ) {
         let env = ProcessInfo.processInfo.environment
@@ -10568,7 +10568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func attemptFocus() {
             guard !resolved else { return }
-            guard let workspace = workspaceManager.workspaces.first(where: { $0.id == tabId }) else {
+            guard let workspace = workspaceManager.workspaces.first(where: { $0.id == watchedWorkspaceId }) else {
                 resolved = true
                 cleanup()
                 publish(ready: false, failure: "workspace_missing")
@@ -10607,9 +10607,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
 
             _ = self.focusMainWindow(windowId: windowId)
-            if let ws = workspaceManager.workspaces.first(where: { $0.id == tabId }) {
-                workspaceManager.selectTab(ws)
-                workspaceManager.focusSurface(workspaceId: tabId, surfaceId: surfaceId)
+            if let ws = workspaceManager.workspaces.first(where: { $0.id == watchedWorkspaceId }) {
+                workspaceManager.selectWorkspace(ws)
+                workspaceManager.focusSurface(workspaceId: watchedWorkspaceId, surfaceId: surfaceId)
             }
         }
 
@@ -10627,7 +10627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { note in
             guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
                   let candidateSurfaceId = note.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID,
-                  candidateWorkspaceId == tabId,
+                  candidateWorkspaceId == watchedWorkspaceId,
                   candidateSurfaceId == surfaceId else { return }
             attemptFocus()
         })
@@ -10638,7 +10638,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { note in
             guard let candidateWorkspaceId = note.userInfo?[GhosttyNotificationKey.workspaceId] as? UUID,
                   let candidateSurfaceId = note.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID,
-                  candidateWorkspaceId == tabId,
+                  candidateWorkspaceId == watchedWorkspaceId,
                   candidateSurfaceId == surfaceId else { return }
             attemptFocus()
         })
@@ -10649,7 +10649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { note in
             guard let workspaceId = note.userInfo?["workspaceId"] as? UUID,
                   let readySurfaceId = note.userInfo?["surfaceId"] as? UUID,
-                  workspaceId == tabId,
+                  workspaceId == watchedWorkspaceId,
                   readySurfaceId == surfaceId else { return }
             attemptFocus()
         })
@@ -10826,7 +10826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ])
         }
 #endif
-        for flag in SurfaceAttentionIndex.shared.oldestFlags {
+        for flag in TabAttentionIndex.shared.oldestFlags {
             if openNotification(
                 workspaceId: flag.workspaceId,
                 surfaceId: flag.surfaceId,
@@ -11630,7 +11630,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
 
-        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .newTab)) {
+        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .newWorkspace)) {
 #if DEBUG
             dlog("shortcut.action name=newWorkspace \(debugShortcutRouteSnapshot(event: event))")
 #endif
@@ -11828,7 +11828,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .renameTab)) {
             // Keep Cmd+R browser reload behavior when a browser panel is focused.
-            if workspaceManager?.focusedBrowserPanel != nil {
+            if workspaceManager?.focusedBrowserTab != nil {
                 return false
             }
             let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
@@ -11846,7 +11846,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "shortcut.action name=workspaceDigit digit=\(num) targetIndex=\(targetIndex) manager=\(debugManagerToken(manager)) \(debugShortcutRouteSnapshot(event: event))"
             )
 #endif
-            manager.selectTab(at: targetIndex)
+            manager.selectWorkspace(at: targetIndex)
             return true
         }
 
@@ -12025,8 +12025,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             event: event,
             shortcut: StoredShortcut(key: "l", command: true, shift: false, option: false, control: false)
         ) {
-            if let focusedPanel = workspaceManager?.focusedBrowserPanel {
-                focusBrowserAddressBar(in: focusedPanel)
+            if let focusedTab = workspaceManager?.focusedBrowserTab {
+                focusBrowserAddressBar(in: focusedTab)
                 return true
             }
 
@@ -12153,7 +12153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let keyWindow = NSApp.keyWindow
         let firstResponderType = keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
-        let panel = workspaceManager?.focusedBrowserPanel
+        let panel = workspaceManager?.focusedBrowserTab
         let panelToken = panel.map { String($0.id.uuidString.prefix(8)) } ?? "nil"
         let panelZoom = panel?.webView.pageZoom ?? -1
         var line =
@@ -12224,7 +12224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @discardableResult
     func openBrowserAndFocusAddressBar(url: URL? = nil, insertAtEnd: Bool = false) -> UUID? {
         let preferredProfileID =
-            workspaceManager?.focusedBrowserPanel?.profileID
+            workspaceManager?.focusedBrowserTab?.profileID
             ?? workspaceManager?.selectedWorkspace?.preferredBrowserProfileID
         guard let panelId = workspaceManager?.openBrowser(
             url: url,
@@ -12257,7 +12257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return panelId
     }
 
-    private func focusBrowserAddressBar(in panel: BrowserPanel) {
+    private func focusBrowserAddressBar(in panel: BrowserTab) {
 #if DEBUG
         let requestId = panel.requestAddressBarFocus()
         dlog(
@@ -12553,7 +12553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let firstResponderType = firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
         let firstResponderPtr = firstResponder.map { String(describing: Unmanaged.passUnretained($0).toOpaque()) } ?? "nil"
         let eventDescription = event.map(NSWindow.keyDescription) ?? "none"
-        if let browser = workspaceManager?.focusedBrowserPanel {
+        if let browser = workspaceManager?.focusedBrowserTab {
             var line =
                 "browser.devtools shortcut=\(phase) panel=\(browser.id.uuidString.prefix(5)) " +
                 "\(browser.debugDeveloperToolsStateSummary()) \(browser.debugDeveloperToolsGeometrySummary()) " +
@@ -12575,7 +12575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
 
     private func prepareFocusedBrowserDevToolsForSplit(directionLabel: String) {
-        guard let browser = workspaceManager?.focusedBrowserPanel else { return }
+        guard let browser = workspaceManager?.focusedBrowserTab else { return }
         guard browser.shouldPreserveWebViewAttachmentDuringTransientHide() else { return }
         guard let keyWindow = NSApp.keyWindow else { return }
         guard isLikelyWebInspectorResponder(keyWindow.firstResponder) else { return }
@@ -12627,7 +12627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return -1
         }()
         let splitContext = "keyWin=\(keyWindow?.windowNumber ?? -1) mainWin=\(NSApp.mainWindow?.windowNumber ?? -1) fr=\(firstResponderType)@\(firstResponderPtr) frWin=\(firstResponderWindow)"
-        if let browser = workspaceManager?.focusedBrowserPanel {
+        if let browser = workspaceManager?.focusedBrowserTab {
             let webWindow = browser.webView.window?.windowNumber ?? -1
             let webSuperview = browser.webView.superview.map { String(describing: Unmanaged.passUnretained($0).toOpaque()) } ?? "nil"
             dlog("split.shortcut dir=\(directionLabel) pre panel=\(browser.id.uuidString.prefix(5)) \(browser.debugDeveloperToolsStateSummary()) webWin=\(webWindow) webSuper=\(webSuperview) \(splitContext)")
@@ -12663,7 +12663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return -1
             }()
             let splitContext = "keyWin=\(keyWindow?.windowNumber ?? -1) mainWin=\(NSApp.mainWindow?.windowNumber ?? -1) fr=\(firstResponderType)@\(firstResponderPtr) frWin=\(firstResponderWindow)"
-            if let browser = self?.workspaceManager?.focusedBrowserPanel {
+            if let browser = self?.workspaceManager?.focusedBrowserTab {
                 let webWindow = browser.webView.window?.windowNumber ?? -1
                 let webSuperview = browser.webView.superview.map { String(describing: Unmanaged.passUnretained($0).toOpaque()) } ?? "nil"
                 dlog("split.shortcut dir=\(directionLabel) post panel=\(browser.id.uuidString.prefix(5)) \(browser.debugDeveloperToolsStateSummary()) webWin=\(webWindow) webSuper=\(webSuperview) \(splitContext)")
@@ -13204,10 +13204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let surfaceId: UUID? = {
-            guard let surfaceIdString = response.notification.request.content.userInfo["surfaceId"] as? String else {
+            guard let tabIdString = response.notification.request.content.userInfo["surfaceId"] as? String else {
                 return nil
             }
-            return UUID(uuidString: surfaceIdString)
+            return UUID(uuidString: tabIdString)
         }()
 
         switch response.actionIdentifier {
@@ -13287,7 +13287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func browserPanel(for panelId: UUID) -> BrowserPanel? {
+    private func browserPanel(for panelId: UUID) -> BrowserTab? {
         return workspaceManager?.selectedWorkspace?.browserPanel(for: panelId)
     }
 
@@ -13301,7 +13301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarSelectionState = context.sidebarSelectionState
         TerminalController.shared.setActiveWorkspaceManager(context.workspaceManager)
         // C11-243: the key window's context is now resolvable.
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
 #if DEBUG
         dlog(
             "mainWindow.active window={\(debugWindowToken(window))} context={\(debugContextToken(context))} beforeMgr=\(beforeManagerToken) afterMgr=\(debugManagerToken(workspaceManager)) \(debugShortcutRouteSnapshot())"
@@ -13347,10 +13347,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // are no longer in `removed.tabManager.tabs`.
         for workspace in removed.workspaceManager.workspaces {
             for panelId in workspace.panels.keys {
-                SurfaceSeenTracker.shared.forget(panelId: panelId)
+                TabSeenTracker.shared.forget(panelId: panelId)
             }
         }
-        SurfaceSeenTracker.shared.refresh()
+        TabSeenTracker.shared.refresh()
 
         if workspaceManager === removed.workspaceManager {
             // Repoint "active" pointers to any remaining main terminal window.

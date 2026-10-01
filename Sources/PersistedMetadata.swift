@@ -94,7 +94,7 @@ enum PersistedMetadataBridge {
     ) -> [String: PersistedJSONValue] {
         var current = values
         while let data = try? JSONEncoder().encode(current),
-              data.count > SurfaceMetadataStore.payloadCapBytes {
+              data.count > TabMetadataStore.payloadCapBytes {
             // Drop the largest single-key encoding. Deterministic tie-break
             // by sorted key name so the behavior is test-stable.
             let sizedKeys: [(key: String, size: Int)] = current.keys.sorted().map { key in
@@ -192,8 +192,8 @@ enum PersistedMetadataBridge {
     /// outrank a new `.explicit` write).
     static func decodeSources(
         _ persisted: [String: PersistedMetadataSource]
-    ) -> [String: SurfaceMetadataStore.SourceRecord] {
-        var result: [String: SurfaceMetadataStore.SourceRecord] = [:]
+    ) -> [String: TabMetadataStore.SourceRecord] {
+        var result: [String: TabMetadataStore.SourceRecord] = [:]
         for (key, ps) in persisted {
             let source: MetadataSource
             if let known = MetadataSource(rawValue: ps.source) {
@@ -204,7 +204,7 @@ enum PersistedMetadataBridge {
                 #endif
                 source = .heuristic
             }
-            result[key] = SurfaceMetadataStore.SourceRecord(source: source, ts: ps.ts)
+            result[key] = TabMetadataStore.SourceRecord(source: source, ts: ps.ts)
         }
         return result
     }

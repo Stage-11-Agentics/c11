@@ -147,7 +147,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // acceptance fixture reads through).
         for surfaceSpec in registryPlan.surfaces where surfaceSpec.kind == .terminal {
             guard let panelId = parseUUIDSuffix(restoreResult.surfaceRefs[surfaceSpec.id]),
-                  let terminal = restoredWorkspace.panels[panelId] as? TerminalPanel else {
+                  let terminal = restoredWorkspace.panels[panelId] as? TerminalTab else {
                 XCTFail("restored terminal surface[\(surfaceSpec.id)] not resolvable")
                 continue
             }
@@ -180,7 +180,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         for surfaceSpec in registryPlan.surfaces {
             guard let paneMetadata = surfaceSpec.paneMetadata, !paneMetadata.isEmpty else { continue }
             guard let panelId = parseUUIDSuffix(restoreResult.surfaceRefs[surfaceSpec.id]),
-                  let paneUUID = restoredWorkspace.paneIdForPanel(panelId)?.id else {
+                  let paneUUID = restoredWorkspace.paneIdForTab(panelId)?.id else {
                 XCTFail("surface[\(surfaceSpec.id)] paneUUID not resolvable on restored workspace")
                 continue
             }
@@ -240,7 +240,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         let restored = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         for spec in plan.surfaces where spec.kind == .terminal {
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[spec.id]),
-                  let terminal = restored.panels[panelId] as? TerminalPanel else {
+                  let terminal = restored.panels[panelId] as? TerminalTab else {
                 continue
             }
             let pending = terminalPendingInput(terminal) ?? ""
@@ -292,7 +292,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     private func runMixedFirstFixtureRoundTrip(
         fixtureName: String,
         firstSurfaceId: String,
-        firstSurfaceKind: SurfaceSpecKind,
+        firstSurfaceKind firstTabKind: TabSpecKind,
         distinguishingValue: String,
         trailingTerminalId: String
     ) throws {
@@ -345,10 +345,10 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // exactly one non-terminal first surface + one trailing terminal,
         // so `kind` is unique enough to identify the right one.
         let firstSurfaceInRoundTrip = try XCTUnwrap(
-            convertedPlan.surfaces.first { $0.kind == firstSurfaceKind }
+            convertedPlan.surfaces.first { $0.kind == firstTabKind }
         )
-        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstSurfaceKind)
-        switch firstSurfaceKind {
+        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstTabKind)
+        switch firstTabKind {
         case .browser:
             XCTAssertEqual(firstSurfaceInRoundTrip.url, distinguishingValue)
         case .markdown:
@@ -380,7 +380,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         _ = trailingTerminalId
         let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.kind == .terminal })
         let panelId = try XCTUnwrap(parseUUIDSuffix(restoreResult.surfaceRefs[terminalSpec.id]))
-        let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalPanel)
+        let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalTab)
         let sessionId = try XCTUnwrap(stringMetadataValue(terminalSpec.metadata, key: "claude.session_id"))
         // `sendSubmitFormText` trims the registry's trailing newline
         // before queueing — see the mixed-claude-mailbox acceptance above.
@@ -452,7 +452,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     /// Observed through the `#if DEBUG` test-only accessor on
     /// `TerminalSurface` (`pendingInitialInputForTests`) — a small seam
     /// added in Phase 1 rather than making `pendingTextQueue` internal.
-    private func terminalPendingInput(_ panel: TerminalPanel) -> String? {
+    private func terminalPendingInput(_ panel: TerminalTab) -> String? {
         #if DEBUG
         return panel.surface.pendingInitialInputForTests
         #else

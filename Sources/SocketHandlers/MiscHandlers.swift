@@ -112,12 +112,12 @@ extension TerminalController {
             }
 
             @MainActor
-            func insertionIndexToRight(anchorTabId: TabID, inPane paneId: PaneID) -> Int {
+            func insertionIndexToRight(anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> Int {
                 let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let anchorIndex = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }) else { return bonsplitTabs.count }
+                guard let anchorIndex = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else { return bonsplitTabs.count }
                 let pinnedCount = bonsplitTabs.reduce(into: 0) { count, bonsplitTab in
                     if let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id),
-                       workspace.isPanelPinned(panelId) {
+                       workspace.isTabPinned(panelId) {
                         count += 1
                     }
                 }
@@ -131,14 +131,14 @@ extension TerminalController {
                 var skippedPinned = 0
                 for bonsplitTabId in bonsplitTabIds {
                     guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) else { continue }
-                    if workspace.isPanelPinned(panelId) {
+                    if workspace.isTabPinned(panelId) {
                         skippedPinned += 1
                         continue
                     }
                     if workspace.panels.count <= 1 {
                         break
                     }
-                    if workspace.closePanel(panelId, force: true) {
+                    if workspace.closeTab(panelId, force: true) {
                         closed += 1
                     }
                 }
@@ -153,27 +153,27 @@ extension TerminalController {
                     return
                 }
                 let title = titleRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-                workspace.setPanelCustomTitle(panelId: surfaceId, title: title)
+                workspace.setTabCustomTitle(panelId: surfaceId, title: title)
                 finish(["title": title])
 
             case "clear_name":
-                workspace.setPanelCustomTitle(panelId: surfaceId, title: nil)
+                workspace.setTabCustomTitle(panelId: surfaceId, title: nil)
                 finish()
 
             case "pin":
-                workspace.setPanelPinned(panelId: surfaceId, pinned: true)
+                workspace.setTabPinned(panelId: surfaceId, pinned: true)
                 finish(["pinned": true])
 
             case "unpin":
-                workspace.setPanelPinned(panelId: surfaceId, pinned: false)
+                workspace.setTabPinned(panelId: surfaceId, pinned: false)
                 finish(["pinned": false])
 
             case "mark_read":
-                workspace.markPanelRead(surfaceId)
+                workspace.markTabRead(surfaceId)
                 finish()
 
             case "mark_unread", "mark_as_unread":
-                workspace.markPanelUnread(surfaceId)
+                workspace.markTabUnread(surfaceId)
                 finish()
 
             case "reload", "reload_tab":
@@ -185,15 +185,15 @@ extension TerminalController {
                 finish()
 
             case "duplicate", "duplicate_tab":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId),
                       let browserPanel = workspace.browserPanel(for: surfaceId) else {
                     result = .err(code: "invalid_state", message: "Duplicate is only available for browser tabs", data: nil)
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
-                guard let newPanel = workspace.newBrowserSurface(
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
+                guard let newTab = workspace.newBrowserSurface(
                     inPane: paneId,
                     url: browserPanel.currentURL,
                     focus: true
@@ -201,36 +201,36 @@ extension TerminalController {
                     result = .err(code: "internal_error", message: "Failed to duplicate tab", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newPanel.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
+                    "created_surface_id": newTab.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
+                    "created_tab_id": newTab.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newTab.id)
                 ])
 
             case "new_terminal_right", "new_terminal_to_right", "new_terminal_tab_to_right":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
                     result = .err(code: "not_found", message: "Area for tab not found", data: nil)
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
-                guard let newPanel = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
+                guard let newTab = workspace.newTerminalSurface(inPane: paneId, focus: true) else {
                     result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newPanel.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
+                    "created_surface_id": newTab.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
+                    "created_tab_id": newTab.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newTab.id)
                 ])
 
             case "new_browser_right", "new_browser_to_right", "new_browser_tab_to_right":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
                     result = .err(code: "not_found", message: "Area for tab not found", data: nil)
                     return
@@ -243,27 +243,27 @@ extension TerminalController {
                     return
                 }
 
-                let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
-                guard let newPanel = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
+                let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
+                guard let newTab = workspace.newBrowserSurface(inPane: paneId, url: url, focus: true) else {
                     result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
                     return
                 }
-                _ = workspace.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
+                _ = workspace.reorderSurface(panelId: newTab.id, toIndex: targetIndex)
                 finish([
-                    "created_surface_id": newPanel.id.uuidString,
-                    "created_surface_ref": v2Ref(kind: .surface, uuid: newPanel.id),
-                    "created_tab_id": newPanel.id.uuidString,
-                    "created_tab_ref": v2TabRef(uuid: newPanel.id)
+                    "created_surface_id": newTab.id.uuidString,
+                    "created_surface_ref": v2Ref(kind: .surface, uuid: newTab.id),
+                    "created_tab_id": newTab.id.uuidString,
+                    "created_tab_ref": v2TabRef(uuid: newTab.id)
                 ])
 
             case "close_left", "close_to_left":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
                     result = .err(code: "not_found", message: "Area for tab not found", data: nil)
                     return
                 }
                 let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }) else {
+                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
                     result = .err(code: "not_found", message: "Tab not found in area", data: nil)
                     return
                 }
@@ -272,13 +272,13 @@ extension TerminalController {
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
             case "close_right", "close_to_right":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
                     result = .err(code: "not_found", message: "Area for tab not found", data: nil)
                     return
                 }
                 let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
-                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }) else {
+                guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else {
                     result = .err(code: "not_found", message: "Tab not found in area", data: nil)
                     return
                 }
@@ -287,14 +287,14 @@ extension TerminalController {
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 
             case "close_others", "close_other_tabs":
-                guard let anchorTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
+                guard let anchorBonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId),
                       let paneId = workspace.paneId(forPanelId: surfaceId) else {
                     result = .err(code: "not_found", message: "Area for tab not found", data: nil)
                     return
                 }
                 let targetIds = workspace.bonsplitController.tabs(inPane: paneId)
                     .map(\.id)
-                    .filter { $0 != anchorTabId }
+                    .filter { $0 != anchorBonsplitTabId }
                 let closeResult = closeTabs(targetIds)
                 finish(["closed": closeResult.closed, "skipped_pinned": closeResult.skippedPinned])
 

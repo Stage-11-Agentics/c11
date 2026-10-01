@@ -35,8 +35,8 @@ import Darwin
 ///   the surface's reported tty — pure C-API (`stat` + `proc_listpids`
 ///   filtered to that tty), so no main-actor dependency. Closes the DoD #5
 ///   gap that was open after C11-25 commit 6 (browser-only).
-final class SurfaceMetricsSampler: ObservableObject, @unchecked Sendable {
-    static let shared = SurfaceMetricsSampler()
+final class TabMetricsSampler: ObservableObject, @unchecked Sendable {
+    static let shared = TabMetricsSampler()
 
     /// Per-surface sample. Stored briefly between ticks; consumers read
     /// via `sample(forSurfaceId:)`.

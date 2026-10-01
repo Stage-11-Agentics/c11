@@ -164,7 +164,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         let panelId = UUID()
         let boundary = Date(timeIntervalSince1970: 2_000.75)
         var panel = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
-        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        panel.surfaceConversations = TabConversations(active: ConversationRef(
             kind: "codex",
             id: codexSessionId,
             placeholder: false,
@@ -205,9 +205,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         var panel = makePanelSnapshot(
             id: panelId,
             type: .terminal,
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+            metadata: [TabMetadataKeyName.terminalType: .string("  ")]
         )
-        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        panel.surfaceConversations = TabConversations(active: ConversationRef(
             kind: "codex",
             id: codexSessionId,
             placeholder: false,
@@ -250,7 +250,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             type: .terminal,
             metadata: nil
         )
-        missingTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        missingTypePanel.surfaceConversations = TabConversations(active: ConversationRef(
             kind: "codex",
             id: "aaaa1111-2222-3333-4444-555566667777",
             cwd: "/work/shared/../shared",
@@ -260,9 +260,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         var emptyTypePanel = makePanelSnapshot(
             id: emptyTypePanelId,
             type: .terminal,
-            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+            metadata: [TabMetadataKeyName.terminalType: .string("  ")]
         )
-        emptyTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+        emptyTypePanel.surfaceConversations = TabConversations(active: ConversationRef(
             kind: "codex",
             id: "bbbb1111-2222-3333-4444-555566667777",
             cwd: "/work/shared",
@@ -311,9 +311,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             id: UUID,
             conversationID: String,
             state: ConversationState
-        ) -> SessionPanelSnapshot {
+        ) -> SessionTabSnapshot {
             var panel = makePanelSnapshot(id: id, type: .terminal, metadata: nil)
-            panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            panel.surfaceConversations = TabConversations(active: ConversationRef(
                 kind: "codex",
                 id: conversationID,
                 cwd: "/work/shared",
@@ -504,10 +504,10 @@ final class WorkspaceConversationResumeTests: XCTestCase {
 
     private func makePanelSnapshot(
         id: UUID,
-        type: PanelType,
+        type: TabContentType,
         metadata: [String: PersistedJSONValue]? = nil
-    ) -> SessionPanelSnapshot {
-        return SessionPanelSnapshot(
+    ) -> SessionTabSnapshot {
+        return SessionTabSnapshot(
             id: id,
             type: type,
             title: "Test",
@@ -518,7 +518,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: type == .terminal ? SessionTerminalPanelSnapshot(workingDirectory: nil, scrollback: nil) : nil,
+            terminal: type == .terminal ? SessionTerminalTabSnapshot(workingDirectory: nil, scrollback: nil) : nil,
             browser: nil,
             markdown: nil,
             metadata: metadata,
@@ -526,7 +526,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
     }
 
-    private func makeSnapshot(panels: [SessionPanelSnapshot]) -> SessionWorkspaceSnapshot {
+    private func makeSnapshot(panels: [SessionTabSnapshot]) -> SessionWorkspaceSnapshot {
         return SessionWorkspaceSnapshot(
             id: UUID(),
             processTitle: "Test",
@@ -607,8 +607,8 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         // runtime). With the original `Task { ... }` pattern, this
         // would deadlock against the test's main-actor wait and the
         // returned dict would be empty.
-        let captured: [String: SurfaceConversations] = await MainActor.run {
-            Workspace.readConversationsByPanelIdSync(timeout: 2.0)
+        let captured: [String: TabConversations] = await MainActor.run {
+            Workspace.readConversationsByTabIdSync(timeout: 2.0)
         }
 
         XCTAssertEqual(captured[surfaceA]?.active?.id, claudeSessionId)
@@ -622,8 +622,8 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// Sanity check the empty-store contract.
     func testReadConversationsByPanelIdSyncEmptyStoreReturnsEmpty() async throws {
         // setUp clears the store; nothing else pushed.
-        let captured: [String: SurfaceConversations] = await MainActor.run {
-            Workspace.readConversationsByPanelIdSync(timeout: 1.0)
+        let captured: [String: TabConversations] = await MainActor.run {
+            Workspace.readConversationsByTabIdSync(timeout: 1.0)
         }
         XCTAssertTrue(captured.isEmpty,
                       "expected empty dict from empty store; got \(captured.count) entries")
@@ -641,7 +641,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// instead of blocking main on a semaphore. Pure (no `Workspace`), so
     /// this one runs in the bare local xctest runner too.
     func testAutosaveConversationHashChangeSensitiveAndOrderIndependent() {
-        func hash(_ map: [String: SurfaceConversations]) -> Int {
+        func hash(_ map: [String: TabConversations]) -> Int {
             var hasher = Hasher()
             AppDelegate.hashConversationState(map, into: &hasher)
             return hasher.finalize()
@@ -651,17 +651,17 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             state: ConversationState = .alive,
             via: CaptureSource = .hook,
             kind: String = "claude-code"
-        ) -> SurfaceConversations {
-            SurfaceConversations(active: ConversationRef(
+        ) -> TabConversations {
+            TabConversations(active: ConversationRef(
                 kind: kind, id: id, capturedVia: via, state: state))
         }
 
-        let base: [String: SurfaceConversations] = [
+        let base: [String: TabConversations] = [
             "surface-a": ref(id: "sess-1"),
             "surface-b": ref(id: "sess-2"),
         ]
         // Same entries, rebuilt dict → identical hash (order-independent).
-        let reordered: [String: SurfaceConversations] = [
+        let reordered: [String: TabConversations] = [
             "surface-b": ref(id: "sess-2"),
             "surface-a": ref(id: "sess-1"),
         ]
@@ -715,7 +715,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
 
         // Inject a DIFFERENT map (ref Y, codex). Injection wins over the store.
-        let injectedY = SurfaceConversations(active: ConversationRef(
+        let injectedY = TabConversations(active: ConversationRef(
             kind: "codex", id: codexSessionId, capturedVia: .scrape, state: .suspended))
         let injectedSnapshot = workspace.sessionSnapshot(
             includeScrollback: false,

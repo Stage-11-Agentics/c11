@@ -146,7 +146,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         let result = await handler.deliver(
             envelope: envelope,
             to: surfaceId,
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         XCTAssertEqual(result.outcome, .ok)
         XCTAssertGreaterThan(result.bytes ?? 0, 0)
@@ -168,7 +168,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         let result = await handler.deliver(
             envelope: envelope,
             to: UUID(),
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         XCTAssertEqual(result.outcome, .buffered)
         XCTAssertGreaterThan(result.bytes ?? 0, 0)
@@ -211,7 +211,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         _ = await handler.deliver(
             envelope: envelope,
             to: UUID(),
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         XCTAssertEqual(captured.id, "01K3A2B7X8PQRTVWYZ0123456J")
         XCTAssertEqual(captured.recipient, "watcher")
@@ -229,7 +229,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         let result = await handler.deliver(
             envelope: envelope,
             to: UUID(),
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         XCTAssertEqual(result.outcome, .closed)
     }
@@ -253,7 +253,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         let result = await handler.deliver(
             envelope: envelope,
             to: UUID(),
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         XCTAssertEqual(result.outcome, .timeout)
     }
@@ -293,7 +293,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         let result = await handler.deliver(
             envelope: envelope,
             to: UUID(),
-            surfaceName: "watcher"
+            tabName: "watcher"
         )
         let elapsed = Date().timeIntervalSince(start)
 

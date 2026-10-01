@@ -54,11 +54,11 @@ private extension String {
 }
 
 private extension Workspace {
-    func scriptingTerminalPanels() -> [TerminalPanel] {
-        var results: [TerminalPanel] = []
+    func scriptingTerminalTabs() -> [TerminalTab] {
+        var results: [TerminalTab] = []
         var seen: Set<UUID> = []
 
-        for panelId in sidebarOrderedPanelIds() {
+        for panelId in sidebarOrderedTabIds() {
             guard seen.insert(panelId).inserted,
                   let terminal = terminalPanel(for: panelId) else {
                 continue
@@ -67,7 +67,7 @@ private extension Workspace {
         }
 
         let remaining = panels.values
-            .compactMap { $0 as? TerminalPanel }
+            .compactMap { $0 as? TerminalTab }
             .sorted { $0.id.uuidString < $1.id.uuidString }
 
         for terminal in remaining where seen.insert(terminal.id).inserted {
@@ -130,7 +130,7 @@ extension NSApplication {
         return appDelegate.scriptableMainWindows()
             .flatMap { state in
                 state.workspaceManager.workspaces.flatMap { workspace in
-                    workspace.scriptingTerminalPanels().map {
+                    workspace.scriptingTerminalTabs().map {
                         ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
                     }
                 }
@@ -281,7 +281,7 @@ final class ScriptWindow: NSObject {
             return []
         }
         return state.workspaceManager.workspaces.flatMap { workspace in
-            workspace.scriptingTerminalPanels().map {
+            workspace.scriptingTerminalTabs().map {
                 ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
             }
         }
@@ -410,7 +410,7 @@ final class ScriptWorkspace: NSObject {
     @objc(focusedTerminal)
     var focusedTerminal: ScriptTerminal? {
         guard NSApp.isAppleScriptEnabled,
-              let terminalId = workspace?.focusedTerminalPanel?.id else {
+              let terminalId = workspace?.focusedTerminalTab?.id else {
             return nil
         }
         return ScriptTerminal(workspaceId: tabId, terminalId: terminalId)
@@ -422,7 +422,7 @@ final class ScriptWorkspace: NSObject {
               let workspace else {
             return []
         }
-        return workspace.scriptingTerminalPanels().map {
+        return workspace.scriptingTerminalTabs().map {
             ScriptTerminal(workspaceId: tabId, terminalId: $0.id)
         }
     }
@@ -515,7 +515,7 @@ final class ScriptTerminal: NSObject {
         state?.workspaceManager.workspaces.first(where: { $0.id == workspaceId })
     }
 
-    private var terminal: TerminalPanel? {
+    private var terminal: TerminalTab? {
         workspace?.terminalPanel(for: terminalId)
     }
 
@@ -629,7 +629,7 @@ final class ScriptTerminal: NSObject {
             return nil
         }
 
-        guard workspace.closePanel(terminalId, force: true) else {
+        guard workspace.closeTab(terminalId, force: true) else {
             command.scriptErrorNumber = errAEEventFailed
             command.scriptErrorString = AppleScriptStrings.terminalUnavailable
             return nil

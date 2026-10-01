@@ -446,7 +446,7 @@ extension TerminalController {
                         )?.workspace.id
                     }
                 ) else { return }
-                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity
@@ -1049,7 +1049,7 @@ extension TerminalController {
 
         let launchFlagReason: String?
         if params["flag"] != nil {
-            switch SurfaceAttentionReason.validate(params["flag"]) {
+            switch TabAttentionReason.validate(params["flag"]) {
             case .success(let reason):
                 launchFlagReason = reason
             case .failure(let error):
@@ -1058,9 +1058,9 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
-        let launchFlagActor: SurfaceAttentionActor
+        let launchFlagActor: TabAttentionActor
         if let rawActor = params["by"] as? String {
-            guard let parsed = SurfaceAttentionActor(rawValue: rawActor) else {
+            guard let parsed = TabAttentionActor(rawValue: rawActor) else {
                 return .err(
                     code: "invalid_params",
                     message: "by must be one of: operator, agent",
@@ -1164,7 +1164,7 @@ extension TerminalController {
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
-                    callerSurfaceId: callerWorkspace == nil ? nil : launchCallerSurfaceId
+                    callerTabId: callerWorkspace == nil ? nil : launchCallerSurfaceId
                 )
                 return .success(
                     workspaceManager: workspaceManager,
@@ -1284,7 +1284,7 @@ extension TerminalController {
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
             let ws: Workspace
-            let panel: TerminalPanel
+            let panel: TerminalTab
             let paneUUID: UUID?
             if newWorkspace {
                 // Identity env rides workspace creation so it is present at
@@ -1303,12 +1303,12 @@ extension TerminalController {
                     eagerLoadTerminal: !focus,
                     autoWelcomeIfNeeded: false
                 )
-                guard let initialPanel = created.focusedTerminalPanel else {
+                guard let initialTab = created.focusedTerminalTab else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal tab", data: nil)
                     return result
                 }
                 ws = created
-                panel = initialPanel
+                panel = initialTab
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
@@ -1364,7 +1364,7 @@ extension TerminalController {
                     },
                     stampSuppression: {
                         if launchSuppressed {
-                            _ = try SurfaceAttentionService.shared.suppress(
+                            _ = try TabAttentionService.shared.suppress(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 by: .operator
@@ -1373,13 +1373,13 @@ extension TerminalController {
                     },
                     stampFlag: {
                         if let launchFlagReason {
-                            _ = try SurfaceAttentionService.shared.raise(
+                            _ = try TabAttentionService.shared.raise(
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
-                                callerSurfaceId: launchCallerSurfaceId,
+                                callerTabId: launchCallerSurfaceId,
                                 by: launchFlagActor,
-                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
+                                title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
                     },
@@ -1390,7 +1390,7 @@ extension TerminalController {
                         panel.sendText(plan.launchLine + "\n")
                     }
                 )
-            } catch let error as SurfaceMetadataStore.WriteError {
+            } catch let error as TabMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return result
             } catch {

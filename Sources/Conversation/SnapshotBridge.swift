@@ -44,10 +44,10 @@ enum WorkspaceSnapshotConversationBridge {
 
     /// Pure snapshot extraction used by delayed-barrier tests and by the
     /// async seed adapter above.
-    static func records(from snapshot: AppSessionSnapshot) -> [String: SurfaceConversations] {
+    static func records(from snapshot: AppSessionSnapshot) -> [String: TabConversations] {
         var liftedCount = 0
         var nativeCount = 0
-        var seedMap: [String: SurfaceConversations] = [:]
+        var seedMap: [String: TabConversations] = [:]
         for window in snapshot.windows {
             for ws in window.workspaceManager.workspaces {
                 for panel in ws.panels {
@@ -63,7 +63,7 @@ enum WorkspaceSnapshotConversationBridge {
                     // out. Tracked alongside the
                     // CMUX_DISABLE_CONVERSATION_STORE kill switch.
                     if let lifted = liftLegacyClaudeSessionId(panel) {
-                        seedMap[surfaceId] = SurfaceConversations(active: lifted, history: [])
+                        seedMap[surfaceId] = TabConversations(active: lifted, history: [])
                         liftedCount += 1
                     }
                 }
@@ -77,10 +77,10 @@ enum WorkspaceSnapshotConversationBridge {
     /// Synchronous helper for tests. Returns the synthesized ref iff the
     /// legacy metadata key is present + valid.
     static func liftLegacyClaudeSessionId(
-        _ panel: SessionPanelSnapshot
+        _ panel: SessionTabSnapshot
     ) -> ConversationRef? {
         guard let metadata = panel.metadata else { return nil }
-        guard case .string(let raw)? = metadata[SurfaceMetadataKeyName.claudeSessionId] else {
+        guard case .string(let raw)? = metadata[TabMetadataKeyName.claudeSessionId] else {
             return nil
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

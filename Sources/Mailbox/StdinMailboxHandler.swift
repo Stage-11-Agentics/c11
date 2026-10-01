@@ -77,7 +77,7 @@ final class StdinMailboxHandler: MailboxHandler {
     func deliver(
         envelope: MailboxEnvelope,
         to surfaceId: UUID,
-        surfaceName: String
+        tabName: String
     ) async -> MailboxDispatcher.HandlerInvocationResult {
         let block = Self.formatFramedBlock(envelope: envelope)
         let start = Date()
@@ -102,7 +102,7 @@ final class StdinMailboxHandler: MailboxHandler {
             let envelopeId = envelope.id
             Task {
                 let outcome: WriteOutcome = await MainActor.run {
-                    writer(surfaceId, envelopeId, surfaceName, block)
+                    writer(surfaceId, envelopeId, tabName, block)
                 }
                 let result: MailboxDispatcher.HandlerInvocationResult
                 switch outcome {

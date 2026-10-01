@@ -103,7 +103,7 @@ final class AgentManifestTests: XCTestCase {
         let projectDir = "/Users/atin/Projects/example"
         let inputs: [(String?, [String: String])] = [
             (uuid, [:]),
-            (uuid, [SurfaceMetadataKeyName.claudeSessionProjectDir: projectDir]),
+            (uuid, [TabMetadataKeyName.claudeSessionProjectDir: projectDir]),
             ("not-a-valid-uuid", [:]),
             (nil, [:])
         ]
@@ -152,7 +152,7 @@ final class AgentManifestTests: XCTestCase {
         let uuid = "550e8400-e29b-41d4-a716-446655440000"
         let out = m.resumeCommand(
             sessionId: uuid,
-            metadata: [SurfaceMetadataKeyName.claudeSessionProjectDir: "/tmp/wt"])
+            metadata: [TabMetadataKeyName.claudeSessionProjectDir: "/tmp/wt"])
         XCTAssertEqual(
             out,
             "cd '/tmp/wt' && claude --dangerously-skip-permissions --resume \(uuid)\n")

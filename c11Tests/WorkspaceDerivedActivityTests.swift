@@ -20,10 +20,10 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let workspace = Workspace()
         let surface = UUID()
 
-        XCTAssertNil(workspace.derivedActivityBySurface[surface])
+        XCTAssertNil(workspace.derivedActivityByTab[surface])
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityBySurface[surface], .working)
+        XCTAssertEqual(workspace.derivedActivityByTab[surface], .working)
     }
 
     @MainActor
@@ -32,10 +32,10 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let surface = UUID()
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityBySurface[surface], .working)
+        XCTAssertEqual(workspace.derivedActivityByTab[surface], .working)
 
         workspace.setDerivedActivity(.idle, forSurface: surface)
-        XCTAssertEqual(workspace.derivedActivityBySurface[surface], .idle)
+        XCTAssertEqual(workspace.derivedActivityByTab[surface], .idle)
     }
 
     @MainActor
@@ -44,11 +44,11 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let surface = UUID()
 
         workspace.setDerivedActivity(.working, forSurface: surface)
-        XCTAssertNotNil(workspace.derivedActivityBySurface[surface])
+        XCTAssertNotNil(workspace.derivedActivityByTab[surface])
 
         workspace.setDerivedActivity(nil, forSurface: surface)
-        XCTAssertNil(workspace.derivedActivityBySurface[surface])
-        XCTAssertFalse(workspace.derivedActivityBySurface.keys.contains(surface))
+        XCTAssertNil(workspace.derivedActivityByTab[surface])
+        XCTAssertFalse(workspace.derivedActivityByTab.keys.contains(surface))
     }
 
     @MainActor
@@ -60,13 +60,13 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         workspace.setDerivedActivity(.working, forSurface: surfaceA)
         workspace.setDerivedActivity(.idle, forSurface: surfaceB)
 
-        XCTAssertEqual(workspace.derivedActivityBySurface[surfaceA], .working)
-        XCTAssertEqual(workspace.derivedActivityBySurface[surfaceB], .idle)
+        XCTAssertEqual(workspace.derivedActivityByTab[surfaceA], .working)
+        XCTAssertEqual(workspace.derivedActivityByTab[surfaceB], .idle)
 
         // Clearing one leaves the other untouched.
         workspace.setDerivedActivity(nil, forSurface: surfaceA)
-        XCTAssertNil(workspace.derivedActivityBySurface[surfaceA])
-        XCTAssertEqual(workspace.derivedActivityBySurface[surfaceB], .idle)
+        XCTAssertNil(workspace.derivedActivityByTab[surfaceA])
+        XCTAssertEqual(workspace.derivedActivityByTab[surfaceB], .idle)
     }
 
     @MainActor
@@ -74,7 +74,7 @@ final class WorkspaceDerivedActivityTests: XCTestCase {
         let workspace = Workspace()
 
         // A freshly seeded workspace has no derived signals for its surfaces.
-        workspace.derivedActivityBySurface = [:]
+        workspace.derivedActivityByTab = [:]
         XCTAssertNil(workspace.aggregatedDerivedActivity)
     }
 

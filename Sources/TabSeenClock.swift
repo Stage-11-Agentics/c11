@@ -38,7 +38,7 @@ import Foundation
 // one second on the socket. Closed panels are dropped via `forget(panelId:)`.
 
 /// Pure state machine behind `lastSeenAt`. No AppKit, no clock of its own.
-struct SurfaceSeenClock {
+struct TabSeenClock {
     /// The panel being seen right now, if any.
     private(set) var current: UUID?
     private var stamps: [UUID: Date] = [:]
@@ -80,8 +80,8 @@ struct SurfaceSeenClock {
 }
 
 @MainActor
-final class SurfaceSeenTracker {
-    static let shared = SurfaceSeenTracker()
+final class TabSeenTracker {
+    static let shared = TabSeenTracker()
 
     /// Independent reasons the operator cannot be looking at c11 even though its
     /// focus state is unchanged. Each is cleared only by its own counterpart, so a
@@ -94,7 +94,7 @@ final class SurfaceSeenTracker {
         case sessionInactive
     }
 
-    private var clock = SurfaceSeenClock()
+    private var clock = TabSeenClock()
     private(set) var interruptions: Set<InterruptReason> = []
     private let seenProvider: @MainActor () -> UUID?
     private let now: () -> Date
@@ -107,7 +107,7 @@ final class SurfaceSeenTracker {
     init(
         seenProvider: @escaping @MainActor () -> UUID? = { AppDelegate.shared?.operatorSeenPanelId() },
         now: @escaping () -> Date = { Date() },
-        screenLockedProvider: @escaping () -> Bool = { SurfaceSeenTracker.systemScreenIsLocked() }
+        screenLockedProvider: @escaping () -> Bool = { TabSeenTracker.systemScreenIsLocked() }
     ) {
         self.seenProvider = seenProvider
         self.now = now

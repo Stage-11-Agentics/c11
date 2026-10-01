@@ -1445,7 +1445,7 @@ func installFileDropOverlay(on window: NSWindow, workspaceManager: WorkspaceMana
     overlay.translatesAutoresizingMaskIntoConstraints = false
     overlay.onDrop = { [weak workspaceManager] urls in
         MainActor.assumeIsolated {
-            guard let workspaceManager, let terminal = workspaceManager.selectedWorkspace?.focusedTerminalPanel else { return false }
+            guard let workspaceManager, let terminal = workspaceManager.selectedWorkspace?.focusedTerminalTab else { return false }
             return terminal.hostedView.handleDroppedURLs(urls)
         }
     }
@@ -1598,7 +1598,7 @@ struct ContentView: View {
     private struct CommandPaletteRestoreFocusTarget {
         let workspaceId: UUID
         let panelId: UUID
-        let intent: PanelFocusIntent
+        let intent: TabFocusIntent
     }
 
     private enum CommandPaletteInputFocusTarget {
@@ -1785,10 +1785,10 @@ struct ContentView: View {
         let id: UUID
         let displayName: String
         let metadata: CommandPaletteSwitcherSearchMetadata
-        let surfaces: [CommandPaletteSwitcherFingerprintSurface]
+        let surfaces: [CommandPaletteSwitcherFingerprintTab]
     }
 
-    struct CommandPaletteSwitcherFingerprintSurface: Sendable {
+    struct CommandPaletteSwitcherFingerprintTab: Sendable {
         let id: UUID
         let displayName: String
         let kindLabel: String
@@ -2420,8 +2420,8 @@ struct ContentView: View {
         }
         // Use focused panel's directory if available
         if let focusedPanelId = workspace.focusedPanelId,
-           let panelDir = workspace.panelDirectories[focusedPanelId] {
-            let trimmed = panelDir.trimmingCharacters(in: .whitespacesAndNewlines)
+           let tabDir = workspace.tabDirectories[focusedPanelId] {
+            let trimmed = tabDir.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 return trimmed
             }
@@ -4651,7 +4651,7 @@ struct ContentView: View {
                         surfaces: includeSurfaces
                             ? commandPaletteOrderedSwitcherPanels(for: workspace).compactMap { panelId in
                                 guard let panel = workspace.panels[panelId] else { return nil }
-                                return CommandPaletteSwitcherFingerprintSurface(
+                                return CommandPaletteSwitcherFingerprintTab(
                                     id: panelId,
                                     displayName: panelDisplayName(
                                         workspace: workspace,
@@ -4777,7 +4777,7 @@ struct ContentView: View {
 
                 for panelId in commandPaletteOrderedSwitcherPanels(for: workspace) {
                     guard let panel = workspace.panels[panelId] else { continue }
-                    let surfaceName = panelDisplayName(
+                    let tabName = panelDisplayName(
                         workspace: workspace,
                         panelId: panelId,
                         fallback: panel.displayTitle
@@ -4791,7 +4791,7 @@ struct ContentView: View {
                             "switch",
                             "go",
                             "open",
-                            surfaceName,
+                            tabName,
                             workspaceName
                         ] + commandPaletteSurfaceKeywords(for: panel.panelType) + windowKeywords,
                         metadata: commandPaletteSurfaceSearchMetadata(for: workspace, panelId: panelId),
@@ -4801,7 +4801,7 @@ struct ContentView: View {
                         CommandPaletteCommand(
                             id: surfaceCommandId,
                             rank: nextRank,
-                            title: surfaceName,
+                            title: tabName,
                             subtitle: commandPaletteSwitcherSubtitle(base: workspaceName, windowLabel: context.windowLabel),
                             shortcutHint: nil,
                             kindLabel: surfaceKindLabel,
@@ -4901,16 +4901,16 @@ struct ContentView: View {
     }
 
     private func commandPaletteOrderedSwitcherPanels(for workspace: Workspace) -> [UUID] {
-        let orderedPanelIds = workspace.sidebarOrderedPanelIds()
-        guard orderedPanelIds.count < workspace.panels.count else { return orderedPanelIds }
+        let orderedTabIds = workspace.sidebarOrderedTabIds()
+        guard orderedTabIds.count < workspace.panels.count else { return orderedTabIds }
 
-        var panelIds = orderedPanelIds
-        var seen = Set(orderedPanelIds)
+        var tabIds = orderedTabIds
+        var seen = Set(orderedTabIds)
         for panelId in workspace.panels.keys.sorted(by: { $0.uuidString < $1.uuidString })
         where seen.insert(panelId).inserted {
-            panelIds.append(panelId)
+            tabIds.append(panelId)
         }
-        return panelIds
+        return tabIds
     }
 
     private func focusCommandPaletteSwitcherTarget(
@@ -4923,7 +4923,7 @@ struct ContentView: View {
         // without being blocked by the palette-visibility guard.
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusTab(workspaceId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true)
         }
     }
 
@@ -4935,7 +4935,7 @@ struct ContentView: View {
     ) {
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusTab(workspaceId, surfaceId: panelId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true)
         }
     }
 
@@ -4955,9 +4955,9 @@ struct ContentView: View {
         for workspace: Workspace,
         panelId: UUID
     ) -> CommandPaletteSwitcherSearchMetadata {
-        let directories = [workspace.panelDirectories[panelId]].compactMap { $0 }
-        let branches = [workspace.panelGitBranches[panelId]?.branch].compactMap { $0 }
-        let ports = workspace.surfaceListeningPorts[panelId] ?? []
+        let directories = [workspace.tabDirectories[panelId]].compactMap { $0 }
+        let branches = [workspace.tabGitBranches[panelId]?.branch].compactMap { $0 }
+        let ports = workspace.tabListeningPorts[panelId] ?? []
         return CommandPaletteSwitcherSearchMetadata(
             directories: directories,
             branches: branches,
@@ -4965,8 +4965,8 @@ struct ContentView: View {
         )
     }
 
-    private func commandPaletteSurfaceKindLabel(for panelType: PanelType) -> String {
-        switch panelType {
+    private func commandPaletteSurfaceKindLabel(for tabType: TabContentType) -> String {
+        switch tabType {
         case .terminal:
             return String(localized: "commandPalette.kind.terminal", defaultValue: "Terminal")
         case .browser:
@@ -4976,8 +4976,8 @@ struct ContentView: View {
         }
     }
 
-    private func commandPaletteSurfaceKeywords(for panelType: PanelType) -> [String] {
-        switch panelType {
+    private func commandPaletteSurfaceKeywords(for tabType: TabContentType) -> [String] {
+        switch tabType {
         case .terminal:
             return ["terminal", "shell", "console"]
         case .browser:
@@ -5075,7 +5075,7 @@ struct ContentView: View {
     private func commandPaletteShortcutAction(for commandId: String) -> KeyboardShortcutSettings.Action? {
         switch commandId {
         case "palette.newWorkspace":
-            return .newTab
+            return .newWorkspace
         case "palette.newWindow":
             return .newWindow
         case "palette.openFolder":
@@ -5218,9 +5218,9 @@ struct ContentView: View {
             )
             snapshot.setBool(CommandPaletteContextKeys.panelIsBrowser, panelContext.panel.panelType == .browser)
             snapshot.setBool(CommandPaletteContextKeys.panelIsTerminal, panelIsTerminal)
-            snapshot.setBool(CommandPaletteContextKeys.panelHasCustomName, workspace.panelCustomTitles[panelId] != nil)
-            snapshot.setBool(CommandPaletteContextKeys.panelShouldPin, !workspace.isPanelPinned(panelId))
-            let hasUnread = workspace.manualUnreadPanelIds.contains(panelId)
+            snapshot.setBool(CommandPaletteContextKeys.panelHasCustomName, workspace.tabCustomTitles[panelId] != nil)
+            snapshot.setBool(CommandPaletteContextKeys.panelShouldPin, !workspace.isTabPinned(panelId))
+            let hasUnread = workspace.manualUnreadTabIds.contains(panelId)
                 || notificationStore.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: panelId)
             snapshot.setBool(CommandPaletteContextKeys.panelHasUnread, hasUnread)
 
@@ -5960,13 +5960,13 @@ struct ContentView: View {
         registry.register(commandId: "palette.openFolder") {
             // Defer so the command palette dismisses before the modal sheet appears.
             DispatchQueue.main.async {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false
-                panel.canChooseDirectories = true
-                panel.allowsMultipleSelection = false
-                panel.title = String(localized: "panel.openFolder.title", defaultValue: "Open Folder")
-                panel.prompt = String(localized: "panel.openFolder.prompt", defaultValue: "Open")
-                if panel.runModal() == .OK, let url = panel.url {
+                let openPanel = NSOpenPanel()
+                openPanel.canChooseFiles = false
+                openPanel.canChooseDirectories = true
+                openPanel.allowsMultipleSelection = false
+                openPanel.title = String(localized: "panel.openFolder.title", defaultValue: "Open Folder")
+                openPanel.prompt = String(localized: "panel.openFolder.prompt", defaultValue: "Open")
+                if openPanel.runModal() == .OK, let url = openPanel.url {
                     workspaceManager.addWorkspace(workingDirectory: url.path)
                 }
             }
@@ -6130,16 +6130,16 @@ struct ContentView: View {
                 NSSound.beep()
                 return
             }
-            panelContext.workspace.setPanelCustomTitle(panelId: panelContext.panelId, title: nil)
+            panelContext.workspace.setTabCustomTitle(panelId: panelContext.panelId, title: nil)
         }
         registry.register(commandId: "palette.toggleTabPin") {
             guard let panelContext = focusedPanelContext else {
                 NSSound.beep()
                 return
             }
-            panelContext.workspace.setPanelPinned(
+            panelContext.workspace.setTabPinned(
                 panelId: panelContext.panelId,
-                pinned: !panelContext.workspace.isPanelPinned(panelContext.panelId)
+                pinned: !panelContext.workspace.isTabPinned(panelContext.panelId)
             )
         }
         registry.register(commandId: "palette.toggleTabUnread") {
@@ -6147,12 +6147,12 @@ struct ContentView: View {
                 NSSound.beep()
                 return
             }
-            let hasUnread = panelContext.workspace.manualUnreadPanelIds.contains(panelContext.panelId)
+            let hasUnread = panelContext.workspace.manualUnreadTabIds.contains(panelContext.panelId)
                 || notificationStore.hasUnreadNotification(forWorkspaceId: panelContext.workspace.id, surfaceId: panelContext.panelId)
             if hasUnread {
-                panelContext.workspace.markPanelRead(panelContext.panelId)
+                panelContext.workspace.markTabRead(panelContext.panelId)
             } else {
-                panelContext.workspace.markPanelUnread(panelContext.panelId)
+                panelContext.workspace.markTabUnread(panelContext.panelId)
             }
         }
         registry.register(commandId: "palette.nextTabInPane") {
@@ -6170,13 +6170,13 @@ struct ContentView: View {
         }
 
         registry.register(commandId: "palette.browserBack") {
-            workspaceManager.focusedBrowserPanel?.goBack()
+            workspaceManager.focusedBrowserTab?.goBack()
         }
         registry.register(commandId: "palette.browserForward") {
-            workspaceManager.focusedBrowserPanel?.goForward()
+            workspaceManager.focusedBrowserTab?.goForward()
         }
         registry.register(commandId: "palette.browserReload") {
-            workspaceManager.focusedBrowserPanel?.reload()
+            workspaceManager.focusedBrowserTab?.reload()
         }
         registry.register(commandId: "palette.browserOpenDefault") {
             if !openFocusedBrowserInDefaultBrowser() {
@@ -6223,7 +6223,7 @@ struct ContentView: View {
             _ = workspaceManager.createBrowserSplit(direction: .down)
         }
         registry.register(commandId: "palette.browserDuplicateRight") {
-            let url = workspaceManager.focusedBrowserPanel?.preferredURLStringForOmnibar().flatMap(URL.init(string:))
+            let url = workspaceManager.focusedBrowserTab?.preferredURLStringForOmnibar().flatMap(URL.init(string:))
             _ = workspaceManager.createBrowserSplit(direction: .right, url: url)
         }
 
@@ -6292,7 +6292,7 @@ struct ContentView: View {
         }
     }
 
-    private var focusedPanelContext: (workspace: Workspace, panelId: UUID, panel: any Panel)? {
+    private var focusedPanelContext: (workspace: Workspace, panelId: UUID, panel: any TabContent)? {
         guard let workspace = workspaceManager.selectedWorkspace,
               let panelId = workspace.focusedPanelId,
               let panel = workspace.panels[panelId] else {
@@ -6311,7 +6311,7 @@ struct ContentView: View {
     }
 
     private func panelDisplayName(workspace: Workspace, panelId: UUID, fallback: String) -> String {
-        let title = workspace.panelTitle(panelId: panelId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let title = workspace.tabTitle(panelId: panelId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
             return title
         }
@@ -6938,8 +6938,8 @@ struct ContentView: View {
         for webView: WKWebView
     ) -> CommandPaletteRestoreFocusTarget? {
         for (panelId, panel) in workspace.panels {
-            guard let browserPanel = panel as? BrowserPanel,
-                  browserPanel.webView === webView else {
+            guard let browserTab = panel as? BrowserTab,
+                  browserTab.webView === webView else {
                 continue
             }
 
@@ -6957,7 +6957,7 @@ struct ContentView: View {
     private func commandPaletteRestoreFocusTarget(
         workspaceId: UUID,
         panelId: UUID,
-        fallbackIntent: PanelFocusIntent,
+        fallbackIntent: TabFocusIntent,
         in window: NSWindow?
     ) -> CommandPaletteRestoreFocusTarget {
         let intent = workspaceManager.workspaces
@@ -6997,7 +6997,7 @@ struct ContentView: View {
         if let window = observedWindow, !window.isKeyWindow {
             window.makeKeyAndOrderFront(nil)
         }
-        workspaceManager.focusTab(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
+        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
 
         guard let context = focusedPanelContext,
               context.workspace.id == target.workspaceId,
@@ -7011,7 +7011,7 @@ struct ContentView: View {
     }
 
 #if DEBUG
-    private func debugCommandPaletteFocusIntent(_ intent: PanelFocusIntent) -> String {
+    private func debugCommandPaletteFocusIntent(_ intent: TabFocusIntent) -> String {
         switch intent {
         case .panel:
             return "panel"
@@ -7259,21 +7259,21 @@ struct ContentView: View {
                 NSSound.beep()
                 return
             }
-            workspace.setPanelCustomTitle(panelId: panelId, title: normalizedName)
+            workspace.setTabCustomTitle(panelId: panelId, title: normalizedName)
         }
 
         dismissCommandPalette()
     }
 
     private func focusFocusedBrowserAddressBar() -> Bool {
-        guard let panel = workspaceManager.focusedBrowserPanel else { return false }
+        guard let panel = workspaceManager.focusedBrowserTab else { return false }
         _ = panel.requestAddressBarFocus()
         NotificationCenter.default.post(name: .browserFocusAddressBar, object: panel.id)
         return true
     }
 
     private func openFocusedBrowserInDefaultBrowser() -> Bool {
-        guard let panel = workspaceManager.focusedBrowserPanel,
+        guard let panel = workspaceManager.focusedBrowserTab,
               let rawURL = panel.preferredURLStringForOmnibar(),
               let url = URL(string: rawURL),
               let scheme = url.scheme?.lowercased(),
@@ -7380,7 +7380,7 @@ struct ContentView: View {
         guard let workspace = workspaceManager.selectedWorkspace else { return nil }
         let rawDirectory: String = {
             if let focusedPanelId = workspace.focusedPanelId,
-               let directory = workspace.panelDirectories[focusedPanelId] {
+               let directory = workspace.tabDirectories[focusedPanelId] {
                 return directory
             }
             return workspace.currentDirectory
@@ -8561,8 +8561,8 @@ struct WorkspaceSidebar: View {
                                           let focusedId = ws.focusedPanelId else {
                                         return []
                                     }
-                                    let context = ws.panelGitContexts[focusedId] ?? nil
-                                    let isDirty = ws.panelGitBranches[focusedId]?.isDirty ?? false
+                                    let context = ws.tabGitContexts[focusedId] ?? nil
+                                    let isDirty = ws.tabGitBranches[focusedId]?.isDirty ?? false
                                     return WorktreeChipProjector.project(
                                         context,
                                         settingsEnabled: true,
@@ -8584,10 +8584,10 @@ struct WorkspaceSidebar: View {
                                     var terminalCount = 0
                                     var browserCount = 0
                                     var documentCount = 0
-                                    for panelId in ws.sidebarOrderedPanelIds() {
-                                        let terminalKind = ws.surfaceActivityTerminalKind(panelId: panelId)
+                                    for tabId in ws.sidebarOrderedTabIds() {
+                                        let terminalKind = ws.surfaceActivityTerminalKind(panelId: tabId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
-                                            switch ws.panels[panelId]?.panelType {
+                                            switch ws.panels[tabId]?.panelType {
                                             case .terminal: terminalCount += 1
                                             case .browser: browserCount += 1
                                             case .markdown: documentCount += 1
@@ -8596,10 +8596,10 @@ struct WorkspaceSidebar: View {
                                             continue
                                         }
                                         let resolved = ws.resolvedSurfaceTabActivityState(
-                                            panelId: panelId,
+                                            panelId: tabId,
                                             hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
                                                 forWorkspaceId: ws.id,
-                                                surfaceId: panelId
+                                                surfaceId: tabId
                                             ),
                                             terminalKind: .some(terminalKind)
                                         )
@@ -8611,25 +8611,25 @@ struct WorkspaceSidebar: View {
                                         case .cold: pulseState = .cold
                                         case nil: continue
                                         }
-                                        let titleBarState = ws.surfaceTitleBarState(panelId: panelId)
+                                        let titleBarState = ws.tabTitleBarState(panelId: tabId)
                                         let reportedTitle = titleBarState.title?
                                             .trimmingCharacters(in: .whitespacesAndNewlines)
                                         let context = WorkspacePulseAgentContextProjector.project(
                                             title: reportedTitle?.isEmpty == false
                                                 ? titleBarState.title
-                                                : ws.panels[panelId]?.displayTitle,
+                                                : ws.panels[tabId]?.displayTitle,
                                             subtitle: showsSidebarNotificationMessage
                                                 ? titleBarState.description
                                                 : nil
                                         )
-                                        let attention = ws.attentionSnapshot(panelId: panelId)
+                                        let attention = ws.attentionSnapshot(panelId: tabId)
                                         let activityHelp = ws.resolvedAgentActivityHelp(
-                                            panelId: panelId,
+                                            panelId: tabId,
                                             activityState: resolved
                                         )
                                         agents.append(
                                             WorkspacePulseAgent(
-                                                surfaceId: panelId,
+                                                surfaceId: tabId,
                                                 state: pulseState,
                                                 context: context,
                                                 flagged: attention.isFlagged,
@@ -10339,27 +10339,27 @@ private struct SidebarFeedbackComposerSheet: View {
     }
 
     private func chooseAttachments() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image]
-        panel.title = String(
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = true
+        openPanel.allowedContentTypes = [.image]
+        openPanel.title = String(
             localized: "sidebar.help.feedback.attachImages.title",
             defaultValue: "Attach Images"
         )
-        panel.prompt = String(
+        openPanel.prompt = String(
             localized: "sidebar.help.feedback.attachImages.prompt",
             defaultValue: "Attach"
         )
 
-        guard panel.runModal() == .OK else { return }
+        guard openPanel.runModal() == .OK else { return }
 
         var updatedAttachments = attachments
         var knownPaths = Set(updatedAttachments.map(\.standardizedPath))
         var firstIssue: String?
 
-        for url in panel.urls {
+        for url in openPanel.urls {
             let normalizedPath = url.standardizedFileURL.path
             if knownPaths.contains(normalizedPath) {
                 continue
@@ -10876,7 +10876,7 @@ private struct SidebarHelpMenuButton: View {
 
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
-    @ObservedObject private var attentionIndex = SurfaceAttentionIndex.shared
+    @ObservedObject private var attentionIndex = TabAttentionIndex.shared
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
@@ -11871,8 +11871,8 @@ enum SidebarWorkspaceShortcutHintMetrics {
 /// 2. `TabItemView`'s body no longer re-evaluates twice a second just
 ///    because a digit moved, which is what tore down an open workspace
 ///    context menu while the operator was still reading it.
-private struct SidebarSurfaceMetricsReadout: View {
-    @ObservedObject private var sampler = SurfaceMetricsSampler.shared
+private struct SidebarTabMetricsReadout: View {
+    @ObservedObject private var sampler = TabMetricsSampler.shared
 
     /// Focused surface for the workspace, or nil when the workspace has no
     /// focused panel. Either way the slot renders.
@@ -11887,7 +11887,7 @@ private struct SidebarSurfaceMetricsReadout: View {
     /// Render a Sample as a compact "<cpu>% <mem>" string.
     /// CPU is integer percent (0%–800% on multi-core spikes); memory is
     /// integer MB up to 1024, otherwise 1-decimal GB.
-    nonisolated static func format(_ sample: SurfaceMetricsSampler.Sample) -> String {
+    nonisolated static func format(_ sample: TabMetricsSampler.Sample) -> String {
         let cpu = "\(Int(sample.cpuPct.rounded()))%"
         let mem: String
         if sample.rssMb >= 1024 {
@@ -12749,7 +12749,7 @@ private struct WorkspaceRowView: View, Equatable {
         // `VerticalTabsSidebar`, passed in via `worktreeChipRows`)
         // replaces them.
         let orderedPanelIds: [UUID]? = detailVisibility.showsPullRequests
-            ? workspace.sidebarOrderedPanelIds()
+            ? workspace.sidebarOrderedTabIds()
             : nil
         let pullRequestRows: [PullRequestDisplay] = {
             guard detailVisibility.showsPullRequests, let orderedPanelIds else { return [] }
@@ -12828,7 +12828,7 @@ private struct WorkspaceRowView: View, Equatable {
             // and its own observation of the sampler, so the card's structure
             // is identical whether or not a sample exists. See
             // `SidebarSurfaceMetricsReadout`.
-            SidebarSurfaceMetricsReadout(
+            SidebarTabMetricsReadout(
                 surfaceId: workspace.focusedPanelId,
                 valueColor: activeSecondaryColor(0.55),
                 // `activeSecondaryColor` collapses to `.secondary` on the
@@ -13353,7 +13353,7 @@ private struct WorkspaceRowView: View, Equatable {
         guard workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex) else { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-        workspaceManager.selectTab(workspace)
+        workspaceManager.selectWorkspace(workspace)
         setSelectionToTabs()
     }
 
@@ -13392,7 +13392,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
 
         lastSidebarSelectionIndex = index
-        workspaceManager.selectTab(workspace)
+        workspaceManager.selectWorkspace(workspace)
         if wasSelected, !isCommand, !isShift {
             workspaceManager.dismissNotificationOnDirectInteraction(
                 workspaceId: workspace.id,
@@ -14765,14 +14765,14 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
             return false
         }
 
-        if let source = app.locateBonsplitSurface(tabId: transfer.bonsplitTab.id),
+        if let source = app.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id),
            source.workspaceId == targetWorkspaceId {
             syncSidebarSelection()
             return true
         }
 
         guard app.moveBonsplitTab(
-            tabId: transfer.bonsplitTab.id,
+            bonsplitTabId: transfer.bonsplitTab.id,
             toWorkspace: targetWorkspaceId,
             focus: true,
             focusWindow: true

@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 n="$1"
-python3 scripts/vocab-rename/rename.py apply "scripts/vocab-rename/pass-${n}.tsv" | tee "/tmp/c11-vocab-pass-${n}.log"
+python3 scripts/vocab-rename/rename.py apply "scripts/vocab-rename/pass-${n}.tsv" --evidence-log "scripts/vocab-rename/evidence-${n}.tsv" | tee "/tmp/c11-vocab-pass-${n}.log"
 if [[ -s "scripts/vocab-rename/pass-${n}.manual.patch" ]]; then
   git apply --whitespace=nowarn "scripts/vocab-rename/pass-${n}.manual.patch" || { echo "MANUAL PATCH FAILED" >&2; exit 1; }
 fi

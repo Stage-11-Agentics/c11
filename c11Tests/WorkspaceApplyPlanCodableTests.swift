@@ -49,7 +49,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     // MARK: - SurfaceSpec
 
     func testSurfaceSpecTerminalRoundTrips() throws {
-        let spec = SurfaceSpec(
+        let spec = TabSpec(
             id: "main",
             kind: .terminal,
             title: "driver",
@@ -71,7 +71,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     }
 
     func testSurfaceSpecBrowserRoundTrips() throws {
-        let spec = SurfaceSpec(
+        let spec = TabSpec(
             id: "docs",
             kind: .browser,
             title: "docs",
@@ -81,12 +81,12 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     }
 
     func testSurfaceSpecCompanionFieldsRoundTrip() throws {
-        let browser = SurfaceSpec(
+        let browser = TabSpec(
             id: "browser",
             kind: .browser,
             linkedAgentSurfacePlanId: "agent"
         )
-        let agent = SurfaceSpec(
+        let agent = TabSpec(
             id: "agent",
             kind: .terminal,
             declaredAgentKind: "codex"
@@ -97,14 +97,14 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
 
     func testSurfaceSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal"}"#
-        let decoded = try decode(SurfaceSpec.self, from: Data(legacyJSON.utf8))
+        let decoded = try decode(TabSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertNil(decoded.linkedAgentSurfacePlanId)
         XCTAssertNil(decoded.declaredAgentKind)
         XCTAssertFalse(decoded.submitCommand)
     }
 
     func testSurfaceSpecMarkdownRoundTrips() throws {
-        let spec = SurfaceSpec(
+        let spec = TabSpec(
             id: "notes",
             kind: .markdown,
             title: "plan",
@@ -118,7 +118,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         // round-trips without normalization. The string-value type guard
         // lives in the executor, not the Codable layer, so a non-string value
         // must still decode cleanly on the wire.
-        let spec = SurfaceSpec(
+        let spec = TabSpec(
             id: "watcher",
             kind: .terminal,
             paneMetadata: [
@@ -128,7 +128,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             ]
         )
         let data = try encode(spec)
-        let decoded = try decode(SurfaceSpec.self, from: data)
+        let decoded = try decode(TabSpec.self, from: data)
         XCTAssertEqual(decoded.paneMetadata?["mailbox.delivery"], .string("silent"))
         XCTAssertEqual(
             decoded.paneMetadata?["mailbox.advertises"],
@@ -140,13 +140,13 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     // MARK: - SurfaceSpec.submitCommand (opt-in, back-compat)
 
     func testSurfaceSpecSubmitCommandRoundTrips() throws {
-        let spec = SurfaceSpec(
+        let spec = TabSpec(
             id: "launcher",
             kind: .terminal,
             command: "python3 /path/position.py --watch",
             submitCommand: true
         )
-        let decoded = try decode(SurfaceSpec.self, from: try encode(spec))
+        let decoded = try decode(TabSpec.self, from: try encode(spec))
         XCTAssertTrue(decoded.submitCommand)
         XCTAssertEqual(decoded, spec)
     }
@@ -156,7 +156,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     /// custom `init(from:)` must instead default it to `false`.
     func testSurfaceSpecDecodesMissingSubmitCommandAsFalse() throws {
         let legacyJSON = #"{"id":"t","kind":"terminal","command":"ls"}"#
-        let decoded = try decode(SurfaceSpec.self, from: Data(legacyJSON.utf8))
+        let decoded = try decode(TabSpec.self, from: Data(legacyJSON.utf8))
         XCTAssertFalse(decoded.submitCommand)
         XCTAssertEqual(decoded.command, "ls")
     }
@@ -164,7 +164,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     /// When `submitCommand` is `false` the encoder omits the key entirely, so
     /// serialized output for every pre-existing spec stays byte-identical.
     func testSurfaceSpecOmitsSubmitCommandWhenFalse() throws {
-        let spec = SurfaceSpec(id: "t", kind: .terminal, command: "ls")
+        let spec = TabSpec(id: "t", kind: .terminal, command: "ls")
         let json = String(data: try encode(spec), encoding: .utf8) ?? ""
         XCTAssertFalse(json.contains("submitCommand"), "false must not serialize; got \(json)")
     }
@@ -248,10 +248,10 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
                 )
             ),
             surfaces: [
-                SurfaceSpec(id: "tl", kind: .terminal, title: "driver", command: "c11 welcome\n"),
-                SurfaceSpec(id: "tr", kind: .browser, title: "spike", url: "https://stage11.ai"),
-                SurfaceSpec(id: "bl", kind: .markdown, title: "welcome", filePath: "/tmp/welcome.md"),
-                SurfaceSpec(id: "br", kind: .terminal, title: "claude", command: "claude\n")
+                TabSpec(id: "tl", kind: .terminal, title: "driver", command: "c11 welcome\n"),
+                TabSpec(id: "tr", kind: .browser, title: "spike", url: "https://stage11.ai"),
+                TabSpec(id: "bl", kind: .markdown, title: "welcome", filePath: "/tmp/welcome.md"),
+                TabSpec(id: "br", kind: .terminal, title: "claude", command: "claude\n")
             ]
         )
         try roundTrip(plan)
@@ -330,16 +330,16 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
     /// Helper: build a plan with the minimum valid layout (one terminal).
     private func minimalPlan(
         version: Int = 1,
-        surfaces: [SurfaceSpec]? = nil,
+        surfaces: [TabSpec]? = nil,
         layout: LayoutTreeSpec? = nil
     ) -> WorkspaceApplyPlan {
-        let resolvedSurfaces = surfaces ?? [SurfaceSpec(id: "a", kind: .terminal)]
+        let resolvedTabs = surfaces ?? [TabSpec(id: "a", kind: .terminal)]
         let resolvedLayout = layout ?? .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"]))
         return WorkspaceApplyPlan(
             version: version,
             workspace: WorkspaceSpec(),
             layout: resolvedLayout,
-            surfaces: resolvedSurfaces
+            surfaces: resolvedTabs
         )
     }
 
@@ -359,8 +359,8 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"])),
             surfaces: [
-                SurfaceSpec(id: "a", kind: .terminal),
-                SurfaceSpec(id: "a", kind: .terminal)
+                TabSpec(id: "a", kind: .terminal),
+                TabSpec(id: "a", kind: .terminal)
             ]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
@@ -377,7 +377,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
                 first: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"])),
                 second: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"]))
             )),
-            surfaces: [SurfaceSpec(id: "a", kind: .terminal)]
+            surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
         XCTAssertEqual(failure?.code, "duplicate_surface_reference")
@@ -388,7 +388,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a", "a"])),
-            surfaces: [SurfaceSpec(id: "a", kind: .terminal)]
+            surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
         XCTAssertEqual(failure?.code, "duplicate_surface_reference")
@@ -399,7 +399,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["ghost"])),
-            surfaces: [SurfaceSpec(id: "a", kind: .terminal)]
+            surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
         XCTAssertEqual(failure?.code, "unknown_surface_ref")
@@ -410,7 +410,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             version: 1,
             workspace: WorkspaceSpec(),
             layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["a"], selectedIndex: 5)),
-            surfaces: [SurfaceSpec(id: "a", kind: .terminal)]
+            surfaces: [TabSpec(id: "a", kind: .terminal)]
         )
         let failure = WorkspaceLayoutExecutor.validate(plan: plan)
         XCTAssertEqual(failure?.code, "validation_failed")

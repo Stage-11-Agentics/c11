@@ -21,14 +21,14 @@ final class AgentDetector: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.stage11.c11.agent-detector", qos: .utility)
 
-    private struct PanelKey: Hashable {
+    private struct TabKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
     }
 
-    private var ttyNames: [PanelKey: String] = [:]
-    private var detectedTerminalTypes: [PanelKey: String] = [:]
-    private var pendingKicks: Set<PanelKey> = []
+    private var ttyNames: [TabKey: String] = [:]
+    private var detectedTerminalTypes: [TabKey: String] = [:]
+    private var pendingKicks: Set<TabKey> = []
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
     private var sweepTimer: DispatchSourceTimer?
@@ -37,7 +37,7 @@ final class AgentDetector: @unchecked Sendable {
 
     func registerTTY(workspaceId: UUID, panelId: UUID, ttyName: String) {
         queue.async { [self] in
-            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
+            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames[key] = ttyName
             pendingKicks.insert(key)
             startCoalesce(delaySeconds: 0.25)
@@ -47,7 +47,7 @@ final class AgentDetector: @unchecked Sendable {
 
     func unregister(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
+            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
             detectedTerminalTypes.removeValue(forKey: key)
             pendingKicks.remove(key)
@@ -57,7 +57,7 @@ final class AgentDetector: @unchecked Sendable {
     /// Request a scan for a specific panel. Coalesces with others.
     func kick(workspaceId: UUID, panelId: UUID) {
         queue.async { [self] in
-            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
+            let key = TabKey(workspaceId: workspaceId, panelId: panelId)
             guard ttyNames[key] != nil else { return }
             pendingKicks.insert(key)
             startCoalesce(delaySeconds: 0.2)
@@ -102,7 +102,7 @@ final class AgentDetector: @unchecked Sendable {
             // work. Decays stale `working` surfaces to `idle` as a backstop
             // for missed prompt reports.
             for key in self.ttyNames.keys {
-                SurfaceLivenessDeriver.reconcile(
+                TabLivenessDeriver.reconcile(
                     surfaceId: key.panelId,
                     workspaceId: key.workspaceId,
                     detectedTerminalType: self.detectedTerminalTypes[key]
@@ -129,7 +129,7 @@ final class AgentDetector: @unchecked Sendable {
 
     // MARK: - Scan
 
-    private func runScan(panelsToWrite: Set<PanelKey>) {
+    private func runScan(panelsToWrite tabsToWrite: Set<TabKey>) {
         scanInFlight = true
         defer { scanInFlight = false }
         guard !ttyNames.isEmpty else { return }
@@ -142,7 +142,7 @@ final class AgentDetector: @unchecked Sendable {
         let ttyList = uniqueTTYs.joined(separator: ",")
         let foregroundPerTTY = Self.runPS(ttyList: ttyList)
 
-        for key in panelsToWrite {
+        for key in tabsToWrite {
             guard let tty = snapshot[key] else { continue }
             guard let info = foregroundPerTTY[tty] else {
                 // TTY exists but no foreground process — skip (no-op).
@@ -157,7 +157,7 @@ final class AgentDetector: @unchecked Sendable {
             if detectionChanged {
                 detectedTerminalTypes[key] = classification
             }
-            let changed = SurfaceMetadataStore.shared.setInternal(
+            let changed = TabMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
                 key: "terminal_type",
@@ -176,7 +176,7 @@ final class AgentDetector: @unchecked Sendable {
                             forSurface: key.panelId
                         )
                         if changed && !detectionChanged {
-                            workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                            workspace.syncSurfaceTabActivityStateForTab(key.panelId)
                         }
                     }
                 }

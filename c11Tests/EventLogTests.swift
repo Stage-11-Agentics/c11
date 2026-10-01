@@ -282,14 +282,14 @@ final class EventLogTests: XCTestCase {
         let log = EventLog(url: logURL(), instance: "mirror-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "mirror-inst")
         let ws = UUID(), sf = UUID()
-        defer { SurfaceMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+        defer { TabMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
 
         // Only canonical keys mirror; non-canonical display chips do not.
         XCTAssertEqual(TerminalController.sidebarStatusCanonicalMirrorKey("status"), "status")
         XCTAssertNil(TerminalController.sidebarStatusCanonicalMirrorKey("build"))
 
         // Mirror the canonical status exactly as the fast path does.
-        XCTAssertTrue(SurfaceMetadataStore.shared.setInternal(
+        XCTAssertTrue(TabMetadataStore.shared.setInternal(
             workspaceId: ws, surfaceId: sf,
             key: TerminalController.sidebarStatusCanonicalMirrorKey("status")!,
             value: "working", source: .explicit))
@@ -312,9 +312,9 @@ final class EventLogTests: XCTestCase {
         let log = EventLog(url: logURL(), instance: "prog-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "prog-inst")
         let ws = UUID(), sf = UUID()
-        defer { SurfaceMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+        defer { TabMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
 
-        XCTAssertTrue(SurfaceMetadataStore.shared.setInternal(
+        XCTAssertTrue(TabMetadataStore.shared.setInternal(
             workspaceId: ws, surfaceId: sf,
             key: MetadataKey.progress, value: 0.5, source: .explicit))
         EventEmitter.shared.flush()
@@ -335,7 +335,7 @@ final class EventLogTests: XCTestCase {
             workspace: workspace,
             surface: surface,
             reason: "Needs schema decision",
-            callerSurfaceId: callerSurface,
+            callerTabId: callerSurface,
             by: .agent
         )
         EventEmitter.shared.emitFlagLowered(workspace: workspace, surface: surface, by: .operator)

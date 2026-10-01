@@ -17,10 +17,10 @@ import Bonsplit
 /// `WorkspaceDerivedActivityTests`; here we assert only the store side.
 final class SurfaceLivenessDeriverTests: XCTestCase {
 
-    private let store = SurfaceMetadataStore.shared
+    private let store = TabMetadataStore.shared
 
     override func tearDown() {
-        SurfaceActivityTracker.shared.resetAll()
+        TabActivityTracker.shared.resetAll()
         super.tearDown()
     }
 
@@ -51,9 +51,9 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     // MARK: - Mapping (pure)
 
     func testActivityStateMapping() {
-        XCTAssertEqual(SurfaceLivenessDeriver.activityState(for: .commandRunning), .working)
-        XCTAssertEqual(SurfaceLivenessDeriver.activityState(for: .promptIdle), .idle)
-        XCTAssertNil(SurfaceLivenessDeriver.activityState(for: .unknown))
+        XCTAssertEqual(TabLivenessDeriver.activityState(for: .commandRunning), .working)
+        XCTAssertEqual(TabLivenessDeriver.activityState(for: .promptIdle), .idle)
+        XCTAssertNil(TabLivenessDeriver.activityState(for: .unknown))
     }
 
     func testReportedAgentActivityParserAcceptsLifecycleVocabulary() {
@@ -75,7 +75,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             source: .derived
         ))
 
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+        TabLivenessDeriver.onAgentLifecycleChanged(
             surfaceId: surfaceId,
             workspaceId: workspaceId,
             activity: .idle
@@ -89,7 +89,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testSurfaceTabResolverMapsRecognizedAgentStates() {
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .working,
                 terminalType: "codex"
@@ -97,7 +97,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             .running
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .idle,
                 isCold: true,
@@ -106,7 +106,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             .cold
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .idle,
                 terminalType: "claude-code"
@@ -114,7 +114,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             .idle
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: nil,
                 terminalType: "opencode-run"
@@ -126,7 +126,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     func testSurfaceTabResolverGivesExactDemandPrecedence() {
         for activity in [SidebarActivityState.working, .idle, nil] {
             XCTAssertEqual(
-                SurfaceTabActivityResolver.resolve(
+                TabActivityResolver.resolve(
                     hasExactSurfaceNotification: true,
                     derivedActivity: activity,
                     terminalType: "codex"
@@ -138,7 +138,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testSurfaceTabResolverDoesNotManufactureWaitingFromWorkspaceOrManualUnread() {
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .idle,
                 terminalType: "codex"
@@ -146,7 +146,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             .idle
         )
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: nil,
                 terminalType: "codex"
@@ -156,17 +156,17 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     }
 
     func testSurfaceTabResolverOmitsNonAgentActivity() {
-        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+        XCTAssertNil(TabActivityResolver.resolve(
             hasExactSurfaceNotification: false,
             derivedActivity: .working,
             terminalType: "terminal"
         ))
-        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+        XCTAssertNil(TabActivityResolver.resolve(
             hasExactSurfaceNotification: false,
             derivedActivity: .idle,
             terminalType: nil
         ))
-        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+        XCTAssertNil(TabActivityResolver.resolve(
             hasExactSurfaceNotification: false,
             derivedActivity: .idle,
             isCold: true,
@@ -178,25 +178,25 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 10_000)
         let threshold: TimeInterval = 10 * 60
 
-        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+        XCTAssertFalse(TabLivenessDeriver.isCold(
             activity: .idle,
             lastTouchedAt: now.addingTimeInterval(-threshold + 0.1),
             now: now,
             coldAfterSeconds: threshold
         ))
-        XCTAssertTrue(SurfaceLivenessDeriver.isCold(
+        XCTAssertTrue(TabLivenessDeriver.isCold(
             activity: .idle,
             lastTouchedAt: now.addingTimeInterval(-threshold),
             now: now,
             coldAfterSeconds: threshold
         ))
-        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+        XCTAssertFalse(TabLivenessDeriver.isCold(
             activity: .working,
             lastTouchedAt: now.addingTimeInterval(-threshold * 2),
             now: now,
             coldAfterSeconds: threshold
         ))
-        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+        XCTAssertFalse(TabLivenessDeriver.isCold(
             activity: .idle,
             lastTouchedAt: nil,
             now: now,
@@ -268,7 +268,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     func testSuppressedWaitingAndFlagModifierCompositionPreserveLifecycle() {
         let now = Date(timeIntervalSince1970: 20_000)
         XCTAssertEqual(
-            SurfaceTabActivityResolver.resolve(
+            TabActivityResolver.resolve(
                 hasExactSurfaceNotification: true,
                 derivedActivity: .idle,
                 terminalType: "codex",
@@ -300,14 +300,14 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testDetectedShellTurnsDeclaredAgentIntoTerminalPresentation() {
         XCTAssertEqual(
-            SurfaceActivityTerminalKindResolver.resolve(
+            TabActivityTerminalKindResolver.resolve(
                 detectedTerminalType: "shell",
                 declaredTerminalType: "codex"
             ),
             "shell"
         )
         XCTAssertEqual(
-            SurfaceActivityTerminalKindResolver.resolve(
+            TabActivityTerminalKindResolver.resolve(
                 detectedTerminalType: "codex",
                 declaredTerminalType: "claude-code"
             ),
@@ -317,7 +317,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testUnknownForegroundChildKeepsDeclaredAgentPresentation() {
         XCTAssertEqual(
-            SurfaceActivityTerminalKindResolver.resolve(
+            TabActivityTerminalKindResolver.resolve(
                 detectedTerminalType: "unknown",
                 declaredTerminalType: "claude-code"
             ),
@@ -328,7 +328,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     func testHarnessIdentityDoesNotChangeResolvedState() {
         for terminalType in ["codex", "claude-code", "opencode", "omp", "pi"] {
             XCTAssertEqual(
-                SurfaceTabActivityResolver.resolve(
+                TabActivityResolver.resolve(
                     hasExactSurfaceNotification: false,
                     derivedActivity: .working,
                     terminalType: terminalType
@@ -362,7 +362,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         let workspace = Workspace()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
 
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: surface, workspaceId: ws, state: .commandRunning, workspace: workspace
         )
 
@@ -376,7 +376,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         let workspace = Workspace()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
 
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: surface, workspaceId: ws, state: .promptIdle, workspace: workspace
         )
 
@@ -391,13 +391,13 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
 
         // Establish a working truth first.
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: surface, workspaceId: ws, state: .commandRunning, workspace: workspace
         )
         XCTAssertTrue(poll { self.activityValue(ws, surface) == SidebarActivityState.working.rawValue })
 
         // Unknown must clear it back to absent.
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: surface, workspaceId: ws, state: .unknown, workspace: workspace
         )
         XCTAssertTrue(poll { self.activityValue(ws, surface) == nil })
@@ -419,7 +419,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         ))
 
         // A derived transition to idle must be rejected by precedence.
-        SurfaceLivenessDeriver.onShellActivityChanged(
+        TabLivenessDeriver.onShellActivityChanged(
             surfaceId: surface, workspaceId: ws, state: .promptIdle, workspace: workspace
         )
         // Give the async write a beat, then assert the explicit value survived.
@@ -440,10 +440,10 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             key: MetadataKey.activity, value: SidebarActivityState.working.rawValue,
             source: .derived
         ))
-        SurfaceActivityTracker.shared.clear(surfaceId: surface.uuidString)
+        TabActivityTracker.shared.clear(surfaceId: surface.uuidString)
 
         // No recency → stale → decays to idle.
-        SurfaceLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
+        TabLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
         XCTAssertEqual(activityValue(ws, surface), SidebarActivityState.idle.rawValue)
         XCTAssertEqual(activitySource(ws, surface), .derived)
     }
@@ -458,9 +458,9 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
                 key: MetadataKey.activity, value: SidebarActivityState.working.rawValue,
                 source: .derived
             ))
-            SurfaceActivityTracker.shared.clear(surfaceId: surface.uuidString)
+            TabActivityTracker.shared.clear(surfaceId: surface.uuidString)
 
-            SurfaceLivenessDeriver.reconcile(
+            TabLivenessDeriver.reconcile(
                 surfaceId: surface,
                 workspaceId: ws,
                 detectedTerminalType: agentKind
@@ -484,11 +484,11 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             source: .derived
         ))
         // Fresh activity now → not stale → no decay.
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surface.uuidString, at: Date())
+        TabActivityTracker.shared.recordActivity(surfaceId: surface.uuidString, at: Date())
         // Let the tracker's async write land.
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
 
-        SurfaceLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
+        TabLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
         XCTAssertEqual(activityValue(ws, surface), SidebarActivityState.working.rawValue)
     }
 
@@ -502,9 +502,9 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             key: MetadataKey.activity, value: SidebarActivityState.working.rawValue,
             source: .explicit
         ))
-        SurfaceActivityTracker.shared.clear(surfaceId: surface.uuidString)
+        TabActivityTracker.shared.clear(surfaceId: surface.uuidString)
 
-        SurfaceLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
+        TabLivenessDeriver.reconcile(surfaceId: surface, workspaceId: ws)
         XCTAssertEqual(activityValue(ws, surface), SidebarActivityState.working.rawValue)
         XCTAssertEqual(activitySource(ws, surface), .explicit)
     }

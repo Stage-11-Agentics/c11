@@ -1074,7 +1074,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let focusExpectation = expectation(description: "observer forwards focus callback")
         var pointerDownCount = 0
@@ -1102,7 +1102,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
             return
         }
 
-        let overlay = MarkdownPanelPointerObserverView(frame: contentView.bounds)
+        let overlay = MarkdownTabPointerObserverView(frame: contentView.bounds)
         overlay.autoresizingMask = [.width, .height]
         let noFocusExpectation = expectation(description: "observer ignores invalid clicks")
         noFocusExpectation.isInverted = true
@@ -1128,7 +1128,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
     }
 
     func testObserverDoesNotParticipateInHitTesting() {
-        let overlay = MarkdownPanelPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let overlay = MarkdownTabPointerObserverView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
         XCTAssertNil(overlay.hitTest(NSPoint(x: 40, y: 30)))
     }
 }

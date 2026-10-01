@@ -25,18 +25,18 @@ final class PaneMetadataStore: @unchecked Sendable {
     // MARK: - Constants
 
     /// Same 64 KiB per-pane cap used for surfaces.
-    static let payloadCapBytes: Int = SurfaceMetadataStore.payloadCapBytes
+    static let payloadCapBytes: Int = TabMetadataStore.payloadCapBytes
 
     /// Reserved canonical keys recognised at the pane layer. Title and
     /// description start; the rest of the surface canonical set is allowed
     /// for future use without a schema bump and validates against the same
     /// rules. Keys outside this set accept any JSON value.
-    static let reservedKeys: Set<String> = SurfaceMetadataStore.reservedKeys
+    static let reservedKeys: Set<String> = TabMetadataStore.reservedKeys
 
-    typealias SourceRecord = SurfaceMetadataStore.SourceRecord
-    typealias WriteError = SurfaceMetadataStore.WriteError
-    typealias WriteMode = SurfaceMetadataStore.WriteMode
-    typealias WriteResult = SurfaceMetadataStore.WriteResult
+    typealias SourceRecord = TabMetadataStore.SourceRecord
+    typealias WriteError = TabMetadataStore.WriteError
+    typealias WriteMode = TabMetadataStore.WriteMode
+    typealias WriteResult = TabMetadataStore.WriteResult
 
     // MARK: - State
 
@@ -215,7 +215,7 @@ final class PaneMetadataStore: @unchecked Sendable {
             if let cur = sblob[key], source.precedence < cur.source.precedence {
                 return false
             }
-            if SurfaceMetadataStore.validateReservedKey(key, value) != nil {
+            if TabMetadataStore.validateReservedKey(key, value) != nil {
                 return false
             }
             if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
@@ -250,8 +250,8 @@ final class PaneMetadataStore: @unchecked Sendable {
         }
 
         for (k, v) in partial {
-            if SurfaceMetadataStore.reservedKeys.contains(k) {
-                if let err = SurfaceMetadataStore.validateReservedKey(k, v) {
+            if TabMetadataStore.reservedKeys.contains(k) {
+                if let err = TabMetadataStore.validateReservedKey(k, v) {
                     throw err
                 }
             }

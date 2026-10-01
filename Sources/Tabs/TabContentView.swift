@@ -3,26 +3,26 @@ import Foundation
 import Bonsplit
 
 /// View that renders the appropriate panel view based on panel type
-struct PanelContentView: View {
+struct TabContentView: View {
     @ObservedObject var workspace: Workspace
-    let panel: any Panel
+    let panel: any TabContent
     let paneId: PaneID
     let isFocused: Bool
     let isSelectedInPane: Bool
     let isVisibleInUI: Bool
     let portalPriority: Int
     let isSplit: Bool
-    let appearance: PanelAppearance
+    let appearance: TabAppearance
     let hasUnreadNotification: Bool
     let onFocus: () -> Void
-    let onRequestPanelFocus: () -> Void
+    let onRequestTabFocus: () -> Void
     let onTriggerFlash: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            let titleBarState = workspace.surfaceTitleBarState(panelId: panel.id)
+            let titleBarState = workspace.tabTitleBarState(panelId: panel.id)
             if titleBarState.rendersBar {
-                SurfaceTitleBarView(
+                TabTitleBarView(
                     state: titleBarState,
                     onToggleCollapsed: { workspace.toggleSurfaceTitleBarCollapsed(panelId: panel.id) }
                 )
@@ -35,11 +35,11 @@ struct PanelContentView: View {
     private var contentView: some View {
         switch panel.panelType {
         case .terminal:
-            if let terminalPanel = panel as? TerminalPanel {
-                TerminalPanelView(
-                    panel: terminalPanel,
+            if let terminalTab = panel as? TerminalTab {
+                TerminalTabView(
+                    panel: terminalTab,
                     paneInteractionRuntime: workspace.paneInteractionRuntime,
-                    drawsPortalTopFrameEdge: !workspace.surfaceTitleBarState(panelId: terminalPanel.id).rendersBar,
+                    drawsPortalTopFrameEdge: !workspace.tabTitleBarState(panelId: terminalTab.id).rendersBar,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,
@@ -51,25 +51,25 @@ struct PanelContentView: View {
                 )
             }
         case .browser:
-            if let browserPanel = panel as? BrowserPanel {
-                BrowserPanelView(
-                    panel: browserPanel,
+            if let browserTab = panel as? BrowserTab {
+                BrowserTabView(
+                    panel: browserTab,
                     paneInteractionRuntime: workspace.paneInteractionRuntime,
                     paneId: paneId,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,
-                    onRequestPanelFocus: onRequestPanelFocus
+                    onRequestTabFocus: onRequestTabFocus
                 )
             }
         case .markdown:
-            if let markdownPanel = panel as? MarkdownPanel {
-                MarkdownPanelView(
-                    panel: markdownPanel,
+            if let markdownTab = panel as? MarkdownTab {
+                MarkdownTabView(
+                    panel: markdownTab,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,
-                    onRequestPanelFocus: onRequestPanelFocus,
+                    onRequestTabFocus: onRequestTabFocus,
                     paneInteractionRuntime: workspace.paneInteractionRuntime
                 )
             }

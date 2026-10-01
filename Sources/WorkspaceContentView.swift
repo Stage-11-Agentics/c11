@@ -56,7 +56,7 @@ struct WorkspaceContentView: View {
     }
 
     var body: some View {
-        let appearance = PanelAppearance.fromConfig(config)
+        let appearance = TabAppearance.fromConfig(config)
         let isSplit = workspace.bonsplitController.allPaneIds.count > 1 ||
             workspace.panels.count > 1
 
@@ -72,7 +72,7 @@ struct WorkspaceContentView: View {
                 // Find the focused panel in this pane and drop the files into it.
                 guard let bonsplitTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id,
                       let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId),
-                      let panel = workspace.panels[panelId] as? TerminalPanel else { return false }
+                      let panel = workspace.panels[panelId] as? TerminalTab else { return false }
                 return panel.hostedView.handleDroppedURLs(urls)
             }
         }()
@@ -90,9 +90,9 @@ struct WorkspaceContentView: View {
                 )
                 let hasUnreadNotification = Workspace.shouldShowUnreadIndicator(
                     hasUnreadNotification: notificationStore.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: panel.id),
-                    isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
+                    isManuallyUnread: workspace.manualUnreadTabIds.contains(panel.id)
                 )
-                PanelContentView(
+                TabContentView(
                     workspace: workspace,
                     panel: panel,
                     paneId: paneId,
@@ -111,7 +111,7 @@ struct WorkspaceContentView: View {
                         guard workspace.panels[panel.id] != nil else { return }
                         workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
                     },
-                    onRequestPanelFocus: {
+                    onRequestTabFocus: {
                         guard isWorkspaceInputActive else { return }
                         guard workspace.panels[panel.id] != nil else { return }
                         workspace.focusPanel(panel.id)
@@ -123,11 +123,11 @@ struct WorkspaceContentView: View {
                 }
             } else {
                 // Fallback for tabs without panels (shouldn't happen normally)
-                EmptyPanelView(workspace: workspace, paneId: paneId)
+                EmptyTabView(workspace: workspace, paneId: paneId)
             }
         } emptyPane: { paneId in
             // Empty pane content
-            EmptyPanelView(workspace: workspace, paneId: paneId)
+            EmptyTabView(workspace: workspace, paneId: paneId)
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
                 }
@@ -170,10 +170,10 @@ struct WorkspaceContentView: View {
         .onChange(of: notificationStore.notifications) { _, _ in
             syncBonsplitNotificationBadges()
         }
-        .onChange(of: workspace.manualUnreadPanelIds) { _, _ in
+        .onChange(of: workspace.manualUnreadTabIds) { _, _ in
             syncBonsplitNotificationBadges()
         }
-        .onChange(of: workspace.derivedActivityBySurface) { _, _ in
+        .onChange(of: workspace.derivedActivityByTab) { _, _ in
             syncBonsplitNotificationBadges()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidReload)) { _ in
@@ -259,13 +259,13 @@ struct WorkspaceContentView: View {
                 .filter { $0.workspaceId == workspace.id && !$0.isRead }
                 .compactMap { $0.surfaceId }
         )
-        let manualUnread = workspace.manualUnreadPanelIds
+        let manualUnread = workspace.manualUnreadTabIds
 
         for paneId in workspace.bonsplitController.allPaneIds {
             for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
                 let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id)
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
-                let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
+                let expectedPinned = panelId.map { workspace.isTabPinned($0) } ?? false
                 let expectedActivity = panelId.flatMap {
                     workspace.resolvedSurfaceTabActivityState(
                         panelId: $0,
@@ -387,8 +387,8 @@ struct WorkspaceContentView: View {
         let chromeReason =
             "refreshGhosttyAppearanceConfig:reason=\(reason):event=\(eventLabel):source=\(sourceLabel):payload=\(payloadLabel)"
         workspace.applyGhosttyChrome(from: next, reason: chromeReason)
-        if let terminalPanel = workspace.focusedTerminalPanel {
-            terminalPanel.applyWindowBackgroundIfActive()
+        if let terminalTab = workspace.focusedTerminalTab {
+            terminalTab.applyWindowBackgroundIfActive()
             logTheme(
                 "theme refresh terminal-applied workspace=\(workspace.id.uuidString) reason=\(reason) event=\(eventLabel) panel=\(workspace.focusedPanelId?.uuidString ?? "nil")"
             )
@@ -434,7 +434,7 @@ extension WorkspaceContentView {
 }
 
 /// View shown for empty panes
-struct EmptyPanelView: View {
+struct EmptyTabView: View {
     @ObservedObject var workspace: Workspace
     let paneId: PaneID
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()

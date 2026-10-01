@@ -818,31 +818,31 @@ final class WorkspaceTeardownTests: XCTestCase {
             return
         }
 
-        workspace.setPanelCustomTitle(panelId: initialPanelId, title: "Initial custom title")
-        workspace.setPanelPinned(panelId: initialPanelId, pinned: true)
+        workspace.setTabCustomTitle(panelId: initialPanelId, title: "Initial custom title")
+        workspace.setTabPinned(panelId: initialPanelId, pinned: true)
 
         guard let splitPanel = workspace.newTerminalSplit(from: initialPanelId, orientation: .horizontal) else {
             XCTFail("Expected split panel to be created")
             return
         }
 
-        workspace.setPanelCustomTitle(panelId: splitPanel.id, title: "Split custom title")
-        workspace.setPanelPinned(panelId: splitPanel.id, pinned: true)
-        workspace.markPanelUnread(initialPanelId)
+        workspace.setTabCustomTitle(panelId: splitPanel.id, title: "Split custom title")
+        workspace.setTabPinned(panelId: splitPanel.id, pinned: true)
+        workspace.markTabUnread(initialPanelId)
 
         XCTAssertFalse(workspace.panels.isEmpty)
-        XCTAssertFalse(workspace.panelTitles.isEmpty)
-        XCTAssertFalse(workspace.panelCustomTitles.isEmpty)
-        XCTAssertFalse(workspace.pinnedPanelIds.isEmpty)
-        XCTAssertFalse(workspace.manualUnreadPanelIds.isEmpty)
+        XCTAssertFalse(workspace.tabTitles.isEmpty)
+        XCTAssertFalse(workspace.tabCustomTitles.isEmpty)
+        XCTAssertFalse(workspace.pinnedTabIds.isEmpty)
+        XCTAssertFalse(workspace.manualUnreadTabIds.isEmpty)
 
         workspace.teardownAllPanels()
 
         XCTAssertTrue(workspace.panels.isEmpty)
-        XCTAssertTrue(workspace.panelTitles.isEmpty)
-        XCTAssertTrue(workspace.panelCustomTitles.isEmpty)
-        XCTAssertTrue(workspace.pinnedPanelIds.isEmpty)
-        XCTAssertTrue(workspace.manualUnreadPanelIds.isEmpty)
+        XCTAssertTrue(workspace.tabTitles.isEmpty)
+        XCTAssertTrue(workspace.tabCustomTitles.isEmpty)
+        XCTAssertTrue(workspace.pinnedTabIds.isEmpty)
+        XCTAssertTrue(workspace.manualUnreadTabIds.isEmpty)
     }
 }
 
@@ -858,7 +858,7 @@ final class WorkspaceSplitWorkingDirectoryTests: XCTestCase {
 
         let staleCurrentDirectory = workspace.currentDirectory
         let requestedDirectory = "/tmp/cmux-requested-split-cwd-\(UUID().uuidString)"
-        guard let sourcePanel = workspace.newTerminalSurface(
+        guard let sourceTab = workspace.newTerminalSurface(
             inPane: sourcePaneId,
             focus: false,
             workingDirectory: requestedDirectory
@@ -867,9 +867,9 @@ final class WorkspaceSplitWorkingDirectoryTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(sourcePanel.requestedWorkingDirectory, requestedDirectory)
+        XCTAssertEqual(sourceTab.requestedWorkingDirectory, requestedDirectory)
         XCTAssertNil(
-            workspace.panelDirectories[sourcePanel.id],
+            workspace.tabDirectories[sourceTab.id],
             "Expected requested cwd to exist before shell integration reports a live cwd"
         )
         XCTAssertEqual(
@@ -879,7 +879,7 @@ final class WorkspaceSplitWorkingDirectoryTests: XCTestCase {
         )
 
         guard let splitPanel = workspace.newTerminalSplit(
-            from: sourcePanel.id,
+            from: sourceTab.id,
             orientation: .horizontal,
             focus: false
         ) else {
@@ -930,8 +930,8 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
             XCTFail("Expected a focused pane and panel in a new workspace")
             return nil
         }
-        workspace.updatePanelDirectory(panelId: sourcePanelId, directory: drift)
-        XCTAssertEqual(workspace.panelDirectories[sourcePanelId], drift)
+        workspace.updateTabDirectory(panelId: sourcePanelId, directory: drift)
+        XCTAssertEqual(workspace.tabDirectories[sourcePanelId], drift)
         return (workspace, paneId, sourcePanelId)
     }
 
@@ -944,8 +944,8 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         let split = workspace.newTerminalSplit(from: sourcePanelId, orientation: .horizontal, focus: false)
         XCTAssertEqual(split?.requestedWorkingDirectory, root)
 
-        let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false)
-        XCTAssertEqual(bonsplitTab?.requestedWorkingDirectory, root)
+        let panel = workspace.newTerminalSurface(inPane: paneId, focus: false)
+        XCTAssertEqual(panel?.requestedWorkingDirectory, root)
     }
 
     func testTabBarSplitButtonPathStartsInRoot() {
@@ -977,8 +977,8 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
             from: sourcePanelId, orientation: .vertical, focus: false, workingDirectory: explicit
         )
         XCTAssertEqual(split?.requestedWorkingDirectory, explicit)
-        let bonsplitTab = workspace.newTerminalSurface(inPane: paneId, focus: false, workingDirectory: explicit)
-        XCTAssertEqual(bonsplitTab?.requestedWorkingDirectory, explicit)
+        let panel = workspace.newTerminalSurface(inPane: paneId, focus: false, workingDirectory: explicit)
+        XCTAssertEqual(panel?.requestedWorkingDirectory, explicit)
     }
 
     func testChangedRootGovernsTheNextSurfaceAndClearFallsBackToSource() {
@@ -1036,7 +1036,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         guard let setup = makeDriftedWorkspace(root: root, drift: drift) else { return }
         let (workspace, _, _) = setup
 
-        XCTAssertEqual(workspace.createReplacementTerminalPanel().requestedWorkingDirectory, root)
+        XCTAssertEqual(workspace.createReplacementTerminalTab().requestedWorkingDirectory, root)
     }
 
     /// Drift never becomes a root: a new workspace starts in the selected
@@ -1050,11 +1050,11 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
         manager.updateSurfaceDirectory(workspaceId: selected.id, surfaceId: focused, directory: drift)
 
         let fromRoot = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        XCTAssertEqual(fromRoot.focusedTerminalPanel?.requestedWorkingDirectory, root)
+        XCTAssertEqual(fromRoot.focusedTerminalTab?.requestedWorkingDirectory, root)
 
         selected.setRootDirectory(nil)
         let fromDrift = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        XCTAssertEqual(fromDrift.focusedTerminalPanel?.requestedWorkingDirectory, drift)
+        XCTAssertEqual(fromDrift.focusedTerminalTab?.requestedWorkingDirectory, drift)
     }
 
     func testAddWorkspaceEstablishesRootFromCreationDirectory() {
@@ -1073,7 +1073,7 @@ final class WorkspaceRootDirectoryTests: XCTestCase {
 
         let rootOnly = manager.addWorkspace(rootDirectory: rootR, select: false, autoWelcomeIfNeeded: false)
         XCTAssertEqual(rootOnly.rootDirectory, rootR)
-        XCTAssertEqual(rootOnly.focusedTerminalPanel?.requestedWorkingDirectory, rootR)
+        XCTAssertEqual(rootOnly.focusedTerminalTab?.requestedWorkingDirectory, rootR)
 
         let unrooted = manager.addWorkspace(
             workingDirectory: dirA, establishRootFromWorkingDirectory: false, select: false, autoWelcomeIfNeeded: false
@@ -1321,9 +1321,9 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
         // Programmatic split focuses the new right panel by default.
         XCTAssertEqual(workspace.focusedPanelId, rightPanel.id)
 
-        let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: leftPaneId)
+        let sourceTab = workspace.terminalTabForConfigInheritance(inPane: leftPaneId)
         XCTAssertEqual(
-            sourcePanel?.id,
+            sourceTab?.id,
             leftPanelId,
             "Expected inheritance to use the selected terminal in the target pane"
         )
@@ -1334,16 +1334,16 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
         guard let workspace = manager.selectedWorkspace,
               let terminalPanelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: terminalPanelId),
-              let browserPanel = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
+              let browserTab = workspace.newBrowserSurface(inPane: paneId, focus: true) else {
             XCTFail("Expected workspace browser setup to succeed")
             return
         }
 
-        XCTAssertEqual(workspace.focusedPanelId, browserPanel.id)
+        XCTAssertEqual(workspace.focusedPanelId, browserTab.id)
 
-        let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: paneId)
+        let sourceTab = workspace.terminalTabForConfigInheritance(inPane: paneId)
         XCTAssertEqual(
-            sourcePanel?.id,
+            sourceTab?.id,
             terminalPanelId,
             "Expected inheritance to fall back to a terminal in the pane when browser is selected"
         )
@@ -1357,8 +1357,8 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
             return
         }
 
-        let sourcePanel = workspace.terminalPanelForConfigInheritance(preferredPanelId: terminalPanelId)
-        XCTAssertEqual(sourcePanel?.id, terminalPanelId)
+        let sourceTab = workspace.terminalTabForConfigInheritance(preferredPanelId: terminalPanelId)
+        XCTAssertEqual(sourceTab?.id, terminalPanelId)
     }
 
     func testPrefersLastFocusedTerminalWhenBrowserFocusedInDifferentPane() {
@@ -1375,9 +1375,9 @@ final class WorkspaceTerminalConfigInheritanceSelectionTests: XCTestCase {
         _ = workspace.newBrowserSurface(inPane: rightPaneId, focus: true)
         XCTAssertNotEqual(workspace.focusedPanelId, leftTerminalPanelId)
 
-        let sourcePanel = workspace.terminalPanelForConfigInheritance(inPane: rightPaneId)
+        let sourceTab = workspace.terminalTabForConfigInheritance(inPane: rightPaneId)
         XCTAssertEqual(
-            sourcePanel?.id,
+            sourceTab?.id,
             leftTerminalPanelId,
             "Expected inheritance to prefer last focused terminal when browser is focused in another pane"
         )
@@ -1516,10 +1516,10 @@ final class WorkspaceAgentPresentationTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -1542,10 +1542,10 @@ final class WorkspaceAgentPresentationTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -1638,7 +1638,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let baselineFocusReconcileDuringDetach = workspace.debugFocusReconcileScheduledDuringDetachCount
 #endif
 
-        guard let detached = workspace.detachSurface(panelId: panelId) else {
+        guard let detached = workspace.detachTab(panelId: panelId) else {
             XCTFail("Expected detach of last surface to succeed")
             return
         }
@@ -1661,7 +1661,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
 #endif
 
-        let restoredPanelId = workspace.attachDetachedSurface(detached, inPane: paneId, focus: false)
+        let restoredPanelId = workspace.attachDetachedTab(detached, inPane: paneId, focus: false)
         XCTAssertEqual(restoredPanelId, panelId)
         XCTAssertEqual(workspace.panels.count, 1)
     }
@@ -1680,7 +1680,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let baselineFocusReconcileDuringDetach = workspace.debugFocusReconcileScheduledDuringDetachCount
 #endif
 
-        guard let detached = workspace.detachSurface(panelId: movedPanel.id) else {
+        guard let detached = workspace.detachTab(panelId: movedPanel.id) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -1707,9 +1707,9 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        XCTAssertTrue(source.updatePanelTitle(panelId: panelId, title: "detached-runtime-title"))
+        XCTAssertTrue(source.updateTabTitle(panelId: panelId, title: "detached-runtime-title"))
 
-        guard let detached = source.detachSurface(panelId: panelId) else {
+        guard let detached = source.detachTab(panelId: panelId) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -1728,43 +1728,43 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        let attachedPanelId = destination.attachDetachedSurface(
+        let attachedPanelId = destination.attachDetachedTab(
             detached,
             inPane: destinationPane,
             focus: false
         )
         XCTAssertEqual(attachedPanelId, panelId)
-        XCTAssertEqual(destination.panelTitle(panelId: panelId), "detached-runtime-title")
+        XCTAssertEqual(destination.tabTitle(panelId: panelId), "detached-runtime-title")
 
-        guard let attachedTabId = destination.bonsplitTabIdFromTabId(panelId),
-              let attachedTab = destination.bonsplitController.tab(attachedTabId) else {
+        guard let attachedBonsplitTabId = destination.bonsplitTabIdFromTabId(panelId),
+              let attachedBonsplitTab = destination.bonsplitController.tab(attachedBonsplitTabId) else {
             XCTFail("Expected attached tab mapping")
             return
         }
-        XCTAssertEqual(attachedTab.title, "detached-runtime-title")
-        XCTAssertFalse(attachedTab.hasCustomTitle)
+        XCTAssertEqual(attachedBonsplitTab.title, "detached-runtime-title")
+        XCTAssertFalse(attachedBonsplitTab.hasCustomTitle)
     }
 
     func testDetachAttachAndRollbackPreserveSurfaceActivityResolverInputs() throws {
         let source = Workspace()
         guard let panelId = source.focusedPanelId,
               let sourcePane = source.paneId(forPanelId: panelId),
-              let sourceTabId = source.bonsplitTabIdFromTabId(panelId) else {
+              let sourceBonsplitTabId = source.bonsplitTabIdFromTabId(panelId) else {
             XCTFail("Expected source panel, pane, and tab")
             return
         }
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: source.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
             mode: .merge,
             source: .explicit
         )
-        _ = SurfaceMetadataStore.shared.setInternal(
+        _ = TabMetadataStore.shared.setInternal(
             workspaceId: source.id,
             surfaceId: panelId,
             key: MetadataKey.activity,
@@ -1772,27 +1772,27 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             source: .derived
         )
         source.setDerivedActivity(.working, forSurface: panelId)
-        XCTAssertEqual(source.bonsplitController.tab(sourceTabId)?.activityState, .running)
+        XCTAssertEqual(source.bonsplitController.tab(sourceBonsplitTabId)?.activityState, .running)
 
-        let detached = try XCTUnwrap(source.detachSurface(panelId: panelId))
-        XCTAssertNil(source.derivedActivityBySurface[panelId])
+        let detached = try XCTUnwrap(source.detachTab(panelId: panelId))
+        XCTAssertNil(source.derivedActivityByTab[panelId])
 
         let destination = Workspace()
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: destination.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: destination.id, surfaceId: panelId)
         }
         let destinationPane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
         XCTAssertEqual(
-            destination.attachDetachedSurface(detached, inPane: destinationPane, focus: false),
+            destination.attachDetachedTab(detached, inPane: destinationPane, focus: false),
             panelId
         )
 
-        let destinationTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
+        let destinationBonsplitTabId = try XCTUnwrap(destination.bonsplitTabIdFromTabId(panelId))
         XCTAssertEqual(destination.surfaceTerminalKind(panelId: panelId), "codex")
-        XCTAssertEqual(destination.derivedActivityBySurface[panelId], .working)
-        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .running)
+        XCTAssertEqual(destination.derivedActivityByTab[panelId], .working)
+        XCTAssertEqual(destination.bonsplitController.tab(destinationBonsplitTabId)?.activityState, .running)
         XCTAssertEqual(
-            SurfaceMetadataStore.shared.getSource(
+            TabMetadataStore.shared.getSource(
                 workspaceId: destination.id,
                 surfaceId: panelId,
                 key: MetadataKey.terminalType
@@ -1800,7 +1800,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             .explicit
         )
         XCTAssertEqual(
-            SurfaceMetadataStore.shared.getSource(
+            TabMetadataStore.shared.getSource(
                 workspaceId: destination.id,
                 surfaceId: panelId,
                 key: MetadataKey.activity
@@ -1809,18 +1809,18 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
 
         destination.setDerivedActivity(nil, forSurface: panelId)
-        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .idle)
+        XCTAssertEqual(destination.bonsplitController.tab(destinationBonsplitTabId)?.activityState, .idle)
 
-        let rollbackTransfer = try XCTUnwrap(destination.detachSurface(panelId: panelId))
+        let rollbackTransfer = try XCTUnwrap(destination.detachTab(panelId: panelId))
         XCTAssertEqual(
-            source.attachDetachedSurface(rollbackTransfer, inPane: sourcePane, focus: false),
+            source.attachDetachedTab(rollbackTransfer, inPane: sourcePane, focus: false),
             panelId
         )
 
-        let rollbackTabId = try XCTUnwrap(source.bonsplitTabIdFromTabId(panelId))
+        let rollbackBonsplitTabId = try XCTUnwrap(source.bonsplitTabIdFromTabId(panelId))
         XCTAssertEqual(source.surfaceTerminalKind(panelId: panelId), "codex")
-        XCTAssertNil(source.derivedActivityBySurface[panelId])
-        XCTAssertEqual(source.bonsplitController.tab(rollbackTabId)?.activityState, .idle)
+        XCTAssertNil(source.derivedActivityByTab[panelId])
+        XCTAssertEqual(source.bonsplitController.tab(rollbackBonsplitTabId)?.activityState, .idle)
     }
 
     func testRemovingTerminalTypeMetadataClearsAgentSurfaceActivityState() throws {
@@ -1829,23 +1829,23 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
         func seedAgentState() throws {
-            _ = try SurfaceMetadataStore.shared.setMetadata(
+            _ = try TabMetadataStore.shared.setMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
                 partial: [MetadataKey.terminalType: "codex"],
                 mode: .merge,
                 source: .explicit
             )
-            workspace.syncSurfaceTabActivityStateForPanel(panelId)
+            workspace.syncSurfaceTabActivityStateForTab(panelId)
             XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
         }
 
         try seedAgentState()
-        let clearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let clearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: nil,
@@ -1863,7 +1863,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
         try seedAgentState()
-        let keyedClearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let keyedClearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: [MetadataKey.terminalType],
@@ -1881,7 +1881,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
         try seedAgentState()
-        let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
+        let replaceResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.description: "replacement metadata"],
@@ -1904,17 +1904,17 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let source = Workspace()
         let panelId = try XCTUnwrap(source.focusedPanelId)
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
         }
 
-        _ = try SurfaceMetadataStore.shared.setMetadata(
+        _ = try TabMetadataStore.shared.setMetadata(
             workspaceId: source.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
             mode: .merge,
             source: .explicit
         )
-        _ = SurfaceMetadataStore.shared.setInternal(
+        _ = TabMetadataStore.shared.setInternal(
             workspaceId: source.id,
             surfaceId: panelId,
             key: MetadataKey.activity,
@@ -1926,13 +1926,13 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let snapshot = source.sessionSnapshot(includeScrollback: false)
         let restored = Workspace()
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
         }
         restored.restoreSessionSnapshot(snapshot)
 
-        let restoredTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
-        XCTAssertEqual(restored.derivedActivityBySurface[panelId], .working)
-        XCTAssertEqual(restored.bonsplitController.tab(restoredTabId)?.activityState, .running)
+        let restoredBonsplitTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
+        XCTAssertEqual(restored.derivedActivityByTab[panelId], .working)
+        XCTAssertEqual(restored.bonsplitController.tab(restoredBonsplitTabId)?.activityState, .running)
     }
 
     func testActivityMetadataMutationsRehydrateLiveTabProjection() throws {
@@ -1941,10 +1941,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
         let bonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(panelId))
         defer {
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+            TabMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        func apply(_ result: SurfaceMetadataStore.WriteResult) {
+        func apply(_ result: TabMetadataStore.WriteResult) {
             TerminalController.shared.applyTitleDescriptionSideEffects(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
@@ -1955,7 +1955,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             )
         }
 
-        let runningResult = try SurfaceMetadataStore.shared.setMetadata(
+        let runningResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [
@@ -1966,30 +1966,30 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             source: .explicit
         )
         apply(runningResult)
-        XCTAssertEqual(workspace.derivedActivityBySurface[panelId], .working)
+        XCTAssertEqual(workspace.derivedActivityByTab[panelId], .working)
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .running)
 
-        let keyedClearResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let keyedClearResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: [MetadataKey.activity],
             source: .explicit
         )
         apply(keyedClearResult)
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
 
-        let clearAllResult = try SurfaceMetadataStore.shared.clearMetadata(
+        let clearAllResult = try TabMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             keys: nil,
             source: .explicit
         )
         apply(clearAllResult)
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
 
-        let idleResult = try SurfaceMetadataStore.shared.setMetadata(
+        let idleResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [
@@ -2000,10 +2000,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             source: .explicit
         )
         apply(idleResult)
-        XCTAssertEqual(workspace.derivedActivityBySurface[panelId], .idle)
+        XCTAssertEqual(workspace.derivedActivityByTab[panelId], .idle)
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
 
-        let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
+        let replaceResult = try TabMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
             partial: [MetadataKey.terminalType: "codex"],
@@ -2012,7 +2012,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
         apply(replaceResult)
         XCTAssertTrue(replaceResult.removedKeys.contains(MetadataKey.activity))
-        XCTAssertNil(workspace.derivedActivityBySurface[panelId])
+        XCTAssertNil(workspace.derivedActivityByTab[panelId])
         XCTAssertEqual(workspace.bonsplitController.tab(bonsplitTabId)?.activityState, .idle)
     }
 
@@ -2028,10 +2028,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 focus: false
             )
         )
-        let backgroundTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(backgroundPanel.id))
+        let backgroundBonsplitTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(backgroundPanel.id))
 
         XCTAssertEqual(workspace.bonsplitController.selectedTab(inPane: paneId)?.id, selectedBonsplitTabId)
-        XCTAssertTrue(workspace.bonsplitController.closeTab(backgroundTabId, inPane: paneId))
+        XCTAssertTrue(workspace.bonsplitController.closeTab(backgroundBonsplitTabId, inPane: paneId))
         XCTAssertEqual(workspace.bonsplitController.selectedTab(inPane: paneId)?.id, selectedBonsplitTabId)
         XCTAssertEqual(workspace.focusedPanelId, selectedPanelId)
     }
@@ -2056,17 +2056,17 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
         guard let splitPaneId = workspace.paneId(forPanelId: browserSplitPanel.id),
-              let splitTabId = workspace.bonsplitTabIdFromTabId(browserSplitPanel.id),
-              let splitTab = workspace.bonsplitController
+              let splitBonsplitTabId = workspace.bonsplitTabIdFromTabId(browserSplitPanel.id),
+              let splitBonsplitTab = workspace.bonsplitController
               .tabs(inPane: splitPaneId)
-              .first(where: { $0.id == splitTabId }) else {
+              .first(where: { $0.id == splitBonsplitTabId }) else {
             XCTFail("Expected split pane/tab mapping")
             return
         }
 
         // Simulate one delayed stale split-selection callback from bonsplit.
         DispatchQueue.main.async {
-            workspace.splitTabBar(workspace.bonsplitController, didSelectTab: splitTab, inPane: splitPaneId)
+            workspace.splitTabBar(workspace.bonsplitController, didSelectTab: splitBonsplitTab, inPane: splitPaneId)
         }
 
         drainMainQueue()
@@ -2127,7 +2127,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        guard let newPanel = workspace.newTerminalSurface(inPane: originalPaneId, focus: false) else {
+        guard let newTab = workspace.newTerminalSurface(inPane: originalPaneId, focus: false) else {
             XCTFail("Expected terminal surface to be created")
             return
         }
@@ -2136,7 +2136,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         drainMainQueue()
         drainMainQueue()
 
-        XCTAssertNotEqual(newPanel.id, originalFocusedPanelId)
+        XCTAssertNotEqual(newTab.id, originalFocusedPanelId)
         XCTAssertEqual(
             workspace.focusedPanelId,
             originalFocusedPanelId,
@@ -2157,7 +2157,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        guard let newPanel = workspace.newBrowserSurface(inPane: originalPaneId, focus: false) else {
+        guard let newTab = workspace.newBrowserSurface(inPane: originalPaneId, focus: false) else {
             XCTFail("Expected browser surface to be created")
             return
         }
@@ -2166,7 +2166,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         drainMainQueue()
         drainMainQueue()
 
-        XCTAssertNotEqual(newPanel.id, originalFocusedPanelId)
+        XCTAssertNotEqual(newTab.id, originalFocusedPanelId)
         XCTAssertEqual(
             workspace.focusedPanelId,
             originalFocusedPanelId,
@@ -2247,18 +2247,18 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: firstPanelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: firstPanelId, branch: "main", isDirty: false)
         guard let secondPanel = workspace.newTerminalSplit(from: firstPanelId, orientation: .horizontal) else {
             XCTFail("Expected split panel to be created")
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: secondPanel.id, branch: "feature/bugfix", isDirty: true)
+        workspace.updateTabGitBranch(panelId: secondPanel.id, branch: "feature/bugfix", isDirty: true)
         XCTAssertEqual(workspace.focusedPanelId, secondPanel.id, "Expected split panel to be focused")
         XCTAssertEqual(workspace.gitBranch?.branch, "feature/bugfix")
         XCTAssertEqual(workspace.gitBranch?.isDirty, true)
 
-        XCTAssertTrue(workspace.closePanel(secondPanel.id, force: true), "Expected split panel close to succeed")
+        XCTAssertTrue(workspace.closeTab(secondPanel.id, force: true), "Expected split panel close to succeed")
         XCTAssertEqual(workspace.focusedPanelId, firstPanelId, "Expected surviving panel to become focused")
         XCTAssertEqual(workspace.gitBranch?.branch, "main")
         XCTAssertEqual(workspace.gitBranch?.isDirty, false)
@@ -2271,12 +2271,12 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: leftPanelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftPanelId, branch: "main", isDirty: false)
         guard let rightPanel = workspace.newTerminalSplit(from: leftPanelId, orientation: .horizontal) else {
             XCTFail("Expected split panel to be created")
             return
         }
-        workspace.updatePanelGitBranch(panelId: rightPanel.id, branch: "feature/sidebar", isDirty: true)
+        workspace.updateTabGitBranch(panelId: rightPanel.id, branch: "feature/sidebar", isDirty: true)
 
         let ordered = workspace.sidebarGitBranchesInDisplayOrder()
         XCTAssertEqual(ordered.map(\.branch), ["main", "feature/sidebar"])
@@ -2288,15 +2288,15 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let workspace = Workspace()
         guard let firstPanelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: firstPanelId),
-              let secondPanel = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
+              let secondTab = workspace.newTerminalSurface(inPane: paneId, focus: false) else {
             XCTFail("Expected focused panel and a second panel")
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: firstPanelId, branch: "main", isDirty: false)
-        workspace.updatePanelGitBranch(panelId: secondPanel.id, branch: "feature/sidebar-pr", isDirty: false)
-        workspace.updatePanelPullRequest(
-            panelId: secondPanel.id,
+        workspace.updateTabGitBranch(panelId: firstPanelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: secondTab.id, branch: "feature/sidebar-pr", isDirty: false)
+        workspace.updateTabPullRequest(
+            panelId: secondTab.id,
             number: 1629,
             label: "PR",
             url: URL(string: "https://github.com/manaflow-ai/cmux/pull/1629")!,
@@ -2309,7 +2309,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             "Expected background panel PRs to stay hidden while the focused panel has no PR"
         )
 
-        workspace.focusPanel(secondPanel.id)
+        workspace.focusPanel(secondTab.id)
 
         XCTAssertEqual(
             workspace.sidebarPullRequestsInDisplayOrder().map(\.number),
@@ -2323,25 +2323,25 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
               let leftPaneId = workspace.paneId(forPanelId: leftFirstPanelId),
               let rightFirstPanel = workspace.newTerminalSplit(from: leftFirstPanelId, orientation: .horizontal),
               let rightPaneId = workspace.paneId(forPanelId: rightFirstPanel.id),
-              let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
-              let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+              let leftSecondTab = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+              let rightSecondTab = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
             XCTFail("Expected panes and panels for ordering test")
             return
         }
 
         XCTAssertTrue(workspace.reorderSurface(panelId: leftFirstPanelId, toIndex: 0))
-        XCTAssertTrue(workspace.reorderSurface(panelId: leftSecondPanel.id, toIndex: 1))
+        XCTAssertTrue(workspace.reorderSurface(panelId: leftSecondTab.id, toIndex: 1))
         XCTAssertTrue(workspace.reorderSurface(panelId: rightFirstPanel.id, toIndex: 0))
-        XCTAssertTrue(workspace.reorderSurface(panelId: rightSecondPanel.id, toIndex: 1))
+        XCTAssertTrue(workspace.reorderSurface(panelId: rightSecondTab.id, toIndex: 1))
 
-        workspace.updatePanelGitBranch(panelId: leftFirstPanelId, branch: "main", isDirty: false)
-        workspace.updatePanelGitBranch(panelId: leftSecondPanel.id, branch: "feature/left", isDirty: false)
-        workspace.updatePanelGitBranch(panelId: rightFirstPanel.id, branch: "main", isDirty: true)
-        workspace.updatePanelGitBranch(panelId: rightSecondPanel.id, branch: "feature/right", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftFirstPanelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftSecondTab.id, branch: "feature/left", isDirty: false)
+        workspace.updateTabGitBranch(panelId: rightFirstPanel.id, branch: "main", isDirty: true)
+        workspace.updateTabGitBranch(panelId: rightSecondTab.id, branch: "feature/right", isDirty: false)
 
         XCTAssertEqual(
-            workspace.sidebarOrderedPanelIds(),
-            [leftFirstPanelId, leftSecondPanel.id, rightFirstPanel.id, rightSecondPanel.id]
+            workspace.sidebarOrderedTabIds(),
+            [leftFirstPanelId, leftSecondTab.id, rightFirstPanel.id, rightSecondTab.id]
         )
 
         let branches = workspace.sidebarGitBranchesInDisplayOrder()
@@ -2355,29 +2355,29 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
               let leftPaneId = workspace.paneId(forPanelId: leftFirstPanelId),
               let rightFirstPanel = workspace.newTerminalSplit(from: leftFirstPanelId, orientation: .horizontal),
               let rightPaneId = workspace.paneId(forPanelId: rightFirstPanel.id),
-              let leftSecondPanel = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
-              let rightSecondPanel = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
+              let leftSecondTab = workspace.newTerminalSurface(inPane: leftPaneId, focus: false),
+              let rightSecondTab = workspace.newTerminalSurface(inPane: rightPaneId, focus: false) else {
             XCTFail("Expected panes and panels for precomputed ordering test")
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: leftFirstPanelId, branch: "main", isDirty: false)
-        workspace.updatePanelGitBranch(panelId: leftSecondPanel.id, branch: "feature/left", isDirty: true)
-        workspace.updatePanelGitBranch(panelId: rightFirstPanel.id, branch: "release/right", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftFirstPanelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftSecondTab.id, branch: "feature/left", isDirty: true)
+        workspace.updateTabGitBranch(panelId: rightFirstPanel.id, branch: "release/right", isDirty: false)
 
-        workspace.updatePanelDirectory(panelId: leftFirstPanelId, directory: "/repo/left/root")
-        workspace.updatePanelDirectory(panelId: leftSecondPanel.id, directory: "/repo/left/feature")
-        workspace.updatePanelDirectory(panelId: rightFirstPanel.id, directory: "/repo/right/root")
-        workspace.updatePanelDirectory(panelId: rightSecondPanel.id, directory: "/repo/right/extra")
+        workspace.updateTabDirectory(panelId: leftFirstPanelId, directory: "/repo/left/root")
+        workspace.updateTabDirectory(panelId: leftSecondTab.id, directory: "/repo/left/feature")
+        workspace.updateTabDirectory(panelId: rightFirstPanel.id, directory: "/repo/right/root")
+        workspace.updateTabDirectory(panelId: rightSecondTab.id, directory: "/repo/right/extra")
 
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: leftFirstPanelId,
             number: 101,
             label: "PR",
             url: URL(string: "https://github.com/manaflow-ai/cmux/pull/101")!,
             status: .open
         )
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: rightFirstPanel.id,
             number: 18,
             label: "MR",
@@ -2385,14 +2385,14 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             status: .merged
         )
 
-        let orderedPanelIds = workspace.sidebarOrderedPanelIds()
+        let orderedTabIds = workspace.sidebarOrderedTabIds()
 
         XCTAssertEqual(
-            workspace.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedPanelIds).map { "\($0.branch)|\($0.isDirty)" },
+            workspace.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedTabIds).map { "\($0.branch)|\($0.isDirty)" },
             workspace.sidebarGitBranchesInDisplayOrder().map { "\($0.branch)|\($0.isDirty)" }
         )
         XCTAssertEqual(
-            workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedPanelIds),
+            workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedTabIds),
             workspace.sidebarPullRequestsInDisplayOrder()
         )
     }
@@ -2406,8 +2406,8 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: leftPanelId, branch: "branch1", isDirty: false)
-        workspace.updatePanelGitBranch(panelId: rightPanel.id, branch: "branch2", isDirty: false)
+        workspace.updateTabGitBranch(panelId: leftPanelId, branch: "branch1", isDirty: false)
+        workspace.updateTabGitBranch(panelId: rightPanel.id, branch: "branch2", isDirty: false)
 
         XCTAssertEqual(workspace.sidebarGitBranchesInDisplayOrder().map(\.branch), ["branch1", "branch2"])
         XCTAssertTrue(workspace.bonsplitController.closePane(leftPaneId))
@@ -2667,7 +2667,7 @@ final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
     /// The targeted reads exist to keep the sidebar off the whole-source-map
     /// conversion; they are only worth having if they agree with it.
     func testTargetedReadsMatchTheFullSnapshot() throws {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let surfaceId = UUID()
         _ = try store.setMetadata(
             workspaceId: workspaceId,
@@ -2720,7 +2720,7 @@ final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
     }
 
     func testTargetedReadsOnUnknownSurfaceAreEmpty() {
-        let store = SurfaceMetadataStore.shared
+        let store = TabMetadataStore.shared
         let missing = UUID()
         XCTAssertNil(store.metadataValue(workspaceId: workspaceId, surfaceId: missing, key: MetadataKey.terminalType))
         let subset = store.getMetadata(workspaceId: workspaceId, surfaceId: missing, keys: [MetadataKey.title])
@@ -2785,12 +2785,12 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
         let browser = try XCTUnwrap(
             workspace.newBrowserSurface(inPane: paneId, focus: false)
         )
         let markdown = try XCTUnwrap(
-            workspace.newMarkdownSurface(inPane: paneId, focus: false)
+            workspace.newMarkdownTab(inPane: paneId, focus: false)
         )
 
         let expected = [
@@ -2965,11 +2965,11 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "ff8800")
-        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#FF8800")
+        workspace.setTabCustomColor(panelId: panelId, color: "ff8800")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#FF8800")
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "  #aabbcc  ")
-        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#AABBCC")
+        workspace.setTabCustomColor(panelId: panelId, color: "  #aabbcc  ")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#AABBCC")
     }
 
     func testSetPanelCustomColorRejectsInvalidHexLeavesPriorValue() {
@@ -2979,17 +2979,17 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#123456")
-        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#123456")
+        workspace.setTabCustomColor(panelId: panelId, color: "#123456")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#123456")
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "not-a-color")
+        workspace.setTabCustomColor(panelId: panelId, color: "not-a-color")
         XCTAssertEqual(
-            workspace.panelCustomColor(panelId: panelId), "#123456",
+            workspace.tabCustomColor(panelId: panelId), "#123456",
             "Invalid hex must not mutate the existing color"
         )
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#GGHHII")
-        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#123456")
+        workspace.setTabCustomColor(panelId: panelId, color: "#GGHHII")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#123456")
     }
 
     func testSetPanelCustomColorClearsViaNilOrEmpty() {
@@ -2999,25 +2999,25 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#C0392B")
-        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#C0392B")
+        workspace.setTabCustomColor(panelId: panelId, color: "#C0392B")
+        XCTAssertEqual(workspace.tabCustomColor(panelId: panelId), "#C0392B")
 
-        workspace.setPanelCustomColor(panelId: panelId, color: nil)
-        XCTAssertNil(workspace.panelCustomColor(panelId: panelId))
-        XCTAssertNil(workspace.panelCustomColors[panelId])
+        workspace.setTabCustomColor(panelId: panelId, color: nil)
+        XCTAssertNil(workspace.tabCustomColor(panelId: panelId))
+        XCTAssertNil(workspace.tabCustomColors[panelId])
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#1565C0")
-        workspace.setPanelCustomColor(panelId: panelId, color: "   ")
-        XCTAssertNil(workspace.panelCustomColor(panelId: panelId))
+        workspace.setTabCustomColor(panelId: panelId, color: "#1565C0")
+        workspace.setTabCustomColor(panelId: panelId, color: "   ")
+        XCTAssertNil(workspace.tabCustomColor(panelId: panelId))
     }
 
     func testSetPanelCustomColorIgnoresUnknownPanelId() {
         let workspace = Workspace()
         let unknownPanelId = UUID()
 
-        workspace.setPanelCustomColor(panelId: unknownPanelId, color: "#FF0000")
-        XCTAssertNil(workspace.panelCustomColor(panelId: unknownPanelId))
-        XCTAssertTrue(workspace.panelCustomColors.isEmpty)
+        workspace.setTabCustomColor(panelId: unknownPanelId, color: "#FF0000")
+        XCTAssertNil(workspace.tabCustomColor(panelId: unknownPanelId))
+        XCTAssertTrue(workspace.tabCustomColors.isEmpty)
     }
 
     func testTeardownClearsPanelCustomColors() {
@@ -3027,13 +3027,13 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#196F3D")
-        XCTAssertFalse(workspace.panelCustomColors.isEmpty)
+        workspace.setTabCustomColor(panelId: panelId, color: "#196F3D")
+        XCTAssertFalse(workspace.tabCustomColors.isEmpty)
 
         workspace.teardownAllPanels()
 
         XCTAssertTrue(
-            workspace.panelCustomColors.isEmpty,
+            workspace.tabCustomColors.isEmpty,
             "panelCustomColors must be cleared by teardownAllPanels (via pruneSurfaceMetadata)"
         )
     }
@@ -3048,13 +3048,13 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
 
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.customColorHex)
 
-        workspace.setPanelCustomColor(panelId: panelId, color: "#1565C0")
+        workspace.setTabCustomColor(panelId: panelId, color: "#1565C0")
         XCTAssertEqual(
             workspace.bonsplitController.tab(bonsplitTabId)?.customColorHex, "#1565C0",
             "Setting a panel custom color must mirror through to the bonsplit tab"
         )
 
-        workspace.setPanelCustomColor(panelId: panelId, color: nil)
+        workspace.setTabCustomColor(panelId: panelId, color: nil)
         XCTAssertNil(
             workspace.bonsplitController.tab(bonsplitTabId)?.customColorHex,
             "Clearing a panel custom color must clear the bonsplit tab's value"
@@ -3068,9 +3068,9 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        source.setPanelCustomColor(panelId: panelId, color: "#7B3F00")
+        source.setTabCustomColor(panelId: panelId, color: "#7B3F00")
 
-        guard let detached = source.detachSurface(panelId: panelId) else {
+        guard let detached = source.detachTab(panelId: panelId) else {
             XCTFail("Expected detach to succeed")
             return
         }
@@ -3080,7 +3080,7 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             "DetachedSurfaceTransfer must carry the surface tab color"
         )
         XCTAssertNil(
-            source.panelCustomColor(panelId: panelId),
+            source.tabCustomColor(panelId: panelId),
             "Source workspace cleanup paths must drop panelCustomColors entry on detach"
         )
 
@@ -3090,23 +3090,23 @@ final class WorkspacePanelCustomColorTests: XCTestCase {
             return
         }
 
-        let attachedPanelId = destination.attachDetachedSurface(
+        let attachedPanelId = destination.attachDetachedTab(
             detached,
             inPane: destinationPane,
             focus: false
         )
         XCTAssertEqual(attachedPanelId, panelId)
         XCTAssertEqual(
-            destination.panelCustomColor(panelId: panelId), "#7B3F00",
+            destination.tabCustomColor(panelId: panelId), "#7B3F00",
             "Destination workspace must restore the surface tab color from the transfer"
         )
 
-        guard let attachedTabId = destination.bonsplitTabIdFromTabId(panelId) else {
+        guard let attachedBonsplitTabId = destination.bonsplitTabIdFromTabId(panelId) else {
             XCTFail("Expected attached tab mapping")
             return
         }
         XCTAssertEqual(
-            destination.bonsplitController.tab(attachedTabId)?.customColorHex, "#7B3F00",
+            destination.bonsplitController.tab(attachedBonsplitTabId)?.customColorHex, "#7B3F00",
             "Bonsplit tab in the destination must render the migrated color"
         )
     }

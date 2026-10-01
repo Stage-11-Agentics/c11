@@ -4,13 +4,13 @@ import MarkdownUI
 import UniformTypeIdentifiers
 
 /// SwiftUI view that renders a MarkdownPanel's content using MarkdownUI.
-struct MarkdownPanelView: View {
-    @ObservedObject var panel: MarkdownPanel
+struct MarkdownTabView: View {
+    @ObservedObject var panel: MarkdownTab
     @ObservedObject private var themeManager = ThemeManager.shared
     let isFocused: Bool
     let isVisibleInUI: Bool
     let portalPriority: Int
-    let onRequestPanelFocus: () -> Void
+    let onRequestTabFocus: () -> Void
     @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
 
     @State private var focusFlashOpacity: Double = 0.0
@@ -35,7 +35,7 @@ struct MarkdownPanelView: View {
                 localized: "surfaceManifest.menuItem",
                 defaultValue: "Tab Details"
             )) {
-                SurfaceManifestViewerWindowController.show(
+                TabManifestViewerWindowController.show(
                     workspaceId: panel.workspaceId,
                     surfaceId: panel.id,
                     kind: .markdown
@@ -55,7 +55,7 @@ struct MarkdownPanelView: View {
             if isVisibleInUI {
                 // Observe left-clicks without intercepting them so markdown text
                 // selection and link activation continue to use the native path.
-                MarkdownPointerObserver(onPointerDown: onRequestPanelFocus)
+                MarkdownPointerObserver(onPointerDown: onRequestTabFocus)
             }
         }
         .overlay {
@@ -223,7 +223,7 @@ struct MarkdownPanelView: View {
             }
 
             Button {
-                presentOpenMarkdownPanel()
+                presentOpenMarkdownTab()
             } label: {
                 Text(String(localized: "markdown.empty.openButton", defaultValue: "Open Markdown File…"))
                     .font(.system(size: 13, weight: .medium))
@@ -258,7 +258,7 @@ struct MarkdownPanelView: View {
         }
     }
 
-    private func presentOpenMarkdownPanel() {
+    private func presentOpenMarkdownTab() {
         let panelOpen = NSOpenPanel()
         panelOpen.canChooseFiles = true
         panelOpen.canChooseDirectories = false
@@ -510,18 +510,18 @@ struct MarkdownPanelView: View {
 private struct MarkdownPointerObserver: NSViewRepresentable {
     let onPointerDown: () -> Void
 
-    func makeNSView(context: Context) -> MarkdownPanelPointerObserverView {
-        let view = MarkdownPanelPointerObserverView()
+    func makeNSView(context: Context) -> MarkdownTabPointerObserverView {
+        let view = MarkdownTabPointerObserverView()
         view.onPointerDown = onPointerDown
         return view
     }
 
-    func updateNSView(_ nsView: MarkdownPanelPointerObserverView, context: Context) {
+    func updateNSView(_ nsView: MarkdownTabPointerObserverView, context: Context) {
         nsView.onPointerDown = onPointerDown
     }
 }
 
-final class MarkdownPanelPointerObserverView: NSView {
+final class MarkdownTabPointerObserverView: NSView {
     var onPointerDown: (() -> Void)?
     private var eventMonitor: Any?
 

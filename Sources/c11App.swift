@@ -138,7 +138,7 @@ struct cmuxApp: App {
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
     @AppStorage(KeyboardShortcutSettings.Action.toggleSidebar.defaultsKey) private var toggleSidebarShortcutData = Data()
-    @AppStorage(KeyboardShortcutSettings.Action.newTab.defaultsKey) private var newWorkspaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.newWorkspace.defaultsKey) private var newWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.newWindow.defaultsKey) private var newWindowShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.showNotifications.defaultsKey) private var showNotificationsShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey) private var jumpToUnreadShortcutData = Data()
@@ -916,7 +916,7 @@ struct cmuxApp: App {
                     Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeWorkspaceManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.workspaces.count) {
-                            manager.selectTab(at: targetIndex)
+                            manager.selectWorkspace(at: targetIndex)
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -1020,17 +1020,17 @@ struct cmuxApp: App {
             // C11-41 Browser menu: every browser-surface verb in one home.
             CommandMenu(String(localized: "menu.browser.title", defaultValue: "Browser")) {
                 Button(String(localized: "menu.browser.back", defaultValue: "Back")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.goBack()
+                    activeWorkspaceManager.focusedBrowserTab?.goBack()
                 }
                 .keyboardShortcut("[", modifiers: .command)
 
                 Button(String(localized: "menu.browser.forward", defaultValue: "Forward")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.goForward()
+                    activeWorkspaceManager.focusedBrowserTab?.goForward()
                 }
                 .keyboardShortcut("]", modifiers: .command)
 
                 Button(String(localized: "menu.browser.reload", defaultValue: "Reload Page")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.reload()
+                    activeWorkspaceManager.focusedBrowserTab?.reload()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
@@ -1139,7 +1139,7 @@ struct cmuxApp: App {
     }
 
     private var newWorkspaceMenuShortcut: StoredShortcut {
-        decodeShortcut(from: newWorkspaceShortcutData, fallback: KeyboardShortcutSettings.Action.newTab.defaultShortcut)
+        decodeShortcut(from: newWorkspaceShortcutData, fallback: KeyboardShortcutSettings.Action.newWorkspace.defaultShortcut)
     }
 
     private var newWindowMenuShortcut: StoredShortcut {
@@ -1283,7 +1283,7 @@ struct cmuxApp: App {
             NSSound.beep()
             return
         }
-        _ = workspace.newMarkdownSurface(inPane: paneId, focus: true)
+        _ = workspace.newMarkdownTab(inPane: paneId, focus: true)
     }
 
     private var notificationMenuSnapshot: NotificationMenuSnapshot {
@@ -1523,8 +1523,8 @@ struct cmuxApp: App {
         activeWorkspaceManager.closeOtherTabsInFocusedPaneWithConfirmation()
     }
 
-    private func closeTabOrWindow() {
-        activeWorkspaceManager.closeCurrentTabWithConfirmation()
+    private func closeWorkspaceOrWindow() {
+        activeWorkspaceManager.closeCurrentWorkspaceWithConfirmation()
     }
 
     private func showNotificationsPopover() {
@@ -1573,7 +1573,7 @@ struct cmuxApp: App {
 
         do {
             try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
-            if workspace.newMarkdownSurface(inPane: paneId, filePath: fileURL.path, focus: true) == nil {
+            if workspace.newMarkdownTab(inPane: paneId, filePath: fileURL.path, focus: true) == nil {
                 ThemeDiagnostics.engine("debug dump active theme failed: unable to open markdown surface")
             }
         } catch {
@@ -4141,21 +4141,21 @@ enum WelcomeSettings {
     // WorkspaceLayoutExecutor with an `applyToExistingWorkspace(_:workspace:
     // seedPanel:)` overload that skips step 2 and reuses the seed panel.
     @MainActor
-    static func performQuadLayout(on workspace: Workspace, initialPanel: TerminalPanel) {
-        let initialPanelId = initialPanel.id
+    static func performQuadLayout(on workspace: Workspace, initialPanel initialTab: TerminalTab) {
+        let initialTabId = initialTab.id
         let welcomeMdPath = Bundle.main.url(forResource: "welcome", withExtension: "md")?.path
 
         let browserPanel = workspace.newBrowserSplit(
-            from: initialPanelId,
+            from: initialTabId,
             orientation: .horizontal,
             insertFirst: false,
             url: URL(string: spikeURL),
             focus: false
         )
 
-        var bottomRightPanel: TerminalPanel?
+        var bottomRightTab: TerminalTab?
         if let browserPanel {
-            bottomRightPanel = workspace.newTerminalSplit(
+            bottomRightTab = workspace.newTerminalSplit(
                 from: browserPanel.id,
                 orientation: .vertical,
                 insertFirst: false,
@@ -4165,7 +4165,7 @@ enum WelcomeSettings {
 
         if let welcomeMdPath {
             workspace.newMarkdownSplit(
-                from: initialPanelId,
+                from: initialTabId,
                 orientation: .vertical,
                 insertFirst: false,
                 filePath: welcomeMdPath,
@@ -4173,13 +4173,13 @@ enum WelcomeSettings {
             )
         }
 
-        if let bottomRightPanel {
-            bottomRightPanel.sendText(
+        if let bottomRightTab {
+            bottomRightTab.sendText(
                 "command -v claude >/dev/null 2>&1 && claude --dangerously-skip-permissions\n"
             )
         }
 
-        initialPanel.sendText("c11 welcome\n")
+        initialTab.sendText("c11 welcome\n")
     }
 }
 
@@ -4231,7 +4231,7 @@ enum DefaultGridSettings {
     @MainActor
     static func performDefaultGrid(
         on workspace: Workspace,
-        initialPanel: TerminalPanel
+        initialPanel initialTab: TerminalTab
     ) {
         // Remote workspaces spawn a fresh SSH session per pane via
         // `remoteTerminalStartupCommand()`. Fanning out sessions on
@@ -4241,7 +4241,7 @@ enum DefaultGridSettings {
         // columnTails[col] = the panel currently occupying the bottom of column col.
         // Seeded with the initial panel in column 0; column 1 is populated by
         // the phase-1 horizontal split before any vertical splits run.
-        var columnTails: [Int: TerminalPanel] = [0: initialPanel]
+        var columnTails: [Int: TerminalTab] = [0: initialTab]
 
         for op in gridSplitOperations() {
             switch op.direction {
@@ -4424,12 +4424,12 @@ struct SettingsView: View {
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
-    @AppStorage(SurfaceTypeAvailability.internalBrowserEnabledKey)
-    private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
-    @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
-    private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
-    @AppStorage(SurfaceTypeAvailability.markdownSpawnButtonVisibleKey)
-    private var markdownSpawnButtonVisible = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.internalBrowserEnabledKey)
+    private var internalBrowserEnabled = TabTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.markdownTabsEnabledKey)
+    private var markdownSurfacesEnabled = TabTypeAvailability.defaultEnabled
+    @AppStorage(TabTypeAvailability.markdownSpawnButtonVisibleKey)
+    private var markdownSpawnButtonVisible = TabTypeAvailability.defaultEnabled
     @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(TabLayoutSettings.modeKey)
@@ -4468,8 +4468,8 @@ struct SettingsView: View {
     @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey)
     private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
     @AppStorage(WorkspacePlacementSettings.placementKey) private var newWorkspacePlacement = WorkspacePlacementSettings.defaultPlacement.rawValue
-    @AppStorage(LastSurfaceCloseShortcutSettings.key)
-    private var closeWorkspaceOnLastSurfaceShortcut = LastSurfaceCloseShortcutSettings.defaultValue
+    @AppStorage(LastTabCloseShortcutSettings.key)
+    private var closeWorkspaceOnLastSurfaceShortcut = LastTabCloseShortcutSettings.defaultValue
     @AppStorage(WorkspaceAutoReorderSettings.key) private var workspaceAutoReorder = WorkspaceAutoReorderSettings.defaultValue
     @AppStorage(ActivityMarkSettings.staticMarksKey)
     private var staticActivityMarks = ActivityMarkSettings.defaultStaticMarks
@@ -4866,20 +4866,20 @@ struct SettingsView: View {
     }
 
     private func chooseNotificationSoundFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.audio]
-        panel.title = String(
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = false
+        openPanel.allowedContentTypes = [.audio]
+        openPanel.title = String(
             localized: "settings.notifications.sound.custom.choose.title",
             defaultValue: "Choose Notification Sound"
         )
-        panel.prompt = String(
+        openPanel.prompt = String(
             localized: "settings.notifications.sound.custom.choose.prompt",
             defaultValue: "Choose"
         )
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard openPanel.runModal() == .OK, let url = openPanel.url else { return }
         let selectedPath = url.path
         switch NotificationSoundSettings.prepareCustomFileForNotifications(path: selectedPath) {
         case .success:
@@ -6496,7 +6496,7 @@ struct SettingsView: View {
             ShortcutSettingsGroup(
                 id: "window",
                 title: String(localized: "settings.shortcuts.group.window", defaultValue: "Window"),
-                actions: [.toggleSidebar, .newTab, .newWindow, .closeWindow, .openFolder]
+                actions: [.toggleSidebar, .newWorkspace, .newWindow, .closeWindow, .openFolder]
             ),
             ShortcutSettingsGroup(
                 id: "navigation",
@@ -6564,8 +6564,8 @@ struct SettingsView: View {
             showLanguageRestartAlert = true
         }
         socketControlMode = SocketControlSettings.defaultMode.rawValue
-        internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
-        markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+        internalBrowserEnabled = TabTypeAvailability.defaultEnabled
+        markdownSurfacesEnabled = TabTypeAvailability.defaultEnabled
         showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
         tabLayoutMode = TabLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
@@ -6603,7 +6603,7 @@ struct SettingsView: View {
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.modeKey)
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.legacyTitlebarControlsVisibilityModeKey)
         defaults.removeObject(forKey: WorkspaceButtonFadeSettings.legacyPaneTabBarControlsVisibilityModeKey)
-        closeWorkspaceOnLastSurfaceShortcut = LastSurfaceCloseShortcutSettings.defaultValue
+        closeWorkspaceOnLastSurfaceShortcut = LastTabCloseShortcutSettings.defaultValue
         workspaceAutoReorder = WorkspaceAutoReorderSettings.defaultValue
         sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
         sidebarShowNotificationMessage = SidebarWorkspaceDetailSettings.defaultShowNotificationMessage

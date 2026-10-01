@@ -19,7 +19,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
         kind: String = "codex"
     ) -> AgentDescriptor {
         AgentDescriptor(
-            identity: CompanionSurfaceIdentity(
+            identity: CompanionTabIdentity(
                 surfaceID: id,
                 surfaceRef: "surface:\(ordinal)",
                 surfaceOrdinal: ordinal,
@@ -31,10 +31,10 @@ final class BrowserCompanionPolicyTests: XCTestCase {
 
     private var agentA: AgentDescriptor { descriptor(agentAID, name: "Maya", ordinal: 3) }
     private var agentB: AgentDescriptor { descriptor(agentBID, name: "Build Agent", ordinal: 5) }
-    private var linkA: AgentSurfaceLink { AgentSurfaceLink(surfaceID: agentAID, lastKnownName: "Maya") }
+    private var linkA: AgentTabLink { AgentTabLink(surfaceID: agentAID, lastKnownName: "Maya") }
 
     private func presentation(
-        link: AgentSurfaceLink?,
+        link: AgentTabLink?,
         active: UUID?,
         generation: UInt64 = 0,
         agents: [AgentDescriptor]? = nil,
@@ -262,11 +262,11 @@ final class BrowserCompanionPolicyTests: XCTestCase {
     }
 
     func testOrphanFormattingExpandsCollidingPrefixesAndNeverUsesStaleRef() {
-        let first = AgentSurfaceLink(
+        let first = AgentTabLink(
             surfaceID: UUID(uuidString: "7F2A8C00-0000-0000-0000-000000000000")!,
             lastKnownName: "Maya"
         )
-        let second = AgentSurfaceLink(
+        let second = AgentTabLink(
             surfaceID: UUID(uuidString: "7F2A8C10-0000-0000-0000-000000000000")!,
             lastKnownName: "Maya"
         )
@@ -293,7 +293,7 @@ final class BrowserCompanionPolicyTests: XCTestCase {
     }
 
     func testRepeatedVisibleLinksToSameOrphanDoNotArtificiallyExpandPrefix() {
-        let repeated = AgentSurfaceLink(
+        let repeated = AgentTabLink(
             surfaceID: UUID(uuidString: "12345678-0000-0000-0000-000000000000")!,
             lastKnownName: nil
         )

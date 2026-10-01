@@ -65,7 +65,7 @@ extension TerminalController {
         guard let result else {
             return .err(code: "internal_error", message: "store timeout", data: nil)
         }
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": result.ref.kind,
@@ -167,7 +167,7 @@ extension TerminalController {
         }
         // Only an acknowledged claim bumps the activity floor. An expired
         // request is a complete no-op, including side-channel mutations.
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,
@@ -290,7 +290,7 @@ extension TerminalController {
                 data: nil
             )
         }
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,
@@ -427,7 +427,7 @@ extension TerminalController {
         _ = conversationStoreSync { store -> Void in
             await store.clear(surfaceId: surfaceId.uuidString)
         }
-        SurfaceActivityTracker.shared.clear(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.clear(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "result": "cleared"

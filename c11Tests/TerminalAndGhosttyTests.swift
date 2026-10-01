@@ -976,7 +976,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             XCTFail("Expected an initial focused terminal panel")
             return
         }
@@ -986,7 +986,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
             return
         }
 
-        let hostedView = terminalPanel.hostedView
+        let hostedView = terminalTab.hostedView
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
         contentView.addSubview(hostedView)
@@ -1004,12 +1004,12 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
 
         store.addNotification(
             workspaceId: workspace.id,
-            surfaceId: terminalPanel.id,
+            surfaceId: terminalTab.id,
             title: "Unread",
             subtitle: "",
             body: ""
         )
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
 
         AppFocusState.overrideIsFocused = true
         let pointInWindow = surfaceView.convert(NSPoint(x: 20, y: 20), to: nil)
@@ -1019,8 +1019,8 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         DispatchQueue.main.async { drained.fulfill() }
         wait(for: [drained], timeout: 5.0)
 
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
-        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
+        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalTab.id), 1)
     }
 
     func testTerminalKeyDownDismissesUnreadWhenSurfaceIsAlreadyFirstResponder() {
@@ -1048,7 +1048,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             XCTFail("Expected an initial focused terminal panel")
             return
         }
@@ -1058,7 +1058,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
             return
         }
 
-        let hostedView = terminalPanel.hostedView
+        let hostedView = terminalTab.hostedView
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
         contentView.addSubview(hostedView)
@@ -1076,12 +1076,12 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
 
         store.addNotification(
             workspaceId: workspace.id,
-            surfaceId: terminalPanel.id,
+            surfaceId: terminalTab.id,
             title: "Unread",
             subtitle: "",
             body: ""
         )
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
 
         let event = makeKeyEvent(characters: "", keyCode: 122, window: window)
         surfaceView.keyDown(with: event)
@@ -1089,8 +1089,8 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         DispatchQueue.main.async { drained.fulfill() }
         wait(for: [drained], timeout: 5.0)
 
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
-        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
+        XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalTab.id), 1)
     }
 }
 
@@ -1365,7 +1365,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             defer: false
         )
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             window.orderOut(nil)
         }
@@ -1383,8 +1383,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(outsideResponder))
         let before = hostedView.debugFlagBannerState()
 
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need a schema decision",
@@ -1413,7 +1413,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
         let hostedView = surface.hostedView
         defer {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            TabAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
             hostedView.updateFlagBanner()
             hostedView.setSearchOverlay(searchState: nil)
         }
@@ -1423,8 +1423,8 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             searchState: TerminalSurface.SearchState(needle: "operator")
         )
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        SurfaceAttentionIndex.shared.publish(
-            SurfaceAttentionSnapshot(
+        TabAttentionIndex.shared.publish(
+            TabAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: surface.id,
                 flagReason: "Need operator input",

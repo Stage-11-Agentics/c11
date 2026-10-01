@@ -19,7 +19,7 @@ public enum WorkspaceMetadataKey {
 /// validation for keys like `"terminal_type"` / `"status"`; this enum
 /// only names the keys the executor and capture walker reach for by
 /// hand.
-public enum SurfaceMetadataKeyName {
+public enum TabMetadataKeyName {
     /// Surface-scoped session id written by the `c11 claude-hook
     /// session-start` handler when Claude Code emits `SessionStart`.
     /// Consumed by `AgentRestartRegistry` at restore time to synthesise

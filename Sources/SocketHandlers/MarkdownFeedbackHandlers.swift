@@ -175,7 +175,7 @@ extension TerminalController {
                     return
                 }
 
-                let createdPanel = ws.newMarkdownSurface(
+                let createdPanel = ws.newMarkdownTab(
                     inPane: targetPaneId,
                     filePath: filePath,
                     focus: v2FocusAllowed()
@@ -263,7 +263,7 @@ extension TerminalController {
                 errResult = .err(code: "not_found", message: "Tab not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            guard let markdown = panel as? MarkdownPanel else {
+            guard let markdown = panel as? MarkdownTab else {
                 errResult = .err(code: "invalid_params", message: "Tab is not a markdown tab", data: ["surface_id": surfaceId.uuidString])
                 return
             }
@@ -276,7 +276,7 @@ extension TerminalController {
             var out: [String: Any] = [
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "type": PanelType.markdown.rawValue,
+                "type": TabContentType.markdown.rawValue,
                 "file_path": markdown.filePath,
                 "content_length": contentBytes.count,
                 "content_sha256": sha,

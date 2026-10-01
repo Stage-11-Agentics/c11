@@ -162,8 +162,8 @@ enum WorkspaceBlueprintMarkdown {
         }
         var explicitIDs = Set<String>()
         try reserveExplicitSurfaceIDs(in: rootNode, reserved: &explicitIDs)
-        var idGen = SurfaceIDGenerator(reservedIDs: explicitIDs)
-        var surfaces: [SurfaceSpec] = []
+        var idGen = TabIDGenerator(reservedIDs: explicitIDs)
+        var surfaces: [TabSpec] = []
         let layout = try buildLayoutTree(from: rootNode, surfaces: &surfaces, idGen: &idGen)
         try validateCompanionFields(in: surfaces)
 
@@ -315,7 +315,7 @@ enum WorkspaceBlueprintMarkdown {
 
     // MARK: - Layout tree conversion (YAML → LayoutTreeSpec)
 
-    private struct SurfaceIDGenerator {
+    private struct TabIDGenerator {
         var counter: Int = 1
         var reservedIDs: Set<String>
 
@@ -355,15 +355,15 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func surfaceID(
         from node: YAML.Value,
-        generator: inout SurfaceIDGenerator
+        generator: inout TabIDGenerator
     ) -> String {
         nullIfEmpty(node.lookup("id")?.asScalar) ?? generator.mint()
     }
 
     private static func buildLayoutTree(
         from node: YAML.Value,
-        surfaces: inout [SurfaceSpec],
-        idGen: inout SurfaceIDGenerator
+        surfaces: inout [TabSpec],
+        idGen: inout TabIDGenerator
     ) throws -> LayoutTreeSpec {
         let mapping = node.asMapping ?? []
         let keys = Set(mapping.map { $0.0 })
@@ -413,11 +413,11 @@ enum WorkspaceBlueprintMarkdown {
         return .pane(LayoutTreeSpec.PaneSpec(surfaceIds: [id], selectedIndex: nil))
     }
 
-    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> SurfaceSpec {
+    private static func buildSurfaceSpec(id: String, from node: YAML.Value) throws -> TabSpec {
         guard let typeRaw = node.lookup("type")?.asScalar, !typeRaw.isEmpty else {
             throw ParseError.missingType
         }
-        guard let kind = SurfaceSpecKind(rawValue: typeRaw.lowercased()) else {
+        guard let kind = TabSpecKind(rawValue: typeRaw.lowercased()) else {
             throw ParseError.unsupportedSurfaceKind(typeRaw)
         }
         let title = node.lookup("title")?.asScalar
@@ -430,7 +430,7 @@ enum WorkspaceBlueprintMarkdown {
         // Opt-in `submit:` — only the exact scalar `true` (case-insensitive)
         // enables execution; anything else, including absence, stays false.
         let submit = node.lookup("submit")?.asScalar?.lowercased() == "true"
-        return SurfaceSpec(
+        return TabSpec(
             id: id,
             kind: kind,
             title: nullIfEmpty(title),
@@ -447,7 +447,7 @@ enum WorkspaceBlueprintMarkdown {
         )
     }
 
-    private static func validateCompanionFields(in surfaces: [SurfaceSpec]) throws {
+    private static func validateCompanionFields(in surfaces: [TabSpec]) throws {
         let byID = Dictionary(uniqueKeysWithValues: surfaces.map { ($0.id, $0) })
         for surface in surfaces {
             if let declaredKind = surface.declaredAgentKind,
@@ -516,7 +516,7 @@ enum WorkspaceBlueprintMarkdown {
     /// subsequent keys live at column `indent`.
     private static func emitLayoutNode(
         _ tree: LayoutTreeSpec,
-        surfaces: [SurfaceSpec],
+        surfaces: [TabSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -530,7 +530,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitSplitNode(
         _ split: LayoutTreeSpec.SplitSpec,
-        surfaces: [SurfaceSpec],
+        surfaces: [TabSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -547,7 +547,7 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func emitPaneNode(
         _ pane: LayoutTreeSpec.PaneSpec,
-        surfaces: [SurfaceSpec],
+        surfaces: [TabSpec],
         indent: Int,
         listItem: Bool
     ) -> String {
@@ -574,7 +574,7 @@ enum WorkspaceBlueprintMarkdown {
     }
 
     private static func emitSurfaceFields(
-        _ surface: SurfaceSpec,
+        _ surface: TabSpec,
         firstLinePad: String,
         restPad: String
     ) -> String {

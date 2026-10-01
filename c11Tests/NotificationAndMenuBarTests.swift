@@ -243,26 +243,26 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
         let rootThreadId = UUID().uuidString.lowercased()
         let childThreadId = UUID().uuidString.lowercased()
         _ = await ConversationStore.shared.captureRuntimeEnv(
-            surfaceId: terminalPanel.id.uuidString,
+            surfaceId: terminalTab.id.uuidString,
             id: rootThreadId,
             cwd: nil
         )
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
-            surfaceId: terminalPanel.id,
+        TabLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: terminalTab.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
@@ -271,17 +271,17 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 1,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: childThreadId),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
         XCTAssertEqual(waitingEdges, [])
@@ -318,25 +318,25 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
         let rootThreadId = UUID().uuidString.lowercased()
         _ = await ConversationStore.shared.captureRuntimeEnv(
-            surfaceId: terminalPanel.id.uuidString,
+            surfaceId: terminalTab.id.uuidString,
             id: rootThreadId,
             cwd: nil
         )
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
-            surfaceId: terminalPanel.id,
+        TabLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: terminalTab.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
@@ -345,18 +345,18 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 2,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: rootThreadId),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertEqual(waitingEdges, [true])
         XCTAssertTrue(waitUntil {
-            SurfaceMetadataStore.shared.getMetadata(
+            TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.idle.rawValue
         })
     }
@@ -392,7 +392,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
@@ -401,13 +401,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 3,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: UUID().uuidString.lowercased()),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertEqual(waitingEdges, [true])
     }
 
@@ -735,13 +735,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
     }
 
     func testNotificationIndexesTrackUnreadCountsByTabAndSurface() {
-        let tabA = UUID()
-        let tabB = UUID()
+        let workspaceA = UUID()
+        let workspaceB = UUID()
         let surfaceA = UUID()
         let surfaceB = UUID()
         let notificationAUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            workspaceId: workspaceA,
             surfaceId: surfaceA,
             title: "A unread",
             subtitle: "",
@@ -751,7 +751,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationARead = TerminalNotification(
             id: UUID(),
-            workspaceId: tabA,
+            workspaceId: workspaceA,
             surfaceId: surfaceB,
             title: "A read",
             subtitle: "",
@@ -761,7 +761,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
         let notificationBUnread = TerminalNotification(
             id: UUID(),
-            workspaceId: tabB,
+            workspaceId: workspaceB,
             surfaceId: nil,
             title: "B unread",
             subtitle: "",
@@ -778,13 +778,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
         ])
 
         XCTAssertEqual(store.unreadCount, 2)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabA), 1)
-        XCTAssertEqual(store.unreadCount(forWorkspaceId: tabB), 1)
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceA))
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: tabA, surfaceId: surfaceB))
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: tabB, surfaceId: nil))
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabA)?.id, notificationAUnread.id)
-        XCTAssertEqual(store.latestNotification(forWorkspaceId: tabB)?.id, notificationBUnread.id)
+        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspaceA), 1)
+        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspaceB), 1)
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspaceA, surfaceId: surfaceA))
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspaceA, surfaceId: surfaceB))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspaceB, surfaceId: nil))
+        XCTAssertEqual(store.latestNotification(forWorkspaceId: workspaceA)?.id, notificationAUnread.id)
+        XCTAssertEqual(store.latestNotification(forWorkspaceId: workspaceB)?.id, notificationBUnread.id)
     }
 
     func testUnreadNotificationCreationBoundaryUsesExactEligibleSurfaceSignal() {

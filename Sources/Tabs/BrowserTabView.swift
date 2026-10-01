@@ -273,8 +273,8 @@ private struct BrowserChromeStyle {
 }
 
 /// View for rendering a browser panel with address bar
-struct BrowserPanelView: View {
-    @ObservedObject var panel: BrowserPanel
+struct BrowserTabView: View {
+    @ObservedObject var panel: BrowserTab
     @ObservedObject private var browserProfileStore = BrowserProfileStore.shared
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
@@ -282,7 +282,7 @@ struct BrowserPanelView: View {
     let isFocused: Bool
     let isVisibleInUI: Bool
     let portalPriority: Int
-    let onRequestPanelFocus: () -> Void
+    let onRequestTabFocus: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.paneDropZone) private var paneDropZone
     @AppStorage(ThemeAppStorage.Keys.m1bBrowserChromeMigrated, store: ThemeAppStorage.defaults)
@@ -618,7 +618,7 @@ struct BrowserPanelView: View {
             }
             .onAppear { panel.applyVisibility(isVisibleInUI) }
             .onChange(of: isFocused) { focused in
-                handlePanelFocusChange(focused)
+                handleTabFocusChange(focused)
             }
             .onChange(of: addressBarFocused) { focused in
                 handleAddressBarFocusChange(focused)
@@ -672,7 +672,7 @@ struct BrowserPanelView: View {
             setAddressBarFocused(false, reason: "webView.clickIntent")
         }
         if !isFocused {
-            onRequestPanelFocus()
+            onRequestTabFocus()
         }
     }
 
@@ -710,7 +710,7 @@ struct BrowserPanelView: View {
         panel.refreshAppearanceDrivenColors()
         panel.setBrowserThemeMode(browserThemeMode)
         applyPendingAddressBarFocusRequestIfNeeded()
-        syncURLFromPanel()
+        syncURLFromTab()
         // If the browser surface is focused but has no URL loaded yet, auto-focus the omnibar.
         autoFocusOmnibarIfBlank()
         syncWebViewResponderPolicyWithViewState(reason: "onAppear")
@@ -723,7 +723,7 @@ struct BrowserPanelView: View {
 
     private func handleCurrentURLChange() {
         let addressWasEmpty = omnibarState.buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        syncURLFromPanel()
+        syncURLFromTab()
         // If we auto-focused a blank omnibar but then a URL loads programmatically, move focus
         // into WebKit unless the user had already started typing.
         if addressBarFocused,
@@ -771,7 +771,7 @@ struct BrowserPanelView: View {
         panel.scheduleDeveloperToolsVisibilityLossCheck()
     }
 
-    private func handlePanelFocusChange(_ focused: Bool) {
+    private func handleTabFocusChange(_ focused: Bool) {
 #if DEBUG
         logBrowserFocusState(
             event: "panelFocus.onChange",
@@ -816,7 +816,7 @@ struct BrowserPanelView: View {
 #if DEBUG
                 logBrowserFocusState(event: "addressBarFocus.requestPanelFocus")
 #endif
-                onRequestPanelFocus()
+                onRequestTabFocus()
             }
             let effects = omnibarReduce(state: &omnibarState, event: .focusGained(currentURLString: urlString))
             applyOmnibarEffects(effects)
@@ -1351,7 +1351,7 @@ struct BrowserPanelView: View {
                     .contentShape(Rectangle())
                     .accessibilityIdentifier(browserContentAccessibilityIdentifier)
                     .onTapGesture {
-                        onRequestPanelFocus()
+                        onRequestTabFocus()
                         if addressBarFocused {
                             setAddressBarFocused(false, reason: "placeholderContent.tapBlur")
                         }
@@ -1499,7 +1499,7 @@ struct BrowserPanelView: View {
         return false
     }
 
-    private func isPanelFocusedInModel() -> Bool {
+    private func isTabFocusedInModel() -> Bool {
         guard let app = AppDelegate.shared,
               let manager = app.workspaceManagerFor(workspaceId: panel.workspaceId),
               manager.selectedWorkspaceId == panel.workspaceId,
@@ -1510,7 +1510,7 @@ struct BrowserPanelView: View {
     }
 
     private func shouldApplyAddressBarExitFallback(in window: NSWindow) -> Bool {
-        panel.webView.window === window && isPanelFocusedInModel()
+        panel.webView.window === window && isTabFocusedInModel()
     }
 
 #if DEBUG
@@ -1544,13 +1544,13 @@ struct BrowserPanelView: View {
     }
 #endif
 
-    private func syncURLFromPanel() {
+    private func syncURLFromTab() {
         let urlString = panel.preferredURLStringForOmnibar() ?? ""
         let effects = omnibarReduce(state: &omnibarState, event: .panelURLChanged(currentURLString: urlString))
         applyOmnibarEffects(effects)
     }
 
-    private func isCommandPaletteVisibleForPanelWindow() -> Bool {
+    private func isCommandPaletteVisibleForTabWindow() -> Bool {
         guard let app = AppDelegate.shared else { return false }
 
         if let window = panel.webView.window, app.isCommandPaletteVisible(for: window) {
@@ -1596,7 +1596,7 @@ struct BrowserPanelView: View {
             clearPendingAddressBarFocusRetry()
             return
         }
-        guard !isCommandPaletteVisibleForPanelWindow() else {
+        guard !isCommandPaletteVisibleForTabWindow() else {
 #if DEBUG
             logBrowserFocusState(
                 event: "addressBarFocus.request.apply.skip",
@@ -1825,7 +1825,7 @@ struct BrowserPanelView: View {
 #endif
             return
         }
-        guard !isCommandPaletteVisibleForPanelWindow() else {
+        guard !isCommandPaletteVisibleForTabWindow() else {
 #if DEBUG
             logBrowserFocusState(event: "addressBarFocus.autoFocus.skip", detail: "reason=command_palette_visible")
 #endif
@@ -1907,7 +1907,7 @@ struct BrowserPanelView: View {
             // briefly re-acquired during `focusPane`.
             setAddressBarFocused(true, reason: "omnibar.tap")
         }
-        onRequestPanelFocus()
+        onRequestTabFocus()
     }
 
     private func hideSuggestions() {
@@ -1931,7 +1931,7 @@ struct BrowserPanelView: View {
         omnibarState.isUserEditing = false
         switch suggestion.kind {
         case .switchToTab(let workspaceId, let panelId, _, _):
-            AppDelegate.shared?.workspaceManager?.focusTab(workspaceId, surfaceId: panelId)
+            AppDelegate.shared?.workspaceManager?.focusWorkspace(workspaceId, surfaceId: panelId)
         default:
             panel.navigateSmart(suggestion.completion)
         }
@@ -2184,13 +2184,13 @@ struct BrowserPanelView: View {
         let includeCurrentPanelForSingleCharacterQuery = singleCharacterQuery != nil
         let workspaceManager = AppDelegate.shared?.workspaceManager
         let currentPanelWorkspaceId = workspaceManager?.workspaces.first(where: { workspace in
-            workspace.panels[panel.id] is BrowserPanel
+            workspace.panels[panel.id] is BrowserTab
         })?.id
         var matches: [OmnibarOpenTabMatch] = []
         var seenKeys = Set<String>()
 
-        func preferredPanelURL(_ browserPanel: BrowserPanel) -> String? {
-            browserPanel.preferredURLStringForOmnibar()
+        func preferredPanelURL(_ browserTab: BrowserTab) -> String? {
+            browserTab.preferredURLStringForOmnibar()
         }
 
         func addMatch(
@@ -2239,15 +2239,15 @@ struct BrowserPanelView: View {
 
         for workspace in workspaceManager.workspaces {
             for (panelId, anyPanel) in workspace.panels {
-                guard let browserPanel = anyPanel as? BrowserPanel else { continue }
-                guard let currentURL = preferredPanelURL(browserPanel),
+                guard let browserTab = anyPanel as? BrowserTab else { continue }
+                guard let currentURL = preferredPanelURL(browserTab),
                       !currentURL.isEmpty else { continue }
                 let isCurrentPanel = workspace.id == panel.workspaceId && panelId == panel.id
                 if isCurrentPanel && !includeCurrentPanelForSingleCharacterQuery {
                     continue
                 }
 
-                let rawTitle = browserPanel.pageTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawTitle = browserTab.pageTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 let title = rawTitle.isEmpty ? nil : rawTitle
                 let isMatch: Bool = {
                     if let singleCharacterQuery {
@@ -4468,7 +4468,7 @@ private struct OmnibarSuggestionsView: View {
 
 /// NSViewRepresentable wrapper for WKWebView
 struct WebViewRepresentable: NSViewRepresentable {
-    let panel: BrowserPanel
+    let panel: BrowserTab
     let paneId: PaneID
     let shouldAttachWebView: Bool
     let useLocalInlineHosting: Bool
@@ -4482,7 +4482,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let paneTopChromeHeight: CGFloat
 
     final class Coordinator {
-        weak var panel: BrowserPanel?
+        weak var panel: BrowserTab?
         weak var webView: WKWebView?
         var attachGeneration: Int = 0
         var desiredPortalVisibleInUI: Bool = true
@@ -5884,7 +5884,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 
     #if DEBUG
     private static func logDevToolsState(
-        _ panel: BrowserPanel,
+        _ panel: BrowserTab,
         event: String,
         generation: Int,
         retryCount: Int,
@@ -6446,7 +6446,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     }
 
     private static func applyFocus(
-        panel: BrowserPanel,
+        panel: BrowserTab,
         webView: WKWebView,
         nsView: NSView,
         shouldFocusWebView: Bool,
@@ -6510,7 +6510,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     }
 
     private static func applyWebViewFirstResponderPolicy(
-        panel: BrowserPanel,
+        panel: BrowserTab,
         webView: WKWebView,
         isPanelFocused: Bool
     ) {

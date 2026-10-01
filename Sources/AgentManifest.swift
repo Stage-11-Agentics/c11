@@ -359,7 +359,7 @@ struct AgentRegistry: Sendable {
             sfSymbolFallback: "sparkles",
             resume: .uuidById(
                 command: "claude --dangerously-skip-permissions --resume",
-                projectDirKey: SurfaceMetadataKeyName.claudeSessionProjectDir
+                projectDirKey: TabMetadataKeyName.claudeSessionProjectDir
             ),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),

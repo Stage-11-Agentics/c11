@@ -1,7 +1,7 @@
 import Foundation
 import Bonsplit
 
-enum SurfaceTabActivityResolver {
+enum TabActivityResolver {
     static func resolve(
         hasExactSurfaceNotification: Bool,
         derivedActivity: SidebarActivityState?,
@@ -34,7 +34,7 @@ enum SurfaceTabActivityResolver {
     }
 }
 
-enum SurfaceActivityTerminalKindResolver {
+enum TabActivityTerminalKindResolver {
     static func resolve(
         detectedTerminalType: String?,
         declaredTerminalType: String?
@@ -64,7 +64,7 @@ enum SurfaceActivityTerminalKindResolver {
 /// `Workspace.setDerivedActivity` mirror, which is dispatched explicitly via
 /// `DispatchQueue.main.async` + `MainActor.assumeIsolated`. Nothing here ever
 /// runs on the typing hot paths.
-enum SurfaceLivenessDeriver {
+enum TabLivenessDeriver {
 
     /// Off-main compute queue for the realtime transition path. Keeps the
     /// caller's thread (which may be the main actor, since
@@ -89,7 +89,7 @@ enum SurfaceLivenessDeriver {
     /// - `.promptIdle`     ⇒ `.idle`
     /// - `.unknown`        ⇒ `nil` (no truth; the key is cleared)
     static func activityState(
-        for shell: Workspace.PanelShellActivityState
+        for shell: Workspace.TabShellActivityState
     ) -> SidebarActivityState? {
         switch shell {
         case .commandRunning: return .working
@@ -110,11 +110,11 @@ enum SurfaceLivenessDeriver {
     static func onShellActivityChanged(
         surfaceId: UUID,
         workspaceId: UUID,
-        state: Workspace.PanelShellActivityState,
+        state: Workspace.TabShellActivityState,
         workspace: Workspace
     ) {
         let derived = activityState(for: state)
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             // NOTE (C11-162 m5 / C11-163): this realtime path runs on `Self.queue`
             // while `reconcile(...)` runs on the AgentDetector sweep queue — two
@@ -157,7 +157,7 @@ enum SurfaceLivenessDeriver {
         workspaceId: UUID,
         activity: SidebarActivityState
     ) {
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(
@@ -208,7 +208,7 @@ enum SurfaceLivenessDeriver {
         now: Date = Date(),
         coldAfterSeconds: TimeInterval = SidebarAgentColdSettings.thresholdSeconds()
     ) {
-        let snap = SurfaceMetadataStore.shared.getMetadata(
+        let snap = TabMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
@@ -220,7 +220,7 @@ enum SurfaceLivenessDeriver {
             return
         }
 
-        let last = SurfaceActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
+        let last = TabActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
         let metadataTouch = (record["ts"] as? Double).map(Date.init(timeIntervalSince1970:))
         let lastTouched = [last, metadataTouch].compactMap { $0 }.max()
 
@@ -259,7 +259,7 @@ enum SurfaceLivenessDeriver {
         guard isStale else { return }
 
         applyToStore(derived: .idle, workspaceId: workspaceId, surfaceId: surfaceId)
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString, at: now)
+        TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString, at: now)
         emitLivenessTransition(
             from: SidebarActivityState.working.rawValue,
             to: SidebarActivityState.idle.rawValue,
@@ -306,7 +306,7 @@ enum SurfaceLivenessDeriver {
                 }
                 if isCold,
                    let observedLastTouchedAt,
-                   let currentLastTouchedAt = SurfaceActivityTracker.shared.lastActivity(
+                   let currentLastTouchedAt = TabActivityTracker.shared.lastActivity(
                        for: surfaceId.uuidString
                    ),
                    currentLastTouchedAt > observedLastTouchedAt {
@@ -324,7 +324,7 @@ enum SurfaceLivenessDeriver {
 
     /// Read the current raw `activity` value (nil when unset). Off-main-safe.
     private static func currentActivityRaw(workspaceId: UUID, surfaceId: UUID) -> String? {
-        let snap = SurfaceMetadataStore.shared.getMetadata(
+        let snap = TabMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
@@ -340,7 +340,7 @@ enum SurfaceLivenessDeriver {
         surfaceId: UUID
     ) {
         if let derived {
-            SurfaceMetadataStore.shared.setInternal(
+            TabMetadataStore.shared.setInternal(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 key: MetadataKey.activity,
@@ -348,7 +348,7 @@ enum SurfaceLivenessDeriver {
                 source: .derived
             )
         } else {
-            _ = try? SurfaceMetadataStore.shared.clearMetadata(
+            _ = try? TabMetadataStore.shared.clearMetadata(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 keys: [MetadataKey.activity],

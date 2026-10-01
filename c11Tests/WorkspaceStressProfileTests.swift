@@ -98,7 +98,7 @@ final class WorkspaceStressProfileTests: XCTestCase {
         var switchSecondDrainSamples: [TimedSample] = []
 
         let manager = timed("workspace-000-create", collectInto: &creationSamples) {
-            TabManager()
+            WorkspaceManager()
         }
 
         guard let bootstrapWorkspace = manager.selectedWorkspace else {
@@ -128,14 +128,14 @@ final class WorkspaceStressProfileTests: XCTestCase {
             settleWorkspaceSelection(manager)
         }
 
-        XCTAssertEqual(manager.tabs.count, config.workspaceCount)
-        XCTAssertTrue(manager.tabs.allSatisfy { $0.panels.count == config.tabsPerWorkspace })
+        XCTAssertEqual(manager.workspaces.count, config.workspaceCount)
+        XCTAssertTrue(manager.workspaces.allSatisfy { $0.panels.count == config.tabsPerWorkspace })
 
         for pass in 0..<config.switchPasses {
-            for switchIndex in 0..<manager.tabs.count {
+            for switchIndex in 0..<manager.workspaces.count {
                 timed("pass-\(label(for: pass))-next-\(label(for: switchIndex))", collectInto: &switchSamples) {
                     timed("pass-\(label(for: pass))-next-dispatch-\(label(for: switchIndex))", collectInto: &switchDispatchSamples) {
-                        manager.selectNextTab()
+                        manager.selectNextWorkspace()
                     }
                     timed("pass-\(label(for: pass))-next-drain1-\(label(for: switchIndex))", collectInto: &switchFirstDrainSamples) {
                         drainMainQueue()
@@ -149,10 +149,10 @@ final class WorkspaceStressProfileTests: XCTestCase {
                 }
             }
 
-            for switchIndex in 0..<manager.tabs.count {
+            for switchIndex in 0..<manager.workspaces.count {
                 timed("pass-\(label(for: pass))-prev-\(label(for: switchIndex))", collectInto: &switchSamples) {
                     timed("pass-\(label(for: pass))-prev-dispatch-\(label(for: switchIndex))", collectInto: &switchDispatchSamples) {
-                        manager.selectPreviousTab()
+                        manager.selectPreviousWorkspace()
                     }
                     timed("pass-\(label(for: pass))-prev-drain1-\(label(for: switchIndex))", collectInto: &switchFirstDrainSamples) {
                         drainMainQueue()
@@ -221,7 +221,7 @@ final class WorkspaceStressProfileTests: XCTestCase {
         }
     }
 
-    private func settleWorkspaceSelection(_ manager: TabManager) {
+    private func settleWorkspaceSelection(_ manager: WorkspaceManager) {
         drainMainQueue()
         manager.completePendingWorkspaceUnfocus(reason: "workspace_stress_profile")
         drainMainQueue()

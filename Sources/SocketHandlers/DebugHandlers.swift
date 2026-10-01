@@ -210,8 +210,8 @@ extension TerminalController {
 
             var mappedLocations: [ObjectIdentifier: MappedTerminalLocation] = [:]
             for (windowIndex, state) in windows.enumerated() {
-                let tabManager = state.tabManager
-                for (workspaceIndex, workspace) in tabManager.tabs.enumerated() {
+                let workspaceManager = state.workspaceManager
+                for (workspaceIndex, workspace) in workspaceManager.workspaces.enumerated() {
                     let paneIndexById = Dictionary(
                         uniqueKeysWithValues: workspace.bonsplitController.allPaneIds.enumerated().map {
                             ($0.element.id, $0.offset)
@@ -220,9 +220,9 @@ extension TerminalController {
                     var selectedInPaneByPanelId: [UUID: Bool] = [:]
                     for paneId in workspace.bonsplitController.allPaneIds {
                         let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
-                        for tab in workspace.bonsplitController.tabs(inPane: paneId) {
-                            guard let panelId = workspace.panelIdFromSurfaceId(tab.id) else { continue }
-                            selectedInPaneByPanelId[panelId] = (tab.id == selectedTab?.id)
+                        for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
+                            guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
+                            selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedTab?.id)
                         }
                     }
 
@@ -233,14 +233,14 @@ extension TerminalController {
                             windowId: state.windowId,
                             window: state.window,
                             workspaceIndex: workspaceIndex,
-                            workspaceSelected: workspace.id == tabManager.selectedTabId,
+                            workspaceSelected: workspace.id == workspaceManager.selectedWorkspaceId,
                             workspace: workspace,
                             terminalPanel: terminalPanel,
                             paneId: workspace.paneId(forPanelId: terminalPanel.id),
                             paneIndex: workspace.paneId(forPanelId: terminalPanel.id).flatMap { paneIndexById[$0.id] },
                             surfaceIndex: surfaceIndex,
                             selectedInPane: selectedInPaneByPanelId[terminalPanel.id],
-                            bonsplitTabId: workspace.surfaceIdFromPanelId(terminalPanel.id)
+                            bonsplitTabId: workspace.bonsplitTabIdFromTabId(terminalPanel.id)
                         )
                     }
                 }
@@ -974,8 +974,8 @@ extension TerminalController {
         v2MainSync {
             if clear {
                 workspace.bonsplitController.setLinkedHover(tabId: nil, fromSheet: fromSheet)
-            } else if let tabId = workspace.surfaceIdFromPanelId(surfaceId) {
-                workspace.bonsplitController.setLinkedHover(tabId: tabId, fromSheet: fromSheet)
+            } else if let bonsplitTabId = workspace.bonsplitTabIdFromTabId(surfaceId) {
+                workspace.bonsplitController.setLinkedHover(tabId: bonsplitTabId, fromSheet: fromSheet)
             }
         }
         return .ok(["clear": clear, "from_sheet": fromSheet])
@@ -1005,14 +1005,14 @@ extension TerminalController {
     /// Returns `{ "before": [uuid,...], "after": [uuid,...] }` — callers
     /// compare the sets to verify stability.
     private func v2DebugSessionRoundTrip(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var before: [String] = []
         var after: [String] = []
         var failureMessage: String?
         v2MainSync {
-            guard let workspace = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let workspace = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 failureMessage = "workspace_not_found"
                 return
             }
@@ -1035,16 +1035,16 @@ extension TerminalController {
     /// Returns the ordered workspace UUIDs before and after so callers can
     /// assert that workspace IDs survive a save/load cycle.
     private func v2DebugSessionRoundTripWorkspaces(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var before: [String] = []
         var after: [String] = []
         v2MainSync {
-            before = tabManager.tabs.map { $0.id.uuidString }
-            let snapshot = tabManager.sessionSnapshot(includeScrollback: false)
-            tabManager.restoreSessionSnapshot(snapshot)
-            after = tabManager.tabs.map { $0.id.uuidString }
+            before = workspaceManager.workspaces.map { $0.id.uuidString }
+            let snapshot = workspaceManager.sessionSnapshot(includeScrollback: false)
+            workspaceManager.restoreSessionSnapshot(snapshot)
+            after = workspaceManager.workspaces.map { $0.id.uuidString }
         }
         return .ok([
             "before": before,

@@ -516,7 +516,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var activeAgentSurfaceId: UUID? = nil
 }
 
-struct SessionTabManagerSnapshot: Codable, Sendable {
+struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
 }
@@ -524,8 +524,16 @@ struct SessionTabManagerSnapshot: Codable, Sendable {
 struct SessionWindowSnapshot: Codable, Sendable {
     var frame: SessionRectSnapshot?
     var display: SessionDisplaySnapshot?
-    var tabManager: SessionTabManagerSnapshot
+    var workspaceManager: SessionWorkspaceManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+
+    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.
+    enum CodingKeys: String, CodingKey {
+        case frame
+        case display
+        case workspaceManager = "tabManager"
+        case sidebar
+    }
 }
 
 struct AppSessionSnapshot: Codable, Sendable {

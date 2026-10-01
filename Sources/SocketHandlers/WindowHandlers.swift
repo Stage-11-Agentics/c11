@@ -47,10 +47,10 @@ extension TerminalController {
     }
 
     private func v2WindowCurrent(params _: [String: Any]) -> V2CallResult {
-        guard let tabManager else {
+        guard let workspaceManager else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
-        guard let windowId = v2ResolveWindowId(tabManager: tabManager) else {
+        guard let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) else {
             return .err(code: "not_found", message: "Current window not found", data: nil)
         }
         return .ok([
@@ -85,8 +85,8 @@ extension TerminalController {
             return .err(code: "internal_error", message: "Failed to create window", data: nil)
         }
         // The new window should become key, but setActiveTabManager defensively.
-        if let tm = v2MainSync({ AppDelegate.shared?.tabManagerFor(windowId: windowId) }) {
-            setActiveTabManager(tm)
+        if let tm = v2MainSync({ AppDelegate.shared?.workspaceManagerFor(windowId: windowId) }) {
+            setActiveWorkspaceManager(tm)
         }
         return .ok([
             "window_id": windowId.uuidString,

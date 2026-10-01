@@ -471,7 +471,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             guard seen.insert(ObjectIdentifier(window)).inserted else { continue }
             for slot in slots.values {
                 guard let workspace = slot.workspace else { continue }
-                guard let manager = app.tabManagerFor(tabId: workspace.id) else { continue }
+                guard let manager = app.workspaceManagerFor(workspaceId: workspace.id) else { continue }
                 guard manager.window === window else { continue }
                 guard manager.selectedWorkspace?.id == workspace.id else { continue }
                 guard workspace.bonsplitController.focusedPaneId == slot.paneId else { continue }
@@ -533,24 +533,24 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func previewRows(workspace: Workspace, paneId: PaneID) -> [TabRailTipPreviewRow] {
-        let tabs = workspace.bonsplitController.tabs(inPane: paneId)
-        guard !tabs.isEmpty else { return [] }
+        let bonsplitTabs = workspace.bonsplitController.tabs(inPane: paneId)
+        guard !bonsplitTabs.isEmpty else { return [] }
         let selected = workspace.bonsplitController.selectedTab(inPane: paneId)?.id
-        let index = tabs.firstIndex(where: { $0.id == selected }) ?? 0
-        let range = TabRailTipPreviewWindow.range(count: tabs.count, selectedIndex: index)
-        return tabs[range].map { tab in
+        let index = bonsplitTabs.firstIndex(where: { $0.id == selected }) ?? 0
+        let range = TabRailTipPreviewWindow.range(count: bonsplitTabs.count, selectedIndex: index)
+        return bonsplitTabs[range].map { bonsplitTab in
             TabRailTipPreviewRow(
-                id: tab.id.uuid.uuidString,
-                title: tab.detail?.title.flatMap { $0.isEmpty ? nil : $0 } ?? tab.title,
-                ordinal: tab.displayOrdinal,
-                status: Self.statusKind(for: tab),
-                selected: tab.id == selected
+                id: bonsplitTab.id.uuid.uuidString,
+                title: bonsplitTab.detail?.title.flatMap { $0.isEmpty ? nil : $0 } ?? bonsplitTab.title,
+                ordinal: bonsplitTab.displayOrdinal,
+                status: Self.statusKind(for: bonsplitTab),
+                selected: bonsplitTab.id == selected
             )
         }
     }
 
-    private static func statusKind(for tab: Bonsplit.Tab) -> TabRailTipStatusKind? {
-        if let kind = tab.detail?.status?.kind {
+    private static func statusKind(for bonsplitTab: Bonsplit.Tab) -> TabRailTipStatusKind? {
+        if let kind = bonsplitTab.detail?.status?.kind {
             switch kind {
             case .working: return .working
             case .waiting: return .waiting
@@ -559,7 +559,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             case .cold: return .cold
             }
         }
-        switch tab.activityState {
+        switch bonsplitTab.activityState {
         case .running: return .working
         case .idle: return .idle
         case .cold: return .cold

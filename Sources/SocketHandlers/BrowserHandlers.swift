@@ -239,15 +239,15 @@ extension TerminalController {
 
     func v2BrowserWithPanel(
         params: [String: Any],
-        _ body: (_ tabManager: TabManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserPanel: BrowserPanel) -> V2CallResult
+        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserPanel: BrowserPanel) -> V2CallResult
     ) -> V2CallResult {
         var result: V2CallResult = .err(code: "internal_error", message: "Browser operation failed", data: nil)
         v2MainSync {
-            guard let tabManager = v2ResolveTabManager(params: params) else {
+            guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
                 result = .err(code: "unavailable", message: "TabManager not available", data: nil)
                 return
             }
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -260,7 +260,7 @@ extension TerminalController {
                 result = .err(code: "invalid_params", message: "Tab is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            result = body(tabManager, ws, surfaceId, browserPanel)
+            result = body(workspaceManager, ws, surfaceId, browserPanel)
         }
         return result
     }
@@ -280,10 +280,10 @@ extension TerminalController {
         // through to the focused surface.
         v2RefreshKnownRefs()
 
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .result(.err(code: "unavailable", message: "TabManager not available", data: nil))
         }
-        guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+        guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
             return .result(.err(code: "not_found", message: "Workspace not found", data: nil))
         }
         let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
@@ -1120,7 +1120,7 @@ extension TerminalController {
     }
 
     func v2BrowserOpenSplit(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         let urlStr = v2String(params, "url")
@@ -1134,7 +1134,7 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -1149,7 +1149,7 @@ extension TerminalController {
                     )
                     return
                 }
-                let windowId = v2ResolveWindowId(tabManager: tabManager)
+                let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
                 result = .ok([
                     "window_id": v2OrNull(windowId?.uuidString),
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -1166,8 +1166,8 @@ extension TerminalController {
                 ])
                 return
             }
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            v2MaybeFocusWindow(for: workspaceManager)
+            v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
@@ -1208,7 +1208,7 @@ extension TerminalController {
             }
 
             let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -1241,7 +1241,7 @@ extension TerminalController {
     }
 
     func v2BrowserNavigate(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let surfaceId = v2UUID(params, "surface_id") else {
@@ -1255,7 +1255,7 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "not_found", message: "Tab not found or not a browser", data: ["surface_id": surfaceId.uuidString])
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
             let disposition = browserPanel.navigateSmart(url, allowInsecureHTTP: allowInsecureHTTP)
             if case .blocked(let host, let reason) = disposition {
@@ -1275,8 +1275,8 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))
+                "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))
             ]
             if let insecureHTTP = browserInsecureHTTPPayload(for: disposition) {
                 payload["insecure_http"] = insecureHTTP

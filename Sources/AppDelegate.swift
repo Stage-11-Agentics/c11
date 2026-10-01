@@ -2228,7 +2228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 #if DEBUG
     private var didSetupJumpUnreadUITest = false
-    private var jumpUnreadFocusExpectation: (workspaceId: UUID, surfaceId: UUID)?
+    private var jumpUnreadFocusExpectation: (tabId: UUID, surfaceId: UUID)?
     private var jumpUnreadFocusObserver: NSObjectProtocol?
     private var didSetupGotoSplitUITest = false
     private var didSetupBonsplitTabDragUITest = false
@@ -8618,12 +8618,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                           workspace.panel(for: tab.id) is TerminalPanel else {
                         continue
                     }
-                    if workspace.preloadTerminalPanelForDebugStress(tabId: tab.id, inPane: paneId) != nil {
+                    if workspace.preloadTerminalPanelForDebugStress(workspaceId: tab.id, inPane: paneId) != nil {
                         queuedTargets.append(
                             DebugStressTerminalLoadTarget(
                                 workspace: workspace,
                                 paneId: paneId,
-                                tabId: tab.id,
+                                workspaceId: tab.id,
                                 panelId: panelId
                             )
                         )
@@ -9336,8 +9336,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return updates
     }
 
-    private func focusWebViewForGotoSplitUITest(workspace: Workspace, browserPanelId: UUID) {
-        guard let browserPanel = workspace.browserPanel(for: browserPanelId) else {
+    private func focusWebViewForGotoSplitUITest(tab: Workspace, browserPanelId: UUID) {
+        guard let browserPanel = tab.browserPanel(for: browserPanelId) else {
             writeGotoSplitTestData([
                 "webViewFocused": "false",
                 "setupError": "Browser panel missing"
@@ -9357,7 +9357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         func recordFocusedState() {
             guard !resolved else { return }
-            guard let panel = workspace.browserPanel(for: browserPanelId) else {
+            guard let panel = tab.browserPanel(for: browserPanelId) else {
                 resolved = true
                 cleanup()
                 writeGotoSplitTestData([
@@ -9367,11 +9367,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return
             }
 
-            workspace.focusPanel(browserPanelId)
+            tab.focusPanel(browserPanelId)
 
             guard isWebViewFocused(panel),
                   let (browserPaneId, terminalPaneId) = paneIdsForGotoSplitUITest(
-                    workspace: workspace,
+                    tab: tab,
                     browserPanelId: browserPanelId
                   ) else {
                 return
@@ -9383,8 +9383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "browserPanelId": browserPanelId.uuidString,
                 "browserPaneId": browserPaneId.description,
                 "terminalPaneId": terminalPaneId.description,
-                "initialPaneCount": String(workspace.bonsplitController.allPaneIds.count),
-                "focusedPaneId": workspace.bonsplitController.focusedPaneId?.description ?? "",
+                "initialPaneCount": String(tab.bonsplitController.allPaneIds.count),
+                "focusedPaneId": tab.bonsplitController.focusedPaneId?.description ?? "",
                 "ghosttyGotoSplitLeftShortcut": ghosttyGotoSplitLeftShortcut?.displayString ?? "",
                 "ghosttyGotoSplitRightShortcut": ghosttyGotoSplitRightShortcut?.displayString ?? "",
                 "ghosttyGotoSplitUpShortcut": ghosttyGotoSplitUpShortcut?.displayString ?? "",
@@ -9412,7 +9412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   surfaceId == browserPanelId else { return }
             recordFocusedState()
         })
-        panelsCancellable = workspace.$panels
+        panelsCancellable = tab.$panels
             .map { _ in () }
             .sink { _ in recordFocusedState() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in

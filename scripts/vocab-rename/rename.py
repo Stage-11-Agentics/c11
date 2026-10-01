@@ -65,9 +65,9 @@ def load_table(path):
                 continue
             cols = line.split("\t")
             if cols[0] == "@keep":
-                if len(cols) != 4:
-                    sys.exit(f"{path}:{ln}: @keep needs glob, regex, names")
-                keeps.append((cols[1], cols[2], cols[3]))
+                if len(cols) not in (4, 5):
+                    sys.exit(f"{path}:{ln}: @keep needs glob, regex, names[, exempt names]")
+                keeps.append((cols[1], cols[2], cols[3], cols[4] if len(cols) == 5 else ""))
                 continue
             if cols[0] == "@delete":
                 if len(cols) != 3:
@@ -394,6 +394,27 @@ def is_implicit_member(src, a):
     return True
 
 
+VENDOR_CALLEES = {"setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
+
+
+def vendor_callee(src, a):
+    """Name of the callee whose argument list contains the label at a (best effort)."""
+    depth, i = 0, a - 1
+    while i >= 0:
+        c = src[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                j = i - 1
+                while j >= 0 and (src[j].isalnum() or src[j] == "_"):
+                    j -= 1
+                return src[j + 1:i] in VENDOR_CALLEES
+            depth -= 1
+        i -= 1
+    return False
+
+
 def is_call_label(src, a, b):
     """True if the token at [a,b) is an argument label of a call (not a binding)."""
     j = b
@@ -419,7 +440,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
     lx = Lexer(src)
     lx.scan(0, False)
     reg, spans = regions(src, lx)
-    keeps = [(set(n.split(',')), re.compile(rx)) for g, rx, n in (keep_rules or []) if fnmatch.fnmatch(rel, g)]
+    keeps = [(set(n.split(',')), re.compile(rx), set(x.split(',')) if x else set()) for g, rx, n, x in (keep_rules or []) if any(fnmatch.fnmatch(rel, gg) for gg in g.split(","))]
     kept_cache = {}
     pin_enum = {}   # token start -> old name, for implicit-raw String enum cases
     case_decl = set()  # token starts of enum case declarations
@@ -469,9 +490,11 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
             continue  # leading-dot implicit member (an enum case), not a property
         member = a >= 1 and src[a - 1] == "." and not is_implicit_member(src, a)
         mgr_member = member and RECV_MGR.search(src[max(0, a - 80):a - 1] + ".") is not None
-        if keeps and not mgr_member:
+        if keeps and not mgr_member:  # (member/label exemptions handled inside)
             skip = False
-            for names, rx in keeps:
+            for names, rx, exempt in keeps:
+                if tok in exempt and (member or (is_call_label(src, a, b) and not vendor_callee(src, a) is True)):
+                    continue  # member access / c11 call label: follow the declaration
                 if tok in names:
                     key = (id(rx), r)
                     if key not in kept_cache:

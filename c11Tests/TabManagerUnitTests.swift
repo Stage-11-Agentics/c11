@@ -650,8 +650,8 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
             return
         }
 
-        let workspaces = workspace.bonsplitController.tabs(inPane: paneId)
-        guard let lastSurfaceId = workspaces.last?.id else {
+        let tabs = workspace.bonsplitController.tabs(inPane: paneId)
+        guard let lastSurfaceId = tabs.last?.id else {
             XCTFail("Expected at least one surface in pane")
             return
         }

@@ -3988,14 +3988,14 @@ class WorkspaceManager: ObservableObject {
     }
 
     /// Equalize splits - not directly supported by bonsplit
-    func equalizeSplits(workspaceId: UUID) -> Bool {
-        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return false }
+    func equalizeSplits(tabId: UUID) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabId }) else { return false }
 
         var foundSplit = false
         var allSucceeded = true
         equalizeSplits(
-            in: workspace.bonsplitController.treeSnapshot(),
-            controller: workspace.bonsplitController,
+            in: tab.bonsplitController.treeSnapshot(),
+            controller: tab.bonsplitController,
             foundSplit: &foundSplit,
             allSucceeded: &allSucceeded
         )
@@ -4088,13 +4088,13 @@ class WorkspaceManager: ObservableObject {
 
     /// Create a new browser surface in a pane
     func newBrowserSurface(
-        workspaceId: UUID,
+        tabId: UUID,
         inPane paneId: PaneID,
         url: URL? = nil,
         preferredProfileID: UUID? = nil
     ) -> UUID? {
-        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
-        return workspace.newBrowserSurface(
+        guard let tab = tabs.first(where: { $0.id == tabId }) else { return nil }
+        return tab.newBrowserSurface(
             inPane: paneId,
             url: url,
             preferredProfileID: preferredProfileID
@@ -4110,15 +4110,15 @@ class WorkspaceManager: ObservableObject {
     /// Open a browser in a specific workspace, optionally preferring a split-right layout.
     @discardableResult
     func openBrowser(
-        inWorkspace workspaceId: UUID,
+        inWorkspace tabId: UUID,
         url: URL? = nil,
         preferSplitRight: Bool = false,
         preferredProfileID: UUID? = nil,
         insertAtEnd: Bool = false
     ) -> UUID? {
-        guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
-        if selectedWorkspaceId != workspaceId {
-            selectedWorkspaceId = workspaceId
+        guard let workspace = tabs.first(where: { $0.id == tabId }) else { return nil }
+        if selectedTabId != tabId {
+            selectedTabId = tabId
         }
 
         if preferSplitRight {
@@ -4130,7 +4130,7 @@ class WorkspaceManager: ObservableObject {
                    insertAtEnd: insertAtEnd,
                    preferredProfileID: preferredProfileID
                ) {
-                rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
+                rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
                 return browserPanel.id
             }
 
@@ -4139,7 +4139,7 @@ class WorkspaceManager: ObservableObject {
                    workspace.panels[focusedPanelId] != nil {
                     return focusedPanelId
                 }
-                if let rememberedPanelId = lastFocusedPanelByWorkspace[workspaceId],
+                if let rememberedPanelId = lastFocusedPanelByWorkspace[tabId],
                    workspace.panels[rememberedPanelId] != nil {
                     return rememberedPanelId
                 }
@@ -4157,7 +4157,7 @@ class WorkspaceManager: ObservableObject {
                    preferredProfileID: preferredProfileID,
                    focus: true
                ) {
-                rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
+                rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
                 return browserPanel.id
             }
         }
@@ -4172,7 +4172,7 @@ class WorkspaceManager: ObservableObject {
               ) else {
             return nil
         }
-        rememberFocusedSurface(workspaceId: workspaceId, surfaceId: browserPanel.id)
+        rememberFocusedSurface(workspaceId: tabId, surfaceId: browserPanel.id)
         return browserPanel.id
     }
 
@@ -5569,8 +5569,8 @@ class WorkspaceManager: ObservableObject {
 extension WorkspaceManager {
     func sessionAutosaveFingerprint() -> Int {
         var hasher = Hasher()
-        hasher.combine(selectedWorkspaceId)
-        hasher.combine(workspaces.count)
+        hasher.combine(selectedTabId)
+        hasher.combine(tabs.count)
         // Tier 1 Phase 2: fold in the monotonic per-process revision counter
         // from SurfaceMetadataStore so metadata-only changes (which never
         // touch workspace/panel counts or titles) still flip the fingerprint
@@ -5582,7 +5582,7 @@ extension WorkspaceManager {
         // the same 8s cadence as surface metadata.
         hasher.combine(PaneMetadataStore.shared.currentRevision())
 
-        for workspace in workspaces.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
+        for workspace in tabs.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
             hasher.combine(workspace.id)
             hasher.combine(workspace.focusedPanelId)
             hasher.combine(workspace.currentDirectory)

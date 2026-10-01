@@ -12793,7 +12793,7 @@ private struct WorkspaceRowView: View, Equatable {
         // `VerticalTabsSidebar`, passed in via `worktreeChipRows`)
         // replaces them.
         let orderedPanelIds: [UUID]? = detailVisibility.showsPullRequests
-            ? workspace.sidebarOrderedPanelIds()
+            ? tab.sidebarOrderedPanelIds()
             : nil
         let pullRequestRows: [PullRequestDisplay] = {
             guard detailVisibility.showsPullRequests, let orderedPanelIds else { return [] }
@@ -12807,7 +12807,7 @@ private struct WorkspaceRowView: View, Equatable {
             // inline (an empty container still claims spacing on both sides)
             // and keep the gaps tight.
             HStack(alignment: .center, spacing: 5) {
-                Text(workspace.title)
+                Text(tab.title)
                     .font(.system(size: chromeTokens.sidebarWorkspaceTitle + 1.5, weight: titleFontWeight))
                     .foregroundColor(.primary)
                     .lineLimit(1)
@@ -12816,7 +12816,7 @@ private struct WorkspaceRowView: View, Equatable {
 
                 Spacer(minLength: 2)
 
-                if workspace.isPinned {
+                if tab.isPinned {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: chromeTokens.sidebarWorkspaceAccessory + 1, weight: .semibold))
                         .foregroundColor(.secondary.opacity(0.7))
@@ -12825,9 +12825,9 @@ private struct WorkspaceRowView: View, Equatable {
                 ZStack(alignment: .trailing) {
                     Button(action: {
                         #if DEBUG
-                        dlog("sidebar.close workspace=\(workspace.id.uuidString.prefix(5)) method=button")
+                        dlog("sidebar.close workspace=\(tab.id.uuidString.prefix(5)) method=button")
                         #endif
-                        workspaceManager.closeWorkspaceWithConfirmation(workspace)
+                        workspaceManager.closeWorkspaceWithConfirmation(tab)
                     }) {
                         Image(systemName: "xmark")
                             .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .medium))
@@ -12873,7 +12873,7 @@ private struct WorkspaceRowView: View, Equatable {
             // is identical whether or not a sample exists. See
             // `SidebarSurfaceMetricsReadout`.
             SidebarSurfaceMetricsReadout(
-                surfaceId: workspace.focusedPanelId,
+                surfaceId: tab.focusedPanelId,
                 valueColor: activeSecondaryColor(0.55),
                 // `activeSecondaryColor` collapses to `.secondary` on the
                 // non-inverted path, so the null state's dimming has to be
@@ -12897,12 +12897,12 @@ private struct WorkspaceRowView: View, Equatable {
             remoteWorkspaceSection
 
             if detailVisibility.showsMetadata {
-                let metadataBlocks = workspace.sidebarMetadataBlocksInDisplayOrder()
+                let metadataBlocks = tab.sidebarMetadataBlocksInDisplayOrder()
                 // TEL-2/TEL-4: the status section owns the decay-clock observation
                 // and renders either the explicit status rows (with age decay) or,
                 // once they expire, the single derived-activity takeover pill.
                 SidebarStatusSection(
-                    workspace: workspace,
+                    tab: tab,
                     isActive: usesInvertedActiveForeground,
                     onFocus: { updateSelection() }
                 )
@@ -12918,7 +12918,7 @@ private struct WorkspaceRowView: View, Equatable {
             }
 
             // Latest log entry
-            if detailVisibility.showsLog, let latestLog = workspace.logEntries.last {
+            if detailVisibility.showsLog, let latestLog = tab.logEntries.last {
                 HStack(spacing: 4) {
                     Image(systemName: logLevelIcon(latestLog.level))
                         .font(.system(size: chromeTokens.sidebarWorkspaceLogIcon))
@@ -12936,7 +12936,7 @@ private struct WorkspaceRowView: View, Equatable {
             // the age-decay clock is observed there — never in TabItemView's
             // Equatable body — letting the bar dim/gray as it goes stale
             // without invalidating the whole row on every clock tick.
-            if detailVisibility.showsProgress, let progress = workspace.progress {
+            if detailVisibility.showsProgress, let progress = tab.progress {
                 SidebarProgressIndicator(
                     progress: progress,
                     trackColor: activeProgressTrackColor,
@@ -12982,8 +12982,8 @@ private struct WorkspaceRowView: View, Equatable {
             }
 
             // Ports row
-            if detailVisibility.showsPorts, !workspace.listeningPorts.isEmpty {
-                Text(workspace.listeningPorts.map { ":\($0)" }.joined(separator: ", "))
+            if detailVisibility.showsPorts, !tab.listeningPorts.isEmpty {
+                Text(tab.listeningPorts.map { ":\($0)" }.joined(separator: ", "))
                     .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
                     .foregroundColor(activeSecondaryColor(0.75))
                     .lineLimit(1)
@@ -12992,9 +12992,9 @@ private struct WorkspaceRowView: View, Equatable {
 
             workspacePulseCompositionRail
         }
-        .animation(.easeInOut(duration: 0.2), value: workspace.logEntries.count)
-        .animation(.easeInOut(duration: 0.2), value: workspace.progress != nil)
-        .animation(.easeInOut(duration: 0.2), value: workspace.metadataBlocks.count)
+        .animation(.easeInOut(duration: 0.2), value: tab.logEntries.count)
+        .animation(.easeInOut(duration: 0.2), value: tab.progress != nil)
+        .animation(.easeInOut(duration: 0.2), value: tab.metadataBlocks.count)
         .padding(.horizontal, 13)
         .padding(.top, 13)
         .padding(.bottom, 11)
@@ -13021,9 +13021,9 @@ private struct WorkspaceRowView: View, Equatable {
         .overlay {
             MiddleClickCapture {
                 #if DEBUG
-                dlog("sidebar.close workspace=\(workspace.id.uuidString.prefix(5)) method=middleClick")
+                dlog("sidebar.close workspace=\(tab.id.uuidString.prefix(5)) method=middleClick")
                 #endif
-                workspaceManager.closeWorkspaceWithConfirmation(workspace)
+                workspaceManager.closeWorkspaceWithConfirmation(tab)
             }
         }
         .overlay(alignment: .top) {
@@ -13037,34 +13037,34 @@ private struct WorkspaceRowView: View, Equatable {
         }
         .onDrag {
             #if DEBUG
-            dlog("sidebar.onDrag tab=\(workspace.id.uuidString.prefix(5))")
+            dlog("sidebar.onDrag tab=\(tab.id.uuidString.prefix(5))")
             #endif
-            draggedWorkspaceId = workspace.id
+            draggedTabId = tab.id
             dropIndicator = nil
-            return SidebarWorkspaceDragPayload.provider(for: workspace.id)
+            return SidebarWorkspaceDragPayload.provider(for: tab.id)
         }
         .internalOnlyTabDrag()
         .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
-            targetWorkspaceId: workspace.id,
+            targetWorkspaceId: tab.id,
             workspaceManager: workspaceManager,
-            draggedWorkspaceId: $draggedWorkspaceId,
-            selectedWorkspaceIds: $selectedWorkspaceIds,
+            draggedWorkspaceId: $draggedTabId,
+            selectedWorkspaceIds: $selectedTabIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
             targetRowHeight: rowHeight,
             dragAutoScrollController: dragAutoScrollController,
             dropIndicator: $dropIndicator
         ))
         .onDrop(of: BonsplitTabDragPayload.dropContentTypes, delegate: SidebarBonsplitTabDropDelegate(
-            targetWorkspaceId: workspace.id,
+            targetWorkspaceId: tab.id,
             workspaceManager: workspaceManager,
-            selectedWorkspaceIds: $selectedWorkspaceIds,
+            selectedWorkspaceIds: $selectedTabIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex
         ))
         .onTapGesture {
             // CMUX-10: clicking the workspace row dismisses any persistent
             // flash inside it (across all panels). The operator clicked,
             // they're acknowledging — give them the surface clean.
-            workspace.cancelAllPersistentFlashes()
+            tab.cancelAllPersistentFlashes()
             updateSelection()
         }
         .onHover { hovering in
@@ -14764,7 +14764,7 @@ private enum BonsplitTabDragPayload {
             let id: UUID
         }
 
-        let workspace: TabInfo
+        let tab: TabInfo
         let sourcePaneId: UUID
         let sourceProcessId: Int32
 
@@ -14776,7 +14776,7 @@ private enum BonsplitTabDragPayload {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.workspace = try container.decode(TabInfo.self, forKey: .tab)
+            self.tab = try container.decode(TabInfo.self, forKey: .tab)
             self.sourcePaneId = try container.decode(UUID.self, forKey: .sourcePaneId)
             // Legacy payloads won't include this field. Treat as foreign process.
             self.sourceProcessId = try container.decodeIfPresent(Int32.self, forKey: .sourceProcessId) ?? -1
@@ -14811,7 +14811,7 @@ private enum BonsplitTabDragPayload {
 private struct SidebarBonsplitTabDropDelegate: DropDelegate {
     let targetWorkspaceId: UUID
     let workspaceManager: WorkspaceManager
-    @Binding var selectedWorkspaceIds: Set<UUID>
+    @Binding var selectedTabIds: Set<UUID>
     @Binding var lastSidebarSelectionIndex: Int?
 
     func validateDrop(info: DropInfo) -> Bool {
@@ -14831,14 +14831,14 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
             return false
         }
 
-        if let source = app.locateBonsplitSurface(workspaceId: transfer.workspace.id),
+        if let source = app.locateBonsplitSurface(workspaceId: transfer.tab.id),
            source.workspaceId == targetWorkspaceId {
             syncSidebarSelection()
             return true
         }
 
         guard app.moveBonsplitTab(
-            workspaceId: transfer.workspace.id,
+            workspaceId: transfer.tab.id,
             toWorkspace: targetWorkspaceId,
             focus: true,
             focusWindow: true
@@ -14846,7 +14846,7 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
             return false
         }
 
-        selectedWorkspaceIds = [targetWorkspaceId]
+        selectedTabIds = [targetWorkspaceId]
         syncSidebarSelection()
         return true
     }

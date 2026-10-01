@@ -78,16 +78,16 @@ final class TabOrdinalDisplayTests: XCTestCase {
         let manager = WorkspaceManager()
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
 
-        let workspaceIds = workspace.bonsplitController.allTabIds
-        XCTAssertFalse(workspaceIds.isEmpty, "A new workspace has an initial terminal tab")
+        let tabIds = workspace.bonsplitController.allTabIds
+        XCTAssertFalse(tabIds.isEmpty, "A new workspace has an initial terminal tab")
 
-        for workspaceId in workspaceIds {
-            guard let panelId = workspace.panelIdFromSurfaceId(workspaceId) else {
-                XCTFail("Tab \(workspaceId) has no panel mapping")
+        for tabId in tabIds {
+            guard let panelId = workspace.panelIdFromSurfaceId(tabId) else {
+                XCTFail("Tab \(tabId) has no panel mapping")
                 continue
             }
             let expected = TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId)
-            XCTAssertEqual(workspace.bonsplitController.tab(workspaceId)?.displayOrdinal, expected,
+            XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.displayOrdinal, expected,
                            "Every tab is numbered with its surface:N ordinal at creation")
         }
     }

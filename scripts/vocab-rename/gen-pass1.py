@@ -20,6 +20,7 @@ LEAF_FILES = [
     "!Sources/WorkspaceLayoutExecutor.swift", "!c11Tests/WorkspaceUnitTests.swift",
     "!c11UITests/**", "!Sources/TabLayoutSettings.swift", "!c11Tests/TabLayoutSettingsTests.swift",
 ]
+BONSPLIT_SIGNAL = r"bonsplitController\.|\bTabID\b|Bonsplit\.Tab\b|BonsplitTab|\bTabInfo\b|inPane:|splitTabBar"
 NOIMPLICIT = {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}
 
 SUBSTRING_RULES = [  # (old substring, new substring), applied to whole identifiers
@@ -92,8 +93,10 @@ def main():
            "# Columns: old<TAB>new<TAB>globs<TAB>fallback-on-shadowing-collision<TAB>flags",
            "@path\tSources/TabManager.swift\tSources/WorkspaceManager.swift",
            "@delete\tSources/TabManager.swift\tvar selectedTab: Workspace? { selectedWorkspace }"]
-    out.append("# Members that call the bonsplit leaf-tab API keep the generic names (they mean bonsplit tabs there).")
-    out.append("@keep\tSources/**\t\\.tabs\\(inPane|selectedTab\\(inPane|Bonsplit\\.Tab\\b|\\bTabID\\b\ttab,tabs,selectedTab,selectedTabId,tabId,tabIds")
+    out.append("# Members that touch the bonsplit leaf-tab API keep the generic names (they mean bonsplit tabs there).")
+    keep_names = ",".join(sorted(set(ID_FAMILY) | {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}))
+    exempt = ",".join(sorted(set(ID_FAMILY) | {"selectedTabId", "tabId", "tabIds"}))
+    out.append("@keep\tSources/**,c11Tests/**\t" + BONSPLIT_SIGNAL + "\t" + keep_names + "\t" + exempt)
     out.append("@keep\tSources/TerminalController.swift\tLayoutDebugSelectedPanel|splitViews: \\[LayoutDebugSplitView\\]\tselectedTabId")
     leaf_positive = ",".join(g[1:] for g in LEAF_FILES if not g.startswith("!c11UITests"))
     for old in sorted(rows):

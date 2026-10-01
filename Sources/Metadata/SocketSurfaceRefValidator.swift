@@ -77,7 +77,7 @@ internal enum SocketSurfaceRefValidator {
             if case .empty = classify(params[key]) {
                 return Rejection(
                     code: emptyRefCode,
-                    message: "surface ref '\(key)' was provided but empty — pass a concrete id (no focused-surface fallback for writes)"
+                    message: "tab ref '\(key)' was provided but empty — pass a concrete id (no focused-tab fallback for writes)"
                 )
             }
         }
@@ -89,7 +89,7 @@ internal enum SocketSurfaceRefValidator {
         if !hasTarget {
             return Rejection(
                 code: missingRefCode,
-                message: "no surface target — pass one of \(requiredAnyOf.joined(separator: ", ")) (no focused-surface fallback for writes)"
+                message: "no tab target — pass one of \(requiredAnyOf.joined(separator: ", ")) (no focused-tab fallback for writes)"
             )
         }
         return nil

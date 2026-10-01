@@ -116,7 +116,7 @@ def main() -> int:
         clean_payload = payload(clean)
         expect(clean.returncode == 0 and clean_payload.get("mode") == "clean", f"clean mode failed: {clean.stderr} {clean.stdout}", failures)
         clean_panel = (clean_payload.get("panels") or [{}])[0]
-        expect(clean_panel.get("action") == f"codex resume '{codex_id}'", f"clean mode did not emit exact command: {clean_panel}", failures)
+        expect(clean_panel.get("action") == f"codex resume --yolo '{codex_id}'", f"clean mode did not emit exact command: {clean_panel}", failures)
 
         snapshot(path, [{
             "kind": "codex", "id": "wrapper-claim:test", "placeholder": True,
@@ -173,7 +173,7 @@ def main() -> int:
         )
         dirty_present = run(cli, sessions_root, path, "dirty")
         present_panel = (payload(dirty_present).get("panels") or [{}])[0]
-        expect(dirty_present.returncode == 0 and present_panel.get("action") == f"codex resume '{codex_id}'", f"dirty exact transcript did not resume: {present_panel}", failures)
+        expect(dirty_present.returncode == 0 and present_panel.get("action") == f"codex resume --yolo '{codex_id}'", f"dirty exact transcript did not resume: {present_panel}", failures)
 
         no_resume = run(cli, sessions_root, path, "no-resume")
         no_resume_payload = payload(no_resume)
@@ -188,7 +188,7 @@ def main() -> int:
             os.utime(decoy, (2_000 + index, 2_000 + index))
         dirty_beyond_bound = run(cli, sessions_root, path, "dirty")
         bounded_panel = (payload(dirty_beyond_bound).get("panels") or [{}])[0]
-        expect(dirty_beyond_bound.returncode == 0 and bounded_panel.get("action") == f"codex resume '{codex_id}'", f"Codex exact lookup inherited the 512 candidate bound: {bounded_panel}", failures)
+        expect(dirty_beyond_bound.returncode == 0 and bounded_panel.get("action") == f"codex resume --yolo '{codex_id}'", f"Codex exact lookup inherited the 512 candidate bound: {bounded_panel}", failures)
 
         snapshot(path, [exact_ref, exact_ref])
         duplicate = run(cli, sessions_root, path, "clean")
@@ -203,7 +203,7 @@ def main() -> int:
         expect(
             causal_wins.returncode != 0
             and len(causal_wins_panels) == 2
-            and causal_wins_panels[0].get("action") == f"codex resume '{codex_id}'"
+            and causal_wins_panels[0].get("action") == f"codex resume --yolo '{codex_id}'"
             and causal_wins_panels[1].get("skip_code") == "duplicate-ownership",
             f"sole causal duplicate owner did not displace inferred owner: {causal_wins_panels}",
             failures,
@@ -256,7 +256,7 @@ def main() -> int:
             nonresumable_same_cwd.returncode != 0
             and len(nonresumable_panels) == 3
             and nonresumable_panels[0].get("action")
-                == f"codex resume '{nonresumable_same_cwd_refs[0]['id']}'"
+                == f"codex resume --yolo '{nonresumable_same_cwd_refs[0]['id']}'"
             and [row.get("skip_code") for row in nonresumable_panels[1:]]
                 == ["state-not-resumable", "state-not-resumable"],
             "nonresumable Codex refs polluted same-cwd ownership: "

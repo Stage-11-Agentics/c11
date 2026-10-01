@@ -53,7 +53,6 @@ Auto-exported into every c11 tab child process.
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_TAB_ID` | Auto-set; default for `--tab` |
 | `C11_TAB_NUM` | Integer N of this tab's `tab:N` ref — the number shown in the tab bar when tab-number display is on. Address yourself as `tab:$C11_TAB_NUM` |
-| `C11_TAB_ID` | Optional alias for tab commands |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
 | `C11_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 |

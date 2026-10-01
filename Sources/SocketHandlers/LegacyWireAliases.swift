@@ -35,11 +35,16 @@ enum LegacyWireAliases {
     /// `surface:N` -> `tab:N`, `pane:N` -> `area:N` (case-insensitive, trimmed).
     /// Anything else is returned unchanged.
     nonisolated static func canonicalHandle(_ handle: String) -> String {
-        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.hasPrefix("surface:") { return "tab:" + trimmed.dropFirst("surface:".count) }
-        if trimmed.hasPrefix("pane:") { return "area:" + trimmed.dropFirst("pane:".count) }
-        if trimmed.hasPrefix("tab:") || trimmed.hasPrefix("area:") { return trimmed }
-        return handle
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only the prefix is case-folded; the remainder (an ordinal, or a fallback UUID) is kept verbatim.
+        guard let colon = trimmed.firstIndex(of: ":") else { return handle }
+        let prefix = trimmed[..<colon].lowercased()
+        let rest = trimmed[trimmed.index(after: colon)...]
+        switch prefix {
+        case "surface", "tab": return "tab:" + rest
+        case "pane", "area": return "area:" + rest
+        default: return handle
+        }
     }
 
     /// `tab:N` -> `surface:N`, `area:N` -> `pane:N`: the old-format value that
@@ -133,7 +138,13 @@ enum LegacyWireAliases {
 
     /// Subtrees the output completion never enters: user/page-supplied data
     /// whose keys are not ours.
-    nonisolated private static let opaqueKeys: Set<String> = ["value", "metadata", "metadata_sources"]
+    /// (page values, metadata blobs, conversation payloads, network headers and cookies, config
+    /// and plan blobs.)
+    nonisolated private static let opaqueKeys: Set<String> = [
+        "value", "metadata", "metadata_sources", "payload", "headers", "request_headers",
+        "response_headers", "cookies", "storage", "entries", "plan",
+        "configs", "config", "recent", "removed", "pinned",
+    ]
 
     // MARK: - Params (inbound)
 

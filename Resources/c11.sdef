@@ -59,7 +59,7 @@
       </element>
     </class>
 
-    <class name="workspace" code="CMtb" plural="workspaces" description="A cmux workspace.">
+    <class name="workspace" code="CMtb" plural="workspaces" description="A c11 workspace.">
       <cocoa class="CmuxScriptTab"/>
       <synonym name="tab" plural="tabs" hidden="yes"/>
       <property name="id" code="ID  " type="text" access="r" description="Stable ID for this workspace."/>
@@ -68,7 +68,7 @@
       </property>
       <property name="index" code="pidx" type="integer" access="r" description="1-based index of this workspace in its window."/>
       <property name="selected" code="CMsl" type="boolean" access="r" description="Whether this workspace is selected in its window."/>
-      <property name="focused terminal" code="CMfT" type="terminal" access="r" description="The currently focused terminal panel in this workspace.">
+      <property name="focused terminal" code="CMfT" type="terminal" access="r" description="The currently focused terminal in this workspace.">
         <cocoa key="focusedTerminal"/>
       </property>
       <responds-to command="select workspace">
@@ -82,9 +82,9 @@
       </element>
     </class>
 
-    <class name="terminal" code="CMtr" plural="terminals" description="An individual terminal panel.">
+    <class name="terminal" code="CMtr" plural="terminals" description="An individual terminal tab.">
       <cocoa class="CmuxScriptTerminal"/>
-      <property name="id" code="ID  " type="text" access="r" description="Stable ID for this terminal panel."/>
+      <property name="id" code="ID  " type="text" access="r" description="Stable ID for this terminal tab."/>
       <property name="name" code="pnam" type="text" access="r" description="Current terminal title.">
         <cocoa key="title"/>
       </property>

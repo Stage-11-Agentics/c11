@@ -97,11 +97,11 @@ enum SurfaceTypeAvailability {
     static func disabledMessage(for type: PanelType) -> String {
         switch type {
         case .browser:
-            return "browser surfaces are disabled (Settings → General → Surfaces → Internal Browser)"
+            return "browser tabs are disabled (Settings → General → Tabs & Areas → Internal Browser)"
         case .markdown:
-            return "markdown surfaces are disabled (Settings → General → Surfaces → Markdown Surfaces)"
+            return "markdown tabs are disabled (Settings → General → Tabs & Areas → Markdown Tabs)"
         case .terminal:
-            return "terminal surfaces cannot be disabled"
+            return "terminal tabs cannot be disabled"
         }
     }
 }

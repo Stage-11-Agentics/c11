@@ -120,21 +120,15 @@ struct SurfaceManifestView: View {
     }
 
     // The handle refs are the headline — always-visible, each copyable, with
-    // surface:N rendered extra-large since it's the number the operator most
+    // tab:N rendered extra-large since it's the number the operator most
     // often wants.
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             refRow(
-                label: String(localized: "surfaceManifest.ref.surface", defaultValue: "Tab"),
-                value: handle.surfaceRef,
-                field: "surface",
-                size: .extraLarge
-            )
-            refRow(
                 label: String(localized: "surfaceManifest.ref.tab", defaultValue: "Tab"),
                 value: handle.tabRef,
                 field: "tab",
-                size: .prominent
+                size: .extraLarge
             )
             if let pane = handle.paneRef {
                 refRow(

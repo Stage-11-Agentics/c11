@@ -1522,6 +1522,6 @@ extension TerminalController {
         for dir in dirs where fm.isExecutableFile(atPath: "\(dir)/\(binary)") {
             return nil
         }
-        return "binary '\(binary)' not found on the app PATH or common install dirs; the pane's login shell may still resolve it"
+        return "binary '\(binary)' not found on the app PATH or common install dirs; the tab's login shell may still resolve it"
     }
 }

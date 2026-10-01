@@ -29,6 +29,9 @@ Table format (one entry per line, `#` comments and blank lines ignored):
                                         in matching files, names whose binding site
                                         (let/for/guard/param) derives from the regex
                                         (a bonsplit value) are renamed per member
+  @fix<TAB>file<TAB>old text<TAB>new text   exact one-off text edit applied after the renames
+                                        (\\n = newline); must match exactly once, else
+                                        the run reports FIXUP STALE and exits non-zero
   @delete<TAB>file<TAB>exact line       delete that whole line (stripped compare)
                                         from the file, if present
 
@@ -65,12 +68,18 @@ def load_table(path):
     keeps = []
     callees = {}  # callee/type name -> "keep" | "rename"
     taints = []  # (glob, regex, {name: target})
+    fixes = []  # (file, old text, new text): exact one-off edits, written as \\n for newlines
     with open(path, encoding="utf-8") as fh:
         for ln, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             cols = line.split("\t")
+            if cols[0] == "@fix":
+                if len(cols) != 4:
+                    sys.exit(f"{path}:{ln}: @fix needs file, old, new")
+                fixes.append((cols[1], cols[2].replace("\\n", "\n"), cols[3].replace("\\n", "\n")))
+                continue
             if cols[0] == "@taint":
                 if len(cols) != 4:
                     sys.exit(f"{path}:{ln}: @taint needs glob, rhs-regex, name=target,...")
@@ -102,7 +111,7 @@ def load_table(path):
             fallback = cols[3] if len(cols) > 3 and cols[3] else None
             flags = set(cols[4].split(",")) if len(cols) > 4 and cols[4] else set()
             renames.setdefault(cols[0], []).append((cols[1], globs, fallback, flags))
-    return renames, paths, deletes, keeps, callees, taints
+    return renames, paths, deletes, keeps, callees, taints, fixes
 
 
 def glob_match(rel, globs):
@@ -755,7 +764,7 @@ def main(argv):
     use_git = "--no-git" not in argv
     if "--root" in argv:
         root = argv[argv.index("--root") + 1]
-    renames, paths, deletes, keeps, callees, taints = load_table(table)
+    renames, paths, deletes, keeps, callees, taints, fixes = load_table(table)
     validate(renames)
     for rel, text in deletes:
         full = os.path.join(root, rel)
@@ -781,9 +790,25 @@ def main(argv):
             print(f"{n:6d}  {rel}")
             if not dry:
                 open(full, "w", encoding="utf-8").write(new)
+    stale = 0
+    for rel, old, new in fixes:
+        full = os.path.join(root, rel)
+        text = open(full, encoding="utf-8").read() if os.path.exists(full) else ""
+        if new in text and old not in text:
+            continue  # already applied
+        if text.count(old) != 1:
+            print(f"FIXUP STALE {rel}: {old[:70]!r} found {text.count(old)}x")
+            stale += 1
+            continue
+        print(f"  [fix] {rel}: {old[:60]!r}")
+        if not dry:
+            open(full, "w", encoding="utf-8").write(text.replace(old, new))
     for line in report:
         print(line)
     print(f"identifiers renamed: {total_hits} in {total_files} files; collisions left: {len(report)}")
+    if stale:
+        print(f"{stale} stale @fix entries: the code drifted; update the table", file=sys.stderr)
+        return 3
     if paths:
         # Paths after contents: edits above are by path as it was on entry.
         n = apply_paths(root, paths, dry, use_git)

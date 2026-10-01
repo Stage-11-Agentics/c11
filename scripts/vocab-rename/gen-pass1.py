@@ -22,6 +22,17 @@ LEAF_FILES = [
 ]
 BONSPLIT_SIGNAL = r"bonsplitController\.|\bTabID\b|Bonsplit\.Tab\b|BonsplitTab|\bTabInfo\b|inPane:|splitTabBar"
 # Callees whose argument labels follow (rename) or ignore (keep) the rename: from compile errors.
+# Exact one-off edits the renamer cannot infer (persisted keys, member uses of kept declarations).
+FIXES = [
+    ("Sources/SessionPersistence.swift",
+     "    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n}\n",
+     "    var workspaceManager: SessionWorkspaceManagerSnapshot\n    var sidebar: SessionSidebarSnapshot\n\n"
+     "    // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.\n"
+     "    enum CodingKeys: String, CodingKey {\n        case frame\n        case display\n"
+     "        case workspaceManager = \"tabManager\"\n        case sidebar\n    }\n}\n"),
+    ("Sources/AppDelegate.swift",
+     "target.workspace.panel(for: target.workspaceId)", "target.workspace.panel(for: target.tabId)"),
+]
 CALLEES = {"BrowserPaneDragTransfer": "keep", "move": "keep", "equalizeSplits": "rename",
            "matchesCurrentTerminalFocusTarget": "rename", "resolveSurfaceId": "rename",
            "preloadTerminalPanelForDebugStress": "keep", "DebugStressTerminalLoadTarget": "keep", "ScriptTab": "keep",
@@ -99,6 +110,8 @@ def main():
            "# Columns: old<TAB>new<TAB>globs<TAB>fallback-on-shadowing-collision<TAB>flags",
            "@path\tSources/TabManager.swift\tSources/WorkspaceManager.swift",
            "@delete\tSources/TabManager.swift\tvar selectedTab: Workspace? { selectedWorkspace }"]
+    for rel, old, new in FIXES:
+        out.append("\t".join(["@fix", rel, old.replace("\n", "\\n"), new.replace("\n", "\\n")]))
     for name, how in sorted(CALLEES.items()):
         out.append(f"@callee\t{name}\t{how}")
     out.append("@keep\tSources/TerminalController.swift\tLayoutDebugSelectedPanel|splitViews: \\[LayoutDebugSplitView\\]\tselectedTabId")

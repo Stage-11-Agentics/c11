@@ -98,3 +98,16 @@ alone (the pass lists it as a CLASH), so a geometry `area` can never be merged w
 `check-domains` adds two probes for it: D (an area-named binding that holds a Bonsplit `PaneID`) and E (one name bound
 to a geometry measure and to a c11 area in the same member). Persisted keys are untouched: layout leaves are still
 persisted as `"pane"`, `paneMetadata` keeps its key, and renamed Codable properties get automatic `CodingKeys` pins.
+
+## Test names (P6)
+
+`gen-p6.py` renames test classes, test functions and test files in `c11Tests` that name a renamed subject
+(`SurfaceLifecycleTests` -> `TabLifecycleTests`, `PaneMetadataStoreTests` -> `AreaMetadataStoreTests`,
+`TabManagerUnitTests` -> `WorkspaceManagerUnitTests`, `testSurfaceX` -> `testTabX`). Evidence (re-derived by
+`check-evidence`, class `Test`): the test body names an identifier a pass renamed away from the same old word, or
+the test name starts with two or more segments of a renamed identifier's old name (`BrowserPaneDropRouting...`).
+A body that touches the Ghostty surface, an AppKit panel or a Bonsplit pane vetoes the body evidence, a class
+named for Ghostty/Bonsplit keeps its name, and a name that holds both the old word and its replacement
+(`testRenameAcceptsEitherSurfaceOrTabId`) is a legacy-alias test and keeps it. c11UITests drive the app by
+strings, have no subject identifiers to point at, and keep their names. References outside Swift
+(`-skip-testing`/`-only-testing` lists, `c11-27-split-tests.rb`) are updated by hand from the pass table.

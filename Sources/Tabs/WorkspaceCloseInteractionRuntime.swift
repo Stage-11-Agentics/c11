@@ -16,8 +16,9 @@ import Foundation
 @MainActor
 public final class WorkspaceCloseInteractionRuntime: ObservableObject {
     @Published public private(set) var active: ConfirmContent?
-    /// Highlighted button on the live card. Defaults to `.cancel` on every
-    /// present — the destructive action requires a deliberate move to confirm.
+    /// Highlighted button on the live card. Each present starts on the card's
+    /// `defaultSelection`, else `.cancel`, so closing a workspace of several
+    /// tabs takes a deliberate move to confirm.
     @Published public internal(set) var selection: ConfirmSelectionField = .cancel
     private var dedupeToken: String?
 
@@ -37,7 +38,7 @@ public final class WorkspaceCloseInteractionRuntime: ObservableObject {
             existing.completion(.dismissed)
         }
         active = content
-        selection = .cancel
+        selection = content.defaultSelection ?? .cancel
         self.dedupeToken = dedupeToken
     }
 

@@ -2727,7 +2727,8 @@ class WorkspaceManager: ObservableObject {
         guard confirmClose(
             title: String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other tabs?"),
             message: message,
-            acceptCmdD: false
+            acceptCmdD: false,
+            defaultsToClose: count == 1
         ) else { return }
 
         for panelId in plan.panelIds {
@@ -2813,14 +2814,15 @@ class WorkspaceManager: ObservableObject {
     }
 
 
-    private func confirmClose(title: String, message: String, acceptCmdD: Bool) -> Bool {
+    private func confirmClose(title: String, message: String, acceptCmdD: Bool, defaultsToClose: Bool) -> Bool {
         if let confirmCloseHandler {
             return confirmCloseHandler(title, message, acceptCmdD)
         }
         _ = acceptCmdD
 
-        // Cancel is the first button, so Return and Escape both keep things
-        // open; closing takes a click.
+        // Cancel is the first button. A close that takes one tab makes Close
+        // the Return default; otherwise Return and Escape both keep things
+        // open and closing takes a click.
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
@@ -2828,6 +2830,7 @@ class WorkspaceManager: ObservableObject {
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
         alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
             .hasDestructiveAction = true
+        if defaultsToClose { alert.makeSecondButtonDefault() }
 
         // C11-196: `NSApp.activationPolicy()` is a synchronous LaunchServices XPC
         // round trip; read the policy c11 itself set instead.
@@ -2836,6 +2839,12 @@ class WorkspaceManager: ObservableObject {
         }
 
         return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    /// Closing a workspace that holds one tab is closing one tab, so its card
+    /// starts on Close. A pinned workspace keeps Cancel: the pin asks for it.
+    static func workspaceCloseTakesOneTab(_ workspace: Workspace) -> Bool {
+        !workspace.isPinned && workspace.panels.count == 1
     }
 
     private struct CloseOtherTabsInFocusedAreaPlan {
@@ -2980,6 +2989,7 @@ class WorkspaceManager: ObservableObject {
                 let accepted = await workspace.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
+                    defaultsToClose: WorkspaceManager.workspaceCloseTakesOneTab(workspace),
                     source: .local
                 )
                 guard accepted else { return }
@@ -3091,7 +3101,8 @@ class WorkspaceManager: ObservableObject {
             guard confirmClose(
                 title: String(localized: "dialog.closeTab.title", defaultValue: "Close tab?"),
                 message: String(localized: "dialog.closeTab.message", defaultValue: "This will close the current tab."),
-                acceptCmdD: false
+                acceptCmdD: false,
+                defaultsToClose: true
             ) else { return }
             performCloseRuntimeSurface(workspace: workspace, surfaceId: surfaceId)
             return
@@ -5798,4 +5809,19 @@ extension Notification.Name {
     static let webViewDidReceiveClick = Notification.Name("webViewDidReceiveClick")
     static let terminalPortalVisibilityDidChange = Notification.Name("cmux.terminalPortalVisibilityDidChange")
     static let browserPortalRegistryDidChange = Notification.Name("cmux.browserPortalRegistryDidChange")
+}
+
+extension NSAlert {
+    /// For a two-button close alert laid out Cancel then Close: Return
+    /// presses Close and Escape presses Cancel. Used when the close takes
+    /// one tab.
+    func makeSecondButtonDefault() {
+        guard buttons.count >= 2 else { return }
+        let cancelButton = buttons[0]
+        let closeButton = buttons[1]
+        cancelButton.keyEquivalent = "\u{1b}"
+        closeButton.keyEquivalent = "\r"
+        window.defaultButtonCell = closeButton.cell as? NSButtonCell
+        window.initialFirstResponder = closeButton
+    }
 }

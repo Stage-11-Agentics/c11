@@ -6204,8 +6204,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Asks before closing a main window. Cancel is the first button, so
-    /// Return and Escape keep the window; closing takes a click. Presented as
-    /// a sheet so nothing on this path can block the main thread.
+    /// Return and Escape keep the window and closing takes a click, unless the
+    /// window holds one tab: then Return closes it. Presented as a sheet so
+    /// nothing on this path can block the main thread.
     private func confirmCloseMainWindow(_ window: NSWindow, onConfirm: @escaping () -> Void) {
 #if DEBUG
         if let debugCloseMainWindowConfirmationHandler {
@@ -6228,6 +6229,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
         alert.addButton(withTitle: String(localized: "common.close", defaultValue: "Close"))
             .hasDestructiveAction = true
+        if let workspaces = contextForMainWindow(window)?.workspaceManager.workspaces,
+           workspaces.count == 1,
+           WorkspaceManager.workspaceCloseTakesOneTab(workspaces[0]) {
+            alert.makeSecondButtonDefault()
+        }
         alert.beginSheetModal(for: window) { response in
             guard response == .alertSecondButtonReturn else { return }
             // Close after the sheet has detached; performClose refuses a window

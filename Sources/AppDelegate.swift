@@ -2228,7 +2228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 #if DEBUG
     private var didSetupJumpUnreadUITest = false
-    private var jumpUnreadFocusExpectation: (tabId: UUID, surfaceId: UUID)?
+    private var jumpUnreadFocusExpectation: (workspaceId: UUID, surfaceId: UUID)?
     private var jumpUnreadFocusObserver: NSObjectProtocol?
     private var didSetupGotoSplitUITest = false
     private var didSetupBonsplitTabDragUITest = false
@@ -8739,7 +8739,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             var startedThisPass = 0
 
             for target in pendingTargets {
-                guard let terminalPanel = target.workspace.panel(for: target.workspaceId) as? TerminalPanel else {
+                guard let terminalPanel = target.workspace.panel(for: target.tabId) as? TerminalPanel else {
                     nextPending.append(target)
                     continue
                 }
@@ -9336,7 +9336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return updates
     }
 
-    private func focusWebViewForGotoSplitUITest(tab: Workspace, browserPanelId: UUID) {
+    private func focusWebViewForGotoSplitUITest(workspace tab: Workspace, browserPanelId: UUID) {
         guard let browserPanel = tab.browserPanel(for: browserPanelId) else {
             writeGotoSplitTestData([
                 "webViewFocused": "false",

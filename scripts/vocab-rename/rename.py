@@ -28,7 +28,11 @@ Rules:
     comments. Identifiers inside string interpolations `\\( ... )` ARE renamed.
   * Exact, case-sensitive whole-token match. `$old` (property-wrapper
     projection) follows `old`.
-  * A token qualified by `Bonsplit.` (the vendor module) is never renamed.
+  * A token qualified by a vendor receiver (`Bonsplit.`, `bonsplitController.`,
+    `controller.`) is never renamed.
+  * Cases of implicit-raw-value `String` enums are pinned: `case a` -> `case b = "a"`.
+  * Codable properties/cases without CodingKeys that get renamed are reported as
+    CODABLE hazards (pin by hand, record as `# manual:` in the table).
   * Idempotent: re-running on renamed code is a no-op. A table whose `new`
     name is also an `old` name (without disjoint globs) is rejected.
   * Never edits vendor/ or ghostty/.
@@ -205,6 +209,7 @@ class Lexer:
         return n
 
 
+VENDOR_RECEIVERS = ("Bonsplit.", "bonsplitController.", "bonsplitController?.", "controller.")
 TYPE_KEYWORDS = {"class", "struct", "enum", "extension", "protocol", "actor"}
 
 
@@ -265,14 +270,147 @@ def regions(src, lx):
     return out, spans
 
 
+def type_bodies(src, lx):
+    """[(kind, name, header, open_pos, close_pos)] for every type declaration."""
+    ev, ids = lx.events, lx.idents
+    out, stack = [], []  # stack entries: None or index into out
+    last_boundary = -1
+    for pos, ch in ev:
+        if ch == "{":
+            kind = name = None
+            header = ""
+            for k, (a, b) in enumerate(ids):
+                if a <= last_boundary:
+                    continue
+                if a >= pos:
+                    break
+                if src[a:b] in TYPE_KEYWORDS and kind is None:
+                    kind = src[a:b]
+                    if k + 1 < len(ids):
+                        name = src[ids[k + 1][0]:ids[k + 1][1]]
+                    header = src[last_boundary + 1:pos]
+            if kind:
+                out.append([kind, name, header, pos, None])
+                stack.append(len(out) - 1)
+            else:
+                stack.append(None)
+            last_boundary = pos
+        elif ch == "}":
+            if stack:
+                top = stack.pop()
+                if top is not None:
+                    out[top][4] = pos
+            last_boundary = pos
+        else:
+            last_boundary = pos
+    return [tuple(x) for x in out if x[4] is not None]
+
+
+def own_depth_idents(src, lx, bodies):
+    """For each type body, idents directly inside it (brace depth 0 relative)."""
+    ev = lx.events
+    res = []
+    for kind, name, header, op, cl in bodies:
+        depth = 0
+        evs = [(p, c) for p, c in ev if op < p <= cl]
+        inside = []
+        ei = 0
+        for a, b in lx.idents:
+            if a <= op or a >= cl:
+                continue
+            while ei < len(evs) and evs[ei][0] < a:
+                if evs[ei][1] == "{":
+                    depth += 1
+                elif evs[ei][1] == "}":
+                    depth -= 1
+                ei += 1
+            if depth == 0:
+                inside.append((a, b))
+        res.append(inside)
+    return res
+
+
+CASE_AFTER = re.compile(r"\s*(\(|=|,|$|\n)")
+
+
+def declared_names(src, inside):
+    """(props, cases) declared directly in a body, as lists of (start, end)."""
+    props, cases = [], []
+    for k, (a, b) in enumerate(inside):
+        w = src[a:b]
+        if w in ("let", "var") and k + 1 < len(inside):
+            na, nb = inside[k + 1]
+            if src[b:na].strip() == "":
+                props.append((na, nb))
+        elif w == "case" and k + 1 < len(inside):
+            na, nb = inside[k + 1]
+            if src[b:na].strip() == "":
+                cases.append((na, nb))
+                # `case a, b, c` : following idents after commas at same level
+                j = nb
+                while True:
+                    m = re.match(r"(\([^)]*\))?\s*(=\s*[^,\n]+)?\s*,\s*", src[j:j + 400])
+                    if not m or m.end() == 0:
+                        break
+                    nxt = [(x, y) for x, y in inside if x >= j + m.end()][:1]
+                    if not nxt or src[j + m.end():nxt[0][0]].strip() != "":
+                        break
+                    cases.append(nxt[0])
+                    j = nxt[0][1]
+    return props, cases
+
+
+TYPE_START = re.compile(r"\s*(?:inout\s+|@escaping\s+|any\s+|some\s+)*(?:\[\s*)*([A-Za-z_][\w.]*)(<[^>]*>)?([?!]?)\s*([,)\]:=\n{]|->|$)")
+
+
+def is_call_label(src, a, b):
+    """True if the token at [a,b) is an argument label of a call (not a binding)."""
+    j = b
+    while j < len(src) and src[j] in " \t":
+        j += 1
+    if j >= len(src) or src[j] != ":":
+        return False
+    i = a - 1
+    while i >= 0 and src[i] in " \t\n":
+        i -= 1
+    if i < 0 or src[i] not in "(,":
+        return False
+    rest = src[j + 1:j + 160]
+    m = TYPE_START.match(rest)
+    if m and m.group(1)[0].isupper():
+        return False  # declaration: `name: Type`
+    if re.match(r"\s*(\(|\[\s*\]|\[\s*[A-Z][\w.]*\s*(:\s*[A-Z][\w.]*\s*)?\])", rest) and False:
+        return False
+    return True
+
+
 def rewrite(src, rel, renames, report=None, keep_rules=None):
     lx = Lexer(src)
     lx.scan(0, False)
     reg, spans = regions(src, lx)
     keeps = [(set(n.split(',')), re.compile(rx)) for g, rx, n in (keep_rules or []) if fnmatch.fnmatch(rel, g)]
     kept_cache = {}
+    pin_enum = {}   # token start -> old name, for implicit-raw String enum cases
+    hazard_pos = {}  # token start -> description, Codable property/case
+    bodies = type_bodies(src, lx)
+    for (kind, name, header, op, cl), inside in zip(bodies, own_depth_idents(src, lx, bodies)):
+        h = header
+        is_codable = re.search(r"\b(Codable|Encodable|Decodable)\b", h) is not None
+        raw_string = kind == "enum" and re.search(r":\s*(?:[\w.,\s]*?\b)?String\b", h) is not None
+        props, cases = declared_names(src, inside)
+        has_ck = any(src[a:b] == "CodingKeys" for a, b in inside)
+        if raw_string:
+            for a, b in cases:
+                tail = src[b:b + 40].lstrip(" ")
+                if not tail.startswith("="):
+                    pin_enum[a] = src[a:b]
+        elif is_codable and not has_ck:
+            for a, b in props + (cases if kind == "enum" else []):
+                hazard_pos[a] = f"{kind} {name}"
     by_region = {}
     for (a, b), r in zip(lx.idents, reg):
+        if is_call_label(src, a, b):
+            continue
         by_region.setdefault(r, set()).add(src[a:b])
     out, last, count = [], 0, 0
     for (a, b), r in zip(lx.idents, reg):
@@ -287,7 +425,8 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
                 break
         if new is None:
             continue
-        if src[max(0, a - 9):a] == "Bonsplit.":
+        pre = src[max(0, a - 20):a]
+        if pre.endswith(VENDOR_RECEIVERS):
             continue
         if keeps:
             skip = False
@@ -303,7 +442,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
             if skip:
                 continue
         present = by_region[r]
-        if new in present:
+        if new in present and not is_call_label(src, a, b):
             if fallback and fallback not in present:
                 new = fallback
             else:
@@ -312,7 +451,13 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
                     report.append(f"COLLISION {rel}:{line} {tok} -> {new} (already in scope; left as is)")
                 continue
         out.append(src[last:a])
-        out.append(new)
+        if a in pin_enum:
+            out.append(f'{new} = "{pin_enum[a]}"')
+        else:
+            out.append(new)
+        if a in hazard_pos and report is not None:
+            line = src.count("\n", 0, a) + 1
+            report.append(f"CODABLE {rel}:{line} {tok} -> {new} in {hazard_pos[a]} (no CodingKeys: pin the old key by hand)")
         last = b
         count += 1
     out.append(src[last:])

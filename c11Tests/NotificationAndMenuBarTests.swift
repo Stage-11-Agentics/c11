@@ -243,26 +243,26 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
         let rootThreadId = UUID().uuidString.lowercased()
         let childThreadId = UUID().uuidString.lowercased()
         _ = await ConversationStore.shared.captureRuntimeEnv(
-            surfaceId: terminalPanel.id.uuidString,
+            surfaceId: terminalTab.id.uuidString,
             id: rootThreadId,
             cwd: nil
         )
         TabLivenessDeriver.onAgentLifecycleChanged(
-            surfaceId: terminalPanel.id,
+            surfaceId: terminalTab.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
             TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
@@ -271,17 +271,17 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 1,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: childThreadId),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertTrue(waitUntil {
             TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
         XCTAssertEqual(waitingEdges, [])
@@ -318,25 +318,25 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
         let rootThreadId = UUID().uuidString.lowercased()
         _ = await ConversationStore.shared.captureRuntimeEnv(
-            surfaceId: terminalPanel.id.uuidString,
+            surfaceId: terminalTab.id.uuidString,
             id: rootThreadId,
             cwd: nil
         )
         TabLivenessDeriver.onAgentLifecycleChanged(
-            surfaceId: terminalPanel.id,
+            surfaceId: terminalTab.id,
             workspaceId: workspace.id,
             activity: .working
         )
         XCTAssertTrue(waitUntil {
             TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
@@ -345,18 +345,18 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 2,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: rootThreadId),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertEqual(waitingEdges, [true])
         XCTAssertTrue(waitUntil {
             TabMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
-                surfaceId: terminalPanel.id
+                surfaceId: terminalTab.id
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.idle.rawValue
         })
     }
@@ -392,7 +392,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
 
         guard let workspace = manager.selectedWorkspace,
-              let terminalPanel = workspace.focusedTerminalPanel else {
+              let terminalTab = workspace.focusedTerminalTab else {
             return XCTFail("Expected initial focused terminal panel")
         }
 
@@ -401,13 +401,13 @@ final class NotificationAndMenuBarTests: XCTestCase {
             id: 3,
             params: [
                 "workspace_id": workspace.id.uuidString,
-                "surface_id": terminalPanel.id.uuidString,
+                "surface_id": terminalTab.id.uuidString,
                 "title": "Codex",
                 legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: UUID().uuidString.lowercased()),
             ]
         )
         XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
-        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: terminalTab.id))
         XCTAssertEqual(waitingEdges, [true])
     }
 

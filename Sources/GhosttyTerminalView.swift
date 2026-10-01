@@ -6419,7 +6419,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
             // path; the keyDown / typing hot path is not touched here.
             if let workspace = AppDelegate.shared?.workspaceManager?.workspaces.first(where: { $0.id == terminalSurface.workspaceId }),
-               workspace.persistentFlashPanels[terminalSurface.id] != nil {
+               workspace.persistentFlashTabs[terminalSurface.id] != nil {
                 workspace.cancelPersistentFlash(panelId: terminalSurface.id)
             }
             AppDelegate.shared?.workspaceManager?.dismissNotificationOnDirectInteraction(
@@ -8981,7 +8981,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    func capturePanelFocusIntent(in window: NSWindow?) -> TerminalPanelFocusIntent {
+    func capturePanelFocusIntent(in window: NSWindow?) -> TerminalTabFocusIntent {
         if surfaceView.terminalSurface?.searchState != nil {
             if let firstResponder = window?.firstResponder as? NSView,
                (firstResponder === surfaceView || firstResponder.isDescendant(of: surfaceView)) {
@@ -8998,14 +8998,14 @@ final class GhosttySurfaceScrollView: NSView {
         return .surface
     }
 
-    func preferredPanelFocusIntentForActivation() -> TerminalPanelFocusIntent {
+    func preferredPanelFocusIntentForActivation() -> TerminalTabFocusIntent {
         if surfaceView.terminalSurface?.searchState != nil, searchFocusTarget == .searchField {
             return .findField
         }
         return .surface
     }
 
-    func preparePanelFocusIntentForActivation(_ intent: TerminalPanelFocusIntent) {
+    func preparePanelFocusIntentForActivation(_ intent: TerminalTabFocusIntent) {
         switch intent {
         case .surface:
             searchFocusTarget = .terminal
@@ -9022,7 +9022,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @discardableResult
-    func restorePanelFocusIntent(_ intent: TerminalPanelFocusIntent) -> Bool {
+    func restorePanelFocusIntent(_ intent: TerminalTabFocusIntent) -> Bool {
         switch intent {
         case .surface:
             searchFocusTarget = .terminal
@@ -9052,7 +9052,7 @@ final class GhosttySurfaceScrollView: NSView {
         }
     }
 
-    func ownedPanelFocusIntent(for responder: NSResponder) -> TerminalPanelFocusIntent? {
+    func ownedPanelFocusIntent(for responder: NSResponder) -> TerminalTabFocusIntent? {
         if isCurrentSurfaceSearchResponder(responder) {
             return .findField
         }
@@ -9074,7 +9074,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     @discardableResult
-    func yieldPanelFocusIntent(_ intent: TerminalPanelFocusIntent, in window: NSWindow) -> Bool {
+    func yieldPanelFocusIntent(_ intent: TerminalTabFocusIntent, in window: NSWindow) -> Bool {
         guard let firstResponder = window.firstResponder,
               ownedPanelFocusIntent(for: firstResponder) == intent else {
             return false

@@ -1020,17 +1020,17 @@ struct cmuxApp: App {
             // C11-41 Browser menu: every browser-surface verb in one home.
             CommandMenu(String(localized: "menu.browser.title", defaultValue: "Browser")) {
                 Button(String(localized: "menu.browser.back", defaultValue: "Back")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.goBack()
+                    activeWorkspaceManager.focusedBrowserTab?.goBack()
                 }
                 .keyboardShortcut("[", modifiers: .command)
 
                 Button(String(localized: "menu.browser.forward", defaultValue: "Forward")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.goForward()
+                    activeWorkspaceManager.focusedBrowserTab?.goForward()
                 }
                 .keyboardShortcut("]", modifiers: .command)
 
                 Button(String(localized: "menu.browser.reload", defaultValue: "Reload Page")) {
-                    activeWorkspaceManager.focusedBrowserPanel?.reload()
+                    activeWorkspaceManager.focusedBrowserTab?.reload()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
@@ -4141,21 +4141,21 @@ enum WelcomeSettings {
     // WorkspaceLayoutExecutor with an `applyToExistingWorkspace(_:workspace:
     // seedPanel:)` overload that skips step 2 and reuses the seed panel.
     @MainActor
-    static func performQuadLayout(on workspace: Workspace, initialPanel: TerminalPanel) {
-        let initialPanelId = initialPanel.id
+    static func performQuadLayout(on workspace: Workspace, initialPanel initialTab: TerminalTab) {
+        let initialTabId = initialTab.id
         let welcomeMdPath = Bundle.main.url(forResource: "welcome", withExtension: "md")?.path
 
         let browserPanel = workspace.newBrowserSplit(
-            from: initialPanelId,
+            from: initialTabId,
             orientation: .horizontal,
             insertFirst: false,
             url: URL(string: spikeURL),
             focus: false
         )
 
-        var bottomRightPanel: TerminalPanel?
+        var bottomRightTab: TerminalTab?
         if let browserPanel {
-            bottomRightPanel = workspace.newTerminalSplit(
+            bottomRightTab = workspace.newTerminalSplit(
                 from: browserPanel.id,
                 orientation: .vertical,
                 insertFirst: false,
@@ -4165,7 +4165,7 @@ enum WelcomeSettings {
 
         if let welcomeMdPath {
             workspace.newMarkdownSplit(
-                from: initialPanelId,
+                from: initialTabId,
                 orientation: .vertical,
                 insertFirst: false,
                 filePath: welcomeMdPath,
@@ -4173,13 +4173,13 @@ enum WelcomeSettings {
             )
         }
 
-        if let bottomRightPanel {
-            bottomRightPanel.sendText(
+        if let bottomRightTab {
+            bottomRightTab.sendText(
                 "command -v claude >/dev/null 2>&1 && claude --dangerously-skip-permissions\n"
             )
         }
 
-        initialPanel.sendText("c11 welcome\n")
+        initialTab.sendText("c11 welcome\n")
     }
 }
 
@@ -4231,7 +4231,7 @@ enum DefaultGridSettings {
     @MainActor
     static func performDefaultGrid(
         on workspace: Workspace,
-        initialPanel: TerminalPanel
+        initialPanel initialTab: TerminalTab
     ) {
         // Remote workspaces spawn a fresh SSH session per pane via
         // `remoteTerminalStartupCommand()`. Fanning out sessions on
@@ -4241,7 +4241,7 @@ enum DefaultGridSettings {
         // columnTails[col] = the panel currently occupying the bottom of column col.
         // Seeded with the initial panel in column 0; column 1 is populated by
         // the phase-1 horizontal split before any vertical splits run.
-        var columnTails: [Int: TerminalPanel] = [0: initialPanel]
+        var columnTails: [Int: TerminalTab] = [0: initialTab]
 
         for op in gridSplitOperations() {
             switch op.direction {

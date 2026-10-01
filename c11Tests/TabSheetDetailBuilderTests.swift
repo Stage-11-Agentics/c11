@@ -13,7 +13,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000_000)
 
     private func inputs(
-        panelType: PanelType = .terminal,
+        panelType tabType: TabContentType = .terminal,
         title: String? = nil,
         terminalKind: String? = nil,
         model: String? = nil,
@@ -26,7 +26,7 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         isFlagged: Bool = false
     ) -> TabSheetDetailBuilder.Inputs {
         .init(
-            panelType: panelType,
+            panelType: tabType,
             title: title,
             terminalKind: terminalKind,
             model: model,

@@ -89,7 +89,7 @@ enum TabLivenessDeriver {
     /// - `.promptIdle`     ⇒ `.idle`
     /// - `.unknown`        ⇒ `nil` (no truth; the key is cleared)
     static func activityState(
-        for shell: Workspace.PanelShellActivityState
+        for shell: Workspace.TabShellActivityState
     ) -> SidebarActivityState? {
         switch shell {
         case .commandRunning: return .working
@@ -110,7 +110,7 @@ enum TabLivenessDeriver {
     static func onShellActivityChanged(
         surfaceId: UUID,
         workspaceId: UUID,
-        state: Workspace.PanelShellActivityState,
+        state: Workspace.TabShellActivityState,
         workspace: Workspace
     ) {
         let derived = activityState(for: state)

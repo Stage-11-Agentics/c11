@@ -16,7 +16,7 @@ enum TabSheetDetailBuilder {
     static let optInClocks = ["touched", "turn", "tools", "tokens"]
 
     struct Inputs {
-        var panelType: PanelType
+        var panelType: TabContentType
         /// Full title (custom or process title), untruncated.
         var title: String?
         /// The kind used for live agent presentation (`nil` for a plain shell).
@@ -126,8 +126,8 @@ enum TabSheetDetailBuilder {
     }
 
     /// The tab's kind for the sheet's Type column, shown when it hosts no agent.
-    static func typeLabel(_ panelType: PanelType) -> String {
-        switch panelType {
+    static func typeLabel(_ tabType: TabContentType) -> String {
+        switch tabType {
         case .terminal:
             return String(localized: "tabSheet.type.terminal", defaultValue: "Terminal")
         case .browser:
@@ -305,9 +305,9 @@ extension Workspace {
         let help = resolvedAgentActivityHelp(panelId: panelId, activityState: activity)
         let attention = attentionSnapshot(panelId: panelId)
         let terminalKind = panel.panelType == .terminal ? surfaceActivityTerminalKind(panelId: panelId) : nil
-        let fullTitle = resolvedPanelTitle(
+        let fullTitle = resolvedTabTitle(
             panelId: panelId,
-            fallback: panelTitles[panelId] ?? panel.displayTitle
+            fallback: tabTitles[panelId] ?? panel.displayTitle
         )
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
@@ -331,9 +331,9 @@ extension Workspace {
             model: effectiveModel.model,
             modelLabel: effectiveModel.label,
             description: snapshot.metadata[MetadataKey.description] as? String,
-            directory: panelDirectories[panelId],
-            browserURL: (panel as? BrowserPanel)?.currentURL,
-            markdownPath: (panel as? MarkdownPanel)?.filePath,
+            directory: tabDirectories[panelId],
+            browserURL: (panel as? BrowserTab)?.currentURL,
+            markdownPath: (panel as? MarkdownTab)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
             stateEnteredAt: entered,
@@ -356,20 +356,20 @@ extension Workspace {
     /// `tokens`. Plain reads of stores the panels keep up to date; no work here
     /// scales with output.
     private func tabSheetSignals(
-        panel: any Panel,
+        panel: any TabContent,
         panelId: UUID,
         terminalKind: String?
     ) -> (activeAt: Date?, touchedAt: Date?, turnStartedAt: Date?, turnToolCalls: Int?, tokens: Int?, lastAgentEventAt: Date?) {
         switch panel.panelType {
         case .terminal:
-            let surface = (panel as? TerminalPanel)?.surface
+            let surface = (panel as? TerminalTab)?.surface
             let touched = surface?.lastOperatorInputAt
             // Plain terminal, or an agent whose files say nothing (Kimi, Copilot,
             // no transcript yet): output that scrolled while visible, or a command
             // starting/finishing. Hidden terminals only see command edges. Operator
             // input is never part of Active; with no signal the clock reads `—`.
             let growth = surface?.lastOutputGrowthAt
-            let edge = panelShellEdgeAt[panelId]
+            let edge = tabShellEdgeAt[panelId]
             let plainActive = TabSheetDetailBuilder.terminalActiveAt(agentLastEventAt: nil, outputGrowthAt: growth, commandEdgeAt: edge)
             if AgentIdentityPolicy.isAgentKind(terminalKind),
                let signals = AgentModelDetector.shared.signals(forSurface: panelId) {
@@ -385,9 +385,9 @@ extension Workspace {
             }
             return (plainActive, touched, nil, nil, nil, nil)
         case .markdown:
-            return ((panel as? MarkdownPanel)?.lastContentChangeAt, nil, nil, nil, nil, nil)
+            return ((panel as? MarkdownTab)?.lastContentChangeAt, nil, nil, nil, nil, nil)
         case .browser:
-            let browser = panel as? BrowserPanel
+            let browser = panel as? BrowserTab
             return (browser?.lastLoadedAt, browser?.lastOperatorInputAt, nil, nil, nil, nil)
         }
     }
@@ -395,7 +395,7 @@ extension Workspace {
     /// Pushes the tab's sheet detail into bonsplit when anything other than a
     /// clock changed. Clocks are refreshed by `tabDetailProvider` as the sheet
     /// opens, so a stream of activity never churns the tab bar.
-    func syncSurfaceTabDetailForPanel(_ panelId: UUID) {
+    func syncSurfaceTabDetailForTab(_ panelId: UUID) {
         // Nothing can show the detail unless a sheet is open in this pane;
         // opening one refreshes it, so skip the work otherwise.
         // Nothing open anywhere (the common case): no pane lookup, no work.

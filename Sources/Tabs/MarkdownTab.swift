@@ -22,10 +22,10 @@ enum MarkdownSegment: Identifiable {
 /// A panel that renders a markdown file with live file-watching.
 /// When the file changes on disk, the content is automatically reloaded.
 @MainActor
-final class MarkdownPanel: Panel, ObservableObject {
+final class MarkdownTab: TabContent, ObservableObject {
     let id: UUID
     let createdAt: Date?
-    let panelType: PanelType = .markdown
+    let panelType: TabContentType = .markdown
 
     /// Absolute path to the markdown file being displayed, or nil when the
     /// panel is unbound (empty state — user hasn't picked a file yet).

@@ -107,7 +107,7 @@ extension TerminalController {
                             reason: validatedReason!,
                             callerTabId: callerTabId,
                             by: actor,
-                            title: workspace.panelTitle(panelId: surfaceId)
+                            title: workspace.tabTitle(panelId: surfaceId)
                                 ?? workspace.panels[surfaceId]?.displayTitle
                         )
                     case "flag.lower":

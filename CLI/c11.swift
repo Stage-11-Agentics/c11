@@ -13117,7 +13117,7 @@ struct CMUXCLI {
     }
 
     /// Per-panel verify result.
-    private struct StateVerifyPanel {
+    private struct StateVerifyTab {
         let kind: String
         let id: String
         let state: String
@@ -13438,7 +13438,7 @@ struct CMUXCLI {
         ownership: ResumeOwnershipStatus,
         mode: ResumeRecoveryMode,
         home: String
-    ) -> StateVerifyPanel {
+    ) -> StateVerifyTab {
         let persistedState = ResumePersistedState(rawValue: input.state) ?? .unknown
         let idValid: Bool
         switch input.kind {
@@ -13527,13 +13527,13 @@ struct CMUXCLI {
         ))
         switch decision {
         case .command(let command):
-            return StateVerifyPanel(
+            return StateVerifyTab(
                 kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
                 ownership: ownership, transcriptEvidence: transcriptEvidence,
                 wouldResume: true, action: command.text, skipCode: nil
             )
         case .skip(let code, let reason):
-            return StateVerifyPanel(
+            return StateVerifyTab(
                 kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
                 ownership: ownership, transcriptEvidence: transcriptEvidence,
                 wouldResume: false, action: "skip: \(reason)", skipCode: code.rawValue

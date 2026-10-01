@@ -537,8 +537,8 @@ final class ScrapeCapturePipelineTests: XCTestCase {
 
     private func makeTerminalPanel(
         id: UUID, directory: String?, metadata: [String: PersistedJSONValue]?
-    ) -> SessionPanelSnapshot {
-        SessionPanelSnapshot(
+    ) -> SessionTabSnapshot {
+        SessionTabSnapshot(
             id: id, type: .terminal, title: "T", customTitle: nil, directory: directory,
             isPinned: false, isManuallyUnread: false, gitBranch: nil, listeningPorts: [],
             ttyName: nil, terminal: nil, browser: nil, markdown: nil,
@@ -546,8 +546,8 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         )
     }
 
-    private func makeBrowserPanel(id: UUID) -> SessionPanelSnapshot {
-        SessionPanelSnapshot(
+    private func makeBrowserPanel(id: UUID) -> SessionTabSnapshot {
+        SessionTabSnapshot(
             id: id, type: .browser, title: "B", customTitle: nil, directory: nil,
             isPinned: false, isManuallyUnread: false, gitBranch: nil, listeningPorts: [],
             ttyName: nil, terminal: nil, browser: nil, markdown: nil,
@@ -556,7 +556,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         )
     }
 
-    private func makeSnapshot(panels: [SessionPanelSnapshot]) -> AppSessionSnapshot {
+    private func makeSnapshot(panels: [SessionTabSnapshot]) -> AppSessionSnapshot {
         let workspace = SessionWorkspaceSnapshot(
             id: UUID(), processTitle: "Terminal", customTitle: nil, customColor: nil,
             isPinned: false, currentDirectory: "/tmp", focusedPanelId: nil,

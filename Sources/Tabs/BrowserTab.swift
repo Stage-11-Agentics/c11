@@ -1956,7 +1956,7 @@ final class BrowserPortalAnchorView: NSView {
 }
 
 @MainActor
-final class BrowserPanel: Panel, ObservableObject {
+final class BrowserTab: TabContent, ObservableObject {
     private static let remoteLoopbackProxyAliasHost = "c11-loopback.localtest.me"
     private static let remoteLoopbackHosts: Set<String> = [
         "localhost",
@@ -2106,7 +2106,7 @@ final class BrowserPanel: Panel, ObservableObject {
 
     let id: UUID
     let createdAt: Date?
-    let panelType: PanelType = .browser
+    let panelType: TabContentType = .browser
 
     /// The workspace ID this panel belongs to
     private(set) var workspaceId: UUID
@@ -2421,7 +2421,7 @@ final class BrowserPanel: Panel, ObservableObject {
     @Published private(set) var pendingAddressBarFocusRequestId: UUID?
 
     /// Semantic in-panel focus target used by split switching and transient overlays.
-    private(set) var preferredFocusIntent: BrowserPanelFocusIntent = .webView
+    private(set) var preferredFocusIntent: BrowserTabFocusIntent = .webView
 
     /// Incremented whenever async browser find focus ownership changes.
     @Published private(set) var searchFocusRequestGeneration: UInt64 = 0
@@ -2720,7 +2720,7 @@ final class BrowserPanel: Panel, ObservableObject {
         websiteDataStore: WKWebsiteDataStore? = nil
     ) -> CmuxWebView {
         let config = WKWebViewConfiguration()
-        config.processPool = BrowserPanel.sharedProcessPool
+        config.processPool = BrowserTab.sharedProcessPool
         config.mediaTypesRequiringUserActionForPlayback = []
         // Ensure browser cookies/storage persist across navigations and launches.
         // This reduces repeated consent/bot-challenge flows on sites like Google.
@@ -4368,7 +4368,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 }
 
-extension BrowserPanel {
+extension BrowserTab {
     private var needsWorkspaceContextReset: Bool {
         shouldRenderWebView ||
         currentURL != nil ||
@@ -4513,7 +4513,7 @@ func resolveBrowserNavigableURL(_ input: String) -> URL? {
     return nil
 }
 
-extension BrowserPanel {
+extension BrowserTab {
 
     /// Go back in history
     func goBack() {
@@ -5478,7 +5478,7 @@ extension BrowserPanel {
             preferredFocusIntent == .findField
     }
 
-    func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent {
+    func captureFocusIntent(in window: NSWindow?) -> TabFocusIntent {
         if pendingAddressBarFocusRequestId != nil || AppDelegate.shared?.focusedBrowserAddressBarPanelId() == id {
             return .browser(.addressBar)
         }
@@ -5495,7 +5495,7 @@ extension BrowserPanel {
         return .browser(preferredFocusIntent)
     }
 
-    func preferredFocusIntentForActivation() -> PanelFocusIntent {
+    func preferredFocusIntentForActivation() -> TabFocusIntent {
         if pendingAddressBarFocusRequestId != nil {
             return .browser(.addressBar)
         }
@@ -5505,7 +5505,7 @@ extension BrowserPanel {
         return .browser(preferredFocusIntent)
     }
 
-    func prepareFocusIntentForActivation(_ intent: PanelFocusIntent) {
+    func prepareFocusIntentForActivation(_ intent: TabFocusIntent) {
         guard case .browser(let target) = intent else { return }
 
         switch target {
@@ -5529,7 +5529,7 @@ extension BrowserPanel {
     }
 
     @discardableResult
-    func restoreFocusIntent(_ intent: PanelFocusIntent) -> Bool {
+    func restoreFocusIntent(_ intent: TabFocusIntent) -> Bool {
         guard case .browser(let target) = intent else { return false }
 
         switch target {
@@ -5553,7 +5553,7 @@ extension BrowserPanel {
         }
     }
 
-    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent? {
+    func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> TabFocusIntent? {
         if AppDelegate.shared?.focusedBrowserAddressBarPanelId() == id {
             return .browser(.addressBar)
         }
@@ -5570,7 +5570,7 @@ extension BrowserPanel {
     }
 
     @discardableResult
-    func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool {
+    func yieldFocusIntent(_ intent: TabFocusIntent, in window: NSWindow) -> Bool {
         guard case .browser(let target) = intent else { return false }
 
         switch target {
@@ -5852,7 +5852,7 @@ extension BrowserPanel {
 
 }
 
-private extension BrowserPanel {
+private extension BrowserTab {
     func applyBrowserThemeModeIfNeeded() {
         switch browserThemeMode {
         case .system:
@@ -5936,7 +5936,7 @@ private extension BrowserPanel {
 }
 
 #if DEBUG
-extension BrowserPanel {
+extension BrowserTab {
     func configureInsecureHTTPAlertHooksForTesting(
         alertFactory: @escaping () -> NSAlert,
         windowProvider: @escaping () -> NSWindow?
@@ -6026,7 +6026,7 @@ extension BrowserPanel {
 }
 #endif
 
-private extension BrowserPanel {
+private extension BrowserTab {
     @discardableResult
     func applyPageZoom(_ candidate: CGFloat) -> Bool {
         let clamped = max(minPageZoom, min(maxPageZoom, candidate))
@@ -6114,7 +6114,7 @@ private extension BrowserPanel {
     }
 }
 
-extension BrowserPanel {
+extension BrowserTab {
     func hideBrowserPortalView(source: String) {
         BrowserWindowPortalRegistry.hide(
             webView: webView,

@@ -1284,7 +1284,7 @@ extension TerminalController {
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
             let ws: Workspace
-            let panel: TerminalPanel
+            let panel: TerminalTab
             let paneUUID: UUID?
             if newWorkspace {
                 // Identity env rides workspace creation so it is present at
@@ -1303,12 +1303,12 @@ extension TerminalController {
                     eagerLoadTerminal: !focus,
                     autoWelcomeIfNeeded: false
                 )
-                guard let initialPanel = created.focusedTerminalPanel else {
+                guard let initialTab = created.focusedTerminalTab else {
                     result = .err(code: "internal_error", message: "New workspace has no terminal tab", data: nil)
                     return result
                 }
                 ws = created
-                panel = initialPanel
+                panel = initialTab
                 paneUUID = created.bonsplitController.focusedPaneId?.id
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
@@ -1379,7 +1379,7 @@ extension TerminalController {
                                 reason: launchFlagReason,
                                 callerTabId: launchCallerSurfaceId,
                                 by: launchFlagActor,
-                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
+                                title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
                     },

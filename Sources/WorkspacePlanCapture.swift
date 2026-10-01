@@ -151,7 +151,7 @@ enum WorkspacePlanCapture {
 
                 let isFirstInPane = ids.count == 1
                 let kind = kind(for: panel)
-                let title = workspace.panelCustomTitles[panelId]
+                let title = workspace.tabCustomTitles[panelId]
                 let metadata = strippingRedundantCanonicalFields(
                     surfaceMetadata(for: panelId),
                     title: title,
@@ -165,7 +165,7 @@ enum WorkspacePlanCapture {
                    let linkedAgent = companionBridge.linkedAgentForBrowser(panelId) {
                     let targetPlanID = planIDByPanelID[linkedAgent.surfaceID]
                     if let targetPlanID,
-                       workspace.panels[linkedAgent.surfaceID] is TerminalPanel,
+                       workspace.panels[linkedAgent.surfaceID] is TerminalTab,
                        AgentIdentityPolicy.isAgentKind(
                            companionBridge.declaredAgentKindForTerminal(linkedAgent.surfaceID)
                        ) {
@@ -220,7 +220,7 @@ enum WorkspacePlanCapture {
 
         // MARK: Kind + panel accessors
 
-        private func kind(for panel: any Panel) -> TabSpecKind {
+        private func kind(for panel: any TabContent) -> TabSpecKind {
             switch panel.panelType {
             case .terminal: return .terminal
             case .browser:  return .browser
@@ -228,19 +228,19 @@ enum WorkspacePlanCapture {
             }
         }
 
-        private func workingDirectory(for panel: any Panel) -> String? {
-            guard let terminal = panel as? TerminalPanel else { return nil }
+        private func workingDirectory(for panel: any TabContent) -> String? {
+            guard let terminal = panel as? TerminalTab else { return nil }
             let requested = terminal.requestedWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (requested?.isEmpty == false) ? requested : nil
         }
 
-        private func url(for panel: any Panel) -> String? {
-            guard let browser = panel as? BrowserPanel else { return nil }
+        private func url(for panel: any TabContent) -> String? {
+            guard let browser = panel as? BrowserTab else { return nil }
             return browser.currentURL?.absoluteString
         }
 
-        private func filePath(for panel: any Panel) -> String? {
-            guard let markdown = panel as? MarkdownPanel else { return nil }
+        private func filePath(for panel: any TabContent) -> String? {
+            guard let markdown = panel as? MarkdownTab else { return nil }
             return markdown.filePath
         }
 

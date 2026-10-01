@@ -495,10 +495,10 @@ extension TerminalController {
             }
 
             if let sourcePlaceholder {
-                _ = workspace.closePanel(sourcePlaceholder, force: true)
+                _ = workspace.closeTab(sourcePlaceholder, force: true)
             }
             if let targetPlaceholder {
-                _ = workspace.closePanel(targetPlaceholder, force: true)
+                _ = workspace.closeTab(targetPlaceholder, force: true)
             }
 
             if focus {

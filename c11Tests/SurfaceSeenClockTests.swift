@@ -88,8 +88,8 @@ final class SurfaceSeenClockTests: XCTestCase {
 
     func testLastSeenAtRoundTripsThroughPanelSnapshot() throws {
         let stamp = Date(timeIntervalSince1970: 1_700_000_123)
-        func snapshot(_ lastSeenAt: Date?) -> SessionPanelSnapshot {
-            SessionPanelSnapshot(
+        func snapshot(_ lastSeenAt: Date?) -> SessionTabSnapshot {
+            SessionTabSnapshot(
                 id: UUID(), type: .terminal, title: nil, customTitle: nil,
                 directory: nil, isPinned: false, isManuallyUnread: false,
                 gitBranch: nil, listeningPorts: [], ttyName: nil,
@@ -99,11 +99,11 @@ final class SurfaceSeenClockTests: XCTestCase {
         }
         let data = try JSONEncoder().encode(snapshot(stamp))
         XCTAssertTrue((String(data: data, encoding: .utf8) ?? "").contains("\"last_seen_at\""))
-        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(SessionTabSnapshot.self, from: data)
         XCTAssertEqual(decoded.lastSeenAt, stamp)
 
         let legacy = try JSONEncoder().encode(snapshot(nil))
-        XCTAssertNil(try JSONDecoder().decode(SessionPanelSnapshot.self, from: legacy).lastSeenAt)
+        XCTAssertNil(try JSONDecoder().decode(SessionTabSnapshot.self, from: legacy).lastSeenAt)
     }
 
     // MARK: - Tracker (injected seen provider and clock)

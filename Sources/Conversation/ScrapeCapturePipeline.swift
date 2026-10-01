@@ -58,7 +58,7 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     }
 
     /// Read the panel's declared `terminal_type` metadata value (a `.string`).
-    private static func terminalType(of panel: SessionPanelSnapshot) -> String? {
+    private static func terminalType(of panel: SessionTabSnapshot) -> String? {
         guard let metadata = panel.metadata else { return nil }
         guard case .string(let raw)? = metadata[TabMetadataKeyName.terminalType] else {
             return nil

@@ -239,7 +239,7 @@ extension TerminalController {
 
     func v2BrowserWithPanel(
         params: [String: Any],
-        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserPanel: BrowserPanel) -> V2CallResult
+        _ body: (_ workspaceManager: WorkspaceManager, _ workspace: Workspace, _ surfaceId: UUID, _ browserTab: BrowserTab) -> V2CallResult
     ) -> V2CallResult {
         var result: V2CallResult = .err(code: "internal_error", message: "Browser operation failed", data: nil)
         v2MainSync {
@@ -256,11 +256,11 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "No focused browser tab", data: nil)
                 return
             }
-            guard let browserPanel = ws.browserPanel(for: surfaceId) else {
+            guard let browserTab = ws.browserPanel(for: surfaceId) else {
                 result = .err(code: "invalid_params", message: "Tab is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            result = body(workspaceManager, ws, surfaceId, browserPanel)
+            result = body(workspaceManager, ws, surfaceId, browserTab)
         }
         return result
     }
@@ -948,11 +948,11 @@ extension TerminalController {
     /// hibernated) has a URL already and needs to be told that instead, or the
     /// agent re-issues the same navigate in a loop.
     func v2BrowserNoDocumentResultIfNeeded(
-        browserPanel: BrowserPanel,
+        browserPanel browserTab: BrowserTab,
         surfaceId: UUID
     ) -> V2CallResult? {
-        guard !Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView) else { return nil }
-        let currentURL = browserPanel.currentURL?.absoluteString
+        guard !Self.v2BrowserWebViewHasIssuedLoad(browserTab.webView) else { return nil }
+        let currentURL = browserTab.currentURL?.absoluteString
         let message = currentURL.map { Self.v2BrowserNavigationWithheldMessage(url: $0) }
             ?? Self.v2BrowserNoDocumentMessage
         return .err(
@@ -961,7 +961,7 @@ extension TerminalController {
             data: [
                 "surface_id": surfaceId.uuidString,
                 "current_url": v2OrNull(currentURL),
-                "lifecycle_state": browserPanel.lifecycleState.rawValue
+                "lifecycle_state": browserTab.lifecycleState.rawValue
             ]
         )
     }
@@ -1086,7 +1086,7 @@ extension TerminalController {
         return first
     }
 
-    func v2BrowserEnsureInitScriptsApplied(surfaceId: UUID, browserPanel: BrowserPanel) {
+    func v2BrowserEnsureInitScriptsApplied(surfaceId: UUID, browserPanel browserTab: BrowserTab) {
         let scripts = v2BrowserInitScriptsBySurface[surfaceId] ?? []
         let styles = v2BrowserInitStylesBySurface[surfaceId] ?? []
         guard !scripts.isEmpty || !styles.isEmpty else { return }
@@ -1097,10 +1097,10 @@ extension TerminalController {
           return true;
         })()
         """
-        _ = v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: injector)
+        _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: injector)
 
         for script in scripts {
-            _ = v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script)
+            _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: script)
         }
         for css in styles {
             let cssLiteral = v2JSONLiteral(css)
@@ -1115,7 +1115,7 @@ extension TerminalController {
               return true;
             })()
             """
-            _ = v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: styleScript)
+            _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: styleScript)
         }
     }
 
@@ -1183,9 +1183,9 @@ extension TerminalController {
 
             var createdSplit = true
             var placementStrategy = "split_right"
-            let createdPanel: BrowserPanel?
+            let createdTab: BrowserTab?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                createdPanel = ws.newBrowserSurface(
+                createdTab = ws.newBrowserSurface(
                     inPane: targetPane,
                     url: url,
                     focus: true,
@@ -1194,7 +1194,7 @@ extension TerminalController {
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
-                createdPanel = ws.newBrowserSplit(
+                createdTab = ws.newBrowserSplit(
                     from: sourceSurfaceId,
                     orientation: .horizontal,
                     url: url,
@@ -1202,12 +1202,12 @@ extension TerminalController {
                 )
             }
 
-            guard let browserPanelId = createdPanel?.id else {
+            guard let browserTabId = createdTab?.id else {
                 result = .err(code: "internal_error", message: "Failed to create browser", data: nil)
                 return
             }
 
-            let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
+            let targetPaneUUID = ws.paneId(forPanelId: browserTabId)?.id
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
             var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
@@ -1216,8 +1216,8 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
-                "surface_id": browserPanelId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: browserPanelId),
+                "surface_id": browserTabId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: browserTabId),
                 "source_surface_id": sourceSurfaceId.uuidString,
                 "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
                 "source_pane_id": v2OrNull(sourcePaneUUID?.uuidString),
@@ -1232,7 +1232,7 @@ extension TerminalController {
             // in the payload rather than as an error, so the caller keeps the
             // surface/pane refs it needs to retry with `allow_insecure_http`
             // or to close the surface.
-            if let insecureHTTP = browserInsecureHTTPPayload(for: createdPanel?.lastNavigationDisposition) {
+            if let insecureHTTP = browserInsecureHTTPPayload(for: createdTab?.lastNavigationDisposition) {
                 payload["insecure_http"] = insecureHTTP
             }
             result = .ok(payload)
@@ -1301,7 +1301,7 @@ extension TerminalController {
 
     func v2BrowserNotFoundDiagnostics(
         surfaceId: UUID,
-        browserPanel: BrowserPanel,
+        browserPanel browserTab: BrowserTab,
         selector: String
     ) -> [String: Any] {
         let selectorLiteral = v2JSONLiteral(selector)
@@ -1368,7 +1368,7 @@ extension TerminalController {
         })()
         """
 
-        switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script, timeout: 4.0) {
+        switch v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: script, timeout: 4.0) {
         case .failure(let message):
             return [
                 "selector": selector,
@@ -1397,9 +1397,9 @@ extension TerminalController {
         selector: String,
         attempts: Int,
         surfaceId: UUID,
-        browserPanel: BrowserPanel
+        browserPanel browserTab: BrowserTab
     ) -> V2CallResult {
-        var data = v2BrowserNotFoundDiagnostics(surfaceId: surfaceId, browserPanel: browserPanel, selector: selector)
+        var data = v2BrowserNotFoundDiagnostics(surfaceId: surfaceId, browserPanel: browserTab, selector: selector)
         data["action"] = actionName
         data["retry_attempts"] = attempts
         data["hint"] = "Run 'browser snapshot' to refresh refs, then retry with a more specific selector."

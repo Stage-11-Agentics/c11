@@ -47,11 +47,11 @@ final class PanelIdentityRestoreTests: XCTestCase {
 
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let markdownPanel = try XCTUnwrap(
+        let markdownTab = try XCTUnwrap(
             workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: true)
         )
         let expectedIds = Set(workspace.panels.keys)
-        XCTAssertTrue(expectedIds.contains(markdownPanel.id))
+        XCTAssertTrue(expectedIds.contains(markdownTab.id))
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 
@@ -61,7 +61,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
         let restoredIds = Set(restored.panels.keys)
         XCTAssertEqual(restoredIds, expectedIds)
         XCTAssertNotNil(
-            restored.markdownPanel(for: markdownPanel.id),
+            restored.markdownTab(for: markdownTab.id),
             "Markdown panel UUID should round-trip and resolve on the restored workspace"
         )
     }
@@ -101,7 +101,7 @@ final class PanelIdentityRestoreTests: XCTestCase {
 
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let terminalPanel = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        let terminalTab = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
         let browserPanel = try XCTUnwrap(
             workspace.newBrowserSurface(
                 inPane: paneId,
@@ -109,14 +109,14 @@ final class PanelIdentityRestoreTests: XCTestCase {
                 focus: false
             )
         )
-        let markdownPanel = try XCTUnwrap(
+        let markdownTab = try XCTUnwrap(
             workspace.newMarkdownTab(inPane: paneId, filePath: markdownURL.path, focus: false)
         )
 
         let expected = Set(workspace.panels.keys)
-        XCTAssertTrue(expected.contains(terminalPanel.id))
+        XCTAssertTrue(expected.contains(terminalTab.id))
         XCTAssertTrue(expected.contains(browserPanel.id))
-        XCTAssertTrue(expected.contains(markdownPanel.id))
+        XCTAssertTrue(expected.contains(markdownTab.id))
 
         let snapshot = workspace.sessionSnapshot(includeScrollback: false)
 

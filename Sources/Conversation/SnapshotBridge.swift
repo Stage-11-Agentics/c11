@@ -77,7 +77,7 @@ enum WorkspaceSnapshotConversationBridge {
     /// Synchronous helper for tests. Returns the synthesized ref iff the
     /// legacy metadata key is present + valid.
     static func liftLegacyClaudeSessionId(
-        _ panel: SessionPanelSnapshot
+        _ panel: SessionTabSnapshot
     ) -> ConversationRef? {
         guard let metadata = panel.metadata else { return nil }
         guard case .string(let raw)? = metadata[TabMetadataKeyName.claudeSessionId] else {

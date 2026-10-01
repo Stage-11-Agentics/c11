@@ -231,7 +231,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second, third, fourth],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 337,
                     label: "PR",
@@ -281,7 +281,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -310,7 +310,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -342,7 +342,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [first, second],
-            panelPullRequests: [
+            tabPullRequests: [
                 first: pullRequestState(
                     number: 42,
                     label: "PR",
@@ -372,7 +372,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -380,7 +380,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open,
             checks: .pass
         )
-        workspace.updatePanelPullRequest(
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 42,
             label: "PR",
@@ -388,7 +388,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        XCTAssertEqual(workspace.panelPullRequests[panelId]?.checks, .pass)
+        XCTAssertEqual(workspace.tabPullRequests[panelId]?.checks, .pass)
         XCTAssertEqual(workspace.pullRequest?.checks, .pass)
     }
 
@@ -401,7 +401,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
         )
         let pullRequests = SidebarBranchOrdering.orderedUniquePullRequests(
             orderedPanelIds: [],
-            panelPullRequests: [:],
+            tabPullRequests: [:],
             fallbackPullRequest: fallback
         )
 
@@ -416,8 +416,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
-        workspace.updatePanelPullRequest(
+        workspace.updateTabGitBranch(panelId: panelId, branch: "feature/sidebar-pr", isDirty: false)
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",
@@ -425,10 +425,10 @@ final class SidebarBranchOrderingTests: XCTestCase {
             status: .open
         )
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
 
         XCTAssertNil(workspace.pullRequest)
-        XCTAssertNil(workspace.panelPullRequests[panelId])
+        XCTAssertNil(workspace.tabPullRequests[panelId])
         XCTAssertTrue(workspace.sidebarPullRequestsInDisplayOrder().isEmpty)
     }
 
@@ -440,8 +440,8 @@ final class SidebarBranchOrderingTests: XCTestCase {
             return
         }
 
-        workspace.updatePanelGitBranch(panelId: panelId, branch: "main", isDirty: false)
-        workspace.updatePanelPullRequest(
+        workspace.updateTabGitBranch(panelId: panelId, branch: "main", isDirty: false)
+        workspace.updateTabPullRequest(
             panelId: panelId,
             number: 1629,
             label: "PR",

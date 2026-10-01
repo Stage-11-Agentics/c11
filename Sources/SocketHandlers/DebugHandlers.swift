@@ -118,7 +118,7 @@ extension TerminalController {
                 let workspaceIndex: Int
                 let workspaceSelected: Bool
                 let workspace: Workspace
-                let terminalPanel: TerminalPanel
+                let terminalPanel: TerminalTab
                 let paneId: PaneID?
                 let paneIndex: Int?
                 let surfaceIndex: Int
@@ -227,20 +227,20 @@ extension TerminalController {
                     }
 
                     for (surfaceIndex, panel) in orderedPanels(in: workspace).enumerated() {
-                        guard let terminalPanel = panel as? TerminalPanel else { continue }
-                        mappedLocations[ObjectIdentifier(terminalPanel.surface)] = MappedTerminalLocation(
+                        guard let terminalTab = panel as? TerminalTab else { continue }
+                        mappedLocations[ObjectIdentifier(terminalTab.surface)] = MappedTerminalLocation(
                             windowIndex: windowIndex,
                             windowId: state.windowId,
                             window: state.window,
                             workspaceIndex: workspaceIndex,
                             workspaceSelected: workspace.id == workspaceManager.selectedWorkspaceId,
                             workspace: workspace,
-                            terminalPanel: terminalPanel,
-                            paneId: workspace.paneId(forPanelId: terminalPanel.id),
-                            paneIndex: workspace.paneId(forPanelId: terminalPanel.id).flatMap { paneIndexById[$0.id] },
+                            terminalPanel: terminalTab,
+                            paneId: workspace.paneId(forPanelId: terminalTab.id),
+                            paneIndex: workspace.paneId(forPanelId: terminalTab.id).flatMap { paneIndexById[$0.id] },
                             surfaceIndex: surfaceIndex,
-                            selectedInPane: selectedInPaneByPanelId[terminalPanel.id],
-                            bonsplitTabId: workspace.bonsplitTabIdFromTabId(terminalPanel.id)
+                            selectedInPane: selectedInPaneByPanelId[terminalTab.id],
+                            bonsplitTabId: workspace.bonsplitTabIdFromTabId(terminalTab.id)
                         )
                     }
                 }
@@ -258,13 +258,13 @@ extension TerminalController {
                 let panelId = mapped?.terminalPanel.id ?? terminalSurface.id
                 let portalState = hostedView.portalBindingGuardState()
                 let portalHostLease = terminalSurface.debugPortalHostLease()
-                let gitBranchState = workspace?.panelGitBranches[panelId]
+                let gitBranchState = workspace?.tabGitBranches[panelId]
                 let listeningPorts = (workspace?.tabListeningPorts[panelId] ?? []).sorted()
-                let title = workspace?.panelTitle(panelId: panelId)
+                let title = workspace?.tabTitle(panelId: panelId)
                 let paneId = mapped?.paneId
                 let treeVisible = mapped?.bonsplitTabId != nil && paneId != nil
                 let ttyName = workspace?.tabTTYNames[panelId]
-                let currentDirectory = nonEmpty(workspace?.panelDirectories[panelId] ?? mapped?.terminalPanel.directory)
+                let currentDirectory = nonEmpty(workspace?.tabDirectories[panelId] ?? mapped?.terminalPanel.directory)
                 let teardownRequest = terminalSurface.debugTeardownRequest()
                 let lastKnownWorkspaceId = terminalSurface.debugLastKnownWorkspaceId()
 
@@ -302,7 +302,7 @@ extension TerminalController {
                     "surface_title": v2OrNull(title),
                     "surface_focused": v2OrNull(workspace.map { panelId == $0.focusedPanelId }),
                     "surface_selected_in_pane": v2OrNull(mapped?.selectedInPane),
-                    "surface_pinned": v2OrNull(workspace.map { $0.isPanelPinned(panelId) }),
+                    "surface_pinned": v2OrNull(workspace.map { $0.isTabPinned(panelId) }),
                     "surface_context": terminalSurface.debugSurfaceContextLabel(),
                     "surface_created_at": v2OrNull(iso8601String(terminalSurface.debugCreatedAt())),
                     "surface_age_seconds": v2OrNull(ageSeconds(since: terminalSurface.debugCreatedAt())),

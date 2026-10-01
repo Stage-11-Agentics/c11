@@ -338,7 +338,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         guard let panelId = parseUUIDSuffix(result.surfaceRefs["t"]),
-              let terminal = workspace.panels[panelId] as? TerminalPanel else {
+              let terminal = workspace.panels[panelId] as? TerminalTab else {
             return XCTFail("terminal panel not resolvable")
         }
         #if DEBUG
@@ -387,7 +387,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
         let panelId = try XCTUnwrap(parseUUIDSuffix(result.surfaceRefs["t"]))
-        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalPanel)
+        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalTab)
         return terminal.surface
     }
 
@@ -825,11 +825,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 continue
             }
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[spec.id]),
-                  let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+                  let terminalTab = workspace.panels[panelId] as? TerminalTab else {
                 XCTFail("[\(fixtureName)] terminal surface[\(spec.id)] with workingDirectory did not produce a resolvable panel")
                 continue
             }
-            let landed = terminalPanel.requestedWorkingDirectory?
+            let landed = terminalTab.requestedWorkingDirectory?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if landed == expectedCwd {
                 continue
@@ -878,7 +878,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             guard let panelId = parseUUIDSuffix(result.surfaceRefs[surfaceSpec.id]) else {
                 continue
             }
-            let paneUUID = workspace.paneIdForPanel(panelId)?.id
+            let paneUUID = workspace.paneIdForTab(panelId)?.id
 
             // Surface-level metadata.
             let (surfaceMetadata, _) = TabMetadataStore.shared.getMetadata(

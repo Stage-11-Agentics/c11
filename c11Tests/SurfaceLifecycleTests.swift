@@ -266,7 +266,7 @@ final class SurfaceLifecycleTests: XCTestCase {
         BrowserSnapshotStore.shared.clear(forSurfaceId: surfaceId)
         defer { BrowserSnapshotStore.shared.clear(forSurfaceId: surfaceId) }
 
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             id: surfaceId,
             workspaceId: UUID(),
             initialURL: url,
@@ -309,7 +309,7 @@ final class SurfaceLifecycleTests: XCTestCase {
     @MainActor
     func testBrowserPanelDefaultConstructionStillFiresInitialLoad() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/c11-25-default"))
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             initialURL: url
         )
@@ -474,8 +474,8 @@ final class SurfaceLifecycleTests: XCTestCase {
 @MainActor
 final class WorkspaceSelectionLifecycleTests: XCTestCase {
 
-    private func terminals(_ workspace: Workspace) -> [TerminalPanel] {
-        workspace.panels.values.compactMap { $0 as? TerminalPanel }
+    private func terminals(_ workspace: Workspace) -> [TerminalTab] {
+        workspace.panels.values.compactMap { $0 as? TerminalTab }
     }
 
     func testDeselectingWorkspaceThrottlesItsTerminalsAndSelectingActivates() throws {

@@ -69,7 +69,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     let webView: CmuxWebView
     private let panel: NSPanel
     private let urlLabel: NSTextField
-    private weak var openerPanel: BrowserPanel?
+    private weak var openerPanel: BrowserTab?
     private weak var parentPopupController: BrowserPopupWindowController?
     private let nestingDepth: Int
     private var titleObservation: NSKeyValueObservation?
@@ -84,11 +84,11 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     init(
         configuration: WKWebViewConfiguration,
         windowFeatures: WKWindowFeatures,
-        openerPanel: BrowserPanel?,
+        openerPanel openerTab: BrowserTab?,
         parentPopupController: BrowserPopupWindowController? = nil,
         nestingDepth: Int = 0
     ) {
-        self.openerPanel = openerPanel
+        self.openerPanel = openerTab
         self.parentPopupController = parentPopupController
         self.nestingDepth = nestingDepth
 
@@ -112,7 +112,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         let h = max(windowFeatures.height?.doubleValue ?? defaultHeight, minHeight)
 
         // Screen-clamping: use opener's screen or main screen
-        let screen = openerPanel?.webView.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let screen = openerTab?.webView.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let contentRect = browserPopupContentRect(
             requestedWidth: w,
@@ -224,7 +224,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         panel.delegate = self
 
         #if DEBUG
-        dlog("popup.init depth=\(nestingDepth) size=\(Int(contentRect.width))x\(Int(contentRect.height)) opener=\(openerPanel?.id.uuidString.prefix(5) ?? "nil")")
+        dlog("popup.init depth=\(nestingDepth) size=\(Int(contentRect.width))x\(Int(contentRect.height)) opener=\(openerTab?.id.uuidString.prefix(5) ?? "nil")")
         #endif
 
         panel.makeKeyAndOrderFront(self)

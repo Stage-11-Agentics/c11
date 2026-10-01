@@ -709,19 +709,19 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserEnsureTelemetryHooks(surfaceId _: UUID, browserPanel: BrowserPanel) {
+    func v2BrowserEnsureTelemetryHooks(surfaceId _: UUID, browserPanel browserTab: BrowserTab) {
         _ = v2RunJavaScript(
-            browserPanel.webView,
-            script: BrowserPanel.telemetryHookBootstrapScriptSource,
+            browserTab.webView,
+            script: BrowserTab.telemetryHookBootstrapScriptSource,
             timeout: 5.0,
             contentWorld: .page
         )
     }
 
-    func v2BrowserEnsureDialogHooks(browserPanel: BrowserPanel) {
+    func v2BrowserEnsureDialogHooks(browserPanel browserTab: BrowserTab) {
         _ = v2RunJavaScript(
-            browserPanel.webView,
-            script: BrowserPanel.dialogTelemetryHookBootstrapScriptSource,
+            browserTab.webView,
+            script: BrowserTab.dialogTelemetryHookBootstrapScriptSource,
             timeout: 5.0,
             contentWorld: .page
         )
@@ -1214,8 +1214,8 @@ extension TerminalController {
         var payload: [String: Any]?
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
-            let browserPanels = orderedPanels(in: ws).compactMap { panel -> BrowserPanel? in
-                panel as? BrowserPanel
+            let browserPanels = orderedPanels(in: ws).compactMap { panel -> BrowserTab? in
+                panel as? BrowserTab
             }
             let browserTabs: [[String: Any]] = browserPanels.enumerated().map { index, panel in
                 [
@@ -1297,7 +1297,7 @@ extension TerminalController {
             }
 
             let browserIds = orderedPanels(in: ws).compactMap { panel -> UUID? in
-                (panel as? BrowserPanel)?.id
+                (panel as? BrowserTab)?.id
             }
 
             let targetId: UUID? = {
@@ -1339,7 +1339,7 @@ extension TerminalController {
             }
 
             let browserIds = orderedPanels(in: ws).compactMap { panel -> UUID? in
-                (panel as? BrowserPanel)?.id
+                (panel as? BrowserTab)?.id
             }
             guard !browserIds.isEmpty else {
                 result = .err(code: "not_found", message: "No browser tabs", data: nil)
@@ -1369,7 +1369,7 @@ extension TerminalController {
                 return
             }
 
-            let ok = ws.closePanel(targetId, force: true)
+            let ok = ws.closeTab(targetId, force: true)
             result = ok
                 ? .ok([
                     "workspace_id": ws.id.uuidString,

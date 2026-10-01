@@ -41,7 +41,7 @@ enum TabTypeAvailability {
 
     /// Single source of truth for the gate. Terminal surfaces are never gated.
     static func isEnabled(
-        _ type: PanelType,
+        _ type: TabContentType,
         defaults: UserDefaults = .standard,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
@@ -94,7 +94,7 @@ enum TabTypeAvailability {
 
     /// Actionable message for a blocked creation attempt. Plain English — these
     /// surface as CLI/socket error envelopes, not localized in-app UI strings.
-    static func disabledMessage(for type: PanelType) -> String {
+    static func disabledMessage(for type: TabContentType) -> String {
         switch type {
         case .browser:
             return "browser tabs are disabled (Settings → General → Tabs & Areas → Internal Browser)"

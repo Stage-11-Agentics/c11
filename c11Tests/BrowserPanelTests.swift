@@ -117,7 +117,7 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
             alternateStore.clearHistory()
         }
 
-        let panel = BrowserPanel(
+        let panel = BrowserTab(
             workspaceId: UUID(),
             profileID: BrowserProfileStore.shared.builtInDefaultProfileID
         )
@@ -154,7 +154,7 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
 @MainActor
 final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     func testRequestPersistsUntilAcknowledged() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         XCTAssertNil(panel.pendingAddressBarFocusRequestId)
 
         let requestId = panel.requestAddressBarFocus()
@@ -172,7 +172,7 @@ final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testRequestCoalescesWhilePending() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         let secondRequest = panel.requestAddressBarFocus()
 
@@ -181,7 +181,7 @@ final class BrowserPanelAddressBarFocusRequestTests: XCTestCase {
     }
 
     func testStaleAcknowledgementDoesNotClearNewestRequest() {
-        let panel = BrowserPanel(workspaceId: UUID())
+        let panel = BrowserTab(workspaceId: UUID())
         let firstRequest = panel.requestAddressBarFocus()
         panel.acknowledgeAddressBarFocusRequest(firstRequest)
         let secondRequest = panel.requestAddressBarFocus()

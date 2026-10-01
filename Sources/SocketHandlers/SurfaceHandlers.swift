@@ -102,21 +102,21 @@ extension TerminalController {
                     "ref": v2Ref(kind: .surface, uuid: panel.id),
                     "index": index,
                     "type": panel.panelType.rawValue,
-                    "title": ws.panelTitle(panelId: panel.id) ?? panel.displayTitle,
+                    "title": ws.tabTitle(panelId: panel.id) ?? panel.displayTitle,
                     "focused": panel.id == focusedSurfaceId,
                     "pane_id": v2OrNull(paneUUID?.uuidString),
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
                     "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
                     "tty": v2OrNull(ws.tabTTYNames[panel.id]),
-                    "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
+                    "custom_color": v2OrNull(ws.tabCustomColor(panelId: panel.id))
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
-                if let browserPanel = panel as? BrowserPanel {
-                    item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
+                if let browserTab = panel as? BrowserTab {
+                    item["developer_tools_visible"] = browserTab.isDeveloperToolsVisible()
                 }
-                if let markdownPanel = panel as? MarkdownPanel {
-                    item["file_path"] = markdownPanel.filePath
+                if let markdownTab = panel as? MarkdownTab {
+                    item["file_path"] = markdownTab.filePath
                 }
                 // C11-25 fix DoD #5: expose the SurfaceMetricsSampler
                 // snapshot for terminal + browser surfaces so callers
@@ -188,7 +188,7 @@ extension TerminalController {
                 "surface_id": v2OrNull(surfaceId?.uuidString),
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                 "surface_type": v2OrNull(surfaceId.flatMap { ws.panels[$0]?.panelType.rawValue }),
-                "custom_color": v2OrNull(surfaceId.flatMap { ws.panelCustomColor(panelId: $0) })
+                "custom_color": v2OrNull(surfaceId.flatMap { ws.tabCustomColor(panelId: $0) })
             ]
         }
 
@@ -228,11 +228,11 @@ extension TerminalController {
             workspaceUUID = workspace.id
             found = true
             if clear {
-                workspace.setPanelCustomColor(panelId: surfaceId, color: nil)
+                workspace.setTabCustomColor(panelId: surfaceId, color: nil)
                 applied = nil
             } else if let hex {
-                workspace.setPanelCustomColor(panelId: surfaceId, color: hex)
-                applied = workspace.panelCustomColor(panelId: surfaceId)
+                workspace.setTabCustomColor(panelId: surfaceId, color: hex)
+                applied = workspace.tabCustomColor(panelId: surfaceId)
             }
         }
 
@@ -499,7 +499,7 @@ extension TerminalController {
             }
 
             // Socket API must be non-interactive: bypass close-confirmation gating.
-            ws.closePanel(surfaceId, force: true)
+            ws.closeTab(surfaceId, force: true)
             result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
         }
         return result
@@ -781,8 +781,8 @@ extension TerminalController {
             }
             var refreshedCount = 0
             for panel in ws.panels.values {
-                if let terminalPanel = panel as? TerminalPanel {
-                    terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceRefresh")
+                if let terminalTab = panel as? TerminalTab {
+                    terminalTab.surface.forceRefresh(reason: "terminalController.v2SurfaceRefresh")
                     refreshedCount += 1
                 }
             }
@@ -803,9 +803,9 @@ extension TerminalController {
             let panels = orderedPanels(in: ws)
             let items: [[String: Any]] = panels.enumerated().map { index, panel in
                 var inWindow: Any = NSNull()
-                if let tp = panel as? TerminalPanel {
+                if let tp = panel as? TerminalTab {
                     inWindow = tp.surface.isViewInWindow
-                } else if let bp = panel as? BrowserPanel {
+                } else if let bp = panel as? BrowserTab {
                     inWindow = bp.webView.window != nil
                 }
                 return [

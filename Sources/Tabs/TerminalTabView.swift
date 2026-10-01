@@ -3,8 +3,8 @@ import Foundation
 import AppKit
 
 /// View for rendering a terminal panel
-struct TerminalPanelView: View {
-    @ObservedObject var panel: TerminalPanel
+struct TerminalTabView: View {
+    @ObservedObject var panel: TerminalTab
     @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
     @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(NotificationPaneRingSettings.enabledKey)
@@ -22,7 +22,7 @@ struct TerminalPanelView: View {
     let isVisibleInUI: Bool
     let portalPriority: Int
     let isSplit: Bool
-    let appearance: PanelAppearance
+    let appearance: TabAppearance
     let hasUnreadNotification: Bool
     let onFocus: () -> Void
     let onTriggerFlash: () -> Void
@@ -155,13 +155,13 @@ struct TerminalPanelView: View {
 }
 
 /// Shared appearance settings for panels
-struct PanelAppearance {
+struct TabAppearance {
     let dividerColor: Color
     let unfocusedOverlayNSColor: NSColor
     let unfocusedOverlayOpacity: Double
 
-    static func fromConfig(_ config: GhosttyConfig) -> PanelAppearance {
-        PanelAppearance(
+    static func fromConfig(_ config: GhosttyConfig) -> TabAppearance {
+        TabAppearance(
             dividerColor: Color(nsColor: config.resolvedSplitDividerColor),
             unfocusedOverlayNSColor: config.unfocusedSplitOverlayFill,
             unfocusedOverlayOpacity: config.unfocusedSplitOverlayOpacity

@@ -311,7 +311,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             id: UUID,
             conversationID: String,
             state: ConversationState
-        ) -> SessionPanelSnapshot {
+        ) -> SessionTabSnapshot {
             var panel = makePanelSnapshot(id: id, type: .terminal, metadata: nil)
             panel.surfaceConversations = TabConversations(active: ConversationRef(
                 kind: "codex",
@@ -504,10 +504,10 @@ final class WorkspaceConversationResumeTests: XCTestCase {
 
     private func makePanelSnapshot(
         id: UUID,
-        type: PanelType,
+        type: TabContentType,
         metadata: [String: PersistedJSONValue]? = nil
-    ) -> SessionPanelSnapshot {
-        return SessionPanelSnapshot(
+    ) -> SessionTabSnapshot {
+        return SessionTabSnapshot(
             id: id,
             type: type,
             title: "Test",
@@ -518,7 +518,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             gitBranch: nil,
             listeningPorts: [],
             ttyName: nil,
-            terminal: type == .terminal ? SessionTerminalPanelSnapshot(workingDirectory: nil, scrollback: nil) : nil,
+            terminal: type == .terminal ? SessionTerminalTabSnapshot(workingDirectory: nil, scrollback: nil) : nil,
             browser: nil,
             markdown: nil,
             metadata: metadata,
@@ -526,7 +526,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
     }
 
-    private func makeSnapshot(panels: [SessionPanelSnapshot]) -> SessionWorkspaceSnapshot {
+    private func makeSnapshot(panels: [SessionTabSnapshot]) -> SessionWorkspaceSnapshot {
         return SessionWorkspaceSnapshot(
             id: UUID(),
             processTitle: "Test",
@@ -608,7 +608,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         // would deadlock against the test's main-actor wait and the
         // returned dict would be empty.
         let captured: [String: TabConversations] = await MainActor.run {
-            Workspace.readConversationsByPanelIdSync(timeout: 2.0)
+            Workspace.readConversationsByTabIdSync(timeout: 2.0)
         }
 
         XCTAssertEqual(captured[surfaceA]?.active?.id, claudeSessionId)
@@ -623,7 +623,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     func testReadConversationsByPanelIdSyncEmptyStoreReturnsEmpty() async throws {
         // setUp clears the store; nothing else pushed.
         let captured: [String: TabConversations] = await MainActor.run {
-            Workspace.readConversationsByPanelIdSync(timeout: 1.0)
+            Workspace.readConversationsByTabIdSync(timeout: 1.0)
         }
         XCTAssertTrue(captured.isEmpty,
                       "expected empty dict from empty store; got \(captured.count) entries")

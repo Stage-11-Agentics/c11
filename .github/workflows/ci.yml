@@ -201,7 +201,11 @@ jobs:
       - name: SSH shell command availability
         run: |
           set -euo pipefail
-          CLI_BINARY="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug/c11' -type f -print -quit)"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+            -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
+            -disableAutomaticPackageResolution -destination "platform=macOS" \
+            -showBuildSettings -json > "$RUNNER_TEMP/c11-build-settings.json"
+          CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
           test -x "$CLI_BINARY"
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
 

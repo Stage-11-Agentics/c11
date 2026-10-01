@@ -173,7 +173,7 @@ private struct ConfirmCard: View {
                 )
         )
         .environment(\.colorScheme, .dark)
-        .accessibilityIdentifier("PaneInteraction.confirm.card")
+        .accessibilityIdentifier("AreaInteraction.confirm.card")
         .onAppear {
             if isCritical { pulse = true }
         }
@@ -275,7 +275,7 @@ private struct TextInputCard: View {
                 Text(errorText)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.red)
-                    .accessibilityIdentifier("PaneInteraction.textInput.error")
+                    .accessibilityIdentifier("AreaInteraction.textInput.error")
             }
 
             HStack(spacing: 8) {
@@ -326,7 +326,7 @@ private struct TextInputCard: View {
                 )
         )
         .environment(\.colorScheme, .dark)
-        .accessibilityIdentifier("PaneInteraction.textInput.card")
+        .accessibilityIdentifier("AreaInteraction.textInput.card")
         .onAppear {
             value = content.defaultValue
             // Seed the bridge so Cmd+D immediately after present() submits the

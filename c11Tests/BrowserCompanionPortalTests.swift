@@ -286,9 +286,7 @@ final class BrowserCompanionPortalTests: XCTestCase {
                   String(describing: type(of: $0)).contains("NSHostingView")
               }),
               let veilIndex = subviews.firstIndex(where: { $0 is BrowserCompanionOverlayHost }),
-              let dragIndex = subviews.firstIndex(where: {
-                  String(describing: type(of: $0)).contains("BrowserPaneDropTargetView")
-              }),
+              let dragIndex = subviews.firstIndex(where: { $0 is BrowserAreaDropTargetView }),
               let modalIndex = subviews.firstIndex(where: { $0 is AreaInteractionOverlayHost })
         else {
             XCTFail("Expected all five portal interaction layers")

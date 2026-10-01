@@ -713,7 +713,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.surfaceTitleBar",
-                            defaultValue: "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+                            defaultValue: "Debug: Theme M1b / Toggle TabTitleBarView"
                         ),
                         checked: m1bSurfaceTitleBarMigrated
                     )
@@ -725,7 +725,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.browserChrome",
-                            defaultValue: "Debug: Theme M1b / Toggle BrowserPanelView"
+                            defaultValue: "Debug: Theme M1b / Toggle BrowserTabView"
                         ),
                         checked: m1bBrowserChromeMigrated
                     )
@@ -737,7 +737,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.markdownChrome",
-                            defaultValue: "Debug: Theme M1b / Toggle MarkdownPanelView"
+                            defaultValue: "Debug: Theme M1b / Toggle MarkdownTabView"
                         ),
                         checked: m1bMarkdownChromeMigrated
                     )
@@ -762,7 +762,7 @@ struct cmuxApp: App {
                     debugCheckedMenuLabel(
                         String(
                             localized: "debug.theme.m1b.toggle.sidebarTabItem",
-                            defaultValue: "Debug: Theme M1b / Toggle ContentView.TabItemView"
+                            defaultValue: "Debug: Theme M1b / Toggle ContentView.WorkspaceRowView"
                         ),
                         checked: m1bSidebarTabItemMigrated
                     )

@@ -277,17 +277,17 @@ def main() -> int:
             storage_session_after = c._call("browser.storage.get", {"tab_id": sid, "type": "session", "key": "beta"}) or {}
             _must(storage_session_after.get("value") is None, f"Expected session key cleared: {storage_session_after}")
 
-            tabs_before = c._call("browser.tab.list", {"tab_id": sid}) or {}
+            tabs_before = c._call("browser.tab.list", {"surface_id": sid}) or {}
             before_count = len(tabs_before.get("tabs") or [])
-            tab_new = c._call("browser.tab.new", {"tab_id": sid, "url": second_url}) or {}
+            tab_new = c._call("browser.tab.new", {"surface_id": sid, "url": second_url}) or {}
             sid2 = str(tab_new.get("tab_id") or "")
             _must(bool(sid2), f"Expected tab_id from browser.tab.new: {tab_new}")
             _wait_selector(c, sid2, "#second", timeout_s=7.0)
-            tabs_after = c._call("browser.tab.list", {"tab_id": sid2}) or {}
+            tabs_after = c._call("browser.tab.list", {"surface_id": sid2}) or {}
             ids_after = {str(item.get("id") or "") for item in (tabs_after.get("tabs") or [])}
             _must(sid2 in ids_after and len(ids_after) >= before_count + 1, f"Expected new tab in list: {tabs_after}")
-            c._call("browser.tab.switch", {"tab_id": sid2, "target_tab_id": sid})
-            c._call("browser.tab.close", {"tab_id": sid, "target_tab_id": sid2})
+            c._call("browser.tab.switch", {"surface_id": sid2, "target_surface_id": sid})
+            c._call("browser.tab.close", {"surface_id": sid, "target_surface_id": sid2})
 
             addscript_payload = c._call("browser.addscript", {"tab_id": sid, "script": "1 + 2"}) or {}
             _must(int(addscript_payload.get("value") or 0) == 3, f"Expected addscript value=3: {addscript_payload}")

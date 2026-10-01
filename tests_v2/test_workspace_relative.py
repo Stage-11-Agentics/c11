@@ -121,7 +121,7 @@ def test_send_workspace_relative(c: cmux, cli: str) -> None:
         cli, ["send", " "],
         env_overrides={"CMUX_WORKSPACE_ID": ws["id"]}
     )
-    _must("OK" in output or ("tab" in output.lower() or "surface" in output.lower()),
+    _must(output.startswith("OK") and "tab:" in output,
           f"Expected OK from send, got: {output}")
     print("  PASS: send workspace-relative (env var accepted)")
 
@@ -136,7 +136,7 @@ def test_send_with_explicit_workspace(c: cmux, cli: str) -> None:
 
     # Send a space character (harmless) with explicit workspace
     output = _run_cli(cli, ["send", "--workspace", ws_ref, " "])
-    _must(output.startswith("OK") or ("tab" in output.lower() or "surface" in output.lower()),
+    _must(output.startswith("OK") and "tab:" in output,
           f"Expected OK from send, got: {output}")
 
     print("  PASS: send with explicit --workspace")
@@ -197,12 +197,12 @@ def test_non_json_output_uses_refs(c: cmux, cli: str) -> None:
     """Non-JSON output from migrated commands uses ref format."""
     # list-panels non-JSON
     output = _run_cli(cli, ["list-tabs"])
-    _must("tab:" in output or "No tabs" in output or "No surfaces" in output,
+    _must("tab:" in output or "No tabs" in output,
           f"Expected ref format in list-tabs output, got: {output}")
 
     # list-panes non-JSON
     output = _run_cli(cli, ["list-areas"])
-    _must("area:" in output or "No areas" in output or "No panes" in output,
+    _must("area:" in output or "No areas" in output,
           f"Expected ref format in list-areas output, got: {output}")
 
     # list-workspaces non-JSON

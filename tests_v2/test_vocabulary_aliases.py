@@ -400,10 +400,13 @@ def test_dual_keys_in_tree_json(cli: str, f: Fixture) -> None:
         tabs, surfaces = area.get("tabs"), area.get("surfaces")
         _must(isinstance(tabs, list) and isinstance(surfaces, list) and len(tabs) == len(surfaces) > 0,
               f"tree area node should carry both `tabs` and `surfaces`: {sorted(area)}")
-        _same_ref(area.get("ref"), "area", pane.get("ref"), "pane", "tree area/pane ref")
+        # `ref` has no legacy twin: both arrays hold the canonical `area:N` / `tab:N` value.
+        _ordinal(area.get("ref"), "area")
+        _must(area.get("ref") == pane.get("ref"), f"tree areas/panes entries should be the same area: {area} {pane}")
         _must(area.get("tab_count") == area.get("surface_count") == len(tabs), f"tree area counts differ: {area}")
         for tab, surface in zip(tabs, surfaces):
-            _same_ref(tab.get("ref"), "tab", surface.get("ref"), "surface", "tree tab/surface ref")
+            _ordinal(tab.get("ref"), "tab")
+            _must(tab.get("ref") == surface.get("ref"), f"tree tabs/surfaces entries should be the same tab: {tab} {surface}")
             _check_tab_row(tab, "tree tab")
             _check_tab_row(surface, "tree surface")
     print("PASS: tree --json carries areas/panes and tabs/surfaces")
@@ -577,6 +580,37 @@ def test_cli_env_vars_target_the_same_tab(c: cmux, cli: str, f: Fixture) -> None
     print("PASS: C11_TAB_ID / C11_SURFACE_ID / CMUX_* and --tab/--surface/--panel/--area/--pane agree")
 
 
+def _last_screen_line(c: cmux, ws: str, tab_id: str) -> str:
+    text = str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": tab_id}).get("text") or "")
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
+def test_free_text_is_never_rewritten(c: cmux, cli: str, f: Fixture) -> None:
+    """Text typed into a tab is data: flag-looking words arrive literally, old or new spelling."""
+    ws = f.ws
+    for token in ("--surface", "--pane", "--panel", "--tab", "--area"):
+        for form in ("after --", "positional"):
+            _cli(cli, ["send-key", "--workspace", ws, "--tab", f.t3, "ctrl+u"])
+            if form == "after --":
+                args = ["send", "--workspace", ws, "--tab", f.t3, "--no-submit", "--", token]
+                env = None
+            else:
+                args = ["send", "--no-submit", token]
+                env = _cli_env({"C11_TAB_ID": f.t3, "C11_WORKSPACE_ID": ws})
+            _cli(cli, args, env=env)
+            deadline = time.time() + 6.0
+            line = ""
+            while time.time() < deadline:
+                line = _last_screen_line(c, ws, f.t3)
+                if line.endswith(token):
+                    break
+                time.sleep(0.15)
+            _must(line.endswith(token), f"send ({form}) of {token!r} did not arrive literally; last line {line!r}")
+    _cli(cli, ["send-key", "--workspace", ws, "--tab", f.t3, "ctrl+u"])
+    print("PASS: flag-looking free text reaches the tab literally")
+
+
 # ---------------------------------------------------------------------------
 
 def main() -> int:
@@ -595,6 +629,7 @@ def main() -> int:
             test_cli_read_command_aliases(cli, fixture)
             test_cli_env_vars_target_the_same_tab(c, cli, fixture)
             test_cli_action_command_aliases(c, cli, fixture)
+            test_free_text_is_never_rewritten(c, cli, fixture)
         finally:
             fixture.close()
     print("PASS: vocabulary aliases")

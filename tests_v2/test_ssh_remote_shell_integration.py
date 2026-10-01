@@ -123,8 +123,7 @@ def _wait_remote_connected(client: cmux, workspace_id: str, timeout: float) -> d
 
 
 def _is_terminal_surface_not_found(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return "terminal tab not found" in text or "terminal surface not found" in text
+    return "terminal surface not found" in str(exc).lower()
 
 
 def _read_probe_value(client: cmux, surface_id: str, command: str, timeout: float = 20.0) -> str:

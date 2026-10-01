@@ -2838,6 +2838,12 @@ class WorkspaceManager: ObservableObject {
         return alert.runModal() == .alertSecondButtonReturn
     }
 
+    /// Closing a workspace that holds one tab is closing one tab, so its card
+    /// starts on Close. A pinned workspace keeps Cancel: the pin asks for it.
+    static func workspaceCloseTakesOneTab(_ workspace: Workspace) -> Bool {
+        !workspace.isPinned && workspace.panels.count == 1
+    }
+
     private struct CloseOtherTabsInFocusedAreaPlan {
         let workspace: Workspace
         let panelIds: [UUID]
@@ -2980,6 +2986,7 @@ class WorkspaceManager: ObservableObject {
                 let accepted = await workspace.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
+                    defaultsToClose: WorkspaceManager.workspaceCloseTakesOneTab(workspace),
                     source: .local
                 )
                 guard accepted else { return }

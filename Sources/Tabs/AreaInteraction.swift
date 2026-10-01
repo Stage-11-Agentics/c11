@@ -48,6 +48,11 @@ public struct ConfirmContent: Identifiable {
     public let cancelLabel: String
     public let role: ConfirmRole
     public let style: ConfirmStyle
+    /// The button the card highlights first, so Return lands on it. Nil
+    /// follows the role: a destructive card starts on Cancel, a standard one
+    /// on its confirm button. Closing a single tab starts on its destructive
+    /// confirm button; closing more than one tab keeps Cancel.
+    public let defaultSelection: ConfirmSelectionField?
     public let source: InteractionSource
     public let completion: (ConfirmResult) -> Void
 
@@ -74,6 +79,7 @@ public struct ConfirmContent: Identifiable {
         cancelLabel: String,
         role: ConfirmRole,
         style: ConfirmStyle = .standard,
+        defaultSelection: ConfirmSelectionField? = nil,
         source: InteractionSource,
         completion: @escaping (ConfirmResult) -> Void
     ) {
@@ -84,6 +90,7 @@ public struct ConfirmContent: Identifiable {
         self.cancelLabel = cancelLabel
         self.role = role
         self.style = style
+        self.defaultSelection = defaultSelection
         self.source = source
         self.completion = completion
     }
@@ -527,9 +534,11 @@ public final class AreaInteractionRuntime: ObservableObject {
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
     /// A destructive card starts on Cancel so a reflexive Return keeps things
-    /// open; a standard question starts on its confirm button.
+    /// open, and a standard question starts on its confirm button, unless the
+    /// card names its own default.
     static func initialSelection(for content: ConfirmContent) -> ConfirmSelectionField {
-        content.role == .destructive ? .cancel : .confirm
+        if let selection = content.defaultSelection { return selection }
+        return content.role == .destructive ? .cancel : .confirm
     }
 
     public func hasActiveDestructiveConfirm(panelId: UUID) -> Bool {

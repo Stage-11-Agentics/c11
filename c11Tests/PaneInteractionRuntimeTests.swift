@@ -425,6 +425,29 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertEqual(result, .cancelled)
     }
 
+    func testSingleTabCloseStartsOnClose() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        runtime.present(panelId: panelId, interaction: .confirm(ConfirmContent(
+            title: "Close tab?",
+            message: nil,
+            confirmLabel: "Close",
+            cancelLabel: "Cancel",
+            role: .destructive,
+            defaultSelection: .confirm,
+            source: .local,
+            completion: { result = $0 }
+        )))
+        XCTAssertEqual(runtime.confirmSelection[panelId], .confirm)
+        // Still destructive, so Cmd+D never accepts it.
+        XCTAssertTrue(runtime.hasActiveDestructiveConfirm(panelId: panelId))
+        XCTAssertTrue(runtime.handleKeyDown(panelId: panelId, keyCode: 36)) // return
+
+        XCTAssertEqual(result, .confirmed)
+    }
+
     func testHandleKeyDownConfirmUpDownAndReturn() {
         let runtime = AreaInteractionRuntime()
         let panelId = UUID()

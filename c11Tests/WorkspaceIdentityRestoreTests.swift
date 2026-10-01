@@ -18,7 +18,7 @@ import XCTest
 @MainActor
 final class WorkspaceIdentityRestoreTests: XCTestCase {
     func testSingleWorkspaceIdIsStableAcrossTabManagerRoundTrip() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let originalId = workspace.id
 
@@ -26,19 +26,19 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         XCTAssertEqual(snapshot.workspaces.count, 1)
         XCTAssertEqual(snapshot.workspaces.first?.id, originalId)
 
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        XCTAssertEqual(restored.tabs.count, 1)
+        XCTAssertEqual(restored.workspaceList.count, 1)
         XCTAssertEqual(
-            restored.tabs.first?.id,
+            restored.workspaceList.first?.id,
             originalId,
             "Restored workspace should keep the UUID from the snapshot"
         )
     }
 
     func testMultipleWorkspaceIdsSurviveRoundTripWithoutCollisionOrSwap() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let first = try XCTUnwrap(manager.selectedWorkspace)
         first.setCustomTitle("First")
         // Force append-to-end placement so the test's index-based assertions on
@@ -52,7 +52,7 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let third = manager.addWorkspace(select: true, placementOverride: .end)
         third.setCustomTitle("Third")
 
-        let orderedIds = manager.tabs.map(\.id)
+        let orderedIds = manager.workspaceList.map(\.id)
         XCTAssertEqual(orderedIds.count, 3)
         XCTAssertEqual(Set(orderedIds).count, 3, "Pre-snapshot workspace ids must be distinct")
 
@@ -60,10 +60,10 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let snapshotIds = snapshot.workspaces.map(\.id)
         XCTAssertEqual(snapshotIds, orderedIds)
 
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        let restoredIds = restored.tabs.map(\.id)
+        let restoredIds = restored.workspaceList.map(\.id)
         XCTAssertEqual(
             restoredIds,
             orderedIds,
@@ -73,25 +73,25 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
 
         // Workspace-scoped metadata (customTitle) must still track the correct workspace
         // after restore — a sanity check that the id stability doesn't cross ids.
-        XCTAssertEqual(restored.tabs[0].customTitle, "First")
-        XCTAssertEqual(restored.tabs[1].customTitle, "Second")
-        XCTAssertEqual(restored.tabs[2].customTitle, "Third")
+        XCTAssertEqual(restored.workspaceList[0].customTitle, "First")
+        XCTAssertEqual(restored.workspaceList[1].customTitle, "Second")
+        XCTAssertEqual(restored.workspaceList[2].customTitle, "Third")
     }
 
     func testFallbackWorkspaceOnEmptySnapshotGetsFreshId() {
-        let manager = TabManager()
-        let emptySnapshot = SessionTabManagerSnapshot(
+        let manager = WorkspaceManager()
+        let emptySnapshot = SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: nil,
             workspaces: []
         )
 
         manager.restoreSessionSnapshot(emptySnapshot)
 
-        XCTAssertEqual(manager.tabs.count, 1)
+        XCTAssertEqual(manager.workspaces.count, 1)
         // The empty-snapshot fallback has no snapshot id to inject; it must still
         // mint a valid fresh UUID — this guards the fallback code path at
         // TabManager.restoreSessionSnapshot.
-        XCTAssertNotNil(manager.selectedTabId)
-        XCTAssertEqual(manager.selectedTabId, manager.tabs.first?.id)
+        XCTAssertNotNil(manager.selectedWorkspaceId)
+        XCTAssertEqual(manager.selectedWorkspaceId, manager.workspaces.first?.id)
     }
 }

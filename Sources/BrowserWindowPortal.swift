@@ -921,7 +921,7 @@ final class WindowBrowserHostView: NSView {
             // the explicit Bonsplit drag types so WKWebView cannot steal the
             // session as a file upload.
             return DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
-                || DragOverlayRoutingPolicy.hasSidebarTabReorder(pasteboardTypes)
+                || DragOverlayRoutingPolicy.hasSidebarWorkspaceReorder(pasteboardTypes)
         default:
             return false
         }

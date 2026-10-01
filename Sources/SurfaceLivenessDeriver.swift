@@ -177,8 +177,8 @@ enum SurfaceLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
-                          let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                    guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
+                          let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                         return
                     }
                     workspace.setAgentCold(false, forSurface: surfaceId)
@@ -269,8 +269,8 @@ enum SurfaceLivenessDeriver {
         // Mirror onto the Workspace projection if it is currently resident.
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
-                      let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
                 workspace.setAgentCold(false, forSurface: surfaceId)
@@ -300,8 +300,8 @@ enum SurfaceLivenessDeriver {
     ) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
-                      let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),
+                      let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
                 if isCold,

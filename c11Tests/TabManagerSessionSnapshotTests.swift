@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class TabManagerSessionSnapshotTests: XCTestCase {
     func testSessionSnapshotSerializesWorkspacesAndRestoreRebuildsSelection() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let firstWorkspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -18,37 +18,37 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
 
         let secondWorkspace = manager.addWorkspace(select: true)
         secondWorkspace.setCustomTitle("Second")
-        XCTAssertEqual(manager.tabs.count, 2)
-        XCTAssertEqual(manager.selectedTabId, secondWorkspace.id)
+        XCTAssertEqual(manager.workspaceList.count, 2)
+        XCTAssertEqual(manager.selectedWorkspaceId, secondWorkspace.id)
 
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
         XCTAssertEqual(snapshot.workspaces.count, 2)
         XCTAssertEqual(snapshot.selectedWorkspaceIndex, 1)
 
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
 
-        XCTAssertEqual(restored.tabs.count, 2)
-        XCTAssertEqual(restored.selectedTabId, restored.tabs[1].id)
-        XCTAssertEqual(restored.tabs[0].customTitle, "First")
-        XCTAssertEqual(restored.tabs[1].customTitle, "Second")
+        XCTAssertEqual(restored.workspaceList.count, 2)
+        XCTAssertEqual(restored.selectedWorkspaceId, restored.workspaceList[1].id)
+        XCTAssertEqual(restored.workspaceList[0].customTitle, "First")
+        XCTAssertEqual(restored.workspaceList[1].customTitle, "Second")
     }
 
     func testRestoreSessionSnapshotWithNoWorkspacesKeepsSingleFallbackWorkspace() {
-        let manager = TabManager()
-        let emptySnapshot = SessionTabManagerSnapshot(
+        let manager = WorkspaceManager()
+        let emptySnapshot = SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: nil,
             workspaces: []
         )
 
         manager.restoreSessionSnapshot(emptySnapshot)
 
-        XCTAssertEqual(manager.tabs.count, 1)
-        XCTAssertNotNil(manager.selectedTabId)
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertNotNil(manager.selectedWorkspaceId)
     }
 
     func testSessionSnapshotRoundtripsWorkspaceMetadata() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -65,16 +65,16 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.workspaces[0].metadata?["icon"], "🦊")
         XCTAssertEqual(snapshot.workspaces[0].metadata?["custom.tag"], "v2")
 
-        let restored = TabManager()
+        let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
-        XCTAssertEqual(restored.tabs.count, 1)
-        XCTAssertEqual(restored.tabs[0].metadata["description"], "Backend refactor")
-        XCTAssertEqual(restored.tabs[0].metadata["icon"], "🦊")
-        XCTAssertEqual(restored.tabs[0].metadata["custom.tag"], "v2")
+        XCTAssertEqual(restored.workspaceList.count, 1)
+        XCTAssertEqual(restored.workspaceList[0].metadata["description"], "Backend refactor")
+        XCTAssertEqual(restored.workspaceList[0].metadata["icon"], "🦊")
+        XCTAssertEqual(restored.workspaceList[0].metadata["custom.tag"], "v2")
     }
 
     func testEmptyMetadataIsOmittedFromSnapshot() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -86,7 +86,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
     }
 
     func testAutosaveFingerprintChangesOnMetadataValueEdit() {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace else {
             XCTFail("Expected initial workspace")
             return
@@ -100,7 +100,7 @@ final class TabManagerSessionSnapshotTests: XCTestCase {
     }
 
     func testSessionSnapshotExcludesRemoteWorkspacesFromRestore() throws {
-        let manager = TabManager()
+        let manager = WorkspaceManager()
         let remoteWorkspace = manager.addWorkspace(select: true)
         let configuration = WorkspaceRemoteConfiguration(
             destination: "cmux-macmini",

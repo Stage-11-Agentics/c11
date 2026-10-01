@@ -479,14 +479,14 @@ final class WorkspaceSelectionLifecycleTests: XCTestCase {
     }
 
     func testDeselectingWorkspaceThrottlesItsTerminalsAndSelectingActivates() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let firstTerminal = try XCTUnwrap(terminals(first).first)
         let secondTerminal = try XCTUnwrap(terminals(second).first)
 
         manager.selectWorkspace(second)
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
         XCTAssertEqual(firstTerminal.lifecycle.state, .throttled)
         XCTAssertEqual(secondTerminal.lifecycle.state, .active)
         XCTAssertEqual(
@@ -502,8 +502,8 @@ final class WorkspaceSelectionLifecycleTests: XCTestCase {
     }
 
     func testTabCreatedInsideHiddenWorkspaceStaysThrottled() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         manager.selectWorkspace(second)
 
@@ -524,8 +524,8 @@ final class WorkspaceSelectionLifecycleTests: XCTestCase {
     }
 
     func testHibernatedTerminalIsNotReactivatedBySelection() throws {
-        let manager = TabManager()
-        let first = try XCTUnwrap(manager.tabs.first)
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.workspaces.first)
         let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         let firstTerminal = try XCTUnwrap(terminals(first).first)
 

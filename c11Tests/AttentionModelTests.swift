@@ -572,13 +572,13 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(indexes.rawUnreadCount, 2)
         XCTAssertEqual(indexes.unreadCount, 1)
         XCTAssertTrue(
-            indexes.rawUnreadByTabSurface.contains(
-                .init(tabId: workspace, surfaceId: suppressedSurface)
+            indexes.rawUnreadByWorkspaceSurface.contains(
+                .init(workspaceId: workspace, surfaceId: suppressedSurface)
             )
         )
         XCTAssertFalse(
-            indexes.unreadByTabSurface.contains(
-                .init(tabId: workspace, surfaceId: suppressedSurface)
+            indexes.unreadByWorkspaceSurface.contains(
+                .init(workspaceId: workspace, surfaceId: suppressedSurface)
             )
         )
     }
@@ -634,8 +634,8 @@ final class AttentionModelTests: XCTestCase {
         let originalNotifications = notificationStore.notifications
         var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, workspaceId in
+            if workspaceId == workspace { edges.append(entered) }
         }
         defer {
             notificationStore.resetWaitingEdgeHandlerForTesting()
@@ -671,8 +671,8 @@ final class AttentionModelTests: XCTestCase {
         let originalNotifications = notificationStore.notifications
         var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, workspaceId in
+            if workspaceId == workspace { edges.append(entered) }
         }
         defer {
             notificationStore.resetWaitingEdgeHandlerForTesting()
@@ -968,7 +968,7 @@ final class AttentionModelTests: XCTestCase {
     private func notification(workspace: UUID, surface: UUID) -> TerminalNotification {
         TerminalNotification(
             id: UUID(),
-            tabId: workspace,
+            workspaceId: workspace,
             surfaceId: surface,
             title: "Waiting",
             subtitle: "",

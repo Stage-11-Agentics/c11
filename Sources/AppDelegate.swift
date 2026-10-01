@@ -4717,11 +4717,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func buildSessionSnapshot(
-        includeScrollback: Bool,
-        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
-    ) -> AppSessionSnapshot? {
-        let contexts = mainWindowContexts.values.sorted { lhs, rhs in
+    /// Window order used by `buildSessionSnapshot`: key window first, then by
+    /// window id. Snapshot windows carry no id, so anything that pairs
+    /// snapshot windows back to live windows by position must use this same
+    /// ordering.
+    private func sessionSnapshotOrderedWindowContexts() -> [MainWindowContext] {
+        mainWindowContexts.values.sorted { lhs, rhs in
             let lhsWindow = lhs.window ?? windowForMainWindowId(lhs.windowId)
             let rhsWindow = rhs.window ?? windowForMainWindowId(rhs.windowId)
             let lhsIsKey = lhsWindow?.isKeyWindow ?? false
@@ -4731,6 +4732,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return lhs.windowId.uuidString < rhs.windowId.uuidString
         }
+    }
+
+    private func buildSessionSnapshot(
+        includeScrollback: Bool,
+        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+    ) -> AppSessionSnapshot? {
+        let contexts = sessionSnapshotOrderedWindowContexts()
 
         guard !contexts.isEmpty else { return nil }
 
@@ -4838,8 +4846,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// touches `SurfaceMetadataStore`; panels, layouts, and all other
     /// workspace state remain untouched.
     func debugForceMetadataSaveAndLoad() -> Bool {
-        // 1. Force a synchronous disk write of the live state.
-        let saved = saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false)
+        // 1. Force a synchronous disk write of the live state. Without
+        // `forceSynchronousWrite` the write is queued on
+        // `sessionPersistenceQueue` and step 2 would read the previous
+        // on-disk snapshot.
+        let saved = saveSessionSnapshot(
+            includeScrollback: false,
+            removeWhenEmpty: false,
+            forceSynchronousWrite: true
+        )
         guard saved else {
             dlog("debug.session.save_and_load step=save result=failed")
             return false
@@ -4860,9 +4875,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // most robust way to pair them. For each panel in the snapshot,
         // clear the live store entry and replay persisted metadata.
         for (windowIdx, windowSnapshot) in loaded.windows.enumerated() {
-            let contexts = mainWindowContexts.values.sorted(by: {
-                $0.windowId.uuidString < $1.windowId.uuidString
-            })
+            // Same ordering the save used (key window first), so snapshot
+            // window N pairs with live window N.
+            let contexts = sessionSnapshotOrderedWindowContexts()
             guard windowIdx < contexts.count else { continue }
             let context = contexts[windowIdx]
             for (wsIdx, wsSnapshot) in windowSnapshot.tabManager.workspaces.enumerated() {

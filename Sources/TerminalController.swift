@@ -750,7 +750,7 @@ class TerminalController {
     /// value onto: the explicit surface when it belongs to the tab, else the
     /// tab's focused surface. Called from the same main-queue blocks that already
     /// mutate `tab` state, so it stays non-isolated to match those call sites.
-    static func sidebarMirrorSurface(tab: Tab, explicit: UUID?) -> UUID? {
+    static func sidebarMirrorSurface(tab: Workspace, explicit: UUID?) -> UUID? {
         if let explicit, tab.panels[explicit] != nil { return explicit }
         return tab.focusedPanelId
     }
@@ -5719,7 +5719,7 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            let tab: Tab?
+            let tab: Workspace?
             if let tabId = UUID(uuidString: tabArg) {
                 tab = tabForSidebarMutation(id: tabId)
             } else {
@@ -6370,7 +6370,7 @@ class TerminalController {
         }
     }
 
-    private func resolveTab(from arg: String, tabManager: TabManager) -> Tab? {
+    private func resolveTab(from arg: String, tabManager: TabManager) -> Workspace? {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             guard let selected = tabManager.selectedTabId else { return nil }
@@ -7729,7 +7729,7 @@ class TerminalController {
         return "ERROR: \(r.code): \(r.message)"
     }
 
-    private func resolveTabForReport(_ args: String) -> Tab? {
+    private func resolveTabForReport(_ args: String) -> Workspace? {
         guard let tabManager else { return nil }
         let parsed = parseOptions(args)
         if let tabArg = parsed.options["tab"], !tabArg.isEmpty {
@@ -7764,7 +7764,7 @@ class TerminalController {
         return (nil, error)
     }
 
-    private func tabForSidebarMutation(id: UUID) -> Tab? {
+    private func tabForSidebarMutation(id: UUID) -> Workspace? {
         if let tab = tabManager?.tabs.first(where: { $0.id == id }) {
             return tab
         }
@@ -7795,7 +7795,7 @@ class TerminalController {
         args: String,
         options: [String: String],
         missingPanelUsage: String,
-        mutation: @escaping (Tab, UUID) -> Void
+        mutation: @escaping (Workspace, UUID) -> Void
     ) -> String {
         let rawPanelArg = options["panel"] ?? options["surface"]
         let surfaceIdFromOptions: UUID?

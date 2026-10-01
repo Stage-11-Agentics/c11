@@ -8402,7 +8402,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         pasteboard.setString(payload, forType: .string)
     }
 
-    private func sendTextWhenReady(_ text: String, to tab: Tab, beforeSend: (() -> Void)? = nil) {
+    private func sendTextWhenReady(_ text: String, to tab: Workspace, beforeSend: (() -> Void)? = nil) {
         if let terminalPanel = tab.focusedTerminalPanel, terminalPanel.surface.surface != nil {
             beforeSend?()
             terminalPanel.sendText(text)

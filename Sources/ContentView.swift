@@ -8460,7 +8460,7 @@ struct VerticalTabsSidebar: View {
     }
 
     private func themedSidebarTabColors(
-        tab: Tab,
+        tab: Workspace,
         isActive: Bool,
         isMultiSelected: Bool
     ) -> (background: NSColor?, rail: NSColor?) {
@@ -11963,7 +11963,7 @@ private struct TabItemView: View, Equatable {
     let tabManager: TabManager
     let notificationStore: TerminalNotificationStore
     @Environment(\.colorScheme) private var colorScheme
-    @ObservedObject var tab: Tab
+    @ObservedObject var tab: Workspace
     let index: Int
     let isActive: Bool
     /// C11-104: precomputed worktree/branch chip rows for the focused
@@ -14231,7 +14231,7 @@ private struct SidebarProgressIndicator: View {
 /// status expires and the projector hands off to derived truth, this row goes
 /// quiet instead of duplicating the pulse with a second Idle/Working pill.
 private struct SidebarStatusSection: View {
-    @ObservedObject var tab: Tab
+    @ObservedObject var tab: Workspace
     let isActive: Bool
     let onFocus: () -> Void
 

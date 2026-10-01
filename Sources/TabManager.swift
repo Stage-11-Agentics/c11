@@ -6,9 +6,6 @@ import CoreVideo
 import Combine
 import os
 
-// MARK: - Tab Type Alias for Backwards Compatibility
-// The old Tab class is replaced by Workspace
-typealias Tab = Workspace
 
 /// Always-on signpost facade for workspace-switch perf instrumentation.
 ///

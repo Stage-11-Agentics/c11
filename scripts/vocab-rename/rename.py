@@ -59,12 +59,18 @@ def load_table(path):
     paths = []
     deletes = []
     keeps = []
+    callees = {}  # callee/type name -> "keep" | "rename"
     with open(path, encoding="utf-8") as fh:
         for ln, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             cols = line.split("\t")
+            if cols[0] == "@callee":
+                if len(cols) != 3 or cols[2] not in ("keep", "rename"):
+                    sys.exit(f"{path}:{ln}: @callee needs name and keep|rename")
+                callees[cols[1]] = cols[2]
+                continue
             if cols[0] == "@keep":
                 if len(cols) not in (4, 5):
                     sys.exit(f"{path}:{ln}: @keep needs glob, regex, names[, exempt names]")
@@ -86,7 +92,7 @@ def load_table(path):
             fallback = cols[3] if len(cols) > 3 and cols[3] else None
             flags = set(cols[4].split(",")) if len(cols) > 4 and cols[4] else set()
             renames.setdefault(cols[0], []).append((cols[1], globs, fallback, flags))
-    return renames, paths, deletes, keeps
+    return renames, paths, deletes, keeps, callees
 
 
 def glob_match(rel, globs):
@@ -400,6 +406,27 @@ def is_implicit_member(src, a):
 VENDOR_CALLEES = {"ScriptTab", "preloadTerminalPanelForDebugStress", "DebugStressTerminalLoadTarget", "moveBonsplitTab", "locateBonsplitSurface", "setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
 
 
+def callee_name(src, a):
+    """Identifier before the `(` that encloses position a, or None."""
+    depth, i = 0, a - 1
+    while i >= 0:
+        c = src[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                j = i - 1
+                while j >= 0 and src[j] in " \t":
+                    j -= 1
+                e = j + 1
+                while j >= 0 and (src[j].isalnum() or src[j] == "_"):
+                    j -= 1
+                return src[j + 1:e] or None
+            depth -= 1
+        i -= 1
+    return None
+
+
 def vendor_callee(src, a):
     """Name of the callee whose argument list contains the label at a (best effort)."""
     depth, i = 0, a - 1
@@ -442,7 +469,7 @@ def is_func_decl_param(src, a, b):
         k -= 1
     if k < 0:
         return False
-    m = re.search(r"(?:\bfunc\s+[A-Za-z_]\w*\s*(?:<[^>]*>)?|\binit[?!]?\s*(?:<[^>]*>)?)\s*$", src[max(0, k - 120):k])
+    m = re.search(r"(?:\b(?:func|case)\s+[A-Za-z_]\w*\s*(?:<[^>]*>)?|\binit[?!]?\s*(?:<[^>]*>)?)\s*$", src[max(0, k - 120):k])
     return m is not None
 
 
@@ -467,12 +494,13 @@ def is_call_label(src, a, b):
     return True
 
 
-def rewrite(src, rel, renames, report=None, keep_rules=None):
+def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
     lx = Lexer(src)
     lx.scan(0, False)
     reg, spans = regions(src, lx)
     keeps = [(set(n.split(',')), re.compile(rx), set(x.split(',')) if x else set()) for g, rx, n, x in (keep_rules or []) if any(fnmatch.fnmatch(rel, gg) for gg in g.split(","))]
     kept_cache = {}
+    prop_owner = {}  # token start of a stored property declaration -> owning type name
     pin_enum = {}   # token start -> old name, for implicit-raw String enum cases
     case_decl = set()  # token starts of enum case declarations
     hazard_pos = {}  # token start -> description, Codable property/case
@@ -483,6 +511,8 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         raw_string = kind == "enum" and re.search(r":\s*(?:[\w.,\s]*?\b)?String\b", h) is not None
         props, cases = declared_names(src, inside)
         case_decl.update(a for a, _ in cases)
+        for a, _ in props:
+            prop_owner[a] = name
         has_ck = any(src[a:b] == "CodingKeys" for a, b in inside)
         if raw_string:
             for a, b in cases:
@@ -513,21 +543,31 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         pre = src[max(0, a - 20):a]
         if pre.endswith(VENDOR_RECEIVERS) or pre.endswith("@objc("):
             continue  # vendor member / ObjC runtime name (an external contract)
-        if "labelonly" in flags or "recvmgr" in flags:
-            ok = ("labelonly" in flags and is_call_label(src, a, b) and not vendor_callee(src, a)) or (
-                "recvmgr" in flags and RECV_MGR.search(src[max(0, a - 80):a]) is not None)
-            if not ok:
-                continue  # leaf file: only call labels / manager-receiver members follow the rename
-        if "noimplicit" in flags and a in case_decl:
-            continue  # enum case declaration: keep, its `.case` uses are kept too
-        if "noimplicit" in flags and is_implicit_member(src, a):
-            continue  # leading-dot implicit member (an enum case), not a property
+        is_label = is_call_label(src, a, b)
+        is_param = (not is_label) and is_func_decl_param(src, a, b)
+        rule = None
+        if callees:
+            if is_label or is_param:
+                rule = callees.get(callee_name(src, a) or "")
+            elif a in prop_owner:
+                rule = callees.get(prop_owner[a])
+        if rule == "keep":
+            continue
         member = a >= 1 and src[a - 1] == "." and not is_implicit_member(src, a)
         mgr_member = member and RECV_MGR.search(src[max(0, a - 80):a - 1] + ".") is not None
-        if keeps and not mgr_member:  # (member/label exemptions handled inside)
-            skip = False
+        blocked = None
+        if "labelonly" in flags or "recvmgr" in flags:
+            ok = ("labelonly" in flags and is_label and not vendor_callee(src, a)) or (
+                "recvmgr" in flags and RECV_MGR.search(src[max(0, a - 80):a]) is not None)
+            if not ok:
+                blocked = "leaf"
+        if blocked is None and "noimplicit" in flags and a in case_decl:
+            blocked = "case"
+        if blocked is None and "noimplicit" in flags and is_implicit_member(src, a):
+            blocked = "implicit"
+        if blocked is None and keeps and not mgr_member:
             for names, rx, exempt in keeps:
-                if tok in exempt and (member or (is_call_label(src, a, b) and not vendor_callee(src, a) is True)):
+                if tok in exempt and (member or (is_label and vendor_callee(src, a) is not True)):
                     continue  # member access / c11 call label: follow the declaration
                 if tok in names:
                     key = (id(rx), r)
@@ -535,21 +575,25 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
                         a0, b0 = spans[r]
                         kept_cache[key] = bool(rx.search(src[a0:b0]))
                     if kept_cache[key]:
-                        skip = True
+                        blocked = "keep"
                         break
-            if skip:
-                continue
-        present = by_region[r]
-        if new in present and not member and not is_call_label(src, a, b):
-            if is_func_decl_param(src, a, b):
-                inner = fallback if fallback and fallback not in present else tok
-                new = f"{new} {inner}"  # `func f(newLabel inner: T)`: the label follows the rename, the body keeps a safe name
-            elif fallback and fallback not in present:
+        if blocked is None and new in by_region[r] and not member and not is_label:
+            if is_param:
+                inner = fallback if fallback and fallback not in by_region[r] else tok
+                new = f"{new} {inner}"  # `func f(newLabel inner: T)`: label follows the rename, body keeps a safe name
+            elif fallback and fallback not in by_region[r]:
                 new = fallback
             else:
-                if report is not None:
+                blocked = "collision"
+                if rule != "rename" and report is not None:
                     line = src.count("\n", 0, a) + 1
                     report.append(f"COLLISION {rel}:{line} {tok} -> {new} (already in scope; left as is)")
+        if blocked is not None:
+            if rule == "rename":
+                if is_param:
+                    new = f"{new} {tok}"
+                # call labels and properties: follow the declaration
+            else:
                 continue
         out.append(src[last:a])
         if a in pin_enum:
@@ -618,7 +662,7 @@ def main(argv):
     use_git = "--no-git" not in argv
     if "--root" in argv:
         root = argv[argv.index("--root") + 1]
-    renames, paths, deletes, keeps = load_table(table)
+    renames, paths, deletes, keeps, callees = load_table(table)
     validate(renames)
     for rel, text in deletes:
         full = os.path.join(root, rel)
@@ -635,7 +679,7 @@ def main(argv):
     for full in sorted(swift_files(root)):
         rel = os.path.relpath(full, root)
         src = open(full, encoding="utf-8").read()
-        new, n = rewrite(src, rel, renames, report, keeps)
+        new, n = rewrite(src, rel, renames, report, keeps, callees)
         if n:
             total_files += 1
             total_hits += n

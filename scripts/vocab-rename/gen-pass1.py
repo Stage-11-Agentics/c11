@@ -21,6 +21,9 @@ LEAF_FILES = [
     "!c11UITests/**", "!Sources/TabLayoutSettings.swift", "!c11Tests/TabLayoutSettingsTests.swift",
 ]
 BONSPLIT_SIGNAL = r"bonsplitController\.|\bTabID\b|Bonsplit\.Tab\b|BonsplitTab|\bTabInfo\b|inPane:|splitTabBar"
+# Callees whose argument labels follow (rename) or ignore (keep) the rename: from compile errors.
+CALLEES = {"BrowserPaneDragTransfer": "keep", "move": "keep", "equalizeSplits": "rename",
+           "matchesCurrentTerminalFocusTarget": "rename"}
 NOIMPLICIT = {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}
 
 SUBSTRING_RULES = [  # (old substring, new substring), applied to whole identifiers
@@ -93,6 +96,8 @@ def main():
            "# Columns: old<TAB>new<TAB>globs<TAB>fallback-on-shadowing-collision<TAB>flags",
            "@path\tSources/TabManager.swift\tSources/WorkspaceManager.swift",
            "@delete\tSources/TabManager.swift\tvar selectedTab: Workspace? { selectedWorkspace }"]
+    for name, how in sorted(CALLEES.items()):
+        out.append(f"@callee\t{name}\t{how}")
     out.append("# Members that touch the bonsplit leaf-tab API keep the generic names (they mean bonsplit tabs there).")
     keep_names = ",".join(sorted(set(ID_FAMILY) | {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}))
     exempt = ",".join(sorted(set(ID_FAMILY) | {"selectedTabId", "tabId", "tabIds"}))

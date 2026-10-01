@@ -397,7 +397,7 @@ def is_implicit_member(src, a):
     return True
 
 
-VENDOR_CALLEES = {"preloadTerminalPanelForDebugStress", "DebugStressTerminalLoadTarget", "moveBonsplitTab", "locateBonsplitSurface", "setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
+VENDOR_CALLEES = {"ScriptTab", "preloadTerminalPanelForDebugStress", "DebugStressTerminalLoadTarget", "moveBonsplitTab", "locateBonsplitSurface", "setLinkedHover", "createTab", "updateTab", "selectTab", "closeTab", "moveTab", "reorderTab", "tab", "tabs"}
 
 
 def vendor_callee(src, a):

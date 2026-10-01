@@ -773,8 +773,8 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         // looking up — same conversion `WorkspacePlanCapture.panelID(forTabIDString:)`
         // does at the v2 socket boundary.
         let livePlanIds: [String] = livePane.tabs.map { bonsplitTab in
-            guard let tabUUID = UUID(uuidString: bonsplitTab.id),
-                  let panelId = workspace.tabIdFromBonsplitTabId(TabID(uuid: tabUUID)),
+            guard let bonsplitTabUUID = UUID(uuidString: bonsplitTab.id),
+                  let panelId = workspace.tabIdFromBonsplitTabId(TabID(uuid: bonsplitTabUUID)),
                   let planId = panelUUIDToPlanId[panelId] else {
                 return "unknown(\(bonsplitTab.id))"
             }

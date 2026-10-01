@@ -2688,7 +2688,6 @@ class WorkspaceManager: ObservableObject {
     }
 
     // Keep closeTab as convenience alias
-    func closeCurrentTabWithConfirmation() { closeCurrentWorkspaceWithConfirmation() }
 
     func closeCurrentWorkspace() {
         guard let selectedId = selectedWorkspaceId,
@@ -2857,15 +2856,15 @@ class WorkspaceManager: ObservableObject {
             return nil
         }
 
-        let tabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
-        guard !tabsInPane.isEmpty else { return nil }
-        guard let selectedBonsplitTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id ?? tabsInPane.first?.id else {
+        let bonsplitTabsInPane = workspace.bonsplitController.tabs(inPane: paneId)
+        guard !bonsplitTabsInPane.isEmpty else { return nil }
+        guard let selectedBonsplitTabId = workspace.bonsplitController.selectedTab(inPane: paneId)?.id ?? bonsplitTabsInPane.first?.id else {
             return nil
         }
 
         var targetPanelIds: [UUID] = []
         var targetTitles: [String] = []
-        for bonsplitTab in tabsInPane where bonsplitTab.id != selectedBonsplitTabId {
+        for bonsplitTab in bonsplitTabsInPane where bonsplitTab.id != selectedBonsplitTabId {
             guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
             if workspace.isPanelPinned(panelId) {
                 continue
@@ -4283,8 +4282,8 @@ class WorkspaceManager: ObservableObject {
                focus: true,
                preferredProfileID: snapshot.profileID
            ) {
-            let tabCount = workspace.bonsplitController.tabs(inPane: originalPane).count
-            let maxIndex = max(0, tabCount - 1)
+            let bonsplitTabCount = workspace.bonsplitController.tabs(inPane: originalPane).count
+            let maxIndex = max(0, bonsplitTabCount - 1)
             let targetIndex = min(max(snapshot.originalTabIndex, 0), maxIndex)
             _ = workspace.reorderSurface(panelId: browserPanel.id, toIndex: targetIndex)
             return browserPanel.id
@@ -4293,8 +4292,8 @@ class WorkspaceManager: ObservableObject {
         if let orientation = snapshot.fallbackSplitOrientation,
            let fallbackAnchorPaneId = snapshot.fallbackAnchorPaneId,
            let anchorPane = workspace.bonsplitController.allPaneIds.first(where: { $0.id == fallbackAnchorPaneId }),
-           let anchorTab = workspace.bonsplitController.selectedTab(inPane: anchorPane) ?? workspace.bonsplitController.tabs(inPane: anchorPane).first,
-           let anchorPanelId = workspace.tabIdFromBonsplitTabId(anchorTab.id),
+           let anchorBonsplitTab = workspace.bonsplitController.selectedTab(inPane: anchorPane) ?? workspace.bonsplitController.tabs(inPane: anchorPane).first,
+           let anchorPanelId = workspace.tabIdFromBonsplitTabId(anchorBonsplitTab.id),
            let browserPanelId = workspace.newBrowserSplit(
                from: anchorPanelId,
                orientation: orientation,

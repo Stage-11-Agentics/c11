@@ -6056,13 +6056,26 @@ class TerminalController {
     private struct LayoutDebugSelectedPanel: Codable, Sendable {
         let paneId: String
         let paneFrame: PixelRect?
-        let selectedTabId: String?
+        let selectedBonsplitTabId: String?
         let panelId: String?
         let panelType: String?
         let inWindow: Bool?
         let hidden: Bool?
         let viewFrame: PixelRect?
         let splitViews: [LayoutDebugSplitView]?
+
+        // C11-248: persisted keys keep their on-disk names.
+        enum CodingKeys: String, CodingKey {
+            case paneId
+            case paneFrame
+            case selectedBonsplitTabId = "selectedTabId"
+            case panelId
+            case panelType
+            case inWindow
+            case hidden
+            case viewFrame
+            case splitViews
+        }
     }
 
     private struct LayoutDebugSplitView: Codable, Sendable {
@@ -6160,13 +6173,13 @@ class TerminalController {
             let selectedPanels: [LayoutDebugSelectedPanel] = workspace.bonsplitController.allPaneIds.map { paneId in
                 let paneIdStr = paneId.id.uuidString
                 let paneFrame = paneFrames[paneIdStr]
-                let selectedTabId = layout.panes.first(where: { $0.paneId == paneIdStr })?.selectedTabId
+                let selectedBonsplitTabId = layout.panes.first(where: { $0.paneId == paneIdStr })?.selectedTabId
 
 	                guard let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId) else {
 	                    return LayoutDebugSelectedPanel(
 	                        paneId: paneIdStr,
 	                        paneFrame: paneFrame,
-	                        selectedTabId: selectedTabId,
+	                        selectedBonsplitTabId: selectedBonsplitTabId,
 	                        panelId: nil,
 	                        panelType: nil,
 	                        inWindow: nil,
@@ -6181,7 +6194,7 @@ class TerminalController {
 	                    return LayoutDebugSelectedPanel(
 	                        paneId: paneIdStr,
 	                        paneFrame: paneFrame,
-	                        selectedTabId: selectedTabId,
+	                        selectedBonsplitTabId: selectedBonsplitTabId,
 	                        panelId: nil,
 	                        panelType: nil,
 	                        inWindow: nil,
@@ -6197,7 +6210,7 @@ class TerminalController {
 		                    return LayoutDebugSelectedPanel(
 	                        paneId: paneIdStr,
 	                        paneFrame: paneFrame,
-	                        selectedTabId: selectedTabId,
+	                        selectedBonsplitTabId: selectedBonsplitTabId,
 	                        panelId: panelId.uuidString,
 	                        panelType: tp.panelType.rawValue,
 	                        inWindow: tp.surface.isViewInWindow,
@@ -6213,7 +6226,7 @@ class TerminalController {
 		                    return LayoutDebugSelectedPanel(
 	                        paneId: paneIdStr,
 	                        paneFrame: paneFrame,
-	                        selectedTabId: selectedTabId,
+	                        selectedBonsplitTabId: selectedBonsplitTabId,
 	                        panelId: panelId.uuidString,
 	                        panelType: bp.panelType.rawValue,
 	                        inWindow: bp.webView.window != nil,
@@ -6226,7 +6239,7 @@ class TerminalController {
 	                return LayoutDebugSelectedPanel(
 	                    paneId: paneIdStr,
 	                    paneFrame: paneFrame,
-	                    selectedTabId: selectedTabId,
+	                    selectedBonsplitTabId: selectedBonsplitTabId,
 	                    panelId: panelId.uuidString,
 	                    panelType: panel.panelType.rawValue,
 	                    inWindow: nil,
@@ -7330,8 +7343,8 @@ class TerminalController {
 
             let lines = paneIds.enumerated().map { index, paneId in
                 let selected = paneId == focusedPaneId ? "*" : " "
-                let tabCount = workspace.bonsplitController.tabs(inPane: paneId).count
-                return "\(selected) \(index): \(paneId) [\(tabCount) tabs]"
+                let bonsplitTabCount = workspace.bonsplitController.tabs(inPane: paneId).count
+                return "\(selected) \(index): \(paneId) [\(bonsplitTabCount) tabs]"
             }
             result = lines.isEmpty ? "No panes" : lines.joined(separator: "\n")
         }

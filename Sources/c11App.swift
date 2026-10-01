@@ -1523,8 +1523,8 @@ struct cmuxApp: App {
         activeWorkspaceManager.closeOtherTabsInFocusedPaneWithConfirmation()
     }
 
-    private func closeTabOrWindow() {
-        activeWorkspaceManager.closeCurrentTabWithConfirmation()
+    private func closeWorkspaceOrWindow() {
+        activeWorkspaceManager.closeCurrentWorkspaceWithConfirmation()
     }
 
     private func showNotificationsPopover() {
@@ -4866,20 +4866,20 @@ struct SettingsView: View {
     }
 
     private func chooseNotificationSoundFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.audio]
-        panel.title = String(
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = false
+        openPanel.allowedContentTypes = [.audio]
+        openPanel.title = String(
             localized: "settings.notifications.sound.custom.choose.title",
             defaultValue: "Choose Notification Sound"
         )
-        panel.prompt = String(
+        openPanel.prompt = String(
             localized: "settings.notifications.sound.custom.choose.prompt",
             defaultValue: "Choose"
         )
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard openPanel.runModal() == .OK, let url = openPanel.url else { return }
         let selectedPath = url.path
         switch NotificationSoundSettings.prepareCustomFileForNotifications(path: selectedPath) {
         case .success:

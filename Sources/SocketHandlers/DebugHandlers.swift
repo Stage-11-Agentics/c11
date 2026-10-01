@@ -219,10 +219,10 @@ extension TerminalController {
                     )
                     var selectedInPaneByPanelId: [UUID: Bool] = [:]
                     for paneId in workspace.bonsplitController.allPaneIds {
-                        let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
+                        let selectedBonsplitTab = workspace.bonsplitController.selectedTab(inPane: paneId)
                         for bonsplitTab in workspace.bonsplitController.tabs(inPane: paneId) {
                             guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
-                            selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedTab?.id)
+                            selectedInPaneByPanelId[panelId] = (bonsplitTab.id == selectedBonsplitTab?.id)
                         }
                     }
 

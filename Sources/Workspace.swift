@@ -6120,7 +6120,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         // Remove the default "Welcome" tab that bonsplit creates
-        let welcomeTabIds = bonsplitController.allTabIds
+        let welcomeBonsplitTabIds = bonsplitController.allTabIds
 
         // Create initial terminal panel
         let terminalPanel = TerminalPanel(
@@ -6137,7 +6137,7 @@ final class Workspace: Identifiable, ObservableObject {
         seedTerminalInheritanceFontPoints(panelId: terminalPanel.id, configTemplate: configTemplate)
 
         // Create initial tab in bonsplit and store the mapping
-        var initialTabId: TabID?
+        var initialBonsplitTabId: TabID?
         if let bonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: title),
             icon: "terminal.fill",
@@ -6147,12 +6147,12 @@ final class Workspace: Identifiable, ObservableObject {
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
         ) {
             bonsplitTabIdToTabId[bonsplitTabId] = terminalPanel.id
-            initialTabId = bonsplitTabId
+            initialBonsplitTabId = bonsplitTabId
         }
 
         // Close the default Welcome tab(s)
-        for welcomeTabId in welcomeTabIds {
-            bonsplitController.closeTab(welcomeTabId)
+        for welcomeBonsplitTabId in welcomeBonsplitTabIds {
+            bonsplitController.closeTab(welcomeBonsplitTabId)
         }
 
         bonsplitController.onExternalTabDrop = { [weak self] request in
@@ -6173,11 +6173,11 @@ final class Workspace: Identifiable, ObservableObject {
         // Ensure bonsplit has a focused pane and our didSelectTab handler runs for the
         // initial terminal. bonsplit's createTab selects internally but does not emit
         // didSelectTab, and focusedPaneId can otherwise be nil until user interaction.
-        if let initialTabId {
+        if let initialBonsplitTabId {
             // Focus the pane containing the initial tab (or the first pane as fallback).
             let paneToFocus: PaneID? = {
                 for paneId in bonsplitController.allPaneIds {
-                    if bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == initialTabId }) {
+                    if bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == initialBonsplitTabId }) {
                         return paneId
                     }
                 }
@@ -6186,7 +6186,7 @@ final class Workspace: Identifiable, ObservableObject {
             if let paneToFocus {
                 bonsplitController.focusPane(paneToFocus)
             }
-            bonsplitController.selectTab(initialTabId)
+            bonsplitController.selectTab(initialBonsplitTabId)
         }
 
         // C11-134: breadcrumb this workspace's surface shape (per-type panel
@@ -6427,21 +6427,21 @@ final class Workspace: Identifiable, ObservableObject {
     /// Tab IDs that are allowed to close even if they would normally require confirmation.
     /// This is used by app-level confirmation prompts (e.g., Cmd+W "Close Tab?") so the
     /// Bonsplit delegate doesn't block the close after the user already confirmed.
-    private var forceCloseTabIds: Set<TabID> = []
+    private var forceCloseBonsplitTabIds: Set<TabID> = []
 
     /// Tab IDs that are currently showing (or about to show) a close confirmation prompt.
     /// Prevents repeated close gestures (e.g., middle-click spam) from stacking dialogs.
-    private var pendingCloseConfirmTabIds: Set<TabID> = []
+    private var pendingCloseConfirmBonsplitTabIds: Set<TabID> = []
 
     /// Tab IDs whose next close attempt should be treated as an explicit
     /// workspace-close gesture from the user (the tab-strip X button, or Cmd+W when
     /// the shortcut preference is set to close the workspace on the last surface),
     /// rather than an internal close/move flow.
-    private var explicitUserCloseTabIds: Set<TabID> = []
+    private var explicitUserCloseBonsplitTabIds: Set<TabID> = []
 
     /// Deterministic tab selection to apply after a tab closes.
     /// Keyed by the closing tab ID, value is the tab ID we want to select next.
-    private var postCloseSelectTabId: [TabID: TabID] = [:]
+    private var postCloseSelectBonsplitTabId: [TabID: TabID] = [:]
     /// Panel IDs that were in a pane when a pane-close operation was approved.
     /// Bonsplit pane-close does not emit per-tab didClose callbacks.
     private var pendingPaneClosePanelIds: [UUID: [UUID]] = [:]
@@ -6512,7 +6512,7 @@ final class Workspace: Identifiable, ObservableObject {
         let shellEdgeAt: Date?
     }
 
-    private var detachingTabIds: Set<TabID> = []
+    private var detachingBonsplitTabIds: Set<TabID> = []
     private var pendingDetachedSurfaces: [TabID: DetachedSurfaceTransfer] = [:]
     private var activeDetachCloseTransactions: Int = 0
     private var isDetachingCloseTransaction: Bool { activeDetachCloseTransactions > 0 }
@@ -6529,7 +6529,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func markExplicitClose(bonsplitTabId: TabID) {
-        explicitUserCloseTabIds.insert(bonsplitTabId)
+        explicitUserCloseBonsplitTabIds.insert(bonsplitTabId)
     }
 
     func bonsplitTabIdFromTabId(_ panelId: UUID) -> TabID? {
@@ -7019,28 +7019,28 @@ final class Workspace: Identifiable, ObservableObject {
         defer { isNormalizingPinnedTabOrder = false }
 
         let bonsplitTabs = bonsplitController.tabs(inPane: paneId)
-        let pinnedTabs = bonsplitTabs.filter { bonsplitTab in
+        let pinnedBonsplitTabs = bonsplitTabs.filter { bonsplitTab in
             guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id) else { return false }
             return pinnedPanelIds.contains(panelId)
         }
-        let unpinnedTabs = bonsplitTabs.filter { bonsplitTab in
+        let unpinnedBonsplitTabs = bonsplitTabs.filter { bonsplitTab in
             guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id) else { return true }
             return !pinnedPanelIds.contains(panelId)
         }
-        let desiredOrder = pinnedTabs + unpinnedTabs
+        let desiredOrder = pinnedBonsplitTabs + unpinnedBonsplitTabs
 
         for (index, desiredTab) in desiredOrder.enumerated() {
-            let currentTabs = bonsplitController.tabs(inPane: paneId)
-            guard let currentIndex = currentTabs.firstIndex(where: { $0.id == desiredTab.id }) else { continue }
+            let currentBonsplitTabs = bonsplitController.tabs(inPane: paneId)
+            guard let currentIndex = currentBonsplitTabs.firstIndex(where: { $0.id == desiredTab.id }) else { continue }
             if currentIndex != index {
                 _ = bonsplitController.reorderTab(desiredTab.id, toIndex: index)
             }
         }
     }
 
-    private func insertionIndexToRight(of anchorTabId: TabID, inPane paneId: PaneID) -> Int {
+    private func insertionIndexToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> Int {
         let bonsplitTabs = bonsplitController.tabs(inPane: paneId)
-        guard let anchorIndex = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }) else { return bonsplitTabs.count }
+        guard let anchorIndex = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else { return bonsplitTabs.count }
         let pinnedCount = bonsplitTabs.reduce(into: 0) { count, bonsplitTab in
             if let panelId = tabIdFromBonsplitTabId(bonsplitTab.id), pinnedPanelIds.contains(panelId) {
                 count += 1
@@ -8852,7 +8852,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Pre-generate the bonsplit tab ID so we can install the panel mapping before bonsplit
         // mutates layout state (avoids transient "Empty Panel" flashes during split).
-        let newTab = Bonsplit.Tab(
+        let newBonsplitTab = Bonsplit.Tab(
             title: newPanel.displayTitle,
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
@@ -8860,7 +8860,7 @@ final class Workspace: Identifiable, ObservableObject {
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         )
-        bonsplitTabIdToTabId[newTab.id] = newPanel.id
+        bonsplitTabIdToTabId[newBonsplitTab.id] = newPanel.id
         let previousFocusedPanelId = focusedPanelId
 
         // Capture the source terminal's hosted view before bonsplit mutates focusedPaneId,
@@ -8870,10 +8870,10 @@ final class Workspace: Identifiable, ObservableObject {
         // Create the split with the new tab already present in the new pane.
         isProgrammaticSplit = true
         defer { isProgrammaticSplit = false }
-        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newTab, insertFirst: insertFirst) != nil else {
+        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newBonsplitTab, insertFirst: insertFirst) != nil else {
             panels.removeValue(forKey: newPanel.id)
             panelTitles.removeValue(forKey: newPanel.id)
-            bonsplitTabIdToTabId.removeValue(forKey: newTab.id)
+            bonsplitTabIdToTabId.removeValue(forKey: newBonsplitTab.id)
             if remoteTerminalStartupCommand != nil {
                 untrackRemoteTerminalSurface(newPanel.id)
             }
@@ -8953,7 +8953,7 @@ final class Workspace: Identifiable, ObservableObject {
         seedTerminalInheritanceFontPoints(panelId: newPanel.id, configTemplate: inheritedConfig)
 
         // Create tab in bonsplit
-        guard let newTabId = bonsplitController.createTab(
+        guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
@@ -8971,16 +8971,16 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
-        bonsplitTabIdToTabId[newTabId] = newPanel.id
+        bonsplitTabIdToTabId[newBonsplitTabId] = newPanel.id
 
         // bonsplit's createTab may not reliably emit didSelectTab, and its internal selection
         // updates can be deferred. Force a deterministic selection + focus path so the new
         // surface becomes interactive immediately (no "frozen until pane switch" state).
         if shouldFocusNewTab {
             bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
+            bonsplitController.selectTab(newBonsplitTabId)
             newPanel.focus()
-            applyTabSelection(bonsplitTabId: newTabId, inPane: paneId)
+            applyTabSelection(bonsplitTabId: newBonsplitTabId, inPane: paneId)
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -9099,7 +9099,7 @@ final class Workspace: Identifiable, ObservableObject {
         panelTitles[browserPanel.id] = browserPanel.displayTitle
 
         // Pre-generate the bonsplit tab ID so the mapping exists before the split lands.
-        let newTab = Bonsplit.Tab(
+        let newBonsplitTab = Bonsplit.Tab(
             title: browserPanel.displayTitle,
             icon: browserPanel.displayIcon,
             kind: SurfaceKind.browser,
@@ -9108,15 +9108,15 @@ final class Workspace: Identifiable, ObservableObject {
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: browserPanel.id)
         )
-        bonsplitTabIdToTabId[newTab.id] = browserPanel.id
+        bonsplitTabIdToTabId[newBonsplitTab.id] = browserPanel.id
         let previousFocusedPanelId = focusedPanelId
 
         // Create the split with the browser tab already present.
         // Mark this split as programmatic so didSplitPane doesn't auto-create a terminal.
         isProgrammaticSplit = true
         defer { isProgrammaticSplit = false }
-        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newTab, insertFirst: insertFirst) != nil else {
-            bonsplitTabIdToTabId.removeValue(forKey: newTab.id)
+        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newBonsplitTab, insertFirst: insertFirst) != nil else {
+            bonsplitTabIdToTabId.removeValue(forKey: newBonsplitTab.id)
             panels.removeValue(forKey: browserPanel.id)
             panelTitles.removeValue(forKey: browserPanel.id)
             return nil
@@ -9188,7 +9188,7 @@ final class Workspace: Identifiable, ObservableObject {
         panels[browserPanel.id] = browserPanel
         panelTitles[browserPanel.id] = browserPanel.displayTitle
 
-        guard let newTabId = bonsplitController.createTab(
+        guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: browserPanel.displayTitle),
             icon: browserPanel.displayIcon,
             kind: SurfaceKind.browser,
@@ -9203,21 +9203,21 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
-        bonsplitTabIdToTabId[newTabId] = browserPanel.id
+        bonsplitTabIdToTabId[newBonsplitTabId] = browserPanel.id
         setPreferredBrowserProfileID(browserPanel.profileID)
 
         // Keyboard/browser-open paths want "new tab at end" regardless of global new-tab placement.
         if insertAtEnd {
             let targetIndex = max(0, bonsplitController.tabs(inPane: paneId).count - 1)
-            _ = bonsplitController.reorderTab(newTabId, toIndex: targetIndex)
+            _ = bonsplitController.reorderTab(newBonsplitTabId, toIndex: targetIndex)
         }
 
         // Match terminal behavior: enforce deterministic selection + focus.
         if shouldFocusNewTab {
             bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
+            bonsplitController.selectTab(newBonsplitTabId)
             browserPanel.focus()
-            applyTabSelection(bonsplitTabId: newTabId, inPane: paneId)
+            applyTabSelection(bonsplitTabId: newBonsplitTabId, inPane: paneId)
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -9245,7 +9245,7 @@ final class Workspace: Identifiable, ObservableObject {
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
-        let newTab = Bonsplit.Tab(
+        let newBonsplitTab = Bonsplit.Tab(
             title: markdownPanel.displayTitle,
             icon: markdownPanel.displayIcon,
             kind: SurfaceKind.markdown,
@@ -9254,13 +9254,13 @@ final class Workspace: Identifiable, ObservableObject {
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: markdownPanel.id)
         )
-        bonsplitTabIdToTabId[newTab.id] = markdownPanel.id
+        bonsplitTabIdToTabId[newBonsplitTab.id] = markdownPanel.id
         let previousFocusedPanelId = focusedPanelId
 
         isProgrammaticSplit = true
         defer { isProgrammaticSplit = false }
-        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newTab, insertFirst: insertFirst) != nil else {
-            bonsplitTabIdToTabId.removeValue(forKey: newTab.id)
+        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newBonsplitTab, insertFirst: insertFirst) != nil else {
+            bonsplitTabIdToTabId.removeValue(forKey: newBonsplitTab.id)
             panels.removeValue(forKey: markdownPanel.id)
             panelTitles.removeValue(forKey: markdownPanel.id)
             return nil
@@ -9306,7 +9306,7 @@ final class Workspace: Identifiable, ObservableObject {
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
-        guard let newTabId = bonsplitController.createTab(
+        guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: markdownPanel.displayTitle),
             icon: markdownPanel.displayIcon,
             kind: SurfaceKind.markdown,
@@ -9321,11 +9321,11 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
-        bonsplitTabIdToTabId[newTabId] = markdownPanel.id
+        bonsplitTabIdToTabId[newBonsplitTabId] = markdownPanel.id
         if shouldFocusNewTab {
             bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
-            applyTabSelection(bonsplitTabId: newTabId, inPane: paneId)
+            bonsplitController.selectTab(newBonsplitTabId)
+            applyTabSelection(bonsplitTabId: newBonsplitTabId, inPane: paneId)
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -9384,7 +9384,7 @@ final class Workspace: Identifiable, ObservableObject {
     func closePanel(_ panelId: UUID, force: Bool = false) -> Bool {
         if let bonsplitTabId = bonsplitTabIdFromTabId(panelId) {
             if force {
-                forceCloseTabIds.insert(bonsplitTabId)
+                forceCloseBonsplitTabIds.insert(bonsplitTabId)
             }
             // Close the tab in bonsplit (this triggers delegate callback)
             return bonsplitController.closeTab(bonsplitTabId)
@@ -9412,7 +9412,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         if force {
-            forceCloseTabIds.insert(selected.id)
+            forceCloseBonsplitTabIds.insert(selected.id)
         }
         let closed = bonsplitController.closeTab(selected.id)
 #if DEBUG
@@ -9622,7 +9622,7 @@ final class Workspace: Identifiable, ObservableObject {
     private func stageClosedBrowserRestoreSnapshotIfNeeded(for bonsplitTab: Bonsplit.Tab, inPane pane: PaneID) {
         guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id),
               let browserPanel = browserPanel(for: panelId),
-              let tabIndex = bonsplitController.tabs(inPane: pane).firstIndex(where: { $0.id == bonsplitTab.id }) else {
+              let bonsplitTabIndex = bonsplitController.tabs(inPane: pane).firstIndex(where: { $0.id == bonsplitTab.id }) else {
             pendingClosedBrowserRestoreSnapshots.removeValue(forKey: bonsplitTab.id)
             return
         }
@@ -9639,7 +9639,7 @@ final class Workspace: Identifiable, ObservableObject {
             url: resolvedURL,
             profileID: browserPanel.profileID,
             originalPaneId: pane.id,
-            originalTabIndex: tabIndex,
+            originalTabIndex: bonsplitTabIndex,
             fallbackSplitOrientation: fallbackPlan?.orientation,
             fallbackSplitInsertFirst: fallbackPlan?.insertFirst ?? false,
             fallbackAnchorPaneId: fallbackPlan?.anchorPaneId
@@ -9765,14 +9765,14 @@ final class Workspace: Identifiable, ObservableObject {
         )
 #endif
 
-        detachingTabIds.insert(bonsplitTabId)
-        forceCloseTabIds.insert(bonsplitTabId)
+        detachingBonsplitTabIds.insert(bonsplitTabId)
+        forceCloseBonsplitTabIds.insert(bonsplitTabId)
         activeDetachCloseTransactions += 1
         defer { activeDetachCloseTransactions = max(0, activeDetachCloseTransactions - 1) }
         guard bonsplitController.closeTab(bonsplitTabId) else {
-            detachingTabIds.remove(bonsplitTabId)
+            detachingBonsplitTabIds.remove(bonsplitTabId)
             pendingDetachedSurfaces.removeValue(forKey: bonsplitTabId)
-            forceCloseTabIds.remove(bonsplitTabId)
+            forceCloseBonsplitTabIds.remove(bonsplitTabId)
 #if DEBUG
             dlog(
                 "split.detach.fail ws=\(id.uuidString.prefix(5)) panel=\(panelId.uuidString.prefix(5)) " +
@@ -9912,7 +9912,7 @@ final class Workspace: Identifiable, ObservableObject {
             detectedTerminalTypesBySurface.removeValue(forKey: detached.panelId)
         }
 
-        guard let newTabId = bonsplitController.createTab(
+        guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: detached.title),
             hasCustomTitle: detached.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
             icon: detached.icon,
@@ -9953,19 +9953,19 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
-        bonsplitTabIdToTabId[newTabId] = detached.panelId
+        bonsplitTabIdToTabId[newBonsplitTabId] = detached.panelId
         if let index {
-            _ = bonsplitController.reorderTab(newTabId, toIndex: index)
+            _ = bonsplitController.reorderTab(newBonsplitTabId, toIndex: index)
         }
-        syncPinnedStateForTab(newTabId, panelId: detached.panelId)
+        syncPinnedStateForTab(newBonsplitTabId, panelId: detached.panelId)
         syncSurfaceTabActivityStateForPanel(detached.panelId)
         normalizePinnedTabs(in: paneId)
 
         if focus {
             bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
+            bonsplitController.selectTab(newBonsplitTabId)
             detached.panel.focus()
-            applyTabSelection(bonsplitTabId: newTabId, inPane: paneId)
+            applyTabSelection(bonsplitTabId: newBonsplitTabId, inPane: paneId)
         } else {
             scheduleFocusReconcile()
         }
@@ -9974,7 +9974,7 @@ final class Workspace: Identifiable, ObservableObject {
 #if DEBUG
         dlog(
             "split.attach.end ws=\(id.uuidString.prefix(5)) panel=\(detached.panelId.uuidString.prefix(5)) " +
-            "tab=\(newTabId.uuid.uuidString.prefix(5)) pane=\(paneId.id.uuidString.prefix(5)) " +
+            "tab=\(newBonsplitTabId.uuid.uuidString.prefix(5)) pane=\(paneId.id.uuidString.prefix(5)) " +
             "index=\(index.map(String.init) ?? "nil") focus=\(focus ? 1 : 0) " +
             "elapsedMs=\(debugElapsedMs(since: attachStart))"
         )
@@ -10564,7 +10564,7 @@ final class Workspace: Identifiable, ObservableObject {
         seedTerminalInheritanceFontPoints(panelId: newPanel.id, configTemplate: inheritedConfig)
 
         // Create tab in bonsplit
-        if let newTabId = bonsplitController.createTab(
+        if let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
@@ -10572,7 +10572,7 @@ final class Workspace: Identifiable, ObservableObject {
             isPinned: false,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         ) {
-            bonsplitTabIdToTabId[newTabId] = newPanel.id
+            bonsplitTabIdToTabId[newBonsplitTabId] = newPanel.id
         }
 
         return newPanel
@@ -10609,17 +10609,17 @@ final class Workspace: Identifiable, ObservableObject {
         var targetPanelId: UUID?
 
         if let focusedPane = bonsplitController.focusedPaneId,
-           let focusedTab = bonsplitController.selectedTab(inPane: focusedPane),
-           let mappedPanelId = tabIdFromBonsplitTabId(focusedTab.id),
+           let focusedBonsplitTab = bonsplitController.selectedTab(inPane: focusedPane),
+           let mappedPanelId = tabIdFromBonsplitTabId(focusedBonsplitTab.id),
            panels[mappedPanelId] != nil {
             targetPanelId = mappedPanelId
         } else {
             for pane in bonsplitController.allPaneIds {
-                guard let selectedTab = bonsplitController.selectedTab(inPane: pane),
-                      let mappedPanelId = tabIdFromBonsplitTabId(selectedTab.id),
+                guard let selectedBonsplitTab = bonsplitController.selectedTab(inPane: pane),
+                      let mappedPanelId = tabIdFromBonsplitTabId(selectedBonsplitTab.id),
                       panels[mappedPanelId] != nil else { continue }
                 bonsplitController.focusPane(pane)
-                bonsplitController.selectTab(selectedTab.id)
+                bonsplitController.selectTab(selectedBonsplitTab.id)
                 targetPanelId = mappedPanelId
                 break
             }
@@ -10627,12 +10627,12 @@ final class Workspace: Identifiable, ObservableObject {
 
         if targetPanelId == nil, let fallbackPanelId = panels.keys.first {
             targetPanelId = fallbackPanelId
-            if let fallbackTabId = bonsplitTabIdFromTabId(fallbackPanelId),
+            if let fallbackBonsplitTabId = bonsplitTabIdFromTabId(fallbackPanelId),
                let fallbackPane = bonsplitController.allPaneIds.first(where: { paneId in
-                   bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == fallbackTabId })
+                   bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == fallbackBonsplitTabId })
                }) {
                 bonsplitController.focusPane(fallbackPane)
-                bonsplitController.selectTab(fallbackTabId)
+                bonsplitController.selectTab(fallbackBonsplitTabId)
             }
         }
 
@@ -11054,9 +11054,9 @@ final class Workspace: Identifiable, ObservableObject {
         var visiblePanelIds: Set<UUID> = []
 
         for paneId in renderedPaneIds {
-            let selectedTab = bonsplitController.selectedTab(inPane: paneId) ?? bonsplitController.tabs(inPane: paneId).first
-            guard let selectedTab,
-                  let panelId = tabIdFromBonsplitTabId(selectedTab.id),
+            let selectedBonsplitTab = bonsplitController.selectedTab(inPane: paneId) ?? bonsplitController.tabs(inPane: paneId).first
+            guard let selectedBonsplitTab,
+                  let panelId = tabIdFromBonsplitTabId(selectedBonsplitTab.id),
                   panels[panelId] != nil else {
                 continue
             }
@@ -11240,34 +11240,34 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    private func tabIdsToLeft(of anchorTabId: TabID, inPane paneId: PaneID) -> [TabID] {
+    private func bonsplitTabIdsToLeft(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID] {
         let bonsplitTabs = bonsplitController.tabs(inPane: paneId)
-        guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }) else { return [] }
+        guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }) else { return [] }
         return Array(bonsplitTabs.prefix(index).map(\.id))
     }
 
-    private func tabIdsToRight(of anchorTabId: TabID, inPane paneId: PaneID) -> [TabID] {
+    private func bonsplitTabIdsToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID] {
         let bonsplitTabs = bonsplitController.tabs(inPane: paneId)
-        guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorTabId }),
+        guard let index = bonsplitTabs.firstIndex(where: { $0.id == anchorBonsplitTabId }),
               index + 1 < bonsplitTabs.count else { return [] }
         return Array(bonsplitTabs.suffix(from: index + 1).map(\.id))
     }
 
-    private func tabIdsToCloseOthers(of anchorTabId: TabID, inPane paneId: PaneID) -> [TabID] {
+    private func bonsplitTabIdsToCloseOthers(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID] {
         bonsplitController.tabs(inPane: paneId)
             .map(\.id)
-            .filter { $0 != anchorTabId }
+            .filter { $0 != anchorBonsplitTabId }
     }
 
-    private func createTerminalToRight(of anchorTabId: TabID, inPane paneId: PaneID) {
-        let targetIndex = insertionIndexToRight(of: anchorTabId, inPane: paneId)
+    private func createTerminalToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) {
+        let targetIndex = insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
         guard let newPanel = newTerminalSurface(inPane: paneId, focus: true) else { return }
         _ = reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
     }
 
-    private func createBrowserToRight(of anchorTabId: TabID, inPane paneId: PaneID, url: URL? = nil) {
-        let targetIndex = insertionIndexToRight(of: anchorTabId, inPane: paneId)
-        let preferredProfileID = tabIdFromBonsplitTabId(anchorTabId).flatMap { browserPanel(for: $0)?.profileID }
+    private func createBrowserToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID, url: URL? = nil) {
+        let targetIndex = insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
+        let preferredProfileID = tabIdFromBonsplitTabId(anchorBonsplitTabId).flatMap { browserPanel(for: $0)?.profileID }
         guard let newPanel = newBrowserSurface(
             inPane: paneId,
             url: url,
@@ -11277,10 +11277,10 @@ final class Workspace: Identifiable, ObservableObject {
         _ = reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
     }
 
-    private func duplicateBrowserToRight(anchorTabId: TabID, inPane paneId: PaneID) {
-        guard let panelId = tabIdFromBonsplitTabId(anchorTabId),
+    private func duplicateBrowserToRight(anchorBonsplitTabId: TabID, inPane paneId: PaneID) {
+        guard let panelId = tabIdFromBonsplitTabId(anchorBonsplitTabId),
               let browser = browserPanel(for: panelId) else { return }
-        let targetIndex = insertionIndexToRight(of: anchorTabId, inPane: paneId)
+        let targetIndex = insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
         guard let newPanel = newBrowserSurface(
             inPane: paneId,
             url: browser.currentURL,
@@ -11487,7 +11487,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         #endif
         let moved = app.moveBonsplitTab(
-            tabId: request.tabId.uuid,
+            bonsplitTabId: request.tabId.uuid,
             toWorkspace: id,
             targetPane: targetPane,
             targetIndex: targetIndex,
@@ -11765,9 +11765,9 @@ extension Workspace: BonsplitDelegate {
         let focusedPane: PaneID
         let selectedBonsplitTabId: TabID
         if let currentPane = bonsplitController.focusedPaneId,
-           let currentTabId = bonsplitController.selectedTab(inPane: currentPane)?.id {
+           let currentBonsplitTabId = bonsplitController.selectedTab(inPane: currentPane)?.id {
             focusedPane = currentPane
-            selectedBonsplitTabId = currentTabId
+            selectedBonsplitTabId = currentBonsplitTabId
         } else if bonsplitController.tabs(inPane: pane).contains(where: { $0.id == bonsplitTabId }) {
             focusedPane = pane
             selectedBonsplitTabId = bonsplitTabId
@@ -12058,13 +12058,13 @@ extension Workspace: BonsplitDelegate {
         func recordPostCloseSelection() {
             let bonsplitTabs = controller.tabs(inPane: pane)
             guard let idx = bonsplitTabs.firstIndex(where: { $0.id == bonsplitTab.id }) else {
-                postCloseSelectTabId.removeValue(forKey: bonsplitTab.id)
+                postCloseSelectBonsplitTabId.removeValue(forKey: bonsplitTab.id)
                 return
             }
 
             if let selectedBonsplitTabId = controller.selectedTab(inPane: pane)?.id,
                selectedBonsplitTabId != bonsplitTab.id {
-                postCloseSelectTabId[bonsplitTab.id] = selectedBonsplitTabId
+                postCloseSelectBonsplitTabId[bonsplitTab.id] = selectedBonsplitTabId
                 return
             }
 
@@ -12075,15 +12075,15 @@ extension Workspace: BonsplitDelegate {
             }()
 
             if let target {
-                postCloseSelectTabId[bonsplitTab.id] = target
+                postCloseSelectBonsplitTabId[bonsplitTab.id] = target
             } else {
-                postCloseSelectTabId.removeValue(forKey: bonsplitTab.id)
+                postCloseSelectBonsplitTabId.removeValue(forKey: bonsplitTab.id)
             }
         }
 
-        let explicitUserClose = explicitUserCloseTabIds.remove(bonsplitTab.id) != nil
+        let explicitUserClose = explicitUserCloseBonsplitTabIds.remove(bonsplitTab.id) != nil
 
-        if forceCloseTabIds.contains(bonsplitTab.id) {
+        if forceCloseBonsplitTabIds.contains(bonsplitTab.id) {
             stageClosedBrowserRestoreSnapshotIfNeeded(for: bonsplitTab, inPane: pane)
             recordPostCloseSelection()
             return true
@@ -12115,16 +12115,16 @@ extension Workspace: BonsplitDelegate {
         // this gating on the second pass.
         if panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()) {
             clearStagedClosedBrowserRestoreSnapshot(for: bonsplitTab.id)
-            if pendingCloseConfirmTabIds.contains(bonsplitTab.id) {
+            if pendingCloseConfirmBonsplitTabIds.contains(bonsplitTab.id) {
                 return false
             }
 
-            pendingCloseConfirmTabIds.insert(bonsplitTab.id)
+            pendingCloseConfirmBonsplitTabIds.insert(bonsplitTab.id)
             let bonsplitTabId = bonsplitTab.id
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 Task { @MainActor in
-                    defer { self.pendingCloseConfirmTabIds.remove(bonsplitTabId) }
+                    defer { self.pendingCloseConfirmBonsplitTabIds.remove(bonsplitTabId) }
 
                     // If the tab disappeared while we were scheduling, do nothing.
                     guard self.tabIdFromBonsplitTabId(bonsplitTabId) != nil else { return }
@@ -12142,7 +12142,7 @@ extension Workspace: BonsplitDelegate {
                     let confirmed = await self.confirmClosePanel(for: bonsplitTabId)
                     guard confirmed else { return }
 
-                    self.forceCloseTabIds.insert(bonsplitTabId)
+                    self.forceCloseBonsplitTabIds.insert(bonsplitTabId)
                     self.bonsplitController.closeTab(bonsplitTabId)
                 }
             }
@@ -12156,10 +12156,10 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didCloseTab bonsplitTabId: TabID, fromPane pane: PaneID) {
-        forceCloseTabIds.remove(bonsplitTabId)
-        let selectTabId = postCloseSelectTabId.removeValue(forKey: bonsplitTabId)
+        forceCloseBonsplitTabIds.remove(bonsplitTabId)
+        let selectBonsplitTabId = postCloseSelectBonsplitTabId.removeValue(forKey: bonsplitTabId)
         let closedBrowserRestoreSnapshot = pendingClosedBrowserRestoreSnapshots.removeValue(forKey: bonsplitTabId)
-        let isDetaching = detachingTabIds.remove(bonsplitTabId) != nil || isDetachingCloseTransaction
+        let isDetaching = detachingBonsplitTabIds.remove(bonsplitTabId) != nil || isDetachingCloseTransaction
 
         // Clean up our panel
         guard let panelId = tabIdFromBonsplitTabId(bonsplitTabId) else {
@@ -12282,30 +12282,30 @@ extension Workspace: BonsplitDelegate {
             }
 
             let replacement = createReplacementTerminalPanel()
-            if let replacementTabId = bonsplitTabIdFromTabId(replacement.id),
+            if let replacementBonsplitTabId = bonsplitTabIdFromTabId(replacement.id),
                let replacementPane = bonsplitController.allPaneIds.first {
                 bonsplitController.focusPane(replacementPane)
-                bonsplitController.selectTab(replacementTabId)
-                applyTabSelection(bonsplitTabId: replacementTabId, inPane: replacementPane)
+                bonsplitController.selectTab(replacementBonsplitTabId)
+                applyTabSelection(bonsplitTabId: replacementBonsplitTabId, inPane: replacementPane)
             }
             scheduleTerminalGeometryReconcile()
             scheduleFocusReconcile()
             return
         }
 
-        if let selectTabId,
+        if let selectBonsplitTabId,
            bonsplitController.allPaneIds.contains(pane),
-           bonsplitController.tabs(inPane: pane).contains(where: { $0.id == selectTabId }),
+           bonsplitController.tabs(inPane: pane).contains(where: { $0.id == selectBonsplitTabId }),
            bonsplitController.focusedPaneId == pane {
             // Keep selection/focus convergence in the same close transaction to avoid a transient
             // frame where the pane has no selected content.
-            bonsplitController.selectTab(selectTabId)
-            applyTabSelection(bonsplitTabId: selectTabId, inPane: pane)
+            bonsplitController.selectTab(selectBonsplitTabId)
+            applyTabSelection(bonsplitTabId: selectBonsplitTabId, inPane: pane)
         } else if let focusedPane = bonsplitController.focusedPaneId,
-                  let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+                  let focusedBonsplitTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
             // When closing the last tab in a pane, Bonsplit may focus a different pane and skip
             // emitting didSelectTab. Re-apply the focused selection so sidebar state stays in sync.
-            applyTabSelection(bonsplitTabId: focusedTabId, inPane: focusedPane)
+            applyTabSelection(bonsplitTabId: focusedBonsplitTabId, inPane: focusedPane)
         }
 
         if bonsplitController.allPaneIds.contains(pane) {
@@ -12464,8 +12464,8 @@ extension Workspace: BonsplitDelegate {
             clearRemoteConfigurationIfWorkspaceBecameLocal()
 
             if let focusedPane = bonsplitController.focusedPaneId,
-               let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
-                applyTabSelection(bonsplitTabId: focusedTabId, inPane: focusedPane)
+               let focusedBonsplitTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
+                applyTabSelection(bonsplitTabId: focusedBonsplitTabId, inPane: focusedPane)
             } else if shouldScheduleFocusReconcile {
                 scheduleFocusReconcile()
             }
@@ -12481,7 +12481,7 @@ extension Workspace: BonsplitDelegate {
         // Check if any panel in this pane needs close confirmation
         let bonsplitTabs = controller.tabs(inPane: pane)
         for bonsplitTab in bonsplitTabs {
-            if forceCloseTabIds.contains(bonsplitTab.id) { continue }
+            if forceCloseBonsplitTabIds.contains(bonsplitTab.id) { continue }
             if let panelId = tabIdFromBonsplitTabId(bonsplitTab.id),
                let terminalPanel = terminalPanel(for: panelId),
                panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminalPanel.needsConfirmClose()) {
@@ -12495,7 +12495,7 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
 #if DEBUG
-        let panelKindForTab: (TabID) -> String = { bonsplitTabId in
+        let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),
                   let panel = self.panels[panelId] else { return "placeholder" }
             if panel is TerminalPanel { return "terminal" }
@@ -12506,11 +12506,11 @@ extension Workspace: BonsplitDelegate {
             let bonsplitTabs = controller.tabs(inPane: paneId)
             guard !bonsplitTabs.isEmpty else { return "-" }
             return bonsplitTabs.map { bonsplitTab in
-                String(panelKindForTab(bonsplitTab.id).prefix(1))
+                String(panelKindForBonsplitTab(bonsplitTab.id).prefix(1))
             }.joined(separator: ",")
         }
-        let originalSelectedKind = controller.selectedTab(inPane: originalPane).map { panelKindForTab($0.id) } ?? "none"
-        let newSelectedKind = controller.selectedTab(inPane: newPane).map { panelKindForTab($0.id) } ?? "none"
+        let originalSelectedKind = controller.selectedTab(inPane: originalPane).map { panelKindForBonsplitTab($0.id) } ?? "none"
+        let newSelectedKind = controller.selectedTab(inPane: newPane).map { panelKindForBonsplitTab($0.id) } ?? "none"
         dlog(
             "split.didSplit original=\(originalPane.id.uuidString.prefix(5)) new=\(newPane.id.uuidString.prefix(5)) " +
             "orientation=\(orientation) programmatic=\(isProgrammaticSplit ? 1 : 0) " +
@@ -12552,25 +12552,25 @@ extension Workspace: BonsplitDelegate {
         // Replace placeholder-only source panes with a real terminal surface, then drop the
         // placeholder tabs so the UI stays consistent and pane lists don't contain empties.
         if !controller.tabs(inPane: newPane).isEmpty {
-            let originalTabs = controller.tabs(inPane: originalPane)
-            let hasRealSurface = originalTabs.contains { tabIdFromBonsplitTabId($0.id) != nil }
+            let originalBonsplitTabs = controller.tabs(inPane: originalPane)
+            let hasRealSurface = originalBonsplitTabs.contains { tabIdFromBonsplitTabId($0.id) != nil }
 #if DEBUG
             dlog(
                 "split.didSplit.drag original=\(originalPane.id.uuidString.prefix(5)) " +
-                "new=\(newPane.id.uuidString.prefix(5)) originalTabs=\(originalTabs.count) " +
+                "new=\(newPane.id.uuidString.prefix(5)) originalTabs=\(originalBonsplitTabs.count) " +
                 "newTabs=\(controller.tabs(inPane: newPane).count) hasRealSurface=\(hasRealSurface ? 1 : 0) " +
                 "originalKinds=[\(paneKindSummary(originalPane))] newKinds=[\(paneKindSummary(newPane))]"
             )
 #endif
             if !hasRealSurface {
-                let placeholderTabs = originalTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+                let placeholderBonsplitTabs = originalBonsplitTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
 #if DEBUG
                 dlog(
                     "split.placeholderRepair pane=\(originalPane.id.uuidString.prefix(5)) " +
-                    "action=reusePlaceholder placeholderCount=\(placeholderTabs.count)"
+                    "action=reusePlaceholder placeholderCount=\(placeholderBonsplitTabs.count)"
                 )
 #endif
-                if let replacementTab = placeholderTabs.first {
+                if let replacementBonsplitTab = placeholderBonsplitTabs.first {
                     // Keep the existing placeholder tab identity and replace only the panel mapping.
                     // This avoids an extra create+close tab churn that can transiently render an
                     // empty pane during drag-to-split of a single-tab pane.
@@ -12590,10 +12590,10 @@ extension Workspace: BonsplitDelegate {
                     panels[replacementPanel.id] = replacementPanel
                     panelTitles[replacementPanel.id] = replacementPanel.displayTitle
                     seedTerminalInheritanceFontPoints(panelId: replacementPanel.id, configTemplate: inheritedConfig)
-                    bonsplitTabIdToTabId[replacementTab.id] = replacementPanel.id
+                    bonsplitTabIdToTabId[replacementBonsplitTab.id] = replacementPanel.id
 
                     bonsplitController.updateTab(
-                        replacementTab.id,
+                        replacementBonsplitTab.id,
                         title: TitleFormatting.sidebarLabel(from: replacementPanel.displayTitle),
                         icon: .some(replacementPanel.displayIcon),
                         iconImageData: .some(nil),
@@ -12605,7 +12605,7 @@ extension Workspace: BonsplitDelegate {
                         isPinned: false
                     )
 
-                    for extraPlaceholder in placeholderTabs.dropFirst() {
+                    for extraPlaceholder in placeholderBonsplitTabs.dropFirst() {
                         bonsplitController.closeTab(extraPlaceholder.id)
                     }
                 } else {
@@ -12632,8 +12632,8 @@ extension Workspace: BonsplitDelegate {
         // Mirror Cmd+D behavior: split buttons should always seed a terminal in the new pane.
         // When the focused source is a browser, inherit terminal config from nearby terminals
         // (or fall back to defaults) instead of leaving an empty selector pane.
-        let sourceTabId = controller.selectedTab(inPane: originalPane)?.id
-        let sourcePanelId = sourceTabId.flatMap { tabIdFromBonsplitTabId($0) }
+        let sourceBonsplitTabId = controller.selectedTab(inPane: originalPane)?.id
+        let sourcePanelId = sourceBonsplitTabId.flatMap { tabIdFromBonsplitTabId($0) }
 
 #if DEBUG
         dlog(
@@ -12659,7 +12659,7 @@ extension Workspace: BonsplitDelegate {
         panelTitles[newPanel.id] = newPanel.displayTitle
         seedTerminalInheritanceFontPoints(panelId: newPanel.id, configTemplate: inheritedConfig)
 
-        guard let newTabId = bonsplitController.createTab(
+        guard let newBonsplitTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
@@ -12674,7 +12674,7 @@ extension Workspace: BonsplitDelegate {
             return
         }
 
-        bonsplitTabIdToTabId[newTabId] = newPanel.id
+        bonsplitTabIdToTabId[newBonsplitTabId] = newPanel.id
         normalizePinnedTabs(in: newPane)
 #if DEBUG
         dlog(
@@ -12688,7 +12688,7 @@ extension Workspace: BonsplitDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if self.bonsplitController.focusedPaneId == newPane {
-                self.bonsplitController.selectTab(newTabId)
+                self.bonsplitController.selectTab(newBonsplitTabId)
             }
             self.scheduleTerminalGeometryReconcile()
             self.scheduleFocusReconcile()
@@ -13258,9 +13258,9 @@ extension Workspace: BonsplitDelegate {
                 // then drop a fresh terminal in so the operator isn't left
                 // staring at the empty-pane chooser. Matches the user's ask:
                 // X always does something, even on the root pane.
-                let tabsNow = self.bonsplitController.tabs(inPane: pane)
-                for bonsplitTab in tabsNow {
-                    self.forceCloseTabIds.insert(bonsplitTab.id)
+                let bonsplitTabsNow = self.bonsplitController.tabs(inPane: pane)
+                for bonsplitTab in bonsplitTabsNow {
+                    self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
                     _ = self.bonsplitController.closeTab(bonsplitTab.id)
                 }
                 _ = self.newTerminalSurface(inPane: pane)
@@ -13272,7 +13272,7 @@ extension Workspace: BonsplitDelegate {
                 // user already confirmed the pane-level action. Mirrors the
                 // isOnlyPane branch above.
                 for bonsplitTab in self.bonsplitController.tabs(inPane: pane) {
-                    self.forceCloseTabIds.insert(bonsplitTab.id)
+                    self.forceCloseBonsplitTabIds.insert(bonsplitTab.id)
                 }
                 _ = self.bonsplitController.closePane(pane)
             }
@@ -13396,11 +13396,11 @@ extension Workspace: BonsplitDelegate {
             // — the pane is reset with a fresh terminal rather than torn down.
             splitTabBar(controller, didRequestClosePane: pane)
         case .closeToLeft:
-            closeTabs(tabIdsToLeft(of: bonsplitTab.id, inPane: pane))
+            closeTabs(bonsplitTabIdsToLeft(of: bonsplitTab.id, inPane: pane))
         case .closeToRight:
-            closeTabs(tabIdsToRight(of: bonsplitTab.id, inPane: pane))
+            closeTabs(bonsplitTabIdsToRight(of: bonsplitTab.id, inPane: pane))
         case .closeOthers:
-            closeTabs(tabIdsToCloseOthers(of: bonsplitTab.id, inPane: pane))
+            closeTabs(bonsplitTabIdsToCloseOthers(of: bonsplitTab.id, inPane: pane))
         case .move:
             promptMovePanel(bonsplitTabId: bonsplitTab.id)
         case .newTerminalToRight:
@@ -13412,7 +13412,7 @@ extension Workspace: BonsplitDelegate {
                   let browser = browserPanel(for: panelId) else { return }
             browser.reload()
         case .duplicate:
-            duplicateBrowserToRight(anchorTabId: bonsplitTab.id, inPane: pane)
+            duplicateBrowserToRight(anchorBonsplitTabId: bonsplitTab.id, inPane: pane)
         case .togglePin:
             guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id) else { return }
             let shouldPin = !pinnedPanelIds.contains(panelId)
@@ -13433,9 +13433,9 @@ extension Workspace: BonsplitDelegate {
             guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id) else { return }
             promptCustomTabColor(panelId: panelId)
         case .surfaceDetails:
-            showSurfaceDetails(forSurfaceId: bonsplitTab.id)
+            showSurfaceDetails(forBonsplitTabId: bonsplitTab.id)
         case .copySurfaceRef:
-            copySurfaceRef(forSurfaceId: bonsplitTab.id)
+            copySurfaceRef(forBonsplitTabId: bonsplitTab.id)
         @unknown default:
             break
         }
@@ -13443,7 +13443,7 @@ extension Workspace: BonsplitDelegate {
 
     /// Copy the tab's `surface:N` handle to the clipboard and show a brief
     /// confirmation HUD. Routed from the tab right-click menu's copy item.
-    func copySurfaceRef(forSurfaceId bonsplitTabId: TabID) {
+    func copySurfaceRef(forBonsplitTabId bonsplitTabId: TabID) {
         guard let panel = panel(for: bonsplitTabId) else { return }
         let ref = TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panel.id)
         let pasteboard = NSPasteboard.general
@@ -13456,7 +13456,7 @@ extension Workspace: BonsplitDelegate {
     /// Open the Surface Details panel for the surface backing a tab. Routed
     /// from the tab right-click menu; the panel shows the `surface:N` /
     /// `tab:N` handles plus the surface metadata manifest.
-    func showSurfaceDetails(forSurfaceId bonsplitTabId: TabID) {
+    func showSurfaceDetails(forBonsplitTabId bonsplitTabId: TabID) {
         guard let panel = panel(for: bonsplitTabId) else { return }
         showSurfaceDetails(for: panel)
     }

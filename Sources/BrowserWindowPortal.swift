@@ -1737,8 +1737,8 @@ struct BrowserPaneDragTransfer: Equatable {
     static func decode(from data: Data) -> BrowserPaneDragTransfer? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let bonsplitTab = json["tab"] as? [String: Any],
-              let tabIdRaw = bonsplitTab["id"] as? String,
-              let bonsplitTabId = UUID(uuidString: tabIdRaw),
+              let bonsplitTabIdRaw = bonsplitTab["id"] as? String,
+              let bonsplitTabId = UUID(uuidString: bonsplitTabIdRaw),
               let sourcePaneIdRaw = json["sourcePaneId"] as? String,
               let sourcePaneId = UUID(uuidString: sourcePaneIdRaw) else {
             return nil
@@ -1984,7 +1984,7 @@ final class BrowserPaneDropTargetView: NSView {
             return true
         case .move(let bonsplitTabId, let workspaceId, let targetPane, let splitTarget):
             let moved = AppDelegate.shared?.moveBonsplitTab(
-                tabId: bonsplitTabId,
+                bonsplitTabId: bonsplitTabId,
                 toWorkspace: workspaceId,
                 targetPane: targetPane,
                 splitTarget: splitTarget.map { ($0.orientation, $0.insertFirst) },

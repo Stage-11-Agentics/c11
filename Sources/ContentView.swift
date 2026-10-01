@@ -5960,13 +5960,13 @@ struct ContentView: View {
         registry.register(commandId: "palette.openFolder") {
             // Defer so the command palette dismisses before the modal sheet appears.
             DispatchQueue.main.async {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false
-                panel.canChooseDirectories = true
-                panel.allowsMultipleSelection = false
-                panel.title = String(localized: "panel.openFolder.title", defaultValue: "Open Folder")
-                panel.prompt = String(localized: "panel.openFolder.prompt", defaultValue: "Open")
-                if panel.runModal() == .OK, let url = panel.url {
+                let openPanel = NSOpenPanel()
+                openPanel.canChooseFiles = false
+                openPanel.canChooseDirectories = true
+                openPanel.allowsMultipleSelection = false
+                openPanel.title = String(localized: "panel.openFolder.title", defaultValue: "Open Folder")
+                openPanel.prompt = String(localized: "panel.openFolder.prompt", defaultValue: "Open")
+                if openPanel.runModal() == .OK, let url = openPanel.url {
                     workspaceManager.addWorkspace(workingDirectory: url.path)
                 }
             }
@@ -10339,27 +10339,27 @@ private struct SidebarFeedbackComposerSheet: View {
     }
 
     private func chooseAttachments() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image]
-        panel.title = String(
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = true
+        openPanel.allowedContentTypes = [.image]
+        openPanel.title = String(
             localized: "sidebar.help.feedback.attachImages.title",
             defaultValue: "Attach Images"
         )
-        panel.prompt = String(
+        openPanel.prompt = String(
             localized: "sidebar.help.feedback.attachImages.prompt",
             defaultValue: "Attach"
         )
 
-        guard panel.runModal() == .OK else { return }
+        guard openPanel.runModal() == .OK else { return }
 
         var updatedAttachments = attachments
         var knownPaths = Set(updatedAttachments.map(\.standardizedPath))
         var firstIssue: String?
 
-        for url in panel.urls {
+        for url in openPanel.urls {
             let normalizedPath = url.standardizedFileURL.path
             if knownPaths.contains(normalizedPath) {
                 continue
@@ -14765,14 +14765,14 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
             return false
         }
 
-        if let source = app.locateBonsplitSurface(tabId: transfer.bonsplitTab.id),
+        if let source = app.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id),
            source.workspaceId == targetWorkspaceId {
             syncSidebarSelection()
             return true
         }
 
         guard app.moveBonsplitTab(
-            tabId: transfer.bonsplitTab.id,
+            bonsplitTabId: transfer.bonsplitTab.id,
             toWorkspace: targetWorkspaceId,
             focus: true,
             focusWindow: true

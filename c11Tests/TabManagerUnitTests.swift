@@ -798,8 +798,8 @@ final class TabManagerSurfaceCreationTests: XCTestCase {
             "Expected browser to open in the top-right pane when multiple splits already exist"
         )
 
-        let targetPaneTabs = workspace.bonsplitController.tabs(inPane: topRightPaneId)
-        guard let lastSurfaceId = targetPaneTabs.last?.id else {
+        let targetPaneBonsplitTabs = workspace.bonsplitController.tabs(inPane: topRightPaneId)
+        guard let lastSurfaceId = targetPaneBonsplitTabs.last?.id else {
             XCTFail("Expected top-right pane to contain tabs")
             return
         }

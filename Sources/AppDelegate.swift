@@ -5236,11 +5236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return windowId
     }
 
-    func locateBonsplitSurface(tabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
-        let bonsplitTabId = TabID(uuid: tabId)
+    func locateBonsplitSurface(bonsplitTabId: UUID) -> (windowId: UUID, workspaceId: UUID, panelId: UUID, workspaceManager: WorkspaceManager)? {
+        let leafId = TabID(uuid: bonsplitTabId)
         for context in mainWindowContexts.values {
             for workspace in context.workspaceManager.workspaces {
-                if let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTabId) {
+                if let panelId = workspace.tabIdFromBonsplitTabId(leafId) {
                     return (context.windowId, workspace.id, panelId, context.workspaceManager)
                 }
             }
@@ -5362,11 +5362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if destinationWorkspace.id == sourceWorkspace.id {
             if let splitTarget {
-                guard let sourceTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
+                guard let sourceBonsplitTabId = sourceWorkspace.bonsplitTabIdFromTabId(panelId),
                       sourceWorkspace.bonsplitController.splitPane(
                         resolvedTargetPane,
                         orientation: splitTarget.orientation,
-                        movingTab: sourceTabId,
+                        movingTab: sourceBonsplitTabId,
                         insertFirst: splitTarget.insertFirst
                       ) != nil else {
 #if DEBUG
@@ -5455,11 +5455,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
             let splitStart = ProcessInfo.processInfo.systemUptime
 #endif
-            guard let movedTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
+            guard let movedBonsplitTabId = destinationWorkspace.bonsplitTabIdFromTabId(panelId),
                   destinationWorkspace.bonsplitController.splitPane(
                     resolvedTargetPane,
                     orientation: splitTarget.orientation,
-                    movingTab: movedTabId,
+                    movingTab: movedBonsplitTabId,
                     insertFirst: splitTarget.insertFirst
                   ) != nil else {
                 if let detachedFromDestination = destinationWorkspace.detachSurface(panelId: panelId) {
@@ -5529,7 +5529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func moveBonsplitTab(
-        tabId: UUID,
+        bonsplitTabId: UUID,
         toWorkspace targetWorkspaceId: UUID,
         targetPane: PaneID? = nil,
         targetIndex: Int? = nil,
@@ -5544,14 +5544,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return String(format: "%.2f", ms)
         }
         dlog(
-            "surface.moveBonsplit.begin tab=\(tabId.uuidString.prefix(5)) targetWs=\(targetWorkspaceId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.begin tab=\(bonsplitTabId.uuidString.prefix(5)) targetWs=\(targetWorkspaceId.uuidString.prefix(5)) " +
             "targetPane=\(targetPane?.id.uuidString.prefix(5) ?? "auto") targetIndex=\(targetIndex.map(String.init) ?? "nil")"
         )
 #endif
-        guard let located = locateBonsplitSurface(tabId: tabId) else {
+        guard let located = locateBonsplitSurface(bonsplitTabId: bonsplitTabId) else {
 #if DEBUG
             dlog(
-                "surface.moveBonsplit.fail tab=\(tabId.uuidString.prefix(5)) reason=tabNotFound " +
+                "surface.moveBonsplit.fail tab=\(bonsplitTabId.uuidString.prefix(5)) reason=tabNotFound " +
                 "targetWs=\(targetWorkspaceId.uuidString.prefix(5)) elapsedMs=\(elapsedMs(since: moveStart))"
             )
 #endif
@@ -5559,7 +5559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #if DEBUG
         dlog(
-            "surface.moveBonsplit.located tab=\(tabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.located tab=\(bonsplitTabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
             "sourceWs=\(located.workspaceId.uuidString.prefix(5)) sourceWin=\(located.windowId.uuidString.prefix(5))"
         )
 #endif
@@ -5574,7 +5574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
 #if DEBUG
         dlog(
-            "surface.moveBonsplit.end tab=\(tabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
+            "surface.moveBonsplit.end tab=\(bonsplitTabId.uuidString.prefix(5)) panel=\(located.panelId.uuidString.prefix(5)) " +
             "moved=\(moved ? 1 : 0) elapsedMs=\(elapsedMs(since: moveStart))"
         )
 #endif

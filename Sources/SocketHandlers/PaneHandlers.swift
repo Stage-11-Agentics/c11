@@ -459,10 +459,10 @@ extension TerminalController {
             let workspace = located.workspace
             let sourcePane = located.paneId
 
-            guard let selectedSourceTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
-                  let selectedTargetTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
-                  let sourceSurfaceId = workspace.tabIdFromBonsplitTabId(selectedSourceTab.id),
-                  let targetSurfaceId = workspace.tabIdFromBonsplitTabId(selectedTargetTab.id) else {
+            guard let selectedSourceBonsplitTab = workspace.bonsplitController.selectedTab(inPane: sourcePane),
+                  let selectedTargetBonsplitTab = workspace.bonsplitController.selectedTab(inPane: targetPane),
+                  let sourceSurfaceId = workspace.tabIdFromBonsplitTabId(selectedSourceBonsplitTab.id),
+                  let targetSurfaceId = workspace.tabIdFromBonsplitTabId(selectedTargetBonsplitTab.id) else {
                 result = .err(code: "invalid_state", message: "Both areas must have a selected tab", data: nil)
                 return
             }

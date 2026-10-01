@@ -1015,3 +1015,55 @@ func TestApplyTabEnvFallbackPrecedence(t *testing.T) {
 		t.Fatalf("expected CMUX_SURFACE_ID last, got %v", params["surface_id"])
 	}
 }
+
+func TestLegacyWireValueRewritesRefPrefixesOnly(t *testing.T) {
+	tests := []struct{ key, in, want string }{
+		{"surface_id", "tab:3", "surface:3"},
+		{"surface_id", "TAB:3", "surface:3"},
+		{"surface_id", "surface:3", "surface:3"},
+		{"surface_id", "FBE933E1-CEA0-4981-B0A4-05DE9BDD3B36", "FBE933E1-CEA0-4981-B0A4-05DE9BDD3B36"},
+		{"surface_id", "3", "3"},
+		{"pane_id", "area:2", "pane:2"},
+		{"pane_id", "Area:2", "pane:2"},
+		{"pane_id", "pane:2", "pane:2"},
+		{"pane_id", "tab:2", "tab:2"},
+		{"workspace_id", "tab:1", "tab:1"},
+	}
+	for _, tc := range tests {
+		if got := legacyWireValue(tc.key, tc.in); got != tc.want {
+			t.Errorf("legacyWireValue(%q, %q) = %q, want %q", tc.key, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCLISendsLegacyRefValuesOnLegacyKeys(t *testing.T) {
+	sockPath, requests := startMockV2SocketWithRequestCapture(t)
+	clearTabEnv(t)
+	code := runCLI([]string{"--socket", sockPath, "--json", "send", "--tab", "tab:3", "--text", "hi"})
+	if code != 0 {
+		t.Fatalf("send should return 0, got %d", code)
+	}
+	select {
+	case req := <-requests:
+		params, _ := req["params"].(map[string]any)
+		if got := params["surface_id"]; got != "surface:3" {
+			t.Fatalf("expected surface_id surface:3, got %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for send request")
+	}
+
+	code = runCLI([]string{"--socket", sockPath, "--json", "list-area-tabs", "--area", "area:2"})
+	if code != 0 {
+		t.Fatalf("list-area-tabs should return 0, got %d", code)
+	}
+	select {
+	case req := <-requests:
+		params, _ := req["params"].(map[string]any)
+		if got := params["pane_id"]; got != "pane:2" {
+			t.Fatalf("expected pane_id pane:2, got %v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for list-area-tabs request")
+	}
+}

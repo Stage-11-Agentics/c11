@@ -226,7 +226,7 @@ func execV2(socketPath string, spec *commandSpec, args []string, jsonOutput bool
 				if override, ok := spec.paramKeyOverrides[key]; ok {
 					paramKey = override
 				}
-				params[paramKey] = val
+				params[paramKey] = legacyWireValue(paramKey, val)
 			}
 		}
 
@@ -333,7 +333,7 @@ func runBrowserRelay(socketPath string, args []string, jsonOutput bool, refreshA
 	for _, key := range flagKeys {
 		if val, ok := parsed.flags[key]; ok {
 			paramKey := flagToParamKey(key)
-			params[paramKey] = val
+			params[paramKey] = legacyWireValue(paramKey, val)
 		}
 	}
 	if allowPositionalURL {
@@ -378,7 +378,7 @@ func applyTabEnvFallback(params map[string]any) {
 	}
 	for _, name := range []string{"C11_TAB_ID", "C11_SURFACE_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"} {
 		if v := os.Getenv(name); v != "" {
-			params["surface_id"] = v
+			params["surface_id"] = legacyWireValue("surface_id", v)
 			return
 		}
 	}
@@ -451,6 +451,28 @@ func flagToParamKey(key string) string {
 type parsedFlags struct {
 	flags      map[string]string // --key value pairs
 	positional []string          // non-flag arguments
+}
+
+// legacyWireValue rewrites a handle-ref value to the legacy spelling the legacy
+// wire keys expect: tab:N -> surface:N for surface_id, area:N -> pane:N for
+// pane_id (prefix only, case-insensitive; UUIDs and everything else pass
+// through). An older app resolves tab:N to a different tab, so a new-style ref
+// must not ride a legacy key.
+func legacyWireValue(paramKey, val string) string {
+	var from, to string
+	switch paramKey {
+	case "surface_id":
+		from, to = "tab:", "surface:"
+	case "pane_id":
+		from, to = "area:", "pane:"
+	default:
+		return val
+	}
+	trimmed := strings.TrimSpace(val)
+	if len(trimmed) >= len(from) && strings.EqualFold(trimmed[:len(from)], from) {
+		return to + trimmed[len(from):]
+	}
+	return val
 }
 
 // flagAliases maps hidden legacy flag spellings onto the canonical flag name.

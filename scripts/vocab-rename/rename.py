@@ -558,6 +558,131 @@ def bound_names(text):
     return names
 
 
+HEADER_START = re.compile(
+    r"^\s*(?:@\w+(?:\([^)]*\))?\s+|(?:private|fileprivate|internal|public|open|static|final|override|mutating|"
+    r"nonisolated|class|lazy|required|convenience)\s+)*(?:func|init|subscript|if|else|for|while|catch|case|do|"
+    r"repeat|get|set|willSet|didSet|deinit|switch)\b")
+TYPE_HEAD = re.compile(r"\b(?:class|struct|enum|extension|protocol|actor)\b")
+CLOSURE_PARAMS = re.compile(r"\s*(?:\[[^\]]*\]\s*)?(?:\(([^)]*)\)|([\w, ]+?))(?:\s*->\s*[^\n{]+?)?\s+in\b")
+
+
+class Block:
+    __slots__ = ("open", "close", "parent", "header", "header_start", "own", "children", "is_type", "_desc")
+
+    def __init__(self, open_, parent, header, header_start):
+        self.open, self.close, self.parent = open_, None, parent
+        self.header, self.header_start = header, header_start
+        self.own, self.children = set(), []
+        self.is_type = bool(TYPE_HEAD.search(header))
+        self._desc = None
+
+
+class Scopes:
+    """Lexical block scopes of one Swift file: which names are bound locally where."""
+
+    def __init__(self, src, lx):
+        self.src = src
+        self.blocks, stack, last = [], [], -1
+        for pos, ch in lx.events:
+            if ch == "{":
+                seg_start = last + 1
+                seg = src[seg_start:pos]
+                header, hstart = "", pos
+                offset = 0
+                lines = seg.split("\n")
+                for i, line in enumerate(lines):
+                    if HEADER_START.match(line):
+                        header = "\n".join(lines[i:])
+                        hstart = seg_start + offset
+                        break
+                    offset += len(line) + 1
+                blk = Block(pos, stack[-1] if stack else None, header, hstart)
+                if stack:
+                    stack[-1].children.append(blk)
+                self.blocks.append(blk)
+                stack.append(blk)
+                last = pos
+            elif ch == "}":
+                if stack:
+                    blk = stack.pop()
+                    blk.close = pos
+                    self._bind(blk)
+                last = pos
+            else:
+                last = pos
+        for blk in stack:  # unbalanced (shouldn't happen): treat as closed at EOF
+            blk.close = len(src)
+            self._bind(blk)
+        self.blocks.sort(key=lambda b: b.open)
+        self.opens = [b.open for b in self.blocks]
+
+    def _bind(self, blk):
+        if blk.is_type:
+            return
+        src = self.src
+        names = set(bound_names(blk.header)) if blk.header else set()
+        m = CLOSURE_PARAMS.match(src[blk.open + 1:blk.open + 300])
+        if m:
+            for grp in (m.group(1), m.group(2)):
+                for part in re.split(r"[,\s]+", grp or ""):
+                    part = part.strip("()")
+                    if re.fullmatch(r"[A-Za-z_]\w*", part):
+                        names.add(part)
+        pieces, cur = [], blk.open + 1
+        for ch in sorted(blk.children, key=lambda c: c.header_start):
+            pieces.append(src[cur:ch.header_start])
+            cur = ch.close + 1
+        pieces.append(src[cur:blk.close])
+        direct = "".join(pieces)
+        for m in _BIND_LET.finditer(direct):
+            for grp in (m.group(1), m.group(2)):
+                for part in re.split(r"[,\s]+", grp or ""):
+                    part = part.strip("()")
+                    if re.fullmatch(r"[A-Za-z_]\w*", part):
+                        names.add(part)
+        blk.own = names
+
+    def innermost(self, p):
+        import bisect
+        i = bisect.bisect_right(self.opens, p) - 1
+        blk = self.blocks[i] if i >= 0 else None
+        while blk is not None and not (blk.open < p < blk.close):
+            blk = blk.parent
+        # a token in a block's header (parameters, for/if bindings) belongs to that block
+        pool = blk.children if blk is not None else [b for b in self.blocks if b.parent is None]
+        for ch in pool:
+            if ch.header_start <= p < ch.open and ch.header:
+                return ch
+        return blk
+
+    def _desc(self, blk):
+        if blk._desc is None:
+            acc = set()
+            for ch in blk.children:
+                acc |= ch.own
+                acc |= self._desc(ch)
+            blk._desc = acc
+        return blk._desc
+
+    def conflict(self, p, tok, new):
+        """(conflicts, tok_is_local): would renaming `tok` at p to `new` clash with a local binding?"""
+        blk = self.innermost(p)
+        chain, b = [], blk
+        while b is not None:
+            chain.append(b)
+            b = b.parent
+        binder = next((c for c in chain if tok in c.own), None)
+        names = set()
+        if binder is not None:
+            for c in chain[chain.index(binder):]:
+                names |= c.own
+            names |= self._desc(binder)
+        else:
+            for c in chain:
+                names |= c.own
+        return (new in names), binder is not None
+
+
 def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, receivers=None):
     lx = Lexer(src)
     lx.scan(0, False)
@@ -586,13 +711,7 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
         elif is_codable and not has_ck:
             for a, b in props + (cases if kind == "enum" else []):
                 hazard_pos[a] = f"{kind} {name}"
-    by_region = {}  # region id -> names bound locally in that region
-    class _Lazy(dict):
-        def __missing__(self, r):
-            a0, b0 = spans[r]
-            self[r] = bound_names(src[a0:b0])
-            return self[r]
-    by_region = _Lazy()
+    scopes = Scopes(src, lx)
     protected = set()  # (region, name): parameters of `keep` callees keep their name through the body
     if callees:
         for (a, b), r in zip(lx.idents, reg):
@@ -656,19 +775,21 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, recei
                     if kept_cache[key]:
                         blocked = "keep"
                         break
-        if blocked is None and new in by_region[r] and not member and not is_label:
-            if tok not in by_region[r] and not is_param:
-                new = "self." + new  # a member use: qualify so a same-named local cannot capture it
-            elif is_param:
-                inner = fallback if fallback and fallback not in by_region[r] else tok
-                new = f"{new} {inner}"  # `func f(newLabel inner: T)`: label follows the rename, body keeps a safe name
-            elif fallback and fallback not in by_region[r]:
-                new = fallback
-            else:
-                blocked = "collision"
-                if rule != "rename" and report is not None:
-                    line = src.count("\n", 0, a) + 1
-                    report.append(f"COLLISION {rel}:{line} {tok} -> {new} (already in scope; left as is)")
+        if blocked is None and not member and not is_label:
+            clash, local = scopes.conflict(a, tok, new)
+            if clash:
+                if not local and not is_param:
+                    new = "self." + new  # a member use: qualify so a same-named local cannot capture it
+                elif is_param:
+                    inner = fallback if fallback and not scopes.conflict(a, tok, fallback)[0] else tok
+                    new = f"{new} {inner}"  # `func f(newLabel inner: T)`: label follows the rename, body keeps a safe name
+                elif fallback and not scopes.conflict(a, tok, fallback)[0]:
+                    new = fallback
+                else:
+                    blocked = "collision"
+                    if rule != "rename" and report is not None:
+                        line = src.count("\n", 0, a) + 1
+                        report.append(f"COLLISION {rel}:{line} {tok} -> {new} (already in scope; left as is)")
         if blocked is not None:
             if rule == "rename":
                 if is_param:

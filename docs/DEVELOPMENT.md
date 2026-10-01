@@ -53,9 +53,9 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | Area | Files |
 |---|---|
 | Terminal | `TerminalView.swift`, `GhosttyTerminalView.swift`, `GhosttyConfig.swift`, `TerminalController.swift`, `TerminalWindowPortal.swift` |
-| Browser | `BrowserWindowPortal.swift`, `Panels/BrowserPanel.swift`, `Panels/BrowserPanelView.swift`, `Panels/CmuxWebView.swift` |
-| Markdown | `Panels/MarkdownPanel.swift`, `Panels/MarkdownPanelView.swift`, `Panels/FencedCodeRenderer.swift`, `Panels/MermaidRenderer.swift` |
-| Tab base | `Panels/Panel.swift`, `Panels/PanelContentView.swift`, `Panels/PaneInteraction.swift` |
+| Browser | `BrowserWindowPortal.swift`, `Tabs/BrowserTab.swift`, `Tabs/BrowserTabView.swift`, `Tabs/CmuxWebView.swift` |
+| Markdown | `Tabs/MarkdownTab.swift`, `Tabs/MarkdownTabView.swift`, `Tabs/FencedCodeRenderer.swift`, `Tabs/MermaidRenderer.swift` |
+| Tab base | `Tabs/TabContent.swift`, `Tabs/TabContentView.swift`, `Tabs/PaneInteraction.swift` |
 
 ### Areas, tabs, workspaces
 
@@ -72,7 +72,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 | `AgentDetector.swift` | Identifies which agent (Claude Code / Codex / Gemini / shell) is running in a tab |
 | `AgentChip.swift`, `AgentChipBadge.swift` | Sidebar chip UI |
 | `AgentSkillsView.swift`, `SkillInstaller.swift` | Skills onboarding sheet |
-| `PaneMetadataStore.swift`, `SurfaceMetadataStore.swift`, `SurfaceTitleBarView.swift` | The tab manifest — the open JSON blob agents read/write over the socket |
+| `PaneMetadataStore.swift`, `TabMetadataStore.swift`, `TabTitleBarView.swift` | The tab manifest — the open JSON blob agents read/write over the socket |
 
 ### Theming
 
@@ -84,7 +84,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 ### Find / search overlay
 
-`Sources/Find/SurfaceSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
+`Sources/Find/TabSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
 
 ## The CLI and socket
 
@@ -101,7 +101,7 @@ The socket protocol it speaks is documented in [`socket-api-reference.md`](socke
 A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full detail in [`../CLAUDE.md`](../CLAUDE.md); the short version:
 
 - **`WindowTerminalHostView.hitTest()`** in `TerminalWindowPortal.swift` — all divider/sidebar/drag routing is gated to pointer events only. Don't add work outside the `isPointerEvent` guard.
-- **`TabItemView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `tab`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
+- **`WorkspaceRowView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
 - **`TerminalSurface.forceRefresh()`** in `GhosttyTerminalView.swift` — no allocations, file I/O, or formatting here.
 
 ## Socket threading — read before adding a socket command

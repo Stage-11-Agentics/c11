@@ -29,6 +29,8 @@ Table format (one entry per line, `#` comments and blank lines ignored):
                                         in matching files, names whose binding site
                                         (let/for/guard/param) derives from the regex
                                         (a bonsplit value) are renamed per member
+  @receiver<TAB>Type.                    members accessed as `Type.name` always follow the rename,
+                                        even in files the globs exclude
   @fix<TAB>file<TAB>old text<TAB>new text   exact one-off text edit applied after the renames
                                         (\\n = newline); must match exactly once, else
                                         the run reports FIXUP STALE and exits non-zero
@@ -68,6 +70,7 @@ def load_table(path):
     keeps = []
     callees = {}  # callee/type name -> "keep" | "rename"
     taints = []  # (glob, regex, {name: target})
+    receivers = []  # member receivers whose members always follow the rename (e.g. "GhosttyNotificationKey.")
     fixes = []  # (file, old text, new text): exact one-off edits, written as \\n for newlines
     with open(path, encoding="utf-8") as fh:
         for ln, raw in enumerate(fh, 1):
@@ -75,6 +78,9 @@ def load_table(path):
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             cols = line.split("\t")
+            if cols[0] == "@receiver":
+                receivers.append(cols[1])
+                continue
             if cols[0] == "@fix":
                 if len(cols) != 4:
                     sys.exit(f"{path}:{ln}: @fix needs file, old, new")
@@ -111,7 +117,7 @@ def load_table(path):
             fallback = cols[3] if len(cols) > 3 and cols[3] else None
             flags = set(cols[4].split(",")) if len(cols) > 4 and cols[4] else set()
             renames.setdefault(cols[0], []).append((cols[1], globs, fallback, flags))
-    return renames, paths, deletes, keeps, callees, taints, fixes
+    return renames, paths, deletes, keeps, callees, taints, fixes, receivers
 
 
 def glob_match(rel, globs):
@@ -513,7 +519,46 @@ def is_call_label(src, a, b):
     return True
 
 
-def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
+
+_BIND_LET = re.compile(r"\b(?:let|var)\s+(?:\(([^)]*)\)|([A-Za-z_]\w*))")
+_BIND_FOR = re.compile(r"\bfor\s+(?:\(([^)]*)\)|([A-Za-z_]\w*))\s+in\b")
+_BIND_CLOSURE = re.compile(r"\{\s*(?:\[[^\]]*\]\s*)?(?:\(([^)]*)\)|([\w, ]+?))(?:\s*->\s*[\w?!.<>\[\]]+)?\s+in\b")
+_BIND_FUNC = re.compile(r"\b(?:func\s+[A-Za-z_]\w*|init[?!]?)\s*(?:<[^>]*>)?\(([^)]*)\)")
+
+
+def bound_names(text):
+    """Names bound locally (let/var/for/closure params/func params) somewhere in `text`."""
+    names = set()
+    def add(group):
+        for part in re.split(r"[,\s]+", group or ""):
+            part = part.strip("()")
+            if re.fullmatch(r"[A-Za-z_]\w*", part):
+                names.add(part)
+    for rx in (_BIND_LET, _BIND_FOR, _BIND_CLOSURE):
+        for m in rx.finditer(text):
+            add(m.group(1))
+            add(m.group(2))
+    for m in _BIND_FUNC.finditer(text):
+        depth, cur, parts = 0, "", []
+        for ch in m.group(1):
+            if ch in "([<":
+                depth += 1
+            elif ch in ")]>":
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append(cur)
+                cur = ""
+            else:
+                cur += ch
+        parts.append(cur)
+        for part in parts:
+            head = part.split(":")[0].split()
+            if head:
+                names.add(head[-1])
+    return names
+
+
+def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None, receivers=None):
     lx = Lexer(src)
     lx.scan(0, False)
     reg, spans = regions(src, lx)
@@ -541,11 +586,13 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
         elif is_codable and not has_ck:
             for a, b in props + (cases if kind == "enum" else []):
                 hazard_pos[a] = f"{kind} {name}"
-    by_region = {}
-    for (a, b), r in zip(lx.idents, reg):
-        if is_call_label(src, a, b):
-            continue
-        by_region.setdefault(r, set()).add(src[a:b])
+    by_region = {}  # region id -> names bound locally in that region
+    class _Lazy(dict):
+        def __missing__(self, r):
+            a0, b0 = spans[r]
+            self[r] = bound_names(src[a0:b0])
+            return self[r]
+    by_region = _Lazy()
     out, last, count = [], 0, 0
     for (a, b), r in zip(lx.idents, reg):
         tok = src[a:b]
@@ -557,12 +604,14 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
             if glob_match(rel, globs):
                 new, fallback, flags = cand, fb, fl
                 break
+        if new is None and receivers and lst and a >= 1 and src[a - 1] == "." and any(src[:a].endswith(rc) for rc in receivers):
+            new, fallback, flags = lst[0][0], lst[0][2], set()  # member of a renamed c11 type
         if new is None and callees and lst:
             if is_call_label(src, a, b) and callees.get(callee_name(src, a) or "") == "rename":
                 new, fallback, flags = lst[0][0], lst[0][2], set()  # follows its renamed declaration
         if new is None:
             continue
-        pre = src[max(0, a - 20):a]
+        pre = src[max(0, a - 40):a]
         if pre.endswith(VENDOR_RECEIVERS) or pre.endswith("@objc("):
             continue  # vendor member / ObjC runtime name (an external contract)
         is_label = is_call_label(src, a, b)
@@ -600,7 +649,9 @@ def rewrite(src, rel, renames, report=None, keep_rules=None, callees=None):
                         blocked = "keep"
                         break
         if blocked is None and new in by_region[r] and not member and not is_label:
-            if is_param:
+            if tok not in by_region[r] and not is_param:
+                new = "self." + new  # a member use: qualify so a same-named local cannot capture it
+            elif is_param:
                 inner = fallback if fallback and fallback not in by_region[r] else tok
                 new = f"{new} {inner}"  # `func f(newLabel inner: T)`: label follows the rename, body keeps a safe name
             elif fallback and fallback not in by_region[r]:
@@ -764,7 +815,7 @@ def main(argv):
     use_git = "--no-git" not in argv
     if "--root" in argv:
         root = argv[argv.index("--root") + 1]
-    renames, paths, deletes, keeps, callees, taints, fixes = load_table(table)
+    renames, paths, deletes, keeps, callees, taints, fixes, receivers = load_table(table)
     validate(renames)
     for rel, text in deletes:
         full = os.path.join(root, rel)
@@ -782,7 +833,7 @@ def main(argv):
         rel = os.path.relpath(full, root)
         src = open(full, encoding="utf-8").read()
         src, nt = taint_pass(src, rel, taints, report)
-        new, n = rewrite(src, rel, renames, report, keeps, callees)
+        new, n = rewrite(src, rel, renames, report, keeps, callees, receivers)
         n += nt
         if n:
             total_files += 1

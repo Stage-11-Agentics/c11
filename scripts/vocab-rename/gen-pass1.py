@@ -37,7 +37,10 @@ CALLEES = {"BrowserPaneDragTransfer": "keep", "move": "keep", "equalizeSplits": 
            "matchesCurrentTerminalFocusTarget": "rename", "resolveSurfaceId": "rename",
            "preloadTerminalPanelForDebugStress": "keep", "DebugStressTerminalLoadTarget": "keep", "ScriptTab": "keep",
            "moveBonsplitTab": "keep", "locateBonsplitSurface": "keep",
-           "newSplit": "rename", "clearNotifications": "rename"}
+           "newSplit": "rename", "clearNotifications": "rename", "addNotification": "rename",
+           "hasUnreadNotification": "rename", "markRead": "rename", "unreadNotificationCreatedAt": "rename",
+           "workspaceManagerFor": "rename", "tabManagerFor": "rename"}
+RECEIVERS = ["GhosttyNotificationKey."]
 NOIMPLICIT = {"tab", "tabs", "selectedTab", "selectedTabId", "tabId", "tabIds"}
 
 SUBSTRING_RULES = [  # (old substring, new substring), applied to whole identifiers
@@ -112,6 +115,8 @@ def main():
            "@delete\tSources/TabManager.swift\tvar selectedTab: Workspace? { selectedWorkspace }"]
     for rel, old, new in FIXES:
         out.append("\t".join(["@fix", rel, old.replace("\n", "\\n"), new.replace("\n", "\\n")]))
+    for rc in RECEIVERS:
+        out.append(f"@receiver\t{rc}")
     for name, how in sorted(CALLEES.items()):
         out.append(f"@callee\t{name}\t{how}")
     out.append("@keep\tSources/TerminalController.swift\tLayoutDebugSelectedPanel|splitViews: \\[LayoutDebugSplitView\\]\tselectedTabId")

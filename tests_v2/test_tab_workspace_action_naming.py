@@ -81,7 +81,8 @@ def main() -> int:
 
     help_text = _run_cli(cli, ["tab-action", "--help"], json_output=False)
     _must("Target tab" in help_text, "tab-action --help should describe tab target naming")
-    _must("tab:<n>" in help_text, "tab-action --help should mention tab:<n> refs")
+    _must("--tab <id|ref|index>" in help_text, "tab-action --help should document --tab")
+    _must("surface" not in help_text.lower(), "tab-action --help should not use the old tab word")
     _must("--tab tab:" in help_text, "tab-action examples should use tab: refs")
 
     with cmux(SOCKET_PATH) as c:

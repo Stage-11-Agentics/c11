@@ -61,7 +61,8 @@ def run_tree_json(
     extra_args: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Run `cmux --json tree [extra_args]` and parse JSON output."""
-    args = ["tree"] + (extra_args or [])
+    # Default id format is refs-only; tests assert on both ids and refs.
+    args = ["--id-format", "both", "tree"] + (extra_args or [])
     _, stdout, _ = run_cli(cli, args, json_mode=True)
     try:
         return json.loads(stdout or "{}")

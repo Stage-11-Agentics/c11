@@ -43,7 +43,7 @@ def _find_cli() -> str:
 
 def _register_tty(socket_path: str, ws_id: str, surface_id: str, tty_name: str) -> None:
     """Send a report_tty command via the raw CLI socket protocol."""
-    raw_cmd = f"report_tty {tty_name} --tab={ws_id} --tab={surface_id}\n"
+    raw_cmd = f"report_tty {tty_name} --tab={ws_id} --panel={surface_id}\n"
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(socket_path)
     try:

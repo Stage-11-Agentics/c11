@@ -1039,10 +1039,10 @@ extension TerminalController {
         var before: [String] = []
         var after: [String] = []
         v2MainSync {
-            before = workspaceManager.tabs.map { $0.id.uuidString }
+            before = workspaceManager.workspaces.map { $0.id.uuidString }
             let snapshot = workspaceManager.sessionSnapshot(includeScrollback: false)
             workspaceManager.restoreSessionSnapshot(snapshot)
-            after = workspaceManager.tabs.map { $0.id.uuidString }
+            after = workspaceManager.workspaces.map { $0.id.uuidString }
         }
         return .ok([
             "before": before,

@@ -7234,7 +7234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             persistedWidth: CGFloat(sidebarWidth)
         )
         let sidebarSelectionState = SidebarSelectionState(
-            selection: sessionWindowSnapshot?.sidebar.selection.sidebarSelection ?? .tabs
+            selection: sessionWindowSnapshot?.sidebar.selection.sidebarSelection ?? .workspaces
         )
         let notificationStore = TerminalNotificationStore.shared
 

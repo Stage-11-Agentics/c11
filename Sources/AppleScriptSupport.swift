@@ -129,7 +129,7 @@ extension NSApplication {
 
         return appDelegate.scriptableMainWindows()
             .flatMap { state in
-                state.workspaceManager.tabs.flatMap { workspace in
+                state.workspaceManager.workspaces.flatMap { workspace in
                     workspace.scriptingTerminalPanels().map {
                         ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
                     }
@@ -146,7 +146,7 @@ extension NSApplication {
         }
 
         for state in appDelegate.scriptableMainWindows() {
-            for workspace in state.workspaceManager.tabs where workspace.terminalPanel(for: terminalId) != nil {
+            for workspace in state.workspaceManager.workspaces where workspace.terminalPanel(for: terminalId) != nil {
                 return ScriptTerminal(workspaceId: workspace.id, terminalId: terminalId)
             }
         }
@@ -262,13 +262,13 @@ final class ScriptWindow: NSObject {
               let state else {
             return []
         }
-        return state.workspaceManager.tabs.map { ScriptWorkspace(windowId: windowId, tabId: $0.id) }
+        return state.workspaceManager.workspaces.map { ScriptWorkspace(windowId: windowId, tabId: $0.id) }
     }
 
     @objc(selectedTab)
     var selectedTab: ScriptWorkspace? {
         guard NSApp.isAppleScriptEnabled,
-              let selectedId = state?.workspaceManager.selectedTabId else {
+              let selectedId = state?.workspaceManager.selectedWorkspaceId else {
             return nil
         }
         return ScriptWorkspace(windowId: windowId, tabId: selectedId)
@@ -280,7 +280,7 @@ final class ScriptWindow: NSObject {
               let state else {
             return []
         }
-        return state.workspaceManager.tabs.flatMap { workspace in
+        return state.workspaceManager.workspaces.flatMap { workspace in
             workspace.scriptingTerminalPanels().map {
                 ScriptTerminal(workspaceId: workspace.id, terminalId: $0.id)
             }
@@ -292,7 +292,7 @@ final class ScriptWindow: NSObject {
         guard NSApp.isAppleScriptEnabled,
               let tabId = UUID(uuidString: uniqueID),
               let state,
-              state.workspaceManager.tabs.contains(where: { $0.id == tabId }) else {
+              state.workspaceManager.workspaces.contains(where: { $0.id == tabId }) else {
             return nil
         }
         return ScriptWorkspace(windowId: windowId, tabId: tabId)
@@ -306,7 +306,7 @@ final class ScriptWindow: NSObject {
             return nil
         }
 
-        for workspace in state.workspaceManager.tabs where workspace.terminalPanel(for: terminalId) != nil {
+        for workspace in state.workspaceManager.workspaces where workspace.terminalPanel(for: terminalId) != nil {
             return ScriptTerminal(workspaceId: workspace.id, terminalId: terminalId)
         }
 
@@ -371,7 +371,7 @@ final class ScriptWorkspace: NSObject {
     }
 
     private var workspace: Workspace? {
-        state?.workspaceManager.tabs.first(where: { $0.id == tabId })
+        state?.workspaceManager.workspaces.first(where: { $0.id == tabId })
     }
 
     private var window: ScriptWindow {
@@ -394,7 +394,7 @@ final class ScriptWorkspace: NSObject {
     var index: Int {
         guard NSApp.isAppleScriptEnabled,
               let state,
-              let idx = state.workspaceManager.tabs.firstIndex(where: { $0.id == tabId }) else {
+              let idx = state.workspaceManager.workspaces.firstIndex(where: { $0.id == tabId }) else {
             return 0
         }
         return idx + 1
@@ -403,7 +403,7 @@ final class ScriptWorkspace: NSObject {
     @objc(selected)
     var selected: Bool {
         guard NSApp.isAppleScriptEnabled else { return false }
-        return state?.workspaceManager.selectedTabId == tabId
+        return state?.workspaceManager.selectedWorkspaceId == tabId
     }
 
     @objc(focusedTerminal)
@@ -463,7 +463,7 @@ final class ScriptWorkspace: NSObject {
             return nil
         }
 
-        if state.workspaceManager.tabs.count > 1 {
+        if state.workspaceManager.workspaces.count > 1 {
             state.workspaceManager.closeWorkspace(workspace)
             return nil
         }
@@ -510,7 +510,7 @@ final class ScriptTerminal: NSObject {
     }
 
     private var workspace: Workspace? {
-        state?.workspaceManager.tabs.first(where: { $0.id == workspaceId })
+        state?.workspaceManager.workspaces.first(where: { $0.id == workspaceId })
     }
 
     private var terminal: TerminalPanel? {
@@ -611,7 +611,7 @@ final class ScriptTerminal: NSObject {
         }
 
         if workspace.panels.count == 1 {
-            if state.workspaceManager.tabs.count > 1 {
+            if state.workspaceManager.workspaces.count > 1 {
                 state.workspaceManager.closeWorkspace(workspace)
                 return nil
             }

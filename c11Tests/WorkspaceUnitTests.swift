@@ -224,7 +224,7 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
 
     func testNewManagerWorkspacesUseStableWorkspaceDefaultTitles() {
         let manager = WorkspaceManager()
-        let first = manager.tabs[0]
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
 
         XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(1))
@@ -355,35 +355,35 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         let currentPlacement = WorkspacePlacementSettings.current()
 
         let defaultManager = makeManagerWithThreeWorkspaces()
-        let defaultBaselineOrder = defaultManager.tabs.map(\.id)
+        let defaultBaselineOrder = defaultManager.workspaces.map(\.id)
         let defaultInserted = defaultManager.addWorkspace()
-        guard let defaultInsertedIndex = defaultManager.tabs.firstIndex(where: { $0.id == defaultInserted.id }) else {
+        guard let defaultInsertedIndex = defaultManager.workspaces.firstIndex(where: { $0.id == defaultInserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
-        XCTAssertEqual(defaultManager.tabs.map(\.id).filter { $0 != defaultInserted.id }, defaultBaselineOrder)
+        XCTAssertEqual(defaultManager.workspaces.map(\.id).filter { $0 != defaultInserted.id }, defaultBaselineOrder)
 
         let explicitManager = makeManagerWithThreeWorkspaces()
-        let explicitBaselineOrder = explicitManager.tabs.map(\.id)
+        let explicitBaselineOrder = explicitManager.workspaces.map(\.id)
         let explicitInserted = explicitManager.addWorkspace(placementOverride: currentPlacement)
-        guard let explicitInsertedIndex = explicitManager.tabs.firstIndex(where: { $0.id == explicitInserted.id }) else {
+        guard let explicitInsertedIndex = explicitManager.workspaces.firstIndex(where: { $0.id == explicitInserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
-        XCTAssertEqual(explicitManager.tabs.map(\.id).filter { $0 != explicitInserted.id }, explicitBaselineOrder)
+        XCTAssertEqual(explicitManager.workspaces.map(\.id).filter { $0 != explicitInserted.id }, explicitBaselineOrder)
         XCTAssertEqual(defaultInsertedIndex, explicitInsertedIndex)
     }
 
     func testAddWorkspaceEndOverrideAlwaysAppends() {
         let manager = makeManagerWithThreeWorkspaces()
-        let baselineCount = manager.tabs.count
+        let baselineCount = manager.workspaces.count
         guard baselineCount >= 3 else {
             XCTFail("Expected at least three workspaces for placement regression test")
             return
         }
 
         let inserted = manager.addWorkspace(placementOverride: .end)
-        guard let insertedIndex = manager.tabs.firstIndex(where: { $0.id == inserted.id }) else {
+        guard let insertedIndex = manager.workspaces.firstIndex(where: { $0.id == inserted.id }) else {
             XCTFail("Expected inserted workspace in tab list")
             return
         }
@@ -395,7 +395,7 @@ final class WorkspaceCreationPlacementTests: XCTestCase {
         let manager = WorkspaceManager()
         _ = manager.addWorkspace()
         _ = manager.addWorkspace()
-        if let first = manager.tabs.first {
+        if let first = manager.workspaces.first {
             manager.selectWorkspace(first)
         }
         return manager
@@ -699,27 +699,27 @@ final class WorkspaceReorderTests: XCTestCase {
     @MainActor
     func testReorderWorkspaceMovesWorkspaceToRequestedIndex() {
         let manager = WorkspaceManager()
-        let first = manager.tabs[0]
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
         let third = manager.addWorkspace()
 
         manager.selectWorkspace(second)
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: second.id, toIndex: 0))
-        XCTAssertEqual(manager.tabs.map(\.id), [second.id, first.id, third.id])
-        XCTAssertEqual(manager.selectedTabId, second.id)
+        XCTAssertEqual(manager.workspaces.map(\.id), [second.id, first.id, third.id])
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
     }
 
     @MainActor
     func testReorderWorkspaceClampsOutOfRangeTargetIndex() {
         let manager = WorkspaceManager()
-        let first = manager.tabs[0]
+        let first = manager.workspaces[0]
         let second = manager.addWorkspace()
         let third = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: first.id, toIndex: 999))
-        XCTAssertEqual(manager.tabs.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [second.id, third.id, first.id])
     }
 
     @MainActor
@@ -731,27 +731,27 @@ final class WorkspaceReorderTests: XCTestCase {
     @MainActor
     func testReorderWorkspaceKeepsUnpinnedWorkspaceBelowPinnedSegment() {
         let manager = WorkspaceManager()
-        let firstPinned = manager.tabs[0]
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: unpinned.id, toIndex: 0))
-        XCTAssertEqual(manager.tabs.map(\.id), [firstPinned.id, secondPinned.id, unpinned.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [firstPinned.id, secondPinned.id, unpinned.id])
     }
 
     @MainActor
     func testReorderWorkspaceKeepsPinnedWorkspaceInsidePinnedSegment() {
         let manager = WorkspaceManager()
-        let firstPinned = manager.tabs[0]
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
         let unpinned = manager.addWorkspace()
 
         XCTAssertTrue(manager.reorderWorkspace(tabId: firstPinned.id, toIndex: 999))
-        XCTAssertEqual(manager.tabs.map(\.id), [secondPinned.id, firstPinned.id, unpinned.id])
+        XCTAssertEqual(manager.workspaces.map(\.id), [secondPinned.id, firstPinned.id, unpinned.id])
     }
 }
 
@@ -789,7 +789,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
             }
         }
 
-        let firstPinned = manager.tabs[0]
+        let firstPinned = manager.workspaces[0]
         manager.setPinned(firstPinned, pinned: true)
         let secondPinned = manager.addWorkspace()
         manager.setPinned(secondPinned, pinned: true)
@@ -804,7 +804,7 @@ final class WorkspaceNotificationReorderTests: XCTestCase {
             body: "Pinned workspaces should stay put"
         )
 
-        XCTAssertEqual(manager.tabs.map(\.id), expectedOrder)
+        XCTAssertEqual(manager.workspaces.map(\.id), expectedOrder)
     }
 }
 

@@ -340,7 +340,7 @@ final class SurfaceAttentionService {
         SurfaceMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
         SurfaceAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
-            .tabs.first(where: { $0.id == workspaceId })?
+            .workspaces.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)
     }
 
@@ -460,7 +460,7 @@ final class SurfaceAttentionService {
     private func publishProjection(_ snapshot: SurfaceAttentionSnapshot) {
         SurfaceAttentionIndex.shared.publish(snapshot)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
-            .tabs.first(where: { $0.id == snapshot.workspaceId })?
+            .workspaces.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
     }
 }

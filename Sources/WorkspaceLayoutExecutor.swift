@@ -497,7 +497,7 @@ enum WorkspaceLayoutExecutor {
         // Step 2: resolve the target. A missing id is a user/scripting
         // mistake, not a partial failure: surface it as `invalid_params`
         // so the v2 handler can map to the right socket error code.
-        guard let existing = dependencies.workspaceManager.tabs.first(where: { $0.id == existingWorkspaceId }) else {
+        guard let existing = dependencies.workspaceManager.workspaces.first(where: { $0.id == existingWorkspaceId }) else {
             let failure = ApplyFailure(
                 code: "invalid_params",
                 step: "validate",

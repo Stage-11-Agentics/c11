@@ -960,7 +960,7 @@ final class TerminalNotificationStore: ObservableObject {
         emitWaitingEdges(previous: previous, current: indexes.unreadCountByWorkspaceId)
         for workspaceId in Set(previous.keys).union(indexes.unreadCountByWorkspaceId.keys) {
             AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
-                .tabs.first(where: { $0.id == workspaceId })?
+                .workspaces.first(where: { $0.id == workspaceId })?
                 .syncSurfaceTabActivityStates()
         }
     }

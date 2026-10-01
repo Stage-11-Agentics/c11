@@ -10480,7 +10480,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// Used to degrade `--persistent` to a one-shot pulse in that case.
     private func isFocusedTargetForPersistentFlash(panelId: UUID) -> Bool {
         guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
-        guard workspaceManager.selectedTabId == self.id else { return false }
+        guard workspaceManager.selectedWorkspaceId == self.id else { return false }
         guard self.focusedPanelId == panelId else { return false }
         guard NSApp.isActive else { return false }
         return true

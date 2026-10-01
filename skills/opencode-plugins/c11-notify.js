@@ -68,9 +68,9 @@ export const C11NotifyPlugin = async ({ $ }) => {
         case "session.created": {
           // Exact-session resume rail (C11-151). Push the new opencode
           // session id to c11's conversation store so a quit+relaunch
-          // re-attaches the surface to THIS session via `opencode -s <id>`.
+          // re-attaches the tab to THIS session via `opencode -s <id>`.
           // Root sessions only — a sub-agent session (parentID set) must
-          // not clobber the surface's primary conversation id. opencode
+          // not clobber the tab's primary conversation id. opencode
           // session ids are `ses_` + 26-char base62; the c11 CLI
           // revalidates the grammar before storing.
           if (info?.id && !info.parentID) {

@@ -48,8 +48,8 @@ c11 notify --title "Build Complete"
 # With subtitle and body
 c11 notify --title "Claude Code" --subtitle "Permission" --body "Approval needed"
 
-# Notify specific tab/panel
-c11 notify --title "Done" --tab 0 --panel 1
+# Notify a specific workspace and tab
+c11 notify --title "Done" --workspace 0 --tab 1
 ```
 
 ## Integration Examples
@@ -186,16 +186,13 @@ c11 sets these in child shells:
 | Variable | Description |
 |----------|-------------|
 | `C11_SOCKET_PATH` | Path to control socket |
+| `C11_WORKSPACE_ID` | UUID of the current workspace |
 | `C11_TAB_ID` | UUID of the current tab |
-| `C11_PANEL_ID` | UUID of the current panel |
-| `C11_SURFACE_ID` | UUID of the current surface |
-
-> **Backwards compatibility:** `CMUX_SOCKET_PATH`, `CMUX_TAB_ID`, `CMUX_PANEL_ID`, and `CMUX_SURFACE_ID` are also accepted as aliases. c11 mirrors both env var namespaces at startup.
 
 ## CLI Commands
 
 ```
-c11 notify --title <text> [--subtitle <text>] [--body <text>] [--tab <id|index>] [--panel <id|index>]
+c11 notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|index>] [--tab <id|index>]
 c11 list-notifications
 c11 clear-notifications
 c11 ping

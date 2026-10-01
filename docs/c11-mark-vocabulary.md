@@ -1,6 +1,6 @@
 # c11 Agent-State Mark Vocabulary
 
-The four lifecycle marks drawn beside every surface. Every state is distinguishable from
+The four lifecycle marks drawn beside every tab. Every state is distinguishable from
 every other **by shape alone** — no reliance on color or opacity. Color is thereby free for
 the flagged modifier (flat violet recolor), per `docs/c11-flagged-agent-plan.md`.
 Suppression consumes no visual channel at all — it is a lifecycle projection, not a
@@ -71,7 +71,7 @@ is exactly what that intensity is reserved for. For the other flagged combinatio
 (flagged-and-working, -idle, -cold) the mark breathes as the flagged-agent plan specifies;
 the waiting combination alone flashes instead of breathing.
 
-**Suppressed: a lifecycle projection, not a treatment.** A suppressed surface **never enters
+**Suppressed: a lifecycle projection, not a treatment.** A suppressed tab **never enters
 the waiting state**; the record survives even though the state does not. Its mark renders in
 normal lifecycle colors and only ever shows **working, idle, or cold** — on stop it reads
 idle, while the notification record still lands in the store. There is **no visual indicator
@@ -141,7 +141,7 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
 
 1. Each animated mark is **leaf-isolated** — its own small view owning its animation phase
    (driven by the shared clock of item 5, never a per-mark timer), so repaints cannot
-   invalidate the tab row or workspace card (`TabItemView` relies on `Equatable` +
+   invalidate the workspace row or workspace card (`TabItemView` relies on `Equatable` +
    `.equatable()` to skip body re-evaluation during typing).
 2. The dot fill repaints **once per beat** (~2.5 fps), not per frame. The dip is a continuous
    opacity tween but is the same class as the already-approved flagged breathe. The alarm
@@ -161,9 +161,9 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
    passes trivially and proves nothing; the gate runs against a realistic fleet.
 5. **One shared clock, per-mark phase offset.** N marks owning N timers is both more
    expensive and visually worse than one app-level tick every mark reads. Offset each mark's
-   phase by a stable hash of its surface id so the fleet staggers instead of pulsing in
+   phase by a stable hash of its tab id so the fleet staggers instead of pulsing in
    unison: one timer, coalesced repaints, scattered appearance.
-6. **Pause off-screen and in background.** Unselected workspaces, collapsed panes, tabs
+6. **Pause off-screen and in background.** Unselected workspaces, collapsed areas, tabs
    scrolled out of the tab bar, and app-not-active all stop animating. SwiftUI does not do
    this for you; animating what nobody can see is pure battery burn at fleet scale.
 7. **Validate the ladder order empirically.** The dip-before-fill degradation order is
@@ -179,7 +179,7 @@ The base set stays draw-once-per-state-change; the setting must not regress typi
 Two renderers must change in agreement, plus the sidebar sizing rule:
 
 1. **`vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabItemView.swift`** —
-   `TabActivityMark` (the surface-tab chips) and `TabActivityMarkMetrics`. This vocabulary
+   `TabActivityMark` (the tab chips) and `TabActivityMarkMetrics`. This vocabulary
    is what makes the file's doc comment — "survives greyscale and a color-blind reader" —
    accurate; keep the comment and the code in agreement. Keep the bonsplit
    change pure shape vocabulary with no c11-specific concepts — it is a clean accessibility

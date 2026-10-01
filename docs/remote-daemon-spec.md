@@ -74,8 +74,8 @@ This is a **living implementation spec** (also called an **execution spec**): a 
 ### 4.1 Browser Networking Path
 1. `DONE` one local proxy endpoint is created per SSH transport/session key (not per detected port).
 2. `DONE` endpoint is provided by a local broker that supports SOCKS5 + HTTP CONNECT and tunnels via daemon stream RPC.
-3. `DONE` browser panels in remote workspaces are auto-wired to the workspace proxy endpoint.
-4. `DONE` browser panels in local workspaces are not force-proxied.
+3. `DONE` browser tabs in remote workspaces are auto-wired to the workspace proxy endpoint.
+4. `DONE` browser tabs in local workspaces are not force-proxied.
 5. `DONE` identical SSH transports share one endpoint via a transport-scoped broker.
 
 ### 4.2 WKWebView Wiring

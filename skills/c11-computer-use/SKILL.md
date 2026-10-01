@@ -1,14 +1,14 @@
 ---
 name: c11-computer-use
 version: 1
-description: Validate c11 as a product through the real macOS UI — screenshots, clicks, keyboard focus, pane readability, visual recovery, user-path checks. Load when a maintainer/dev agent needs to see a c11 change exactly as the operator sees it (not just pass socket/CLI oracle checks). Distinct from the `c11` operating skill, which teaches an agent to use the room; this teaches testing the room through its real UI.
+description: Validate c11 as a product through the real macOS UI — screenshots, clicks, keyboard focus, area readability, visual recovery, user-path checks. Load when a maintainer/dev agent needs to see a c11 change exactly as the operator sees it (not just pass socket/CLI oracle checks). Distinct from the `c11` operating skill, which teaches an agent to use the room; this teaches testing the room through its real UI.
 ---
 
 # c11 Computer-Use Validation
 
 Maintainer skill: prove a c11 change works through the **real macOS UI**, the way the operator experiences it. Use it for behavior that is visual, spatial, focus-sensitive, pointer-driven, or human-ergonomic — the things a green socket/CLI oracle can't prove. Keep the socket for setup and deterministic oracle checks; keep computer-use for the UI path itself.
 
-This is not the `c11` operating skill. That one teaches an agent to drive the room (splits, surfaces, status). This one teaches a maintainer agent to test the room as a product. Do not blur them.
+This is not the `c11` operating skill. That one teaches an agent to drive the room (splits, tabs, status). This one teaches a maintainer agent to test the room as a product. Do not blur them.
 
 ## The hard rule: never validate against the operator's live c11
 
@@ -57,7 +57,7 @@ The operator is usually working on the machine you are driving, so real input ha
   log with `print`/`fputs` rather than `os_log` are then invisible to `log stream` too. Run
   `"<app>/Contents/MacOS/c11" > /tmp/<tag>-stdout.log 2>&1 &` with the same env
   `launch-tagged-automation.sh` sets (`C11_SOCKET_MODE`, `C11_SOCKET_PATH`, `CMUXD_UNIX_PATH`,
-  `C11_DEBUG_LOG`, `C11_QA_LAUNCH`), unsetting the inherited `C11_*`/`CMUX_*` vars first. This is how
+  `C11_DEBUG_LOG`, `C11_QA_LAUNCH`), unsetting the inherited `C11_*` vars first. This is how
   you read an SDK's own debug output instead of inferring it.
 - **Wedge the main thread from outside, with no code seam**, when you need a real beachball:
 
@@ -73,6 +73,6 @@ The operator is usually working on the machine you are driving, so real input ha
 
 ## Prove it, don't assert it
 
-- Capture before/after artifacts for any claim about visible behavior. For size/layout changes, seed terminals with distinctive, size-revealing content so the delta is unmistakable across panes.
-- "It executed" is not enough. Inspect `c11 tree --no-layout` before calling a run good: if panes are too small for a human to read, rebalance and count that as part of validation, not cleanup.
+- Capture before/after artifacts for any claim about visible behavior. For size/layout changes, seed terminals with distinctive, size-revealing content so the delta is unmistakable across areas.
+- "It executed" is not enough. Inspect `c11 tree --no-layout` before calling a run good: if areas are too small for a human to read, rebalance and count that as part of validation, not cleanup.
 - Prefer repeatable harness scenarios over one-off manual runs, and feed what you learn back into reusable scenarios and this skill.

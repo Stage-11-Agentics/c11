@@ -11,14 +11,14 @@ time.
 
 ## Flags and suppression (the attention model)
 
-Your surface's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
+Your tab's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
 Two modifiers sit over it, and they are yours to use.
 
 ### Flag: work has stopped and only a human can restart it
 
 ```bash
-c11 raise-flag --surface "$C11_SURFACE_ID" "Need a call on schema migration vs dual-write"
-c11 lower-flag --surface "$C11_SURFACE_ID"
+c11 raise-flag --tab "$C11_TAB_ID" "Need a call on schema migration vs dual-write"
+c11 lower-flag --tab "$C11_TAB_ID"
 ```
 
 The reason is required, one line, and surfaced everywhere the flag appears — write it as the
@@ -43,12 +43,12 @@ sentence you would say if the operator walked over.
 ### Suppression: keep working, do not signal
 
 ```bash
-c11 suppress --surface "$C11_SURFACE_ID"
-c11 unsuppress --surface "$C11_SURFACE_ID"
+c11 suppress --tab "$C11_TAB_ID"
+c11 unsuppress --tab "$C11_TAB_ID"
 c11 launch-agent ... --suppressed     # the common case: set at dispatch
 ```
 
-A suppressed surface never enters the needs-attention state: when it stops, its mark reads
+A suppressed tab never enters the needs-attention state: when it stops, its mark reads
 idle, and it is excluded from waiting counts, ⌥V, and routine waiting-derived system
 notifications. The notification record still lands in the store — suppression silences the
 routine signal, not the history. A direct notification from `flag.raise` is the deliberate

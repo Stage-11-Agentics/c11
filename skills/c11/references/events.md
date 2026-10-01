@@ -1,6 +1,6 @@
 # c11 Events Stream
 
-c11 emits a **file-first pub/sub log** of everything structural that happens inside a running process — surfaces opening and closing, workspace selection, metadata edits, liveness flips, waiting edges, mailbox traffic. Each running c11 writes an append-only NDJSON file; any process may `tail -f` it directly. This is the push counterpart to per-surface [metadata](metadata.md)'s pull-on-demand model: metadata answers *what is the state now*, the events stream answers *what just changed*.
+c11 emits a **file-first pub/sub log** of everything structural that happens inside a running process — tabs opening and closing, workspace selection, metadata edits, liveness flips, waiting edges, mailbox traffic. Each running c11 writes an append-only NDJSON file; any process may `tail -f` it directly. This is the push counterpart to per-tab [metadata](metadata.md)'s pull-on-demand model: metadata answers *what is the state now*, the events stream answers *what just changed*.
 
 **The file is the contract.** The CLI (`c11 events tail`) is sugar over reading that file — it works with no running app, and a consumer that wants the raw bytes never has to touch c11 at all.
 
@@ -34,27 +34,27 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 | `type` | string | yes | Dotted event type from the closed v1 enum (below). Matches `^[a-z][a-z0-9_.]*$`. |
 | `instance` | string | yes | The emitting process's instance id. Namespaces `seq`. |
 | `v` | int | yes | Schema version, `1`. Integer, not a string. Bumps are breaking. |
-| `workspace` | UUID string | no | Subject workspace/tab this event concerns. |
-| `surface` | UUID string | no | Subject surface this event concerns. |
-| `pane` | UUID string | no | Subject pane this event concerns. |
+| `workspace` | UUID string | no | Subject workspace this event concerns. |
+| `surface` | UUID string | no | Subject tab this event concerns. |
+| `pane` | UUID string | no | Subject area this event concerns. |
 | `payload` | object | no | Type-specific detail, keyed by `type`. Omitted (not `null`) when empty. |
 
 ## v1 taxonomy
 
-The sixteen taxonomy types below are the closed v1 enum. `workspace` / `surface` / `pane` mark which subject refs are populated; `payload` shows the type-specific shape.
+The sixteen taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
-| `surface.created` | workspace + surface | `{kind, title?}` | A new surface opened. `kind` is terminal / browser / markdown. |
-| `surface.closed` | workspace + surface | — | Surface torn down. |
-| `workspace.selected` | workspace (the selected one) | `{previous?}` | Sidebar tab switch. `previous` is the prior workspace UUID. |
-| `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
+| `surface.created` | workspace + surface | `{kind, title?}` | A new tab opened. `kind` is terminal / browser / markdown. |
+| `surface.closed` | workspace + surface | — | Tab torn down. |
+| `workspace.selected` | workspace (the selected one) | `{previous?}` | Sidebar workspace switch. `previous` is the prior workspace UUID. |
+| `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `tab`\|`area`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
 | `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
-| `waiting.entered` | workspace (= tabId) + surface? | — | The "agent is waiting" edge — the unread-notification transition, per tab. |
-| `waiting.left` | workspace (= tabId) + surface? | — | Paired exit edge for `waiting.entered`. |
-| `flag.raised` | workspace + surface | `{reason, caller_surface_id, by}` | A sticky flag went up. `caller_surface_id` is the UUID of the surface that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
+| `waiting.entered` | workspace + surface? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
+| `waiting.left` | workspace + surface? | — | Paired exit edge for `waiting.entered`. |
+| `flag.raised` | workspace + surface | `{reason, caller_surface_id, by}` | A sticky flag went up. `caller_surface_id` is the UUID of the tab that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
 | `flag.lowered` | workspace + surface | `{by}` | Flag cleared. `by` ∈ `operator`\|`agent`; operator dismissal without an answer means *seen and deferred*. |
-| `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this surface. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
+| `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this tab. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
 | `flag.unsuppressed` | workspace + surface | `{by}` | Suppression lifted; routine attention signals resume. `by` ∈ `operator`\|`agent`. |
 | `mailbox.accepted` | workspace | `{id, from, to?, topic?}` | A mailbox message was accepted onto the bus. |
 | `mailbox.delivered` | workspace + surface? | `{id, recipient}` | A mailbox message reached a recipient. |
@@ -100,8 +100,8 @@ Defaults: no `--filter` emits every type (taxonomy + control markers); no `--sin
 
 ```bash
 c11 events tail -f --filter type=surface.closed | while read -r line; do
-  surface=$(printf '%s' "$line" | jq -r '.surface')
-  echo "surface $surface closed — cleaning up"
+  tab=$(printf '%s' "$line" | jq -r '.surface')
+  echo "tab $tab closed — cleaning up"
 done
 ```
 

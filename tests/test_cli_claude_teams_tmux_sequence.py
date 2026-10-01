@@ -6,7 +6,6 @@ Regression test: `cmux claude-teams` supports Claude's tmux teammate flow.
 from __future__ import annotations
 
 import json
-import os
 import socketserver
 import subprocess
 import tempfile
@@ -14,6 +13,7 @@ import threading
 from pathlib import Path
 
 from claude_teams_test_utils import resolve_cmux_cli
+from fake_server_env import fake_server_env
 INITIAL_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111"
 INITIAL_WINDOW_ID = "22222222-2222-4222-8222-222222222222"
 INITIAL_PANE_ID = "33333333-3333-4333-8333-333333333333"
@@ -89,6 +89,8 @@ class FakeCmuxState:
         with self.lock:
             method = V2_METHOD_ALIASES.get(method, method)
             self.requests.append(method)
+            if method == "system.capabilities":
+                return {"protocol": "cmux-socket", "version": 2, "methods": ["system.capabilities", "tab.list", "area.list"]}
             if method == "system.identify":
                 return {
                     "socket_path": str(params.get("socket_path", "")),
@@ -309,10 +311,11 @@ tmux list-panes -t "$window_target" -F '#{pane_id}' > "$FAKE_PANE_LIST_LOG"
 """,
         )
 
-        env = os.environ.copy()
+        # Every socket variable names the fake and caller identity is scrubbed, so this
+        # can never reach a live app, even when run from inside c11.
+        env = fake_server_env(str(socket_path))
         env["HOME"] = str(home)
         env["PATH"] = f"{real_bin}:/usr/bin:/bin"
-        env["CMUX_SOCKET_PATH"] = str(socket_path)
         env["FAKE_TMUX_PANE_LOG"] = str(tmux_pane_log)
         env["FAKE_SOCKET_LOG"] = str(tmux_socket_log)
         env["FAKE_WINDOW_TARGET_LOG"] = str(window_target_log)

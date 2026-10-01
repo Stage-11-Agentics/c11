@@ -15,6 +15,8 @@ import time
 import uuid
 from pathlib import Path
 
+from fake_server_env import fake_server_env
+
 
 def resolve_c11_cli() -> str:
     explicit = os.environ.get("C11_CLI_BIN") or os.environ.get("CMUX_CLI_BIN")
@@ -59,8 +61,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
         super().__init__(path, Handler)
 
 
-def runtime_env(surface: str, thread_id: str) -> dict[str, str]:
-    env = os.environ.copy()
+def runtime_env(surface: str, thread_id: str, socket_path: str) -> dict[str, str]:
+    # Identity is set below on purpose; every socket variable names the fake.
+    env = fake_server_env(socket_path, scrub_identity=False)
     for key in ("C11_TAB_ID", "CMUX_TAB_ID", "C11_SURFACE_ID", "CMUX_SURFACE_ID", "CODEX_THREAD_ID"):
         env.pop(key, None)
     env.update({
@@ -113,7 +116,7 @@ def main() -> int:
             os.environ["CODEX_THREAD_ID"] = caller_thread_id
             surface = str(uuid.uuid4())
             thread_id = str(uuid.uuid4())
-            env = runtime_env(surface, thread_id)
+            env = runtime_env(surface, thread_id, socket_path)
             proc = run(cli, socket_path, ["conversation", "capture-runtime"], env, tmp)
             expect(proc.returncode == 0, f"capture-runtime failed: {proc.stderr}", failures)
             request = state.requests[-1] if state.requests else {}
@@ -233,7 +236,7 @@ def main() -> int:
 
         missing_socket = str(tmp / "missing.sock")
         start = time.monotonic()
-        proc = run(cli, missing_socket, ["conversation", "capture-runtime"], runtime_env(str(uuid.uuid4()), str(uuid.uuid4())), tmp)
+        proc = run(cli, missing_socket, ["conversation", "capture-runtime"], runtime_env(str(uuid.uuid4()), str(uuid.uuid4()), missing_socket), tmp)
         elapsed = time.monotonic() - start
         expect(proc.returncode != 0 and elapsed < 2.0, f"unreachable socket was not bounded: {elapsed:.2f}s", failures)
 

@@ -251,7 +251,9 @@ final class AgentDetector: @unchecked Sendable {
         return foreground
     }
 
-    private static func executablePath(for pid: Int32) -> String? {
+    /// Full executable path from `proc_pidpath`, or nil if `pid` is gone.
+    /// Internal so a test can call it for this process.
+    static func executablePath(for pid: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: pidPathCapacity)
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
@@ -269,10 +271,10 @@ final class AgentDetector: @unchecked Sendable {
               let tpgid = Int(parts[3]) else { return nil }
         let tty = parts[2]
         let comm = parts[4]
-        // Everything after the 5th column is argv. Padding is a run of spaces
-        // (the tty column is wider than `??`), and each run is one column.
-        // Counting every space lands this boundary on `tpgid`, so the first
-        // argv token becomes "0" and the real path is never the argv0.
+        // Everything after the 5th column is argv. A padding run is one
+        // column. Counting every space shifts the boundary: on a `ttysNNN`
+        // line (two-space pad, the shape `ps -t` prints) it lands on `comm`,
+        // so argv0 is the 16-character clip; the wider `??` pad lands on `tpgid`.
         var index = trimmed.startIndex
         var splits = 0
         var argsStart = trimmed.endIndex

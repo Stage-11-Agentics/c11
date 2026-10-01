@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 #if canImport(c11_DEV)
@@ -200,10 +201,7 @@ final class AgentDetectorTests: XCTestCase {
     func testClassifyBasenameLongerThanSixteenCharacters() throws {
         let line = "22770 22744 ??          0 /tmp/c11-246-psp /tmp/c11-246-psprobe/short/claude-code-extra-bin"
         let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
-        let argv0 = info.args.split(whereSeparator: \.isWhitespace).first.map(String.init)
-        let basename = argv0.map { URL(fileURLWithPath: $0).lastPathComponent }
-        XCTAssertEqual(basename, "claude-code-extra-bin")
-        XCTAssertGreaterThan(basename?.count ?? 0, 16)
+        XCTAssertTrue(info.args.hasPrefix("/tmp/c11-246-psprobe/short/claude-code-extra-bin"))
         XCTAssertEqual(
             AgentDetector.classify(comm: info.comm, args: info.args),
             "unknown"
@@ -232,6 +230,31 @@ final class AgentDetectorTests: XCTestCase {
             )),
             "github-copilot"
         )
+    }
+
+    /// `runPS` always passes `-t`, so live lines carry `ttysNNN` and the tty
+    /// column's two-space pad. Captured from `ps -t ttys001`. The 16-character
+    /// comm clip is not the agent; the full argv0 is.
+    func testParsePSLineTTYTwoSpacePadUsesFullArgv0() throws {
+        let line = "62387 62165 ttys001  62387 /Users/atin/.gro /Users/atin/.grok/bin/grok --always-approve"
+        let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
+        XCTAssertEqual(info.tty, "ttys001")
+        XCTAssertEqual(info.comm, "/Users/atin/.gro")
+        XCTAssertEqual(info.args, "/Users/atin/.grok/bin/grok --always-approve")
+        XCTAssertEqual(AgentDetector.classify(comm: info.comm, args: info.args), "grok")
+    }
+
+    /// The scan's path lookup, pointed at this process, is the executable
+    /// dyld reports for it.
+    func testExecutablePathReturnsThisProcess() throws {
+        var size = UInt32(4096)
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        XCTAssertEqual(_NSGetExecutablePath(&buffer, &size), 0)
+        let expected = URL(fileURLWithPath: String(cString: buffer))
+            .resolvingSymlinksInPath().path
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        let got = try XCTUnwrap(AgentDetector.executablePath(for: pid))
+        XCTAssertEqual(URL(fileURLWithPath: got).resolvingSymlinksInPath().path, expected)
     }
 
     /// `~/.local/bin/claude` resolves to a versioned file (`2.1.286`). The

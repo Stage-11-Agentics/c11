@@ -28,7 +28,7 @@ extension TerminalController {
     }
 
     func v2TabAction(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         guard let action = v2ActionKey(params) else {
@@ -63,7 +63,7 @@ extension TerminalController {
         ])
 
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
@@ -83,7 +83,7 @@ extension TerminalController {
                 return
             }
 
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
 
             @MainActor
             func finish(_ extras: [String: Any] = [:]) {
@@ -469,12 +469,12 @@ extension TerminalController {
 
     /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.
     private func v2SidebarState(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         var payload: [String: Any]?
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
             let statusEntries = ws.sidebarStatusEntriesInDisplayOrder()
             let metadataBlocks = ws.sidebarMetadataBlocksInDisplayOrder()
 

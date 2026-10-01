@@ -1254,7 +1254,7 @@ final class CmuxWebView: WKWebView {
 
     static func shouldRejectInternalPaneDrag(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
         DragOverlayRoutingPolicy.hasBonsplitTabTransfer(pasteboardTypes)
-            || DragOverlayRoutingPolicy.hasSidebarTabReorder(pasteboardTypes)
+            || DragOverlayRoutingPolicy.hasSidebarWorkspaceReorder(pasteboardTypes)
     }
 
     override func registerForDraggedTypes(_ newTypes: [NSPasteboard.PasteboardType]) {

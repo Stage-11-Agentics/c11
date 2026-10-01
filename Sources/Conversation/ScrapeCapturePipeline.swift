@@ -34,7 +34,7 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     static func contexts(from snapshot: AppSessionSnapshot) -> [ScrapeCaptureContext] {
         var result: [ScrapeCaptureContext] = []
         for window in snapshot.windows {
-            for ws in window.tabManager.workspaces {
+            for ws in window.workspaceManager.workspaces {
                 for panel in ws.panels {
                     guard panel.type == .terminal else { continue }
                     guard let kind = terminalType(of: panel), !kind.isEmpty else { continue }
@@ -83,7 +83,7 @@ struct ConversationSnapshotCaptureScope: Sendable, Equatable {
 
         var terminalSurfaceIds = Set<String>()
         for window in snapshot.windows {
-            for workspace in window.tabManager.workspaces {
+            for workspace in window.workspaceManager.workspaces {
                 for panel in workspace.panels where panel.type == .terminal {
                     terminalSurfaceIds.insert(panel.id.uuidString)
                 }

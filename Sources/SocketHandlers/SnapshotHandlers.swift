@@ -40,7 +40,7 @@ extension TerminalController {
     /// arbitrary-file-write primitive (overwriting
     /// `~/.claude/settings.json` etc.).
     private func v2SnapshotCreate(params: [String: Any]) -> V2CallResult {
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
         if let rawPath = params["path"] as? String,
@@ -70,9 +70,9 @@ extension TerminalController {
                 warnings: [CompanionPlanDiagnostic]
             )] = []
             v2MainSync {
-                let source = LiveWorkspaceSnapshotSource(tabManager: tabManager)
-                let selectedId = tabManager.selectedWorkspace?.id
-                for ws in tabManager.tabs {
+                let source = LiveWorkspaceSnapshotSource(workspaceManager: workspaceManager)
+                let selectedId = workspaceManager.selectedWorkspace?.id
+                for ws in workspaceManager.workspaces {
                     if let capture = source.captureResult(
                         workspaceId: ws.id, origin: origin, clock: { Date() }
                     ) {
@@ -156,8 +156,8 @@ extension TerminalController {
         var captureResult: WorkspaceSnapshotCaptureResult?
         var workspaceRef = ""
         v2MainSync {
-            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
-            let source = LiveWorkspaceSnapshotSource(tabManager: tabManager)
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else { return }
+            let source = LiveWorkspaceSnapshotSource(workspaceManager: workspaceManager)
             captureResult = source.captureResult(
                 workspaceId: workspace.id,
                 origin: origin,
@@ -276,7 +276,7 @@ extension TerminalController {
             )
         }
 
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -326,7 +326,7 @@ extension TerminalController {
         var result: ApplyResult?
         v2MainSync {
             let deps = WorkspaceLayoutExecutorDependencies(
-                tabManager: tabManager,
+                workspaceManager: workspaceManager,
                 workspaceRefMinter: { [weak self] uuid in
                     self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                 },
@@ -428,7 +428,7 @@ extension TerminalController {
             return .err(code: "snapshot_set_read_failed", message: "\(error)", data: nil)
         }
 
-        guard let tabManager = v2ResolveTabManager(params: params) else {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
@@ -503,7 +503,7 @@ extension TerminalController {
             var result: ApplyResult?
             v2MainSync {
                 let deps = WorkspaceLayoutExecutorDependencies(
-                    tabManager: tabManager,
+                    workspaceManager: workspaceManager,
                     workspaceRefMinter: { [weak self] uuid in
                         self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
                     },
@@ -551,8 +551,8 @@ extension TerminalController {
         if allowFocus, let targetRef = selectedWorkspaceRef,
            let uuid = self.v2ResolveHandleRef(targetRef) {
             v2MainSync {
-                if let ws = tabManager.tabs.first(where: { $0.id == uuid }) {
-                    tabManager.selectWorkspace(ws)
+                if let ws = workspaceManager.workspaces.first(where: { $0.id == uuid }) {
+                    workspaceManager.selectWorkspace(ws)
                 }
             }
         }

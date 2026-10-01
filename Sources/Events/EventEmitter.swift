@@ -135,8 +135,8 @@ final class EventEmitter {
         emit(.metadataChanged, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitWaiting(entered: Bool, workspace tabId: UUID, surface: UUID?) {
-        emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
+    func emitWaiting(entered: Bool, workspace workspaceId: UUID, surface: UUID?) {
+        emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
 
     func emitFlagRaised(

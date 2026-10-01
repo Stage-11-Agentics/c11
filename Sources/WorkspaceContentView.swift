@@ -89,7 +89,7 @@ struct WorkspaceContentView: View {
                     isFocused: isFocused
                 )
                 let hasUnreadNotification = Workspace.shouldShowUnreadIndicator(
-                    hasUnreadNotification: notificationStore.hasUnreadNotification(forTabId: workspace.id, surfaceId: panel.id),
+                    hasUnreadNotification: notificationStore.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: panel.id),
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
                 PanelContentView(
@@ -256,7 +256,7 @@ struct WorkspaceContentView: View {
     private func syncBonsplitNotificationBadges() {
         let unreadFromNotifications: Set<UUID> = Set(
             notificationStore.notifications
-                .filter { $0.tabId == workspace.id && !$0.isRead }
+                .filter { $0.workspaceId == workspace.id && !$0.isRead }
                 .compactMap { $0.surfaceId }
         )
         let manualUnread = workspace.manualUnreadPanelIds

@@ -95,11 +95,14 @@ def main():
     out.append("# Members that call the bonsplit leaf-tab API keep the generic names (they mean bonsplit tabs there).")
     out.append("@keep\tSources/**\t\\.tabs\\(inPane|selectedTab\\(inPane|Bonsplit\\.Tab\\b|\\bTabID\\b\ttab,tabs,selectedTab,selectedTabId,tabId,tabIds")
     out.append("@keep\tSources/TerminalController.swift\tLayoutDebugSelectedPanel|splitViews: \\[LayoutDebugSplitView\\]\tselectedTabId")
+    leaf_positive = ",".join(g[1:] for g in LEAF_FILES if not g.startswith("!c11UITests"))
     for old in sorted(rows):
         new, globs = rows[old]
         fb = GENERIC.get(old, (None, ""))[1] if old in GENERIC else ""
         flags = "noimplicit" if old in NOIMPLICIT else ""
         out.append("\t".join([old, new, ",".join(globs), fb, flags]))
+        if old in ("tabs", "selectedTab", "selectedTabId"):
+            out.append("\t".join([old, new, leaf_positive, "", "recvmgr"]))
     with open(os.path.join(HERE, "pass-1.tsv"), "w") as fh:
         fh.write("\n".join(out) + "\n")
     print(len(rows), "entries")

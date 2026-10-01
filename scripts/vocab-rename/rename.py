@@ -16,7 +16,9 @@ Table format (one entry per line, `#` comments and blank lines ignored):
                                         with no usable fallback the token is left
                                         alone and reported as COLLISION. Flag
                                         `noimplicit` skips enum case declarations and
-                                        leading-dot implicit members (`.tabs`).
+                                        leading-dot implicit members (`.tabs`);
+                                        `recvmgr` renames only on a receiver named
+                                        like a manager (`workspaceManager.tabs`).
   @path<TAB>old<TAB>new                 file or directory rename (git mv, then
                                         project.pbxproj path edits)
   @keep<TAB>glob<TAB>regex<TAB>name,name  in files matching glob, members whose source
@@ -363,7 +365,33 @@ def declared_names(src, inside):
     return props, cases
 
 
+RECV_MGR = re.compile(r"(?:[Mm]anager|TM|\btm)[?!]?\s*\.\s*$")
 TYPE_START = re.compile(r"\s*(?:inout\s+|@escaping\s+|any\s+|some\s+)*(?:\[\s*)*([A-Za-z_][\w.]*)(<[^>]*>)?([?!]?)\s*([,)\]:=\n{]|->|$)")
+
+
+IMPLICIT_AFTER_WORD = {"return", "case", "in", "if", "else", "default", "where", "while", "guard", "switch", "yield", "throw", "try", "await", "is", "as", "let", "var"}
+
+
+def is_implicit_member(src, a):
+    """True if the token at a is `.name` with no receiver (an implicit-member expression)."""
+    if a < 1 or src[a - 1] != ".":
+        return False
+    j = a - 2
+    while j >= 0 and src[j] in " \t":
+        j -= 1
+    if j >= 0 and src[j] == "\n":
+        return False  # chained call on the next line
+    if j < 0:
+        return True
+    c = src[j]
+    if c in ")]}?!>\\":
+        return False
+    if c.isalnum() or c == "_":
+        k = j
+        while k >= 0 and (src[k].isalnum() or src[k] == "_"):
+            k -= 1
+        return src[k + 1:j + 1] in IMPLICIT_AFTER_WORD
+    return True
 
 
 def is_call_label(src, a, b):
@@ -433,9 +461,11 @@ def rewrite(src, rel, renames, report=None, keep_rules=None):
         pre = src[max(0, a - 20):a]
         if pre.endswith(VENDOR_RECEIVERS):
             continue
+        if "recvmgr" in flags and not RECV_MGR.search(src[max(0, a - 80):a]):
+            continue  # only renamed when accessed on a manager-like receiver
         if "noimplicit" in flags and a in case_decl:
             continue  # enum case declaration: keep, its `.case` uses are kept too
-        if "noimplicit" in flags and a >= 1 and src[a - 1] == "." and (a < 2 or not (src[a - 2].isalnum() or src[a - 2] in "_)]}?!>\\")):
+        if "noimplicit" in flags and is_implicit_member(src, a):
             continue  # leading-dot implicit member (an enum case), not a property
         if keeps:
             skip = False

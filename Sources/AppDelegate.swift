@@ -2936,7 +2936,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         guard let renderState = currentUITestRenderDiagnostics() else {
             payload["renderStatsAvailable"] = "0"
-            payload["renderPanelId"] = ""
+            payload["renderTabId"] = ""
             payload["renderDrawCount"] = ""
             payload["renderPresentCount"] = ""
             payload["renderLastPresentTime"] = ""
@@ -2949,7 +2949,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         payload["renderStatsAvailable"] = "1"
-        payload["renderPanelId"] = renderState.panelId.uuidString
+        payload["renderTabId"] = renderState.panelId.uuidString
         payload["renderDrawCount"] = String(renderState.drawCount)
         payload["renderPresentCount"] = String(renderState.presentCount)
         payload["renderLastPresentTime"] = String(format: "%.6f", renderState.lastPresentTime)
@@ -9103,8 +9103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     AppFocusState.overrideIsFocused = prevOverride
 
                     self.writeJumpUnreadTestData([
-                        "expectedTabId": workspace.id.uuidString,
-                        "expectedSurfaceId": targetPanelId.uuidString
+                        "expectedWorkspaceId": workspace.id.uuidString,
+                        "expectedTabId": targetPanelId.uuidString
                     ])
 
                     workspaceManager.selectWorkspace(at: initialIndex)
@@ -9115,8 +9115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func recordJumpToUnreadFocus(workspaceId: UUID, surfaceId: UUID) {
         writeJumpUnreadTestData([
-            "focusedTabId": workspaceId.uuidString,
-            "focusedSurfaceId": surfaceId.uuidString
+            "focusedWorkspaceId": workspaceId.uuidString,
+            "focusedTabId": surfaceId.uuidString
         ])
     }
 
@@ -9333,8 +9333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "workspaceTitle": workspaceTitle,
                 "alphaTitle": alphaTitle,
                 "betaTitle": betaTitle,
-                "alphaPanelId": alphaPanelId.uuidString,
-                "betaPanelId": betaPanelId.uuidString,
+                "alphaTabId": alphaPanelId.uuidString,
+                "betaTabId": betaPanelId.uuidString,
             ])
             self.startBonsplitTabDragUITestRecorder(
                 workspaceId: workspace.id,
@@ -9405,10 +9405,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .flatMap { workspace.tabTitle(panelId: $0) } ?? ""
 
         writeBonsplitTabDragUITestData([
-            "trackedPaneId": trackedPaneId.description,
-            "trackedPaneTabTitles": titles.joined(separator: "|"),
-            "trackedPaneTabCount": String(titles.count),
-            "trackedPaneSelectedTitle": selectedTitle,
+            "trackedAreaId": trackedPaneId.description,
+            "trackedAreaTabTitles": titles.joined(separator: "|"),
+            "trackedAreaTabCount": String(titles.count),
+            "trackedAreaSelectedTitle": selectedTitle,
         ])
     }
 
@@ -9443,27 +9443,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func gotoSplitFindStateSnapshot(for workspace: Workspace) -> [String: String] {
         var updates: [String: String] = [
-            "focusedPaneId": workspace.bonsplitController.focusedPaneId?.description ?? ""
+            "focusedAreaId": workspace.bonsplitController.focusedPaneId?.description ?? ""
         ]
 
         if let focusedPanelId = workspace.focusedPanelId {
-            updates["focusedPanelId"] = focusedPanelId.uuidString
+            updates["focusedTabId"] = focusedPanelId.uuidString
             if let terminal = workspace.terminalPanel(for: focusedPanelId) {
-                updates["focusedPanelKind"] = "terminal"
+                updates["focusedTabKind"] = "terminal"
                 updates["focusedTerminalFindNeedle"] = terminal.searchState?.needle ?? ""
                 updates["focusedBrowserFindNeedle"] = ""
             } else if let browser = workspace.browserPanel(for: focusedPanelId) {
-                updates["focusedPanelKind"] = "browser"
+                updates["focusedTabKind"] = "browser"
                 updates["focusedBrowserFindNeedle"] = browser.searchState?.needle ?? ""
                 updates["focusedTerminalFindNeedle"] = ""
             } else {
-                updates["focusedPanelKind"] = "other"
+                updates["focusedTabKind"] = "other"
                 updates["focusedTerminalFindNeedle"] = ""
                 updates["focusedBrowserFindNeedle"] = ""
             }
         } else {
-            updates["focusedPanelId"] = ""
-            updates["focusedPanelKind"] = "none"
+            updates["focusedTabId"] = ""
+            updates["focusedTabKind"] = "none"
             updates["focusedTerminalFindNeedle"] = ""
             updates["focusedBrowserFindNeedle"] = ""
         }
@@ -9471,13 +9471,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let terminalWithFind = workspace.panels.values
             .compactMap { $0 as? TerminalTab }
             .first(where: { $0.searchState != nil })
-        updates["terminalFindPanelId"] = terminalWithFind?.id.uuidString ?? ""
+        updates["terminalFindTabId"] = terminalWithFind?.id.uuidString ?? ""
         updates["terminalFindNeedle"] = terminalWithFind?.searchState?.needle ?? ""
 
         let browserWithFind = workspace.panels.values
             .compactMap { $0 as? BrowserTab }
             .first(where: { $0.searchState != nil })
-        updates["browserFindPanelId"] = browserWithFind?.id.uuidString ?? ""
+        updates["browserFindTabId"] = browserWithFind?.id.uuidString ?? ""
         updates["browserFindNeedle"] = browserWithFind?.searchState?.needle ?? ""
 
         return updates
@@ -9527,11 +9527,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             resolved = true
             cleanup()
             writeGotoSplitTestData([
-                "browserPanelId": browserPanelId.uuidString,
-                "browserPaneId": browserPaneId.description,
-                "terminalPaneId": terminalPaneId.description,
-                "initialPaneCount": String(workspace.bonsplitController.allPaneIds.count),
-                "focusedPaneId": workspace.bonsplitController.focusedPaneId?.description ?? "",
+                "browserTabId": browserPanelId.uuidString,
+                "browserAreaId": browserPaneId.description,
+                "terminalAreaId": terminalPaneId.description,
+                "initialAreaCount": String(workspace.bonsplitController.allPaneIds.count),
+                "focusedAreaId": workspace.bonsplitController.focusedPaneId?.description ?? "",
                 "ghosttyGotoSplitLeftShortcut": ghosttyGotoSplitLeftShortcut?.displayString ?? "",
                 "ghosttyGotoSplitRightShortcut": ghosttyGotoSplitRightShortcut?.displayString ?? "",
                 "ghosttyGotoSplitUpShortcut": ghosttyGotoSplitUpShortcut?.displayString ?? "",
@@ -9640,7 +9640,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 guard let self else { return }
                 self.writeGotoSplitTestData([
                     key: self.isWebViewFocused(panel) ? "true" : "false",
-                    "\(key)PanelId": panelId.uuidString
+                    "\(key)TabId": panelId.uuidString
                 ])
             }
             return
@@ -9664,7 +9664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             cleanup()
             self.writeGotoSplitTestData([
                 key: focused ? "true" : "false",
-                "\(key)PanelId": panelId.uuidString
+                "\(key)TabId": panelId.uuidString
             ])
         }
 
@@ -9993,7 +9993,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 awaitingInputId: expectedInputId
             ) { snapshot in
                 self.writeGotoSplitTestData([
-                    "\(keyPrefix)PanelId": panelId.uuidString,
+                    "\(keyPrefix)TabId": panelId.uuidString,
                     "\(keyPrefix)ActiveElementId": snapshot["id"] ?? "",
                     "\(keyPrefix)ActiveElementTag": snapshot["tag"] ?? "",
                     "\(keyPrefix)ActiveElementType": snapshot["type"] ?? "",
@@ -10177,7 +10177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         var updates = gotoSplitFindStateSnapshot(for: workspace)
         updates["lastSplitDirection"] = directionValue
-        updates["paneCountAfterSplit"] = String(workspace.bonsplitController.allPaneIds.count)
+        updates["areaCountAfterSplit"] = String(workspace.bonsplitController.allPaneIds.count)
         writeGotoSplitTestData(updates)
     }
 
@@ -10194,8 +10194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
             var updates = self.gotoSplitFindStateSnapshot(for: workspace)
             updates["splitZoomedAfterToggle"] = workspace.bonsplitController.isSplitZoomed ? "true" : "false"
-            updates["zoomedPaneIdAfterToggle"] = workspace.bonsplitController.zoomedPaneId?.description ?? ""
-            updates["browserPanelIdAfterToggle"] = browserTab?.id.uuidString ?? ""
+            updates["zoomedAreaIdAfterToggle"] = workspace.bonsplitController.zoomedPaneId?.description ?? ""
+            updates["browserTabIdAfterToggle"] = browserTab?.id.uuidString ?? ""
             updates["browserContainerHiddenAfterToggle"] = browserSnapshot.map { $0.containerHidden ? "true" : "false" } ?? ""
             updates["browserVisibleFlagAfterToggle"] = browserSnapshot.map { $0.visibleInUI ? "true" : "false" } ?? ""
             updates["browserFrameAfterToggle"] = browserSnapshot.map {
@@ -10207,7 +10207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     $0.frameInWindow.size.height
                 )
             } ?? ""
-            updates["otherTerminalPanelIdAfterToggle"] = otherTerminal?.id.uuidString ?? ""
+            updates["otherTerminalTabIdAfterToggle"] = otherTerminal?.id.uuidString ?? ""
             updates["otherTerminalHostHiddenAfterToggle"] = otherTerminal.map { $0.hostedView.isHidden ? "true" : "false" } ?? ""
             updates["otherTerminalVisibleFlagAfterToggle"] = otherTerminal.map { $0.hostedView.debugPortalVisibleInUI ? "true" : "false" } ?? ""
             updates["otherTerminalFrameAfterToggle"] = otherTerminal.map {
@@ -10507,14 +10507,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         "window1Id": window1.windowId.uuidString,
                         "window2Id": window2.windowId.uuidString,
                         "window2InitialSidebarSelection": "notifications",
-                        "tabId1": workspaceId1.uuidString,
-                        "tabId2": workspaceId2.uuidString,
-                        "surfaceId1": surfaceId1.uuidString,
-                        "surfaceId2": surfaceId2.uuidString,
+                        "workspaceId1": workspaceId1.uuidString,
+                        "workspaceId2": workspaceId2.uuidString,
+                        "tabId1": surfaceId1.uuidString,
+                        "tabId2": surfaceId2.uuidString,
                         "notifId1": notif1?.id.uuidString ?? "",
                         "notifId2": notif2?.id.uuidString ?? "",
                         "expectedLatestWindowId": window1.windowId.uuidString,
-                        "expectedLatestTabId": workspaceId1.uuidString,
+                        "expectedLatestWorkspaceId": workspaceId1.uuidString,
                     ], at: path)
                     self.prepareMultiWindowNotificationSourceTerminalIfNeeded(
                         at: path,
@@ -10787,8 +10787,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         writeMultiWindowNotificationTestData([
             "focusToken": UUID().uuidString,
             "focusedWindowId": windowId.uuidString,
-            "focusedTabId": workspaceId.uuidString,
-            "focusedSurfaceId": surfaceId?.uuidString ?? "",
+            "focusedWorkspaceId": workspaceId.uuidString,
+            "focusedTabId": surfaceId?.uuidString ?? "",
             "focusedSidebarSelection": sidebarSelectionString,
         ], at: path)
     }
@@ -13426,8 +13426,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if isJumpUnreadUITest {
             writeJumpUnreadTestData([
                 "jumpUnreadOpenCalled": "1",
-                "jumpUnreadOpenTabId": workspaceId.uuidString,
-                "jumpUnreadOpenSurfaceId": surfaceId?.uuidString ?? "",
+                "jumpUnreadOpenWorkspaceId": workspaceId.uuidString,
+                "jumpUnreadOpenTabId": surfaceId?.uuidString ?? "",
             ])
         }
 #endif
@@ -13714,8 +13714,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         writeMultiWindowNotificationTestData([
             "focusToken": UUID().uuidString,
-            "openFailureTabId": workspaceId.uuidString,
-            "openFailureSurfaceId": surfaceId?.uuidString ?? "",
+            "openFailureWorkspaceId": workspaceId.uuidString,
+            "openFailureTabId": surfaceId?.uuidString ?? "",
             "openFailureNotificationId": notificationId?.uuidString ?? "",
             "openFailureReason": reason,
             "openFailureContexts": contextSummaries.joined(separator: "; "),

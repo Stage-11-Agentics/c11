@@ -1080,14 +1080,14 @@ class cmux:
 
     def panel_snapshot_reset(self, panel: Union[str, int]) -> None:
         sid = self._resolve_surface_id(panel)
-        self._call("debug.panel_snapshot.reset", {"tab_id": sid})
+        self._call("debug.tab_snapshot.reset", {"tab_id": sid})
 
     def panel_snapshot(self, panel: Union[str, int], label: str = "") -> dict:
         sid = self._resolve_surface_id(panel)
         params: Dict[str, Any] = {"tab_id": sid}
         if label:
             params["label"] = label
-        res = dict(self._call("debug.panel_snapshot", params) or {})
+        res = dict(self._call("debug.tab_snapshot", params) or {})
         # Normalize key to match the v1 client (panel_id).
         if "panel_id" not in res and "tab_id" in res:
             res["panel_id"] = res.get("tab_id")
@@ -1101,11 +1101,11 @@ class cmux:
         self._call("debug.bonsplit_underflow.reset")
 
     def empty_panel_count(self) -> int:
-        res = self._call("debug.empty_panel.count") or {}
+        res = self._call("debug.empty_area.count") or {}
         return int(res.get("count") or 0)
 
     def reset_empty_panel_count(self) -> None:
-        self._call("debug.empty_panel.reset")
+        self._call("debug.empty_area.reset")
 
     def flash_count(self, surface: Union[str, int]) -> int:
         sid = self._resolve_surface_id(surface)

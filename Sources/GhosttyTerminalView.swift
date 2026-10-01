@@ -2062,8 +2062,8 @@ class GhosttyApp {
 #if DEBUG
             cmuxWriteChildExitProbe(
                 [
-                    "probeShowChildExitedTabId": callbackWorkspaceId?.uuidString ?? "",
-                    "probeShowChildExitedSurfaceId": callbackSurfaceId?.uuidString ?? "",
+                    "probeShowChildExitedWorkspaceId": callbackWorkspaceId?.uuidString ?? "",
+                    "probeShowChildExitedTabId": callbackSurfaceId?.uuidString ?? "",
                 ],
                 increments: ["probeShowChildExitedCount": 1]
             )

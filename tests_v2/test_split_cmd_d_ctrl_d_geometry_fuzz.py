@@ -38,7 +38,7 @@ def _pane_count(layout_payload: dict) -> int:
 
 
 def _largest_split_frame(layout_payload: dict) -> dict:
-    selected = layout_payload.get("selectedPanels") or []
+    selected = layout_payload.get("selectedTabs") or []
     best = None
     best_area = -1.0
 

@@ -2697,7 +2697,7 @@ class WorkspaceManager: ObservableObject {
 
     func closeCurrentPanelWithConfirmation() {
 #if DEBUG
-        UITestRecorder.incrementInt("closePanelInvocations")
+        UITestRecorder.incrementInt("closeTabInvocations")
 #endif
         guard let selectedId = selectedWorkspaceId,
               let workspace = workspaces.first(where: { $0.id == selectedId }),
@@ -3322,7 +3322,7 @@ class WorkspaceManager: ObservableObject {
 
         panel.focus()
 #if DEBUG
-        phaseDlog("postPanelFocus")
+        phaseDlog("postTabFocus")
 #endif
 
         // For terminal panels, ensure proper focus handling
@@ -4621,12 +4621,12 @@ class WorkspaceManager: ObservableObject {
 
                 self.writeSplitCloseRightTestData([
                     "tabId": workspace.id.uuidString,
-                    "topLeftPanelId": topLeftPanelId.uuidString,
-                    "bottomLeftPanelId": bottomLeft.id.uuidString,
-                    "topRightPanelId": topRight.id.uuidString,
-                    "bottomRightPanelId": bottomRight.id.uuidString,
-                    "createdPaneCount": String(workspace.bonsplitController.allPaneIds.count),
-                    "createdPanelCount": String(workspace.panels.count)
+                    "topLeftTabId": topLeftPanelId.uuidString,
+                    "bottomLeftTabId": bottomLeft.id.uuidString,
+                    "topRightTabId": topRight.id.uuidString,
+                    "bottomRightTabId": bottomRight.id.uuidString,
+                    "createdAreaCount": String(workspace.bonsplitController.allPaneIds.count),
+                    "createdTabCount": String(workspace.panels.count)
                 ], at: path)
 
                 DebugUIEventCounters.resetEmptyPanelAppearCount()
@@ -4688,12 +4688,12 @@ class WorkspaceManager: ObservableObject {
 
                     return (
                         data: [
-                            "finalPaneCount": String(paneIds.count),
+                            "finalAreaCount": String(paneIds.count),
                             "finalBonsplitTabCount": String(bonsplitTabCount),
-                            "finalPanelCount": String(panelCount),
+                            "finalTabCount": String(panelCount),
                             "missingSelectedTabCount": String(missingSelectedTabCount),
-                            "missingPanelMappingCount": String(missingPanelMappingCount),
-                            "emptyPanelAppearCount": String(DebugUIEventCounters.emptyPanelAppearCount),
+                            "missingTabMappingCount": String(missingPanelMappingCount),
+                            "emptyAreaAppearCount": String(DebugUIEventCounters.emptyPanelAppearCount),
                             "selectedTerminalCount": String(selectedTerminalCount),
                             "selectedTerminalAttachedCount": String(selectedTerminalAttachedCount),
                             "selectedTerminalZeroSizeCount": String(selectedTerminalZeroSizeCount),
@@ -4959,7 +4959,7 @@ class WorkspaceManager: ObservableObject {
                 "timelineFirstBlank": result.firstBlank.map { "\($0.label)@\($0.frame)" } ?? "",
                 "timelineFirstSizeMismatch": result.firstSizeMismatch.map { "\($0.label)@\($0.frame):ios=\($0.ios):exp=\($0.expected)" } ?? "",
                 "timelineTrace": result.trace.joined(separator: "|"),
-                "timelinePaneState": paneStateTrace,
+                "timelineAreaState": paneStateTrace,
                 "visualLastIteration": String(i),
             ], at: path)
 
@@ -5119,8 +5119,8 @@ class WorkspaceManager: ObservableObject {
 
                 write([
                     "iteration": String(i),
-                    "leftPanelId": leftPanelId.uuidString,
-                    "rightPanelId": rightPanel.id.uuidString,
+                    "leftTabId": leftPanelId.uuidString,
+                    "rightTabId": rightPanel.id.uuidString,
                 ])
 
                 ws.focusPanel(rightPanel.id)
@@ -5183,7 +5183,7 @@ class WorkspaceManager: ObservableObject {
 
             write([
                 "workspaceCountAfter": String(self.workspaces.count),
-                "panelCountAfter": String(ws.panels.count),
+                "tabCountAfter": String(ws.panels.count),
                 "workspaceStillOpen": workspaceStillOpen ? "1" : "0",
                 "closedWorkspace": effectiveClosedWorkspace ? "1" : "0",
                 "timedOut": timedOut ? "1" : "0",
@@ -5366,8 +5366,8 @@ class WorkspaceManager: ObservableObject {
                 exitPanelHasSurfaceBeforeCtrlD = readiness.hasSurface
                 if !(readiness.attached && readiness.hasSurface) {
                     write([
-                        "exitPanelAttachedBeforeCtrlD": readiness.attached ? "1" : "0",
-                        "exitPanelHasSurfaceBeforeCtrlD": readiness.hasSurface ? "1" : "0",
+                        "exitTabAttachedBeforeCtrlD": readiness.attached ? "1" : "0",
+                        "exitTabHasSurfaceBeforeCtrlD": readiness.hasSurface ? "1" : "0",
                         "setupError": "Exit panel not ready for Ctrl+D (not attached or surface nil)",
                         "done": "1",
                     ])
@@ -5387,19 +5387,19 @@ class WorkspaceManager: ObservableObject {
 
             write([
                 "workspaceId": ws.id.uuidString,
-                "leftPanelId": leftPanelId.uuidString,
-                "rightPanelId": rightPanel.id.uuidString,
-                "topRightPanelId": topRightPanelId,
-                "bottomLeftPanelId": bottomLeftPanelId,
-                "bottomRightPanelId": bottomRightPanelId,
-                "exitPanelId": exitPanelId.uuidString,
-                "panelCountBeforeCtrlD": String(ws.panels.count),
+                "leftTabId": leftPanelId.uuidString,
+                "rightTabId": rightPanel.id.uuidString,
+                "topRightTabId": topRightPanelId,
+                "bottomLeftTabId": bottomLeftPanelId,
+                "bottomRightTabId": bottomRightPanelId,
+                "exitTabId": exitPanelId.uuidString,
+                "tabCountBeforeCtrlD": String(ws.panels.count),
                 "layout": layout,
-                "expectedPanelsAfter": String(expectedPanelsAfter),
-                "focusedPanelBefore": focusedPanelBefore,
-                "firstResponderPanelBefore": firstResponderPanelBefore,
-                "exitPanelAttachedBeforeCtrlD": exitPanelAttachedBeforeCtrlD ? "1" : "0",
-                "exitPanelHasSurfaceBeforeCtrlD": exitPanelHasSurfaceBeforeCtrlD ? "1" : "0",
+                "expectedTabsAfter": String(expectedPanelsAfter),
+                "focusedTabBefore": focusedPanelBefore,
+                "firstResponderTabBefore": firstResponderPanelBefore,
+                "exitTabAttachedBeforeCtrlD": exitPanelAttachedBeforeCtrlD ? "1" : "0",
+                "exitTabHasSurfaceBeforeCtrlD": exitPanelHasSurfaceBeforeCtrlD ? "1" : "0",
                 "ready": "1",
                 "done": "0",
             ])
@@ -5435,10 +5435,10 @@ class WorkspaceManager: ObservableObject {
 
                             finish([
                                 "workspaceCountAfter": String(self.workspaces.count),
-                                "panelCountAfter": String(workspace.panels.count),
+                                "tabCountAfter": String(workspace.panels.count),
                                 "closedWorkspace": self.workspaces.contains(where: { $0.id == workspace.id }) ? "0" : "1",
-                                "focusedPanelAfter": workspace.focusedPanelId?.uuidString ?? "",
-                                "firstResponderPanelAfter": firstResponderPanelAfter,
+                                "focusedTabAfter": workspace.focusedPanelId?.uuidString ?? "",
+                                "firstResponderTabAfter": firstResponderPanelAfter,
                             ])
                         }
                     }
@@ -5453,7 +5453,7 @@ class WorkspaceManager: ObservableObject {
                         if !alive {
                             finish([
                                 "workspaceCountAfter": "0",
-                                "panelCountAfter": "0",
+                                "tabCountAfter": "0",
                                 "closedWorkspace": "1",
                             ])
                         }
@@ -5464,7 +5464,7 @@ class WorkspaceManager: ObservableObject {
             let work = DispatchWorkItem {
                 finish([
                     "workspaceCountAfter": String(self.workspaces.count),
-                    "panelCountAfter": String(ws.panels.count),
+                    "tabCountAfter": String(ws.panels.count),
                     "closedWorkspace": self.workspaces.contains(where: { $0.id == ws.id }) ? "0" : "1",
                     "timedOut": "1",
                 ])
@@ -5502,7 +5502,7 @@ class WorkspaceManager: ObservableObject {
                         }
                         if !ready,
                            workspace.terminalPanel(for: exitPanelId) == nil {
-                            write(["autoTriggerError": "missingExitPanelBeforeTrigger"])
+                            write(["autoTriggerError": "missingExitTabBeforeTrigger"])
                             return
                         }
                     } else if let panel = workspace.terminalPanel(for: exitPanelId) {
@@ -5510,16 +5510,16 @@ class WorkspaceManager: ObservableObject {
                         hasSurfaceBeforeTrigger = panel.surface.surface != nil
                     }
                     write([
-                        "exitPanelAttachedBeforeTrigger": attachedBeforeTrigger ? "1" : "0",
-                        "exitPanelHasSurfaceBeforeTrigger": hasSurfaceBeforeTrigger ? "1" : "0",
+                        "exitTabAttachedBeforeTrigger": attachedBeforeTrigger ? "1" : "0",
+                        "exitTabHasSurfaceBeforeTrigger": hasSurfaceBeforeTrigger ? "1" : "0",
                     ])
                     if shouldWaitForSurface && !(attachedBeforeTrigger && hasSurfaceBeforeTrigger) {
-                        write(["autoTriggerError": "exitPanelNotReadyBeforeTrigger"])
+                        write(["autoTriggerError": "exitTabNotReadyBeforeTrigger"])
                         return
                     }
 
                     guard let panel = workspace.terminalPanel(for: exitPanelId) else {
-                        write(["autoTriggerError": "missingExitPanelAtTrigger"])
+                        write(["autoTriggerError": "missingExitTabAtTrigger"])
                         return
                     }
                     // Exercise the real key path (ghostty_surface_key for Ctrl+D).

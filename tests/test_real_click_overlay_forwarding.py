@@ -134,13 +134,13 @@ if let scroll = CGEvent(
 
 def pick_top_bottom_terminal_panels(layout: dict) -> tuple[dict, dict]:
     candidates = []
-    for panel in layout.get("selectedPanels", []):
-        if panel.get("panelType") != "terminal":
+    for panel in layout.get("selectedTabs", []):
+        if panel.get("tabType") != "terminal":
             continue
         view = panel.get("viewFrame")
         if not isinstance(view, dict):
             continue
-        if not panel.get("panelId"):
+        if not panel.get("tabId"):
             continue
         candidates.append(panel)
 
@@ -150,7 +150,7 @@ def pick_top_bottom_terminal_panels(layout: dict) -> tuple[dict, dict]:
     candidates.sort(key=lambda p: float(p["viewFrame"]["y"]))
     bottom = candidates[0]
     top = candidates[-1]
-    if bottom["panelId"] == top["panelId"]:
+    if bottom["tabId"] == top["tabId"]:
         raise RuntimeError("Top/bottom panel IDs collapsed to the same panel")
     return top, bottom
 
@@ -160,7 +160,7 @@ def candidate_screen_points(
 ) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
 
-    pane = panel.get("paneFrame") or {}
+    pane = panel.get("areaFrame") or {}
     view = panel.get("viewFrame") or {}
 
     window_points: list[tuple[float, float]] = []
@@ -260,8 +260,8 @@ def main() -> int:
 
             layout = client.layout_debug()
             top_panel, bottom_panel = pick_top_bottom_terminal_panels(layout)
-            top_id = top_panel["panelId"]
-            bottom_id = bottom_panel["panelId"]
+            top_id = top_panel["tabId"]
+            bottom_id = bottom_panel["tabId"]
 
             client.focus_surface_by_panel(top_id)
             time.sleep(0.2)

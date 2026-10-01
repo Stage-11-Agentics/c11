@@ -60,6 +60,21 @@ def _same_ref(new_ref: Any, new_prefix: str, old_ref: Any, old_prefix: str, what
     )
 
 
+def _same(a: Any, b: Any, msg: str) -> None:
+    """Equality that cannot pass vacuously: both sides must be present (not None)."""
+    _must(a is not None and b is not None, f"{msg}: a side is missing (new={a!r}, old={b!r})")
+    _must(a == b, f"{msg}: {a!r} != {b!r}")
+
+
+def _error_of(c: cmux, method: str, params: Optional[Dict[str, Any]] = None) -> str:
+    """The error text of a call that must fail; the call succeeding is itself a failure."""
+    try:
+        c._call(method, params or {})
+    except cmuxError as exc:
+        return str(exc)
+    raise cmuxError(f"{method} was expected to fail but succeeded")
+
+
 def _rows(payload: Dict[str, Any], *keys: str) -> List[Dict[str, Any]]:
     for key in keys:
         if isinstance(payload.get(key), list):
@@ -109,6 +124,17 @@ def _tabs(c: cmux, ws: str) -> List[Dict[str, Any]]:
 
 def _areas(c: cmux, ws: str) -> List[Dict[str, Any]]:
     return _rows(_call(c, "area.list", {"workspace_id": ws}), "areas")
+
+
+def _focused_area_id(c: cmux, ws: str) -> str:
+    return str(_call(c, "tab.current", {"workspace_id": ws}).get("area_id") or "")
+
+
+def _tab_row(c: cmux, ws: str, tab_id: str) -> Dict[str, Any]:
+    for row in _tabs(c, ws):
+        if row.get("id") == tab_id:
+            return row
+    raise cmuxError(f"tab {tab_id} is not in workspace {ws}")
 
 
 def _focused_tab_id(c: cmux, ws: str) -> str:
@@ -162,11 +188,11 @@ def test_read_methods_resolve_to_same_objects(c: cmux, f: Fixture) -> None:
     for old, new, (old_key, new_key) in pairs:
         old_rows = _rows(_call(c, old, {"workspace_id": ws}), old_key)
         new_rows = _rows(_call(c, new, {"workspace_id": ws}), new_key)
-        _must(_ids(old_rows) == _ids(new_rows), f"{old} vs {new} disagree: {_ids(old_rows)} != {_ids(new_rows)}")
+        _must(len(new_rows) > 0 and _ids(old_rows) == _ids(new_rows), f"{old} vs {new} disagree: {_ids(old_rows)} != {_ids(new_rows)}")
 
     old_cur = _call(c, "surface.current", {"workspace_id": ws})
     new_cur = _call(c, "tab.current", {"workspace_id": ws})
-    _must(old_cur.get("surface_id") == new_cur.get("tab_id"), f"surface.current vs tab.current: {old_cur} {new_cur}")
+    _same(new_cur.get("tab_id"), old_cur.get("surface_id"), f"surface.current vs tab.current: {old_cur} {new_cur}")
 
     old_surfaces = _rows(_call(c, "pane.surfaces", {"workspace_id": ws, "pane_id": f.area_a}), "surfaces")
     new_tabs = _rows(_call(c, "area.tabs", {"workspace_id": ws, "area_id": f.area_a}), "tabs")
@@ -174,15 +200,19 @@ def test_read_methods_resolve_to_same_objects(c: cmux, f: Fixture) -> None:
 
     old_md = _call(c, "surface.get_metadata", {"workspace_id": ws, "surface_id": f.t1})
     new_md = _call(c, "tab.get_metadata", {"workspace_id": ws, "tab_id": f.t1})
-    _must(old_md.get("metadata") == new_md.get("metadata"), f"get_metadata differs: {old_md} {new_md}")
+    _must(isinstance(old_md.get("metadata"), dict) and isinstance(new_md.get("metadata"), dict),
+          f"get_metadata must return a metadata object: {old_md} {new_md}")
+    _same(new_md.get("metadata"), old_md.get("metadata"), "surface/tab get_metadata differ")
 
     old_pmd = _call(c, "pane.get_metadata", {"workspace_id": ws, "pane_id": f.area_a})
     new_pmd = _call(c, "area.get_metadata", {"workspace_id": ws, "area_id": f.area_a})
-    _must(old_pmd.get("metadata") == new_pmd.get("metadata"), f"pane/area get_metadata differs: {old_pmd} {new_pmd}")
+    _must(isinstance(old_pmd.get("metadata"), dict) and isinstance(new_pmd.get("metadata"), dict),
+          f"area get_metadata must return a metadata object: {old_pmd} {new_pmd}")
+    _same(new_pmd.get("metadata"), old_pmd.get("metadata"), "pane/area get_metadata differ")
 
     old_tb = _call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t1})
     new_tb = _call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t1})
-    _must(sorted(old_tb) == sorted(new_tb), f"titlebar state keys differ: {sorted(old_tb)} {sorted(new_tb)}")
+    _must(len(new_tb) > 0 and sorted(old_tb) == sorted(new_tb), f"titlebar state keys differ: {sorted(old_tb)} {sorted(new_tb)}")
 
     old_rt = _call(c, "surface.read_text", {"workspace_id": ws, "surface_id": f.t1})
     new_rt = _call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t1})
@@ -269,7 +299,13 @@ def test_write_methods_cross_over(c: cmux, f: Fixture) -> None:
     _call(c, "tab.focus", {"workspace_id": ws, "panel_id": f.t2})
     _must(_focused_tab_id(c, ws) == f.t2, "tab.focus with panel_id did not focus the tab")
     _call(c, "pane.focus", {"workspace_id": ws, "pane_id": f.area_b})
+    _same(_focused_area_id(c, ws), f.area_b, "pane.focus did not focus the area")
+    _must(_focused_tab_id(c, ws) == f.t3, "pane.focus should land on the area's only tab")
     _call(c, "area.focus", {"workspace_id": ws, "area_id": f.area_a})
+    _same(_focused_area_id(c, ws), f.area_a, "area.focus did not focus the area")
+    _call(c, "pane.focus", {"workspace_id": ws, "pane_id": f.area_b})
+    _call(c, "area.focus", {"workspace_id": ws, "pane_id": f.area_a})
+    _same(_focused_area_id(c, ws), f.area_a, "area.focus with the older pane_id key did not focus the area")
 
     # Create and close through the old and the new method.
     before = len(_tabs(c, ws))
@@ -293,7 +329,8 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
         items = list(_call(c, "notification.list").get("notifications") or [])
         mine = [n for n in items if n.get("title") == title]
         _must(len(mine) == 1, f"{method} should create a notification, got {mine}")
-        _must(mine[0].get("tab_id") == mine[0].get("surface_id") == f.t3, f"notification should name the tab under both keys: {mine[0]}")
+        _same(mine[0].get("tab_id"), f.t3, f"notification tab_id for {method}")
+        _same(mine[0].get("surface_id"), f.t3, f"notification surface_id for {method}")
         try:
             c.clear_notifications()
         except Exception:
@@ -310,10 +347,10 @@ def test_notification_create_aliases(c: cmux, f: Fixture) -> None:
 # ---------------------------------------------------------------------------
 
 def _check_tab_row(row: Dict[str, Any], what: str) -> None:
-    _must(row.get("area_id") == row.get("pane_id") and row.get("area_id"), f"{what}: area_id/pane_id differ: {row}")
+    _same(row.get("area_id"), row.get("pane_id"), f"{what}: area_id/pane_id")
     _same_ref(row.get("area_ref"), "area", row.get("pane_ref"), "pane", f"{what} area_ref/pane_ref")
-    _must(row.get("index_in_area") == row.get("index_in_pane"), f"{what}: index_in_area/index_in_pane differ: {row}")
-    _must(row.get("selected_in_area") == row.get("selected_in_pane"), f"{what}: selected_in_area/selected_in_pane differ: {row}")
+    _same(row.get("index_in_area"), row.get("index_in_pane"), f"{what}: index_in_area/index_in_pane")
+    _same(row.get("selected_in_area"), row.get("selected_in_pane"), f"{what}: selected_in_area/selected_in_pane")
     _ordinal(row.get("ref"), "tab")
 
 
@@ -331,49 +368,53 @@ def test_dual_keys_in_list_responses(c: cmux, f: Fixture) -> None:
     areas, panes = _rows(res, "areas"), _rows(res, "panes")
     _must(_ids(areas) == _ids(panes) and len(areas) == 2, f"area.list areas/panes arrays differ: {res}")
     for row in areas:
-        _must(row.get("tab_ids") == row.get("surface_ids") and row.get("tab_ids"), f"area row tab_ids/surface_ids differ: {row}")
+        _same(row.get("tab_ids"), row.get("surface_ids"), "area row tab_ids/surface_ids")
+        _must(len(row["tab_ids"]) > 0, f"area row should list its tabs: {row}")
         _must(len(row["tab_refs"]) == len(row["surface_refs"]) == len(row["tab_ids"]), f"area row refs mismatch: {row}")
         for new_ref, old_ref in zip(row["tab_refs"], row["surface_refs"]):
             _same_ref(new_ref, "tab", old_ref, "surface", "area row tab_refs/surface_refs")
-        _must(row.get("tab_count") == row.get("surface_count") == len(row["tab_ids"]), f"area row counts differ: {row}")
-        _must(row.get("selected_tab_id") == row.get("selected_surface_id"), f"selected_tab_id/selected_surface_id differ: {row}")
+        _same(row.get("tab_count"), row.get("surface_count"), "area row tab_count/surface_count")
+        _same(row.get("tab_count"), len(row["tab_ids"]), "area row tab_count vs tab_ids")
+        _same(row.get("selected_tab_id"), row.get("selected_surface_id"), "selected_tab_id/selected_surface_id")
         _same_ref(row.get("selected_tab_ref"), "tab", row.get("selected_surface_ref"), "surface", "selected refs")
         _ordinal(row.get("ref"), "area")
 
     res = _call(c, "area.tabs", {"workspace_id": ws, "area_id": f.area_a})
     _must(_ids(_rows(res, "tabs")) == _ids(_rows(res, "surfaces")), f"area.tabs tabs/surfaces differ: {res}")
-    _must(res.get("area_id") == res.get("pane_id") == f.area_a, f"area.tabs area_id/pane_id differ: {res}")
+    _same(res.get("area_id"), res.get("pane_id"), "area.tabs area_id/pane_id")
+    _same(res.get("area_id"), f.area_a, "area.tabs area_id")
     _same_ref(res.get("area_ref"), "area", res.get("pane_ref"), "pane", "area.tabs area_ref/pane_ref")
 
     res = _call(c, "tab.current", {"workspace_id": ws})
-    _must(res.get("tab_id") == res.get("surface_id") and res.get("tab_id"), f"tab.current ids differ: {res}")
+    _same(res.get("tab_id"), res.get("surface_id"), "tab.current tab_id/surface_id")
     _same_ref(res.get("tab_ref"), "tab", res.get("surface_ref"), "surface", "tab.current refs")
-    _must(res.get("area_id") == res.get("pane_id"), f"tab.current area_id/pane_id differ: {res}")
+    _same(res.get("area_id"), res.get("pane_id"), "tab.current area_id/pane_id")
     _same_ref(res.get("area_ref"), "area", res.get("pane_ref"), "pane", "tab.current area/pane refs")
-    _must(res.get("tab_type") == res.get("surface_type"), f"tab.current tab_type/surface_type differ: {res}")
+    _same(res.get("tab_type"), res.get("surface_type"), "tab.current tab_type/surface_type")
     print("PASS: list/current responses carry canonical and older keys")
 
 
 def test_dual_keys_in_create_split_identify(c: cmux, f: Fixture) -> None:
     ws = f.ws
     created = _call(c, "tab.create", {"workspace_id": ws, "area_id": f.area_a, "focus": False})
-    _must(created.get("tab_id") == created.get("surface_id") and created.get("tab_id"), f"tab.create ids differ: {created}")
+    _same(created.get("tab_id"), created.get("surface_id"), "tab.create tab_id/surface_id")
     _same_ref(created.get("tab_ref"), "tab", created.get("surface_ref"), "surface", "tab.create refs")
-    _must(created.get("area_id") == created.get("pane_id") == f.area_a, f"tab.create area_id/pane_id differ: {created}")
+    _same(created.get("area_id"), created.get("pane_id"), "tab.create area_id/pane_id")
+    _same(created.get("area_id"), f.area_a, "tab.create area_id")
     _same_ref(created.get("area_ref"), "area", created.get("pane_ref"), "pane", "tab.create area/pane refs")
     _call(c, "tab.close", {"workspace_id": ws, "tab_id": created["tab_id"]})
 
     split = _call(c, "tab.split", {"workspace_id": ws, "tab_id": f.t3, "direction": "down"})
-    _must(split.get("tab_id") == split.get("surface_id") and split.get("tab_id"), f"tab.split ids differ: {split}")
+    _same(split.get("tab_id"), split.get("surface_id"), "tab.split tab_id/surface_id")
     _call(c, "tab.close", {"workspace_id": ws, "tab_id": split["tab_id"]})
     time.sleep(0.2)
 
     ident = _call(c, "system.identify", {"caller": {"workspace_id": ws, "tab_id": f.t2}})
     for scope in ("focused", "caller"):
         block = ident.get(scope) or {}
-        _must(block.get("tab_id") == block.get("surface_id") and block.get("tab_id"), f"identify.{scope} ids differ: {block}")
+        _same(block.get("tab_id"), block.get("surface_id"), f"identify.{scope} tab_id/surface_id")
         _same_ref(block.get("tab_ref"), "tab", block.get("surface_ref"), "surface", f"identify.{scope} tab refs")
-        _must(block.get("area_id") == block.get("pane_id") and block.get("area_id"), f"identify.{scope} area/pane ids differ: {block}")
+        _same(block.get("area_id"), block.get("pane_id"), f"identify.{scope} area_id/pane_id")
         _same_ref(block.get("area_ref"), "area", block.get("pane_ref"), "pane", f"identify.{scope} area refs")
     _must((ident.get("caller") or {}).get("tab_id") == f.t2, f"identify did not resolve the caller tab: {ident}")
 
@@ -396,8 +437,8 @@ def _walk(value: Any):
 def test_dual_keys_in_tree_json(cli: str, f: Fixture) -> None:
     payload = _cli_json(cli, ["tree", "--workspace", f.ws])
     workspaces = [w for d in _walk(payload) for w in (d.get("workspaces") or []) if isinstance(w, dict)]
-    ws_node = next((w for w in workspaces if w.get("id") == f.ws or w.get("ref") == f.ws), workspaces[0] if workspaces else None)
-    _must(ws_node is not None, f"tree --json has no workspace node: {payload}")
+    ws_node = next((w for w in workspaces if w.get("id") == f.ws or w.get("ref") == f.ws), None)
+    _must(ws_node is not None, f"tree --json has no node for workspace {f.ws}: {[w.get('id') for w in workspaces]}")
     areas, panes = ws_node.get("areas"), ws_node.get("panes")
     _must(isinstance(areas, list) and isinstance(panes, list) and len(areas) == len(panes) == 2,
           f"tree workspace node should carry both `areas` and `panes`: {sorted(ws_node)}")
@@ -407,11 +448,14 @@ def test_dual_keys_in_tree_json(cli: str, f: Fixture) -> None:
               f"tree area node should carry both `tabs` and `surfaces`: {sorted(area)}")
         # `ref` has no legacy twin: both arrays hold the canonical `area:N` / `tab:N` value.
         _ordinal(area.get("ref"), "area")
-        _must(area.get("ref") == pane.get("ref"), f"tree areas/panes entries should be the same area: {area} {pane}")
-        _must(area.get("tab_count") == area.get("surface_count") == len(tabs), f"tree area counts differ: {area}")
+        _same(area.get("id"), pane.get("id"), "tree areas/panes entries should be the same area")
+        _same(area.get("ref"), pane.get("ref"), "tree areas/panes entries should share one ref")
+        _same(area.get("tab_count"), area.get("surface_count"), "tree area tab_count/surface_count")
+        _same(area.get("tab_count"), len(tabs), "tree area tab_count vs tabs")
         for tab, surface in zip(tabs, surfaces):
             _ordinal(tab.get("ref"), "tab")
-            _must(tab.get("ref") == surface.get("ref"), f"tree tabs/surfaces entries should be the same tab: {tab} {surface}")
+            _same(tab.get("id"), surface.get("id"), "tree tabs/surfaces entries should be the same tab")
+            _same(tab.get("ref"), surface.get("ref"), "tree tabs/surfaces entries should share one ref")
             _check_tab_row(tab, "tree tab")
             _check_tab_row(surface, "tree surface")
     print("PASS: tree --json carries areas/panes and tabs/surfaces")
@@ -427,8 +471,12 @@ def test_flag_caller_metadata_keys(c: cmux, cli: str, f: Fixture) -> None:
         cli_md = _cli_json(cli, ["get-metadata", "--tab", f.t2], env=env)
         _must((cli_md.get("metadata") or {}).get("flag_caller_tab_id") == f.t2, f"get-metadata lost flag_caller_tab_id: {cli_md}")
     finally:
-        _cli(cli, ["lower-flag", "--tab", f.t2], env=env, check=False)
-    print("PASS: flag_caller_tab_id and flag_caller_surface_id are both written")
+        lowered = _cli(cli, ["lower-flag", "--tab", f.t2], env=env, check=False)
+    _must(lowered.returncode == 0, f"lower-flag failed: {lowered.stdout!r} {lowered.stderr!r}")
+    md = _metadata(c, f.ws, f.t2)
+    for key in ("flag", "flag_caller_tab_id", "flag_caller_surface_id"):
+        _must(key not in md, f"lower-flag left {key} behind: {md}")
+    print("PASS: flag_caller_tab_id and flag_caller_surface_id are both written, and both cleared by lower-flag")
 
 
 # ---------------------------------------------------------------------------
@@ -482,8 +530,15 @@ def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
     _cli(cli, ["focus-area", "--workspace", ws, "--area", f.area_b])
     _must(_focused_tab_id(c, ws) == f.t3, "focus-area --area did not focus the area's tab")
     _cli(cli, ["focus-pane", "--workspace", ws, "--pane", f.area_a])
+    _same(_focused_area_id(c, ws), f.area_a, "focus-pane --pane did not focus the area")
     _cli(cli, ["focus-area", f.area_b, "--workspace", ws])  # positional comes first
+    _same(_focused_area_id(c, ws), f.area_b, "focus-area <area> (positional) did not focus the area")
     _cli(cli, ["focus-pane", f.area_a, "--workspace", ws])
+    _same(_focused_area_id(c, ws), f.area_a, "focus-pane <area> (positional) did not focus the area")
+    _cli(cli, ["focus-tab", f.t3, "--workspace", ws])
+    _must(_focused_tab_id(c, ws) == f.t3, "focus-tab <tab> (positional) did not focus the tab")
+    _cli(cli, ["focus-panel", f.t1, "--workspace", ws])
+    _must(_focused_tab_id(c, ws) == f.t1, "focus-panel <tab> (positional) did not focus the tab")
 
     # send-tab / send-panel, send-key-tab / send-key-panel.
     for cmd, flag in (("send-tab", "--tab"), ("send-panel", "--panel")):
@@ -563,8 +618,7 @@ def test_cli_env_vars_target_the_same_tab(c: cmux, cli: str, f: Fixture) -> None
     env = _cli_env({"C11_TAB_ID": f.t1, "C11_WORKSPACE_ID": ws})
     for flag in ("--tab", "--surface", "--panel"):
         proc = _cli(cli, ["--json", "get-metadata", flag, f.t2], env=env, check=False)
-        if proc.returncode != 0 and flag == "--panel":
-            continue  # `--panel` is only accepted by commands that always took it
+        _must(proc.returncode == 0, f"get-metadata {flag} must be accepted: {proc.stdout!r} {proc.stderr!r}")
         out = json.loads(proc.stdout or "{}")
         _must((out.get("metadata") or {}).get("title") == token, f"{flag} did not override the environment: {out}")
 
@@ -617,6 +671,361 @@ def test_free_text_is_never_rewritten(c: cmux, cli: str, f: Fixture) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Older socket methods, params and refs beyond the basics
+# ---------------------------------------------------------------------------
+
+def _wait_for(pred, timeout: float = 6.0, step: float = 0.15) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pred():
+            return True
+        time.sleep(step)
+    return pred()
+
+
+def _area_of(c: cmux, ws: str, tab_id: str) -> str:
+    return str(_tab_row(c, ws, tab_id).get("area_id") or "")
+
+
+def _index_of(c: cmux, ws: str, tab_id: str) -> int:
+    value = _tab_row(c, ws, tab_id).get("index_in_area")
+    _must(isinstance(value, int), f"tab {tab_id} has no index_in_area: {_tab_row(c, ws, tab_id)}")
+    return int(value)
+
+
+def _spare_tab(c: cmux, ws: str, area_id: str) -> str:
+    created = _call(c, "tab.create", {"workspace_id": ws, "area_id": area_id, "focus": False})
+    tab_id = str(created.get("tab_id") or "")
+    _must(bool(tab_id), f"tab.create returned no tab_id: {created}")
+    time.sleep(0.2)
+    return tab_id
+
+
+def test_tab_action_and_send_key_old_methods(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    # surface.action (routed to the Misc domain) and tab.action are one handler.
+    old_title, new_title = f"old-{uuid.uuid4().hex[:6]}", f"new-{uuid.uuid4().hex[:6]}"
+    res = _call(c, "surface.action", {"workspace_id": ws, "surface_id": f.t2, "action": "rename", "title": old_title})
+    _same(res.get("tab_id"), f.t2, "surface.action result tab_id")
+    _same(res.get("surface_id"), f.t2, "surface.action result surface_id")
+    _same(_tab_row(c, ws, f.t2).get("title"), old_title, "surface.action rename should retitle the tab")
+    res = _call(c, "tab.action", {"workspace_id": ws, "tab_id": f.t2, "action": "rename", "title": new_title})
+    _same(res.get("surface_id"), f.t2, "tab.action result surface_id")
+    _same(_tab_row(c, ws, f.t2).get("title"), new_title, "tab.action rename should retitle the tab")
+    for method, key in (("surface.action", "surface_id"), ("tab.action", "tab_id")):
+        pinned = _call(c, method, {"workspace_id": ws, key: f.t2, "action": "pin"})
+        _must(pinned.get("pinned") is True, f"{method} pin: {pinned}")
+        unpinned = _call(c, method, {"workspace_id": ws, key: f.t2, "action": "unpin"})
+        _must(unpinned.get("pinned") is False, f"{method} unpin: {unpinned}")
+
+    # Off-main methods under the old names: surface.send_key and surface.clear_history.
+    # `$((6*7))` makes the marker appear only in the command's output, never in its echo.
+    marker = f"vk{uuid.uuid4().hex[:6]}"
+    _call(c, "surface.send_text", {"workspace_id": ws, "surface_id": f.t3, "text": f"echo $((6*7)){marker}"})
+    _call(c, "surface.send_key", {"workspace_id": ws, "surface_id": f.t3, "key": "enter"})
+    _must(
+        _wait_for(lambda: f"42{marker}" in str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")),
+        "surface.send_key enter never ran the typed command",
+    )
+    marker = f"vk{uuid.uuid4().hex[:6]}"
+    _call(c, "tab.send_text", {"workspace_id": ws, "tab_id": f.t3, "text": f"echo $((6*7)){marker}"})
+    _call(c, "tab.send_key", {"workspace_id": ws, "tab_id": f.t3, "key": "enter"})
+    _must(
+        _wait_for(lambda: f"42{marker}" in str(_call(c, "tab.read_text", {"workspace_id": ws, "tab_id": f.t3}).get("text") or "")),
+        "tab.send_key enter never ran the typed command",
+    )
+    for method, key in (("surface.clear_history", "surface_id"), ("tab.clear_history", "tab_id")):
+        res = _call(c, method, {"workspace_id": ws, key: f.t3})
+        _same(res.get("tab_id"), f.t3, f"{method} result tab_id")
+        _same(res.get("surface_id"), f.t3, f"{method} result surface_id")
+
+    # pane.confirm is an off-main method that opens a modal; a call without a title fails
+    # before any dialog, so reaching that error proves the old name routes to the handler.
+    old_err = _error_of(c, "pane.confirm", {"workspace_id": ws, "pane_id": f.area_a})
+    new_err = _error_of(c, "area.confirm", {"workspace_id": ws, "area_id": f.area_a})
+    _must(old_err.startswith("invalid_params") and "title" in old_err, f"pane.confirm without a title: {old_err!r}")
+    _same(new_err, old_err, "pane.confirm and area.confirm should fail the same way")
+    print("PASS: surface.action / surface.send_key / surface.clear_history / pane.confirm resolve to the new handlers")
+
+
+def test_old_tab_layout_methods(c: cmux) -> None:
+    f = Fixture(c)
+    try:
+        ws = f.ws
+        # surface.split / tab.split
+        before = len(_areas(c, ws))
+        old_split = _call(c, "surface.split", {"workspace_id": ws, "surface_id": f.t1, "direction": "down"})
+        _same(old_split.get("tab_id"), old_split.get("surface_id"), "surface.split tab_id/surface_id")
+        time.sleep(0.3)
+        _must(len(_areas(c, ws)) == before + 1, "surface.split should add an area")
+        _call(c, "surface.close", {"workspace_id": ws, "surface_id": old_split["surface_id"]})
+        time.sleep(0.3)
+        _must(len(_areas(c, ws)) == before, "closing the split's only tab should remove its area")
+
+        # surface.reorder / tab.reorder with before/after anchors in both spellings.
+        steps = [
+            ("surface.reorder", {"surface_id": f.t2, "before_surface_id": f.t1}, 0),
+            ("tab.reorder", {"tab_id": f.t2, "after_tab_id": f.t1}, 1),
+            ("tab.reorder", {"tab_id": f.t2, "before_tab_id": f.t1}, 0),
+            ("surface.reorder", {"surface_id": f.t2, "after_surface_id": f.t1}, 1),
+            ("tab.reorder", {"surface_id": f.t2, "before_tab_id": f.t1}, 0),
+            ("surface.reorder", {"tab_id": f.t2, "after_surface_id": f.t1}, 1),
+        ]
+        for method, params, want in steps:
+            _call(c, method, {"workspace_id": ws, **params})
+            _same(_index_of(c, ws, f.t2), want, f"{method} {sorted(params)} should place the tab at index {want}")
+
+        # surface.move / tab.move across areas, with before/after anchors and old/new area keys.
+        mover = _spare_tab(c, ws, f.area_b)
+        _call(c, "surface.move", {"workspace_id": ws, "surface_id": mover, "pane_id": f.area_a,
+                                  "before_surface_id": f.t1, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_a, "surface.move should move the tab into the area")
+        _same(_index_of(c, ws, mover), 0, "surface.move before_surface_id should place the tab first")
+        _call(c, "tab.move", {"workspace_id": ws, "tab_id": mover, "area_id": f.area_b, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_b, "tab.move should move the tab back")
+        _call(c, "tab.move", {"workspace_id": ws, "tab_id": mover, "area_id": f.area_a,
+                              "after_tab_id": f.t1, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_a, "tab.move with after_tab_id should move the tab")
+        _same(_index_of(c, ws, mover), _index_of(c, ws, f.t1) + 1, "tab.move after_tab_id should place the tab after the anchor")
+        _call(c, "surface.move", {"workspace_id": ws, "surface_id": mover, "pane_id": f.area_b, "focus": False})
+        _same(_area_of(c, ws, mover), f.area_b, "surface.move should move the tab back")
+
+        # surface.drag_to_split / tab.drag_to_split need a sibling in the source area.
+        for method, key, direction in (("surface.drag_to_split", "surface_id", "right"), ("tab.drag_to_split", "tab_id", "down")):
+            sibling = _spare_tab(c, ws, f.area_b)
+            before = len(_areas(c, ws))
+            _call(c, method, {"workspace_id": ws, key: sibling, "direction": direction})
+            time.sleep(0.3)
+            _must(len(_areas(c, ws)) == before + 1, f"{method} should split the tab off into a new area")
+            _must(_area_of(c, ws, sibling) not in (f.area_a, f.area_b), f"{method} should leave the tab in a new area")
+        print("PASS: surface.split / reorder / move / drag_to_split resolve to the new handlers")
+    finally:
+        f.close()
+
+
+def test_old_tab_presentation_methods(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    for method, key in (("surface.trigger_flash", "surface_id"), ("tab.trigger_flash", "tab_id")):
+        res = _call(c, method, {"workspace_id": ws, key: f.t1})
+        _same(res.get("tab_id"), f.t1, f"{method} result tab_id")
+        _same(res.get("surface_id"), f.t1, f"{method} result surface_id")
+    for method, key in (("surface.cancel_flash", "surface_id"), ("tab.cancel_flash", "tab_id")):
+        res = _call(c, method, {"workspace_id": ws, key: f.t1})
+        _same(res.get("surface_id"), f.t1, f"{method} result surface_id")
+
+    for method, key, hex_ in (("surface.set_custom_color", "surface_id", "#336699"), ("tab.set_custom_color", "tab_id", "#996633")):
+        res = _call(c, method, {"workspace_id": ws, key: f.t2, "hex": hex_})
+        _same(res.get("custom_color"), hex_, f"{method} custom_color")
+        _same(res.get("tab_id"), f.t2, f"{method} result tab_id")
+    cleared = _call(c, "surface.set_custom_color", {"workspace_id": ws, "surface_id": f.t2, "clear": True})
+    _must(cleared.get("cleared") is True and cleared.get("custom_color") is None, f"clear through the old method: {cleared}")
+
+    # Title bar: visibility is workspace-wide, collapsed is per tab.
+    try:
+        _call(c, "surface.set_titlebar_visibility", {"workspace_id": ws, "surface_id": f.t1, "visible": False})
+        _must(_call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t1}).get("visible") is False,
+              "surface.set_titlebar_visibility should hide the title bar")
+        _call(c, "tab.set_titlebar_visibility", {"workspace_id": ws, "tab_id": f.t1, "visible": True})
+        _must(_call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t1}).get("visible") is True,
+              "tab.set_titlebar_visibility should show the title bar")
+    finally:
+        _call(c, "tab.set_titlebar_visibility", {"workspace_id": ws, "tab_id": f.t1, "visible": True})
+    _call(c, "surface.set_titlebar_collapsed", {"workspace_id": ws, "surface_id": f.t3, "collapsed": False})
+    _must(_call(c, "tab.get_titlebar_state", {"workspace_id": ws, "tab_id": f.t3}).get("collapsed") is False,
+          "surface.set_titlebar_collapsed should expand the title bar")
+    _call(c, "tab.set_titlebar_collapsed", {"workspace_id": ws, "tab_id": f.t3, "collapsed": True})
+    _must(_call(c, "surface.get_titlebar_state", {"workspace_id": ws, "surface_id": f.t3}).get("collapsed") is True,
+          "tab.set_titlebar_collapsed should collapse the title bar")
+
+    # surface.clear_metadata / tab.clear_metadata
+    for method, key in (("surface.clear_metadata", "surface_id"), ("tab.clear_metadata", "tab_id")):
+        marker = f"clr-{uuid.uuid4().hex[:6]}"
+        _call(c, "tab.set_metadata", {"workspace_id": ws, "tab_id": f.t3, "mode": "merge", "source": "explicit",
+                                      "metadata": {"vocab_clear": marker}})
+        _same(_metadata(c, ws, f.t3).get("vocab_clear"), marker, "metadata should be set before clearing")
+        _call(c, method, {"workspace_id": ws, key: f.t3, "keys": ["vocab_clear"], "source": "explicit"})
+        _must("vocab_clear" not in _metadata(c, ws, f.t3), f"{method} did not clear the key")
+    print("PASS: surface.trigger_flash / set_custom_color / set_titlebar_* / clear_metadata resolve to the new handlers")
+
+
+def test_old_area_methods(c: cmux) -> None:
+    f = Fixture(c)
+    try:
+        ws = f.ws
+
+        # pane.create / area.create
+        before = len(_areas(c, ws))
+        old_made = _call(c, "pane.create", {"workspace_id": ws, "direction": "down"})
+        new_made = _call(c, "area.create", {"workspace_id": ws, "direction": "down"})
+        time.sleep(0.3)
+        _must(len(_areas(c, ws)) == before + 2, f"pane.create / area.create should each add an area: {old_made} {new_made}")
+        for made in (old_made, new_made):
+            _same(made.get("area_id"), made.get("pane_id"), "area create area_id/pane_id")
+            _call(c, "tab.close", {"workspace_id": ws, "tab_id": str(made.get("tab_id") or made.get("surface_id"))})
+        time.sleep(0.3)
+        _must(len(_areas(c, ws)) == before, "closing the created areas' tabs should remove them")
+
+        # pane.resize / area.resize: the divider between the two side-by-side areas moves.
+        grown = _call(c, "pane.resize", {"workspace_id": ws, "pane_id": f.area_a, "direction": "right", "amount": 40})
+        _same(grown.get("area_id"), f.area_a, "pane.resize result area_id")
+        _same(grown.get("pane_id"), f.area_a, "pane.resize result pane_id")
+        _must(float(grown["new_divider_position"]) > float(grown["old_divider_position"]), f"pane.resize right should grow the area: {grown}")
+        shrunk = _call(c, "area.resize", {"workspace_id": ws, "area_id": f.area_a, "direction": "left", "amount": 40})
+        _must(float(shrunk["new_divider_position"]) < float(shrunk["old_divider_position"]), f"area.resize left should shrink the area: {shrunk}")
+
+        # pane.swap / area.swap with every spelling of the area and target keys. Each swap
+        # trades the two areas' selected tabs, so the owner of a given tab flips every time.
+        rows = {str(r["id"]): r for r in _areas(c, ws)}
+        sel_a = str(rows[f.area_a].get("selected_tab_id"))
+        area_ref = {r["id"]: r["ref"] for r in _areas(c, ws)}
+        old_ref = {k: f"pane:{_ordinal(v, 'area')}" for k, v in area_ref.items()}
+        variants = [
+            ("pane.swap", {"pane_id": f.area_a, "target_pane_id": f.area_b}),
+            ("area.swap", {"area_id": f.area_a, "target_area_id": f.area_b}),
+            ("pane.swap", {"pane_ref": old_ref[f.area_a], "target_pane_ref": old_ref[f.area_b]}),
+            ("area.swap", {"area_ref": area_ref[f.area_a], "target_area_ref": area_ref[f.area_b]}),
+            ("pane.swap", {"area_id": f.area_a, "target_area_id": f.area_b}),
+            ("area.swap", {"pane_id": f.area_a, "target_pane_id": f.area_b}),
+        ]
+        expected_area = f.area_a
+        for method, params in variants:
+            res = _call(c, method, {"workspace_id": ws, "focus": False, **params})
+            expected_area = f.area_b if expected_area == f.area_a else f.area_a
+            _same(_area_of(c, ws, sel_a), expected_area, f"{method} {sorted(params)} should move the selected tab")
+            _same(res.get("source_area_id"), res.get("source_pane_id"), f"{method} result source_area_id/source_pane_id")
+            _same(res.get("target_area_id"), res.get("target_pane_id"), f"{method} result target_area_id/target_pane_id")
+            _same(res.get("source_tab_id"), res.get("source_surface_id"), f"{method} result source_tab_id/source_surface_id")
+            _same(res.get("target_tab_id"), res.get("target_surface_id"), f"{method} result target_tab_id/target_surface_id")
+
+        # pane.join / area.join: surface_id or area_id picks the tab, target_* the destination.
+        joiner = _spare_tab(c, ws, f.area_b)
+        _call(c, "pane.join", {"workspace_id": ws, "surface_id": joiner, "target_pane_id": f.area_a, "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_a, "pane.join should move the tab into the target area")
+        _call(c, "area.join", {"workspace_id": ws, "tab_id": joiner, "target_area_id": f.area_b, "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_b, "area.join should move the tab into the target area")
+        _call(c, "pane.join", {"workspace_id": ws, "surface_id": joiner, "target_area_ref": area_ref[f.area_a], "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_a, "pane.join with target_area_ref should move the tab")
+        _call(c, "area.join", {"workspace_id": ws, "tab_id": joiner, "target_pane_ref": old_ref[f.area_b], "focus": False})
+        _same(_area_of(c, ws, joiner), f.area_b, "area.join with target_pane_ref should move the tab")
+
+        # pane.break / area.break detach a tab into a new workspace.
+        for method, key in (("pane.break", "surface_id"), ("area.break", "tab_id")):
+            breaker = _spare_tab(c, ws, f.area_b)
+            res = _call(c, method, {"workspace_id": ws, key: breaker, "focus": False})
+            new_ws = str(res.get("workspace_id") or "")
+            _must(bool(new_ws) and new_ws != ws, f"{method} should move the tab into another workspace: {res}")
+            try:
+                _must(breaker not in [r["id"] for r in _tabs(c, ws)], f"{method} left the tab in the source workspace")
+            finally:
+                try:
+                    c.close_workspace(new_ws)
+                except Exception:
+                    pass
+
+        # pane.last / area.last: with two areas the alternate one is the other area.
+        _call(c, "area.focus", {"workspace_id": ws, "area_id": f.area_a})
+        res = _call(c, "pane.last", {"workspace_id": ws})
+        _same(res.get("area_id"), f.area_b, "pane.last should target the other area")
+        _same(res.get("pane_id"), f.area_b, "pane.last result pane_id")
+        _same(_focused_area_id(c, ws), f.area_b, "pane.last should focus the other area")
+        res = _call(c, "area.last", {"workspace_id": ws})
+        _same(res.get("area_id"), f.area_a, "area.last should target the other area")
+        _same(_focused_area_id(c, ws), f.area_a, "area.last should focus the other area")
+        print("PASS: pane.create / resize / swap / join / break / last resolve to the new handlers")
+    finally:
+        f.close()
+
+
+def test_old_ref_params_and_caller_keys(c: cmux, f: Fixture) -> None:
+    ws = f.ws
+    token = f"ref-{uuid.uuid4().hex[:8]}"
+    _call(c, "tab.set_metadata", {"workspace_id": ws, "tab_id": f.t2, "mode": "merge", "source": "explicit", "metadata": {"title": token}})
+    t2_row = next(r for r in _tabs(c, ws) if r["id"] == f.t2)
+    ordinal = _ordinal(t2_row["ref"], "tab")
+    # *_ref params: the canonical name and the older one, with either ref prefix.
+    for key, value in (("tab_ref", f"tab:{ordinal}"), ("surface_ref", f"surface:{ordinal}"),
+                       ("tab_ref", f"surface:{ordinal}"), ("surface_ref", f"tab:{ordinal}"),
+                       ("panel_ref", f"tab:{ordinal}")):
+        res = _call(c, "tab.get_metadata", {"workspace_id": ws, key: value})
+        _same((res.get("metadata") or {}).get("title"), token, f"{key}={value} should address tab {f.t2}")
+    a_row = next(r for r in _areas(c, ws) if r["id"] == f.area_a)
+    a_ordinal = _ordinal(a_row["ref"], "area")
+    for key, value in (("area_ref", f"area:{a_ordinal}"), ("pane_ref", f"pane:{a_ordinal}"),
+                       ("area_ref", f"pane:{a_ordinal}"), ("pane_ref", f"area:{a_ordinal}")):
+        res = _call(c, "area.tabs", {"workspace_id": ws, key: value})
+        _must(f.t2 in _ids(_rows(res, "tabs")), f"{key}={value} should address area {f.area_a}: {res}")
+
+    # `area` is the older `pane` placement param (config.launch). Placement conflicts are
+    # rejected before anything launches, so a throwaway saved config exercises the key safely.
+    name = f"c11-vocab-{uuid.uuid4().hex[:8]}"
+    _call(c, "config.save", {"name": name, "harness": "claude"})
+    try:
+        errors = {}
+        for label, params in (("area", {"area": a_row["ref"]}), ("pane", {"pane": f"pane:{a_ordinal}"}),
+                              ("area_id", {"area_id": f.area_a}), ("pane_id", {"pane_id": f.area_a})):
+            errors[label] = _error_of(c, "config.launch", {"config": name, "new_workspace": True, **params})
+            _must(errors[label].startswith("placement_conflict"),
+                  f"config.launch with {label} and new_workspace should be a placement conflict: {errors[label]!r}")
+    finally:
+        try:
+            _call(c, "config.rm", {"config": name})
+        except cmuxError:
+            pass
+
+    # flag.raise takes the caller as caller_surface_id or caller_tab_id; both keys are
+    # written, and flag.lower clears both.
+    for caller_key in ("caller_surface_id", "caller_tab_id"):
+        for tab_key in ("surface_id", "tab_id"):
+            reason = f"vocab {caller_key} {tab_key}"
+            raised = _call(c, "flag.raise", {"workspace_id": ws, tab_key: f.t2, "reason": reason, caller_key: f.t1})
+            _same(raised.get("flag"), reason, "flag.raise result flag")
+            _same(raised.get("caller_surface_id"), f.t1, f"flag.raise result caller_surface_id ({caller_key})")
+            _same(raised.get("caller_tab_id"), f.t1, f"flag.raise result caller_tab_id ({caller_key})")
+            md = _metadata(c, ws, f.t2)
+            _same(md.get("flag_caller_surface_id"), f.t1, f"flag_caller_surface_id after raise ({caller_key}, {tab_key})")
+            _same(md.get("flag_caller_tab_id"), f.t1, f"flag_caller_tab_id after raise ({caller_key}, {tab_key})")
+            _call(c, "flag.lower", {"workspace_id": ws, tab_key: f.t2})
+            md = _metadata(c, ws, f.t2)
+            for key in ("flag", "flag_caller_surface_id", "flag_caller_tab_id"):
+                _must(key not in md, f"flag.lower left {key} behind ({caller_key}, {tab_key}): {md}")
+    print("PASS: *_ref params, area->pane, caller_surface_id/caller_tab_id, flag_caller_* clearing")
+
+
+def test_workspace_apply_ref_maps(c: cmux) -> None:
+    """workspace.apply returns tabRefs/areaRefs (canonical) beside surfaceRefs/paneRefs (older), value-converted."""
+    plan = {
+        "version": 1,
+        "workspace": {"title": f"vocab-apply-{uuid.uuid4().hex[:6]}"},
+        "layout": {"type": "pane", "pane": {"surfaceIds": ["a", "b"]}},
+        "surfaces": [
+            {"id": "a", "kind": "terminal", "title": "first"},
+            {"id": "b", "kind": "terminal", "title": "second"},
+        ],
+    }
+    res = _call(c, "workspace.apply", {"plan": plan})
+    ws_ref = str(res.get("workspaceRef") or "")
+    try:
+        _must(bool(ws_ref), f"workspace.apply returned no workspaceRef: {res}")
+        maps = {name: res.get(name) for name in ("tabRefs", "surfaceRefs", "areaRefs", "paneRefs")}
+        for name, value in maps.items():
+            _must(isinstance(value, dict) and sorted(value) == ["a", "b"], f"workspace.apply {name} should map both plan ids: {value!r}")
+        for plan_id in ("a", "b"):
+            _same(_ordinal(maps["tabRefs"][plan_id], "tab"), _ordinal(maps["surfaceRefs"][plan_id], "surface"),
+                  f"tabRefs/surfaceRefs ordinal for plan id {plan_id}")
+            _same(_ordinal(maps["areaRefs"][plan_id], "area"), _ordinal(maps["paneRefs"][plan_id], "pane"),
+                  f"areaRefs/paneRefs ordinal for plan id {plan_id}")
+        _must(_ordinal(maps["tabRefs"]["a"], "tab") != _ordinal(maps["tabRefs"]["b"], "tab"), "the two tabs should have distinct refs")
+        _same(maps["areaRefs"]["a"], maps["areaRefs"]["b"], "both plan tabs live in one area")
+    finally:
+        if ws_ref:
+            try:
+                _call(c, "workspace.close", {"workspace_id": ws_ref})
+            except cmuxError:
+                pass
+    print("PASS: workspace.apply carries tabRefs/surfaceRefs and areaRefs/paneRefs with matching ordinals and prefixes")
+
+
+# ---------------------------------------------------------------------------
 
 def main() -> int:
     cli = find_cli_binary()
@@ -627,6 +1036,9 @@ def main() -> int:
             test_old_param_names_address_the_same_tab(c, fixture)
             test_write_methods_cross_over(c, fixture)
             test_notification_create_aliases(c, fixture)
+            test_tab_action_and_send_key_old_methods(c, fixture)
+            test_old_tab_presentation_methods(c, fixture)
+            test_old_ref_params_and_caller_keys(c, fixture)
             test_dual_keys_in_list_responses(c, fixture)
             test_dual_keys_in_create_split_identify(c, fixture)
             test_dual_keys_in_tree_json(cli, fixture)
@@ -637,6 +1049,10 @@ def main() -> int:
             test_free_text_is_never_rewritten(c, cli, fixture)
         finally:
             fixture.close()
+        # These reshape the layout, so each gets a workspace of its own.
+        test_old_tab_layout_methods(c)
+        test_old_area_methods(c)
+        test_workspace_apply_ref_maps(c)
     print("PASS: vocabulary aliases")
     return 0
 

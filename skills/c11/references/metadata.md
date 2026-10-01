@@ -290,7 +290,7 @@ Agents do not (and cannot) write `activity` over the external socket — it is r
 
 | Code | When |
 |------|------|
-| `tab_not_found` | `tab_id` doesn't resolve |
+| `surface_not_found` | the tab ref doesn't resolve |
 | `invalid_json` | `metadata` is not a JSON object, or a ref is invalid |
 | `payload_too_large` | Post-merge blob exceeds 64 KiB |
 | `reserved_key_invalid_type` | Canonical key written with wrong type or size; `detail.key` names it |

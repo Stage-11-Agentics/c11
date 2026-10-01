@@ -10461,7 +10461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
             _ = self.focusMainWindow(windowId: windowId)
             if let ws = workspaceManager.workspaces.first(where: { $0.id == tabId }) {
-                workspaceManager.selectTab(self.workspace)
+                workspaceManager.selectTab(ws)
                 workspaceManager.focusSurface(workspaceId: tabId, surfaceId: surfaceId)
             }
         }

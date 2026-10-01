@@ -29,8 +29,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: List[str]) -> str:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     cmd = [cli, "--socket", SOCKET_PATH] + args
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
@@ -60,11 +62,11 @@ def main() -> int:
         _must(bool(created_ws), f"new-workspace returned no workspace id: {created}")
         _must(_current_workspace(c) == baseline_ws, "new-workspace should not switch selected workspace")
 
-        _run_cli(cli, ["new-surface", "--workspace", created_ws])
-        _must(_current_workspace(c) == baseline_ws, "new-surface --workspace should not switch selected workspace")
+        _run_cli(cli, ["new-tab", "--workspace", created_ws])
+        _must(_current_workspace(c) == baseline_ws, "new-tab --workspace should not switch selected workspace")
 
-        _run_cli(cli, ["new-pane", "--workspace", created_ws, "--direction", "right"])
-        _must(_current_workspace(c) == baseline_ws, "new-pane --workspace should not switch selected workspace")
+        _run_cli(cli, ["new-area", "--workspace", created_ws, "--direction", "right"])
+        _must(_current_workspace(c) == baseline_ws, "new-area --workspace should not switch selected workspace")
 
         _run_cli(cli, ["tab-action", "--workspace", created_ws, "--action", "new-terminal-right"])
         _must(_current_workspace(c) == baseline_ws, "tab-action new-terminal-right should not switch selected workspace")

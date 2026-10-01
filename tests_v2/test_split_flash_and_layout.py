@@ -81,7 +81,7 @@ def _assert_selected_panels_healthy(payload: dict, *, min_wh: float = 80.0) -> N
             if ratio < 0.50:
                 raise cmuxError(
                     f"selectedPanels[{i}] bounds mismatch (overlap={ratio:.2f}). "
-                    f"pane={pane_frame} view={view_frame} pane_id={pane_id} panel={panel_id}"
+                    f"pane={pane_frame} view={view_frame} area_id={pane_id} panel={panel_id}"
                 )
 
 

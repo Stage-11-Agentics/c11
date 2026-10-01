@@ -32,8 +32,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: list[str]) -> tuple[subprocess.CompletedProcess[str], float]:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     started = time.monotonic()
     proc = subprocess.run(
@@ -70,7 +72,7 @@ def main() -> int:
 
             output = (proc.stdout or "").strip()
             _must(output.startswith("OK "), f"Expected OK response, got: {output!r}")
-            _must("Surface not ready" not in combined, f"Unexpected surface readiness error: {combined}")
+            _must("Surface not ready" not in combined and "Tab not ready" not in combined, f"Unexpected surface readiness error: {combined}")
             created_ws_id = output[3:].strip()
             _must(bool(created_ws_id), f"Missing workspace id in output: {output!r}")
 

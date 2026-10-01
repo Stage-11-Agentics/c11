@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: pane.resize preserves terminal content drawn before resize."""
+"""Regression: area.resize preserves terminal content drawn before resize."""
 
 from __future__ import annotations
 
@@ -64,10 +64,10 @@ def _run_once(socket_path: str) -> int:
             )
 
             split_payload = client._call(
-                "surface.split",
-                {"workspace_id": workspace_id, "surface_id": surface_id, "direction": "right"},
+                "tab.split",
+                {"workspace_id": workspace_id, "tab_id": surface_id, "direction": "right"},
             ) or {}
-            _must(bool(split_payload.get("surface_id")), f"surface.split returned no surface_id: {split_payload}")
+            _must(bool(split_payload.get("tab_id")), f"tab.split returned no tab_id: {split_payload}")
             _wait_for(lambda: len(_workspace_panes(client, workspace_id)) >= 2, timeout_s=4.0)
 
             client.focus_surface(surface_id)
@@ -79,17 +79,17 @@ def _run_once(socket_path: str) -> int:
             pre_extent = _pane_extent(client, pane_id, resize_axis)
 
             resize_result = client._call(
-                "pane.resize",
+                "area.resize",
                 {
                     "workspace_id": workspace_id,
-                    "pane_id": pane_id,
+                    "area_id": pane_id,
                     "direction": resize_direction,
                     "amount": 80,
                 },
             ) or {}
             _must(
-                str(resize_result.get("pane_id") or "") == pane_id,
-                f"pane.resize response missing expected pane_id: {resize_result}",
+                str(resize_result.get("area_id") or "") == pane_id,
+                f"area.resize response missing expected area_id: {resize_result}",
             )
             _wait_for(lambda: _pane_extent(client, pane_id, resize_axis) > pre_extent + 1.0, timeout_s=5.0)
 
@@ -117,7 +117,7 @@ def _run_once(socket_path: str) -> int:
             client.close_workspace(workspace_id)
             workspace_id = ""
 
-        print("PASS: pane.resize preserves pre-resize visible content and scrollback anchors")
+        print("PASS: area.resize preserves pre-resize visible content and scrollback anchors")
         return 0
     finally:
         if workspace_id:

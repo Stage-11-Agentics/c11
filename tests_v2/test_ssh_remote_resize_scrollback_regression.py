@@ -51,8 +51,10 @@ def _find_cli_binary() -> str:
 def _run_cli_json(cli: str, args: list[str]) -> dict:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
 
     proc = _run([cli, "--socket", SOCKET_PATH, "--json", *args], env=env)
     try:
@@ -114,8 +116,8 @@ def _clean_line(raw: str) -> str:
 
 def _surface_scrollback_text(client: cmux, workspace_id: str, surface_id: str) -> str:
     payload = client._call(
-        "surface.read_text",
-        {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+        "tab.read_text",
+        {"workspace_id": workspace_id, "tab_id": surface_id, "scrollback": True},
     ) or {}
     return str(payload.get("text") or "")
 
@@ -163,10 +165,10 @@ def _valid_resize_directions(client: cmux, workspace_id: str, pane_id: str) -> l
     for direction in ("left", "right", "up", "down"):
         try:
             client._call(
-                "pane.resize",
+                "area.resize",
                 {
                     "workspace_id": workspace_id,
-                    "pane_id": pane_id,
+                    "area_id": pane_id,
                     "direction": direction,
                     "amount": 10,
                 },
@@ -287,10 +289,10 @@ def main() -> int:
             for iteration in range(1, RESIZE_ITERATIONS + 1):
                 pane_id, direction = resize_pair[(iteration - 1) % len(resize_pair)]
                 _ = client._call(
-                    "pane.resize",
+                    "area.resize",
                     {
                         "workspace_id": workspace_id,
-                        "pane_id": pane_id,
+                        "area_id": pane_id,
                         "direction": direction,
                         "amount": 80,
                     },

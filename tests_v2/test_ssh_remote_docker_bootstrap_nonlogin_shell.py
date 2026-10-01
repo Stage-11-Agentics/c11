@@ -213,8 +213,8 @@ chmod 0644 "$HOME/.profile"
             )
 
             opened = client._call("browser.open_split", {"workspace_id": workspace_id}) or {}
-            browser_surface_id = str(opened.get("surface_id") or "")
-            _must(bool(browser_surface_id), f"browser.open_split returned no surface_id: {opened}")
+            browser_surface_id = str(opened.get("tab_id") or "")
+            _must(bool(browser_surface_id), f"browser.open_split returned no tab_id: {opened}")
 
             after_open_heartbeat = _heartbeat_count(status)
             status_after_blank_tab = _wait_for_heartbeat_advance(

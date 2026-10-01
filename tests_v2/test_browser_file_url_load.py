@@ -54,13 +54,13 @@ def main() -> int:
 
         with cmux(SOCKET_PATH) as c:
             opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
-            sid = str(opened.get("surface_id") or "")
-            _must(bool(sid), f"browser.open_split returned no surface_id: {opened}")
+            sid = str(opened.get("tab_id") or "")
+            _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
 
-            c._call("browser.navigate", {"surface_id": sid, "url": file_url})
+            c._call("browser.navigate", {"tab_id": sid, "url": file_url})
 
             _wait_until(
-                lambda: str((c._call("browser.get.title", {"surface_id": sid}) or {}).get("title") or "")
+                lambda: str((c._call("browser.get.title", {"tab_id": sid}) or {}).get("title") or "")
                 == "cmux file url load",
                 timeout_s=5.0,
                 label="browser.get.title(file://)",
@@ -69,7 +69,7 @@ def main() -> int:
             page_text = c._call(
                 "browser.eval",
                 {
-                    "surface_id": sid,
+                    "tab_id": sid,
                     "script": "document.body ? (document.body.innerText || '') : ''",
                 },
             ) or {}
@@ -78,7 +78,7 @@ def main() -> int:
                 f"Expected file:// page body text: {page_text}",
             )
 
-            url_payload = c._call("browser.url.get", {"surface_id": sid}) or {}
+            url_payload = c._call("browser.url.get", {"tab_id": sid}) or {}
             actual_url = str(url_payload.get("url") or "")
             _must(
                 actual_url.startswith("file://"),

@@ -140,7 +140,7 @@ def test_box_content_includes_pane_ref_and_size(c: cmux, cli: str) -> None:
         body = "\n".join(rows)
         _must(rows, f"expected floor plan rows; output:\n{text}")
         # Two panes → at least two pane:N references should appear inside boxes.
-        ref_matches = re.findall(r"pane:\d+", body)
+        ref_matches = re.findall(r"area:\d+", body)
         _must(len(ref_matches) >= 2, f"expected >=2 pane refs in floor plan; matches={ref_matches}\nbody:\n{body}")
         # Percent badges appear as N%W or N%×N% (renderer collapses spaces in narrow boxes).
         pct_matches = re.findall(r"\d+%\s*[Wx×]", body)

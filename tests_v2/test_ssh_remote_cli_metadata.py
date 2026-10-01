@@ -33,8 +33,10 @@ def _find_cli_binary() -> str:
 def _run_cli(cli: str, args: list[str], *, json_output: bool, extra_env: dict[str, str] | None = None) -> str:
     env = dict(os.environ)
     env.pop("CMUX_WORKSPACE_ID", None)
-    env.pop("CMUX_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     if extra_env:
         env.update(extra_env)
 
@@ -72,7 +74,7 @@ def _read_any_terminal_text(client: cmux, workspace_id: str, timeout: float = 8.
                 return client.read_terminal_text(surface_id)
             except cmuxError as exc:
                 text = str(exc).lower()
-                if "terminal surface not found" in text:
+                if "terminal tab not found" in text or "terminal surface not found" in text:
                     last_exc = exc
                     continue
                 raise

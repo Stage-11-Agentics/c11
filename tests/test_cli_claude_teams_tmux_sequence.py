@@ -23,6 +23,24 @@ NEW_PANE_ID = "66666666-6666-4666-8666-666666666666"
 NEW_SURFACE_ID = "77777777-7777-4777-8777-777777777777"
 
 
+# The CLI may speak the canonical (area.* / tab.*) or the alias (pane.* / surface.*)
+# socket vocabulary; the fake server answers both, with both key families.
+V2_METHOD_ALIASES = {
+    "area.list": "pane.list",
+    "area.tabs": "pane.surfaces",
+    "area.resize": "pane.resize",
+    "tab.current": "surface.current",
+    "tab.list": "surface.list",
+    "tab.split": "surface.split",
+    "tab.focus": "surface.focus",
+    "tab.send_text": "surface.send_text",
+}
+
+
+def new_ref(ref: str) -> str:
+    return ref.replace("pane:", "area:").replace("surface:", "tab:")
+
+
 def make_executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
@@ -69,6 +87,7 @@ class FakeCmuxState:
 
     def handle(self, method: str, params: dict[str, object]) -> dict[str, object]:
         with self.lock:
+            method = V2_METHOD_ALIASES.get(method, method)
             self.requests.append(method)
             if method == "system.identify":
                 return {
@@ -78,13 +97,17 @@ class FakeCmuxState:
                         "workspace_ref": self.workspace["ref"],
                         "window_id": self.window["id"],
                         "window_ref": self.window["ref"],
+                        "area_id": self.current_pane_id,
+                        "area_ref": new_ref(self._pane_ref(self.current_pane_id)),
+                        "tab_id": self.current_surface_id,
+                        "tab_ref": new_ref(self._surface_ref(self.current_surface_id)),
                         "pane_id": self.current_pane_id,
                         "pane_ref": self._pane_ref(self.current_pane_id),
                         "surface_id": self.current_surface_id,
                         "surface_ref": self._surface_ref(self.current_surface_id),
-                        "tab_id": INITIAL_TAB_ID,
-                        "tab_ref": "tab:1",
+                        "tab_type": "terminal",
                         "surface_type": "terminal",
+                        "is_browser_tab": False,
                         "is_browser_surface": False,
                     },
                 }
@@ -116,50 +139,53 @@ class FakeCmuxState:
                     ]
                 }
             if method == "pane.list":
-                return {
-                    "panes": [
-                        {
-                            "id": pane["id"],
-                            "ref": pane["ref"],
-                            "index": pane["index"],
-                        }
-                        for pane in self.panes
-                    ]
-                }
+                rows = [
+                    {
+                        "id": pane["id"],
+                        "ref": new_ref(pane["ref"]),
+                        "index": pane["index"],
+                    }
+                    for pane in self.panes
+                ]
+                return {"areas": rows, "panes": rows}
             if method == "pane.surfaces":
-                pane_id = str(params.get("pane_id") or "")
+                pane_id = str(params.get("area_id") or params.get("pane_id") or "")
                 pane = self._pane_by_id(pane_id)
-                return {
-                    "surfaces": [
-                        {
-                            "id": surface_id,
-                            "selected": surface_id == self.current_surface_id,
-                        }
-                        for surface_id in pane["surface_ids"]
-                    ]
-                }
+                rows = [
+                    {
+                        "id": surface_id,
+                        "selected": surface_id == self.current_surface_id,
+                    }
+                    for surface_id in pane["surface_ids"]
+                ]
+                return {"tabs": rows, "surfaces": rows}
             if method == "surface.current":
                 return {
                     "workspace_id": self.workspace["id"],
                     "workspace_ref": self.workspace["ref"],
+                    "area_id": self.current_pane_id,
+                    "area_ref": new_ref(self._pane_ref(self.current_pane_id)),
+                    "tab_id": self.current_surface_id,
+                    "tab_ref": new_ref(self._surface_ref(self.current_surface_id)),
                     "pane_id": self.current_pane_id,
                     "pane_ref": self._pane_ref(self.current_pane_id),
                     "surface_id": self.current_surface_id,
                     "surface_ref": self._surface_ref(self.current_surface_id),
                 }
             if method == "surface.list":
-                return {
-                    "surfaces": [
-                        {
-                            "id": surface["id"],
-                            "ref": surface["ref"],
-                            "title": surface["title"],
-                            "pane_id": surface["pane_id"],
-                            "pane_ref": self._pane_ref(surface["pane_id"]),
-                        }
-                        for surface in self.surfaces
-                    ]
-                }
+                rows = [
+                    {
+                        "id": surface["id"],
+                        "ref": new_ref(surface["ref"]),
+                        "title": surface["title"],
+                        "area_id": surface["pane_id"],
+                        "area_ref": new_ref(self._pane_ref(surface["pane_id"])),
+                        "pane_id": surface["pane_id"],
+                        "pane_ref": self._pane_ref(surface["pane_id"]),
+                    }
+                    for surface in self.surfaces
+                ]
+                return {"tabs": rows, "surfaces": rows}
             if method == "surface.split":
                 self.panes.append(
                     {
@@ -178,11 +204,13 @@ class FakeCmuxState:
                     }
                 )
                 return {
+                    "tab_id": NEW_SURFACE_ID,
+                    "area_id": NEW_PANE_ID,
                     "surface_id": NEW_SURFACE_ID,
                     "pane_id": NEW_PANE_ID,
                 }
             if method == "surface.focus":
-                self.current_surface_id = str(params.get("surface_id") or self.current_surface_id)
+                self.current_surface_id = str(params.get("tab_id") or params.get("surface_id") or self.current_surface_id)
                 surface = self._surface_by_id(self.current_surface_id)
                 self.current_pane_id = surface["pane_id"]
                 return {"ok": True}
@@ -194,13 +222,13 @@ class FakeCmuxState:
 
     def _pane_by_id(self, pane_id: str) -> dict[str, object]:
         for pane in self.panes:
-            if pane["id"] == pane_id or pane["ref"] == pane_id:
+            if pane["id"] == pane_id or new_ref(pane["ref"]) == new_ref(pane_id):
                 return pane
         raise RuntimeError(f"Unknown pane id: {pane_id}")
 
     def _surface_by_id(self, surface_id: str) -> dict[str, object]:
         for surface in self.surfaces:
-            if surface["id"] == surface_id or surface["ref"] == surface_id:
+            if surface["id"] == surface_id or new_ref(surface["ref"]) == new_ref(surface_id):
                 return surface
         raise RuntimeError(f"Unknown surface id: {surface_id}")
 

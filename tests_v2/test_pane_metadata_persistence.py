@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """CMUX-11 Phase 3: PaneMetadataStore on-disk persistence round-trip.
 
-Sets pane metadata via `pane.set_metadata`, forces a full save-to-disk +
+Sets pane metadata via `area.set_metadata`, forces a full save-to-disk +
 reload-from-disk cycle via the DEBUG-only `debug.session.save_and_load`
-socket command, then reads the metadata back via `pane.get_metadata` and
+socket command, then reads the metadata back via `area.get_metadata` and
 asserts every value plus every source attribution survived.
 
 Mirrors `test_metadata_persistence.py` but on the pane axis. Pane metadata
@@ -46,9 +46,9 @@ def _snapshot_path() -> Path | None:
 
 def _fresh_workspace_and_pane(c: cmux) -> tuple[str, str]:
     workspace_id = c.new_workspace()
-    split_res = c._call("surface.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
-    pane_id = split_res.get("pane_id")
-    _must(bool(pane_id), f"surface.split returned no pane_id: {split_res}")
+    split_res = c._call("tab.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
+    pane_id = split_res.get("area_id")
+    _must(bool(pane_id), f"tab.split returned no area_id: {split_res}")
     return workspace_id, str(pane_id)
 
 
@@ -81,10 +81,10 @@ def _run_main_variant(c: cmux) -> None:
             "tags": {"team": "platform", "rungs": ["parent", "phase3"]},
         }
         set_res = c._call(
-            "pane.set_metadata",
+            "area.set_metadata",
             {
                 "workspace_id": workspace_id,
-                "pane_id": pane_id,
+                "area_id": pane_id,
                 "mode": "merge",
                 "source": "explicit",
                 "metadata": metadata_in,
@@ -92,7 +92,7 @@ def _run_main_variant(c: cmux) -> None:
         ) or {}
         applied = set_res.get("applied") or {}
         for k in metadata_in:
-            _must(applied.get(k) is True, f"pane.set_metadata didn't apply {k}: {set_res}")
+            _must(applied.get(k) is True, f"area.set_metadata didn't apply {k}: {set_res}")
 
         # Force on-disk round-trip (clears live PaneMetadataStore, then replays
         # from the persisted snapshot).
@@ -100,10 +100,10 @@ def _run_main_variant(c: cmux) -> None:
         _must(rt_res is not None, "debug.session.save_and_load returned no result")
 
         got = c._call(
-            "pane.get_metadata",
+            "area.get_metadata",
             {
                 "workspace_id": workspace_id,
-                "pane_id": pane_id,
+                "area_id": pane_id,
                 "include_sources": True,
             },
         ) or {}

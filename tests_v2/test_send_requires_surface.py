@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pick #2839: c11 send / send-key without --surface and no CMUX_SURFACE_ID exits non-zero with error."""
+"""Pick #2839: c11 send / send-key without --tab and no C11_TAB_ID exits non-zero with error."""
 
 from __future__ import annotations
 
@@ -41,52 +41,53 @@ def _find_cli() -> str:
 def _run_cli_no_surface(cli: str, args: List[str]) -> subprocess.CompletedProcess:
     """Run CLI with surface env vars explicitly stripped."""
     env = dict(os.environ)
-    env.pop("CMUX_SURFACE_ID", None)
-    env.pop("CMUX_WORKSPACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("C11_TAB_ID", None)
     env.pop("CMUX_TAB_ID", None)
-    env.pop("C11_SURFACE_ID", None)
+    env.pop("C11_TAB_ID", None)
+    env.pop("CMUX_WORKSPACE_ID", None)
     env["CMUX_SOCKET"] = SOCKET_PATH
     cmd = [cli, "--socket", SOCKET_PATH] + args
     return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
 
 
 def test_send_without_surface_fails(cli: str) -> None:
-    """c11 send without --surface and no env target must exit non-zero with an error message."""
+    """c11 send without --tab and no env target must exit non-zero with an error message."""
     proc = _run_cli_no_surface(cli, ["send", "hello"])
-    _must(proc.returncode != 0, "c11 send without --surface should exit non-zero, but exited 0")
+    _must(proc.returncode != 0, "c11 send without --tab should exit non-zero, but exited 0")
     merged = (proc.stdout + proc.stderr).lower()
     _must(
-        "surface" in merged or "target" in merged or "required" in merged,
-        f"c11 send without --surface expected error mentioning surface/target/required, got: {merged!r}",
+        "tab" in merged or "surface" in merged or "target" in merged or "required" in merged,
+        f"c11 send without --tab expected error mentioning surface/target/required, got: {merged!r}",
     )
     print("PASS: test_send_without_surface_fails")
 
 
 def test_send_key_without_surface_fails(cli: str) -> None:
-    """c11 send-key without --surface and no env target must exit non-zero with an error message."""
+    """c11 send-key without --tab and no env target must exit non-zero with an error message."""
     proc = _run_cli_no_surface(cli, ["send-key", "ctrl-c"])
-    _must(proc.returncode != 0, "c11 send-key without --surface should exit non-zero, but exited 0")
+    _must(proc.returncode != 0, "c11 send-key without --tab should exit non-zero, but exited 0")
     merged = (proc.stdout + proc.stderr).lower()
     _must(
-        "surface" in merged or "target" in merged or "required" in merged,
-        f"c11 send-key without --surface expected error mentioning surface/target/required, got: {merged!r}",
+        "tab" in merged or "surface" in merged or "target" in merged or "required" in merged,
+        f"c11 send-key without --tab expected error mentioning surface/target/required, got: {merged!r}",
     )
     print("PASS: test_send_key_without_surface_fails")
 
 
 def test_send_with_surface_succeeds(cli: str, c: cmux) -> None:
-    """c11 send --surface <id> should succeed (guard doesn't fire when surface is explicit)."""
+    """c11 send --tab <id> should succeed (guard doesn't fire when surface is explicit)."""
     created = c._call("workspace.create") or {}
     ws_id = str(created.get("workspace_id") or "")
     _must(bool(ws_id), f"workspace.create returned no workspace_id: {created}")
     try:
         import time; time.sleep(0.2)
-        surfaces = (c._call("surface.list", {"workspace_id": ws_id}) or {}).get("surfaces") or []
+        surfaces = (c._call("tab.list", {"workspace_id": ws_id}) or {}).get("tabs") or []
         _must(bool(surfaces), f"No surfaces in new workspace: {surfaces}")
         sid = str(surfaces[0].get("id") or "")
-        _must(bool(sid), f"surface.list returned surface without id: {surfaces}")
-        proc = _run_cli_no_surface(cli, ["send", "--workspace", ws_id, "--surface", sid, "echo c11_send_guard_test\n"])
-        _must(proc.returncode == 0, f"c11 send with --surface failed unexpectedly: {proc.stderr!r}")
+        _must(bool(sid), f"tab.list returned surface without id: {surfaces}")
+        proc = _run_cli_no_surface(cli, ["send", "--workspace", ws_id, "--tab", sid, "echo c11_send_guard_test\n"])
+        _must(proc.returncode == 0, f"c11 send with --tab failed unexpectedly: {proc.stderr!r}")
     finally:
         try:
             c.close_workspace(ws_id)

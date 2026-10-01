@@ -202,12 +202,12 @@ def test_json_backcompat(c: cmux, cli: str) -> None:
         for key in ("id", "ref", "workspaces"):
             _must(key in win, f"window missing '{key}': {list(win.keys())}")
         for ws in win["workspaces"]:
-            for key in ("id", "ref", "panes"):
+            for key in ("id", "ref", "areas"):
                 _must(key in ws, f"workspace missing '{key}': {list(ws.keys())}")
             # M8 added: content_area (may be null pre-layout).
             _must("content_area" in ws, f"workspace missing 'content_area': {list(ws.keys())}")
-            for p in ws["panes"]:
-                for key in ("id", "ref", "surfaces", "layout"):
+            for p in ws["areas"]:
+                for key in ("id", "ref", "tabs", "layout"):
                     _must(key in p, f"pane missing '{key}': {list(p.keys())}")
                 # M8 layout sub-object exists; values may be null pre-layout.
                 _must(isinstance(p["layout"], dict), f"pane.layout must be dict: {p}")

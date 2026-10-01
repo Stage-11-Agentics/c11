@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CMUX-11 Phase 2: pane.set_metadata / .get_metadata / .clear_metadata.
+"""CMUX-11 Phase 2: area.set_metadata / .get_metadata / .clear_metadata.
 
 Verifies the pane-metadata RPC family added in Phase 2:
 
@@ -7,8 +7,8 @@ Verifies the pane-metadata RPC family added in Phase 2:
 - set response includes `prior_values` (substrate for the
   read-then-write-by-convention norm)
 - Cap enforcement (64 KiB per pane)
-- CLI `--pane pane:N` short-ref targeting
-- CLI `--surface` + `--pane` together → usage error
+- CLI `--area area:N` short-ref targeting
+- CLI `--tab` + `--area` together → usage error
 
 No UI assertions — this is a mechanism-layer test. Requires a running
 c11mux instance; set CMUX_SOCKET to target a tagged build's socket
@@ -59,9 +59,9 @@ def _fresh_workspace_and_pane(c: cmux) -> tuple[str, str]:
     """Create a workspace and split once so we have a second pane to target."""
     workspace_id = c.new_workspace()
     # surface.split always creates a new pane; grab the new pane's id.
-    split_res = c._call("surface.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
-    pane_id = split_res.get("pane_id")
-    _must(bool(pane_id), f"surface.split returned no pane_id: {split_res}")
+    split_res = c._call("tab.split", {"workspace_id": workspace_id, "direction": "right"}) or {}
+    pane_id = split_res.get("area_id")
+    _must(bool(pane_id), f"tab.split returned no area_id: {split_res}")
     return workspace_id, str(pane_id)
 
 
@@ -69,13 +69,13 @@ def _test_roundtrip_and_prior_values(c: cmux) -> None:
     workspace_id, pane_id = _fresh_workspace_and_pane(c)
 
     # Fresh pane — get_metadata should return empty.
-    got = c._call("pane.get_metadata", {"workspace_id": workspace_id, "pane_id": pane_id}) or {}
+    got = c._call("area.get_metadata", {"workspace_id": workspace_id, "area_id": pane_id}) or {}
     _must(got.get("metadata") == {}, f"fresh pane metadata should be empty: {got}")
 
     # First set: prior_values empty (key was unset).
-    set_a = c._call("pane.set_metadata", {
+    set_a = c._call("area.set_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "metadata": {"title": "Parent :: Child"},
     }) or {}
     _must(set_a.get("applied", {}).get("title") is True,
@@ -86,9 +86,9 @@ def _test_roundtrip_and_prior_values(c: cmux) -> None:
           f"post-op metadata wrong: {set_a}")
 
     # Second set: prior_values should contain the previous title string.
-    set_b = c._call("pane.set_metadata", {
+    set_b = c._call("area.set_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "metadata": {"title": "Parent :: Code Review"},
     }) or {}
     _must(set_b.get("applied", {}).get("title") is True,
@@ -98,9 +98,9 @@ def _test_roundtrip_and_prior_values(c: cmux) -> None:
           f"second set should return prior title in prior_values: {set_b}")
 
     # get_metadata reflects the latest write.
-    got2 = c._call("pane.get_metadata", {
+    got2 = c._call("area.get_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "include_sources": True,
     }) or {}
     _must(got2.get("metadata", {}).get("title") == "Parent :: Code Review",
@@ -110,15 +110,15 @@ def _test_roundtrip_and_prior_values(c: cmux) -> None:
           f"title source should be explicit, got: {src}")
 
     # Clear a specific key.
-    clr = c._call("pane.clear_metadata", {
+    clr = c._call("area.clear_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "keys": ["title"],
     }) or {}
     _must(clr.get("applied", {}).get("title") is True,
           f"clear title not applied: {clr}")
 
-    got3 = c._call("pane.get_metadata", {"workspace_id": workspace_id, "pane_id": pane_id}) or {}
+    got3 = c._call("area.get_metadata", {"workspace_id": workspace_id, "area_id": pane_id}) or {}
     _must("title" not in got3.get("metadata", {}),
           f"title should be absent after clear: {got3}")
 
@@ -129,17 +129,17 @@ def _test_source_precedence(c: cmux) -> None:
     workspace_id, pane_id = _fresh_workspace_and_pane(c)
 
     # Set with source=explicit (highest precedence).
-    c._call("pane.set_metadata", {
+    c._call("area.set_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "metadata": {"title": "Explicit"},
         "source": "explicit",
     })
 
     # Attempt to overwrite with source=declare (lower precedence) — should soft-reject.
-    lower = c._call("pane.set_metadata", {
+    lower = c._call("area.set_metadata", {
         "workspace_id": workspace_id,
-        "pane_id": pane_id,
+        "area_id": pane_id,
         "metadata": {"title": "Declare"},
         "source": "declare",
     }) or {}
@@ -149,7 +149,7 @@ def _test_source_precedence(c: cmux) -> None:
           f"rejection reason should be lower_precedence: {lower}")
 
     # Verify the higher-precedence value is still in place.
-    got = c._call("pane.get_metadata", {"workspace_id": workspace_id, "pane_id": pane_id}) or {}
+    got = c._call("area.get_metadata", {"workspace_id": workspace_id, "area_id": pane_id}) or {}
     _must(got.get("metadata", {}).get("title") == "Explicit",
           f"value should remain Explicit after rejected write: {got}")
 
@@ -162,9 +162,9 @@ def _test_cap_enforcement(c: cmux) -> None:
     # 128 KiB string — well above the 64 KiB cap.
     huge = "x" * (128 * 1024)
     try:
-        c._call("pane.set_metadata", {
+        c._call("area.set_metadata", {
             "workspace_id": workspace_id,
-            "pane_id": pane_id,
+            "area_id": pane_id,
             "metadata": {"bulk": huge},
         })
     except cmuxError as exc:
@@ -179,9 +179,9 @@ def _test_replace_mode_requires_explicit(c: cmux) -> None:
     workspace_id, pane_id = _fresh_workspace_and_pane(c)
 
     try:
-        c._call("pane.set_metadata", {
+        c._call("area.set_metadata", {
             "workspace_id": workspace_id,
-            "pane_id": pane_id,
+            "area_id": pane_id,
             "metadata": {"title": "X"},
             "mode": "replace",
             "source": "declare",
@@ -196,11 +196,11 @@ def _test_replace_mode_requires_explicit(c: cmux) -> None:
 
 
 def _test_cli_pane_short_ref(c: cmux) -> None:
-    """`cmux set-metadata --pane pane:N --key title --value ...` round-trip."""
+    """`cmux set-metadata --area area:N --key title --value ...` round-trip."""
     workspace_id, pane_id = _fresh_workspace_and_pane(c)
 
     # Figure out which pane index corresponds to our pane_id.
-    panes = (c._call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes", [])
+    panes = (c._call("area.list", {"workspace_id": workspace_id}) or {}).get("areas", [])
     pane_index = None
     for p in panes:
         if str(p.get("id")) == pane_id:
@@ -208,12 +208,12 @@ def _test_cli_pane_short_ref(c: cmux) -> None:
             break
     _must(pane_index is not None and pane_index >= 0,
           f"could not find pane index for {pane_id} in {panes}")
-    short_ref = f"pane:{pane_index + 1}"  # pane:N refs are 1-indexed in the CLI.
+    short_ref = f"area:{pane_index + 1}"  # pane:N refs are 1-indexed in the CLI.
 
     set_res = _cli([
         "set-metadata",
         "--workspace", workspace_id,
-        "--pane", short_ref,
+        "--area", short_ref,
         "--key", "title",
         "--value", "ShortRef",
         "--json",
@@ -225,7 +225,7 @@ def _test_cli_pane_short_ref(c: cmux) -> None:
     get_res = _cli([
         "get-metadata",
         "--workspace", workspace_id,
-        "--pane", short_ref,
+        "--area", short_ref,
         "--key", "title",
     ])
     _must("ShortRef" in get_res.stdout,
@@ -235,11 +235,11 @@ def _test_cli_pane_short_ref(c: cmux) -> None:
 
 
 def _test_cli_surface_and_pane_mutually_exclusive() -> None:
-    """`--surface` + `--pane` on metadata commands must error."""
+    """`--tab` + `--area` on metadata commands must error."""
     res = _cli([
         "set-metadata",
-        "--surface", "surface:1",
-        "--pane", "pane:1",
+        "--tab", "tab:1",
+        "--area", "area:1",
         "--key", "title",
         "--value", "nope",
     ], check=False)

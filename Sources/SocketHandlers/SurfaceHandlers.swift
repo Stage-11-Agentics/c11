@@ -24,47 +24,45 @@ extension TerminalController {
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchSurface(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
-        case "surface.list":
+        case "tab.list":
             return v2Result(id: id, self.v2SurfaceList(params: params))
-        case "surface.current":
+        case "tab.current":
             return v2Result(id: id, self.v2SurfaceCurrent(params: params))
-        case "surface.set_custom_color":
+        case "tab.set_custom_color":
             return v2Result(id: id, self.v2SurfaceSetCustomColor(params: params))
-        case "surface.focus":
+        case "tab.focus":
             return v2Result(id: id, self.v2SurfaceFocus(params: params))
-        case "surface.split":
+        case "tab.split":
             return v2Result(id: id, self.v2SurfaceSplit(params: params))
-        case "surface.create":
+        case "tab.create":
             return v2Result(id: id, self.v2SurfaceCreate(params: params))
-        case "surface.close":
+        case "tab.close":
             return v2Result(id: id, self.v2SurfaceClose(params: params))
-        case "surface.move":
+        case "tab.move":
             return v2Result(id: id, self.v2SurfaceMove(params: params))
-        case "surface.reorder":
+        case "tab.reorder":
             return v2Result(id: id, self.v2SurfaceReorder(params: params))
-        case "surface.action":
-            return v2Result(id: id, self.v2TabAction(params: params))
-        case "surface.drag_to_split":
+        case "tab.drag_to_split":
             return v2Result(id: id, self.v2SurfaceDragToSplit(params: params))
-        case "surface.refresh":
+        case "tab.refresh":
             return v2Result(id: id, self.v2SurfaceRefresh(params: params))
-        case "surface.health":
+        case "tab.health":
             return v2Result(id: id, self.v2SurfaceHealth(params: params))
-        case "surface.trigger_flash":
+        case "tab.trigger_flash":
             return v2Result(id: id, self.v2SurfaceTriggerFlash(params: params))
-        case "surface.cancel_flash":
+        case "tab.cancel_flash":
             return v2Result(id: id, self.v2SurfaceCancelFlash(params: params))
-        case "surface.set_metadata":
+        case "tab.set_metadata":
             return v2Result(id: id, self.v2SurfaceSetMetadata(params: params))
-        case "surface.get_metadata":
+        case "tab.get_metadata":
             return v2Result(id: id, self.v2SurfaceGetMetadata(params: params))
-        case "surface.clear_metadata":
+        case "tab.clear_metadata":
             return v2Result(id: id, self.v2SurfaceClearMetadata(params: params))
-        case "surface.get_titlebar_state":
+        case "tab.get_titlebar_state":
             return v2Result(id: id, self.v2SurfaceGetTitleBarState(params: params))
-        case "surface.set_titlebar_visibility":
+        case "tab.set_titlebar_visibility":
             return v2Result(id: id, self.v2SurfaceSetTitleBarVisibility(params: params))
-        case "surface.set_titlebar_collapsed":
+        case "tab.set_titlebar_collapsed":
             return v2Result(id: id, self.v2SurfaceSetTitleBarCollapsed(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
@@ -150,6 +148,7 @@ extension TerminalController {
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "tabs": surfaces,
                 "surfaces": surfaces
             ]
         }
@@ -821,6 +820,7 @@ extension TerminalController {
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "tabs": items,
                 "surfaces": items,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
@@ -1431,6 +1431,7 @@ extension TerminalController {
         let attentionKeys = Set([
             MetadataKey.flag,
             MetadataKey.flagCallerSurfaceId,
+            MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])
         let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
@@ -1565,6 +1566,7 @@ extension TerminalController {
         let attentionKeys = Set([
             MetadataKey.flag,
             MetadataKey.flagCallerSurfaceId,
+            MetadataKey.flagCallerTabId,
             MetadataKey.suppressed,
         ])
         let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(

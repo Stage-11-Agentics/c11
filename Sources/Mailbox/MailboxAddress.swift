@@ -19,7 +19,8 @@ import Foundation
 /// the same `MailboxMatcher.select` over this type, so global routing and local
 /// delivery always agree on who a `to` resolves to.
 enum MailboxAddress: Equatable {
-    /// `surface:<address>` — match `mailbox.address` exactly.
+    /// `tab:<address>` (or the legacy `surface:<address>`) — match
+    /// `mailbox.address` exactly.
     case surface(String)
     /// `role:<name>` — match `mailbox.role` exactly.
     case role(String)
@@ -27,12 +28,16 @@ enum MailboxAddress: Equatable {
     case name(String)
 
     static let surfacePrefix = "surface:"
+    static let tabPrefix = "tab:"
     static let rolePrefix = "role:"
 
     /// Parse a raw `to` string. An empty value after a recognized prefix (e.g.
     /// `surface:`) yields that scheme with an empty payload — which matches
     /// nothing, the honest answer, rather than silently degrading to a bare name.
     static func parse(_ raw: String) -> MailboxAddress {
+        if raw.hasPrefix(tabPrefix) {
+            return .surface(String(raw.dropFirst(tabPrefix.count)))
+        }
         if raw.hasPrefix(surfacePrefix) {
             return .surface(String(raw.dropFirst(surfacePrefix.count)))
         }

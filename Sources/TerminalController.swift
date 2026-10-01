@@ -255,9 +255,9 @@ class TerminalController {
         "workspace.next",
         "workspace.previous",
         "workspace.last",
-        "surface.focus",
-        "pane.focus",
-        "pane.last",
+        "tab.focus",
+        "area.focus",
+        "area.last",
         "browser.focus_webview",
         "browser.focus",
         "browser.tab.switch",
@@ -269,11 +269,15 @@ class TerminalController {
     // C11-159: widened private->internal so per-domain socket handler
     // extensions in Sources/SocketHandlers/ can name this type. Module-internal
     // only (app target, no library API surface). See DX-5 widening inventory.
+    // C11-248: the raw value IS the ref prefix. Canonical prefixes are
+    // `area:N` and `tab:N`; `pane:N` / `surface:N` stay accepted on input via
+    // `LegacyWireAliases.canonicalHandle`. The ordinal counter is per kind, so
+    // `tab:N` and `surface:N` are the same handle.
     enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
-        case pane
-        case surface
+        case pane = "area"
+        case surface = "tab"
     }
 
     var v2NextHandleOrdinal: [V2HandleKind: Int] = [
@@ -2054,10 +2058,10 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
-        "surface.send_text",
-        "surface.send_key",
-        "surface.read_text",
-        "surface.clear_history",
+        "tab.send_text",
+        "tab.send_key",
+        "tab.read_text",
+        "tab.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
         // snapshots and the final surface creation.
@@ -2067,7 +2071,7 @@ class TerminalController {
         // user click / async submission; on the default (main-actor) policy
         // that wait freezes the app. Run them off-main; each hops to main only
         // for bounded slices via `Task { @MainActor }`.
-        "pane.confirm",
+        "area.confirm",
         "feedback.submit",
         // C11-180: `config.*` reads + mutations are pure state-root file I/O with
         // no AppKit touch → off-main per the socket threading policy. `config.launch`
@@ -2350,6 +2354,7 @@ class TerminalController {
                 "selected_surface_id": v2OrNull(selectedSurfaceUUID?.uuidString),
                 "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedSurfaceUUID),
                 "surface_count": surfaceUUIDs.count,
+                "tabs": surfacesByPane[paneId.id] ?? [],
                 "surfaces": surfacesByPane[paneId.id] ?? [],
                 "layout": layoutObj
             ]
@@ -2376,6 +2381,7 @@ class TerminalController {
             "pinned": workspace.isPinned,
             "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
+            "areas": panes,
             "panes": panes
         ]
     }
@@ -2450,7 +2456,8 @@ class TerminalController {
         return v2Encode([
             "id": v2OrNull(id),
             "ok": true,
-            "result": result
+            // C11-248: canonical + legacy key pairs (see LegacyWireAliases).
+            "result": LegacyWireAliases.completeResult(result)
         ])
     }
 
@@ -2516,12 +2523,15 @@ class TerminalController {
                 return id
             }
         }
-        // Tab refs are aliases for surface refs in tab-facing APIs.
-        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.hasPrefix("tab:"),
-           let ordinal = Int(trimmed.replacingOccurrences(of: "tab:", with: "")),
-           let id = v2UUIDByRef[.surface]?["surface:\(ordinal)"] {
-            return id
+        // C11-248: legacy `surface:N` / `pane:N` prefixes resolve to the same
+        // handle as `tab:N` / `area:N` (one shared ordinal per kind).
+        let canonical = LegacyWireAliases.canonicalHandle(handle)
+        if canonical != handle {
+            for kind in V2HandleKind.allCases {
+                if let id = v2UUIDByRef[kind]?[canonical] {
+                    return id
+                }
+            }
         }
         return nil
     }
@@ -2533,11 +2543,10 @@ class TerminalController {
 
     func v2TabRef(uuid: UUID?) -> Any {
         guard let uuid else { return NSNull() }
-        let surfaceRef = v2EnsureHandleRef(kind: .surface, uuid: uuid)
-        return surfaceRef.replacingOccurrences(of: "surface:", with: "tab:")
+        return v2EnsureHandleRef(kind: .surface, uuid: uuid)
     }
 
-    /// Cheap surface-ref-only lookup. Mints (or returns) just the `surface:N`
+    /// Cheap tab-ref-only lookup. Mints (or returns) just the `tab:N`
     /// handle for a panel — a dictionary lookup, no pane/window/locate work.
     /// Used by the bonsplit tab context menu's "Copy surface:N" item, which is
     /// built per tab and must stay cheap. `@MainActor` like the ref maps.
@@ -2551,7 +2560,7 @@ class TerminalController {
     /// `C11_SURFACE_NUM` both depend on eager minting).
     func surfaceOrdinal(forSurfaceUUID surfaceId: UUID) -> Int {
         let ref = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
-        return Int(ref.dropFirst("surface:".count)) ?? 0
+        return Int(ref.dropFirst("\(V2HandleKind.surface.rawValue):".count)) ?? 0
     }
 
     /// UI-facing handle lookup for the Surface Details panel.
@@ -2567,8 +2576,8 @@ class TerminalController {
     /// `@MainActor`-confined like the rest of the v2 ref maps; safe to call
     /// from UI (the panel is presented on the main actor).
     func surfaceHandleInfo(workspaceId: UUID, surfaceId: UUID) -> SurfaceHandleInfo {
-        let surfaceRef = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
-        let tabRef = surfaceRef.replacingOccurrences(of: "surface:", with: "tab:")
+        let tabRef = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+        let surfaceRef = LegacyWireAliases.legacyHandle(tabRef)
         let workspaceRef = v2EnsureHandleRef(kind: .workspace, uuid: workspaceId)
 
         var paneRef: String?

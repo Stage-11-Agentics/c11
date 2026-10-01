@@ -48,7 +48,7 @@ extension TerminalController {
         switch method {
         case "notification.create":
             return v2Result(id: id, self.v2NotificationCreate(params: params))
-        case "notification.create_for_surface":
+        case "notification.create_for_tab":
             return v2Result(id: id, self.v2NotificationCreateForSurface(params: params))
         case "notification.create_for_target":
             return v2Result(id: id, self.v2NotificationCreateForTarget(params: params))

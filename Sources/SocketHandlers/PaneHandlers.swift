@@ -12,31 +12,31 @@ extension TerminalController {
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchPane(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
-        case "pane.list":
+        case "area.list":
             return v2Result(id: id, self.v2PaneList(params: params))
-        case "pane.focus":
+        case "area.focus":
             return v2Result(id: id, self.v2PaneFocus(params: params))
-        case "pane.surfaces":
+        case "area.tabs":
             return v2Result(id: id, self.v2PaneSurfaces(params: params))
-        case "pane.create":
+        case "area.create":
             return v2Result(id: id, self.v2PaneCreate(params: params))
-        case "pane.resize":
+        case "area.resize":
             return v2Result(id: id, self.v2PaneResize(params: params))
-        case "pane.swap":
+        case "area.swap":
             return v2Result(id: id, self.v2PaneSwap(params: params))
-        case "pane.break":
+        case "area.break":
             return v2Result(id: id, self.v2PaneBreak(params: params))
-        case "pane.join":
+        case "area.join":
             return v2Result(id: id, self.v2PaneJoin(params: params))
-        case "pane.last":
+        case "area.last":
             return v2Result(id: id, self.v2PaneLast(params: params))
-        case "pane.confirm":
+        case "area.confirm":
             return v2Result(id: id, self.v2PaneConfirm(params: params))
-        case "pane.set_metadata":
+        case "area.set_metadata":
             return v2Result(id: id, self.v2PaneSetMetadata(params: params))
-        case "pane.get_metadata":
+        case "area.get_metadata":
             return v2Result(id: id, self.v2PaneGetMetadata(params: params))
-        case "pane.clear_metadata":
+        case "area.clear_metadata":
             return v2Result(id: id, self.v2PaneClearMetadata(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
@@ -75,6 +75,7 @@ extension TerminalController {
             payload = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "areas": panes,
                 "panes": panes,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
@@ -159,6 +160,7 @@ extension TerminalController {
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": paneId.id.uuidString,
                 "pane_ref": v2Ref(kind: .pane, uuid: paneId.id),
+                "tabs": surfaces,
                 "surfaces": surfaces,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
@@ -874,7 +876,7 @@ extension TerminalController {
             // Seeding is best-effort: the pane is already created and the
             // caller can retry via pane.set_metadata. Log and continue.
             #if DEBUG
-            dlog("pane.title_seed.failed pane=\(paneUUID.uuidString) err=\(error)")
+            dlog("area.title_seed.failed pane=\(paneUUID.uuidString) err=\(error)")
             #endif
         }
     }

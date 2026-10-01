@@ -34,10 +34,11 @@ extension TerminalController {
             return nil
         }
 
+        // C11-248: resolve old method/param spellings once, here.
         return V2SocketRequest(
             id: dict["id"],
-            method: method,
-            params: dict["params"] as? [String: Any] ?? [:]
+            method: LegacyWireAliases.canonicalMethod(method),
+            params: LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
         )
     }
 
@@ -60,13 +61,13 @@ extension TerminalController {
         #endif
 
         switch request.method {
-        case "surface.send_text":
+        case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
-        case "surface.send_key":
+        case "tab.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
-        case "surface.read_text":
+        case "tab.read_text":
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
-        case "surface.clear_history":
+        case "tab.clear_history":
             return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
@@ -75,7 +76,7 @@ extension TerminalController {
         // C11-165 COR-3: off-main handlers that block on a user click / async
         // submission. Each must have a matching entry in socketWorkerV2Methods;
         // a mismatch here would return method_not_found instead of executing.
-        case "pane.confirm":
+        case "area.confirm":
             return v2Result(id: request.id, v2PaneConfirm(params: request.params))
         case "feedback.submit":
             return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
@@ -939,12 +940,14 @@ extension TerminalController {
         }
 
         let id: Any? = dict["id"]
-        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let params = dict["params"] as? [String: Any] ?? [:]
+        let rawMethod = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        guard !method.isEmpty else {
+        guard !rawMethod.isEmpty else {
             return v2Error(id: id, code: "invalid_request", message: "Missing method")
         }
+        // C11-248: resolve old method/param spellings once, here.
+        let method = LegacyWireAliases.canonicalMethod(rawMethod)
+        let params = LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
 
         // C11-26: Methods on the socket-worker policy must be dispatched via
         // socketWorkerV2Response (off main); reaching processV2Command for one of
@@ -993,8 +996,10 @@ extension TerminalController {
         if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
-        if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
-        if method.hasPrefix("surface.") { return v2DispatchSurface(method, id: id, params: params) }
+        if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
+        // `tab.action` is the tab context-menu verb set (Misc); every other `tab.*` is the surface domain.
+        if method == "tab.action" { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("tab.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
         if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
         if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
@@ -1004,7 +1009,7 @@ extension TerminalController {
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
         if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
-        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("tab.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
         return nil
     }
 

@@ -17,6 +17,8 @@ the actual interrupt, then send a new synthetic turn and prove it runs. Record
 artifact/source SHA and provider versions; this raw reader is not that proof.
 
 Latency is CLI-start to first PTY byte, including CLI startup and scheduling.
+Cross-process samples use the same guest wall clock: macOS Python 3.9 gives
+monotonic clocks different process origins. Deadlines stay monotonic.
 Samples are evidence, not a C11-270 baseline/budget comparison or typing soak.
 For matched base/candidate samples, add --latency-only: five warmups followed
 by twenty legacy raw-PTY space samples, with guest load averages recorded. This
@@ -82,7 +84,7 @@ try:
                     data = os.read(0, 4096)
                     if not data:
                         break
-                    output.write(json.dumps({'hex': data.hex(), 't_ns': time.monotonic_ns()}) + '\n')
+                    output.write(json.dumps({'hex': data.hex(), 't_ns': time.time_ns()}) + '\n')
                     output.flush()
     else:
         # Legacy line discipline, not a signal sent by the test controller.
@@ -93,7 +95,7 @@ try:
         termios.tcsetattr(0, termios.TCSANOW, attributes)
         os.write(1, b'\x1b[=0u')
         def interrupted(*_):
-            publish('sigint.json', {'signal': 'SIGINT', 't_ns': time.monotonic_ns()})
+            publish('sigint.json', {'signal': 'SIGINT', 't_ns': time.time_ns()})
             raise SystemExit(0)
         signal.signal(signal.SIGINT, interrupted)
         publish('ready.json', {'mode': mode, 'isig': True})
@@ -319,7 +321,7 @@ class Harness:
 
     def capture_command(self, label, action, expected, kind, event_text):
         floor, cursor = self.event_floor(), self.byte_cursor()
-        started = time.monotonic_ns()
+        started = time.time_ns()
         action()
         self.wait(lambda: len(self.received(cursor)[0]) >= len(expected), label + ' PTY bytes')
         self.assert_one_event(floor, kind, event_text)
@@ -375,7 +377,7 @@ class Harness:
         self.wait(lambda: (self.root / 'finished.json').exists(), 'Kitty reader stopped')
         self.start_reader('legacy')
         floor = self.event_floor()
-        started = time.monotonic_ns()
+        started = time.time_ns()
         self.send_key('ctrl-c')
         self.wait(lambda: (self.root / 'sigint.json').exists(), 'legacy line discipline SIGINT')
         self.wait(lambda: (self.root / 'finished.json').exists(), 'legacy reader stopped')
@@ -407,7 +409,7 @@ class Harness:
                 samples.append(row['command_to_pty_ms'])
         ordered = sorted(samples)
         self.report['latency'] = {
-            'metric': 'CLI-start-to-first-PTY-byte-ms', 'keyboard_mode': 'legacy-raw',
+            'metric': 'CLI-start-to-first-PTY-byte-ms', 'clock': 'same-guest-wall-time-ns', 'keyboard_mode': 'legacy-raw',
             'key': 'space', 'warmups': 5, 'sample_count': 20, 'samples_ms': samples,
             'median_ms': round((ordered[9] + ordered[10]) / 2, 3),
             'p95_nearest_rank_ms': ordered[18], 'p99_nearest_rank_ms': ordered[19],

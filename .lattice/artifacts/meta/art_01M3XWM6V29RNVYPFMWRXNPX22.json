@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:45:21Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XWM6V29RNVYPFMWRXNPX22",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XWM6V29RNVYPFMWRXNPX22.md",
+    "size_bytes": 1458
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Sanitized replacement for art_01M3XSP2419G8Z3AQY1Z6DXTC9",
+  "token_usage": null,
+  "type": "file"
+}

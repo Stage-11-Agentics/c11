@@ -1,0 +1,10 @@
+C11-273 restart scenario PASS
+Head: db405a420d0a08ef57facd5b8f1aeebaa20a3f2b
+Clean tagged Debug build invocation: 3328ac51b9e2475381f898d6f3a828f9
+Build-host executable SHA256: f9c7326ebe2332701e0f1193a0b140b8543fd0588d3996af71df16f3b92e855b
+Test: tests_v2/test_journal_restart.py
+Guest run: one file passed, zero failed; guest deleted.
+
+PASS force-kill/resume restores asks unconfirmed; old running is not live
+PASS startup spool drains once, dedupes committed retry, rejects stale owner and truncated tail
+PASS repeated restart adds no events; fresh native submission reconciles prior ask

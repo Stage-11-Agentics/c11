@@ -148,6 +148,12 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            return v2Result(
+                id: request.id,
+                v2BrowserProfileCommand(method: request.method, params: request.params)
+            )
         case "browser.cookies.clear":
             return v2Result(id: request.id, v2BrowserCookiesClearOffMain(params: request.params))
         case "browser.state.load":

@@ -1,0 +1,556 @@
+{
+  "head": "812b26bd16d7a19dff13539bcb595512de2e2e18",
+  "base": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+  "debug_identity": {
+    "invocation": "1e7e23b4a4d24191aec5c03ca08b3088",
+    "head": "812b26bd16d7a19dff13539bcb595512de2e2e18",
+    "parent_head": "e15a0f06f10dfe81052d02c1b238e188cd3ba3e6",
+    "branch": "c11-1.0/C11-280-initial-input",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-280-input",
+    "slug": "c11-280-input",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-280-input.app",
+    "executable_sha256": "c51f45f649e90e4fe94e7c9a9f24069d3c728a24106b4d258eac86b3114b4944",
+    "ok": true,
+    "local_executable_sha256": "ab9a1ddff87e604345e21b8fe45c346dff940e5acbdff0a2bf7cf1e0a2671485"
+  },
+  "test_identity": {
+    "invocation": "71ad71fba4e4442594dc8f5e6d1430d4",
+    "head": "812b26bd16d7a19dff13539bcb595512de2e2e18",
+    "parent_head": "e15a0f06f10dfe81052d02c1b238e188cd3ba3e6",
+    "branch": "c11-1.0/C11-280-initial-input",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-280-input",
+    "slug": "c11-280-input",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/CreateInitialInputTests",
+      "-only-testing:c11LogicTests/CapabilityFeaturesTests",
+      "-only-testing:c11Tests/CreateInitialInputRuntimeTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "test_receipts": [
+    "INITIAL_INPUT_RUNTIME slow-rc=2.1s initial-count=1 original-pid=80876 reconstructed-pid=81166 events=[\"rc-start:1790929679.965406:80876\", \"rc-ready:1790929682.071644:80876\", \"initial:80876\", \"followup:80876\", \"reparent:80876\", \"rc-start:1790929682.678799:81166\", \"rc-ready:1790929684.782658:81166\", \"reconstructed-followup:81166\"]",
+    "\t Executed 1 test, with 0 failures (0 unexpected) in 5.133 (5.134) seconds",
+    "\t Executed 1 test, with 0 failures (0 unexpected) in 5.133 (5.134) seconds",
+    "\t Executed 1 test, with 0 failures (0 unexpected) in 5.133 (5.135) seconds",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds",
+    "\t Executed 10 tests, with 0 failures (0 unexpected) in 0.006 (0.008) seconds",
+    "\t Executed 12 tests, with 0 failures (0 unexpected) in 0.008 (0.011) seconds",
+    "\t Executed 12 tests, with 0 failures (0 unexpected) in 0.008 (0.012) seconds",
+    "** TEST SUCCEEDED **"
+  ],
+  "cli_sha256": "58294aa864acfb737e8b4f25c5ddf07986245f314ea7013a308c1447f7476362",
+  "packaged_probe_results": [
+    "PASS: new-workspace sends exact input once and renders queued/absent receipts",
+    "PASS: new-split sends exact input once and renders queued/absent receipts",
+    "PASS: new-area sends exact input once and renders queued/absent receipts",
+    "PASS: new-tab sends exact input once and renders queued/absent receipts",
+    "PASS: nonterminal/layout/missing-value errors precede every connection and mutation",
+    "PASS: workspace.create carries initial_input once; no create-following tab.send_text",
+    "PASS: new-tab executes queued input and retains an interactive shell",
+    "PASS: new-split executes queued input and retains an interactive shell",
+    "PASS: new-area executes queued input and retains an interactive shell",
+    "PASS: non-terminal, layout and invalid-type CLI/RPC rejections are atomic",
+    "PASS: initial_command replaces the shell; initial_input leaves it running",
+    "PASS: create.initial_input live tagged artifact checks complete"
+  ],
+  "baseline_identity": {
+    "invocation": "34c5145fee584c99acf2bb2cbf611af2",
+    "head": "43529df178a9cd8817fc092896efd2f3fcd63df5",
+    "parent_head": "6926fa05cf2679e4cad2e76977c094a77f69962e",
+    "branch": "",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-280-baseline",
+    "slug": "c11-280-baseline",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-280-baseline.app",
+    "executable_sha256": "339ff78f7abac44265b842929033a1ffc3842a706f53e4615709cdb19ebc9ae3",
+    "ok": true,
+    "local_executable_sha256": "47a272e5bbc3c6b4d24241f2052b479af89662e945bd01f6113e805c541c0711"
+  },
+  "baseline_measurement": {
+    "socket": "/tmp/c11-debug-c11-280-baseline.sock",
+    "cli": "$HOME/Library/Developer/Xcode/DerivedData/c11-c11-280-baseline/Build/Products/Debug/c11 DEV c11-280-baseline.app/Contents/Resources/bin/c11",
+    "load_average": [
+      39.6689453125,
+      28.88720703125,
+      24.20458984375
+    ],
+    "samples": [
+      {
+        "cli_return_ms": 1233.182,
+        "receipt_ms": 1568.731,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 1140.406,
+        "receipt_ms": 1458.218,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 1177.358,
+        "receipt_ms": 1499.226,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 1169.237,
+        "receipt_ms": 1445.364,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 1096.103,
+        "receipt_ms": 1397.031,
+        "receipt_timeout_s": null
+      }
+    ],
+    "median_cli_return_ms": 1169.237,
+    "median_receipt_ms": 1458.218
+  },
+  "candidate_measurement": {
+    "socket": "/tmp/c11-debug-c11-280-input.sock",
+    "cli": "$HOME/Library/Developer/Xcode/DerivedData/c11-c11-280-input/Build/Products/Debug/c11 DEV c11-280-input.app/Contents/Resources/bin/c11",
+    "load_average": [
+      13.919921875,
+      21.546875,
+      23.6083984375
+    ],
+    "samples": [
+      {
+        "cli_return_ms": 411.248,
+        "receipt_ms": 666.678,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 918.141,
+        "receipt_ms": 1182.376,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 956.003,
+        "receipt_ms": 1154.975,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 895.923,
+        "receipt_ms": 1264.488,
+        "receipt_timeout_s": null
+      },
+      {
+        "cli_return_ms": 899.745,
+        "receipt_ms": 1226.826,
+        "receipt_timeout_s": null
+      }
+    ],
+    "median_cli_return_ms": 899.745,
+    "median_receipt_ms": 1182.376
+  },
+  "window": {
+    "pid": 49103,
+    "screens": [
+      {
+        "frame": "{{0, 0}, {1920, 1080}}",
+        "index": 0,
+        "visible_frame": "{{0, 78}, {1920, 972}}"
+      }
+    ],
+    "windows": [
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 30,
+          "Width": 1920,
+          "X": 0,
+          "Y": 0
+        },
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "",
+        "kCGWindowNumber": 7053,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      },
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 30,
+          "Width": 1920,
+          "X": 0,
+          "Y": 0
+        },
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "",
+        "kCGWindowNumber": 7052,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      },
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 30,
+          "Width": 1920,
+          "X": 0,
+          "Y": 0
+        },
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "",
+        "kCGWindowNumber": 7051,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      },
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 840,
+          "Width": 1120,
+          "X": 400,
+          "Y": 96
+        },
+        "kCGWindowIsOnscreen": true,
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "C11-280 visual proof",
+        "kCGWindowNumber": 7040,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      },
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 30,
+          "Width": 1920,
+          "X": 0,
+          "Y": 0
+        },
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "",
+        "kCGWindowNumber": 7054,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      },
+      {
+        "kCGWindowAlpha": 1,
+        "kCGWindowBounds": {
+          "Height": 64,
+          "Width": 64,
+          "X": 0,
+          "Y": 580
+        },
+        "kCGWindowLayer": 0,
+        "kCGWindowMemoryUsage": 2368,
+        "kCGWindowName": "",
+        "kCGWindowNumber": 7041,
+        "kCGWindowOwnerName": "c11 DEV c11-280-input",
+        "kCGWindowOwnerPID": 49103,
+        "kCGWindowSharingState": 1,
+        "kCGWindowStoreType": 1
+      }
+    ]
+  },
+  "ui_scene": {
+    "workspace": "4A613989-49D4-474E-9C2A-F114DAF105F9",
+    "tab": "B427A046-4A8A-4642-95B9-115818FDDA2B",
+    "screen": "printf 'C11-280: %s\\n' 'queued command executed; interactive shell remains'\nLast login: Fri Oct  2 04:24:34 on ttys014\n[REDACTED]@Mac ~ % printf 'C11-280: %s\\n' 'queued command executed; interactive shell remains'\nC11-280: queued command executed; interactive shell remains\n[REDACTED]@Mac ~ % "
+  },
+  "ui_tree": {
+    "active": {
+      "pane_ref": "pane:14",
+      "window_ref": "window:1",
+      "is_browser_surface": false,
+      "surface_ref": "surface:16",
+      "surface_type": "terminal",
+      "root_directory": null,
+      "tab_ref": "tab:16",
+      "area_ref": "area:14",
+      "tab_type": "terminal",
+      "workspace_ref": "workspace:9",
+      "is_browser_tab": false
+    },
+    "scope": "workspace",
+    "windows": [
+      {
+        "workspaces": [
+          {
+            "title": "C11-280 visual proof",
+            "pinned": false,
+            "active": true,
+            "areas": [
+              {
+                "focused": true,
+                "layout": {
+                  "percent": {
+                    "H": [
+                      0,
+                      1
+                    ],
+                    "V": [
+                      0,
+                      1
+                    ]
+                  },
+                  "pixels": {
+                    "H": [
+                      0,
+                      920
+                    ],
+                    "V": [
+                      0,
+                      808
+                    ]
+                  },
+                  "split_path": []
+                },
+                "tab_refs": [
+                  "tab:16"
+                ],
+                "surface_refs": [
+                  "surface:16"
+                ],
+                "selected_tab_ref": "tab:16",
+                "active": true,
+                "surface_count": 1,
+                "index": 0,
+                "tab_count": 1,
+                "ref": "area:14",
+                "surfaces": [
+                  {
+                    "index": 0,
+                    "here": false,
+                    "selected": true,
+                    "being_seen": true,
+                    "index_in_pane": 0,
+                    "last_seen_at": "2026-10-02T08:24:36Z",
+                    "type": "terminal",
+                    "tty": "ttys014",
+                    "active": true,
+                    "area_ref": "area:14",
+                    "focused": true,
+                    "selected_in_pane": true,
+                    "ref": "tab:16",
+                    "title": "~",
+                    "selected_in_area": true,
+                    "pane_ref": "pane:14",
+                    "url": null,
+                    "index_in_area": 0
+                  }
+                ],
+                "tabs": [
+                  {
+                    "selected_in_area": true,
+                    "index_in_area": 0,
+                    "selected_in_pane": true,
+                    "area_ref": "area:14",
+                    "here": false,
+                    "being_seen": true,
+                    "focused": true,
+                    "active": true,
+                    "selected": true,
+                    "index": 0,
+                    "ref": "tab:16",
+                    "type": "terminal",
+                    "title": "~",
+                    "tty": "ttys014",
+                    "last_seen_at": "2026-10-02T08:24:36Z",
+                    "pane_ref": "pane:14",
+                    "index_in_pane": 0,
+                    "url": null
+                  }
+                ],
+                "selected_surface_ref": "surface:16"
+              }
+            ],
+            "ref": "workspace:9",
+            "root_directory": null,
+            "content_area": {
+              "pixels": {
+                "height": 808,
+                "width": 920
+              }
+            },
+            "selected": true,
+            "group_id": null,
+            "index": 1,
+            "panes": [
+              {
+                "index": 0,
+                "layout": {
+                  "split_path": [],
+                  "pixels": {
+                    "H": [
+                      0,
+                      920
+                    ],
+                    "V": [
+                      0,
+                      808
+                    ]
+                  },
+                  "percent": {
+                    "V": [
+                      0,
+                      1
+                    ],
+                    "H": [
+                      0,
+                      1
+                    ]
+                  }
+                },
+                "tab_refs": [
+                  "tab:16"
+                ],
+                "tab_count": 1,
+                "ref": "area:14",
+                "selected_tab_ref": "tab:16",
+                "selected_surface_ref": "surface:16",
+                "surfaces": [
+                  {
+                    "pane_ref": "pane:14",
+                    "url": null,
+                    "selected": true,
+                    "selected_in_area": true,
+                    "last_seen_at": "2026-10-02T08:24:36Z",
+                    "index_in_area": 0,
+                    "type": "terminal",
+                    "active": true,
+                    "tty": "ttys014",
+                    "area_ref": "area:14",
+                    "being_seen": true,
+                    "index_in_pane": 0,
+                    "focused": true,
+                    "title": "~",
+                    "here": false,
+                    "ref": "tab:16",
+                    "index": 0,
+                    "selected_in_pane": true
+                  }
+                ],
+                "tabs": [
+                  {
+                    "selected_in_area": true,
+                    "active": true,
+                    "focused": true,
+                    "title": "~",
+                    "tty": "ttys014",
+                    "selected": true,
+                    "area_ref": "area:14",
+                    "index_in_pane": 0,
+                    "ref": "tab:16",
+                    "here": false,
+                    "index_in_area": 0,
+                    "last_seen_at": "2026-10-02T08:24:36Z",
+                    "index": 0,
+                    "type": "terminal",
+                    "selected_in_pane": true,
+                    "being_seen": true,
+                    "pane_ref": "pane:14",
+                    "url": null
+                  }
+                ],
+                "surface_count": 1,
+                "active": true,
+                "focused": true,
+                "surface_refs": [
+                  "surface:16"
+                ]
+              }
+            ]
+          }
+        ],
+        "key": true,
+        "active": true,
+        "workspace_groups": [],
+        "index": 0,
+        "ref": "window:1",
+        "current": true,
+        "visible": true,
+        "workspace_count": 1,
+        "selected_workspace_ref": "workspace:9"
+      }
+    ],
+    "caller": null
+  },
+  "screenshot_sha256": "82393937da2d580d62b2604d10931aa0a17c584d8f8c0a21f197ff782be770dc",
+  "scope_notes": [
+    "No Ghostty submodule edits; current main gitlink was merged unchanged.",
+    "No send/mailbox/SocketClient edits.",
+    "No owner self-review; independent review routed by Orchestrator.",
+    "No installed skills sync.",
+    "One additive pbxproj conflict kept both sets of memberships; no resolution logic changes.",
+    "Atlas disk interruption recovered; final build/test identity is clean at the same head."
+  ],
+  "original_screenshot_sha256": "dfbadda7f946afc4140a1025d8b024bad6c84d2157ef4a3614e25ce4e01ddefc",
+  "sanitization": {
+    "home_paths": "replaced with literal $HOME",
+    "prompt_account": "replaced with [REDACTED]",
+    "screenshot": "two opaque account-name redactions; receipts preserved; original screenshot hash retained for provenance",
+    "screenshot_redactions_top_left_pixels": [
+      {
+        "x": 402,
+        "y": 196,
+        "width": 179,
+        "height": 30
+      },
+      {
+        "x": 402,
+        "y": 264,
+        "width": 179,
+        "height": 31
+      }
+    ],
+    "outside_redaction_pixels": "byte-identical to original decoded RGBA pixels"
+  }
+}

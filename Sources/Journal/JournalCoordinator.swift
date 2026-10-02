@@ -17,6 +17,10 @@ final class JournalCoordinator: @unchecked Sendable {
     private var drainStarted = false
     private var sink: (@Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?, UUID?) -> Void)?
 
+    init(store: JournalStore? = nil) {
+        self.store = store
+    }
+
     func register(tabID: UUID, workspaceID: UUID) {
         lock.lock(); let changed = targets[tabID] != workspaceID; targets[tabID] = workspaceID; lock.unlock()
         if changed { refreshOwners([tabID]) }
@@ -183,6 +187,21 @@ final class JournalCoordinator: @unchecked Sendable {
     }
 
     func append(_ draft: JournalDraft, historical: Bool = false, interactivePID: Int32? = nil) throws -> JournalAppendResult {
+        try append(draft, historical: historical, interactivePID: interactivePID, transcriptClockEvidence: false)
+    }
+
+    /// Transcript observations arrive only from the bounded in-process reader,
+    /// which assigns the registered adapter version after parsing native time.
+    func appendTranscript(_ draft: JournalDraft) throws -> JournalAppendResult {
+        try append(draft, historical: false, interactivePID: nil, transcriptClockEvidence: true)
+    }
+
+    private func append(
+        _ draft: JournalDraft,
+        historical: Bool,
+        interactivePID: Int32?,
+        transcriptClockEvidence: Bool
+    ) throws -> JournalAppendResult {
         do {
             let eligible = draft.owner.map { isEligible($0) && target(tabID: $0.tabID) == draft.workspaceID } ?? false
             let model = draft.tabID.flatMap { tabID in target(tabID: tabID).flatMap { workspaceID in
@@ -192,7 +211,15 @@ final class JournalCoordinator: @unchecked Sendable {
                     (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 58, 95].contains($0)
                 } ? value : nil
             }
-            let result = try storage().append(draft: draft, context: JournalContext(eligible: eligible, historical: historical, modelID: model))
+            let context = transcriptClockEvidence
+                ? JournalContext.forTranscriptAppend(draft: draft, eligible: eligible,
+                                                     historical: historical, modelID: model)
+                : JournalContext.forAppend(draft: draft, eligible: eligible,
+                                           historical: historical, modelID: model)
+            let result = try storage().append(
+                draft: draft,
+                context: context
+            )
             if let changed = result.changedSnapshot {
                 let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
                 let opensAsk = [JournalKind.questionRequested, .planReviewRequested, .approvalRequested].contains(draft.kind)

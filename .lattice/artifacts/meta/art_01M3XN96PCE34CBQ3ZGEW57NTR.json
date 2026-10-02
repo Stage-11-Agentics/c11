@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:37:01Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3XN96PCE34CBQ3ZGEW57NTR",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XN96PCE34CBQ3ZGEW57NTR.zip",
+    "size_bytes": 620208
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact repair head54e7c46026; 79 Atlas tests; 52/51ms ignored-signal closes under30streams, survivor ACK during grace, eventual reap; home prefixes redacted.",
+  "tags": [],
+  "title": "C11-294 B1 repair: prompt close and detached reap proof",
+  "token_usage": null,
+  "type": "file"
+}

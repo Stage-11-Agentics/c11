@@ -1,0 +1,140 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-crashes",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-297-startup-readiness",
+      "linked_at": "2026-10-02T06:37:03Z",
+      "linked_by": "agent:astra-crashes",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "medium",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nOn every relaunch the restored agents call the socket in the first second. That walk can crash on a half-built window tree, and the shells can start before the socket is listening, so resume-time CLI calls fail and the session is not captured. Backlog items: B007, B246.\n\n## Evidence\norigin/main `0ff8887e5e`.\n\n- B007, verified: `Sources/SocketHandlers/SocketDispatch.swift:972` runs `v2MainSync { self.v2RefreshKnownRefs() }` on every v2 command. Fable found no restore guard on the walk (`Sources/TerminalController.swift:2632-2650` on this SHA). Upstream cmux #9627 gates the walk with `didCompleteInitialSessionRestore`.\n- The same walk is a per-command main-thread tax once the fleet is up. Fable \u00a79: refresh on create and close, not on every command.\n- B246, probable: `Resources/bin/claude` pings once and passes through when the socket is absent (ledger cited lines 81-101; re-find). A resumed agent launched in that window loses session capture. Confirm whether restore spawns shells before `TerminalController` listens. If the socket is already first, record that and keep only the B007 guard.\n- Research: Fable cluster C4, wave 1. Astra wave 2. `05-bug-reconciled.md`.\n\n## Scope\nIn:\n- While initial restore is in progress, a v2 command does not walk the half-built tree. It waits until restore has finished or returns a typed not-ready error. It does not crash.\n- After restore, ref refresh happens when a window, workspace, or tab is created or closed. A steady command does not walk every window on main.\n- The control socket is listening before restored shells and their wrappers run. The Claude wrapper's one-shot ping either waits briefly for the socket or the app does not spawn those shells until listen succeeds. Pick one, and document it. Do not write `~/.claude`.\n\nRide-alongs:\n- B004: a LaunchServices open of c11 itself can suppress session restore. Exclude the app's own bundle from the explicit-open path that clears the pending snapshot. Re-find. The ledger cited `AppDelegate.swift:6623`.\n- B355, probable: a snapshot of only empty 0-workspace windows still builds empty `NSWindow`s. Filter those at load. `SessionPersistence` rejects an all-empty window list (ledger `:534`) but not a phantom window beside nothing. Confirm the trigger. A disproof retires the row.\n\nOut:\n- Duplicate tab ids in a snapshot (B024). Separate ticket.\n- Wrong-manager close (B019).\n- Second-instance kill (B005).\n- Holding back a poorer autosave (B046) and tearing down the replaced graph (B075). Those are on the tier-2 sweep. History rotation already exists (`SessionPersistence` session-history, #467).\n- Quit confirmation. B051 and B073 are already fixed on this SHA. Do not reopen them.\n- Notification records across restart (B044). The journal delivers that. C11-231 / C11-273.\n- Parked restore rows that are not these: none beyond the ones named above.\n\n## Approach\nA restore-readiness flag the socket checks, matching the upstream guard, plus moving the listen ahead of wrapper launch. For the steady-state walk, update the ref tables at the create and close sites that already run on main. Do not take a main lock from a worker to recompute them per command.\n\nThe Claude wrapper stays the bundle wrapper under `Resources/bin/`. It may wait on the c11 socket. It must not write tenant config.\n\n## Acceptance criteria\n1. Relaunch a tagged build that restores several agent terminals whose wrappers ping immediately. The app stays up. `c11` commands issued as soon as the socket exists see the restored tabs, not a crash and not an empty tree.\n2. A command issued during restore gets not-ready or waits out the restore. It does not throw EXC_BAD_ACCESS and it does not close or send to a random tab.\n3. With the session idle, a burst of `c11` version or ping commands does not walk every workspace on main for each call. A new tab is still addressable by the next command after it is created.\n4. If B246's order is real: a restored Claude wrapper observes a live socket, or the PR shows the spawn-after-listen trace. If it is not real, the PR says what order restore uses today.\n\n## Validation\nA host-free logic test for the readiness flag if the flag can be driven without `NSApp`. Otherwise `tests_v2` against a tagged socket during a scripted relaunch. Computer use only to confirm the restored windows are the previous session. Builds on Atlas after C11-216. No soak required beyond that relaunch. Crash-resume behavior owned by C11-131 must still hold: a clean quit restores, and this ticket does not skip restore.\n\n## Dependencies\nNone inside ws:bugs. Related to C11-131 and C11-139 (crash-resume). Do not expand this ticket into that harness. Cross-workstream: F1 is C11-216. The lead links it.\n\n## Risks\nRestore data: a guard that drops commands on the floor can skip resume. Prefer not-ready plus a short wait over a silent success. Main thread: the remaining refresh stays on the create/close path, which is already main. Doctrine: the wrapper does not write `~/.claude` or `~/.codex`. No new strings expected. If the not-ready error is new user-facing copy, use `String(localized:)` and hand the six locales to the translation ticket. Public repo: a startup race, not a crash recipe.\n\nSize: M. Tier: P1. Doctrine check: socket and launch order only. No tenant config writes.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M3XQA3E0NB7K7R92H7S7MFSC",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XQAQ1XMDHRCS11WVHYCDX9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XQB65Z8VDP9PGX72QNPB2B",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XQEWJQNMRHRGQFXPG0YSF1",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQV2H6M1J9W7QWFMS5KM6B",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRVVY65BD71DV2YPQW0JMG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XRVW0KR8RG0WH86HTTRVAV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XS139WC9ACXGD98S8F1YJH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XSVQMWVH5EWHEZY0KMDCG1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XSVQQ7YWY9XG5VNAH8SS0E",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XT5A05JN9ZRHPD5CD27X7J",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XT5A2KACZFWCN6RK7H5EV8",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XVGJX1Z87MQZ59YFXJ8T6C",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XWPN5VXYC0D0K08X1PTQRN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWR4QMRVS5JGG7H6KC7HNM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YT4ADGARCVRT9QN01CZCHP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YT4AGRV8GPF3Y7F4A3YAZJ",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K1ZKDPMCYX74N8DZ31GM",
+  "last_event_id": "ev_01M3YT4AGRV8GPF3Y7F4A3YAZJ",
+  "last_status_changed_at": "2026-10-02T15:09:21Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3WPMYYQBP8VJN6X48RTV1TD",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-297",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Keep the control socket ready before restored agents call it",
+  "type": "bug",
+  "updated_at": "2026-10-02T17:20:58Z",
+  "urgency": null
+}

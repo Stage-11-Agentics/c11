@@ -1,0 +1,118 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-fixtures",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-263-attention-batch",
+      "linked_at": "2026-10-02T04:45:54Z",
+      "linked_by": "agent:codex-fixtures",
+      "repo": null
+    }
+  ],
+  "comment_count": 13,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:06Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nOne Claude starting a tool or exiting can erase a sibling\u2019s waiting signal. Bypass questions and flags also disappear from attention surfaces the operator relies on. Backlog item: A1.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `CLI/c11.swift:16852`, `:16934`, `:17042` send workspace-wide clears; `Sources/WorkspaceManager.swift:1223` does the same during stale-PID cleanup (the report cites the adjacent comment at 1222). `Sources/TerminalNotificationStore.swift:1216` already has a workspace-and-surface clear seam.\n- `CLI/c11.swift:17006-17040` saves AskUserQuestion then trusts a subsequent Notification; ExitPlanMode falls through to working. `Sources/AppDelegate.swift:13869-13896` builds the menu-bar snapshot from notifications only. Flags use the separate mutation/delivery path at `Sources/AttentionModel.swift:398-429`.\n- `Sources/TerminalNotificationStore.swift:510-530` exports only CMUX_NOTIFICATION_TITLE/SUBTITLE/BODY; direct flag custom-command execution follows banner success at `:1316-1333`.\n- Upstream: cmux #6608 / issue #6606; `CLI/cmux.swift:29701-29730` on upstream/main (`920ff39ff7`) identifies AskUserQuestion and ExitPlanMode at PreToolUse in bypass mode.\n- Research: `upstream-triage/c11-1.0/03-feed-attention.md`, \u201cBugs a Feed would expose\u201d; report 04 question 3 and \u201cWhat c11 has today\u201d; Fable \u00a72 Feed F0 / Phone P0; Astra \u00a72 Feed F0 / Phone P0. BACKLOG A1 and D25 govern delivery in 1.0.\n\n## Scope\nIn: all four scoped-clear sites, bypass question/plan waiting, menu-bar visibility for flags, and Notification Command target/kind environment variables. Keep these as one bounded attention bug batch.\nOut: typed Feed store/UI (A2/A4), shared ordering/open-ask count (A3), producer expansion/journal (J2/J3), phone forwarding, banner answers, menu-key approval, screen classification and separate point releases.\n\n## Approach\nResolve the originating tab once and use the existing scoped clear. The stale-PID map is workspace-scoped: establish a reliable tab association before cleanup, and leave unrelated notices intact when no association exists. Create the bypass attention signal from the existing async hook; normal-mode follow-up notifications must not duplicate it. Have the menu bar observe TabAttentionIndex without inserting flags into routine notification history. Add C11_NOTIFICATION_WORKSPACE_ID, C11_NOTIFICATION_TAB_ID and C11_NOTIFICATION_KIND to both routine and direct flag command paths, with equivalent CMUX_* aliases and existing TITLE/SUBTITLE/BODY compatibility. Document the actual banner-authorization dependency; adding IDs is not a phone-delivery guarantee. J3 must reuse this repair, not reimplement it.\n\n## Acceptance criteria\n1. With two waiting agents in one workspace, run prompt-submit, ordinary pre-tool-use, session-end and stale-PID cleanup for one agent separately; only its eligible notice clears, and the sibling\u2019s unread/waiting state survives each case.\n2. In recorded bypass-mode AskUserQuestion and ExitPlanMode runs, the originating unsuppressed tab enters waiting without PermissionRequest/Notification. A normal-mode follow-up notification yields one attention item. Closing/responding clears only that tab.\n3. A raised flag appears in the enabled menu-bar extra even with zero routine unread notices; a suppressed flagged tab still appears. Lowering removes it, and suppressed unflagged completions remain quiet.\n4. A capture command receives the correct workspace UUID, tab UUID and kind for a routine notice and a flag; C11 and CMUX aliases agree. Workspace-only notices have an explicit absent-tab representation rather than a guessed focused tab. Existing CMUX text variables remain available.\n5. The above actions do not activate c11 or change the operator\u2019s selected tab. Existing root-thread rejection (C11-189) and suppression behavior continue to pass their incident fixtures.\n\n## Validation\nUse F3\u2019s sibling-clear and bypass fixtures through executable hook/store paths, plus a fake Notification Command executable to capture its environment. Run tests_v2 against a tagged socket and a computer-use pass for the menu bar with c11 both frontmost and backgrounded. Run a targeted multi-agent notification churn soak against the F2 typing-latency baseline; do not replace these with source-text assertions.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nDepends on F3 for the recorded regression oracle; the fixes themselves do not require the journal. F1 / C11-216 supplies build/soak capacity. A3 builds on this menu-bar fix. J3 must retain this bypass behavior; J6 / C11-231 owns reason-bearing lifecycle events.\n\n## Risks\nAn unknown stale PID must not be guessed onto a sibling tab. Async hook arrival can expose the known late-PreToolUse incident: keep the repair bounded to the captured cases and leave journal ordering to J2. Follow the C11-188 AAR and escalate after three non-converging review cycles. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: M. Tier: P0. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": "2026-10-02T07:55:31Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XNMEMT2KZVSGJSMSQH0SD6",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XNMES1GMF9AB7836157EJC",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XNN23KE84MQWRVM2TQMYZ7",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XNP95AQSD3HR8VCD6VMW52",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XNP97V4YDM04R02NFXBPBF",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XNT0XE2JCVH636GVB14S3S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XP7XCVCYN3EVC2FW596WT5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XR8PFPQ16WK9R7NYK98PTM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRVC8GC8R03ZHWCM2XDC0V",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRW36N13EB4PQDDCVVXMYT",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XSRZ7900E8X6HASDEYMVRY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XSRZ6WHXYGJ3VEYYWQNQ8B",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWVEJ5YZWCYXJVJH8N9ZD0",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XX976KZ91VVMHTA3PW9M3K",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3WR1DQPZP82V13DV9KR34",
+  "last_event_id": "ev_01M3XX98QZ6VKH5SNKKYSPDTER",
+  "last_status_changed_at": "2026-10-02T07:55:31Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:46:33Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X3XPG2TP2AJC066BS6RT4Y",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-263",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p0"
+  ],
+  "title": "Attention: isolate tab clears, surface bypass asks, and repair flag notification visibility",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:51Z",
+  "urgency": null
+}

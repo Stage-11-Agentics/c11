@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-01T20:51:33Z",
+  "created_by": "agent:claude-opus-5.5",
+  "custom_fields": {},
+  "id": "art_01M3WKS60AFMR6VGKQS9CV321K",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3WKS60AFMR6VGKQS9CV321K.md",
+    "size_bytes": 186
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Drawbridge deep review on PR #480: correct, minimal, conservative; no blockers. Wrapper test passes with fix, fails on old wrapper; live socket check passes. Merged e201af7 on Atin's go.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,7 +1,8 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-08-12T02:52:00Z",
   "created_by": "agent:orchestrator-hangs",
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KZSY4HEJS5D3PVA36E2N5TJR",
-  "last_event_id": "ev_01KZSY4S6K9VAAR0652T9R0C95",
-  "last_status_changed_at": "2026-08-12T02:52:00Z",
+  "last_event_id": "ev_01M3YXXXZTEA5KNVEGE7XV3C56",
+  "last_status_changed_at": "2026-10-02T18:27:23Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -26,10 +27,10 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-205",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": null,
   "title": "Generic-metadata instantiation hangs: 13 of 20 users, 4.6s median stall",
   "type": "bug",
-  "updated_at": "2026-08-12T02:52:08Z",
+  "updated_at": "2026-10-02T18:27:23Z",
   "urgency": null
 }

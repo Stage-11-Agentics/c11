@@ -1,0 +1,3 @@
+# C11-273 start note (Orchestrator)
+
+C11-273 depends on C11-263, which is in review (PR #506), not merged. Start now in this order: (1) the new journal modules that do not touch attention code (append, SQLite store, pure fold, bounded replay, their tests, fixture replay against C11-271's merged corpus); (2) only after C11-263 merges (I will send `C11-263 MERGED`), merge origin/main and do the attention integration that consumes C11-263's repair. The spec is C11-272 (attested); do not reopen it. C11-273 is on the risk list: tagged-build runtime proof before merge, and a Fable review is planned for it. Your worktree has a local WIP commit on the C11-272 spec branch (d96527cce1): create the C11-273 branch from origin/main and leave that branch intact.

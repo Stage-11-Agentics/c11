@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:55:17Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YN7DQXTAZP8Z013JG983YP",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YN7DQXTAZP8Z013JG983YP.md",
+    "size_bytes": 740
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-281 PASS at clean main 12d4f21a8822a3a7763d3a26b5295d8f6213c60a. Exact packaged CLI passed offline parser/protocol and live PTY byte/Return/event oracles, large ASCII and Unicode stdin, forced UTF",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

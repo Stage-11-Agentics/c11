@@ -14,6 +14,7 @@ struct CapabilityFeatures {
         case windowRouteWithoutFocus = "window.route_without_focus"
         case rpc = "cli.rpc"
         case journalAnalytics = "journal.analytics"
+        case browserProfiles = "browser.profiles"
         case feedAsks = "feed.asks"
     }
 
@@ -40,6 +41,7 @@ struct CapabilityFeatures {
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
         Entry(id: .rpc, version: 1, enabled: true),
         Entry(id: .journalAnalytics, version: 1, enabled: true),
+        Entry(id: .browserProfiles, version: 1, enabled: true),
         Entry(id: .feedAsks, version: 1, enabled: true),
     ])
 

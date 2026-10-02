@@ -1,0 +1,115 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-launch",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-285-rpc",
+      "linked_at": "2026-10-02T08:46:13Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    }
+  ],
+  "comment_count": 10,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nSkills and tests sometimes hand-roll a socket call with `nc` because no command sends one raw method. That breaks whenever the framing or the socket path changes. Backlog item: C7. This is one of two tickets for C7. `c11 rpc` and `resize-window` do not share code: one is CLI transport, the other is AppKit window geometry. Shipping them as one PR would couple a P2 convenience to a window-server change.\n\n## Evidence\n- c11: the CLI has no `rpc` command on origin/main (0ff8887e5e). `git grep` for `case \"rpc\"` in `CLI/c11.swift` is empty. Callers use `sendV2` internally (`CLI/c11.swift` around the `capabilities` case, which calls `client.sendV2(method: \"system.capabilities\")`).\n- c11: `Sources/Workspace.swift:3118-3129` refuses every remote command after auth with `remote_commands_disabled`. That is #490 (`0ff8887e5e`). A raw RPC verb must not become a way around that refusal.\n- Upstream: cmux's `rpc <method> [json]` makes one raw v2 call. Report 06 \u00a71i.\n- Research: `c11-1.0.html` marks `c11 rpc` if-time. Astra row 4.9b agrees, and says it must not be a remote-relay escape hatch. The backlog puts it on C7 at P2.\n\n## Scope\nIn: `c11 rpc <method> [json]` sends one v2 request to the local socket and prints the response. JSON in, JSON out. A missing app is a connection error. Unknown method is the server's `method_not_found`, passed through.\nOut: `resize-window` (the other C7 ticket). `c11 guide` and feature flags (C6). Any relay, ssh, or remote invocation. Teaching `rpc` as the way to do things the friendly CLI already covers. Parameter schemas.\n\n## Approach\nAdd a command that parses one method name and an optional JSON object, calls the existing `sendV2`, and prints the body. Do not focus a window. Do not special-case methods. Reject a non-object JSON payload. Document it in the skill as a local escape hatch for methods the CLI has not wrapped, with one line that it does nothing over `c11 ssh`. Register feature flag `cli.rpc` if C6's list exists.\n\n## Acceptance criteria\n1. `c11 rpc system.ping` prints a payload with `pong: true` against a running tagged build, and the key window does not change.\n2. `c11 rpc tab.send_text '{\"text\":\"hello\",\"tab_id\":\"<id>\"}'` delivers to that tab. The same text via `c11 send` still works.\n3. `c11 rpc no.such.method` exits non-zero and prints `method_not_found`. `c11 rpc system.ping '[]'` rejects the payload locally.\n4. From a `c11 ssh` remote shell, `c11 rpc system.ping` fails with the existing \"c11 commands are not available over c11 ssh in this version\" message (`Sources/Workspace.swift:3125`). It does not run the method on the Mac.\n\n## Validation\nA `tests_v2` script against a tagged build's socket for criteria 1 through 3. Criterion 4 is the existing docker ssh test (`tests_v2/test_ssh_remote_cli_relay.py`) if it can invoke `rpc`, otherwise one line added there. No computer-use pass. No soak.\n\n## Dependencies\nNone. Related to C6 for the feature-flag slot. The other C7 ticket is independent. #490 is already on origin/main. Do not reopen the relay.\n\n## Risks\nTyping latency: none. Main thread: whatever the named method already does. `rpc` adds no focus and no `NSApp.activate`. Doctrine: local socket only. No tenant config. Localization: usage errors use `String(localized:)`. Six-locale fill is X1. Public repo: do not document a way to forward `rpc` over ssh. The refusal is the behavior.\n\nSize: S. Tier: P2. Doctrine check: `rpc` is a local socket client. It is not a remote command channel.",
+  "done_at": "2026-10-02T16:43:01Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XXVEX245DRRACW0X736D18",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XXWFKMFXV6W2PA405HX1YR",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XXZ3YVXDRSB16MHE9Q6KDR",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XY4FAMN84SATFMQ51WR53Q",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYJXHPCBD8AQ71XWEF5654",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZMYQR9VE6K4MRPBZWP3P2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YQW6VMQPABE7GF1J25N95X",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YQWE7Y71VDJN5GFJC9ESXP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YQXWCNRM8R0ZG3GDRY6SPQ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YQY7ZJSGWJYAFWDP9ER5AY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YQYTGK7XGYXJZ4QMZNJKCM",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YQYTGG81X94255ASQY4BYC",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FNHQ0075Q5Z5V5TXNK8F",
+  "last_event_id": "ev_01M3YQYTGK7XGYXJZ4QMZNJKCQ",
+  "last_status_changed_at": "2026-10-02T16:43:01Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNN0DSWTKT2J10XD15TN",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-285",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p2"
+  ],
+  "title": "Add c11 rpc as a local raw socket call",
+  "type": "task",
+  "updated_at": "2026-10-02T16:43:01Z",
+  "urgency": null
+}

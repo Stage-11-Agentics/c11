@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:49:37Z",
+  "created_by": "agent:codex-cli",
+  "custom_fields": {},
+  "id": "art_01M3Y3QR2NZQQYZXN3EKYCAR8P",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Y3QR2NZQQYZXN3EKYCAR8P.json",
+    "size_bytes": 1018
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Selection and paired copy timing samples",
+  "token_usage": null,
+  "type": "file"
+}

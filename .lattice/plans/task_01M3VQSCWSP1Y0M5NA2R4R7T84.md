@@ -1,0 +1,3 @@
+# C11-252: Launch editor: xAI model list opens on Grok Build's own models
+
+Idea salvaged from an orphaned, superseded draft found uncommitted in the main checkout during the 0.67.0 pre-flight (saved as branch grok-native-first, commit ec91f0f49, based on pre-#468 main; do not merge it, its harness premise was overturned by #468: the grok CLI rejects xAI ids it does not list). The part worth keeping: with an empty search, the xAI provider's model list shows the native harness's rows (Grok Build) first, catalog order preserved within each group, instead of OpenRouter's long tail. Re-implement on current main in AgentConfigAxes.modelOptions.

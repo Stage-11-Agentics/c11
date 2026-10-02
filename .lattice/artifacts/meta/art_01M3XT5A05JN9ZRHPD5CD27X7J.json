@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:02:16Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XT5A05JN9ZRHPD5CD27X7J",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M3XT5A05JN9ZRHPD5CD27X7J.txt",
+    "size_bytes": 3027
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-297 groups merge exact-head 16 Atlas tests",
+  "token_usage": null,
+  "type": "file"
+}

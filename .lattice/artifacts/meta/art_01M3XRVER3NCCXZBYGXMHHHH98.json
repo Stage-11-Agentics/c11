@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:39:24Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3XRVER3NCCXZBYGXMHHHH98",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XRVER3NCCXZBYGXMHHHH98.png",
+    "size_bytes": 2242921
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Proof app dismissed by synthesized Quit confirmation",
+  "token_usage": null,
+  "type": "file"
+}

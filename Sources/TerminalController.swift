@@ -2344,6 +2344,11 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.profiles.list",
+        "browser.profiles.add",
+        "browser.profiles.rename",
+        "browser.profiles.clear",
+        "browser.profiles.delete",
         "browser.cookies.clear",
         "browser.state.load",
     ]

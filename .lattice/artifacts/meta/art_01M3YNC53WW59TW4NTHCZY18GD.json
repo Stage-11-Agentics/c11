@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:57:52Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YNC53WW59TW4NTHCZY18GD",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YNC53WW59TW4NTHCZY18GD.html",
+    "size_bytes": 7487
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-269 batch 4 observed partial proof and Settings environment gate",
+  "token_usage": null,
+  "type": "file"
+}

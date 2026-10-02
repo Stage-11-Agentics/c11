@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:53:56Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XSP1Z7F3PWM0YKC0VY46JF",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3XSP1Z7F3PWM0YKC0VY46JF.html",
+    "size_bytes": 15784621
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Original payload deleted under disclosure rule. Sanitized replacement: art_01M3XWM8D91ZCGZ3H5FJJYSAK5",
+  "tags": [],
+  "title": "Withdrawn evidence; sanitized replacement available",
+  "token_usage": null,
+  "type": "file"
+}

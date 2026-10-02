@@ -1,0 +1,17 @@
+{
+  "head": "a70bcae30878b6e8dfc24d31e98bc258a41b4fe5",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "dirty": false,
+  "tag": "c11-288",
+  "mode": "release",
+  "compile": "ok",
+  "tests": "na",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "executable_sha256": "31b1856e6c11673639defadcf8f58caf8083e2db4dd8bac1e1c7cbfa6c766425",
+  "local_executable_sha256": "31b1856e6c11673639defadcf8f58caf8083e2db4dd8bac1e1c7cbfa6c766425",
+  "nativeTestAssertions": "not run; Release compilation only"
+}

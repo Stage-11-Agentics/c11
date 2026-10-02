@@ -1,0 +1,56 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-journal",
+  "branch_links": [],
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator needs trustworthy blocked/completed distinctions and queryable history, including after a crash. A bounded, fixture-backed contract must resolve the known late-hook failure before implementation. Backlog item: J1.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Sources/TabLivenessDeriver.swift:13` derives waiting from an unread notification; `Sources/PersistedMetadata.swift:136` preserves activity, while `Sources/Events/EventLog.swift:70` intentionally drops saturated telemetry.\n- Upstream: #10490, `Packages/macOS/CmuxAgentJournal/Sources/CmuxAgentJournal/AgentJournalEventKind.swift:8`; `AgentLifecycleReducer.swift:62` checks sequence and `:68` occurrence time; `AgentJournalStore.swift:78` specifies stable-id retries; `AgentJournalReplayPolicy.swift:24` filters replay.\n- Research: report 01 Proposed c11 1.0 shape; Astra \u00a74 Against the event journal and \u00a77 resource/privacy budgets; Fable \u00a74; BACKLOG.md J1/D1/D3. The 2026-10-01 BACKLOG.md rulings D1/D3 override the older audit and c11-1.0.html deferral: the journal is core 1.0, uses SQLite WAL, and has analytics as its named consumer.\n\n## Scope\nIn: a concrete spec and cross-family plan review for vocabulary, ordering/confidence, SQLite WAL, append/spool/fold/replay, privacy, budgets and compatibility. Out: implementing J2, automatic answers/auto-resume, mailbox delivery (C11-257), screen inference, federation, and the auditors\u2019 superseded journal-deferral alternative.\n\n## Approach\nUse system libsqlite3 and one app writer. Specify cmux-compatible kind mapping (including prefix differences), turn.interrupted, source/confidence (hook > plugin > transcript > screen > shell > keypress; screen remains parked), occurrence time versus app sequence, session/tab ownership and unknown/disconnected/degraded states. Define acknowledged durability, stable event_id retries and conflicts, bounded startup drain and retention by time plus bytes (including WAL/spool), preserving active state when history expires. Replay blocked/error only as unconfirmed historical evidence. Keep activity writes for sidebar, \u2325V and suppression; separate blocked from unread completion. Do not import upstream auto-resume, decision policy or message delivery.\n\n## Acceptance criteria\n1. The spec gives expected results for every F3 incident, including Stop assigned seq 10 followed by an earlier PreToolUse assigned seq 11; the agent stays completed. Explain missing/untrusted occurrence time without claiming ingest sequence establishes causality.\n2. The spec declares a testable event schema/source rank, privacy allowlist with no prompt/tool bodies, unknown/disconnected/degraded and freshness semantics, and app-crash durability limits.\n3. For the crash/retry fixtures, define same-ID/same-content dedupe, same-ID/different-content rejection, safe spool ownership/partial-line treatment, and the bounded drain outcome; no exactly-once claim across arbitrary failures.\n4. For the old-open-ask retention example, specify how time and byte pruning preserve current blocked evidence. For restart while waiting, specify unconfirmed blocked/error replay and no restored running assertion.\n5. The spec maps the six J7 analytics questions to retained fields and interval semantics, and documents activity compatibility for the recorded sibling/seen/suppression workflows.\n6. A fresh reviewer from the other worker family (Codex versus Grok) reviews the plan before code. Record a verdict against these fixtures/questions; stop and escalate after three unsuccessful cycles.\n\n## Validation\nThe deliverable is a local spec with fixture-to-rule mapping and cross-family review evidence, not implementation or fabricated runtime proof. J2 runs fold/store tests and tagged socket/UI validation on Atlas-built artifacts; F2 supplies measured fleet budgets. Use F3 real captures for design examples.\n\n## Dependencies\nDepends on F3 (ticket linked when created). Unlocks J2. J7 is the named downstream analytics consumer. J8 carries the approved bounded doctrine wording; it does not reopen D1/D3.\nWithin-workstream prerequisites: F3 (C11-271).\n\n## Risks\nOrdering is the principal risk: stale events can be durable and wrong. Bound missing evidence rather than pretending certainty. Keep SQLite transactions local to storage; avoid expanding into cross-process consensus. Keep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-02T11:21:52Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3X6A1ZSCXEED76X4HF599T5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y5JSYKJR0HTHPFQJ0A6MJF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y5JSYHX2XVT1ENX14VH06K",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3XPJSSY6XSPBYGP6VCSRR",
+  "last_event_id": "ev_01M3Y5JSYKJR0HTHPFQJ0A6MJJ",
+  "last_status_changed_at": "2026-10-02T11:21:52Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:07Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPG2TP2AJC066BS6RT4Y",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-272",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Specify the SQLite lifecycle journal and obtain cross-family plan review",
+  "type": "task",
+  "updated_at": "2026-10-02T11:21:52Z",
+  "urgency": null
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:43:06Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XWG2KZS30PEN3ZVRJNSRXP",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XWG2KZS30PEN3ZVRJNSRXP.json",
+    "size_bytes": 18398
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 sanitized exact-head Atlas create-input evidence",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:31:17Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XVTEVZW7SY82KH6V0713XS",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XVTEVZW7SY82KH6V0713XS.png",
+    "size_bytes": 352521
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 exact tagged-window readability proof",
+  "token_usage": null,
+  "type": "file"
+}

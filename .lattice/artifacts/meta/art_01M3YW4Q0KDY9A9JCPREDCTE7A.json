@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:56:08Z",
+  "created_by": "agent:luna-303",
+  "custom_fields": {},
+  "id": "art_01M3YW4Q0KDY9A9JCPREDCTE7A",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YW4Q0KDY9A9JCPREDCTE7A.md",
+    "size_bytes": 9901
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Round 1 baseline candidate measurements, UI results and residuals",
+  "token_usage": null,
+  "type": "file"
+}

@@ -54,6 +54,8 @@ extension TerminalController {
         var methods: [String] = [
             "agent.event.append",
             "agents.list",
+            "journal.clear",
+            "journal.status",
             "system.ping",
             "system.capabilities",
             "system.identify",

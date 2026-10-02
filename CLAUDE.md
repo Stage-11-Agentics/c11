@@ -109,7 +109,7 @@ Skip the pattern only when the ticket is a one-line text edit, a trivially mecha
 
 See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` build-and-launch, Release variants, the debug event log, tag hygiene, and the tagged-build reporting format.
 
-The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-slug>`. Never `open` an untagged `c11 DEV.app`.
+The one-liner from a delegator checkout: `./scripts/remote-build.sh --tag <your-branch-slug>` builds on Atlas and retrieves the app without launching. Use `launch-tagged-automation.sh <tag> --qa fresh` only on an authorized validation machine (Atlas for the 1.0 run). The remote route uses two Atlas slots, reducing admission to one after load stays above 40 for 60 s. Hyperion retains its single-build lock. On Atlas, existing `reload.sh` / `reloads.sh` also support `--no-launch`. Never `open` an untagged `c11 DEV.app`.
 
 **One c11 build per machine (HARD RULE).** Two concurrent xcodebuilds each spawn a swift-frontend per core; the load average goes into the hundreds and both builds, the operator's c11, and every agent on the box starve (2026-09-11: load 250, a compile pinned at 4% CPU for 35 minutes). Every build entry point (`reload.sh`, `reloads.sh`, `reloadp.sh`, `test-unit-local.sh`, `test-unit.sh`) already runs xcodebuild through `scripts/with-build-lock.sh`, which holds `/tmp/c11-build.lock`, reports who owns it every 30 s, takes over a lock whose owner died, and gives up with exit 75 after 90 minutes. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` bypasses it; CI runners are the only place that is appropriate. Builds are moving to Atlas entirely (C11-216); until then this lock is the guard.
 

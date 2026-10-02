@@ -581,6 +581,14 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
     }
 
     func testRuntimeClosePromptsWhenShellReportsRunningCommand() {
+        // This handler belongs to the legacy alert path, not the area card.
+        let flagKey = AreaInteractionFeatureFlag.userDefaultsKey
+        let oldFlag = UserDefaults.standard.object(forKey: flagKey)
+        UserDefaults.standard.set(false, forKey: flagKey)
+        defer {
+            if let oldFlag { UserDefaults.standard.set(oldFlag, forKey: flagKey) }
+            else { UserDefaults.standard.removeObject(forKey: flagKey) }
+        }
         let manager = WorkspaceManager()
         guard let workspace = manager.selectedWorkspace,
               let panelId = workspace.focusedPanelId,

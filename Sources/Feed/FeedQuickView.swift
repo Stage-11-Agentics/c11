@@ -164,31 +164,40 @@ struct FeedQuickViewRow: View {
     let onOpen: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 8) {
-                Image(systemName: glyph).frame(width: 16, height: 16)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline).lineLimit(1).truncationMode(.tail)
-                    Text(evidence).font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
-                    Text(row.prompt ?? row.flag?.reason ?? String(localized: "feed.quick.prompt.missing", defaultValue: "—"))
-                        .font(.subheadline).lineLimit(1).truncationMode(.tail)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text(age).font(.caption).monospacedDigit().lineLimit(1).truncationMode(.tail)
-                    .frame(width: 48, alignment: .trailing)
-            }
-            .padding(.horizontal, 12).frame(height: FeedQuickViewGeometry.row)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? Color.accentColor.opacity(0.18) : Color.clear)
-            .contentShape(Rectangle())
-        }
+        Button(action: onOpen) { rowContent }
         .buttonStyle(.plain)
         .feedQuickMeasure("row.\(row.tabID.uuidString)", observer: onLayout)
         .accessibilityIdentifier("feed.quick.row.\(row.tabID.uuidString)")
         .accessibilityLabel(kindTitle + ": " + String(title.prefix(256)))
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .safeHelp(String((title + "\n" + evidence + "\n" + (row.prompt ?? row.flag?.reason ?? "—")).prefix(1024)))
+        .help(accessibleHelp)
         .accessibilityAction { onOpen() }
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: glyph).frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline).lineLimit(1).truncationMode(.tail)
+                Text(evidence).font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
+                Text(prompt).font(.subheadline).lineLimit(1).truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(age).font(.caption).monospacedDigit().lineLimit(1).truncationMode(.tail)
+                .frame(width: 48, alignment: .trailing)
+        }
+        .padding(.horizontal, 12).frame(height: FeedQuickViewGeometry.row)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected ? Color.accentColor.opacity(0.18) : Color.clear)
+        .contentShape(Rectangle())
+    }
+
+    private var prompt: String {
+        row.prompt ?? row.flag?.reason ?? String(localized: "feed.quick.prompt.missing", defaultValue: "—")
+    }
+
+    private var accessibleHelp: String {
+        String([title, evidence, prompt].joined(separator: "\n").prefix(1024))
     }
 
     private var glyph: String {

@@ -130,6 +130,14 @@ launch_tagged() {
   local mode="$1"
   run_logged "$ROOT_DIR/scripts/launch-tagged-automation.sh" "$TAG" --qa "$mode" --wait-socket 30
   [[ -S "$SOCKET" ]] || die "tagged socket did not appear after QA launch: $SOCKET"
+  local deadline=$((SECONDS + 60))
+  while (( SECONDS < deadline )); do
+    if "$CLI" --socket "$SOCKET" --json tree --all >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  die "tagged app did not finish session restoration within 60 seconds: $SOCKET"
 }
 
 write_manifest() {

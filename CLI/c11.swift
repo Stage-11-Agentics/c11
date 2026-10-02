@@ -2144,6 +2144,7 @@ struct CMUXCLI {
                isAdvisoryHookConnectivityError(cliError) {
                 if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
                 return
             }
             // A harness hook drain (`mailbox recv --hook-format`) runs on every
@@ -3622,6 +3623,7 @@ struct CMUXCLI {
                 // doesn't surface a hook-error banner on every prompt. Real
                 // hook bugs (malformed input, logic errors) still propagate.
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")
                 cliTelemetry.captureError(stage: "claude_hook_dispatch", error: error)
@@ -10932,18 +10934,23 @@ struct CMUXCLI {
             """
         case "claude-hook":
             return """
-            Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit> [flags]
+            Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [flags]
 
             Hook for Claude Code integration. Reads JSON from stdin.
 
             Subcommands:
-              session-start   Signal that a Claude session has started
-              active          Alias for session-start
-              stop            Signal that a Claude session has stopped
-              idle            Alias for stop
-              notification    Forward a Claude notification
-              notify          Alias for notification
-              prompt-submit   Clear notification and set Running on user prompt
+              session-start      Signal that a Claude session has started
+              active             Alias for session-start
+              stop               Signal that a Claude session has stopped
+              idle               Alias for stop
+              notification       Forward a Claude notification
+              notify             Alias for notification
+              prompt-submit      Clear notification and set Running on user prompt
+              stop-failure       Record a StopFailure observation
+              permission-request Record a non-ask permission observation and print {}
+              subagent-start     Record a child spawn
+              subagent-stop      Record a child completion
+              pre-compact        Record a compaction observation
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -17639,6 +17646,22 @@ struct CMUXCLI {
             if case .unsupported = delivery { return false }
             return true
         }
+        func appendResolvedJournal() {
+            var workspaceId = fallbackWorkspaceId
+            var preferredSurface = surfaceArg
+            if let sessionId = parsedInput.sessionId,
+               let mapped = try? sessionStore.lookup(sessionId: sessionId),
+               let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
+                workspaceId = mappedWorkspace
+                preferredSurface = mapped.surfaceId
+            }
+            guard let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                preferredSurface,
+                workspaceId: workspaceId,
+                client: client
+            ) else { return }
+            _ = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
+        }
         func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
                                  activity: String, fromNotification: Bool = false) throws {
             if !appendJournal(workspaceId: workspaceId, surfaceId: surfaceId) {
@@ -18020,6 +18043,7 @@ struct CMUXCLI {
             )
             let toolName = parsedInput.object?["tool_name"] as? String
             if subcommand == "post-tool-use", toolName != "AskUserQuestion", toolName != "ExitPlanMode" {
+                _ = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
                 print("OK")
                 return
             }
@@ -18083,11 +18107,21 @@ struct CMUXCLI {
             )
             print("OK")
 
+        case "stop-failure", "subagent-start", "subagent-stop", "pre-compact":
+            telemetry.breadcrumb("claude-hook.\(subcommand)")
+            appendResolvedJournal()
+            print("OK")
+
+        case "permission-request":
+            telemetry.breadcrumb("claude-hook.permission-request")
+            appendResolvedJournal()
+            print("{}")
+
         case "help", "--help", "-h":
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use> [--workspace <id|index>] [--tab <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 
@@ -18984,7 +19018,7 @@ struct CMUXCLI {
           list-notifications
           clear-notifications
           agent-event append --stdin
-          claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]
+          claude-hook <session-start|stop|notification|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|ref>] [--tab <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--tab <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-tab <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]

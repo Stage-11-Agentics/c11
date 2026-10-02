@@ -76,6 +76,25 @@ def main():
                 assert any(c.startswith('set_status ') and 'Running' in c for c in legacy), legacy
                 assert any(c.startswith('clear_notifications ') for c in legacy), legacy
                 assert not any(c.startswith('report_agent_activity ') for c in legacy), legacy
+            calls.clear()
+            ordinary = subprocess.run([cli, '--socket', address, 'claude-hook', 'post-tool-use',
+                '--workspace', WORKSPACE, '--tab', TAB], env=env, text=True, capture_output=True,
+                input=json.dumps({'session_id': 'synthetic-resolution', 'prompt_id': 'turn-a',
+                    'tool_use_id': 'tool-9', 'tool_name': 'Bash',
+                    'tool_response': {'body': 'PRIVATE-SENTINEL'}}), timeout=10)
+            assert ordinary.returncode == 0, ordinary.stderr
+            assert ordinary.stdout.strip() == 'OK', ordinary.stdout
+            ordinary_appends = [c for c in calls if isinstance(c, dict)]
+            assert len(ordinary_appends) == 1, calls
+            ordinary_draft = ordinary_appends[0]['params']['event']
+            assert ordinary_draft['kind'] == 'agent.state.changed'
+            assert ordinary_draft['signal'] == 'tool_activity'
+            assert ordinary_draft['native_event'] == 'PostToolUse'
+            assert 'PRIVATE-SENTINEL' not in json.dumps(ordinary_appends)
+            ordinary_legacy = [c for c in calls if isinstance(c, str)]
+            assert not any(c.startswith('clear_notifications ') for c in ordinary_legacy), ordinary_legacy
+            assert not any(c.startswith('set_status ') for c in ordinary_legacy), ordinary_legacy
+            assert not any(c.startswith('report_agent_activity ') for c in ordinary_legacy), ordinary_legacy
             print('PASS correlated ask/plan resolution and status writes after successful journal append')
         finally:
             server.shutdown(); server.server_close(); worker.join(timeout=3)

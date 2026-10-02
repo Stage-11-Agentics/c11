@@ -145,9 +145,14 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
     private func tenantSnapshot() throws -> [String: Data] {
         let enumerator = try XCTUnwrap(FileManager.default.enumerator(
             at: configRoot, includingPropertiesForKeys: [.isRegularFileKey]))
+        let rootComponents = configRoot.resolvingSymlinksInPath().pathComponents
         var result: [String: Data] = [:]
         for case let url as URL in enumerator {
-            let relative = String(url.path.dropFirst(configRoot.path.count + 1))
+            // Foundation may enumerate /var while the temporary root uses
+            // /private/var. Derive relative components from normalized URLs.
+            let components = url.resolvingSymlinksInPath().pathComponents
+            XCTAssertEqual(Array(components.prefix(rootComponents.count)), rootComponents)
+            let relative = components.dropFirst(rootComponents.count).joined(separator: "/")
             if relative == "skills/c11" || relative.hasPrefix("skills/c11/") { continue }
             if try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
                 result[relative] = try Data(contentsOf: url)

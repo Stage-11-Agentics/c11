@@ -167,8 +167,13 @@ def main() -> int:
                 )
                 print(f"PASS: {label} failure reports CLI error and survives closed error pipe")
 
-            for command in ("help", "--version"):
-                status = readers_closed([str(cli), "--socket", str(root / "absent.sock"), command], resolved_env)
+            # --help returns before socket connection; bare `help` requires a
+            # live socket and would fail on absent.sock even with open pipes.
+            for command in ("--help", "--version"):
+                args = [str(cli), "--socket", str(root / "absent.sock"), command]
+                ordinary = capture(args, resolved_env)
+                assert ordinary.returncode == 0 and ordinary.stdout, ordinary.stderr
+                status = readers_closed(args, resolved_env)
                 assert status == 0, f"c11 {command} with readers closed exited {status}"
             print("PASS: help/version keep safe broken-pipe output behavior")
         return 0

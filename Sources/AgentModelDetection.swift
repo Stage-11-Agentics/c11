@@ -456,7 +456,7 @@ struct AgentModelProbe: Sendable {
         let end = min(size, UInt64(Self.maxIdentityHeaderBytes))
         guard let data = readRange(handle, from: 0, to: end) else { return .unavailable }
         let (lines, _, _) = Self.completeLines(in: data, droppingLeadingPartial: false)
-        for line in lines where hasType(line, "session_meta") {
+        for line in lines where Self.hasType(line, "session_meta") {
             guard line.count <= Self.maxParseBytes,
                   let parsedID = Self.parseLine(kind: "codex", line: line).sessionID else {
                 return .unavailable

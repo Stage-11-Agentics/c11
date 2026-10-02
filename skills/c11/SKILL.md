@@ -163,7 +163,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 ### Two channels for agent communication
 
 - **`c11 send` is a direct poke.** It types into a target tab's PTY and submits one turn, and c11 records the full text as a `tab.input_sent` event. Use it for a nudge, short brief, or immediate instruction; it is not the durable completion or blocker record.
-- **`c11 mailbox send` is durable coordination.** Its envelope and body are recorded through `mailbox.accepted` / `mailbox.delivered` events, with delivery marked `via: push|drain|inbox`. Use it for requests, handoffs, completion reports, and recoverable blockers. A waiting agent gets a new turn; a busy agent gets mail at its turn boundary.
+- **`c11 mailbox send` is durable coordination.** Its envelope and body are recorded through `mailbox.accepted` / `mailbox.delivered` events, with delivery marked `via: push|drain|inbox`. Use it for requests, handoffs, completion reports, and recoverable blockers. A waiting agent that opted into push (`mailbox.delivery=stdin`) gets a new turn; a busy agent gets mail at its turn boundary.
 - **Opt into push only for an agent-owned interactive tab.** Set `mailbox.delivery` to `stdin` during orientation. c11 checks foreground ownership and raw-mode input before typing; plain shells, one-shot commands, and other programs are left with their inbox mail. Claude and Codex drain at turn boundaries through their wrappers/hooks; Grok relies on push. `c11 mailbox recv --drain` is the explicit floor.
 - **`c11 messages view` is the traffic view.** It opens the live recorded timeline in a c11 browser tab without taking focus; `c11 mailbox view` is the mailbox spelling of the same view.
 

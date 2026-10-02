@@ -17,12 +17,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import time
-from typing import Any, Callable, Iterable
-import uuid
+from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).parent))
 from cmux import cmux, cmuxError  # noqa: E402
@@ -645,7 +643,7 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
 
         def a6() -> tuple[list[str], list[str]]:
             before = workspace_snapshot(client, state["window_id"])
-            duplicate_message = expect_error(client, "workspace.group.add", {
+            expect_error(client, "workspace.group.add", {
                 "window_id": state["window_id"], "group_id": group_id(state, "collapsed_flag"),
                 "workspace_ids": [workspace_id(state, "g60-w09")],
             }, "already_grouped")
@@ -653,7 +651,7 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             try:
                 foreign_rows = rows(client, foreign_window)
                 require(foreign_rows, "second-window cancellation oracle has no workspace")
-                wrong_message = expect_error(client, "workspace.group.add", {
+                expect_error(client, "workspace.group.add", {
                     "window_id": state["window_id"], "group_id": group_id(state, "collapsed_flag"),
                     "workspace_ids": [foreign_rows[0]["id"]],
                 }, "wrong_window")

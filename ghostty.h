@@ -395,6 +395,35 @@ typedef enum {
   GHOSTTY_TEXT_READ_NO_SELECTION = 4,
 } ghostty_text_read_status_e;
 
+// Bounded active-screen prompt-region capture. Callers provide storage for at
+// most these limits; native traversal stops at the same limits and marks a
+// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint,
+// and rows preserve hard/soft-wrap boundaries. No scrollback or colors.
+#define GHOSTTY_PROMPT_REGION_MAX_ROWS 16
+#define GHOSTTY_PROMPT_REGION_MAX_CELLS 4096
+#define GHOSTTY_PROMPT_REGION_MAX_TEXT_BYTES 16384
+typedef struct {
+  uint32_t cursor_x;
+  uint32_t cursor_y;
+  uint32_t row_count;
+  uint32_t cell_count;
+  uint32_t text_len;
+  bool cursor_pending_wrap;
+  bool complete;
+} ghostty_prompt_region_s;
+typedef struct {
+  uint32_t screen_y;
+  uint32_t cell_start;
+  uint32_t cell_count;
+  bool soft_wrap;
+  bool wrap_continuation;
+} ghostty_prompt_region_row_s;
+typedef struct {
+  uint32_t text_offset;
+  uint32_t text_len;
+  bool faint;
+} ghostty_prompt_region_cell_s;
+
 typedef enum {
   GHOSTTY_POINT_ACTIVE,
   GHOSTTY_POINT_VIEWPORT,
@@ -1149,6 +1178,19 @@ ghostty_text_read_status_e ghostty_surface_try_read_text(ghostty_surface_t,
 // lock; BUSY does not inspect the active selection.
 ghostty_text_read_status_e ghostty_surface_try_read_selection(ghostty_surface_t,
                                                             ghostty_text_s*);
+// Call on the app thread with a live surface and buffers holding the advertised
+// maximums above. The active-screen lock is attempted once; BUSY returns without
+// reading. The function traverses at most 16 rows, 4096 cells and 16 KiB of
+// UTF-8 text while locked. Result/counters are zeroed on entry. OK returns a
+// snapshot; `complete == false` means the bounded copy clipped data and must not
+// be interpreted as an empty prompt. Result contains only data copied into the
+// caller-owned buffers; it allocates no text and has no matching free function.
+ghostty_text_read_status_e ghostty_surface_try_read_prompt_region(
+    ghostty_surface_t,
+    ghostty_prompt_region_s*,
+    ghostty_prompt_region_row_s*, uintptr_t,
+    ghostty_prompt_region_cell_s*, uintptr_t,
+    char*, uintptr_t);
 void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

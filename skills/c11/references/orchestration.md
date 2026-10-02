@@ -44,6 +44,8 @@ Standard orchestration layout for a single project:
 - **Right top area**: task dashboard (browser tab — GitHub issues, a Kanban board, Lattice).
 - **Right bottom area**: sub-agent tabs (terminal tabs, one per task).
 
+When the layout calls for a role agent where you already sit, launch it in a new tab beside you; don't turn your own tab into that role. Your tab keeps the conversation that built the layout, and the role agent starts cold with its own prompt.
+
 Read `c11 tree` before reshaping — splits reshape the screen and disorient every agent and operator looking at it. For multiple related outputs, prefer tabs (`c11 new-tab`) over splits. Propose layouts; do not impose them.
 
 ## Tab naming (mandatory)

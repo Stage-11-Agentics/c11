@@ -214,6 +214,117 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["scope"] as? String, "surface")
     }
 
+    func testTabInputPayloadRecordsNullCallerAndKeyAttribution() {
+        let log = EventLog(url: logURL(), instance: "input-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "input-inst")
+        let workspace = UUID()
+        let textSurface = UUID()
+        let keySurface = UUID()
+        let caller = UUID()
+
+        EventEmitter.shared.emitTabInputSent(
+            workspace: workspace,
+            surface: textSurface,
+            callerTabId: nil,
+            callerTitle: nil,
+            targetTitle: "outside target",
+            kind: "text",
+            text: "hello",
+            submitted: true
+        )
+        EventEmitter.shared.emitTabInputSent(
+            workspace: workspace,
+            surface: keySurface,
+            callerTabId: caller,
+            callerTitle: "caller",
+            targetTitle: "key target",
+            kind: "key",
+            text: "enter",
+            submitted: true
+        )
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.map { $0["type"] as? String }, ["tab.input_sent", "tab.input_sent"])
+
+        let textPayload = events[0]["payload"] as? [String: Any]
+        XCTAssertTrue(textPayload?["caller_tab_id"] is NSNull)
+        XCTAssertTrue(textPayload?["caller_title"] is NSNull)
+        XCTAssertEqual(textPayload?["target_title"] as? String, "outside target")
+        XCTAssertEqual(textPayload?["kind"] as? String, "text")
+        XCTAssertEqual(textPayload?["text"] as? String, "hello")
+        XCTAssertEqual(textPayload?["bytes"] as? Int, 5)
+        XCTAssertEqual(textPayload?["submitted"] as? Bool, true)
+
+        let keyPayload = events[1]["payload"] as? [String: Any]
+        XCTAssertEqual(keyPayload?["caller_tab_id"] as? String, caller.uuidString)
+        XCTAssertEqual(keyPayload?["caller_title"] as? String, "caller")
+        XCTAssertEqual(keyPayload?["kind"] as? String, "key")
+        XCTAssertEqual(keyPayload?["text"] as? String, "enter")
+    }
+
+    func testTabInputPayloadTruncatesBodyAtUTF8Boundary() {
+        let text = "a" + String(repeating: "🙂", count: 100_000)
+        let payload = EventEmitter.tabInputPayload(
+            callerTabId: nil,
+            callerTitle: nil,
+            targetTitle: "target",
+            kind: "text",
+            text: text,
+            submitted: false
+        )
+
+        guard let recorded = payload["text"] as? String else {
+            XCTFail("payload text must be a string")
+            return
+        }
+        XCTAssertEqual(payload["bytes"] as? Int, text.utf8.count)
+        XCTAssertEqual(payload["truncated"] as? Bool, true)
+        XCTAssertLessThanOrEqual(recorded.utf8.count, EventEmitter.maxRecordedTextBytes)
+        XCTAssertTrue(text.hasPrefix(recorded))
+        XCTAssertFalse(recorded.contains("\u{FFFD}"), "truncation must not split a UTF-8 scalar")
+    }
+
+    func testMailboxEventsCarryMessageFieldsAndDeliveryVia() {
+        let log = EventLog(url: logURL(), instance: "mailbox-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "mailbox-inst")
+        let workspace = UUID()
+        let surface = UUID()
+
+        EventEmitter.shared.emitMailboxAccepted(
+            workspace: workspace,
+            id: "01K3A2B7X8PQRTVWYZ0123456J",
+            from: "builder",
+            to: "watcher",
+            body: "deploy green",
+            bodyRef: "/tmp/deploy.txt",
+            topic: "ci.status",
+            replyTo: "builder",
+            inReplyTo: "01K3A2B7X8PQRTVWYZ0123456K",
+            urgent: true
+        )
+        EventEmitter.shared.emitMailboxDelivered(
+            workspace: workspace,
+            id: "01K3A2B7X8PQRTVWYZ0123456J",
+            recipient: "watcher",
+            surface: surface,
+            via: "inbox"
+        )
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        let accepted = events[0]["payload"] as? [String: Any]
+        XCTAssertEqual(accepted?["body"] as? String, "deploy green")
+        XCTAssertEqual(accepted?["body_ref"] as? String, "/tmp/deploy.txt")
+        XCTAssertEqual(accepted?["topic"] as? String, "ci.status")
+        XCTAssertEqual(accepted?["reply_to"] as? String, "builder")
+        XCTAssertEqual(accepted?["in_reply_to"] as? String, "01K3A2B7X8PQRTVWYZ0123456K")
+        XCTAssertEqual(accepted?["urgent"] as? Bool, true)
+
+        let delivered = events[1]["payload"] as? [String: Any]
+        XCTAssertEqual(delivered?["via"] as? String, "inbox")
+    }
+
     func testEmitterRecordsResumeModeAndTypedDecisions() {
         let log = EventLog(url: logURL(), instance: "resume-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "resume-inst")

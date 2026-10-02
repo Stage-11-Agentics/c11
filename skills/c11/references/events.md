@@ -41,7 +41,7 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 
 ## v1 taxonomy
 
-The sixteen taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
+The seventeen taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
@@ -56,8 +56,9 @@ The sixteen taxonomy types below are the closed v1 enum. The envelope fields `wo
 | `flag.lowered` | workspace + surface | `{by}` | Flag cleared. `by` ∈ `operator`\|`agent`; operator dismissal without an answer means *seen and deferred*. |
 | `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this tab. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
 | `flag.unsuppressed` | workspace + surface | `{by}` | Suppression lifted; routine attention signals resume. `by` ∈ `operator`\|`agent`. |
-| `mailbox.accepted` | workspace | `{id, from, to?, topic?}` | A mailbox message was accepted onto the bus. |
-| `mailbox.delivered` | workspace + surface? | `{id, recipient}` | A mailbox message reached a recipient. |
+| `mailbox.accepted` | workspace | `{id, from, body, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?}` | A mailbox message was accepted onto the bus. `body` is recorded in full up to 256 KiB; larger values carry the first UTF-8-safe 256 KiB and `truncated: true`. |
+| `tab.input_sent` | workspace + surface | `{caller_tab_id, caller_title, target_title, kind, text, bytes, submitted, truncated?}` | A socket send reached the target PTY. `kind` is `text` or `key`; `text` is full up to 256 KiB, then UTF-8-safe truncated with `truncated: true`. Caller refs/titles are null for sends outside c11. |
+| `mailbox.delivered` | workspace + surface? | `{id, recipient, via}` | A mailbox message reached a recipient. `via` is `push`, `drain`, or `inbox`. |
 | `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
 | `conversation.resume.decision` | workspace + surface | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
 | `hang.precursor` | — | `{cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint}` | The main-thread watchdog saw `count` stalls sharing one fingerprint inside `window_ms` — the leading edge of a wedge, emitted before the long stall lands. `durations_ms` are the counted episodes oldest-first; `span_ms` is the wall time the run covered. At most one per fingerprint per window. `runloop-idle` never produces one. |

@@ -55,6 +55,7 @@ struct EventEnvelope {
         case flagSuppressed = "flag.suppressed"
         case flagUnsuppressed = "flag.unsuppressed"
         case mailboxAccepted = "mailbox.accepted"
+        case tabInputSent = "tab.input_sent"
         case mailboxDelivered = "mailbox.delivered"
         case conversationResumeMode = "conversation.resume.mode"
         case conversationResumeDecision = "conversation.resume.decision"

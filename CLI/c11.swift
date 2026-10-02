@@ -1798,6 +1798,20 @@ struct CMUXCLI {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
+        var rpcCall: (method: String, params: [String: Any])?
+        if command == "rpc" {
+            if commandArgs == ["--help"] || commandArgs == ["-h"] {
+                _ = dispatchSubcommandHelp(command: command, commandArgs: commandArgs)
+                return
+            }
+            do {
+                rpcCall = try CapabilityFeatures.current.dispatch(.rpc) {
+                    try RpcCommand.parse(commandArgs)
+                }
+            } catch let error as RpcCommand.ValidationError {
+                throw CLIError(message: error.description)
+            }
+        }
         // Remove the literal command value before inspecting create flags. A
         // body such as "--layout" is input, not another CLI option.
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
@@ -1849,7 +1863,8 @@ struct CMUXCLI {
 
         // Check for --help/-h on subcommands before connecting to the socket,
         // so help text is available even when cmux is not running.
-        if command != "__tmux-compat",
+        if command != "rpc",
+           command != "__tmux-compat",
            command != "claude-teams",
            (createArgs.contains("--help") || createArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
@@ -2062,6 +2077,13 @@ struct CMUXCLI {
             let server = response["server"] as? [String: Any]
             response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
+
+        case "rpc":
+            guard let rpcCall else { preconditionFailure("rpc must be parsed before connect") }
+            let response = try CapabilityFeatures.current.dispatch(.rpc) {
+                try client.sendV2(method: rpcCall.method, params: rpcCall.params)
+            }
+            print(jsonString(response))
 
         case "brand":
             let response = try client.sendV2(method: "system.brand")
@@ -8949,6 +8971,14 @@ struct CMUXCLI {
 
             Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
             sha_match is null when either build has no commit stamp.
+            """
+        case "rpc":
+            return """
+            Usage: c11 rpc <method> [json] [--json]
+
+            Call one local socket method and print its result as JSON.
+            Params must be a JSON object. Prefer a friendly command when available.
+            Remote commands over c11 ssh remain unavailable.
             """
         case "guide":
             return """
@@ -18588,6 +18618,7 @@ struct CMUXCLI {
           version
           guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
+          rpc <method> [json] [--json]
           brand [--json]
           history [list] [--json] [--limit <1...200>]
           history back [--json]

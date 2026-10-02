@@ -136,6 +136,13 @@ def _assert_remote_commands_unavailable(host: str, host_port: int, key_path: Pat
             f"{command_name} should explain unavailable commands: {result.stderr!r}",
         )
 
+    result = _ssh_run(host, host_port, key_path, f'"{wrapper_dir}/c11" rpc system.ping', check=False)
+    _must(result.returncode != 0, "remote rpc unexpectedly succeeded")
+    _must(
+        "c11 commands are not available over c11 ssh in this version" in result.stderr,
+        "remote rpc should explain unavailable commands",
+    )
+
 
 def main() -> int:
     if not _docker_available():

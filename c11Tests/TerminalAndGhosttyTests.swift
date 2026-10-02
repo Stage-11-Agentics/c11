@@ -1329,23 +1329,233 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
     }
 
-    func testSearchOverlayMountsAndUnmountsWithSearchState() {
+    func testRepeatedVisibilityRefreshPreservesNativeFieldEditorAndExplicitTerminalFocus() throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let originalManager = appDelegate.workspaceManager
+        let originalSidebarState = appDelegate.sidebarState
+        let originalSidebarSelectionState = appDelegate.sidebarSelectionState
+        let originalControllerManager = TerminalController.shared.workspaceManager
+        let manager = WorkspaceManager()
+        appDelegate.workspaceManager = manager
+        defer {
+            appDelegate.workspaceManager = originalManager
+            appDelegate.sidebarState = originalSidebarState
+            appDelegate.sidebarSelectionState = originalSidebarSelectionState
+            TerminalController.shared.workspaceManager = originalControllerManager
+        }
+
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        let hostedView = terminal.hostedView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let windowId = UUID()
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        // The hosted app re-synchronizes active pointers while the run loop
+        // drains. Register this manager's actual window, as production does,
+        // so automatic recovery resolves this workspace even after that sync.
+        appDelegate.registerMainWindow(
+            window, windowId: windowId, workspaceManager: manager,
+            sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            hostedView.setActive(false)
+            hostedView.removeFromSuperview()
+            appDelegate.closeMainWindowWithoutPrompt(window)
+        }
+        let contentView = try XCTUnwrap(window.contentView)
+        hostedView.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
+        contentView.addSubview(hostedView)
+        let field = NSTextField(frame: NSRect(x: 20, y: 235, width: 260, height: 24))
+        field.stringValue = "Original group"
+        contentView.addSubview(field)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        hostedView.setActive(true)
+        hostedView.setVisibleInUI(true)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        // Prove this fixture reaches automatic focus recovery, so the assertions
+        // below cannot pass because the surface is inactive or unregistered.
+        XCTAssertTrue(window.isKeyWindow)
+        XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager)
+        XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
+        XCTAssertTrue(hostedView.debugPortalActive)
+        XCTAssertTrue(hostedView.debugPortalVisibleInUI)
+        XCTAssertTrue(window.makeFirstResponder(nil))
+        hostedView.setVisibleInUI(true)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder())
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(firstResponderOwnsTextField(editor, textField: field))
+
+        for _ in 0..<3 {
+            hostedView.setVisibleInUI(true)
+            // Deferred workspace/layout reconciliation uses ensureFocus directly,
+            // independently of the visibility setter's automatic apply callback.
+            hostedView.ensureFocus(for: workspace.id, surfaceId: terminal.id)
+            XCTAssertTrue(window.firstResponder === editor,
+                          "Focus reconciliation must preserve the active native editor")
+            RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+            XCTAssertTrue(window.firstResponder === editor,
+                          "Unchanged visibility must not reclaim focus from a native group editor")
+        }
+        editor.selectAll(nil)
+        editor.insertText("Services", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "Services")
+
+        // A deliberate terminal focus request must still end editing and focus
+        // the terminal; the guard applies only to background recovery.
+        hostedView.moveFocus()
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder())
+        XCTAssertEqual(field.stringValue, "Services")
+
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertTrue(firstResponderOwnsTextField(window.firstResponder, textField: field))
+        XCTAssertTrue(hostedView.restorePanelFocusIntent(.surface))
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder(),
+                      "An explicit restored terminal intent must override native editor focus")
+    }
+
+    func testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection() throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let originalManager = appDelegate.workspaceManager
+        let originalSidebarState = appDelegate.sidebarState
+        let originalSidebarSelectionState = appDelegate.sidebarSelectionState
+        let originalControllerManager = TerminalController.shared.workspaceManager
+        defer {
+            appDelegate.workspaceManager = originalManager
+            appDelegate.sidebarState = originalSidebarState
+            appDelegate.sidebarSelectionState = originalSidebarSelectionState
+            TerminalController.shared.workspaceManager = originalControllerManager
+        }
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.selectedWorkspace)
+        let second = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let firstTerminal = try XCTUnwrap(first.focusedTerminalTab)
+        let secondTerminal = try XCTUnwrap(second.focusedTerminalTab)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 280),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let windowId = UUID()
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        appDelegate.registerMainWindow(
+            window, windowId: windowId, workspaceManager: manager,
+            sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState()
+        )
+        defer {
+            for terminal in [firstTerminal, secondTerminal] {
+                terminal.hostedView.setActive(false)
+                terminal.hostedView.removeFromSuperview()
+            }
+            appDelegate.closeMainWindowWithoutPrompt(window)
+        }
+        let content = try XCTUnwrap(window.contentView)
+        for (index, terminal) in [firstTerminal, secondTerminal].enumerated() {
+            terminal.hostedView.frame = NSRect(x: CGFloat(index) * 200, y: 0, width: 200, height: 220)
+            content.addSubview(terminal.hostedView)
+            terminal.hostedView.setVisibleInUI(true)
+            terminal.hostedView.setActive(index == 0)
+        }
+        let field = NSTextField(frame: NSRect(x: 20, y: 235, width: 260, height: 24))
+        field.stringValue = "Group name"
+        content.addSubview(field)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        content.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(manager.selectedWorkspaceId, first.id)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let oldEditor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        XCTAssertTrue(oldEditor.isFieldEditor)
+
+        // Use the actual sidebar/socket selection entry point, with an already
+        // focused destination panel; no direct moveFocus can mask a regression.
+        manager.selectWorkspace(second)
+        XCTAssertFalse(window.firstResponder === oldEditor,
+                       "Explicit selection must release the editor present at the boundary")
+        let deadline = Date().addingTimeInterval(1)
+        while !secondTerminal.hostedView.isSurfaceViewFirstResponder(), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
+        XCTAssertTrue(secondTerminal.hostedView.isSurfaceViewFirstResponder(),
+                      "Selecting another workspace must deliver keyboard focus to its terminal")
+
+        // A later editor wins over the selection's queued focus restoration.
+        manager.selectWorkspace(first)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let newerEditor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        newerEditor.selectAll(nil)
+        newerEditor.insertText("Newer edit", replacementRange: newerEditor.selectedRange())
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        firstTerminal.hostedView.ensureFocus(for: first.id, surfaceId: firstTerminal.id)
+        XCTAssertEqual(manager.selectedWorkspaceId, first.id)
+        XCTAssertTrue(window.firstResponder === newerEditor,
+                      "Queued selection recovery must respect an editor opened after the request")
+        XCTAssertEqual(newerEditor.string, "Newer edit")
+
+        // Explicit selection may target an inactive registered window. End only
+        // its old editor; the independently focused window must remain untouched.
+        let decoy = NSWindow(
+            contentRect: NSRect(x: 450, y: 0, width: 300, height: 180),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        decoy.isReleasedWhenClosed = false
+        defer { decoy.close() }
+        let decoyField = NSTextField(frame: NSRect(x: 20, y: 30, width: 200, height: 24))
+        try XCTUnwrap(decoy.contentView).addSubview(decoyField)
+        decoy.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(decoy.makeFirstResponder(decoyField))
+        let decoyEditor = try XCTUnwrap(decoy.firstResponder)
+        XCTAssertTrue(NSApp.keyWindow === decoy)
+        XCTAssertFalse(window.isKeyWindow)
+        XCTAssertTrue(window.firstResponder === newerEditor)
+
+        manager.selectWorkspace(second)
+        XCTAssertFalse(window.firstResponder === newerEditor,
+                       "Explicit selection must release the target's old editor even while it is not key")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(NSApp.keyWindow === decoy)
+        XCTAssertTrue(decoy.firstResponder === decoyEditor)
+    }
+
+    func testSearchOverlayMountsAndUnmountsWithSearchState() async {
         let surface = TerminalSurface(
             workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
         )
+        defer { withExtendedLifetime(surface) {} }
         let hostedView = surface.hostedView
         XCTAssertFalse(hostedView.debugHasSearchOverlay())
 
         let searchState = TerminalSurface.SearchState(needle: "example")
         hostedView.setSearchOverlay(searchState: searchState)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Mount/removal are enqueued on main. Await that queue boundary rather
+        // than assuming a nested 50 ms run loop services its pending work.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         XCTAssertTrue(hostedView.debugHasSearchOverlay())
 
         hostedView.setSearchOverlay(searchState: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Mount/removal are enqueued on main. Await that queue boundary rather
+        // than assuming a nested 50 ms run loop services its pending work.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         XCTAssertFalse(hostedView.debugHasSearchOverlay())
     }
 

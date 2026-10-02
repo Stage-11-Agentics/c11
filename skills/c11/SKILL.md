@@ -162,6 +162,22 @@ flat `windows[].workspaces`, adds `workspace_groups`, and adds workspace `group_
 Use `c11 --id-format both … --json` when you need UUIDs and refs together.
 Full verbs, errors and ordering: [API reference](references/api.md#workspace-groups-and-batch-order).
 
+In the sidebar, the chevron hides/shows member rows without changing the active
+terminal. Click the group name to focus a member. The header stays highlighted
+when its active member is hidden. Its fixed slots show members, flagged tabs,
+unsuppressed waiting tabs, and unread notifications separately, including hidden
+members. Any flag makes the group signal violet, even on a suppressed or plain
+terminal; unread alone does not add a waiting tab. Counts above 99 show `99+`,
+with exact counts in accessibility labels and tooltips.
+
+Use the header menu for Rename, Color, Icon, Pin/Unpin, Ungroup or Delete Group;
+name/icon popovers accept Escape to cancel. New Group is in the sidebar menu.
+Workspace menus offer Move to Group and Ungrouped. Drag onto a header to join,
+onto member edges to position, or onto the Ungrouped lane to leave. Folder drags
+reorder folders within their pin segment. Cancelled/invalid drops do not commit.
+These controls organize existing work; deleting a group never closes its members.
+
+
 ## SSH workspaces
 
 `c11 ssh <host>` opens a remote shell in a workspace. Remote-to-local c11 commands
@@ -194,7 +210,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.
 - **`c11 rpc <method> [json]` is a local raw socket call** for methods without a friendly command. Prefer the command when one exists; remote calls over `c11 ssh` remain unavailable.
-- **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
+- **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window. Global `c11 --window <id>` scopes the command without raising that window; use `c11 focus-window --window <id>` to raise it explicitly. A tab or workspace outside the scoped window is an error.
 - **Send modes and status:** default `send` decodes literal `\n`, `\r`, `\t`; `send --raw` and `paste` preserve escapes and newline content. `send -` reads stdin; `paste` reads stdin when text is omitted. For raw/paste, `--no-submit` suppresses c11's extra Return; default send still treats a trailing newline as submit. `delivered` means PTY input, `queued` means waiting for attach, and `submitted` means Return scheduled, never agent acknowledgment. [Delivery details](references/api.md#reading--sending).
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
 

@@ -35,7 +35,7 @@ struct CapabilityFeatures {
         Entry(id: .initialInput, version: 1, enabled: true),
         Entry(id: .rawSend, version: 1, enabled: true),
         Entry(id: .terminalSelection, version: 1, enabled: true),
-        Entry(id: .windowRouteWithoutFocus, version: 1, enabled: false),
+        Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
         Entry(id: .rpc, version: 1, enabled: true),
     ])
 

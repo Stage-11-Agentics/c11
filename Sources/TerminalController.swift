@@ -7797,11 +7797,36 @@ class TerminalController {
 	        return result
 	    }
 	
+    /// Legacy carriers name a workspace directly, without switching the
+    /// controller's active manager or the owning window's selection.
+    private func legacyWorkspaceTarget(workspaceId: UUID?) -> (workspaceManager: WorkspaceManager, workspace: Workspace)? {
+        let manager: WorkspaceManager?
+        if let workspaceId {
+            manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)
+        } else {
+            manager = workspaceManager
+        }
+        guard let manager,
+              let targetId = workspaceId ?? manager.selectedWorkspaceId,
+              let workspace = manager.workspaces.first(where: { $0.id == targetId }) else {
+            return nil
+        }
+        return (manager, workspace)
+    }
+
 	    func dragSurfaceToSplit(_ args: String) -> String {
-	        guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
-	
-	        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
-	        let parts = trimmed.split(separator: " ").map(String.init)
+            let parsed = parseOptions(args)
+            let scopedWorkspaceId: UUID?
+            if let raw = parsed.options["workspace"] {
+                guard let id = UUID(uuidString: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                    return String(localized: "socket.workspace.invalid", defaultValue: "ERROR: Invalid workspace id.")
+                }
+                scopedWorkspaceId = id
+            } else {
+                scopedWorkspaceId = nil
+                guard workspaceManager != nil else { return "ERROR: TabManager not available" }
+            }
+	        let parts = parsed.positional
 	        guard parts.count >= 2 else { return "ERROR: Usage: drag_surface_to_split <id|idx> <left|right|up|down>" }
 	
 	        let surfaceArg = parts[0]
@@ -7815,11 +7840,13 @@ class TerminalController {
 	
 	        var result = "ERROR: Failed to move surface"
 	        guard v2MainSyncWithDeadline({
-	            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-	                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
-	                result = "ERROR: No tab selected"
+	            guard let target = self.legacyWorkspaceTarget(workspaceId: scopedWorkspaceId) else {
+                    result = scopedWorkspaceId != nil
+                        ? String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                        : "ERROR: No tab selected"
 	                return
 	            }
+                let workspace = target.workspace
 	
 	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, workspace: workspace),
 	                  let bonsplitTabId = workspace.bonsplitTabIdFromTabId(panelId) else {
@@ -9453,15 +9480,29 @@ class TerminalController {
         return soft ? "OK Reloaded config (soft)" : "OK Reloaded config"
     }
 
-    func refreshSurfaces() -> String {
-        guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
+    func refreshSurfaces(_ args: String = "") -> String {
+        let parsed = parseOptions(args)
+        let scopedWorkspaceId: UUID?
+        if let raw = parsed.options["workspace"] {
+            guard let id = UUID(uuidString: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                return String(localized: "socket.workspace.invalid", defaultValue: "ERROR: Invalid workspace id.")
+            }
+            scopedWorkspaceId = id
+        } else {
+            scopedWorkspaceId = nil
+            guard workspaceManager != nil else { return "ERROR: TabManager not available" }
+        }
 
         var refreshedCount = 0
+        var scopeError: String?
         v2MainSync {
-            guard let workspaceId = workspaceManager.selectedWorkspaceId,
-                  let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+            guard let target = self.legacyWorkspaceTarget(workspaceId: scopedWorkspaceId) else {
+                if scopedWorkspaceId != nil {
+                    scopeError = String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                }
                 return
             }
+            let workspace = target.workspace
 
             // Force-refresh all terminal panels in current tab
             // (resets cached metrics so the Metal layer drawable resizes correctly)
@@ -9472,6 +9513,7 @@ class TerminalController {
                 }
             }
         }
+        if let scopeError { return scopeError }
         return "OK Refreshed \(refreshedCount) surfaces"
     }
 
@@ -9680,6 +9722,7 @@ class TerminalController {
         var cwdArg: String? = nil
         var promptArg: String? = nil
         var promptFileArg: String? = nil
+        var scopedWorkspaceId: UUID? = nil
         var idx = 0
         while idx < tokens.count {
             let t = tokens[idx]
@@ -9698,6 +9741,12 @@ class TerminalController {
                 promptArg = tokens[idx + 1]; idx += 2
             } else if t == "--prompt-file", idx + 1 < tokens.count {
                 promptFileArg = tokens[idx + 1]; idx += 2
+            } else if t == "--workspace" {
+                guard idx + 1 < tokens.count,
+                      let id = UUID(uuidString: tokens[idx + 1].trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                    return String(localized: "socket.workspace.invalid", defaultValue: "ERROR: Invalid workspace id.")
+                }
+                scopedWorkspaceId = id; idx += 2
             } else {
                 return "ERROR: unknown flag '\(t)'"
             }
@@ -9708,6 +9757,10 @@ class TerminalController {
         }
         if promptArg != nil && promptFileArg != nil {
             return "ERROR: --prompt and --prompt-file are mutually exclusive"
+        }
+        if let scopedWorkspaceId,
+           !legacyAgentLaunchMainSync({ self.legacyWorkspaceTarget(workspaceId: scopedWorkspaceId) != nil }) {
+            return String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
         }
 
         // Resolve the prompt content (file wins on --prompt-file path).
@@ -9732,7 +9785,8 @@ class TerminalController {
             // not diverge. Never substitute the GUI app process's cwd.
             let targetContext = existingSurfaceLaunchCwd(
                 surfaceArg: inSurfaceArg,
-                explicitCwd: cwdArg
+                explicitCwd: cwdArg,
+                workspaceId: scopedWorkspaceId
             )
             if let error = targetContext.error { return error }
 
@@ -9751,7 +9805,8 @@ class TerminalController {
                 agent: resolved.agent,
                 bareCommand: resolved.launch.bareCommand,
                 cwd: cwdArg,
-                prompt: promptText
+                prompt: promptText,
+                workspaceId: scopedWorkspaceId
             )
             // C11-178 rail-1: record only a successful launch. `--in-surface` is
             // CLI-originated → `.launchAgent`. Re-derive cfg the same way sites 1
@@ -9766,7 +9821,16 @@ class TerminalController {
             // A-button mimic: create a new surface in a pane. Prompt args are
             // ignored on this path (the operator's configured initial prompt
             // still flows via launchAgentSurface's file delivery).
-            guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else { return "ERROR: TabManager not available" }
+            guard let workspaceManager = legacyAgentLaunchMainSync({
+                if let scopedWorkspaceId {
+                    return self.legacyWorkspaceTarget(workspaceId: scopedWorkspaceId)?.workspaceManager
+                }
+                return self.workspaceManager
+            }) else {
+                return scopedWorkspaceId != nil
+                    ? String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                    : "ERROR: TabManager not available"
+            }
             // An explicit --cwd wins over the workspace root, validated like
             // every other socket cwd so a bad path errors instead of landing
             // somewhere else.
@@ -9781,8 +9845,11 @@ class TerminalController {
             }
             var result = "ERROR: Failed to launch agent"
             legacyAgentLaunchMainSync {
-                guard let workspaceId = workspaceManager.selectedWorkspaceId,
+                guard let workspaceId = scopedWorkspaceId ?? workspaceManager.selectedWorkspaceId,
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
+                    if scopedWorkspaceId != nil {
+                        result = String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                    }
                     return
                 }
                 let paneIds = workspace.bonsplitController.allPaneIds
@@ -9823,19 +9890,28 @@ class TerminalController {
     /// outside the main-thread snapshot.
     private nonisolated func existingSurfaceLaunchCwd(
         surfaceArg: String,
-        explicitCwd: String?
+        explicitCwd: String?,
+        workspaceId: UUID? = nil
     ) -> (cwd: String?, error: String?) {
         guard let surfaceId = UUID(uuidString: surfaceArg) else {
             return (nil, "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)")
         }
-        guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else {
-            return (nil, "ERROR: TabManager not available")
+        guard let workspaceManager = legacyAgentLaunchMainSync({
+            if let workspaceId {
+                return self.legacyWorkspaceTarget(workspaceId: workspaceId)?.workspaceManager
+            }
+            return self.workspaceManager
+        }) else {
+            return (nil, workspaceId != nil
+                ? String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                : "ERROR: TabManager not available")
         }
 
         var foundSurface = false
         var targetSurfaceCwd: String?
         legacyAgentLaunchMainSync {
-            for workspace in workspaceManager.workspaces where workspace.terminalPanel(for: surfaceId) != nil {
+            for workspace in workspaceManager.workspaces
+                where (workspaceId == nil || workspace.id == workspaceId) && workspace.terminalPanel(for: surfaceId) != nil {
                 foundSurface = true
                 targetSurfaceCwd = workspace.inheritedCwdForAgentLaunch(callerTabId: surfaceId)
                 break
@@ -9870,12 +9946,22 @@ class TerminalController {
         agent: AgentType,
         bareCommand: String,
         cwd: String?,
-        prompt: String?
+        prompt: String?,
+        workspaceId: UUID? = nil
     ) -> String {
         guard let surfaceId = UUID(uuidString: surfaceArg) else {
             return "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)"
         }
-        guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else { return "ERROR: TabManager not available" }
+        guard let workspaceManager = legacyAgentLaunchMainSync({
+            if let workspaceId {
+                return self.legacyWorkspaceTarget(workspaceId: workspaceId)?.workspaceManager
+            }
+            return self.workspaceManager
+        }) else {
+            return workspaceId != nil
+                ? String(localized: "socket.workspace.not_found", defaultValue: "ERROR: Workspace not found.")
+                : "ERROR: TabManager not available"
+        }
 
         let stagedPrompt: LaunchPromptStore.StagedPrompt?
         do {
@@ -9901,7 +9987,7 @@ class TerminalController {
             self.v2RefreshKnownRefs()
 
             var targetTab: TerminalTab?
-            for workspace in workspaceManager.workspaces {
+            for workspace in workspaceManager.workspaces where workspaceId == nil || workspace.id == workspaceId {
                 if let panel = workspace.terminalPanel(for: surfaceId) {
                     targetTab = panel
                     break
@@ -9933,7 +10019,9 @@ class TerminalController {
             // surface is not yet attached to a window.
             panel.submitLaunchPlan(composed) { [weak workspaceManager, weak panel] in
                 guard let workspaceManager, let panel else { return false }
-                return workspaceManager.workspaces.contains { $0.terminalPanel(for: panel.id) === panel }
+                return workspaceManager.workspaces.contains {
+                    (workspaceId == nil || $0.id == workspaceId) && $0.terminalPanel(for: panel.id) === panel
+                }
             }
             result = "OK"
         }

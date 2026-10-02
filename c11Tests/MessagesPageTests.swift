@@ -225,6 +225,52 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertTrue(html.contains("sessionStorage"))
     }
 
+    func testRendererBoundsWorstCaseEscapedBodies() throws {
+        let bodySize = 256 * 1024
+        let events = (0..<63).map { index in
+            let body: String
+            switch index % 3 {
+            case 0:
+                body = String(repeating: "<", count: bodySize)
+            case 1:
+                body = String(repeating: "&", count: bodySize)
+            default:
+                body = String(repeating: "</script>", count: bodySize / 8)
+            }
+            return MessagesPageEvent(object: [
+                "instance": "worst-case-escaped-body",
+                "payload": [
+                    "bytes": body.utf8.count,
+                    "caller_tab_id": NSNull(),
+                    "caller_title": NSNull(),
+                    "kind": "text",
+                    "submitted": true,
+                    "target_title": "target",
+                    "text": body,
+                ],
+                "seq": index + 1,
+                "surface": "surface",
+                "ts": "2026-10-02T00:00:00.000Z",
+                "type": "tab.input_sent",
+                "v": 1,
+                "workspace": "workspace",
+            ])!
+        }
+
+        let snapshot = MessagesPageBuilder.build(events: events, generatedAt: "now")
+        let html = MessagesPageRenderer.render(snapshot: snapshot)
+
+        XCTAssertEqual(snapshot.totalObserved, 63)
+        XCTAssertLessThan(snapshot.messages.count, snapshot.totalObserved)
+        XCTAssertTrue(snapshot.wasBounded)
+        XCTAssertTrue(html.contains("\\u003C"))
+        XCTAssertTrue(html.contains("\\u0026"))
+        XCTAssertLessThanOrEqual(
+            Data(html.utf8).count,
+            MessagesPageBuilder.defaultMessageByteLimit
+        )
+    }
+
     func testSnapshotKeepsNewestRecordsWithinExplicitBound() {
         let events = (0..<7).map { index in
             MessagesPageEvent(object: [
@@ -332,5 +378,66 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(directoryMode & 0o777, 0o700)
         XCTAssertEqual(pageMode & 0o777, 0o600)
         XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("C11_257_TEXT_PROOF"))
+    }
+
+    func testWriterMaxWaitRunsDuringSteadyTraffic() throws {
+        let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
+        try (c1Line + "\n").write(
+            to: eventsDirectory.appendingPathComponent("events-steady-traffic.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            debounceInterval: 0.15,
+            maxWaitInterval: 0.35,
+            observeEvents: false,
+            allowStartUnderXCTest: true,
+            label: "com.stage11.c11.messages-page-max-wait-tests-\(UUID().uuidString)"
+        )
+        let callbackLock = NSLock()
+        var startupWritten = false
+        var armed = false
+        var firstSteadyWrite: DispatchTime?
+        let startupExpectation = expectation(description: "startup page written")
+        let observer = NotificationCenter.default.addObserver(
+            forName: MessagesPageWriter.pageDidWriteNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            callbackLock.lock()
+            if !startupWritten {
+                startupWritten = true
+                startupExpectation.fulfill()
+            } else if armed, firstSteadyWrite == nil {
+                firstSteadyWrite = .now()
+            }
+            callbackLock.unlock()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        writer.start()
+        wait(for: [startupExpectation], timeout: 2.0)
+        callbackLock.lock()
+        armed = true
+        callbackLock.unlock()
+
+        let began = DispatchTime.now()
+        for _ in 0..<20 {
+            writer.scheduleRebuildForTesting()
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        writer.stopForTesting()
+
+        callbackLock.lock()
+        let steadyWrite = firstSteadyWrite
+        callbackLock.unlock()
+        let elapsed = steadyWrite.map {
+            Double($0.uptimeNanoseconds - began.uptimeNanoseconds) / 1_000_000_000
+        }
+        XCTAssertNotNil(steadyWrite)
+        XCTAssertLessThan(elapsed ?? .greatestFiniteMagnitude, 0.8)
     }
 }

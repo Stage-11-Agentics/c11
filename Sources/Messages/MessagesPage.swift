@@ -217,6 +217,17 @@ struct MessagesPageSnapshot: Equatable {
             "messages": messages.map(\.jsonObject),
         ]
     }
+
+    func replacingMessages(_ messages: [MessagesPageRecord]) -> MessagesPageSnapshot {
+        MessagesPageSnapshot(
+            generatedAt: generatedAt,
+            totalObserved: totalObserved,
+            messageLimit: messageLimit,
+            messageByteLimit: messageByteLimit,
+            estimatedMessageBytes: MessagesPageBuilder.estimatedPageBytes(for: messages),
+            messages: messages
+        )
+    }
 }
 
 /// A mailbox file or dispatch-log entry found while rebuilding the page.
@@ -289,6 +300,15 @@ enum MessagesPageBuilder {
     /// Keep the self-contained file in the tens-of-megabytes range even when
     /// individual event bodies approach Lane A's 256 KiB envelope limit.
     static let defaultMessageByteLimit = 16 * 1024 * 1024
+    /// Reserve the fixed HTML, script, and snapshot-summary bytes before
+    /// admitting records. The renderer still measures the complete output and
+    /// trims by that exact measurement, but this keeps the common path to one
+    /// render and makes the selection safe before HTML escaping is applied.
+    static let pageOverheadByteAllowance = 128 * 1024
+    /// Leave room for the per-record keys, lifecycle, routing metadata, and
+    /// summary edges in addition to the escaped record JSON. Body text can
+    /// expand to six bytes per raw byte when embedded in the script element.
+    static let perMessageByteAllowance = 4 * 1024
 
     static func build(
         events: [MessagesPageEvent],
@@ -317,7 +337,7 @@ enum MessagesPageBuilder {
         let byteLimit = max(1, messageByteLimit)
         let candidates = observed.count > limit ? Array(observed.suffix(limit)) : observed
         var messages: [MessagesPageRecord] = []
-        var estimatedBytes = 0
+        var estimatedBytes = pageOverheadByteAllowance
         for message in candidates.reversed() {
             let messageBytes = estimatedJSONBytes(for: message)
             if !messages.isEmpty && estimatedBytes + messageBytes > byteLimit {
@@ -337,11 +357,21 @@ enum MessagesPageBuilder {
         )
     }
 
+    static func estimatedPageBytes(for messages: [MessagesPageRecord]) -> Int {
+        pageOverheadByteAllowance + messages.reduce(into: 0) { total, message in
+            total += estimatedJSONBytes(for: message)
+        }
+    }
+
     private static func estimatedJSONBytes(for message: MessagesPageRecord) -> Int {
-        // This is intentionally conservative: the body is the dominant term,
-        // and the fixed allowance covers routing/lifecycle metadata without
-        // serializing every candidate a second time during a rebuild.
-        message.body.utf8.count + 768
+        // Measure the actual encoded record, then apply the same one-pass
+        // escaping expansion used by the renderer. In particular, '<', '>',
+        // and '&' each become a six-byte JSON escape inside the script tag.
+        let encoded = (try? JSONSerialization.data(
+            withJSONObject: message.jsonObject,
+            options: [.sortedKeys]
+        )) ?? Data()
+        return MessagesPageRenderer.escapedJSONByteCount(encoded) + perMessageByteAllowance
     }
 
     private static func makeSendRecord(event: MessagesPageEvent, fallbackIndex: Int) -> MessagesPageRecord {
@@ -825,6 +855,66 @@ enum MessagesPageSource {
 
 enum MessagesPageRenderer {
     static func render(snapshot: MessagesPageSnapshot) -> String {
+        renderUnbounded(snapshot: boundedSnapshot(snapshot))
+    }
+
+    /// Count the bytes produced by `escapeEmbeddedJSON` without allocating the
+    /// escaped string. This is shared by the builder's conservative selection
+    /// pass and the renderer's final exact-bound pass.
+    static func escapedJSONByteCount(_ data: Data) -> Int {
+        let bytes = [UInt8](data)
+        var count = 0
+        var index = 0
+        while index < bytes.count {
+            if bytes[index] == 0xE2, index + 2 < bytes.count,
+               bytes[index + 1] == 0x80,
+               bytes[index + 2] == 0xA8 || bytes[index + 2] == 0xA9 {
+                count += 6
+                index += 3
+                continue
+            }
+            switch bytes[index] {
+            case 0x26, 0x3C, 0x3E: // &, <, > -> six ASCII bytes (\u00XX)
+                count += 6
+                index += 1
+            default:
+                count += 1
+                index += 1
+            }
+        }
+        return count
+    }
+
+    private static func boundedSnapshot(_ snapshot: MessagesPageSnapshot) -> MessagesPageSnapshot {
+        guard !snapshot.messages.isEmpty else { return snapshot }
+        let limit = snapshot.messageByteLimit
+        guard renderedByteCount(snapshot) > limit else { return snapshot }
+
+        // Keep the newest suffix and use binary search so a pathological page
+        // needs O(log n) complete renders, not one render for every discarded
+        // record. The final rendered output is always measured again before it
+        // is returned to the writer.
+        var lowerBound = 0
+        var upperBound = snapshot.messages.count
+        while lowerBound < upperBound {
+            let candidateCount = (lowerBound + upperBound + 1) / 2
+            let candidate = snapshot.replacingMessages(
+                Array(snapshot.messages.suffix(candidateCount))
+            )
+            if renderedByteCount(candidate) <= limit {
+                lowerBound = candidateCount
+            } else {
+                upperBound = candidateCount - 1
+            }
+        }
+        return snapshot.replacingMessages(Array(snapshot.messages.suffix(lowerBound)))
+    }
+
+    private static func renderedByteCount(_ snapshot: MessagesPageSnapshot) -> Int {
+        Data(renderUnbounded(snapshot: snapshot).utf8).count
+    }
+
+    private static func renderUnbounded(snapshot: MessagesPageSnapshot) -> String {
         let data: Data
         if let encoded = try? JSONSerialization.data(
             withJSONObject: snapshot.jsonObject,
@@ -837,13 +927,7 @@ enum MessagesPageRenderer {
         // A JSON string inside a script element must not be allowed to close
         // that element. Escaping the HTML-significant bytes keeps all agent
         // text data-only while preserving JSON semantics in the browser.
-        let embeddedJSON = String(data: data, encoding: .utf8)?
-            .replacingOccurrences(of: "&", with: "\\u0026")
-            .replacingOccurrences(of: "<", with: "\\u003C")
-            .replacingOccurrences(of: ">", with: "\\u003E")
-            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-            ?? "{}"
+        let embeddedJSON = escapeEmbeddedJSON(data)
 
         return """
         <!doctype html>
@@ -1108,5 +1192,35 @@ enum MessagesPageRenderer {
         </body>
         </html>
         """
+    }
+
+    private static func escapeEmbeddedJSON(_ data: Data) -> String {
+        let bytes = [UInt8](data)
+        var escaped: [UInt8] = []
+        escaped.reserveCapacity(escapedJSONByteCount(data))
+        var index = 0
+        while index < bytes.count {
+            if bytes[index] == 0xE2, index + 2 < bytes.count,
+               bytes[index + 1] == 0x80,
+               bytes[index + 2] == 0xA8 || bytes[index + 2] == 0xA9 {
+                escaped.append(contentsOf: bytes[index + 2] == 0xA8
+                    ? [0x5C, 0x75, 0x32, 0x30, 0x32, 0x38]
+                    : [0x5C, 0x75, 0x32, 0x30, 0x32, 0x39])
+                index += 3
+                continue
+            }
+            switch bytes[index] {
+            case 0x26:
+                escaped.append(contentsOf: [0x5C, 0x75, 0x30, 0x30, 0x32, 0x36])
+            case 0x3C:
+                escaped.append(contentsOf: [0x5C, 0x75, 0x30, 0x30, 0x33, 0x43])
+            case 0x3E:
+                escaped.append(contentsOf: [0x5C, 0x75, 0x30, 0x30, 0x33, 0x45])
+            default:
+                escaped.append(bytes[index])
+            }
+            index += 1
+        }
+        return String(decoding: escaped, as: UTF8.self)
     }
 }

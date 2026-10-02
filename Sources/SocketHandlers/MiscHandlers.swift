@@ -43,18 +43,26 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
-        let targetWorkspaceID = v2MainSync {
-            let requestedWorkspace = v2UUID(params, "workspace_id")
-                .flatMap { workspaceID in
-                    workspaceManager.workspaces.first(where: { $0.id == workspaceID })
+        let hasExplicitWorkspace = params.keys.contains("workspace_id")
+        let targetWorkspaceID: UUID? = v2MainSync {
+            if hasExplicitWorkspace {
+                guard let requestedWorkspaceID = v2UUID(params, "workspace_id"),
+                      workspaceManager.workspaces.contains(where: { $0.id == requestedWorkspaceID }) else {
+                    return nil
                 }
-            let targetWorkspace = requestedWorkspace
-                ?? workspaceManager.selectedWorkspace
-                ?? workspaceManager.workspaces.first
-            return targetWorkspace?.id
+                return requestedWorkspaceID
+            }
+            return (workspaceManager.selectedWorkspace ?? workspaceManager.workspaces.first)?.id
         }
         guard let targetWorkspaceID else {
-            return .err(code: "unavailable", message: "No workspace available", data: nil)
+            let missingWorkspaceData: [String: Any]? = hasExplicitWorkspace
+                ? ["workspace_id": v2String(params, "workspace_id") ?? ""]
+                : nil
+            return .err(
+                code: hasExplicitWorkspace ? "not_found" : "unavailable",
+                message: hasExplicitWorkspace ? "Workspace not found" : "No workspace available",
+                data: missingWorkspaceData
+            )
         }
 
         if !FileManager.default.fileExists(atPath: pageURL.path) {
@@ -92,32 +100,29 @@ extension TerminalController {
         workspaceManager: WorkspaceManager,
         targetWorkspaceID: UUID
     ) -> V2CallResult {
-        var existing: (workspace: Workspace, tab: BrowserTab)?
-        for workspace in workspaceManager.workspaces {
-            if let tab = workspace.panels.values
-                .compactMap({ $0 as? BrowserTab })
-                .first(where: { tab in
-                    guard let currentURL = tab.currentURL else { return false }
-                    return currentURL.standardizedFileURL.path == pageURL.standardizedFileURL.path
-                }) {
-                existing = (workspace, tab)
-                break
-            }
+        guard let targetWorkspace = workspaceManager.workspaces.first(where: { $0.id == targetWorkspaceID }) else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": targetWorkspaceID.uuidString
+            ])
         }
 
-        if let existing {
+        if let existingTab = targetWorkspace.panels.values
+            .compactMap({ $0 as? BrowserTab })
+            .first(where: { tab in
+                guard let currentURL = tab.currentURL else { return false }
+                return currentURL.standardizedFileURL.path == pageURL.standardizedFileURL.path
+            }) {
             // Reload the page in place, but do not select its workspace or tab.
-            existing.tab.reload()
+            existingTab.reload()
             return .ok([
                 "url": pageURL.absoluteString,
-                "workspace_id": existing.workspace.id.uuidString,
-                "tab_id": existing.tab.id.uuidString,
+                "workspace_id": targetWorkspace.id.uuidString,
+                "tab_id": existingTab.id.uuidString,
                 "reused": true,
             ])
         }
 
-        guard let targetWorkspace = workspaceManager.workspaces.first(where: { $0.id == targetWorkspaceID }),
-              let pane = targetWorkspace.bonsplitController.focusedPaneId
+        guard let pane = targetWorkspace.bonsplitController.focusedPaneId
                     ?? targetWorkspace.bonsplitController.allPaneIds.first,
               let tab = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false) else {
             return .err(code: "unavailable", message: "No pane available for messages page", data: nil)

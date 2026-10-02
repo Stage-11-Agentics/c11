@@ -14,6 +14,7 @@ final class MessagesPageWriter {
     private let debounceInterval: TimeInterval
     private let maxWaitInterval: TimeInterval
     private let observeEvents: Bool
+    private let allowStartUnderXCTest: Bool
     private var stateURL: URL?
     private var eventObserver: NSObjectProtocol?
     private var started = false
@@ -36,12 +37,14 @@ final class MessagesPageWriter {
         debounceInterval: TimeInterval = 1.0,
         maxWaitInterval: TimeInterval = 5.0,
         observeEvents: Bool = true,
+        allowStartUnderXCTest: Bool = false,
         label: String = "com.stage11.c11.messages-page-writer"
     ) {
         self.fixedStateURL = stateURL
         self.debounceInterval = max(0, debounceInterval)
         self.maxWaitInterval = max(self.debounceInterval, maxWaitInterval)
         self.observeEvents = observeEvents
+        self.allowStartUnderXCTest = allowStartUnderXCTest
         self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
@@ -52,7 +55,7 @@ final class MessagesPageWriter {
     }
 
     func start() {
-        guard !Self.isRunningUnderXCTest() else { return }
+        guard allowStartUnderXCTest || !Self.isRunningUnderXCTest() else { return }
         lock.lock()
         guard !started else {
             lock.unlock()
@@ -124,6 +127,12 @@ final class MessagesPageWriter {
         try rebuildNow()
     }
 
+    /// Test-only trigger for exercising debounce/max-wait behavior without
+    /// manufacturing an EventLog notification or touching process-wide state.
+    func scheduleRebuildForTesting(refreshMailbox: Bool = false) {
+        scheduleRebuild(refreshMailbox: refreshMailbox)
+    }
+
     /// Resolve a page for a view request without waiting on the writer from the
     /// caller's thread. If the page is missing, the rebuild and callback stay
     /// on the utility queue; callers can hop to the main actor only when the
@@ -171,6 +180,7 @@ final class MessagesPageWriter {
         if refreshMailbox {
             mailboxRefreshRequested = true
         }
+        let shouldScheduleMaxWait = pendingSince == nil
         if pendingSince == nil {
             pendingSince = now
         }
@@ -183,6 +193,12 @@ final class MessagesPageWriter {
         let deadline = DispatchTime(uptimeNanoseconds: min(debounceDeadline, maxDeadline))
         lock.unlock()
 
+        if shouldScheduleMaxWait {
+            queue.asyncAfter(deadline: DispatchTime(uptimeNanoseconds: maxDeadline)) { [weak self] in
+                self?.runMaxWaitIfDue()
+            }
+        }
+
         queue.asyncAfter(deadline: deadline) { [weak self] in
             guard let self else { return }
             self.lock.lock()
@@ -194,6 +210,31 @@ final class MessagesPageWriter {
             guard shouldRun else { return }
             self.rebuildQuietly()
         }
+    }
+
+    /// The max-wait item is deliberately independent of `generation`. New
+    /// events cancel trailing debounce generations, but they must not postpone
+    /// the first rebuild past the pending batch's deadline.
+    private func runMaxWaitIfDue() {
+        lock.lock()
+        guard started, let pendingSince else {
+            lock.unlock()
+            return
+        }
+        let deadline = pendingSince.uptimeNanoseconds
+            + UInt64(maxWaitInterval * 1_000_000_000)
+        let now = DispatchTime.now().uptimeNanoseconds
+        if now < deadline {
+            lock.unlock()
+            queue.asyncAfter(deadline: DispatchTime(uptimeNanoseconds: deadline)) { [weak self] in
+                self?.runMaxWaitIfDue()
+            }
+            return
+        }
+        generation &+= 1
+        self.pendingSince = nil
+        lock.unlock()
+        rebuildQuietly()
     }
 
     private func rebuildQuietly() {

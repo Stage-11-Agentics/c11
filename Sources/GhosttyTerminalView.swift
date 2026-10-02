@@ -1871,6 +1871,14 @@ class GhosttyApp {
         return enabled
     }
 
+    fileprivate func configuredFontSizePoints() -> Float? {
+        guard let config else { return nil }
+        var points: Float = 0
+        let key = "font-size"
+        guard ghostty_config_get(config, &points, key, UInt(key.utf8.count)), points > 0 else { return nil }
+        return points
+    }
+
     fileprivate func shellIntegrationMode() -> String {
         guard let config else { return "detect" }
         var value: UnsafePointer<Int8>?
@@ -2791,6 +2799,40 @@ extension TerminalSurface {
     }
 }
 
+/// Own the C template before the first deferred AppKit attachment. Producers in
+/// Workspace/WorkspaceManager pass the native template synchronously to init;
+/// none of its borrowed strings or env-array pointers survive that call.
+struct OwnedTerminalSurfaceConfig {
+    let scalars: ghostty_surface_config_s
+    let workingDirectory: String?
+    let command: String?
+    let initialInput: String?
+    let environment: [String: String]
+
+    init(_ source: ghostty_surface_config_s) {
+        workingDirectory = source.working_directory.map { String(cString: $0) }
+        command = source.command.map { String(cString: $0) }
+        initialInput = source.initial_input.map { String(cString: $0) }
+        var environment: [String: String] = [:]
+        if let entries = source.env_vars {
+            for index in 0..<Int(source.env_var_count) {
+                let entry = entries[index]
+                if let key = entry.key, let value = entry.value {
+                    environment[String(cString: key)] = String(cString: value)
+                }
+            }
+        }
+        self.environment = environment
+        var scalars = source
+        scalars.working_directory = nil
+        scalars.command = nil
+        scalars.initial_input = nil
+        scalars.env_vars = nil
+        scalars.env_var_count = 0
+        self.scalars = scalars
+    }
+}
+
 final class TerminalSurface: Identifiable, ObservableObject {
     // Main-thread OSC admission, before downstream coalescing/metadata precedence.
     fileprivate var titleChurnFilter = TerminalTitleChurnFilter()
@@ -2857,7 +2899,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return val > 0 ? val : 10
     }()
     private let surfaceContext: ghostty_surface_context_e
-    private let configTemplate: ghostty_surface_config_s?
+    private let configTemplate: OwnedTerminalSurfaceConfig?
     private let workingDirectory: String?
     private let initialCommand: String?
     private var initialInput: String?
@@ -2935,7 +2977,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     fileprivate var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
-    private var lastFocusState: Bool = false
+    private var desiredFocusState: Bool = false
+    private var lastFocusState: Bool?
 #if DEBUG
     private var needsConfirmCloseOverrideForTesting: Bool?
 
@@ -2968,6 +3011,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
     var pendingSubmitOnFlushForTests: Bool {
         pendingSubmitOnFlush
     }
+
+    @MainActor
+    var appliedFocusForTests: Bool? { lastFocusState }
 #endif
     private enum PortalLifecycleState: String {
         case live
@@ -2976,12 +3022,25 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
     private struct PortalHostLease {
         let hostId: ObjectIdentifier
+        let order: UInt64
+        let areaId: UUID?
         let inWindow: Bool
         let area: CGFloat
     }
     private var portalLifecycleState: PortalLifecycleState = .live
     private var portalLifecycleGeneration: UInt64 = 1
     private var activePortalHostLease: PortalHostLease?
+    // Assigned once per host-to-surface assignment, never on a geometry
+    // callback. Retain the high-water mark after release so old hosts cannot
+    // reclaim a terminal while their replacement is being dismantled.
+    private static var nextPortalHostOrder: UInt64 = 0
+    private var latestPortalHostOrder: UInt64 = 0
+    private var latestPortalAreaId: UUID?
+
+    static func allocatePortalHostOrder() -> UInt64 {
+        nextPortalHostOrder += 1
+        return nextPortalHostOrder
+    }
     @Published var searchState: SearchState? = nil {
 	        didSet {
 	            if let searchState {
@@ -3034,7 +3093,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         self.id = id ?? UUID()
         self.workspaceId = workspaceId
         self.surfaceContext = context
-        self.configTemplate = configTemplate
+        self.configTemplate = configTemplate.map(OwnedTerminalSurfaceConfig.init)
         self.workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCommand = initialCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.initialCommand = (trimmedCommand?.isEmpty == false) ? trimmedCommand : nil
@@ -3092,15 +3151,21 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     @MainActor
     private func startRuntimeUsingHeadlessWindowIfNeeded(reason: String) {
-        guard surface == nil else { return }
+        guard portalLifecycleState == .live, surface == nil else { return }
         ensureHeadlessStartupWindowIfNeeded(reason: reason)
         hostedView.attachSurface(self)
     }
 
     @MainActor
     private func ensureHeadlessStartupWindowIfNeeded(reason: String) {
-        guard headlessStartupWindow == nil else { return }
-        guard hostedView.window == nil else { return }
+        guard portalLifecycleState == .live, hostedView.window == nil else { return }
+        // Portal churn can park the host while its bootstrap window survives.
+        // Re-adopt it instead of leaving the cold start permanently unattached.
+        if let window = headlessStartupWindow, let contentView = window.contentView {
+            hostedView.frame = contentView.bounds
+            contentView.addSubview(hostedView)
+            return
+        }
 
         let width = max(surfaceView.bounds.width, CGFloat(800))
         let height = max(surfaceView.bounds.height, CGFloat(600))
@@ -3121,11 +3186,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         let contentView = NSView(frame: frame)
         hostedView.frame = contentView.bounds
         hostedView.autoresizingMask = [.width, .height]
-        contentView.addSubview(hostedView)
-        window.contentView = contentView
         headlessStartupWindow = window
         hostedView.setVisibleInUI(false)
         hostedView.setActive(false)
+        contentView.addSubview(hostedView)
+        window.contentView = contentView
 
 #if DEBUG
         dlog(
@@ -3308,7 +3373,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private static let portalHostAreaThreshold: CGFloat = 4
-    private static let portalHostReplacementAreaGainRatio: CGFloat = 1.2
 
     private static func portalHostArea(for bounds: CGRect) -> CGFloat {
         max(0, bounds.width) * max(0, bounds.height)
@@ -3320,75 +3384,53 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     func claimPortalHost(
         hostId: ObjectIdentifier,
+        order: UInt64,
+        areaId: UUID? = nil,
+        currentAreaId: UUID? = nil,
         inWindow: Bool,
         bounds: CGRect,
         reason: String
     ) -> Bool {
+        guard portalLifecycleState == .live, areaId == currentAreaId else { return false }
+        // Validate against the model's current area before considering order.
+        // Moving back to an older retained host in another area is legitimate;
+        // callbacks from the area just left must not rearm their obsolete lease.
+        if latestPortalAreaId != currentAreaId {
+            activePortalHostLease = nil
+            latestPortalHostOrder = 0
+            latestPortalAreaId = currentAreaId
+        }
+        guard order >= latestPortalHostOrder else { return false }
         let next = PortalHostLease(
             hostId: hostId,
+            order: order,
+            areaId: areaId,
             inWindow: inWindow,
             area: Self.portalHostArea(for: bounds)
         )
-
-        if let current = activePortalHostLease {
-            if current.hostId == hostId {
-                activePortalHostLease = next
-                return true
-            }
-
-            let currentUsable = Self.portalHostIsUsable(current)
-            let nextUsable = Self.portalHostIsUsable(next)
-            let shouldReplace =
-                !currentUsable ||
-                (nextUsable && next.area > (current.area * Self.portalHostReplacementAreaGainRatio))
-
-            if shouldReplace {
-#if DEBUG
-                dlog(
-                    "terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) " +
-                    "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-                    "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) " +
-                    "replacingHost=\(current.hostId) replacingInWin=\(current.inWindow ? 1 : 0) " +
-                    "replacingArea=\(String(format: "%.1f", current.area))"
-                )
-#endif
-                activePortalHostLease = next
-                return true
-            }
-
-#if DEBUG
-            dlog(
-                "terminal.portal.host.skip surface=\(id.uuidString.prefix(5)) " +
-                "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-                "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) " +
-                "ownerHost=\(current.hostId) ownerInWin=\(current.inWindow ? 1 : 0) " +
-                "ownerArea=\(String(format: "%.1f", current.area))"
-            )
-#endif
-            return false
+        if let current = activePortalHostLease, current.hostId != hostId {
+            // A newly mounted, equally sized host wins as soon as it is usable.
+            // A zero-sized placeholder must not displace a working portal yet.
+            guard order > current.order else { return false }
+            guard !Self.portalHostIsUsable(current) || Self.portalHostIsUsable(next) else { return false }
         }
-
         activePortalHostLease = next
+        latestPortalHostOrder = order
 #if DEBUG
-        dlog(
-            "terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) " +
-            "reason=\(reason) host=\(hostId) inWin=\(inWindow ? 1 : 0) " +
-            "size=\(String(format: "%.1fx%.1f", bounds.width, bounds.height)) replacingHost=nil"
-        )
+        dlog("terminal.portal.host.claim surface=\(id.uuidString.prefix(5)) reason=\(reason) host=\(hostId) order=\(order)")
 #endif
         return true
     }
 
-    func releasePortalHostIfOwned(hostId: ObjectIdentifier, reason: String) {
-        guard let current = activePortalHostLease, current.hostId == hostId else { return }
+    @discardableResult
+    func releasePortalHostIfOwned(hostId: ObjectIdentifier, order: UInt64, reason: String) -> Bool {
+        guard let current = activePortalHostLease,
+              current.hostId == hostId, current.order == order else { return false }
         activePortalHostLease = nil
 #if DEBUG
-        dlog(
-            "terminal.portal.host.release surface=\(id.uuidString.prefix(5)) " +
-            "reason=\(reason) host=\(hostId) inWin=\(current.inWindow ? 1 : 0) " +
-            "area=\(String(format: "%.1f", current.area))"
-        )
+        dlog("terminal.portal.host.release surface=\(id.uuidString.prefix(5)) reason=\(reason) host=\(hostId) order=\(order)")
 #endif
+        return true
     }
 
     private func recordTeardownRequest(reason: String) {
@@ -3526,6 +3568,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     func attachToView(_ view: GhosttyNSView) {
+        guard portalLifecycleState == .live else { return }
 #if DEBUG
         dlog(
             "surface.attach surface=\(id.uuidString.prefix(5)) view=\(Unmanaged.passUnretained(view).toOpaque()) " +
@@ -3607,6 +3650,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func createSurface(for view: GhosttyNSView) {
+        guard portalLifecycleState == .live, surface == nil, view.window != nil else { return }
         #if DEBUG
         if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
@@ -3626,7 +3670,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         let scaleFactors = scaleFactors(for: view)
 
-        var surfaceConfig = configTemplate ?? ghostty_surface_config_new()
+        var surfaceConfig = configTemplate?.scalars ?? ghostty_surface_config_new()
+        // Rebuild pointer fields only for this synchronous native create call.
+        let inheritedWorkingDirectory = configTemplate?.workingDirectory.flatMap { strdup($0) }
+        let inheritedCommand = configTemplate?.command.flatMap { strdup($0) }
+        let inheritedInitialInput = configTemplate?.initialInput.flatMap { strdup($0) }
+        defer {
+            free(inheritedWorkingDirectory)
+            free(inheritedCommand)
+            free(inheritedInitialInput)
+        }
+        surfaceConfig.working_directory = inheritedWorkingDirectory.map { UnsafePointer($0) }
+        surfaceConfig.command = inheritedCommand.map { UnsafePointer($0) }
+        surfaceConfig.initial_input = inheritedInitialInput.map { UnsafePointer($0) }
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_MACOS
         surfaceConfig.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
             nsview: Unmanaged.passUnretained(view).toOpaque()
@@ -3653,19 +3709,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
-        var env: [String: String] = [:]
-        if surfaceConfig.env_var_count > 0, let existingEnv = surfaceConfig.env_vars {
-            let count = Int(surfaceConfig.env_var_count)
-            if count > 0 {
-                for i in 0..<count {
-                    let item = existingEnv[i]
-                    if let key = String(cString: item.key, encoding: .utf8),
-                       let value = String(cString: item.value, encoding: .utf8) {
-                        env[key] = value
-                    }
-                }
-            }
-        }
+        var env = configTemplate?.environment ?? [:]
 
         var protectedStartupEnvironmentKeys: Set<String> = []
         func setManagedEnvironmentValue(_ key: String, _ value: String) {
@@ -3952,22 +3996,25 @@ final class TerminalSurface: Identifiable, ObservableObject {
             lastYScale = scaleFactors.y
         }
 
-        // Some GhosttyKit builds can drop inherited font_size during post-create
-        // config/scale reconciliation. If runtime points don't match the inherited
-        // template points, re-apply via binding action so all creation paths
-        // (new surface, split, new workspace) preserve zoom from the source terminal.
-        if let inheritedFontPoints = configTemplate?.font_size,
+        // Native creation sets points without marking font_size_adjusted. Preserve
+        // inherited zoom across appearance/config reloads, but leave default-sized
+        // terminals eligible for later operator font-size configuration changes.
+        // Compare to config, not quicklook's asynchronously updated renderer grid.
+        if let inheritedFontPoints = configTemplate?.scalars.font_size,
            inheritedFontPoints > 0 {
-            let currentFontPoints = cmuxCurrentSurfaceFontSizePoints(createdSurface)
-            let shouldReapply = {
-                guard let currentFontPoints else { return true }
-                return abs(currentFontPoints - inheritedFontPoints) > 0.05
-            }()
-            if shouldReapply {
+            let configuredFontPoints = GhosttyApp.shared.configuredFontSizePoints()
+            let isInheritedZoom = configuredFontPoints.map { abs($0 - inheritedFontPoints) > 0.05 } ?? true
+            if isInheritedZoom {
                 let action = String(format: "set_font_size:%.3f", inheritedFontPoints)
                 _ = performBindingAction(action)
             }
         }
+
+        // Ready means queued bytes reached Ghostty, not that the shell executed
+        // them. The existing delayed submit-on-flush remains asynchronous.
+        ghostty_surface_set_focus(createdSurface, desiredFocusState)
+        lastFocusState = desiredFocusState
+        flushPendingTextIfNeeded()
 
         NotificationCenter.default.post(
             name: .terminalSurfaceDidBecomeReady,
@@ -3978,7 +4025,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
             ]
         )
 
-        flushPendingTextIfNeeded()
+        // A ready observer may synchronously close the tab.
+        guard portalLifecycleState == .live, surface == createdSurface else { return }
 
         // Kick an initial draw after creation/size setup. On some startup paths Ghostty can
         // miss the first vsync callback and sit on a blank frame until another focus/visibility
@@ -4097,7 +4145,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     func setFocus(_ focused: Bool) {
-        guard let surface = surface else { return }
+        desiredFocusState = focused
+        guard portalLifecycleState == .live, let surface else { return }
         // Only send focus events when the state changes to avoid redundant
         // prompt redraws with zsh themes like Powerlevel10k.
         guard focused != lastFocusState else { return }
@@ -4143,6 +4192,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
         if scrollbackGrowth.observe(total: total, len: len) {
             lastOutputGrowthAt = Date()
         }
+    }
+
+    /// Process liveness does not inspect prompt state or acquire the renderer lock.
+    /// Cold and closed terminals deliberately cannot supply replayable scrollback.
+    func hasLiveProcess() -> Bool {
+        guard portalLifecycleState == .live, let surface else { return false }
+        return !ghostty_surface_process_exited(surface)
     }
 
     func needsConfirmClose() -> Bool {
@@ -4548,7 +4604,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
 
-        guard surface == nil else { return }
+        guard portalLifecycleState == .live, surface == nil else { return }
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
 
@@ -4556,7 +4612,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             guard let self else { return }
             MainActor.assumeIsolated {
                 self.backgroundSurfaceStartQueued = false
-                guard self.surface == nil else { return }
+                guard self.portalLifecycleState == .live, self.surface == nil else { return }
                 #if DEBUG
                 let startedAt = ProcessInfo.processInfo.systemUptime
                 #endif
@@ -7678,11 +7734,13 @@ final class GhosttySurfaceScrollView: NSView {
         )
     }
 
-    func releaseOwnedPortalHost(hostId: ObjectIdentifier, reason: String) {
+    @discardableResult
+    func releaseOwnedPortalHost(hostId: ObjectIdentifier, order: UInt64, reason: String) -> Bool {
         surfaceView.terminalSurface?.releasePortalHostIfOwned(
             hostId: hostId,
+            order: order,
             reason: reason
-        )
+        ) ?? false
     }
 
     init(surfaceView: GhosttyNSView) {
@@ -10364,6 +10422,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
     @Environment(\.paneDropZone) var paneDropZone
 
     let terminalSurface: TerminalSurface
+    var areaId: UUID? = nil
     var isActive: Bool = true
     var isVisibleInUI: Bool = true
     var portalZPriority: Int = 0
@@ -10383,6 +10442,16 @@ struct GhosttyTerminalView: NSViewRepresentable {
     var paneInteractionPanelId: UUID? = nil
 
     private final class HostContainerView: NSView {
+        private var representedSurfaceId: UUID?
+        private var representedAreaId: UUID?
+        private(set) var portalHostOrder: UInt64 = 0
+
+        func representSurface(_ id: UUID, areaId: UUID?) {
+            guard representedSurfaceId != id || representedAreaId != areaId else { return }
+            representedSurfaceId = id
+            representedAreaId = areaId
+            portalHostOrder = TerminalSurface.allocatePortalHostOrder()
+        }
         var onDidMoveToWindow: (() -> Void)?
         var onGeometryChanged: (() -> Void)?
         private(set) var geometryRevision: UInt64 = 0
@@ -10500,6 +10569,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let container = HostContainerView()
+        container.representSurface(terminalSurface.id, areaId: areaId)
         container.wantsLayer = false
         // The actual terminal surface lives in the AppKit portal layer above SwiftUI.
         // This empty placeholder should not be walked by the accessibility subsystem.
@@ -10560,21 +10630,36 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
         }
 
+        // Resolve anew for deferred callbacks: a captured area match becomes stale
+        // when a tab moves while SwiftUI keeps the old host alive.
+        func currentAreaId() -> UUID? {
+            guard areaId != nil,
+                  let manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: terminalSurface.workspaceId),
+                  let workspace = manager.workspaces.first(where: { $0.id == terminalSurface.workspaceId }) else {
+                return nil
+            }
+            return workspace.paneId(forPanelId: terminalSurface.id)?.id
+        }
         let hostContainer = nsView as? HostContainerView
+        hostContainer?.representSurface(terminalSurface.id, areaId: areaId)
         let hostOwnsPortalNow = hostContainer.map { host in
             terminalSurface.claimPortalHost(
                 hostId: ObjectIdentifier(host),
+                order: host.portalHostOrder,
+                areaId: areaId,
+                currentAreaId: currentAreaId(),
                 inWindow: host.window != nil,
                 bounds: host.bounds,
                 reason: "update"
             )
         } ?? true
 
-        // Keep the surface lifecycle and handlers updated even if we defer re-parenting.
-        hostedView.attachSurface(terminalSurface)
-        hostedView.setFocusHandler { onFocus?(terminalSurface.id) }
-        hostedView.setTriggerFlashHandler(onTriggerFlash)
-        if hostOwnsPortalNow {
+        // Apply this again when a deferred host first wins its lease. A replaced
+        // host must not overwrite its successor's interaction handlers.
+        func applyOwnedHostedState() {
+            hostedView.attachSurface(terminalSurface)
+            hostedView.setFocusHandler { onFocus?(terminalSurface.id) }
+            hostedView.setTriggerFlashHandler(onTriggerFlash)
             hostedView.setInactiveOverlay(
                 color: inactiveOverlayColor,
                 opacity: CGFloat(inactiveOverlayOpacity),
@@ -10588,6 +10673,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
             }
             hostedView.syncKeyStateIndicator(text: terminalSurface.currentKeyStateIndicatorText)
         }
+        if hostOwnsPortalNow { applyOwnedHostedState() }
         let portalExpectedSurfaceId = terminalSurface.id
         let portalExpectedGeneration = terminalSurface.portalBindingGeneration()
         func portalBindingStillLive() -> Bool {
@@ -10624,17 +10710,22 @@ struct GhosttyTerminalView: NSViewRepresentable {
         let generation = coordinator.attachGeneration
 
         if let host = hostContainer {
+            let hostOrder = host.portalHostOrder
             host.onDidMoveToWindow = { [weak host, weak hostedView, weak coordinator] in
                 guard let host, let hostedView, let coordinator else { return }
                 guard coordinator.attachGeneration == generation else { return }
                 guard terminalSurface.claimPortalHost(
                     hostId: ObjectIdentifier(host),
+                    order: hostOrder,
+                    areaId: areaId,
+                    currentAreaId: currentAreaId(),
                     inWindow: host.window != nil,
                     bounds: host.bounds,
                     reason: "didMoveToWindow"
                 ) else { return }
                 guard host.window != nil else { return }
                 guard portalBindingStillLive() else { return }
+                applyOwnedHostedState()
                 // Phase 2: skip the bind here when the host's frame hasn't been laid
                 // out yet. AppKit fires `viewDidMoveToWindow` during `addSubview`,
                 // BEFORE SwiftUI's layout pass sizes the host. Binding now would
@@ -10677,11 +10768,15 @@ struct GhosttyTerminalView: NSViewRepresentable {
                 guard coordinator.attachGeneration == generation else { return }
                 guard terminalSurface.claimPortalHost(
                     hostId: ObjectIdentifier(host),
+                    order: hostOrder,
+                    areaId: areaId,
+                    currentAreaId: currentAreaId(),
                     inWindow: host.window != nil,
                     bounds: host.bounds,
                     reason: "geometryChanged"
                 ) else { return }
                 guard portalBindingStillLive() else { return }
+                applyOwnedHostedState()
                 let hostId = ObjectIdentifier(host)
                 if host.window != nil,
                    (coordinator.lastBoundHostId != hostId ||
@@ -10849,21 +10944,24 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
         }
 
+        var releasedCurrentHost = false
         if let host = nsView as? HostContainerView {
             host.onDidMoveToWindow = nil
             host.onGeometryChanged = nil
-            hostedView?.releaseOwnedPortalHost(
+            releasedCurrentHost = hostedView?.releaseOwnedPortalHost(
                 hostId: ObjectIdentifier(host),
+                order: host.portalHostOrder,
                 reason: "dismantle"
-            )
+            ) ?? false
         }
 
-        // SwiftUI can transiently dismantle/rebuild NSViewRepresentable instances during split
-        // tree updates. Do not force visible/active false here; that causes avoidable blackouts
-        // when the same hosted view is rebound moments later.
-        hostedView?.setFocusHandler(nil)
-        hostedView?.setTriggerFlashHandler(nil)
-        hostedView?.setDropZoneOverlay(zone: nil)
+        // A stale dismantle cannot clear the replacement host's handlers or overlay.
+        // Preserve visible/active state through SwiftUI's transient rebuilds.
+        if releasedCurrentHost {
+            hostedView?.setFocusHandler(nil)
+            hostedView?.setTriggerFlashHandler(nil)
+            hostedView?.setDropZoneOverlay(zone: nil)
+        }
         coordinator.hostedView = nil
 
         nsView.subviews.forEach { $0.removeFromSuperview() }

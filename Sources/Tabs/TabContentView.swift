@@ -39,6 +39,7 @@ struct TabContentView: View {
                 TerminalTabView(
                     panel: terminalTab,
                     paneInteractionRuntime: workspace.paneInteractionRuntime,
+                    areaId: paneId.id,
                     drawsPortalTopFrameEdge: !workspace.tabTitleBarState(panelId: terminalTab.id).rendersBar,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,

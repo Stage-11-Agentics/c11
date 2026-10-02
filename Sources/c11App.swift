@@ -908,11 +908,11 @@ struct cmuxApp: App {
                 Divider()
 
                 splitCommandButton(title: String(localized: "menu.workspace.next", defaultValue: "Next Workspace"), shortcut: nextWorkspaceMenuShortcut) {
-                    activeWorkspaceManager.selectNextWorkspace()
+                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectNextWorkspace(cause: "menu") }
                 }
 
                 splitCommandButton(title: String(localized: "menu.workspace.previous", defaultValue: "Previous Workspace"), shortcut: prevWorkspaceMenuShortcut) {
-                    activeWorkspaceManager.selectPreviousWorkspace()
+                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectPreviousWorkspace(cause: "menu") }
                 }
 
                 Divider()
@@ -922,7 +922,7 @@ struct cmuxApp: App {
                     Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeWorkspaceManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.workspaces.count) {
-                            manager.selectWorkspace(at: targetIndex)
+                            SocketCommandContext.withContext(nil) { manager.selectWorkspace(at: targetIndex, cause: "shortcut") }
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)

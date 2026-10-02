@@ -1457,6 +1457,12 @@ final class SocketClient {
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
         var params = params
+        if params["caller_tab_id"] == nil {
+            let env = ProcessInfo.processInfo.environment
+            if let caller = env["C11_TAB_ID"] ?? env["CMUX_SURFACE_ID"], UUID(uuidString: caller) != nil {
+                params["caller_tab_id"] = caller
+            }
+        }
         if let scopedWindow, params["window_id"] == nil,
            method.hasPrefix("workspace.") || (method.hasPrefix("tab.") && method != "tab.move") || method.hasPrefix("area.")
             || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
@@ -6902,11 +6908,6 @@ struct CMUXCLI {
             // deadline: .none — SSH handshake and remote setup can exceed 10 s on slow
             // VPNs or distant hosts; the server governs the timeout for this operation.
             configuredPayload = try client.sendV2(method: "workspace.remote.configure", params: configureParams, deadline: .none)
-            var selectParams: [String: Any] = ["workspace_id": workspaceId]
-            if let workspaceWindowId, !workspaceWindowId.isEmpty {
-                selectParams["window_id"] = workspaceWindowId
-            }
-            _ = try client.sendV2(method: "workspace.select", params: selectParams)
             let remoteState = ((configuredPayload["remote"] as? [String: Any])?["state"] as? String) ?? "unknown"
             cliDebugLog(
                 "cli.ssh.remote.configure.ok workspace=\(String(workspaceId.prefix(8))) state=\(remoteState)"
@@ -10131,7 +10132,7 @@ struct CMUXCLI {
             return """
             Usage: c11 focus-area [--area <id|ref> | <id|ref>] [flags]
 
-            Focus the specified area.
+            Focus the specified area within its workspace without switching workspaces.
 
             Flags:
               --area <id|ref>          Area to focus (required unless passed positionally)
@@ -10264,14 +10265,12 @@ struct CMUXCLI {
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the workspace root,
                                                   else the area's terminal cwd.
-              --no-focus                          Create tab without stealing focus
 
             Example:
               c11 new-tab
               c11 new-tab --type browser --area area:1 --url https://example.com
               c11 new-tab --type markdown --file ~/docs/notes.md
               c11 new-tab --cwd .
-              c11 new-tab --no-focus
             """
         case "close-tab":
             return """
@@ -10410,7 +10409,8 @@ struct CMUXCLI {
             return """
             Usage: c11 select-workspace --workspace <id|ref|index>
 
-            Select (switch to) the specified workspace.
+            Workspace switching is reserved for the operator. Socket calls that would
+            switch return workspace_switch_blocked; use background tab/area targeting.
 
             Flags:
               --workspace <id|ref|index>   Workspace to select (required)
@@ -16499,7 +16499,7 @@ struct CMUXCLI {
     }
 
     private func tmuxCallerWorkspaceHandle() -> String? {
-        normalizedTmuxTarget(ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"])
+        normalizedTmuxTarget(ProcessInfo.processInfo.environment["C11_WORKSPACE_ID"] ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"])
     }
 
     private func tmuxCallerPaneHandle() -> String? {
@@ -16612,10 +16612,8 @@ struct CMUXCLI {
         }
 
         if token == "!" || token == "^" || token == "-" {
-            let payload = try client.sendV2(method: "workspace.last")
-            if let workspaceId = payload["workspace_id"] as? String {
-                return workspaceId
-            }
+            let payload = try client.sendV2(method: "workspace.current")
+            if let workspaceId = payload["previous_workspace_id"] as? String { return workspaceId }
             throw CLIError(message: "Previous workspace not found")
         }
 

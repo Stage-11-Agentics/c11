@@ -49,7 +49,7 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
-Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
+Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. The command-local `c11 tree --window` flag still means “show the current window.”
 
 ## Terminal selection
 
@@ -240,8 +240,8 @@ c11 model-costs import <path|-> [--replace]       # bulk JSON: {"<model>": {"in_
     # `provider/model`). `set` stamps observed_at; keep `--source` honest so the next
     # updater has provenance. Prices are relative-magnitude signal, not billing truth.
 
-# Navigate
-c11 select-workspace --workspace <id|ref>
+# Focus within a workspace (never switches the operator's workspace)
+c11 focus-tab --workspace <id|ref> --tab <id|ref>
 c11 focus-area --area <id|ref>
 c11 rename-workspace <title>
 c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
@@ -660,7 +660,7 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 - **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal tab. Find the browser tab ref with `c11 tree` and pass `--tab <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged tab.
-- **Tab doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
+- **Tab does not respond after creation** — background terminals initialize without workspace selection. Retry the explicitly targeted send after attachment; inspect its `queued`/`delivered` result. Never select a workspace to initialize it.
 - **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` maintains the auth chain.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
@@ -699,7 +699,7 @@ The CLI sends its own cwd and resolves a relative `--layout` file path against i
 `c11 history back [--json]` and `c11 history forward [--json]` navigate it.
 Listing never changes focus, including with a global `--window`. Navigation is
 explicit in-app focus intent and does not activate or raise the macOS app.
-`workspace.last` retains its separate workspace-selection history.
+`workspace.last` attempts navigation and is blocked for socket callers. Use `workspace.current`'s `previous_workspace_id` to resolve previous workspace targets without navigating.
 
 Visits qualify after 1 second of continuous **being seen**, using the same
 visibility rules as `last_seen_at`. Fast glances and background selections are
@@ -857,3 +857,11 @@ not erase those older records.
 
 Live answer and resume traces that need later producer work stay out of this
 command. `feed open` is focus only.
+
+### Operator workspace selection
+
+Every socket caller is background automation. Requests that would change a window's selected workspace return `workspace_switch_blocked`, with guidance to raise a flag. This applies to `select-workspace`, `next-window`, `previous-window`, `last-window`, `find-window --select`, tmux `select-window`, and cross-workspace browser `focus-webview`. There is no override. Same-workspace selections are no-ops.
+
+`focus-tab --workspace <w> --tab <t>` and `focus-area --workspace <w> --area <a>` update the target workspace's focused tab/area even while it is hidden. They neither select its workspace nor activate c11. The old command spellings remain hidden aliases. Sending input, browser eval/click/snapshot, creating tabs/workspaces, launching agents, and metadata writes work in background workspaces. `ssh` creates and configures its workspace without selecting it. tmux previous targets resolve from history without navigation.
+
+Tab creation preserves focus. The compatibility `--no-focus` spelling is accepted but unnecessary for `new-tab`. Workspace close/move is refused if removing the selected workspace would force a visible switch. Operator close chooses the most recently seen remaining workspace, then the index neighbour if there is no seen history. Sidebar, keyboard, palette, notification, attention jump, menu and launch restore remain operator navigation paths.

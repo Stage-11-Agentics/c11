@@ -1604,3 +1604,73 @@ final class StartupBundledReportsTests: XCTestCase {
         return result
     }
 }
+
+/// Regression for the background-agent browser-proof workspace interruptions.
+@MainActor
+final class AgentWorkspaceSelectionTests: XCTestCase {
+    func testSocketSelectionDoesNotPublishOrSwitchAndOperatorStillCan() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        var publications = 0
+        let subscription = manager.$storedSelectedWorkspaceId.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        let context = SocketCommandContext(method: "workspace.select", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(context) { manager.selectWorkspace(target) }
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(publications, 0)
+        XCTAssertEqual(context.blockedTarget, target.id)
+        manager.selectWorkspace(target, cause: "sidebar")
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+        XCTAssertEqual(publications, 1)
+    }
+
+    func testSocketDispatcherReturnsRefusalForBothWireVersions() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let controller = TerminalController.shared
+        let savedManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = savedManager }
+        let request: [String: Any] = ["id": 323, "method": "workspace.select",
+            "params": ["workspace_id": target.id.uuidString, "caller_tab_id": UUID().uuidString]]
+        let data = try JSONSerialization.data(withJSONObject: request)
+        let reply = controller.processCommandUsingSocketExecutionPolicy(String(decoding: data, as: UTF8.self))
+        let decoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+        XCTAssertEqual(decoded["ok"] as? Bool, false)
+        XCTAssertEqual((decoded["error"] as? [String: Any])?["code"] as? String, "workspace_switch_blocked")
+        XCTAssertTrue(controller.processCommandUsingSocketExecutionPolicy("select_workspace \(target.id.uuidString)")
+            .contains("workspace_switch_blocked"))
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+    }
+
+    func testSocketCloseCannotRemoveVisibleWorkspace() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspace)
+        _ = manager.addWorkspace(select: false)
+        let context = SocketCommandContext(method: "workspace.close", allowsFocus: false)
+        SocketCommandContext.withContext(context) { manager.closeWorkspace(original) }
+        XCTAssertEqual(manager.selectedWorkspaceId, original.id)
+        XCTAssertTrue(manager.workspaces.contains { $0.id == original.id })
+        XCTAssertNotNil(context.blockedTarget)
+    }
+
+    func testCloseUsesSeenHistoryInsteadOfIndexNeighbour() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspace)
+        let recent = manager.addWorkspace(select: false)
+        let neighbour = manager.addWorkspace(select: false)
+        // Runtime history fixture: last-seen UUID beats an index neighbour.
+        let snapshot = FocusHistorySnapshot(entries: [
+            FocusHistoryEntry(workspaceId: recent.id, panelId: UUID(), seenAt: Date(), dwell: 2)
+        ], index: 0)
+        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 1, history: snapshot), recent.id)
+        manager.closeWorkspace(original)
+        XCTAssertTrue(manager.workspaces.contains { $0.id == neighbour.id })
+    }
+}

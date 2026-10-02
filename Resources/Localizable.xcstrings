@@ -2,6 +2,10 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "socket.error.workspaceSwitchBlocked": {
+      "extractionState": "manual",
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Agents cannot change the operator's workspace. Raise a flag if you need the operator to switch; background tabs remain fully drivable." } } }
+    },
     "statusMenu.attention.none": {
       "extractionState": "manual",
       "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No flags · no open asks" } } }

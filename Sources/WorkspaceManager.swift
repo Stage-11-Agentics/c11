@@ -903,7 +903,33 @@ class WorkspaceManager: ObservableObject {
     private static var nextPortOrdinal: Int = 0
     private static let initialWorkspaceGitProbeDelays: [TimeInterval] = [0, 0.5, 1.5, 3.0, 6.0, 10.0]
     private nonisolated static let workspacePullRequestProbeTimeout: TimeInterval = 5.0
-    @Published var selectedWorkspaceId: UUID? {
+    /// The only workspace-selection gate. Denials happen before @Published or
+    /// responder/visibility/history side effects, across every window and route.
+    var selectedWorkspaceId: UUID? {
+        get { storedSelectedWorkspaceId }
+        set {
+            guard newValue != storedSelectedWorkspaceId else { return }
+            if let context = SocketCommandContext.current, storedSelectedWorkspaceId != nil {
+                let target = newValue ?? storedSelectedWorkspaceId!
+                context.blockedTarget = target
+                EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: context.method,
+                    callerTabId: TerminalController.socketCallerTabId(context))
+                return
+            }
+            if let newValue { prepareForExplicitWorkspaceSelection(to: newValue) }
+            storedSelectedWorkspaceId = newValue
+        }
+    }
+
+    private var workspaceSelectionCause = "menu"
+    func withWorkspaceSelectionCause<T>(_ cause: String, _ body: () -> T) -> T {
+        let prior = workspaceSelectionCause
+        workspaceSelectionCause = cause
+        defer { workspaceSelectionCause = prior }
+        return body()
+    }
+
+    @Published private(set) var storedSelectedWorkspaceId: UUID? {
         willSet {
 #if DEBUG
             guard newValue != selectedWorkspaceId else {
@@ -940,7 +966,9 @@ class WorkspaceManager: ObservableObject {
             // selection route (socket, keyboard, click, close-fallback) since
             // they all land here.
             if let selected = selectedWorkspaceId {
-                EventEmitter.shared.emitWorkspaceSelected(previous: oldValue, selected: selected)
+                EventEmitter.shared.emitWorkspaceSelected(previous: oldValue, selected: selected,
+                    cause: SocketCommandContext.current == nil ? workspaceSelectionCause : "socket",
+                    method: SocketCommandContext.current?.method, callerTabId: SocketCommandContext.current?.callerTabId)
             }
             sentryBreadcrumb("workspace.switch", data: surfaceShapeSummary(tabCount: workspaces.count))
 
@@ -1447,7 +1475,7 @@ class WorkspaceManager: ObservableObject {
 #if DEBUG
             debugPrimeWorkspaceSwitchTrigger("create", to: newWorkspace.id)
 #endif
-            selectedWorkspaceId = newWorkspace.id
+            withWorkspaceSelectionCause("create") { selectedWorkspaceId = newWorkspace.id }
             NotificationCenter.default.post(
                 name: .ghosttyDidFocusTab,
                 object: nil,
@@ -2618,12 +2646,27 @@ class WorkspaceManager: ObservableObject {
         ]
     }
 
+    func closeFallback(excluding workspaceId: UUID, index: Int, history: FocusHistorySnapshot? = nil) -> UUID? {
+        let survivors = workspaces.filter { $0.id != workspaceId }
+        guard !survivors.isEmpty else { return nil }
+        let live = Set(survivors.map(\.id))
+        if let recent = (history ?? FocusHistoryStore.shared.snapshot()).entries
+            .filter({ live.contains($0.workspaceId) })
+            .max(by: { $0.seenAt < $1.seenAt }) { return recent.workspaceId }
+        return survivors[min(index, survivors.count - 1)].id
+    }
+
     func closeWorkspace(_ requestedWorkspace: Workspace) {
         guard workspaces.count > 1,
               let index = workspaces.firstIndex(where: { $0.id == requestedWorkspace.id }) else { return }
         // A stale caller from another window must not tear down its terminals.
         // Resolve the owned instance before any cleanup, even for a matching ID.
         let workspace = workspaces[index]
+        if selectedWorkspaceId == workspace.id {
+            let fallback = closeFallback(excluding: workspace.id, index: index)
+            withWorkspaceSelectionCause("close_fallback") { selectedWorkspaceId = fallback }
+            guard selectedWorkspaceId != workspace.id else { return }
+        }
         sentryBreadcrumb("workspace.close", data: surfaceShapeSummary(tabCount: workspaces.count - 1))
         clearWorkspaceGitProbes(workspaceId: workspace.id)
         sidebarSelectedWorkspaceIds.remove(workspace.id)
@@ -2635,14 +2678,6 @@ class WorkspaceManager: ObservableObject {
         workspace.owningWorkspaceManager = nil
 
         workspaces.remove(at: index)
-
-        if selectedWorkspaceId == workspace.id {
-            // Keep the "focused index" stable when possible:
-            // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
-            // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
-            let newIndex = min(index, max(0, workspaces.count - 1))
-            selectedWorkspaceId = workspaces[newIndex].id
-        }
     }
 
     /// Detach a workspace from this window without closing its panels.
@@ -2650,6 +2685,11 @@ class WorkspaceManager: ObservableObject {
     @discardableResult
     func detachWorkspace(workspaceId: UUID) -> Workspace? {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return nil }
+        if selectedWorkspaceId == workspaceId, SocketCommandContext.current != nil {
+            // A socket move cannot remove the visible workspace and force a switch.
+            selectedWorkspaceId = closeFallback(excluding: workspaceId, index: index) ?? UUID()
+            return nil
+        }
         clearWorkspaceGitProbes(workspaceId: workspaceId)
         sidebarSelectedWorkspaceIds.remove(workspaceId)
 
@@ -2667,7 +2707,9 @@ class WorkspaceManager: ObservableObject {
 
         if selectedWorkspaceId == removed.id {
             let nextIndex = min(index, max(0, workspaces.count - 1))
-            selectedWorkspaceId = workspaces[nextIndex].id
+            withWorkspaceSelectionCause("close_fallback") {
+                selectedWorkspaceId = closeFallback(excluding: removed.id, index: nextIndex)
+            }
         }
 
         return removed
@@ -2686,7 +2728,7 @@ class WorkspaceManager: ObservableObject {
         }()
         workspaces.insert(workspace, at: insertIndex)
         if select {
-            selectedWorkspaceId = workspace.id
+            withWorkspaceSelectionCause("create") { selectedWorkspaceId = workspace.id }
         }
     }
 
@@ -2816,12 +2858,13 @@ class WorkspaceManager: ObservableObject {
         GhosttySurfaceScrollView.endNativeTextEntryForExplicitFocus(in: window)
     }
 
-    func selectWorkspace(_ workspace: Workspace) {
+    func selectWorkspace(_ workspace: Workspace, cause: String = "menu") {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select", to: workspace.id)
 #endif
+        withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspace.id }
+        guard selectedWorkspaceId == workspace.id else { return }
         prepareForExplicitWorkspaceSelection(to: workspace.id)
-        selectedWorkspaceId = workspace.id
     }
 
 
@@ -3571,7 +3614,7 @@ class WorkspaceManager: ObservableObject {
         return trimmedDirectory.isEmpty ? "cmux" : trimmedDirectory
     }
 
-    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false) {
+    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String = "menu") {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         if let surfaceId, workspace.panels[surfaceId] != nil {
             // Keep selected-surface intent stable across selectedTabId didSet async restore.
@@ -3580,24 +3623,27 @@ class WorkspaceManager: ObservableObject {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("focus", to: workspaceId)
 #endif
+        withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaceId }
+        guard selectedWorkspaceId == workspaceId else { return }
         prepareForExplicitWorkspaceSelection(to: workspaceId)
-        selectedWorkspaceId = workspaceId
         NotificationCenter.default.post(
             name: .ghosttyDidFocusTab,
             object: nil,
             userInfo: [GhosttyNotificationKey.workspaceId: workspaceId]
         )
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.unhide(nil)
-            if let app = AppDelegate.shared,
-               let windowId = app.windowId(for: self),
-               let window = app.mainWindow(for: windowId) {
-                window.makeKeyAndOrderFront(nil)
-            } else if let window = NSApp.keyWindow ?? NSApp.windows.first {
-                window.makeKeyAndOrderFront(nil)
+        if SocketCommandContext.current == nil {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.unhide(nil)
+                if let app = AppDelegate.shared,
+                   let windowId = app.windowId(for: self),
+                   let window = app.mainWindow(for: windowId) {
+                    window.makeKeyAndOrderFront(nil)
+                } else if let window = NSApp.keyWindow ?? NSApp.windows.first {
+                    window.makeKeyAndOrderFront(nil)
+                }
             }
         }
 
@@ -3638,7 +3684,8 @@ class WorkspaceManager: ObservableObject {
         // state active around it.
         workspace.clearSplitZoom()
         suppressFocusFlash = true
-        focusWorkspace(workspaceId, surfaceId: desiredPanelId, suppressFlash: true)
+        focusWorkspace(workspaceId, surfaceId: desiredPanelId, suppressFlash: true, cause: "notification")
+        guard selectedWorkspaceId == workspaceId else { suppressFocusFlash = false; return false }
         if wasSelected {
             suppressFocusFlash = false
         }
@@ -3662,7 +3709,7 @@ class WorkspaceManager: ObservableObject {
         workspace.focusPanel(surfaceId)
     }
 
-    func selectNextWorkspace() {
+    func selectNextWorkspace(cause: String = "shortcut") {
         guard let currentId = selectedWorkspaceId,
               let currentIndex = workspaces.firstIndex(where: { $0.id == currentId }) else { return }
         let nextIndex = (currentIndex + 1) % workspaces.count
@@ -3672,10 +3719,10 @@ class WorkspaceManager: ObservableObject {
 #endif
         activateWorkspaceCycleHotWindow()
         prepareForExplicitWorkspaceSelection(to: workspaces[nextIndex].id)
-        selectedWorkspaceId = workspaces[nextIndex].id
+        withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[nextIndex].id }
     }
 
-    func selectPreviousWorkspace() {
+    func selectPreviousWorkspace(cause: String = "shortcut") {
         guard let currentId = selectedWorkspaceId,
               let currentIndex = workspaces.firstIndex(where: { $0.id == currentId }) else { return }
         let prevIndex = (currentIndex - 1 + workspaces.count) % workspaces.count
@@ -3685,7 +3732,7 @@ class WorkspaceManager: ObservableObject {
 #endif
         activateWorkspaceCycleHotWindow()
         prepareForExplicitWorkspaceSelection(to: workspaces[prevIndex].id)
-        selectedWorkspaceId = workspaces[prevIndex].id
+        withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[prevIndex].id }
     }
 
     private func activateWorkspaceCycleHotWindow() {
@@ -3799,13 +3846,13 @@ class WorkspaceManager: ObservableObject {
     }
 #endif
 
-    func selectWorkspace(at index: Int) {
+    func selectWorkspace(at index: Int, cause: String = "shortcut") {
         guard index >= 0 && index < workspaces.count else { return }
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select_index", to: workspaces[index].id)
 #endif
         prepareForExplicitWorkspaceSelection(to: workspaces[index].id)
-        selectedWorkspaceId = workspaces[index].id
+        withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[index].id }
     }
 
     func selectLastWorkspace() {
@@ -3921,6 +3968,15 @@ class WorkspaceManager: ObservableObject {
         historyIndex = workspaceHistory.count - 1
     }
 
+    /// Read-only previous target. tmux target resolution must never navigate.
+    var previousWorkspaceId: UUID? {
+        guard historyIndex > 0 else { return nil }
+        let live = Set(workspaces.map(\.id))
+        return workspaceHistory.prefix(historyIndex).reversed().first {
+            live.contains($0) && $0 != selectedWorkspaceId
+        }
+    }
+
     func navigateBack() {
         guard historyIndex > 0 else { return }
 
@@ -3930,9 +3986,11 @@ class WorkspaceManager: ObservableObject {
             let workspaceId = workspaceHistory[targetIndex]
             if workspaces.contains(where: { $0.id == workspaceId }) {
                 isNavigatingHistory = true
-                historyIndex = targetIndex
-                prepareForExplicitWorkspaceSelection(to: workspaceId)
                 selectedWorkspaceId = workspaceId
+                if selectedWorkspaceId == workspaceId {
+                    historyIndex = targetIndex
+                    prepareForExplicitWorkspaceSelection(to: workspaceId)
+                }
                 isNavigatingHistory = false
                 return
             }
@@ -3952,9 +4010,11 @@ class WorkspaceManager: ObservableObject {
             let workspaceId = workspaceHistory[targetIndex]
             if workspaces.contains(where: { $0.id == workspaceId }) {
                 isNavigatingHistory = true
-                historyIndex = targetIndex
-                prepareForExplicitWorkspaceSelection(to: workspaceId)
                 selectedWorkspaceId = workspaceId
+                if selectedWorkspaceId == workspaceId {
+                    historyIndex = targetIndex
+                    prepareForExplicitWorkspaceSelection(to: workspaceId)
+                }
                 isNavigatingHistory = false
                 return
             }
@@ -5776,7 +5836,7 @@ extension WorkspaceManager {
         workspaceGroups = restoredGroups
         // Single workspace-array publication; folder records precede membership visibility.
         workspaces = newTabs
-        selectedWorkspaceId = newSelectedId
+        withWorkspaceSelectionCause("restore") { selectedWorkspaceId = newSelectedId }
         for workspace in newTabs {
             let terminalTabs = workspace.panels.values.compactMap { $0 as? TerminalTab }
             for terminalTab in terminalTabs {

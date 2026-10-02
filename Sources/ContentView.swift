@@ -4955,7 +4955,7 @@ struct ContentView: View {
         // without being blocked by the palette-visibility guard.
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true, cause: "palette")
         }
     }
 
@@ -4967,7 +4967,7 @@ struct ContentView: View {
     ) {
         DispatchQueue.main.async {
             _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true)
+            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true, cause: "palette")
         }
     }
 
@@ -6137,7 +6137,7 @@ struct ContentView: View {
                 return
             }
             workspaceManager.moveWorkspacesToTop([workspace.id])
-            workspaceManager.selectWorkspace(workspace)
+            SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         }
         registry.register(commandId: "palette.markWorkspaceRead") {
             guard let workspaceId = workspaceManager.selectedWorkspace?.id else {
@@ -7029,7 +7029,7 @@ struct ContentView: View {
         if let window = observedWindow, !window.isKeyWindow {
             window.makeKeyAndOrderFront(nil)
         }
-        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true)
+        workspaceManager.focusWorkspace(target.workspaceId, surfaceId: target.panelId, suppressFlash: true, cause: "palette")
 
         guard let context = focusedPanelContext,
               context.workspace.id == target.workspaceId,
@@ -7200,7 +7200,7 @@ struct ContentView: View {
         let targetIndex = currentIndex + delta
         guard targetIndex >= 0, targetIndex < workspaceManager.workspaces.count else { return }
         _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex)
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
     }
 
     private func syncSidebarSelectedWorkspaceIds() {
@@ -8824,7 +8824,7 @@ struct WorkspaceSidebar: View {
                 try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
             },
             onFocus: { id in
-                guard let selected = try? workspaceManager.focusWorkspaceGroup(id: id) else { return }
+                guard let selected = try? SocketCommandContext.withContext(nil, { try workspaceManager.withWorkspaceSelectionCause("sidebar") { try workspaceManager.focusWorkspaceGroup(id: id) } }) else { return }
                 selectedWorkspaceIds = [selected]
                 lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selected }
                 selection = .tabs
@@ -13575,7 +13575,7 @@ private struct WorkspaceRowView: View, Equatable {
         } catch { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         setSelectionToTabs()
     }
 
@@ -13613,7 +13613,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
 
         lastSidebarSelectionIndex = index
-        workspaceManager.selectWorkspace(workspace)
+        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
         if wasSelected, !isCommand, !isShift {
             workspaceManager.dismissNotificationOnDirectInteraction(
                 workspaceId: workspace.id,

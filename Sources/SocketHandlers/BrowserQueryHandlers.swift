@@ -252,12 +252,9 @@ extension TerminalController {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
 
-            if let windowId = v2ResolveWindowId(workspaceManager: workspaceManager) {
-                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-                setActiveWorkspaceManager(workspaceManager)
-            }
             if workspaceManager.selectedWorkspaceId != ws.id {
                 workspaceManager.selectWorkspace(ws)
+                guard workspaceManager.selectedWorkspaceId == ws.id else { return }
             }
 
             // Prevent omnibar auto-focus from immediately stealing first responder back.

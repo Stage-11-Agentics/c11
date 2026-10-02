@@ -6337,13 +6337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func focusMainWindow(windowId: UUID) -> Bool {
         guard let window = windowForMainWindowId(windowId) else { return false }
         if TerminalController.shouldSuppressSocketCommandActivation() {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            if TerminalController.socketCommandAllowsInAppFocusMutations() {
-                window.orderFront(nil)
-                setActiveMainWindow(window)
-            }
+            // A socket scope may route work here, but never reveals this window.
             return true
         }
         bringToFront(window)
@@ -10876,7 +10870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   readySurfaceId == surfaceId else { return }
             attemptFocus()
         })
-        selectedWorkspaceCancellable = workspaceManager.$selectedWorkspaceId
+        selectedWorkspaceCancellable = workspaceManager.$storedSelectedWorkspaceId
             .map { _ in () }
             .sink { _ in attemptFocus() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
@@ -11937,7 +11931,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=next repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            workspaceManager?.selectNextWorkspace()
+            SocketCommandContext.withContext(nil) { workspaceManager?.selectNextWorkspace() }
             return true
         }
 
@@ -11948,7 +11942,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=prev repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            workspaceManager?.selectPreviousWorkspace()
+            SocketCommandContext.withContext(nil) { workspaceManager?.selectPreviousWorkspace() }
             return true
         }
 
@@ -12067,7 +12061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "shortcut.action name=workspaceDigit digit=\(num) targetIndex=\(targetIndex) manager=\(debugManagerToken(manager)) \(debugShortcutRouteSnapshot(event: event))"
             )
 #endif
-            manager.selectWorkspace(at: targetIndex)
+            SocketCommandContext.withContext(nil) { manager.selectWorkspace(at: targetIndex) }
             return true
         }
 
@@ -13637,7 +13631,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @discardableResult
     func selectFeedTarget(_ target: AttentionOrder.Target) -> Bool {
         guard let (manager, workspace) = resolveFeedTarget(target) else { return false }
-        manager.selectWorkspace(workspace)
+        manager.selectWorkspace(workspace, cause: "jump")
+        guard manager.selectedWorkspaceId == workspace.id else { return false }
         workspace.focusPanel(target.tabID)
         return true
     }
@@ -13898,7 +13893,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   surfaceId == expectedSurfaceId else { return }
             Task { @MainActor in finishIfFocused() }
         })
-        cancellables.append(workspaceManager.$selectedWorkspaceId.sink { _ in
+        cancellables.append(workspaceManager.$storedSelectedWorkspaceId.sink { _ in
             Task { @MainActor in finishIfFocused() }
         })
         if let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) {
@@ -13926,6 +13921,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func bringToFront(_ window: NSWindow) {
+        guard !TerminalController.shouldSuppressSocketCommandActivation() else { return }
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }

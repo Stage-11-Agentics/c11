@@ -282,6 +282,10 @@ class Harness:
         self.first = self.original_key if self.original_key in normal else normal[0]
         self.second = self.rpc('window.create').get('window_id')
         require(bool(self.second) and self.second not in {row['id'] for row in windows}, 'second window was not created')
+        # QA launches deliberately leave c11 inactive. Explicit socket focus
+        # may reorder a window without activating the app, so establish the
+        # guest's AppKit activation before asserting key-window preservation.
+        self.client.activate_app()
         self.cli(['focus-window', '--window', self.first])
         self.wait_key(self.first)
         self.first_frame = self.resize(self.first)

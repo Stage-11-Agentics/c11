@@ -3475,6 +3475,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private func createSurface(for view: GhosttyNSView) {
         #if DEBUG
+        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
         let terminfo = getenv("TERMINFO").flatMap { String(cString: $0) } ?? "(unset)"
         let xdg = getenv("XDG_DATA_DIRS").flatMap { String(cString: $0) } ?? "(unset)"
@@ -4398,9 +4399,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         guard surface == nil else { return }
-        #if DEBUG
-        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
-        #endif
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
 
@@ -4410,7 +4408,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 self.backgroundSurfaceStartQueued = false
                 guard self.surface == nil else { return }
                 #if DEBUG
-                if let expiry = self.debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
                 let startedAt = ProcessInfo.processInfo.systemUptime
                 #endif
                 if let view = self.attachedView, view.window != nil {

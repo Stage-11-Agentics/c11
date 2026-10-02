@@ -16,9 +16,13 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     static let shared = TabRailTipCenter()
 
     private var policy: TabRailTipPolicy
+    /// Where the Tab Layout mode lives. Tests pass an isolated suite.
+    private let defaults: UserDefaults
     private let model = TabRailTipModel()
     private var slots: [String: Slot] = [:]
     private var phase: Phase = .idle
+    /// The one area opened by Try Rail, so Undo can remove its persisted open bit.
+    private var previewedRailSlot: Slot?
     private var sawList = false
     /// True after this showing has written `lastOffered`. Cleared when the
     /// showing ends, so a later offer (after the 30-day gap) stamps again.
@@ -64,8 +68,19 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         }
     }
 
+    /// Tests name the front area directly; the app derives it from the key window.
+    var frontAreaOverride: (@MainActor () -> (workspace: Workspace, paneId: PaneID)?)?
+
+    /// A center with its own policy and defaults and no window observers, for tests.
+    init(policy: TabRailTipPolicy, defaults: UserDefaults) {
+        self.policy = policy
+        self.defaults = defaults
+        super.init()
+    }
+
     private override init() {
         policy = TabRailTipPolicy(calendar: TabRailTipPolicy.localCalendar(), store: UserDefaultsTabRailTipStore())
+        defaults = .standard
         super.init()
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: nil)
@@ -80,6 +95,12 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             NSEvent.removeMonitor(escapeMonitor)
         }
     }
+
+    #if DEBUG
+    /// Puts a test center in the on-screen teaching phase without a popover.
+    func beginLiveOfferForTesting() { phase = .live }
+    var isOfferLiveForTesting: Bool { phase == .live }
+    #endif
 
     // MARK: Signals from a workspace
 
@@ -139,12 +160,13 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     func performTryRail() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let slot = frontSlot(), let workspace = slot.workspace else { return }
+        previewedRailSlot = slot
         phase = .undo
         reanchoring = true
         anchorBeforeSwitch = slot.anchor
         model.mode = .undo
         model.rows = []
-        TabLayoutSettings.setMode(.rail)
+        TabLayoutSettings.setMode(.rail, defaults: defaults)
         workspace.bonsplitController.setRailOpen(true, inPane: slot.paneId)
         resizePopover()
         scheduleRefresh()
@@ -152,14 +174,27 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     func performUndo() {
         dispatchPrecondition(condition: .onQueue(.main))
+        // Keep the workspace alive and capture the exact preview pane before
+        // closing the popover. Closing it can deliver a delegate callback that
+        // ends the offer and clears `previewedRailSlot`.
+        let previewed = previewedRailSlot
+        let previewWorkspace = previewed?.workspace
+        let previewPaneId = previewed?.paneId
         // Idle before the defaults write, so the layout observer cannot
         // treat the return to Tabs as a new offer. Undo does not dismiss.
         phase = .idle
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        // Clear the per-pane bit while its controller is still live, before
+        // returning to Tabs. Removal is safe if the pane closed during preview
+        // and also clears any stale persisted bit for that pane.
+        if let previewWorkspace, let previewPaneId {
+            previewWorkspace.bonsplitController.setRailOpen(false, inPane: previewPaneId)
+        }
         hidePopover()
-        TabLayoutSettings.setMode(.tabs)
+        previewedRailSlot = nil
+        TabLayoutSettings.setMode(.tabs, defaults: defaults)
     }
 
     func performShowList() {
@@ -171,6 +206,28 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             return
         }
         guard let slot = frontSlot(), let workspace = slot.workspace else { return }
+        performShowList(in: slot, workspace: workspace)
+    }
+
+    /// The count-cell callback runs after the clicked area is focused and before
+    /// Bonsplit toggles its sheet. Consume only the active teaching action.
+    func performShowListFromCountCell(workspace: Workspace, paneId: PaneID) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return false }
+        switch phase {
+        case .live, .pending:
+            break
+        case .idle, .undo:
+            return false
+        }
+        guard let slot = slots[slotID(workspace, paneId)],
+              frontSlot() === slot,
+              !slot.sheetOpen else { return false }
+        performShowList(in: slot, workspace: workspace)
+        return true
+    }
+
+    private func performShowList(in slot: Slot, workspace: Workspace) {
         sawList = true
         model.sawList = true
         hidePopover()
@@ -184,6 +241,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        previewedRailSlot = nil
         hidePopover()
     }
 
@@ -270,7 +328,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func considerStarting() {
-        guard TabLayoutSettings.mode() == .tabs else { return }
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else { return }
         guard let slot = frontSlot(), slot.overflowing, !slot.sheetOpen, slot.anchor?.window != nil else { return }
         guard policy.shouldOffer(now: Date(), layoutIsTabs: true, areaOverflowing: true) else { return }
         phase = .pending
@@ -279,7 +337,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateTeaching() {
-        guard TabLayoutSettings.mode() == .tabs else {
+        guard TabLayoutSettings.mode(defaults: defaults) == .tabs else {
             endOffer()
             return
         }
@@ -295,7 +353,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     }
 
     private func updateUndo() {
-        guard TabLayoutSettings.mode() == .rail else {
+        guard TabLayoutSettings.mode(defaults: defaults) == .rail else {
             endOffer()
             return
         }
@@ -331,6 +389,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        previewedRailSlot = nil
         hidePopover()
     }
 
@@ -465,6 +524,10 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     /// A key popover is skipped in favor of the main window. An inactive
     /// app has no front area, so the tip hides until the operator comes back.
     private func frontSlot() -> Slot? {
+        if let frontAreaOverride {
+            guard let area = frontAreaOverride() else { return nil }
+            return slots[slotID(area.workspace, area.paneId)]
+        }
         guard NSApp.isActive, let app = AppDelegate.shared else { return nil }
         var seen = Set<ObjectIdentifier>()
         for case let window? in [NSApp.keyWindow, NSApp.mainWindow] {
@@ -599,7 +662,7 @@ struct TabRailTipView: View {
                 Text(String(localized: "tabRailTip.undoTitle", defaultValue: "Tab Layout is Rail"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.text)
-                Text(String(localized: "tabRailTip.undoBody", defaultValue: "Every area keeps its tab list on the left. Undo puts Tabs back."))
+                Text(String(localized: "tabRailTip.undoBody", defaultValue: "This area's tab list stays open on the left. Undo puts Tabs back."))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.dim)
                     .fixedSize(horizontal: false, vertical: true)

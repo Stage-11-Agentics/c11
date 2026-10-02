@@ -539,6 +539,13 @@ public final class AreaInteractionRuntime: ObservableObject {
         confirmSelection[panelId] ?? .cancel
     }
 
+#if DEBUG
+    /// Tests only: reproduces a confirm card whose published selection is missing.
+    func debugClearConfirmSelection(panelId: UUID) {
+        confirmSelection[panelId] = nil
+    }
+#endif
+
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
     /// A destructive card starts on Cancel so a reflexive Return keeps things
     /// open, and a standard question starts on its confirm button, unless the

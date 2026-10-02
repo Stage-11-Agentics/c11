@@ -404,6 +404,25 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         )
     }
 
+    func testReturnOnActiveConfirmWithMissingSelectionCancels() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+        // A standard confirm starts on its confirm button, so only the missing
+        // selection can send Return to Cancel.
+        let content = ConfirmContent(
+            title: "Continue?", message: nil, confirmLabel: "Continue", cancelLabel: "Cancel",
+            role: .standard, source: .local, completion: { result = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(content))
+        XCTAssertEqual(runtime.confirmSelectionForDisplay(panelId: panelId), .confirm)
+
+        runtime.debugClearConfirmSelection(panelId: panelId)
+        runtime.acceptSelectedConfirm(panelId: panelId)
+
+        XCTAssertEqual(result, .cancelled)
+    }
+
     func testStandardConfirmStartsOnItsConfirmButton() {
         let runtime = AreaInteractionRuntime()
         let panelId = UUID()

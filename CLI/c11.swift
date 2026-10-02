@@ -1806,6 +1806,10 @@ struct CMUXCLI {
         }
 
         if command == "remote-daemon-status" {
+            if (commandArgs.contains("--help") || commandArgs.contains("-h")),
+               dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
+                return
+            }
             try runRemoteDaemonStatus(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
@@ -8570,6 +8574,32 @@ struct CMUXCLI {
 
             Print server capabilities as JSON.
             """
+        case "brand":
+            return """
+            Usage: c11 brand [--json]
+
+            Print the c11 brand and build identity.
+            """
+        case "config":
+            return """
+            Usage: c11 config <subcommand> [options]
+
+            Manage saved launch configurations. File-backed commands work with
+            the app down; `launch` starts a configured surface in c11.
+
+            Subcommands:
+              list [--json]                         List saved configurations.
+              recent [--json]                       Show recent launch history.
+              stats [--window <n>] [--by <axis>]    Show launch statistics.
+              save <name> [fields]                  Save a configuration.
+              edit <name|id> [fields]               Edit a configuration.
+              rm <name|id>                          Remove a configuration.
+              reorder <name|id> --to <index>        Move a configuration.
+              default <name|id>|--pin-current       Set the default configuration.
+              launch <name|id> [fields]              Launch a configuration.
+
+            Run `c11 config <subcommand> --help` for command-specific details.
+            """
         case "events":
             return eventsUsage()
         case "messages":
@@ -9012,6 +9042,13 @@ struct CMUXCLI {
               c11 ssh dev@my-host
               c11 ssh dev@my-host --name "gpu-box" --port 2222 --identity ~/.ssh/id_ed25519
               c11 ssh dev@my-host --ssh-option UserKnownHostsFile=/dev/null --ssh-option StrictHostKeyChecking=no
+            """
+        case "ssh-session-end":
+            return """
+            Usage: c11 ssh-session-end --relay-port <port> [--workspace <ref>] [--surface <ref>]
+
+            Notify c11 that an SSH terminal session has ended.
+            Defaults to CMUX_WORKSPACE_ID and C11_TAB_ID when omitted.
             """
         case "remote-daemon-status":
             return """
@@ -10567,6 +10604,57 @@ struct CMUXCLI {
                 Run `c11 workspace --help` for the full list.
                 """
             }
+        case "workspace-apply":
+            return """
+            Usage: c11 workspace-apply --file <path|->
+
+            Compatibility alias for `c11 workspace apply`. Apply a
+            WorkspaceApplyPlan JSON document; `-` reads from stdin.
+            """
+        case "markdown-content":
+            return """
+            Usage: c11 markdown-content [--surface <id|ref>] [--json]
+
+            Read the content of the caller's markdown tab, or the tab named by
+            --surface. The caller tab defaults to C11_TAB_ID.
+            """
+        case "ui":
+            return """
+            Usage: c11 ui themes <subcommand> [options]
+
+            Manage the legacy UI theme command surface. Use `c11 themes --help`
+            for the full c11 theme command reference.
+            """
+        case "workspace-color":
+            return """
+            Usage: c11 workspace-color <set|clear|get|list-palette> [options]
+
+            Read or change the workspace frame color.
+            """
+        case "tab-color":
+            return """
+            Usage: c11 tab-color <set|clear|get> [options]
+
+            Read or change a tab's accent color.
+            """
+        case "state":
+            return stateUsage()
+        case "app":
+            return appUsage()
+        case "agent-hook", "codex-hook":
+            return """
+            Usage: c11 agent-hook <working|idle>
+                   c11 codex-hook <working|idle>
+
+            Report the lifecycle state of the calling agent tab.
+            `codex-hook` is a compatibility alias.
+            """
+        case "skill":
+            return skillCommandUsage()
+        case "model-costs":
+            return ModelCostsCommandCore.usage
+        case "mailbox":
+            return mailboxUsage()
         default:
             return nil
         }
@@ -18118,6 +18206,7 @@ struct CMUXCLI {
           display-message [-p|--print] <text>
 
           markdown [open] <path>             (open markdown file in formatted viewer tab with live reload)
+          mailbox <send|recv|trace|tail|...>  durable agent-to-agent messaging
 
           messages view                         (open the live local agent-messages page)
           mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)

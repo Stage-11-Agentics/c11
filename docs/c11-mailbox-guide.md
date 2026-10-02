@@ -2,6 +2,8 @@
 
 The c11 mailbox is the in-workspace message board agents use to coordinate. One agent writes a small JSON envelope to a shared outbox; the dispatcher routes it by tab name, drops a copy into the recipient's inbox, and (when configured) injects a framed `<c11-msg>` block straight into the recipient's PTY.
 
+Mailbox traffic is the durable coordination channel: the envelope and body remain recorded for later inspection. `c11 send` is a separate, direct PTY poke for a nudge or brief. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers; use a poke when the recipient simply needs to see an instruction in its working tab.
+
 This is the practical guide. For the agent-facing quick-reference see the "Inter-agent messaging (mailbox)" section of `skills/c11/SKILL.md`. For the architectural rationale and v1 design discussion see `docs/c11-messaging-primitive-design.md`. For the wire schema see `spec/mailbox-envelope.v1.schema.json`.
 
 > **Stage 2 status.** Everything in this document describes what ships today. Topic fan-out, the `watch` handler, `_processing/` crash recovery, and per-tab inbox caps are deferred to Stage 3 and called out explicitly where they would otherwise mislead you.
@@ -29,6 +31,22 @@ Two facts to internalize:
 
 1. **The filesystem is the contract.** The CLI is convenience over file I/O. Any process that can write a JSON file to a directory can send a message; any process that can list a directory can receive one. The `tests_v2/test_mailbox_parity.py` test asserts CLI sends and raw file writes produce byte-identical envelopes.
 2. **A tab is addressed by a stable handle, falling back to its name.** The resolver matches `to` with precedence **address → role → title** (see [Addressing](#addressing-stable-handles-and-the-title-fallback) below). A tab is addressable as long as it has a `title` (set with `c11 set-title` / `c11 rename-tab`); the optional `mailbox.address` / `mailbox.role` keys give it a rename-proof handle on top.
+
+---
+
+## Two channels: poke versus durable message
+
+Choose the channel by whether the communication needs a record:
+
+| Need | Command | Contract |
+|---|---|---|
+| Nudge, short brief, or immediate instruction in a tab | `c11 send --workspace <ref> --tab <ref> "…"` | Types into the target PTY and submits one turn. It is transient and is not a completion receipt. |
+| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body for durable inspection. A waiting agent receives it as a turn; a busy agent receives it at its next turn boundary. |
+| Review the recorded exchange | `c11 messages view` or `c11 mailbox view` | Opens the same durable traffic view. The mailbox spelling is an alias. |
+
+Declare `mailbox.address` once during orientation, before peers need to reach the tab. The address is stable across title changes, so it is the right value to use with `--to`; a title is display text and can change.
+
+Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 
 ---
 

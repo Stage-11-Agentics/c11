@@ -6,17 +6,18 @@ final class ThemedValueEvaluatorTests: XCTestCase {
     // C11-253: the golden snapshot exposed #00000000 resolving as opaque
     // black. Exercise parsed RGB/RGBA literals, including leading zeros.
     func testEightDigitHexRetainsAlphaWithLeadingZeros() throws {
-        for (literal, expectedHex) in [
-            ("#00000000", "#00000000"),
-            ("#00112280", "#00112280"),
-            ("#000000", "#000000FF")
-        ] {
+        let cases: [(String, NSColor)] = [
+            ("#00000000", NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)),
+            ("#00112280", NSColor(srgbRed: 0, green: 17.0 / 255, blue: 34.0 / 255, alpha: 128.0 / 255)),
+            ("#000000", NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        ]
+        for (literal, expected) in cases {
             let ast = try ThemedValueParser.parse(literal)
             let resolved = ThemedValueEvaluator.evaluate(
                 ast, context: defaultContext, warningKey: literal,
                 colorLookup: { _, _ in nil }
             )
-            assertColor(resolved, matches: try XCTUnwrap(NSColor(hex: expectedHex)))
+            assertColor(resolved, matches: expected)
         }
     }
 

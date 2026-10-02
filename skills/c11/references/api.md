@@ -48,6 +48,8 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
+Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.

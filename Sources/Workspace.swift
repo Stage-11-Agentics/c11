@@ -9171,6 +9171,17 @@ final class Workspace: Identifiable, ObservableObject {
         return markdownTab
     }
 
+    /// Retire a graph displaced by session restore, even when external callers
+    /// still retain it. ID-keyed cleanup must finish before its replacement is
+    /// constructed. Normal close's notifications/last-workspace policy do not apply.
+    func retireForSessionRestore() {
+        mailboxDispatcher?.stop()
+        mailboxDispatcher = nil
+        teardownRemoteConnection()
+        owningWorkspaceManager = nil
+        teardownAllPanels()
+    }
+
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.

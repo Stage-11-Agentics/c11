@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import socket
 import threading
+import uuid
 
 
 def skill_state(root):
@@ -32,10 +33,42 @@ def main():
     skill_root = Path.home() / ".claude/skills/c11"
     before = skill_state(skill_root)
 
-    def run(*arguments, ok=True):
-        proc = subprocess.run([cli, *arguments], capture_output=True, text=True, timeout=20)
+    def run(*arguments, ok=True, environment=None, error_contains=None):
+        proc = subprocess.run([cli, *arguments], capture_output=True, text=True,
+                              timeout=20, env=environment)
         assert (proc.returncode == 0) == ok, (arguments, proc.returncode, proc.stderr)
+        if error_contains is not None:
+            assert error_contains in proc.stderr, (arguments, proc.stderr)
         return proc.stdout
+
+    # A tag-derived listener is the first implicit discovery candidate. Clear
+    # every socket override: plain guide and its alias/help must never probe it.
+    environment = dict(os.environ)
+    for key in ("C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET", "CMUX_SOCKET_PATH"):
+        environment.pop(key, None)
+    environment["CMUX_TAG"] = "c11-guide-" + uuid.uuid4().hex
+    discoverable_socket = "/tmp/cmux-debug-" + environment["CMUX_TAG"] + ".sock"
+    try:
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(discoverable_socket)
+            listener.listen(8)
+            listener.settimeout(0.1)
+            plain = run("guide", environment=environment)
+            assert plain == run("--skill", environment=environment)
+            implicit_guide = json.loads(run("--json", "guide", environment=environment))
+            assert implicit_guide == json.loads(run("--skill", "--json", environment=environment))
+            help_text = run("guide", "--help", environment=environment)
+            assert "Usage: c11 guide" in help_text
+            assert help_text == run("--skill", "--help", environment=environment)
+            try:
+                connection, _ = listener.accept()
+            except socket.timeout:
+                pass
+            else:
+                connection.close()
+                raise AssertionError("bundled guide/help connected to a discoverable listener")
+    finally:
+        Path(discoverable_socket).unlink(missing_ok=True)
 
     # An explicit non-existent path proves this command does not need a server,
     # even on a machine that happens to have an app running.
@@ -50,7 +83,6 @@ def main():
         assert guide["cli"]["short_version"] and guide["cli"]["build"] and guide["cli"]["commit"]
         assert "rename-tab" in guide["body"] and "rename-tab" in run("--help")
         assert "There is no `c11 list`" in guide["body"]
-        run("--socket", dead_socket, "list", ok=False)
         assert "Usage: c11 guide" in run("--socket", dead_socket, "guide", "--help")
         assert "Discovery & state" in run("--socket", dead_socket, "guide", "api")
         run("--socket", dead_socket, "guide", "../SKILL", ok=False)
@@ -69,7 +101,7 @@ def main():
                 listener.listen(1)
                 listener.settimeout(20)
 
-                def serve():
+                def serve(expect_request=True):
                     try:
                         with listener.accept()[0] as connection:
                             connection.settimeout(20)
@@ -79,6 +111,9 @@ def main():
                                     stream.write(b"OK\n")
                                     stream.flush()
                                     line = stream.readline()
+                                if not expect_request:
+                                    assert not line, line
+                                    return
                                 request = json.loads(line)
                                 assert request["method"] == "system.capabilities", request
                                 result = {"methods": ["system.capabilities"], "features": [], "features_version": 1}
@@ -104,6 +139,17 @@ def main():
                 assert comparison["cli"] == guide["cli"]
                 if server_sha is not None:
                     assert comparison["server"]["commit"] == server_sha
+                if expected is True:
+                    # A reachable peer proves rejection is command validation,
+                    # rather than the unrelated missing-socket failure.
+                    peer = threading.Thread(target=lambda: serve(False), daemon=True)
+                    peer.start()
+                    try:
+                        run("--socket", socket_path, "list", ok=False,
+                            error_contains="Unknown command: list")
+                    finally:
+                        peer.join(timeout=20)
+                    assert not peer.is_alive() and not errors, errors
 
     assert skill_state(skill_root) == before, "guide modified the installed skill"
     if not args.offline:

@@ -1792,6 +1792,12 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        // Guide (including its help) is bundled, offline content. Socket
+        // discovery probes listeners, so return before resolving any path.
+        if command == "guide" {
+            try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -1890,11 +1896,6 @@ struct CMUXCLI {
 
         if command == "skill" {
             try runSkillCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-
-        if command == "guide" {
-            try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
 

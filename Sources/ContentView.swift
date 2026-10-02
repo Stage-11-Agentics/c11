@@ -1559,6 +1559,8 @@ struct ContentView: View {
     @State private var commandPaletteTerminalOpenTargetAvailability: Set<TerminalDirectoryOpenTarget> = []
     @State private var isCommandPaletteSearchPending = false
     @State private var commandPalettePendingActivation: CommandPalettePendingActivation?
+    /// Who submitted the pending activation (nil: the operator), replayed with it.
+    @State private var commandPalettePendingOrigin: SocketCommandContext?
     @State private var commandPaletteResultsRevision: UInt64 = 0
     @State private var commandPaletteUsageHistoryByCommandId: [String: CommandPaletteUsageEntry] = [:]
     @State private var isFeedbackComposerPresented = false
@@ -4543,7 +4545,7 @@ struct ContentView: View {
         let usageHistory = commandPaletteUsageHistoryByCommandId
         let queryIsEmpty = CommandPaletteFuzzyMatcher.preparedQuery(matchingQuery).isEmpty
         let historyTimestamp = Date().timeIntervalSince1970
-        commandPalettePendingActivation = nil
+        commandPalettePendingActivation = nil; commandPalettePendingOrigin = nil
         cancelCommandPaletteSearch()
         if Self.commandPaletteShouldSynchronouslySeedResults(
             hasVisibleResultsForScope: commandPaletteVisibleResultsScope == scope
@@ -4613,6 +4615,7 @@ struct ContentView: View {
                 )
                 let resultIDs = cachedCommandPaletteResults.map(\.id)
                 let pendingActivation = commandPalettePendingActivation
+                let pendingOrigin = commandPalettePendingOrigin
                 let resolvedActivation = Self.commandPaletteResolvedPendingActivation(
                     pendingActivation,
                     requestID: requestID,
@@ -4630,13 +4633,16 @@ struct ContentView: View {
                 )
                 if Self.commandPalettePendingActivationRequestID(pendingActivation) == requestID {
                     commandPalettePendingActivation = nil
+                    commandPalettePendingOrigin = nil
                 }
                 commandPaletteResultsRevision &+= 1
                 if commandPaletteSearchRequestID == requestID {
                     commandPaletteSearchTask = nil
                 }
                 if let resolvedActivation {
-                    runCommandPaletteResolvedActivation(resolvedActivation)
+                    SocketCommandContext.withContext(pendingOrigin) {
+                        runCommandPaletteResolvedActivation(resolvedActivation)
+                    }
                 }
             }
         }
@@ -6627,6 +6633,7 @@ struct ContentView: View {
                     requestID: commandPaletteSearchRequestID,
                     commandID: commandID
                 )
+                commandPalettePendingOrigin = SocketCommandContext.adoptForPaletteSession()
             }
             return
         }
@@ -6641,6 +6648,7 @@ struct ContentView: View {
                     fallbackSelectedIndex: commandPaletteSelectedResultIndex,
                     preferredCommandID: commandPaletteSelectionAnchorCommandID
                 )
+                commandPalettePendingOrigin = SocketCommandContext.adoptForPaletteSession()
             }
             return
         }
@@ -6664,6 +6672,7 @@ struct ContentView: View {
         dlog("palette.run commandId=\(command.id) dismissOnRun=\(command.dismissOnRun ? 1 : 0)")
 #endif
         recordCommandPaletteUsage(command.id)
+        SocketCommandContext.adoptForPaletteSession()
         command.action()
         if command.dismissOnRun {
             dismissCommandPalette(restoreFocus: false)
@@ -6855,7 +6864,7 @@ struct ContentView: View {
         commandPaletteResolvedSearchFingerprint = nil
         commandPaletteTerminalOpenTargetAvailability = []
         isCommandPaletteSearchPending = false
-        commandPalettePendingActivation = nil
+        commandPalettePendingActivation = nil; commandPalettePendingOrigin = nil
         commandPaletteResultsRevision &+= 1
         if let window = observedWindow {
             _ = window.makeFirstResponder(nil)

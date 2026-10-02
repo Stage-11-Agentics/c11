@@ -13741,6 +13741,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func openNotificationInContext(_ context: MainWindowContext, workspaceId: UUID, surfaceId: UUID?, notificationId: UUID?) -> Bool {
+        // This path raises the window before it selects, so a socket-adopted palette
+        // session is refused here, ahead of any raise.
+        if context.workspaceManager.selectedWorkspaceId != workspaceId,
+           context.workspaceManager.refuseSocketWorkspaceSelection(target: workspaceId) { return false }
         let expectedIdentifier = "cmux.main.\(context.windowId.uuidString)"
         let window: NSWindow? = context.window ?? NSApp.windows.first(where: { $0.identifier?.rawValue == expectedIdentifier })
         guard let window else {

@@ -183,6 +183,11 @@ final class SocketCommandContext: @unchecked Sendable {
     let callerTabId: UUID?
     let callerTTYDevice: UInt32?
     var blockedTarget: UUID?
+    /// A command-palette session adopts the request that drives it (a simulated
+    /// shortcut, a debug call). Once adopted, the operator-only wrappers around
+    /// palette actions keep this context, so the selection setter still refuses
+    /// and attributes the action. Operator-driven sessions never carry one.
+    var holdsOperatorWrappers = false
 
     init(method: String, allowsFocus: Bool, callerTabId: UUID? = nil, callerTTYDevice: UInt32? = nil) {
         self.method = method
@@ -191,7 +196,17 @@ final class SocketCommandContext: @unchecked Sendable {
         self.callerTTYDevice = callerTTYDevice
     }
 
+    /// The origin of the palette session now running, or nil when an operator drives it.
+    /// Call where a session accepts a submission or saves one to replay later.
+    @discardableResult
+    static func adoptForPaletteSession() -> SocketCommandContext? {
+        guard let context = current else { return nil }
+        context.holdsOperatorWrappers = true
+        return context
+    }
+
     static func withContext<T>(_ context: SocketCommandContext?, _ body: () throws -> T) rethrows -> T {
+        if context == nil, current?.holdsOperatorWrappers == true { return try body() }
         let prior = current
         if let context { Thread.current.threadDictionary[threadKey] = context }
         else { Thread.current.threadDictionary.removeObject(forKey: threadKey) }

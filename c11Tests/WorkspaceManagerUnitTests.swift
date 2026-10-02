@@ -1657,6 +1657,59 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
         XCTAssertEqual(manager.selectedWorkspaceId, target.id)
     }
 
+    /// Pending-search route: a submission before the search settles is saved and replayed
+    /// on a later main turn. ContentView saves the origin with it (`adoptForPaletteSession`)
+    /// and replays it under that context (`withContext(origin)`); both calls are made here.
+    func testPendingPaletteSubmissionReplaysUnderItsSocketOrigin() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let request = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        let savedOrigin = SocketCommandContext.withContext(request) { SocketCommandContext.adoptForPaletteSession() }
+        XCTAssertNil(SocketCommandContext.current, "the request has ended before the replay")
+        SocketCommandContext.withContext(savedOrigin) {
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+            SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "palette") }
+        }
+        let settled = expectation(description: "main turn passed")
+        DispatchQueue.main.async { DispatchQueue.main.async { settled.fulfill() } }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(request.blockedTarget, target.id)
+        // An operator-origin pending submission replays with no context and switches.
+        SocketCommandContext.withContext(nil) { manager.selectWorkspace(target, cause: "palette") }
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
+    /// Jump to Latest Unread runs through operator-only wrappers (`withContext(nil)`).
+    /// Inside a socket-adopted palette session they must keep the socket origin; the
+    /// window is not raised and the selection does not move. Operator use still jumps.
+    func testPaletteJumpUnderSocketOriginCannotSwitchThroughOperatorWrapper() throws {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let manager = WorkspaceManager()
+        let windowId = UUID()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(window, windowId: windowId, workspaceManager: manager,
+                               sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState())
+        defer { window.close() }
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let panel = try XCTUnwrap(target.focusedPanelId)
+        let request = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(request) {
+            SocketCommandContext.adoptForPaletteSession()
+            XCTAssertFalse(app.operatorOpenNotification(workspaceId: target.id, surfaceId: panel, notificationId: nil))
+        }
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        XCTAssertEqual(request.blockedTarget, target.id)
+        XCTAssertTrue(app.operatorOpenNotification(workspaceId: target.id, surfaceId: panel, notificationId: nil))
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
     func testSelectionCausesReachTheEventLogFromRealRoutes() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-323-\(UUID().uuidString)")

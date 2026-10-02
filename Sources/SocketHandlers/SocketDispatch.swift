@@ -162,6 +162,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserStateSave(params: request.params))
         case "browser.state.load":
             return v2Result(id: request.id, v2BrowserStateLoadOffMain(params: request.params))
+        case let method where method.hasPrefix("browser."):
+            return v2DispatchBrowserAwaitWorker(method, id: request.id, params: request.params)
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

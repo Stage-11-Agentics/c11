@@ -1136,8 +1136,9 @@ extension TerminalController {
         return result
     }
 
-    // C11-26: surface.read_text matches surface.clear_history shape — no
-    // waitForTerminalSurface, no deadlock vector — migrated for uniformity.
+    // C11-296: resolve on main, demand-start and wait on the socket worker,
+    // then revalidate and read on main. Reuse the send path's bounded wait;
+    // never wait for a cold terminal while holding the main queue.
     nonisolated func v2SurfaceReadText(params: [String: Any]) -> V2CallResult {
         var includeScrollback = v2Bool(params, "scrollback") ?? false
         let lineLimit = v2Int(params, "lines")
@@ -1150,6 +1151,7 @@ extension TerminalController {
 
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Failed to read terminal text", data: nil)
+        nonisolated(unsafe) var target: (WorkspaceManager, Workspace, TerminalTab)?
         Task { @MainActor in
             defer { semaphore.signal() }
             // C11-26: refresh ref handles before resolution; see
@@ -1171,6 +1173,24 @@ extension TerminalController {
             }
             guard let terminalPanel = ws.terminalPanel(for: surfaceId) else {
                 result = .err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+
+            target = (workspaceManager, ws, terminalPanel)
+        }
+        semaphore.wait()
+        guard let (workspaceManager, ws, terminalPanel) = target else { return result }
+
+        // This pointer is only a readiness signal. The read below fetches the
+        // live runtime again on main, where teardown is serialized with it.
+        _ = waitForTerminalSurfaceOffMain(terminalPanel, waitUpTo: 2.0)
+
+        Task { @MainActor in
+            defer { semaphore.signal() }
+            let surfaceId = terminalPanel.id
+            guard workspaceManager.workspaces.contains(where: { $0 === ws }),
+                  ws.terminalPanel(for: surfaceId) === terminalPanel else {
+                result = .err(code: "not_found", message: "Terminal surface not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
 

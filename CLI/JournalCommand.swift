@@ -1,7 +1,7 @@
 import Foundation
 
 enum JournalCommand {
-    enum Delivery { case committed([String: Any]), spooled, unsupported, lost }
+    enum Delivery { case committed([String: Any]), spooled, unsupported, lost, rejected(String) }
 
     static func deliver(_ draft: JournalDraft, socketPath: String) -> Delivery {
         guard let data = try? draft.canonicalData(),
@@ -21,6 +21,9 @@ enum JournalCommand {
             return .committed(try client.sendV2(method: "agent.event.append", params: envelope, deadline: .custom(0.250)))
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
             return .unsupported
+        } catch let error as CLIError where [JournalError.invalidEvent, .conflict, .expired, .unsupportedVersion]
+            .contains(where: { error.message.hasPrefix($0.rawValue + ":") }) {
+            return .rejected(String(error.message.prefix(while: { $0 != ":" })))
         } catch { return spool(draft) }
     }
 
@@ -48,6 +51,7 @@ enum JournalCommand {
         case .spooled: print("{\"spooled\":true}")
         case .unsupported: throw CLIError(message: "method_not_found")
         case .lost: throw CLIError(message: "storage_unavailable")
+        case .rejected(let code): throw CLIError(message: code)
         }
     }
 

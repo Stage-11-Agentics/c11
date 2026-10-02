@@ -250,13 +250,13 @@ enum TabLivenessDeriver {
                     workspace.setJournalSnapshot(snapshot, forTab: tabID)
                     // A coalesced start may already have been superseded by its ask.
                     // Closing a prior prompt gate is safe; only the live boundary below opens it.
-                    if let snapshot, [.working, .blocked, .error].contains(snapshot.phase) {
-                        workspace.noteMailboxAgentLifecycle(surfaceId: tabID, source: .reported,
-                            activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
-                    } else if let boundary {
+                    if let boundary {
                         workspace.noteMailboxAgentLifecycle(surfaceId: tabID,
                             source: boundary.pid == nil ? .headless : .reported,
                             activity: boundary.working ? .working : .idle, at: boundary.at, agentPid: boundary.pid)
+                    } else if let snapshot, [.working, .blocked, .error].contains(snapshot.phase) {
+                        workspace.noteMailboxAgentLifecycle(surfaceId: tabID, source: .reported,
+                            activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
                     }
                 }
             }

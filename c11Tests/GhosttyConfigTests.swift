@@ -47,6 +47,28 @@ final class GhosttyConfigTests: XCTestCase {
         let blue: Int
     }
 
+    func testDarkenConvertsCatalogAndGrayscaleColorsBeforeReadingHue() {
+        let colors = [
+            ("catalog", NSColor.red),
+            ("grayscale", NSColor(calibratedWhite: 0.55, alpha: 0.7)),
+        ]
+
+        for (name, color) in colors {
+            let darkened = color.darken(by: 0.2)
+            XCTAssertEqual(
+                darkened.alphaComponent,
+                color.alphaComponent,
+                accuracy: 0.001,
+                "Darkening a \(name) color should preserve alpha"
+            )
+            XCTAssertLessThan(
+                darkened.luminance,
+                color.luminance,
+                "Darkening a \(name) color should reduce its luminance"
+            )
+        }
+    }
+
     func testResolveThemeNamePrefersLightEntryForPairedTheme() {
         let resolved = GhosttyConfig.resolveThemeName(
             from: "light:Builtin Solarized Light,dark:Builtin Solarized Dark",

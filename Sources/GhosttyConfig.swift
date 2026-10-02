@@ -642,11 +642,12 @@ extension NSColor {
     }
 
     func darken(by amount: CGFloat) -> NSColor {
+        guard let rgb = usingColorSpace(.sRGB) else { return self }
         var h: CGFloat = 0
         var s: CGFloat = 0
         var b: CGFloat = 0
         var a: CGFloat = 0
-        getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        rgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
         return NSColor(
             hue: h,
             saturation: s,

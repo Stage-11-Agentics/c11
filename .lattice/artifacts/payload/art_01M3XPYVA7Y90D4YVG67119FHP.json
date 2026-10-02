@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "invocation": "719036c98be040b7aed6f89985822ef4",
+    "head": "dfdbf66513db027196f5b22238908c088feb184f",
+    "parent_head": "73e29c0cdab172004bc4f1370e22e81b7c932422",
+    "branch": "c11-1.0/C11-258-launch-runtime-file",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-258-launch",
+    "slug": "c11-258-launch",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/LaunchPromptDeliveryTests",
+      "-only-testing:c11Tests/LaunchPostBootAttachmentTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "selected_results": [
+    "POSTBOOT github-copilot: unattached=3.004256010055542s attach-to-launch=0.3151381015777588s launch-to-read=2.6528728008270264s bytes=32768 sha256=fde1c94c25bf0be3c9c0790a901e394fc8fba87497fff74f5c7a61e45e10c665",
+    "POSTBOOT kimi: unattached=3.0042049884796143s attach-to-launch=0.2923722267150879s launch-to-read=2.6586220264434814s bytes=32768 sha256=401ceb1970ae9ff787eeee1a14f2aa4553c9b5dfa7a3e6263efaec9224865bc0",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.003 (12.004) seconds",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.003 (12.004) seconds",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.003 (12.005) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.106 (1.108) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.106 (1.109) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.106 (1.110) seconds",
+    "** TEST SUCCEEDED **"
+  ],
+  "conflicts": [
+    "GhosttyTabs.xcodeproj/project.pbxproj"
+  ],
+  "resolution_logic_changed": false,
+  "static_review": "PASS both parents memberships retained; launch sources unchanged"
+}

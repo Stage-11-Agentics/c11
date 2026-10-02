@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 8,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPKJ68Q9CZHMN7YCWWD4AH8S",
-  "last_event_id": "ev_01KT9WX9JQZ86C4Y60N77S7BMA",
-  "last_status_changed_at": "2026-05-05T01:09:18Z",
+  "last_event_id": "ev_01M3YXY53KM2DWTXSVM54JCFS6",
+  "last_status_changed_at": "2026-10-02T18:27:30Z",
   "linked_files": [],
   "priority": "low",
   "relationships_out": [
@@ -56,7 +57,7 @@
   "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-129",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "architecture",
     "bonsplit",
@@ -65,6 +66,6 @@
   ],
   "title": "Bonsplit \u2194 c11: TrailingAccessory slot \u2014 extract toolbar buttons out of bonsplit",
   "type": "spike",
-  "updated_at": "2026-06-04T18:04:14Z",
+  "updated_at": "2026-10-02T18:27:30Z",
   "urgency": null
 }

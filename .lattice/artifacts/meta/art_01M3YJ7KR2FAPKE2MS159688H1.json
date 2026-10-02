@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:02:57Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YJ7KR2FAPKE2MS159688H1",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YJ7KR2FAPKE2MS159688H1.md",
+    "size_bytes": 598
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-301 native runtime complete at b6f239bd077164d2ff2e7aa18d5464d4e885fd35: candidate PASS, baseline comparison completed. Two complete native 61-workspace cycles per build, 60 retained UUIDs restore",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

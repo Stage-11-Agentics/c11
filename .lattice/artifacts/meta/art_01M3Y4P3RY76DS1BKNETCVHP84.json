@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T11:06:12Z",
+  "created_by": "agent:astra-hangs",
+  "custom_fields": {},
+  "id": "art_01M3Y4P3RY76DS1BKNETCVHP84",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Y4P3RY76DS1BKNETCVHP84.tgz",
+    "size_bytes": 28938
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Clean tagged build; 40 streams, 100 native keyboard observations, zero misses at merged head; cropped neutral prompt proof. Prior targeted tests retain their original head attribution.",
+  "tags": [],
+  "title": "C11-295 merged-head runtime proof 6eaab8c580",
+  "token_usage": null,
+  "type": "file"
+}

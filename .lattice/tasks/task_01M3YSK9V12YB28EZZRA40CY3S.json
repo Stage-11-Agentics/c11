@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-10-02T17:11:40Z",
+  "created_by": "agent:claude-opus-5.5",
+  "custom_fields": {},
+  "description": "## Why\nEvery session-resume wrapper in Resources/bin gates on the legacy CMUX_SURFACE_ID env var (codex also falls back to C11_SURFACE_ID). CLAUDE.md names C11_TAB_ID as the c11 tab identity, and the c11 naming rule says residual cmux names are bugs except the deliberate cmux CLI alias.\n\n## Scope\nclaude, codex, grok, opencode, pi, copilot, omp under Resources/bin: gate on C11_TAB_ID (the hidden-alias layer keeps old env names readable, so keep a fallback read of the legacy var for older running sessions if the alias layer does not already export it). Update the wrapper header comments. Update CLAUDE.md's host-and-primitive bullet once landed (it currently notes the residual).\n\n## Acceptance\n1. Inside a c11 terminal each wrapper still captures resume identity; outside c11 or with no live socket it falls through to the real binary unchanged.\n2. No wrapper references CMUX_SURFACE_ID except a documented fallback, if one is kept.\n3. CLAUDE.md residual note removed.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3YSK9V12YB28EZZRA40CY3S",
+  "last_event_id": "ev_01M3YSK9VERJVHPR0R36N7TWV7",
+  "last_status_changed_at": "2026-10-02T17:11:40Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-318",
+  "status": "backlog",
+  "tags": [
+    "naming",
+    "wrappers"
+  ],
+  "title": "Session-resume wrappers gate on C11_TAB_ID instead of legacy CMUX_SURFACE_ID",
+  "type": "chore",
+  "updated_at": "2026-10-02T17:11:40Z",
+  "urgency": null
+}

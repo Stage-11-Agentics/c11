@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:21:39Z",
+  "created_by": "agent:luna-291",
+  "custom_fields": {},
+  "id": "art_01M3YK9VC7HWV6F9A5F92DKB9X",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YK9VC7HWV6F9A5F92DKB9X.png",
+    "size_bytes": 719926
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PID-scoped Escape dismissed the Japanese History menu on the exact tagged artifact; the tagged window remained visible.",
+  "tags": [],
+  "title": "Atlas Japanese History menu dismissed",
+  "token_usage": null,
+  "type": "file"
+}

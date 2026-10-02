@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T03:34:33Z",
+  "created_by": "agent:codex-soak",
+  "custom_fields": {},
+  "id": "art_01M3XAV3A22K3Y4DE1VEDGJAZC",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XAV3A22K3Y4DE1VEDGJAZC.md",
+    "size_bytes": 16867
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Codex takeover soak protocol, planning only",
+  "token_usage": null,
+  "type": "file"
+}

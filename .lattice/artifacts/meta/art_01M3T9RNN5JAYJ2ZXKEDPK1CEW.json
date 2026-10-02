@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-30T23:18:01Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "id": "art_01M3T9RNN5JAYJ2ZXKEDPK1CEW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3T9RNN5JAYJ2ZXKEDPK1CEW.md",
+    "size_bytes": 408
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged as c11 #461 (merge commit cd567b9dd), fully green CI. Fresh-context review plus a delta review; all findings fixed (per-reason interrupt set, Space/occlusion, forget on close, static formatter,",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

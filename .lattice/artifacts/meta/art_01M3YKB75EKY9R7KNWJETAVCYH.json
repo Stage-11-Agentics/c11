@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:22:24Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKB75EKY9R7KNWJETAVCYH",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKB75EKY9R7KNWJETAVCYH.png",
+    "size_bytes": 193151
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Chrome mixed fixture: plaintext cookie and history, explicit encrypted warning",
+  "token_usage": null,
+  "type": "file"
+}

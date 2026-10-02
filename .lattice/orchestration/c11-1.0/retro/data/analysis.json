@@ -1,0 +1,5095 @@
+{
+ "go": "2026-10-02T04:45:00Z",
+ "now": "2026-10-02T16:24:30.339542Z",
+ "tickets": [
+  {
+   "id": "C11-299",
+   "title": "Restore a session that contains a duplicate tab id",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 499,
+   "prs": [
+    499
+   ],
+   "additions": 682,
+   "deletions": 5,
+   "impl": "2026-10-02T04:16:32Z",
+   "merged": "2026-10-02T05:40:58Z",
+   "done": "2026-10-02T06:39:21Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:16:32Z",
+     "2026-10-02T04:33:57Z"
+    ],
+    [
+     "review",
+     "2026-10-02T04:33:57Z",
+     "2026-10-02T04:38:36Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T04:38:36Z",
+     "2026-10-02T04:46:07Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T04:46:07Z",
+     "2026-10-02T05:40:58Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T05:40:58Z",
+     "2026-10-02T06:39:21Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T04:38:36Z",
+     "v": "FAIL",
+     "fam": "codex"
+    },
+    {
+     "ts": "2026-10-02T04:46:07Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 1,
+   "validator": [
+    {
+     "ts": "2026-10-02T06:39:21Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0.04388888888888889,
+   "ci_runs": 4,
+   "ci_cancelled": 2,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.39055555555555554,
+   "land_ci_run_h": 0.09722222222222222,
+   "conflicts": 0,
+   "flake_mentions": 2,
+   "mac_minutes": 35.8
+  },
+  {
+   "id": "C11-289",
+   "title": "Add browser profile list, add, rename, clear, delete, and --profile",
+   "status": "in_progress",
+   "ws": "cli-browser-release",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T09:20:22Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T09:20:22Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T09:20:22Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-280",
+   "title": "Type --command into a new terminal via Ghostty initial_input",
+   "status": "in_validation",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 522,
+   "prs": [
+    522,
+    536
+   ],
+   "additions": 933,
+   "deletions": 66,
+   "impl": "2026-10-02T07:21:46Z",
+   "merged": "2026-10-02T08:53:43Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:21:46Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:21:46Z",
+     "2026-10-02T08:35:20Z"
+    ],
+    [
+     "review",
+     "2026-10-02T08:35:20Z",
+     "2026-10-02T08:39:27Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T08:39:27Z",
+     "2026-10-02T08:53:43Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T08:53:43Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T08:39:27Z",
+     "v": "FAIL",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.017222222222222222,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 54.26666666666667
+  },
+  {
+   "id": "C11-303",
+   "title": "Stop scroll updates from laying out every window",
+   "status": "in_progress",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:50:29Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:50:29Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:50:29Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-315",
+   "title": "Run full CI hourly on main and on an Atlas self-hosted runner for internal branches",
+   "status": "review",
+   "ws": "infra",
+   "tier": "p1",
+   "pr": 537,
+   "prs": [
+    537
+   ],
+   "additions": 481,
+   "deletions": 498,
+   "impl": "2026-10-02T14:55:35Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T14:44:15Z",
+     "2026-10-02T14:55:35Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:55:35Z",
+     "2026-10-02T15:40:55Z"
+    ],
+    [
+     "review",
+     "2026-10-02T15:40:55Z",
+     "2026-10-02T15:46:52Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T15:46:52Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T15:46:52Z",
+     "v": "FAIL",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 2,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-273",
+   "title": "Implement journal append, SQLite store, pure fold and bounded replay",
+   "status": "done",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": 527,
+   "prs": [
+    527
+   ],
+   "additions": 4200,
+   "deletions": 108,
+   "impl": "2026-10-02T06:49:34Z",
+   "merged": "2026-10-02T12:01:30Z",
+   "done": "2026-10-02T12:01:33Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:49:34Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:49:34Z",
+     "2026-10-02T10:23:20Z"
+    ],
+    [
+     "review",
+     "2026-10-02T10:23:20Z",
+     "2026-10-02T10:39:15Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T10:39:15Z",
+     "2026-10-02T11:02:16Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T11:02:16Z",
+     "2026-10-02T12:01:30Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T10:39:15Z",
+     "v": "FAIL",
+     "fam": "fable"
+    },
+    {
+     "ts": "2026-10-02T11:02:16Z",
+     "v": "PASS",
+     "fam": "fable"
+    },
+    {
+     "ts": "2026-10-02T11:15:36Z",
+     "v": "PASS",
+     "fam": "grok"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0.46805555555555556,
+   "ci_runs": 3,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.02666666666666667,
+   "land_ci_run_h": 0.7236111111111111,
+   "conflicts": 3,
+   "flake_mentions": 1,
+   "mac_minutes": 117.28333333333333
+  },
+  {
+   "id": "C11-308",
+   "title": "Encode send-key ctrl+letter so agents can interrupt a TUI",
+   "status": "in_validation",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 523,
+   "prs": [
+    523
+   ],
+   "additions": 763,
+   "deletions": 30,
+   "impl": "2026-10-02T06:56:59Z",
+   "merged": "2026-10-02T09:10:58Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:56:59Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:56:59Z",
+     "2026-10-02T09:01:56Z"
+    ],
+    [
+     "review",
+     "2026-10-02T09:01:56Z",
+     "2026-10-02T09:07:14Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T09:07:14Z",
+     "2026-10-02T09:10:58Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T09:10:58Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T09:07:14Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.03666666666666667,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 25.21666666666667
+  },
+  {
+   "id": "C11-284",
+   "title": "Print the bundled skill and a versioned capabilities.features list",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 502,
+   "prs": [
+    502
+   ],
+   "additions": 623,
+   "deletions": 6,
+   "impl": "2026-10-02T04:16:22Z",
+   "merged": "2026-10-02T07:00:36Z",
+   "done": "2026-10-02T09:05:55Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:16:22Z",
+     "2026-10-02T05:05:05Z"
+    ],
+    [
+     "review",
+     "2026-10-02T05:05:05Z",
+     "2026-10-02T05:08:25Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T05:08:25Z",
+     "2026-10-02T05:17:11Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T05:17:11Z",
+     "2026-10-02T07:00:36Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T07:00:36Z",
+     "2026-10-02T09:05:55Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T05:08:25Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T05:17:11Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [
+    {
+     "ts": "2026-10-02T09:05:55Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 6,
+   "ci_cancelled": 0,
+   "ci_failed": 2,
+   "land_ci_queue_h": 0.7969444444444445,
+   "land_ci_run_h": 0.31416666666666665,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 142.66666666666666
+  },
+  {
+   "id": "C11-312",
+   "title": "Artifact-only signing: signed, notarized test builds from GitHub Actions without publishing",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 503,
+   "prs": [
+    503
+   ],
+   "additions": 724,
+   "deletions": 0,
+   "impl": "2026-10-02T04:16:24Z",
+   "merged": "2026-10-02T06:22:18Z",
+   "done": "2026-10-02T06:22:50Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:16:24Z",
+     "2026-10-02T06:02:42Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:02:42Z",
+     "2026-10-02T06:07:51Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:07:51Z",
+     "2026-10-02T06:22:18Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:07:51Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 7,
+   "ci_cancelled": 4,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 205.9
+  },
+  {
+   "id": "C11-277",
+   "title": "Query lifecycle analytics and export the journal as NDJSON",
+   "status": "in_progress",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:50:03Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:50:03Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:50:03Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-290",
+   "title": "Smoke c11 ssh atlas and correct the API reference",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 520,
+   "prs": [
+    520
+   ],
+   "additions": 2,
+   "deletions": 2,
+   "impl": "2026-10-02T07:16:19Z",
+   "merged": "2026-10-02T08:25:35Z",
+   "done": "2026-10-02T08:25:38Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:16:19Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:16:19Z",
+     "2026-10-02T08:01:46Z"
+    ],
+    [
+     "review",
+     "2026-10-02T08:01:46Z",
+     "2026-10-02T08:05:17Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T08:05:17Z",
+     "2026-10-02T08:25:35Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T08:05:17Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0.026111111111111113,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-282",
+   "title": "Read a terminal selection off the main thread",
+   "status": "in_validation",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 529,
+   "prs": [
+    529
+   ],
+   "additions": 641,
+   "deletions": 1,
+   "impl": "2026-10-02T09:24:44Z",
+   "merged": "2026-10-02T11:43:06Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T09:24:44Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T09:24:44Z",
+     "2026-10-02T10:49:37Z"
+    ],
+    [
+     "review",
+     "2026-10-02T10:49:37Z",
+     "2026-10-02T10:59:31Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T10:59:31Z",
+     "2026-10-02T11:10:53Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T11:10:53Z",
+     "2026-10-02T11:43:06Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T11:43:06Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T10:59:31Z",
+     "v": "FAIL",
+     "fam": "grok"
+    },
+    {
+     "ts": "2026-10-02T11:10:53Z",
+     "v": "PASS",
+     "fam": "grok"
+    },
+    {
+     "ts": "2026-10-02T11:34:49Z",
+     "v": "PASS",
+     "fam": "grok"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.001388888888888889,
+   "land_ci_run_h": 0.15222222222222223,
+   "conflicts": 1,
+   "flake_mentions": 0,
+   "mac_minutes": 39.833333333333336
+  },
+  {
+   "id": "C11-258",
+   "title": "launch-agent: deliver long prompts by file reference and report startup truthfully",
+   "status": "done",
+   "ws": "attention",
+   "tier": "p1",
+   "pr": 512,
+   "prs": [
+    512
+   ],
+   "additions": 2243,
+   "deletions": 176,
+   "impl": "2026-10-02T05:28:28Z",
+   "merged": "2026-10-02T07:33:39Z",
+   "done": "2026-10-02T08:49:18Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:28:28Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:28:28Z",
+     "2026-10-02T06:10:44Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:10:44Z",
+     "2026-10-02T06:16:27Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T06:16:27Z",
+     "2026-10-02T06:42:12Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:42:12Z",
+     "2026-10-02T07:33:39Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T07:33:39Z",
+     "2026-10-02T08:49:18Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:16:27Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T06:42:12Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [
+    {
+     "ts": "2026-10-02T08:49:18Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 3,
+   "ci_cancelled": 2,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.030833333333333334,
+   "land_ci_run_h": 0.28055555555555556,
+   "conflicts": 1,
+   "flake_mentions": 1,
+   "mac_minutes": 109.21666666666664
+  },
+  {
+   "id": "C11-311",
+   "title": "Tier-2 bug sweep",
+   "status": "in_progress",
+   "ws": "bugs",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:51:38Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:51:38Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:51:38Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-293",
+   "title": "Release 1.0.0 only after Atin names the sign-off build",
+   "status": "planned",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-259",
+   "title": "Workspace groups: folder model, persistence, CLI and atomic batch reorder",
+   "status": "done",
+   "ws": "workspaces",
+   "tier": "p1",
+   "pr": 504,
+   "prs": [
+    504
+   ],
+   "additions": 1880,
+   "deletions": 60,
+   "impl": "2026-10-02T04:37:44Z",
+   "merged": "2026-10-02T07:56:11Z",
+   "done": "2026-10-02T07:56:14Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:37:44Z",
+     "2026-10-02T05:04:23Z"
+    ],
+    [
+     "review",
+     "2026-10-02T05:04:23Z",
+     "2026-10-02T05:12:47Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T05:12:47Z",
+     "2026-10-02T07:35:47Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T07:35:47Z",
+     "2026-10-02T07:56:11Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T05:12:47Z",
+     "v": "FAIL",
+     "fam": "codex"
+    },
+    {
+     "ts": "2026-10-02T07:35:47Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 5,
+   "ci_cancelled": 3,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.2238888888888889,
+   "land_ci_run_h": 0.105,
+   "conflicts": 1,
+   "flake_mentions": 2,
+   "mac_minutes": 178.9
+  },
+  {
+   "id": "C11-279",
+   "title": "Reject misspelled routing keys instead of hitting the focused tab",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 508,
+   "prs": [
+    508
+   ],
+   "additions": 225,
+   "deletions": 1,
+   "impl": "2026-10-02T05:06:26Z",
+   "merged": "2026-10-02T09:41:19Z",
+   "done": "2026-10-02T15:52:13Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:06:26Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:06:26Z",
+     "2026-10-02T09:02:22Z"
+    ],
+    [
+     "review",
+     "2026-10-02T09:02:22Z",
+     "2026-10-02T09:27:58Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T09:27:58Z",
+     "2026-10-02T09:41:19Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T09:41:19Z",
+     "2026-10-02T15:52:13Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T09:27:58Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T15:52:13Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 3,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.11916666666666667,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 46.916666666666664
+  },
+  {
+   "id": "C11-216",
+   "title": "Move c11 tagged builds, tests and release builds onto Atlas",
+   "status": "done",
+   "ws": "journal",
+   "tier": "p0",
+   "pr": 498,
+   "prs": [
+    498
+   ],
+   "additions": 976,
+   "deletions": 67,
+   "impl": "2026-10-02T03:56:47Z",
+   "merged": "2026-10-02T05:25:45Z",
+   "done": "2026-10-02T05:26:29Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T03:56:47Z",
+     "2026-10-02T04:35:42Z"
+    ],
+    [
+     "review",
+     "2026-10-02T04:35:42Z",
+     "2026-10-02T04:39:30Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T04:39:30Z",
+     "2026-10-02T04:50:22Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T04:50:22Z",
+     "2026-10-02T05:25:45Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T04:39:30Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T04:50:22Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 4,
+   "ci_cancelled": 3,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.5897222222222223,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 70.03333333333335
+  },
+  {
+   "id": "C11-271",
+   "title": "Capture real lifecycle sequences as the journal and Feed fixture oracle",
+   "status": "done",
+   "ws": "journal",
+   "tier": "p0",
+   "pr": 495,
+   "prs": [
+    495
+   ],
+   "additions": 6580,
+   "deletions": 0,
+   "impl": "2026-10-02T04:38:29Z",
+   "merged": "2026-10-02T05:39:47Z",
+   "done": "2026-10-02T05:40:13Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:38:29Z",
+     "2026-10-02T04:44:48Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T04:44:48Z",
+     "2026-10-02T05:39:47Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T02:45:52Z",
+     "v": "FAIL",
+     "fam": "codex"
+    },
+    {
+     "ts": "2026-10-02T03:19:51Z",
+     "v": "FAIL",
+     "fam": "codex"
+    },
+    {
+     "ts": "2026-10-02T03:29:07Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 2,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-300",
+   "title": "Refuse to close a workspace from the wrong window",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 505,
+   "prs": [
+    505
+   ],
+   "additions": 231,
+   "deletions": 24,
+   "impl": "2026-10-02T04:47:36Z",
+   "merged": "2026-10-02T05:42:17Z",
+   "done": "2026-10-02T06:35:07Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:47:36Z",
+     "2026-10-02T04:59:30Z"
+    ],
+    [
+     "review",
+     "2026-10-02T04:59:30Z",
+     "2026-10-02T05:03:48Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T05:03:48Z",
+     "2026-10-02T05:42:17Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T05:42:17Z",
+     "2026-10-02T06:35:07Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T05:03:48Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T06:35:07Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 14.466666666666669
+  },
+  {
+   "id": "C11-310",
+   "title": "Measure the sidebar before changing it",
+   "status": "backlog",
+   "ws": "bugs",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-296",
+   "title": "Start a cold terminal when an agent reads its screen",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 511,
+   "prs": [
+    511
+   ],
+   "additions": 182,
+   "deletions": 2,
+   "impl": "2026-10-02T05:59:18Z",
+   "merged": "2026-10-02T06:36:55Z",
+   "done": "2026-10-02T07:40:09Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:59:18Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:59:18Z",
+     "2026-10-02T06:04:06Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:04:06Z",
+     "2026-10-02T06:08:50Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:08:50Z",
+     "2026-10-02T06:36:55Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T06:36:55Z",
+     "2026-10-02T07:40:09Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:08:50Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T07:40:09Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.3372222222222222,
+   "land_ci_run_h": 0.10083333333333333,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 18.666666666666668
+  },
+  {
+   "id": "C11-292",
+   "title": "One sign-off build and a numbered script for Atin",
+   "status": "planned",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-265",
+   "title": "Attention: share flags-first oldest-first ordering across Feed and navigation",
+   "status": "planned",
+   "ws": "attention",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-263",
+   "title": "Attention: isolate tab clears, surface bypass asks, and repair flag notification visibility",
+   "status": "done",
+   "ws": "attention",
+   "tier": "p0",
+   "pr": 506,
+   "prs": [
+    506
+   ],
+   "additions": 15416,
+   "deletions": 256,
+   "impl": "2026-10-02T04:45:54Z",
+   "merged": "2026-10-02T07:55:27Z",
+   "done": "2026-10-02T07:55:31Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:45:54Z",
+     "2026-10-02T06:46:40Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:46:40Z",
+     "2026-10-02T06:53:47Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:53:47Z",
+     "2026-10-02T07:55:27Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:53:47Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 5,
+   "ci_cancelled": 3,
+   "ci_failed": 1,
+   "land_ci_queue_h": 0.4925,
+   "land_ci_run_h": 0.2247222222222222,
+   "conflicts": 1,
+   "flake_mentions": 1,
+   "mac_minutes": 87.44999999999999
+  },
+  {
+   "id": "C11-304",
+   "title": "Ignore spinner-only terminal titles",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 513,
+   "prs": [
+    513
+   ],
+   "additions": 181,
+   "deletions": 2,
+   "impl": "2026-10-02T05:55:52Z",
+   "merged": "2026-10-02T06:58:05Z",
+   "done": "2026-10-02T09:00:53Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:55:52Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:55:52Z",
+     "2026-10-02T06:22:54Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:22:54Z",
+     "2026-10-02T06:26:47Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:26:47Z",
+     "2026-10-02T06:58:05Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T06:58:05Z",
+     "2026-10-02T09:00:53Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:26:47Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T09:00:53Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.11611111111111111,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 18.066666666666666
+  },
+  {
+   "id": "C11-295",
+   "title": "Stop autosave and screen reads from stalling main, and start cold terminals",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p0",
+   "pr": 530,
+   "prs": [
+    530
+   ],
+   "additions": 1939,
+   "deletions": 221,
+   "impl": "2026-10-02T07:50:48Z",
+   "merged": "2026-10-02T11:15:28Z",
+   "done": "2026-10-02T11:15:31Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:50:48Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:50:48Z",
+     "2026-10-02T10:55:13Z"
+    ],
+    [
+     "review",
+     "2026-10-02T10:55:13Z",
+     "2026-10-02T11:04:46Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T11:04:46Z",
+     "2026-10-02T11:15:28Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T11:04:46Z",
+     "v": "PASS",
+     "fam": "fable"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.03194444444444444,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 24.53333333333333
+  },
+  {
+   "id": "C11-269",
+   "title": "Runtime hygiene: reset claude-teams SIGPIPE and stop persistent OpenCode plugin installs",
+   "status": "in_validation",
+   "ws": "attention",
+   "tier": "p1",
+   "pr": 517,
+   "prs": [
+    517
+   ],
+   "additions": 504,
+   "deletions": 242,
+   "impl": "2026-10-02T06:11:58Z",
+   "merged": "2026-10-02T08:24:40Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:11:58Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:11:58Z",
+     "2026-10-02T07:19:40Z"
+    ],
+    [
+     "review",
+     "2026-10-02T07:19:40Z",
+     "2026-10-02T07:23:53Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T07:23:53Z",
+     "2026-10-02T08:24:40Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T08:24:40Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T07:23:53Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.1786111111111111,
+   "land_ci_run_h": 0.24805555555555556,
+   "conflicts": 1,
+   "flake_mentions": 0,
+   "mac_minutes": 94.93333333333334
+  },
+  {
+   "id": "C11-275",
+   "title": "Gate Codex per-process lifecycle hooks on isolated trust proof",
+   "status": "in_validation",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": 535,
+   "prs": [
+    535
+   ],
+   "additions": 449,
+   "deletions": 44,
+   "impl": "2026-10-02T14:50:58Z",
+   "merged": "2026-10-02T16:10:39Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:50:58Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:50:58Z",
+     "2026-10-02T15:32:56Z"
+    ],
+    [
+     "review",
+     "2026-10-02T15:32:56Z",
+     "2026-10-02T15:37:03Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T15:37:03Z",
+     "2026-10-02T16:06:23Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T16:06:23Z",
+     "2026-10-02T16:10:39Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T16:10:39Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T15:37:03Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T16:06:23Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 3,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 58.01666666666667
+  },
+  {
+   "id": "C11-261",
+   "title": "Workspace groups: 50-workspace validation and numbered sign-off script",
+   "status": "in_progress",
+   "ws": "workspaces",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:49:42Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:49:42Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:49:42Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-267",
+   "title": "Send: inspect styled prompt input and guard against overwriting operator drafts",
+   "status": "planned",
+   "ws": "attention",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-302",
+   "title": "Coalesce terminal wakeups so streaming output cannot flood main",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 526,
+   "prs": [
+    526
+   ],
+   "additions": 684,
+   "deletions": 39,
+   "impl": "2026-10-02T07:51:09Z",
+   "merged": "2026-10-02T10:03:05Z",
+   "done": "2026-10-02T10:03:08Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:51:09Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:51:09Z",
+     "2026-10-02T09:53:04Z"
+    ],
+    [
+     "review",
+     "2026-10-02T09:53:04Z",
+     "2026-10-02T09:57:59Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T09:57:59Z",
+     "2026-10-02T10:03:05Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T09:57:59Z",
+     "v": "PASS",
+     "fam": "grok"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0.03027777777777778,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.07861111111111112,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 15.983333333333334
+  },
+  {
+   "id": "C11-268",
+   "title": "Feed: explicit guarded text replies and answer-bearing flag lowering",
+   "status": "planned",
+   "ws": "attention",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-297",
+   "title": "Keep the control socket ready before restored agents call it",
+   "status": "in_validation",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 516,
+   "prs": [
+    516
+   ],
+   "additions": 1128,
+   "deletions": 101,
+   "impl": "2026-10-02T06:37:03Z",
+   "merged": "2026-10-02T08:26:37Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:37:03Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:37:03Z",
+     "2026-10-02T07:13:03Z"
+    ],
+    [
+     "review",
+     "2026-10-02T07:13:03Z",
+     "2026-10-02T07:21:43Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T07:21:43Z",
+     "2026-10-02T07:42:29Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T07:42:29Z",
+     "2026-10-02T08:26:37Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T08:26:37Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T07:21:43Z",
+     "v": "FAIL",
+     "fam": "codex"
+    },
+    {
+     "ts": "2026-10-02T07:42:29Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.245,
+   "land_ci_run_h": 0.12194444444444444,
+   "conflicts": 2,
+   "flake_mentions": 1,
+   "mac_minutes": 28.7
+  },
+  {
+   "id": "C11-278",
+   "title": "Document bounded lifecycle hooks and sync the journal operating skill",
+   "status": "planned",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-270",
+   "title": "Gate c11 1.0 with a measured 40-agent fleet soak",
+   "status": "planned",
+   "ws": "journal",
+   "tier": "p0",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-283",
+   "title": "Scope --window without focusing that window",
+   "status": "in_validation",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 525,
+   "prs": [
+    525
+   ],
+   "additions": 1229,
+   "deletions": 55,
+   "impl": "2026-10-02T08:03:34Z",
+   "merged": "2026-10-02T10:22:58Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T08:03:34Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T08:03:34Z",
+     "2026-10-02T09:17:04Z"
+    ],
+    [
+     "review",
+     "2026-10-02T09:17:04Z",
+     "2026-10-02T09:22:13Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T09:22:13Z",
+     "2026-10-02T09:49:51Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T09:49:51Z",
+     "2026-10-02T10:22:58Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T10:22:58Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T09:22:13Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T09:49:51Z",
+     "v": "PASS",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T10:12:19Z",
+     "v": "PASS",
+     "fam": "grok"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 3,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.09222222222222222,
+   "land_ci_run_h": 0.2802777777777778,
+   "conflicts": 1,
+   "flake_mentions": 0,
+   "mac_minutes": 89.39999999999999
+  },
+  {
+   "id": "C11-291",
+   "title": "Translate new 1.0 strings into the six locales",
+   "status": "in_validation",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 534,
+   "prs": [
+    534
+   ],
+   "additions": 1903,
+   "deletions": 235,
+   "impl": "2026-10-02T14:50:20Z",
+   "merged": "2026-10-02T15:33:48Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:50:20Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:50:20Z",
+     "2026-10-02T15:23:10Z"
+    ],
+    [
+     "review",
+     "2026-10-02T15:23:10Z",
+     "2026-10-02T15:27:29Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T15:27:29Z",
+     "2026-10-02T15:33:48Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T15:33:48Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T15:27:29Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.07916666666666666,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 17.599999999999998
+  },
+  {
+   "id": "C11-276",
+   "title": "Emit advisory Codex and Grok turn edges from transcript observation",
+   "status": "in_progress",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:50:05Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:50:05Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:50:05Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-288",
+   "title": "Smoke Chrome, Arc, and Safari import on a tagged build",
+   "status": "in_progress",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T07:47:30Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:47:30Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:47:30Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-274",
+   "title": "Widen Claude lifecycle observations through per-process hooks",
+   "status": "in_progress",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": 533,
+   "prs": [
+    533
+   ],
+   "additions": 624,
+   "deletions": 59,
+   "impl": "2026-10-02T14:42:06Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:42:06Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:42:06Z",
+     "2026-10-02T15:10:24Z"
+    ],
+    [
+     "review",
+     "2026-10-02T15:10:24Z",
+     "2026-10-02T15:17:42Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T15:17:42Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T15:17:42Z",
+     "v": "FAIL",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 40.96666666666667
+  },
+  {
+   "id": "C11-266",
+   "title": "Feed: keyboard-first Command-I quick view with stable rows and turn-end filter",
+   "status": "planned",
+   "ws": "attention",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": null,
+   "merged": null,
+   "done": null,
+   "segs": [],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-294",
+   "title": "Make Ghostty mailbox waits abortable and ship the 1.0 terminal patch set",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p0",
+   "pr": 507,
+   "prs": [
+    507
+   ],
+   "additions": 1522,
+   "deletions": 1,
+   "impl": "2026-10-02T04:37:32Z",
+   "merged": "2026-10-02T07:49:47Z",
+   "done": "2026-10-02T07:49:51Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:37:32Z",
+     "2026-10-02T05:57:22Z"
+    ],
+    [
+     "review",
+     "2026-10-02T05:57:22Z",
+     "2026-10-02T06:10:01Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:10:01Z",
+     "2026-10-02T07:49:47Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:10:01Z",
+     "v": "FAIL",
+     "fam": "fable"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 6,
+   "ci_cancelled": 3,
+   "ci_failed": 2,
+   "land_ci_queue_h": 0.33444444444444443,
+   "land_ci_run_h": 0.16555555555555557,
+   "conflicts": 0,
+   "flake_mentions": 3,
+   "mac_minutes": 97.64999999999999
+  },
+  {
+   "id": "C11-285",
+   "title": "Add c11 rpc as a local raw socket call",
+   "status": "in_validation",
+   "ws": "cli-browser-release",
+   "tier": "p2",
+   "pr": 524,
+   "prs": [
+    524
+   ],
+   "additions": 308,
+   "deletions": 1,
+   "impl": "2026-10-02T08:46:13Z",
+   "merged": "2026-10-02T09:38:18Z",
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T08:46:13Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T08:46:13Z",
+     "2026-10-02T09:07:44Z"
+    ],
+    [
+     "review",
+     "2026-10-02T09:07:44Z",
+     "2026-10-02T09:11:43Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T09:11:43Z",
+     "2026-10-02T09:38:18Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T09:38:18Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T09:11:43Z",
+     "v": "FAIL",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 1,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.055,
+   "land_ci_run_h": 0.20944444444444443,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 55.21666666666667
+  },
+  {
+   "id": "C11-286",
+   "title": "Add resize-window that keeps the top-left and does not focus",
+   "status": "in_progress",
+   "ws": "cli-browser-release",
+   "tier": "p2",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T09:09:35Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T09:09:35Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T09:09:35Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-262",
+   "title": "Seen-based focus history with persistent UUIDs and agent-readable c11 history",
+   "status": "done",
+   "ws": "workspaces",
+   "tier": "p1",
+   "pr": 510,
+   "prs": [
+    510
+   ],
+   "additions": 1264,
+   "deletions": 7,
+   "impl": "2026-10-02T05:28:33Z",
+   "merged": "2026-10-02T06:51:02Z",
+   "done": "2026-10-02T09:46:05Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:28:33Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:28:33Z",
+     "2026-10-02T06:00:47Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:00:47Z",
+     "2026-10-02T06:07:53Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:07:53Z",
+     "2026-10-02T06:51:02Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T06:51:02Z",
+     "2026-10-02T09:46:05Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:07:53Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T09:46:05Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.5152777777777777,
+   "land_ci_run_h": 0.11472222222222223,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 23.733333333333334
+  },
+  {
+   "id": "C11-309",
+   "title": "Tell agents that tab numbers do not survive a restart",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 509,
+   "prs": [
+    509
+   ],
+   "additions": 7,
+   "deletions": 3,
+   "impl": "2026-10-02T05:18:22Z",
+   "merged": "2026-10-02T05:43:39Z",
+   "done": "2026-10-02T05:44:29Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T05:18:22Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T05:18:22Z",
+     "2026-10-02T05:21:45Z"
+    ],
+    [
+     "review",
+     "2026-10-02T05:21:45Z",
+     "2026-10-02T05:26:10Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T05:26:10Z",
+     "2026-10-02T05:29:41Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T05:29:41Z",
+     "2026-10-02T05:43:39Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T05:26:10Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T05:29:41Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-305",
+   "title": "Stop shell helpers from outliving the shell and locking git",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 515,
+   "prs": [
+    515,
+    521
+   ],
+   "additions": 660,
+   "deletions": 46,
+   "impl": "2026-10-02T06:52:13Z",
+   "merged": "2026-10-02T07:29:46Z",
+   "done": "2026-10-02T14:49:37Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:52:13Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:52:13Z",
+     "2026-10-02T07:13:57Z"
+    ],
+    [
+     "review",
+     "2026-10-02T07:13:57Z",
+     "2026-10-02T07:18:37Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T07:18:37Z",
+     "2026-10-02T07:29:46Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T07:29:46Z",
+     "2026-10-02T14:49:37Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T07:18:37Z",
+     "v": "PASS",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T08:21:54Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T14:49:37Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 2,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.1275,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 34.883333333333326
+  },
+  {
+   "id": "C11-307",
+   "title": "Bump Sparkle so macOS 26 can install updates",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 518,
+   "prs": [
+    518
+   ],
+   "additions": 5,
+   "deletions": 5,
+   "impl": "2026-10-02T06:24:29Z",
+   "merged": "2026-10-02T08:37:03Z",
+   "done": "2026-10-02T08:37:06Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:24:29Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:24:29Z",
+     "2026-10-02T07:46:24Z"
+    ],
+    [
+     "review",
+     "2026-10-02T07:46:24Z",
+     "2026-10-02T07:51:45Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T07:51:45Z",
+     "2026-10-02T08:37:03Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T07:51:45Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 1,
+   "land_ci_queue_h": 0.09305555555555556,
+   "land_ci_run_h": 0.09277777777777778,
+   "conflicts": 0,
+   "flake_mentions": 2,
+   "mac_minutes": 15.55
+  },
+  {
+   "id": "C11-287",
+   "title": "Replace a crashed web view on the next turn and stop forced layout",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 501,
+   "prs": [
+    501
+   ],
+   "additions": 621,
+   "deletions": 65,
+   "impl": "2026-10-02T04:16:21Z",
+   "merged": "2026-10-02T06:40:11Z",
+   "done": "2026-10-02T07:53:56Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:16:21Z",
+     "2026-10-02T05:55:03Z"
+    ],
+    [
+     "review",
+     "2026-10-02T05:55:03Z",
+     "2026-10-02T05:59:55Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T05:59:55Z",
+     "2026-10-02T06:16:17Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:16:17Z",
+     "2026-10-02T06:40:11Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T06:40:11Z",
+     "2026-10-02T07:53:56Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T05:59:55Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T06:16:17Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [
+    {
+     "ts": "2026-10-02T07:53:56Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 10,
+   "ci_cancelled": 6,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.26916666666666667,
+   "land_ci_run_h": 0.10472222222222222,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 169.16666666666666
+  },
+  {
+   "id": "C11-281",
+   "title": "Document send delivery and add --raw, stdin, and unknown-flag errors",
+   "status": "done",
+   "ws": "cli-browser-release",
+   "tier": "p1",
+   "pr": 519,
+   "prs": [
+    519
+   ],
+   "additions": 962,
+   "deletions": 113,
+   "impl": "2026-10-02T06:24:52Z",
+   "merged": "2026-10-02T09:57:38Z",
+   "done": "2026-10-02T15:55:17Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:24:52Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:24:52Z",
+     "2026-10-02T07:53:59Z"
+    ],
+    [
+     "review",
+     "2026-10-02T07:53:59Z",
+     "2026-10-02T07:59:28Z"
+    ],
+    [
+     "repair",
+     "2026-10-02T07:59:28Z",
+     "2026-10-02T08:41:27Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T08:41:27Z",
+     "2026-10-02T09:57:38Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T09:57:38Z",
+     "2026-10-02T15:55:17Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T07:59:28Z",
+     "v": "FAIL",
+     "fam": "astra"
+    },
+    {
+     "ts": "2026-10-02T08:41:27Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 1,
+   "validator": [
+    {
+     "ts": "2026-10-02T15:55:17Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 4,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.25222222222222224,
+   "land_ci_run_h": 0.3983333333333333,
+   "conflicts": 2,
+   "flake_mentions": 0,
+   "mac_minutes": 115.60000000000001
+  },
+  {
+   "id": "C11-314",
+   "title": "Delete flaky timing tests that block unrelated landings",
+   "status": "done",
+   "ws": "infra",
+   "tier": "p1",
+   "pr": 532,
+   "prs": [
+    532
+   ],
+   "additions": 14,
+   "deletions": 308,
+   "impl": "2026-10-02T14:49:02Z",
+   "merged": "2026-10-02T15:10:48Z",
+   "done": "2026-10-02T15:10:51Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T14:49:02Z",
+     "2026-10-02T14:59:16Z"
+    ],
+    [
+     "review",
+     "2026-10-02T14:59:16Z",
+     "2026-10-02T15:02:00Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T15:02:00Z",
+     "2026-10-02T15:10:48Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T15:02:00Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.12055555555555555,
+   "conflicts": 0,
+   "flake_mentions": 2,
+   "mac_minutes": 20.333333333333332
+  },
+  {
+   "id": "C11-301",
+   "title": "Cap how many background workspaces mount at once",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 514,
+   "prs": [
+    514
+   ],
+   "additions": 264,
+   "deletions": 18,
+   "impl": "2026-10-02T06:38:42Z",
+   "merged": "2026-10-02T07:23:09Z",
+   "done": "2026-10-02T15:02:57Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T06:38:42Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T06:38:42Z",
+     "2026-10-02T06:45:20Z"
+    ],
+    [
+     "review",
+     "2026-10-02T06:45:20Z",
+     "2026-10-02T06:50:42Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T06:50:42Z",
+     "2026-10-02T07:23:09Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T07:23:09Z",
+     "2026-10-02T15:02:57Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T06:50:42Z",
+     "v": "PASS",
+     "fam": "codex"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T15:02:57Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.5111111111111111,
+   "land_ci_run_h": 0.029722222222222223,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 14.433333333333334
+  },
+  {
+   "id": "C11-298",
+   "title": "A second copy of c11 must not kill the running fleet",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 531,
+   "prs": [
+    531
+   ],
+   "additions": 630,
+   "deletions": 57,
+   "impl": "2026-10-02T07:15:03Z",
+   "merged": "2026-10-02T11:38:47Z",
+   "done": "2026-10-02T11:38:50Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:15:03Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:15:03Z",
+     "2026-10-02T11:22:02Z"
+    ],
+    [
+     "review",
+     "2026-10-02T11:22:02Z",
+     "2026-10-02T11:28:36Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T11:28:36Z",
+     "2026-10-02T11:38:47Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T11:28:36Z",
+     "v": "PASS",
+     "fam": "grok"
+    }
+   ],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.029444444444444443,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 27.299999999999997
+  },
+  {
+   "id": "C11-260",
+   "title": "Workspace groups: sidebar folders, drag/drop and visible attention",
+   "status": "done",
+   "ws": "workspaces",
+   "tier": "p1",
+   "pr": 528,
+   "prs": [
+    528
+   ],
+   "additions": 3285,
+   "deletions": 285,
+   "impl": "2026-10-02T07:57:15Z",
+   "merged": "2026-10-02T10:49:23Z",
+   "done": "2026-10-02T10:49:26Z",
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T07:57:15Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T07:57:15Z",
+     "2026-10-02T10:32:47Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T10:32:47Z",
+     "2026-10-02T10:49:23Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 1,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0.0,
+   "land_ci_run_h": 0.12638888888888888,
+   "conflicts": 0,
+   "flake_mentions": 0,
+   "mac_minutes": 24.71666666666667
+  },
+  {
+   "id": "C11-264",
+   "title": "Feed: typed per-tab asks with list, open, watch and ask events",
+   "status": "in_progress",
+   "ws": "attention",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:42:16Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:42:16Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:42:16Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-231",
+   "title": "Expose journal-backed agent snapshots, waiting reasons, clocks and restore candidates",
+   "status": "in_progress",
+   "ws": "journal",
+   "tier": "p1",
+   "pr": null,
+   "prs": [],
+   "additions": 0,
+   "deletions": 0,
+   "impl": "2026-10-02T14:42:18Z",
+   "merged": null,
+   "done": null,
+   "segs": [
+    [
+     "queued",
+     "2026-10-02T04:45:00Z",
+     "2026-10-02T14:42:18Z"
+    ],
+    [
+     "implement",
+     "2026-10-02T14:42:18Z",
+     "2026-10-02T16:24:30.339542Z"
+    ]
+   ],
+   "reviews": [],
+   "fails": 0,
+   "validator": [],
+   "blocked_h": 0,
+   "ci_runs": 0,
+   "ci_cancelled": 0,
+   "ci_failed": 0,
+   "land_ci_queue_h": 0,
+   "land_ci_run_h": 0,
+   "conflicts": 0,
+   "flake_mentions": 1,
+   "mac_minutes": 0
+  },
+  {
+   "id": "C11-306",
+   "title": "Bound the Claude Stop hook so it does not reread the whole transcript",
+   "status": "done",
+   "ws": "bugs",
+   "tier": "p1",
+   "pr": 500,
+   "prs": [
+    500
+   ],
+   "additions": 430,
+   "deletions": 77,
+   "impl": "2026-10-02T04:16:47Z",
+   "merged": "2026-10-02T06:30:43Z",
+   "done": "2026-10-02T07:40:09Z",
+   "segs": [
+    [
+     "implement",
+     "2026-10-02T04:16:47Z",
+     "2026-10-02T04:38:16Z"
+    ],
+    [
+     "review",
+     "2026-10-02T04:38:16Z",
+     "2026-10-02T04:41:02Z"
+    ],
+    [
+     "landing",
+     "2026-10-02T04:41:02Z",
+     "2026-10-02T06:30:43Z"
+    ],
+    [
+     "validation",
+     "2026-10-02T06:30:43Z",
+     "2026-10-02T07:40:09Z"
+    ]
+   ],
+   "reviews": [
+    {
+     "ts": "2026-10-02T04:41:02Z",
+     "v": "PASS",
+     "fam": "astra"
+    }
+   ],
+   "fails": 0,
+   "validator": [
+    {
+     "ts": "2026-10-02T07:40:09Z",
+     "v": "PASS"
+    }
+   ],
+   "blocked_h": 0,
+   "ci_runs": 4,
+   "ci_cancelled": 1,
+   "ci_failed": 1,
+   "land_ci_queue_h": 0.9691666666666666,
+   "land_ci_run_h": 0.2063888888888889,
+   "conflicts": 0,
+   "flake_mentions": 3,
+   "mac_minutes": 80.41666666666666
+  }
+ ],
+ "steps": [
+  {
+   "t": "2026-10-02T03:45:00Z",
+   "q_xl": 2,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T03:50:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T03:55:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T04:00:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T04:05:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T04:10:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T04:15:00Z",
+   "q_xl": 1,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T04:20:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T04:25:00Z",
+   "q_xl": 4,
+   "r_xl": 5,
+   "q_std": 7,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T04:30:00Z",
+   "q_xl": 5,
+   "r_xl": 6,
+   "q_std": 6,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T04:35:00Z",
+   "q_xl": 7,
+   "r_xl": 5,
+   "q_std": 7,
+   "r_std": 6
+  },
+  {
+   "t": "2026-10-02T04:40:00Z",
+   "q_xl": 9,
+   "r_xl": 2,
+   "q_std": 7,
+   "r_std": 6
+  },
+  {
+   "t": "2026-10-02T04:45:00Z",
+   "q_xl": 11,
+   "r_xl": 4,
+   "q_std": 9,
+   "r_std": 5
+  },
+  {
+   "t": "2026-10-02T04:50:00Z",
+   "q_xl": 11,
+   "r_xl": 6,
+   "q_std": 11,
+   "r_std": 6
+  },
+  {
+   "t": "2026-10-02T04:55:00Z",
+   "q_xl": 9,
+   "r_xl": 6,
+   "q_std": 11,
+   "r_std": 7
+  },
+  {
+   "t": "2026-10-02T05:00:00Z",
+   "q_xl": 8,
+   "r_xl": 7,
+   "q_std": 10,
+   "r_std": 7
+  },
+  {
+   "t": "2026-10-02T05:05:00Z",
+   "q_xl": 9,
+   "r_xl": 8,
+   "q_std": 10,
+   "r_std": 7
+  },
+  {
+   "t": "2026-10-02T05:10:00Z",
+   "q_xl": 8,
+   "r_xl": 7,
+   "q_std": 9,
+   "r_std": 7
+  },
+  {
+   "t": "2026-10-02T05:15:00Z",
+   "q_xl": 9,
+   "r_xl": 6,
+   "q_std": 10,
+   "r_std": 5
+  },
+  {
+   "t": "2026-10-02T05:20:00Z",
+   "q_xl": 14,
+   "r_xl": 5,
+   "q_std": 14,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T05:25:00Z",
+   "q_xl": 12,
+   "r_xl": 4,
+   "q_std": 11,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T05:30:00Z",
+   "q_xl": 8,
+   "r_xl": 6,
+   "q_std": 10,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T05:35:00Z",
+   "q_xl": 6,
+   "r_xl": 7,
+   "q_std": 11,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T05:40:00Z",
+   "q_xl": 6,
+   "r_xl": 4,
+   "q_std": 8,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T05:45:00Z",
+   "q_xl": 5,
+   "r_xl": 4,
+   "q_std": 8,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T05:50:00Z",
+   "q_xl": 9,
+   "r_xl": 2,
+   "q_std": 7,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T05:55:00Z",
+   "q_xl": 12,
+   "r_xl": 2,
+   "q_std": 8,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T06:00:00Z",
+   "q_xl": 10,
+   "r_xl": 4,
+   "q_std": 5,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T06:05:00Z",
+   "q_xl": 11,
+   "r_xl": 5,
+   "q_std": 8,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T06:10:00Z",
+   "q_xl": 7,
+   "r_xl": 8,
+   "q_std": 8,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T06:15:00Z",
+   "q_xl": 9,
+   "r_xl": 3,
+   "q_std": 6,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T06:20:00Z",
+   "q_xl": 9,
+   "r_xl": 1,
+   "q_std": 4,
+   "r_std": 5
+  },
+  {
+   "t": "2026-10-02T06:25:00Z",
+   "q_xl": 8,
+   "r_xl": 3,
+   "q_std": 2,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T06:30:00Z",
+   "q_xl": 4,
+   "r_xl": 5,
+   "q_std": 1,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T06:35:00Z",
+   "q_xl": 9,
+   "r_xl": 5,
+   "q_std": 4,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T06:40:00Z",
+   "q_xl": 7,
+   "r_xl": 4,
+   "q_std": 6,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T06:45:00Z",
+   "q_xl": 9,
+   "r_xl": 2,
+   "q_std": 6,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T06:50:00Z",
+   "q_xl": 8,
+   "r_xl": 3,
+   "q_std": 7,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T06:55:00Z",
+   "q_xl": 9,
+   "r_xl": 3,
+   "q_std": 4,
+   "r_std": 5
+  },
+  {
+   "t": "2026-10-02T07:00:00Z",
+   "q_xl": 8,
+   "r_xl": 4,
+   "q_std": 3,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T07:05:00Z",
+   "q_xl": 8,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T07:10:00Z",
+   "q_xl": 6,
+   "r_xl": 3,
+   "q_std": 2,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T07:15:00Z",
+   "q_xl": 7,
+   "r_xl": 4,
+   "q_std": 5,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T07:20:00Z",
+   "q_xl": 7,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T07:25:00Z",
+   "q_xl": 6,
+   "r_xl": 3,
+   "q_std": 4,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T07:30:00Z",
+   "q_xl": 6,
+   "r_xl": 5,
+   "q_std": 6,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T07:35:00Z",
+   "q_xl": 5,
+   "r_xl": 4,
+   "q_std": 5,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T07:40:00Z",
+   "q_xl": 5,
+   "r_xl": 2,
+   "q_std": 4,
+   "r_std": 4
+  },
+  {
+   "t": "2026-10-02T07:45:00Z",
+   "q_xl": 4,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T07:50:00Z",
+   "q_xl": 3,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T07:55:00Z",
+   "q_xl": 4,
+   "r_xl": 3,
+   "q_std": 4,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T08:00:00Z",
+   "q_xl": 5,
+   "r_xl": 5,
+   "q_std": 5,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T08:05:00Z",
+   "q_xl": 4,
+   "r_xl": 4,
+   "q_std": 4,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T08:10:00Z",
+   "q_xl": 4,
+   "r_xl": 2,
+   "q_std": 2,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T08:15:00Z",
+   "q_xl": 3,
+   "r_xl": 2,
+   "q_std": 2,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T08:20:00Z",
+   "q_xl": 1,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T08:25:00Z",
+   "q_xl": 1,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T08:30:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T08:35:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T08:40:00Z",
+   "q_xl": 7,
+   "r_xl": 2,
+   "q_std": 2,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T08:45:00Z",
+   "q_xl": 4,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T08:50:00Z",
+   "q_xl": 1,
+   "r_xl": 4,
+   "q_std": 1,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T08:55:00Z",
+   "q_xl": 2,
+   "r_xl": 4,
+   "q_std": 1,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:00:00Z",
+   "q_xl": 2,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:05:00Z",
+   "q_xl": 2,
+   "r_xl": 4,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:10:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:15:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T09:20:00Z",
+   "q_xl": 4,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:25:00Z",
+   "q_xl": 6,
+   "r_xl": 4,
+   "q_std": 6,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:30:00Z",
+   "q_xl": 2,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:35:00Z",
+   "q_xl": 2,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T09:40:00Z",
+   "q_xl": 1,
+   "r_xl": 3,
+   "q_std": 2,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T09:45:00Z",
+   "q_xl": 2,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T09:50:00Z",
+   "q_xl": 1,
+   "r_xl": 3,
+   "q_std": 1,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T09:55:00Z",
+   "q_xl": 1,
+   "r_xl": 2,
+   "q_std": 1,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T10:00:00Z",
+   "q_xl": 3,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T10:05:00Z",
+   "q_xl": 1,
+   "r_xl": 3,
+   "q_std": 1,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:10:00Z",
+   "q_xl": 2,
+   "r_xl": 3,
+   "q_std": 1,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:15:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T10:20:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T10:25:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:30:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:35:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:40:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:45:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T10:50:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T10:55:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:00:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T11:05:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:10:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T11:15:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:20:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:25:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:30:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:35:00Z",
+   "q_xl": 0,
+   "r_xl": 4,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T11:40:00Z",
+   "q_xl": 0,
+   "r_xl": 4,
+   "q_std": 2,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T11:45:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 1,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T11:50:00Z",
+   "q_xl": 1,
+   "r_xl": 3,
+   "q_std": 3,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T11:55:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T12:00:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T12:05:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T12:10:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T12:15:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:20:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:25:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:30:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:35:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:40:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:45:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:50:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T12:55:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:00:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:05:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:10:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:15:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:20:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:25:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:30:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:35:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:40:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:45:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:50:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T13:55:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:00:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:05:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:10:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:15:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:20:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:25:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:30:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:35:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:40:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:45:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:50:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T14:55:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T15:00:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T15:05:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T15:10:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T15:15:00Z",
+   "q_xl": 1,
+   "r_xl": 2,
+   "q_std": 1,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T15:20:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T15:25:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T15:30:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T15:35:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 2,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T15:40:00Z",
+   "q_xl": 1,
+   "r_xl": 2,
+   "q_std": 1,
+   "r_std": 3
+  },
+  {
+   "t": "2026-10-02T15:45:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T15:50:00Z",
+   "q_xl": 1,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T15:55:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 1,
+   "r_std": 2
+  },
+  {
+   "t": "2026-10-02T16:00:00Z",
+   "q_xl": 0,
+   "r_xl": 2,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T16:05:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T16:10:00Z",
+   "q_xl": 0,
+   "r_xl": 0,
+   "q_std": 0,
+   "r_std": 0
+  },
+  {
+   "t": "2026-10-02T16:15:00Z",
+   "q_xl": 0,
+   "r_xl": 3,
+   "q_std": 0,
+   "r_std": 1
+  },
+  {
+   "t": "2026-10-02T16:20:00Z",
+   "q_xl": 0,
+   "r_xl": 1,
+   "q_std": 0,
+   "r_std": 1
+  }
+ ],
+ "bwaits": [
+  {
+   "t": "2026-10-02T03:50:35Z",
+   "wait": 1.15,
+   "branch": "c11-257-e",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T03:58:11Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-257-e",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:10:43Z",
+   "wait": 0.1,
+   "branch": "c11-1.0/C11-216-atlas-builds",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:13:34Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-257-c",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:16:42Z",
+   "wait": 1.0666666666666667,
+   "branch": "c11-1.0/C11-216-atlas-builds",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:20:26Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-299-duplicate-restore",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:21:06Z",
+   "wait": 0.5666666666666667,
+   "branch": "c11-1.0/C11-306-bounded-stop-transcript",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:22:39Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:22:53Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-299-duplicate-restore",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:23:11Z",
+   "wait": 1.25,
+   "branch": "c11-1.0/C11-306-bounded-stop-transcript",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:23:35Z",
+   "wait": 11.616666666666667,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T04:24:25Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-216-atlas-builds",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:24:16Z",
+   "wait": 0.6,
+   "branch": "c11-1.0/C11-299-duplicate-restore",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:24:54Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:25:07Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:25:32Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:26:10Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:28:07Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:28:17Z",
+   "wait": 23.233333333333334,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:32:08Z",
+   "wait": 0.0,
+   "branch": "c11-257-c",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:34:32Z",
+   "wait": 11.516666666666667,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:34:40Z",
+   "wait": 20.183333333333334,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:00:21Z",
+   "wait": 10.866666666666667,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:36:29Z",
+   "wait": 3.65,
+   "branch": "c11-257-c",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:41:34Z",
+   "wait": 0.38333333333333336,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T04:42:25Z",
+   "wait": 38.46666666666667,
+   "branch": "c11-1.0/C11-306-bounded-stop-transcript",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:43:01Z",
+   "wait": 26.533333333333335,
+   "branch": "c11-1.0/C11-299-duplicate-restore",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:45:23Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-259-workspace-groups",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:46:19Z",
+   "wait": 45.78333333333333,
+   "branch": "c11-1.0/C11-216-atlas-builds",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:46:56Z",
+   "wait": 11.05,
+   "branch": "c11-1.0/C11-259-workspace-groups",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:48:52Z",
+   "wait": 15.883333333333333,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:51:39Z",
+   "wait": 0.18333333333333332,
+   "branch": "c11-1.0/C11-300-close-ownership",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T04:54:21Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-263-attention-batch",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:55:16Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-294-ghostty-patchset",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:58:54Z",
+   "wait": 4.433333333333334,
+   "branch": "c11-1.0/C11-263-attention-batch",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T04:59:36Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-259-workspace-groups",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:00:43Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:03:05Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:04:05Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-263-attention-batch",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:04:06Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:07:03Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-294-ghostty-patchset",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:07:18Z",
+   "wait": 20.283333333333335,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:09:03Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-279-canonical-routing-keys",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:10:41Z",
+   "wait": 5.466666666666667,
+   "branch": "c11-1.0/C11-279-canonical-routing-keys",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:15:01Z",
+   "wait": 7.25,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:15:13Z",
+   "wait": 17.633333333333333,
+   "branch": "c11-1.0/C11-259-workspace-groups",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:17:34Z",
+   "wait": 25.483333333333334,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:16:51Z",
+   "wait": 47.31666666666667,
+   "branch": "c11-257-e",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:34:20Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T05:34:46Z",
+   "wait": 4.383333333333334,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:49:24Z",
+   "wait": 16.466666666666665,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:48:03Z",
+   "wait": 11.166666666666666,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:48:37Z",
+   "wait": 1.95,
+   "branch": "c11-1.0/C11-312-artifact-signing",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:49:27Z",
+   "wait": 19.683333333333334,
+   "branch": "c11-1.0/C11-306-bounded-stop-transcript",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T05:50:15Z",
+   "wait": 36.21666666666667,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T05:57:22Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-294-ghostty-patchset",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T06:01:24Z",
+   "wait": 37.4,
+   "branch": "c11-1.0/C11-262-focus-history",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:03:30Z",
+   "wait": 25.566666666666666,
+   "branch": "c11-1.0/C11-296-cold-read",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:09:29Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-258-launch-runtime-file",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T06:12:35Z",
+   "wait": 17.266666666666666,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:12:48Z",
+   "wait": 19.633333333333333,
+   "branch": "c11-1.0/C11-287-webview-crash",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:22:52Z",
+   "wait": 3.75,
+   "branch": "c11-1.0/C11-304-spinner-titles",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:35:51Z",
+   "wait": 2.566666666666667,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:33:49Z",
+   "wait": 6.516666666666667,
+   "branch": "c11-1.0/C11-284-guide-features",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:38:09Z",
+   "wait": 7.616666666666666,
+   "branch": "c11-1.0/C11-294-ghostty-patchset",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T06:44:45Z",
+   "wait": 22.183333333333334,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:44:21Z",
+   "wait": 37.016666666666666,
+   "branch": "c11-1.0/C11-301-mount-cap",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T06:46:22Z",
+   "wait": 27.033333333333335,
+   "branch": "c11-1.0/C11-263-attention-batch",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T06:53:57Z",
+   "wait": 0.0,
+   "branch": "c11-1.0/C11-258-launch-runtime-file",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T07:13:19Z",
+   "wait": 6.15,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:03:31Z",
+   "wait": 1.85,
+   "branch": "c11-1.0/C11-258-launch-runtime-file",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:11:43Z",
+   "wait": 6.333333333333333,
+   "branch": "c11-1.0/C11-305-shell-helpers",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:14:45Z",
+   "wait": 12.45,
+   "branch": "c11-1.0/C11-294-ghostty-patchset",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:17:36Z",
+   "wait": 11.133333333333333,
+   "branch": "c11-1.0/C11-269-runtime-hygiene",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:26:30Z",
+   "wait": 24.433333333333334,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:27:23Z",
+   "wait": 21.833333333333332,
+   "branch": "c11-1.0/C11-259-workspace-groups",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:38:01Z",
+   "wait": 9.933333333333334,
+   "branch": "c11-1.0/C11-263-attention-batch",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:46:11Z",
+   "wait": 11.15,
+   "branch": "c11-1.0/C11-307-sparkle-macos26",
+   "concl": "failure"
+  },
+  {
+   "t": "2026-10-02T07:52:38Z",
+   "wait": 2.966666666666667,
+   "branch": "c11-1.0/C11-281-send-contract",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:57:15Z",
+   "wait": 15.116666666666667,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T07:57:29Z",
+   "wait": 5.866666666666666,
+   "branch": "c11-1.0/C11-269-runtime-hygiene",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:02:06Z",
+   "wait": 14.7,
+   "branch": "c11-1.0/C11-297-startup-readiness",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:14:25Z",
+   "wait": 1.5333333333333334,
+   "branch": "c11-1.0/C11-305-test-cleanup",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:24:43Z",
+   "wait": 0.5333333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:33:27Z",
+   "wait": 0.43333333333333335,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:33:07Z",
+   "wait": 0.1,
+   "branch": "c11-1.0/C11-280-initial-input",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:36:52Z",
+   "wait": 7.0,
+   "branch": "c11-1.0/C11-281-send-contract",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:41:27Z",
+   "wait": 6.783333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:57:12Z",
+   "wait": 0.5333333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T08:58:38Z",
+   "wait": 3.3,
+   "branch": "c11-1.0/C11-308-control-keys",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:06:54Z",
+   "wait": 2.566666666666667,
+   "branch": "c11-1.0/C11-285-rpc",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T09:11:01Z",
+   "wait": 2.9833333333333334,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:15:45Z",
+   "wait": 1.0666666666666667,
+   "branch": "c11-1.0/C11-283-window-scope",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:16:45Z",
+   "wait": 3.3,
+   "branch": "c11-1.0/C11-285-rpc",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:22:07Z",
+   "wait": 9.35,
+   "branch": "c11-1.0/C11-281-send-contract",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:23:23Z",
+   "wait": 4.3,
+   "branch": "c11-1.0/C11-279-canonical-routing-keys",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:38:21Z",
+   "wait": 1.3166666666666667,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:47:19Z",
+   "wait": 2.95,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:44:02Z",
+   "wait": 3.3666666666666667,
+   "branch": "c11-1.0/C11-281-send-contract",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:52:25Z",
+   "wait": 3.1666666666666665,
+   "branch": "c11-1.0/C11-302-ghostty-wakeups",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T09:56:15Z",
+   "wait": 2.0166666666666666,
+   "branch": "c11-1.0/C11-283-window-scope",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T09:58:12Z",
+   "wait": 3.95,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:09:32Z",
+   "wait": 2.35,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:06:05Z",
+   "wait": 3.5166666666666666,
+   "branch": "c11-1.0/C11-283-window-scope",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:23:02Z",
+   "wait": 0.08333333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:31:12Z",
+   "wait": 0.11666666666666667,
+   "branch": "c11-1.0/C11-260-groups-sidebar",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:49:26Z",
+   "wait": 0.1,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T10:56:45Z",
+   "wait": 0.1,
+   "branch": "c11-1.0/C11-295-main-stalls",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:10:38Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-1.0/C11-273-journal",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T11:15:32Z",
+   "wait": 0.08333333333333333,
+   "branch": "main",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T11:21:27Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-1.0/C11-298-single-instance",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:31:15Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-1.0/C11-282-read-selection",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:37:53Z",
+   "wait": 1.0333333333333334,
+   "branch": "c11-1.0/C11-273-journal",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:40:56Z",
+   "wait": 0.1,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:50:19Z",
+   "wait": 4.2,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T11:49:54Z",
+   "wait": 0.48333333333333334,
+   "branch": "c11-1.0/C11-273-journal",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T12:03:55Z",
+   "wait": 0.08333333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T14:59:23Z",
+   "wait": 0.11666666666666667,
+   "branch": "c11-1.0/C11-314-delete-flaky-tests",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:10:31Z",
+   "wait": 0.11666666666666667,
+   "branch": "c11-1.0/C11-274-claude-hooks",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T15:10:53Z",
+   "wait": 3.683333333333333,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:14:30Z",
+   "wait": 0.43333333333333335,
+   "branch": "c11-1.0/C11-274-claude-hooks",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:23:04Z",
+   "wait": 0.11666666666666667,
+   "branch": "c11-1.0/C11-291-locales",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:33:17Z",
+   "wait": 0.1,
+   "branch": "c11-1.0/C11-275-codex-notify",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:33:52Z",
+   "wait": 0.11666666666666667,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:36:38Z",
+   "wait": 6.0,
+   "branch": "c11-1.0/C11-280-test-fresh-object",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:48:19Z",
+   "wait": 0.1,
+   "branch": "c11-1.0/C11-275-codex-notify",
+   "concl": "cancelled"
+  },
+  {
+   "t": "2026-10-02T15:50:00Z",
+   "wait": 0.08333333333333333,
+   "branch": "c11-1.0/C11-275-codex-notify",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T15:54:38Z",
+   "wait": 0.1,
+   "branch": "main",
+   "concl": "success"
+  },
+  {
+   "t": "2026-10-02T16:10:43Z",
+   "wait": 0.1,
+   "branch": "main",
+   "concl": ""
+  }
+ ],
+ "merges": [
+  "2026-10-02T04:22:59Z",
+  "2026-10-02T04:34:37Z",
+  "2026-10-02T04:35:09Z",
+  "2026-10-02T05:15:49Z",
+  "2026-10-02T05:16:19Z",
+  "2026-10-02T05:25:45Z",
+  "2026-10-02T05:39:47Z",
+  "2026-10-02T05:40:58Z",
+  "2026-10-02T05:42:17Z",
+  "2026-10-02T05:43:39Z",
+  "2026-10-02T06:11:55Z",
+  "2026-10-02T06:22:18Z",
+  "2026-10-02T06:30:43Z",
+  "2026-10-02T06:36:55Z",
+  "2026-10-02T06:40:11Z",
+  "2026-10-02T06:51:02Z",
+  "2026-10-02T06:58:05Z",
+  "2026-10-02T07:00:36Z",
+  "2026-10-02T07:23:09Z",
+  "2026-10-02T07:29:46Z",
+  "2026-10-02T07:33:39Z",
+  "2026-10-02T07:49:47Z",
+  "2026-10-02T07:55:27Z",
+  "2026-10-02T07:56:11Z",
+  "2026-10-02T08:24:40Z",
+  "2026-10-02T08:25:35Z",
+  "2026-10-02T08:26:37Z",
+  "2026-10-02T08:30:59Z",
+  "2026-10-02T08:37:03Z",
+  "2026-10-02T08:53:43Z",
+  "2026-10-02T09:10:58Z",
+  "2026-10-02T09:38:18Z",
+  "2026-10-02T09:41:19Z",
+  "2026-10-02T09:57:38Z",
+  "2026-10-02T10:03:05Z",
+  "2026-10-02T10:22:58Z",
+  "2026-10-02T10:49:23Z",
+  "2026-10-02T11:15:28Z",
+  "2026-10-02T11:38:47Z",
+  "2026-10-02T11:43:06Z",
+  "2026-10-02T12:01:30Z",
+  "2026-10-02T15:10:48Z",
+  "2026-10-02T15:33:48Z",
+  "2026-10-02T15:54:35Z",
+  "2026-10-02T16:10:39Z"
+ ],
+ "wf": [
+  {
+   "wf": "Mailbox parity",
+   "concl": "success",
+   "n": 125
+  },
+  {
+   "wf": "CI",
+   "concl": "",
+   "n": 1
+  },
+  {
+   "wf": "macOS Compatibility",
+   "concl": "",
+   "n": 1
+  },
+  {
+   "wf": "Build GhosttyKit",
+   "concl": "success",
+   "n": 108
+  },
+  {
+   "wf": "Drawbridge",
+   "concl": "success",
+   "n": 52
+  },
+  {
+   "wf": "CI",
+   "concl": "success",
+   "n": 89
+  },
+  {
+   "wf": "Drawbridge",
+   "concl": "skipped",
+   "n": 126
+  },
+  {
+   "wf": ".github/workflows/ci-macos-compat.yml",
+   "concl": "failure",
+   "n": 2
+  },
+  {
+   "wf": "macOS Compatibility",
+   "concl": "success",
+   "n": 90
+  },
+  {
+   "wf": "Build GhosttyKit",
+   "concl": "cancelled",
+   "n": 34
+  },
+  {
+   "wf": "macOS Compatibility",
+   "concl": "cancelled",
+   "n": 49
+  },
+  {
+   "wf": "CI",
+   "concl": "cancelled",
+   "n": 48
+  },
+  {
+   "wf": "Mailbox parity",
+   "concl": "cancelled",
+   "n": 23
+  },
+  {
+   "wf": "Sentry quota watch",
+   "concl": "success",
+   "n": 1
+  },
+  {
+   "wf": "Nightly c11 macOS build",
+   "concl": "success",
+   "n": 1
+  },
+  {
+   "wf": "Sign unpublished c11 artifact",
+   "concl": "success",
+   "n": 6
+  },
+  {
+   "wf": "CI",
+   "concl": "failure",
+   "n": 7
+  },
+  {
+   "wf": "Drawbridge Sweep",
+   "concl": "success",
+   "n": 1
+  },
+  {
+   "wf": "macOS Compatibility",
+   "concl": "failure",
+   "n": 3
+  },
+  {
+   "wf": "Build GhosttyKit",
+   "concl": "failure",
+   "n": 1
+  },
+  {
+   "wf": "Sign unpublished c11 artifact",
+   "concl": "cancelled",
+   "n": 3
+  },
+  {
+   "wf": "Mailbox parity",
+   "concl": "failure",
+   "n": 3
+  }
+ ],
+ "mac_minutes_total": 3060.5446514000014,
+ "mac_minutes_cancelled": 812.7666666666668,
+ "reviewer_families": {
+  "codex": {
+   "PASS": 7,
+   "FAIL": 5
+  },
+  "astra": {
+   "PASS": 22,
+   "FAIL": 12
+  },
+  "fable": {
+   "PASS": 2,
+   "FAIL": 2
+  },
+  "grok": {
+   "PASS": 6,
+   "FAIL": 1
+  }
+ }
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:22:24Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKB7ACD89KTH6WVBRKG8G5",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKB7ACD89KTH6WVBRKG8G5.png",
+    "size_bytes": 180357
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Safari fixture history and unsupported Cookies.binarycookies warning",
+  "token_usage": null,
+  "type": "file"
+}

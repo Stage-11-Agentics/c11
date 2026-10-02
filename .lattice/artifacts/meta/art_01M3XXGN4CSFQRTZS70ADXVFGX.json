@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:00:53Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XXGN4CSFQRTZS70ADXVFGX",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XXGN4CSFQRTZS70ADXVFGX.md",
+    "size_bytes": 500
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-304 scoped Batch3 PASS at b6f239bd077164d2ff2e7aa18d5464d4e885fd35: real OSC spinner/meaningful-title/burst behavior verified in two terminals against exact pre-change baseline; all native input m",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

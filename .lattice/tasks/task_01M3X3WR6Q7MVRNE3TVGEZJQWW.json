@@ -1,0 +1,54 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sol-feed",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-265-attention-order",
+      "linked_at": "2026-10-02T18:00:56Z",
+      "linked_by": "agent:sol-feed",
+      "repo": null
+    }
+  ],
+  "comment_count": 1,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator should reach the same next item from the Feed and \u2325V, with urgent flags first and older asks no longer starved by new arrivals. Backlog item: A3.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `Sources/AttentionModel.swift:179` exposes oldestFlags. `Sources/AppDelegate.swift:10829-10845` tries flags then walks unread notification storage in its existing order; `:13869-13896` builds the menu bar from notifications only.\n- `Sources/KeyboardShortcutSettings.swift:150-153` makes \u2318I the notifications default and Control-Command-Return the jump default; \u2325V is Atin\u2019s configured jump binding, not a new global default to install.\n- Upstream: cmux #3057 Feed is comparative context, not a c11 flag-order implementation; `Sources/Feed/FeedPanelView.swift` has filters but no matching c11 suppression model.\n- Research: report 03 \u201cUI sketch\u201d; Fable Feed F2a; Astra Feed F2 and D7; `c11-1.0.html` D7. BACKLOG A3 explicitly rules flags first, then oldest.\n\n## Scope\nIn: one shared attention ordering used by Feed and jump-to-unread/\u2325V, plus flags and open-ask count in the menu-bar extra.\nOut: A1\u2019s basic missing-flag repair, A4 quick-view layout, global keybinding changes (D16), sidebar rewrite (D21), phone UI, answering and banners.\n\n## Approach\nExpose a pure ordered projection from A2 with flags ahead of asks, oldest within each class, and a deterministic UUID tie-break. Specify same-tab flag-plus-ask row/count semantics so a flag is not counted as an extra ask. Preserve flagged suppression override and skip unavailable targets using the same resolution policy in both consumers. Retain the configured jump shortcut. Extend A1\u2019s menu-bar observation with the projection and ask count instead of adding a third independent list.\n\n## Acceptance criteria\n1. Given two flags and three asks with intentionally interleaved timestamps, Feed and the jump command select flags oldest-first, then asks oldest-first; a tied timestamp produces the same stable order on repeated reads.\n2. Suppressed routine asks are excluded, suppressed flags remain at flag priority, and lowering a flag exposes any remaining ask at its original age. A tab with both has one open ask in the ask count.\n3. A closed/unavailable target is skipped consistently without redirecting to an arbitrary focused tab. The next resolvable Feed row matches the tab opened by the jump action.\n4. The enabled menu bar shows flags and the same eligible open-ask count as the projection, including zero states, while a finished turn is not mislabeled a blocking ask. Updates do not activate c11.\n5. Existing user shortcut bindings survive the change; the default jump binding is unchanged.\n\n## Validation\nUse pure sorting/count fixtures covering timestamp ties, flag-plus-ask, suppression and closed targets. Validate Feed JSON versus tests_v2 jump outcomes on a tagged socket, then use computer interaction to invoke the configured shortcut and inspect the menu bar. Measure update churn against F2 on Atlas.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nDepends on A1 (flag visibility) and A2 (typed projection). A4 consumes this order. F1 / C11-216 and F2 provide build/soak infrastructure and baseline.\n\n## Risks\nRaw unread counts and open asks are different quantities; name them distinctly. Avoid re-sorting or broad observable reads on each terminal keystroke. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: S. Tier: P1. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3X3WR6Q7MVRNE3TVGEZJQWW",
+  "last_event_id": "ev_01M3YXABKNEBR3G086KXFBK4WY",
+  "last_status_changed_at": "2026-10-02T18:00:56Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR1DQPZP82V13DV9KR34",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-265",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p1"
+  ],
+  "title": "Attention: share flags-first oldest-first ordering across Feed and navigation",
+  "type": "task",
+  "updated_at": "2026-10-02T18:16:41Z",
+  "urgency": null
+}

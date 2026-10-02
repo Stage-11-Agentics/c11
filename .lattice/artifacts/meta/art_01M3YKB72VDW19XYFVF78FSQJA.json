@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:22:24Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKB72VDW19XYFVF78FSQJA",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKB72VDW19XYFVF78FSQJA.png",
+    "size_bytes": 194103
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Named Chrome denial: zero cookies, one history row",
+  "token_usage": null,
+  "type": "file"
+}

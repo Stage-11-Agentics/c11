@@ -1,0 +1,209 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>C11-285 validation</title><style>body{font:17px/1.5 system-ui;max-width:1100px;margin:45px auto;padding:0 25px;color:#17212b;background:#f7fafc}h1{font-size:30px}table{border-collapse:collapse;width:100%;background:white}td,th{padding:14px;border:1px solid #ced8e1;text-align:left;vertical-align:top}code{overflow-wrap:anywhere}small{color:#485563}a{color:#075c9c}</style><h1>C11-285 · PASS</h1><p>Independent batch validator reviewed the source fixture and actual runtime receipts.</p><p>Actual packaged RPC, CLI framing and owned SSH refusal at merged head <code>12d4f21a8822a3a7763d3a26b5295d8f6213c60a</code>.</p><table><tr><th>Owner step</th><th>Outcome</th><th>Observed evidence</th></tr><tr><td>1 — local native RPC</td><td>PASS</td><td>Ping, unchanged window, feature/error checks, actual raw/friendly receipts.</td></tr><tr><td>2 — pre-connection rejection</td><td>PASS</td><td>Ten invalid calls plus help made zero fake-peer connections; valid absent socket failed.</td></tr><tr><td>3 — actual SSH/refusal</td><td>PASS</td><td>Shipping loopback SSH bootstrap/wrappers refused remote calls; ordinary SSH remained usable; authenticated retained handler passed.</td></tr><tr><td>4 — literal JSON forms</td><td>PASS</td><td>All three JSON invocation forms preserved the complete result; Unicode and literal UUID fixture passed.</td></tr></table><p>Docker's configured daemon was unavailable. The actual existing SSH service in the owned disposable guest exercised the shipping bootstrap and wrapper refusal with a temporary synthetic key. Docker container/port lifecycle is unperformed.</p><p>Original guest authorization bytes and mode were restored, the synthetic key deleted and newly owned wrapper removed. Guest native Quit retained its PID; bounded input failure and verified owned SIGKILL cleanup remain explicit. Common native-session Quit is a separate batch proof.</p><p>Canonical executable <code>1115fd376391d35eb824abe7a10d2a0e88b8441030350125db89dd95f9b69d67</code><br>Guest executable <code>f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39</code></p><small>Public evidence uses synthetic content. No account, machine name, email, real home path, provider session ID or screenshot is included.</small><details open><summary>Validation</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">C11-285 PASS in Batch 4 after independent validator review of the executable fixture, live RPC receipts, shipping SSH bootstrap/wrappers and retained authenticated-handler gate.
+
+Exact merged head `12d4f21a8822a3a7763d3a26b5295d8f6213c60a`; Debug invocation `dc3b9a7120b34a03a050f42551f5809c`. Canonical executable `1115fd376391d35eb824abe7a10d2a0e88b8441030350125db89dd95f9b69d67`; independently checked guest copy `f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39`.
+
+1. Owner step 1: actual raw RPC ping returned pong; window.list unchanged; cli.rpc v1 advertised; unknown/non-object errors rejected. Actual raw tab.send_text and friendly send produced distinct synthetic shell receipts without a second caller Return.
+2. Owner step 2: invalid [] rejected with JSON-object error under trace. Packaged CLI fake-peer fixture independently counted zero connections for ten malformed calls and help; valid absent socket failed.
+3. Owner step 3: actual c11 ssh bootstrap to the same owned disposable guest, existing loopback SSH service. Shipped c11/cmux ping and c11 rpc system.ping wrappers returned nonzero with explicit unavailable message and no Mac pong. Ordinary SSH receipts passed before and after. Temporary synthetic key deleted; authorized_keys original bytes/mode restored; only the newly owned wrapper entry removed. Actual retained handler independently accepted its authenticated handshake then refused the arbitrary command and closed transport: one test, zero failures, 0.073s, invocation dcbf149d79a0479997358feb3b7ae755 at the same exact head.
+4. Owner step 4: default, global --json and rpc-subcommand --json preserved the entire same unformatted JSON result, including is_terminating_app=false. Host fake peer preserved literal nested Unicode parameters and result UUID. No global window scope was added to the live ping focus test.
+
+Docker&#x27;s configured daemon was unavailable. No Docker-specific transport or port lifecycle claim is made. The owned existing SSH endpoint exercised the same shipping bootstrap/wrapper seam.
+
+The live fixture&#x27;s tests/cmux import shadowing was corrected only in the ignored adapter by selecting the pinned shipping tests_v2 helper; its socket guard accepts the isolated sandbox socket. Original source hashes and adaptation are logged. First invalid harness attempt is retained privately and is not a product finding.
+
+Guest synthesized native Quit did not exit the PID; reports retain that environment gate and verified owned SIGKILL fallback. Primary PID 26033 is gone; loopback launch log attributes PID 27018, with owned lifecycle cleanup verified. No false native-dismissal PASS. Batch common native Quit proof is separate. No provider login, real authentication copying, install, host settings, product/source/installed-skill changes or Lattice writes occurred.
+</pre></details><details open><summary>Structured evidence</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{
+  &quot;ticket&quot;: &quot;C11-285&quot;,
+  &quot;proposed_verdict&quot;: &quot;PASS; parent independently reviews and records completion&quot;,
+  &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+  &quot;canonical_invocation&quot;: &quot;dc3b9a7120b34a03a050f42551f5809c&quot;,
+  &quot;canonical_executable_sha256&quot;: &quot;1115fd376391d35eb824abe7a10d2a0e88b8441030350125db89dd95f9b69d67&quot;,
+  &quot;guest_executable_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+  &quot;primary_rpc&quot;: {
+    &quot;phase&quot;: &quot;rpc&quot;,
+    &quot;artifact_head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+    &quot;fixture_source_head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+    &quot;guest_app_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+    &quot;cases&quot;: [
+      {
+        &quot;fixture&quot;: &quot;rpc-live&quot;,
+        &quot;exit_status&quot;: 0,
+        &quot;log&quot;: &quot;rpc-live.log&quot;,
+        &quot;log_sha256&quot;: &quot;f489ac26ca18ea81b3d9b8ea9c355e5259257ecf1c96b5e3a69342d478336d0b&quot;
+      }
+    ],
+    &quot;load_before&quot;: [
+      1.42431640625,
+      1.65771484375,
+      2.32958984375
+    ],
+    &quot;pid&quot;: 26033,
+    &quot;pid_start&quot;: &quot;Fri Oct 2 16:22:27 2026&quot;,
+    &quot;display_bounds&quot;: [
+      {
+        &quot;y&quot;: 0,
+        &quot;x&quot;: 0,
+        &quot;width&quot;: 1024,
+        &quot;height&quot;: 768
+      }
+    ],
+    &quot;result&quot;: &quot;PASS&quot;,
+    &quot;rpc_json_forms&quot;: [
+      {
+        &quot;form&quot;: [],
+        &quot;result&quot;: {
+          &quot;is_terminating_app&quot;: false,
+          &quot;pong&quot;: true
+        }
+      },
+      {
+        &quot;form&quot;: [
+          &quot;--json&quot;
+        ],
+        &quot;result&quot;: {
+          &quot;pong&quot;: true,
+          &quot;is_terminating_app&quot;: false
+        }
+      },
+      {
+        &quot;form&quot;: [
+          &quot;subcommand-json&quot;
+        ],
+        &quot;result&quot;: {
+          &quot;pong&quot;: true,
+          &quot;is_terminating_app&quot;: false
+        }
+      }
+    ],
+    &quot;invalid_object_before_transport&quot;: {
+      &quot;exit_nonzero&quot;: true,
+      &quot;trace_socket_send_absent&quot;: true,
+      &quot;host_fake_peer_covers_connection_count&quot;: true
+    },
+    &quot;valid_absent_socket_nonzero&quot;: true,
+    &quot;owned_pid_gone&quot;: true,
+    &quot;dismissal&quot;: {
+      &quot;native_quit&quot;: false,
+      &quot;fallback&quot;: &quot;owned PID SIGKILL&quot;,
+      &quot;native_gate&quot;: &quot;TimeoutError&quot;,
+      &quot;pid_gone&quot;: true
+    },
+    &quot;load_after&quot;: [
+      3.86962890625,
+      2.205078125,
+      2.50244140625
+    ]
+  },
+  &quot;fake_peer&quot;: {
+    &quot;result&quot;: &quot;PASS&quot;,
+    &quot;exit_status&quot;: 0,
+    &quot;source_sha256&quot;: &quot;8518fe2057157322e7e4556a58c6f3abb871dfd11a7fa67b7c196d7e7acd3c6e&quot;,
+    &quot;malformed_cases_without_connections&quot;: 10,
+    &quot;help_without_connections&quot;: true,
+    &quot;literal_params_and_uuid_preserved&quot;: true
+  },
+  &quot;ssh&quot;: {
+    &quot;ticket&quot;: &quot;C11-285&quot;,
+    &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+    &quot;app_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;,
+    &quot;cases&quot;: [
+      {
+        &quot;command&quot;: &quot;c11 ping&quot;,
+        &quot;exit_nonzero&quot;: true,
+        &quot;explicit_unavailable&quot;: true,
+        &quot;mac_pong_absent&quot;: true
+      },
+      {
+        &quot;command&quot;: &quot;cmux ping&quot;,
+        &quot;exit_nonzero&quot;: true,
+        &quot;explicit_unavailable&quot;: true,
+        &quot;mac_pong_absent&quot;: true
+      },
+      {
+        &quot;command&quot;: &quot;c11 rpc system.ping&quot;,
+        &quot;exit_nonzero&quot;: true,
+        &quot;explicit_unavailable&quot;: true,
+        &quot;mac_pong_absent&quot;: true
+      }
+    ],
+    &quot;existing_loopback_ssh_banner_verified&quot;: true,
+    &quot;unprivileged_listener_enumeration_visible&quot;: false,
+    &quot;synthetic_loopback_only&quot;: true,
+    &quot;ordinary_ssh_still_works&quot;: true,
+    &quot;result&quot;: &quot;PASS actual wrappers; host retained-handler handshake proof separate&quot;,
+    &quot;owned_pid_gone&quot;: true,
+    &quot;dismissal&quot;: {
+      &quot;native_quit&quot;: false,
+      &quot;fallback&quot;: &quot;owned PID SIGKILL&quot;,
+      &quot;native_gate&quot;: &quot;TimeoutError&quot;,
+      &quot;pid_gone&quot;: true,
+      &quot;observations&quot;: [
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        },
+        {
+          &quot;sheet&quot;: &quot;not exposed&quot;
+        }
+      ]
+    },
+    &quot;authorized_keys_exactly_restored&quot;: true,
+    &quot;synthetic_key_deleted&quot;: true,
+    &quot;new_owned_wrapper_entries_removed&quot;: 1
+  },
+  &quot;ssh_app_pids_from_owned_launch_log&quot;: [
+    27018
+  ],
+  &quot;retained_handler&quot;: {
+    &quot;invocation&quot;: &quot;dcbf149d79a0479997358feb3b7ae755&quot;,
+    &quot;head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+    &quot;target&quot;: &quot;c11LogicTests/WorkspaceRemoteConnectionTests/testRemoteCommandIsRefusedAfterSuccessfulHandshake&quot;,
+    &quot;tests&quot;: 1,
+    &quot;failures&quot;: 0,
+    &quot;duration_seconds&quot;: 0.073,
+    &quot;result&quot;: &quot;ok&quot;
+  },
+  &quot;limits&quot;: [
+    &quot;Docker configured daemon unavailable; Docker image/container/port lifecycle was not run or claimed.&quot;,
+    &quot;Actual owned guest loopback SSH used the shipping bootstrap and wrappers with a synthetic temporary key; authentication file restored exactly.&quot;,
+    &quot;Guest native Quit retained PID after bounded synthesized input; cleanup used owned PID SIGKILL. Common native-session Quit is a separate parent proof.&quot;,
+    &quot;The shipping live test prepends legacy tests/cmux; ignored adapter pins exact tests_v2/cmux helper and accepts only the standard isolated socket. Product and shipping test source unchanged.&quot;
+  ],
+  &quot;packaged_cli_sha256&quot;: &quot;4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e&quot;
+}
+</pre></details><details open><summary>Live fixture receipt</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{&quot;fixture&quot;: &quot;rpc-live&quot;, &quot;artifact_head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;, &quot;fixture_source_head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;, &quot;fixture_sha256&quot;: &quot;c052a41f4bac842061f6275d15bb5842ad0662500d2ea61ce0e68ff1ce7483f4&quot;, &quot;app_sha256&quot;: &quot;f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39&quot;, &quot;adaptation&quot;: [&quot;pin shipping tests_v2 cmux helper to prevent legacy tests/cmux shadowing&quot;, &quot;isolated socket guard only&quot;]}
+PASS: tagged rpc ping preserves window; cli.rpc advertised; unknown and invalid calls rejected
+PASS: raw tab.send_text and existing friendly send both produce shell receipts
+</pre></details><details open><summary>CLI fake-peer receipt</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">Executable fixture: tests/test_cli_rpc.py
+Source head: 12d4f21a8822a3a7763d3a26b5295d8f6213c60a
+Packaged guest CLI; invocation returned exit 0.
+PASS: rpc sends one named v2 request; literal JSON/results preserved; server error passed through
+PASS: ten malformed calls and help make zero connections; valid missing-app call fails
+</pre></details><details open><summary>Retained handler receipt</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">    /Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug -destination platform=macOS -derivedDataPath $HOME/c11-builds/val-4-t/derived-test test &quot;-only-testing:c11LogicTests/WorkspaceRemoteConnectionTests/testRemoteCommandIsRefusedAfterSuccessfulHandshake&quot;
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testRemoteCommandIsRefusedAfterSuccessfulHandshake]&#x27; started.
+Test Case &#x27;-[c11LogicTests.WorkspaceRemoteConnectionTests testRemoteCommandIsRefusedAfterSuccessfulHandshake]&#x27; passed (0.073 seconds).
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.073 (0.074) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.073 (0.074) seconds
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.073 (0.075) seconds
+** TEST SUCCEEDED **
+</pre></details></html>

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:40:21Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XZRWZN7TKC1S5WGTFWZ24R",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3XZRWZN7TKC1S5WGTFWZ24R.html",
+    "size_bytes": 8792
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact candidate and earlier main reproduce automatic branch routing failure; scoped cleanup passes; overall verdict awaits classification.",
+  "tags": [],
+  "title": "Paired runtime evidence: pre-existing branch routing and watcher cleanup",
+  "token_usage": null,
+  "type": "file"
+}

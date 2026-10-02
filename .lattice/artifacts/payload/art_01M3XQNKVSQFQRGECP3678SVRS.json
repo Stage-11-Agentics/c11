@@ -1,0 +1,37 @@
+{
+  "identity": {
+    "invocation": "356f4333c0274a20add53ea2c2568cd1",
+    "head": "bbe2e2500a57239b68f334aa243c02e496f7e5f0",
+    "parent_head": "b3e7af7cf5d5fae0a4804dff6f529eb31cf54d78",
+    "branch": "c11-1.0/C11-269-runtime-hygiene",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-269-hygiene",
+    "slug": "c11-269-hygiene",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/SkillInstallerPluginBoundaryTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "selected_results": [
+    "\t Executed 5 tests, with 0 failures (0 unexpected) in 0.045 (0.046) seconds",
+    "\t Executed 5 tests, with 0 failures (0 unexpected) in 0.045 (0.047) seconds",
+    "\t Executed 5 tests, with 0 failures (0 unexpected) in 0.045 (0.047) seconds",
+    "** TEST SUCCEEDED **"
+  ],
+  "built_cli_probes": "PASS: native observer and wrapper preserve both signal dispositions\nPASS: resolved-path execv child inherits SIG_DFL\nPASS: wrapper-skipped PATH execvp child inherits SIG_DFL\nPASS: execv failure reports CLI error and survives closed error pipe\nPASS: execvp failure reports CLI error and survives closed error pipe\nPASS: help/version keep safe broken-pipe output behavior\nPASS: OpenCode lifecycle loads at runtime without tenant config writes\n29f8c6c7cfbec5ca937aee14bdcebe916ab955c8be227c34e7ca217ba6f2a5e2  ../derived-test/Build/Products/Debug/c11\n",
+  "fresh_context_static_review": "PASS bbe2e2500a including merged main; review did not run runtime checks",
+  "packaged_OpenCode_Settings_runtime": "Deferred to low-risk batch Validator; not claimed observed"
+}

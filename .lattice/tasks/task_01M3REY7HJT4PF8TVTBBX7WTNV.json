@@ -1,0 +1,42 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:cairn-tab-bar",
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-09-30T06:09:57Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "description": "Record, per tab, when the operator last looked at it: stamp when a tab becomes the visible tab of the focused area in the key window, and when it stops being visible (area unfocused, tab switched, workspace switched, window resigns key, app deactivated). Persist it with the session snapshot. Expose it next to the existing tab timestamps (createdAt, last activity) so the tab sheet can show a Seen clock, and read it back through the socket/CLI (for example in get-metadata or tree --json) so agents can use it. Out of scope: the sheet UI itself; the tab sheet round-three PR adds a Seen clock column that reads this once it lands. Design reference: design/tab-bar-qol/prototype-v3.html (the '+ Seen' clock order) on the tab-bar-qol branch. Requested by Atin 2026-09-29.",
+  "done_at": "2026-09-30T23:18:01Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3T9RNN63ASVFD7Y49BAYWBZ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3T9RNN5JAYJ2ZXKEDPK1CEW",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3REY7HJT4PF8TVTBBX7WTNV",
+  "last_event_id": "ev_01M3T9RNN63ASVFD7Y49BAYWC2",
+  "last_status_changed_at": "2026-09-30T23:18:01Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-243",
+  "status": "done",
+  "tags": [
+    "tab-bar",
+    "telemetry"
+  ],
+  "title": "Tab last-seen tracking: record when the operator last looked at each tab",
+  "type": "task",
+  "updated_at": "2026-09-30T23:18:01Z",
+  "urgency": null
+}

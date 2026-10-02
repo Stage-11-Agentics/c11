@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:18:44Z",
+  "created_by": "agent:astra-hangs",
+  "custom_fields": {},
+  "id": "art_01M3Y1Z6EDRFX4KZ8RH2GE3GEZ",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3Y1Z6EDRFX4KZ8RH2GE3GEZ.tgz",
+    "size_bytes": 24954
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Sanitized per-head build, targeted test, read, transport, timeout and baseline records. Latest overlay repair build/tests pass; no final runtime PASS claimed.",
+  "tags": [],
+  "title": "C11-295 validation checkpoint; keyboard gate pending",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,2 @@
+# C11-291 start note (Orchestrator)
+Translate every new 1.0 user-facing string already on origin/main now into ja, uk, ko, zh-Hans, zh-Hant and ru (CLAUDE.md Localization: jq for well-formedness; every interpolation token preserved in all six). Parallelize per locale inside your session if useful. Open the PR at handoff and land it; when the English string freeze comes (after the last feature PR), a refresh pass covers only strings added since (audit finding 6: no English-only release). Key manifests are on C11-259 (ev_01M3XGMZMCGN380J1G7N5NQPWY) and other tickets' plans.

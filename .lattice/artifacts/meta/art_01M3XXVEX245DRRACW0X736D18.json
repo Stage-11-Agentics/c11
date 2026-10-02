@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:06:47Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XXVEX245DRRACW0X736D18",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XXVEX245DRRACW0X736D18.json",
+    "size_bytes": 2841
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-285 exact-head Atlas logic and executable CLI evidence",
+  "token_usage": null,
+  "type": "file"
+}

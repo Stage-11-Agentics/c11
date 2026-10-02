@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": "agent:token-cost-arch",
   "branch_links": [],
   "comment_count": 2,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KY0305KSTQ99D3GGF7W7HE2W",
-  "last_event_id": "ev_01KY04FP639QYYEHC7GN17N0AR",
-  "last_status_changed_at": "2026-07-20T15:41:02Z",
+  "last_event_id": "ev_01M3YXY587J08AN528KRF6WYNA",
+  "last_status_changed_at": "2026-10-02T18:27:30Z",
   "linked_files": [],
   "needs_human": null,
   "priority": "high",
@@ -19,7 +20,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-174",
-  "status": "in_progress",
+  "status": "cancelled",
   "tags": [
     "architecture",
     "token-cost",
@@ -27,6 +28,6 @@
   ],
   "title": "Token-cost awareness: model pricing catalog + 24h OpenRouter poller + query surface (architecture)",
   "type": "spike",
-  "updated_at": "2026-07-20T16:07:00Z",
+  "updated_at": "2026-10-02T18:27:30Z",
   "urgency": null
 }

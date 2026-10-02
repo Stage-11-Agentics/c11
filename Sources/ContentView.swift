@@ -4953,10 +4953,7 @@ struct ContentView: View {
         // Switcher commands dismiss the palette after action dispatch.
         // Defer focus mutation one turn so browser omnibar autofocus can run
         // without being blocked by the palette-visibility guard.
-        DispatchQueue.main.async {
-            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, suppressFlash: true, cause: "palette")
-        }
+        workspaceManager.focusPaletteSwitcherTarget(windowId: windowId, workspaceId: workspaceId)
     }
 
     private func focusCommandPaletteSwitcherSurfaceTarget(
@@ -4965,10 +4962,7 @@ struct ContentView: View {
         workspaceId: UUID,
         panelId: UUID
     ) {
-        DispatchQueue.main.async {
-            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            workspaceManager.focusWorkspace(workspaceId, surfaceId: panelId, suppressFlash: true, cause: "palette")
-        }
+        workspaceManager.focusPaletteSwitcherTarget(windowId: windowId, workspaceId: workspaceId, surfaceId: panelId)
     }
 
     private func commandPaletteWorkspaceSearchMetadata(for workspace: Workspace) -> CommandPaletteSwitcherSearchMetadata {
@@ -6120,10 +6114,10 @@ struct ContentView: View {
             workspaceManager.setPinned(workspace, pinned: !workspace.isPinned)
         }
         registry.register(commandId: "palette.nextWorkspace") {
-            workspaceManager.selectNextWorkspace()
+            workspaceManager.selectNextWorkspace(cause: "palette")
         }
         registry.register(commandId: "palette.previousWorkspace") {
-            workspaceManager.selectPreviousWorkspace()
+            workspaceManager.selectPreviousWorkspace(cause: "palette")
         }
         registry.register(commandId: "palette.moveWorkspaceUp") {
             moveSelectedWorkspace(by: -1)
@@ -8694,9 +8688,9 @@ struct WorkspaceSidebar: View {
             modifierKeyMonitor.start()
             horizontalScrollMonitor.start { [workspaceManager] step in
                 if step > 0 {
-                    workspaceManager.selectNextWorkspace()
+                    workspaceManager.selectNextWorkspace(cause: "shortcut")
                 } else {
-                    workspaceManager.selectPreviousWorkspace()
+                    workspaceManager.selectPreviousWorkspace(cause: "shortcut")
                 }
             }
             draggedWorkspaceId = nil

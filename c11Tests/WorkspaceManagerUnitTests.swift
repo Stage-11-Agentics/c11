@@ -1632,6 +1632,64 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
         XCTAssertEqual(publications, 1)
     }
 
+    /// Incident route: a socket `simulate_shortcut` opens the palette and submits it. The
+    /// submission defers its focus to the next main turn, past the request context.
+    func testSocketPaletteSubmissionIsRefusedBeforeItsDeferredHop() throws {
+        _ = NSApplication.shared
+        let manager = WorkspaceManager()
+        let original = try XCTUnwrap(manager.selectedWorkspaceId)
+        let target = manager.addWorkspace(select: false)
+        let context = SocketCommandContext(method: "simulate_shortcut", allowsFocus: true, callerTabId: UUID())
+        SocketCommandContext.withContext(context) {
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+            manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id, surfaceId: UUID())
+        }
+        XCTAssertEqual(context.blockedTarget, target.id)
+        let settled = expectation(description: "main turn passed")
+        DispatchQueue.main.async { DispatchQueue.main.async { settled.fulfill() } }
+        wait(for: [settled], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, original)
+        // The operator's own palette use still switches, labeled palette.
+        manager.focusPaletteSwitcherTarget(windowId: UUID(), workspaceId: target.id)
+        let operatorTurn = expectation(description: "operator submission applied")
+        DispatchQueue.main.async { DispatchQueue.main.async { operatorTurn.fulfill() } }
+        wait(for: [operatorTurn], timeout: 5)
+        XCTAssertEqual(manager.selectedWorkspaceId, target.id)
+    }
+
+    func testSelectionCausesReachTheEventLogFromRealRoutes() throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-323-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("events.ndjson")
+        EventEmitter.shared.startForTesting(log: EventLog(url: url, instance: "c11-323"), instance: "c11-323")
+        defer { EventEmitter.shared.resetForTesting(); try? FileManager.default.removeItem(at: directory) }
+        func causes() throws -> [String] {
+            EventEmitter.shared.flush()
+            let text = try String(contentsOf: url, encoding: .utf8)
+            return try text.split(separator: "\n").compactMap { line in
+                let row = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+                guard row["type"] as? String == "workspace.selected" else { return nil }
+                return (row["payload"] as? [String: Any])?["cause"] as? String
+            }
+        }
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.selectedWorkspace)
+        let second = manager.addWorkspace(select: false)
+        let group = try manager.createWorkspaceGroup(name: "C11-323")
+        try manager.addWorkspacesToGroup(id: group.id, workspaceIds: [second.id])
+        // Sidebar folder click: the enclosing cause survives the shared group helper.
+        _ = try manager.withWorkspaceSelectionCause("sidebar") { try manager.focusWorkspaceGroup(id: group.id) }
+        XCTAssertEqual(manager.selectedWorkspaceId, second.id)
+        // Palette Next/Previous label themselves; shortcuts and scroll gestures too.
+        manager.selectPreviousWorkspace(cause: "palette")
+        manager.selectNextWorkspace(cause: "palette")
+        manager.selectWorkspace(at: 0, cause: "shortcut")
+        XCTAssertEqual(manager.selectedWorkspaceId, first.id)
+        manager.selectNextWorkspace(cause: "shortcut")
+        XCTAssertEqual(Array(try causes().suffix(5)), ["sidebar", "palette", "palette", "shortcut", "shortcut"])
+    }
+
     func testSocketDispatcherReturnsRefusalForBothWireVersions() throws {
         _ = NSApplication.shared
         let manager = WorkspaceManager()

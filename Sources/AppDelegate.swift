@@ -11952,7 +11952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=next repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectNextWorkspace() }
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectNextWorkspace(cause: "shortcut") }
             return true
         }
 
@@ -11963,7 +11963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=prev repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectPreviousWorkspace() }
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectPreviousWorkspace(cause: "shortcut") }
             return true
         }
 
@@ -12082,7 +12082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "shortcut.action name=workspaceDigit digit=\(num) targetIndex=\(targetIndex) manager=\(debugManagerToken(manager)) \(debugShortcutRouteSnapshot(event: event))"
             )
 #endif
-            withOperatorShortcutIntent(operatorIntent) { manager.selectWorkspace(at: targetIndex) }
+            withOperatorShortcutIntent(operatorIntent) { manager.selectWorkspace(at: targetIndex, cause: "shortcut") }
             return true
         }
 

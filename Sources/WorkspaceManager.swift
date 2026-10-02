@@ -909,22 +909,42 @@ class WorkspaceManager: ObservableObject {
         get { storedSelectedWorkspaceId }
         set {
             guard newValue != storedSelectedWorkspaceId else { return }
-            if let context = SocketCommandContext.current, storedSelectedWorkspaceId != nil {
-                let target = newValue ?? storedSelectedWorkspaceId!
-                context.blockedTarget = target
-                EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: context.method,
-                    callerTabId: TerminalController.socketCallerTabId(context))
-                return
-            }
+            if storedSelectedWorkspaceId != nil,
+               refuseSocketWorkspaceSelection(target: newValue ?? storedSelectedWorkspaceId!) { return }
             if let newValue { prepareForExplicitWorkspaceSelection(to: newValue) }
             storedSelectedWorkspaceId = newValue
         }
     }
 
+    /// True when the current socket request may not change the selection; records
+    /// the refusal for the response and the event log. Deferred selections call this
+    /// before they hop off the request, because a hop drops the request context.
+    @discardableResult
+    func refuseSocketWorkspaceSelection(target: UUID) -> Bool {
+        guard let context = SocketCommandContext.current else { return false }
+        context.blockedTarget = target
+        EventEmitter.shared.emitWorkspaceSwitchBlocked(target: target, method: context.method,
+            callerTabId: TerminalController.socketCallerTabId(context))
+        return true
+    }
+
+    /// The palette switcher runs its focus one main turn after the dismissal. The hop
+    /// drops the socket request context, so a socket-driven submission is refused
+    /// first; an operator's own palette use proceeds as before.
+    func focusPaletteSwitcherTarget(windowId: UUID, workspaceId: UUID, surfaceId: UUID? = nil) {
+        if refuseSocketWorkspaceSelection(target: workspaceId) { return }
+        DispatchQueue.main.async { [weak self] in
+            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
+            self?.focusWorkspace(workspaceId, surfaceId: surfaceId, suppressFlash: true, cause: "palette")
+        }
+    }
+
     private var workspaceSelectionCause = "menu"
-    func withWorkspaceSelectionCause<T>(_ cause: String, _ body: () throws -> T) rethrows -> T {
+    /// A nil cause keeps the enclosing one, so a caller's "sidebar" or "palette"
+    /// survives routes that select through shared helpers.
+    func withWorkspaceSelectionCause<T>(_ cause: String?, _ body: () throws -> T) rethrows -> T {
         let prior = workspaceSelectionCause
-        workspaceSelectionCause = cause
+        workspaceSelectionCause = cause ?? prior
         defer { workspaceSelectionCause = prior }
         return try body()
     }
@@ -2858,7 +2878,7 @@ class WorkspaceManager: ObservableObject {
         GhosttySurfaceScrollView.endNativeTextEntryForExplicitFocus(in: window)
     }
 
-    func selectWorkspace(_ workspace: Workspace, cause: String = "menu") {
+    func selectWorkspace(_ workspace: Workspace, cause: String? = nil) {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select", to: workspace.id)
 #endif
@@ -3614,7 +3634,7 @@ class WorkspaceManager: ObservableObject {
         return trimmedDirectory.isEmpty ? "cmux" : trimmedDirectory
     }
 
-    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String = "menu") {
+    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String? = nil) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         if let surfaceId, workspace.panels[surfaceId] != nil {
             // Keep selected-surface intent stable across selectedTabId didSet async restore.
@@ -3709,7 +3729,7 @@ class WorkspaceManager: ObservableObject {
         workspace.focusPanel(surfaceId)
     }
 
-    func selectNextWorkspace(cause: String = "shortcut") {
+    func selectNextWorkspace(cause: String? = nil) {
         guard let currentId = selectedWorkspaceId,
               let currentIndex = workspaces.firstIndex(where: { $0.id == currentId }) else { return }
         let nextIndex = (currentIndex + 1) % workspaces.count
@@ -3721,7 +3741,7 @@ class WorkspaceManager: ObservableObject {
         if selectedWorkspaceId == workspaces[nextIndex].id { activateWorkspaceCycleHotWindow() }
     }
 
-    func selectPreviousWorkspace(cause: String = "shortcut") {
+    func selectPreviousWorkspace(cause: String? = nil) {
         guard let currentId = selectedWorkspaceId,
               let currentIndex = workspaces.firstIndex(where: { $0.id == currentId }) else { return }
         let prevIndex = (currentIndex - 1 + workspaces.count) % workspaces.count
@@ -3844,7 +3864,7 @@ class WorkspaceManager: ObservableObject {
     }
 #endif
 
-    func selectWorkspace(at index: Int, cause: String = "shortcut") {
+    func selectWorkspace(at index: Int, cause: String? = nil) {
         guard index >= 0 && index < workspaces.count else { return }
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select_index", to: workspaces[index].id)

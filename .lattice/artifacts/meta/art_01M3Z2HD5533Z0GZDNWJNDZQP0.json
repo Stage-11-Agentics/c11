@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:47:55Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2HD5533Z0GZDNWJNDZQP0",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z2HD5533Z0GZDNWJNDZQP0.md",
+    "size_bytes": 17286
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Fixed 18 budgets, raw load per sample, same tag artifacts; binds existing holder PID 14629 without acquiring slots. Owner observes appearance/templates; no independent or human approval implied.",
+  "tags": [],
+  "title": "Repair round 1 authoritative perf protocol 005",
+  "token_usage": null,
+  "type": "file"
+}

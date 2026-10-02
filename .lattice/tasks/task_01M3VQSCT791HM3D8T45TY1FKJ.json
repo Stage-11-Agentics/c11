@@ -18,15 +18,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01M3VQSCT791HM3D8T45TY1FKJ",
-  "last_event_id": "ev_01M3YY750MD29DFT25N2EEG49F",
-  "last_status_changed_at": "2026-10-02T18:32:25Z",
+  "last_event_id": "ev_01M3Z1CJ9NSGZVP6C0E1VVHKYV",
+  "last_status_changed_at": "2026-10-02T18:37:30Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-251",
-  "status": "in_planning",
+  "status": "in_progress",
   "tags": [
     "c11-1.0",
     "ws:backlog-review",
@@ -34,6 +34,6 @@
   ],
   "title": "Bare-shell clear/list sidebar commands act on the selected workspace",
   "type": "bug",
-  "updated_at": "2026-10-02T18:32:25Z",
+  "updated_at": "2026-10-02T19:27:48Z",
   "urgency": null
 }

@@ -137,6 +137,7 @@ class Harness:
         raise AssertionError('explicit focus did not make the expected guest window key')
 
     def validate(self):
+        require(Path('/Volumes/My Shared Files/out').is_dir(), 'disposable sandbox guest required')
         path = Path(self.args.socket)
         require(path.is_socket() and path.parent == Path('/tmp') and
                 re.fullmatch(r'(?:c11|cmux)-(?:debug|sandbox)-[^/]+\.sock', path.name),
@@ -198,6 +199,7 @@ class Harness:
         require(any(row.get('id') == 'window.resize' for row in bundled.get('features', [])),
                 'bundled CLI capability feature missing')
         self.report['cli_server_sha_match'] = bundled.get('sha_match')
+        require(bundled.get('sha_match') is True, 'CLI and server must identify the same build')
         help_text = self.cli(['resize-window', '--help']).stdout.lower()
         require(all(part in help_text for part in ('resize-window', '--window', 'width', 'height', 'keep')),
                 'bundled subcommand help must describe explicit target, sizes and kept edges')

@@ -31,7 +31,10 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let command = "printf 'initial:%s\\n' \"$$\" >> \(quotedReceipt); printf 'initial-done\\n'"
-        let shellCommand = try XCTUnwrap(strdup("/bin/zsh -i"))
+        // Set rc isolation in the shell launcher itself: c11 correctly protects
+        // its integration ZDOTDIR from environment overrides.
+        let quotedRoot = DefaultAgentResolver.shellQuote(root.path)
+        let shellCommand = try XCTUnwrap(strdup("/usr/bin/env HOME=\(quotedRoot) ZDOTDIR=\(quotedRoot) /bin/zsh -i"))
         defer { free(shellCommand) }
         var template = ghostty_surface_config_new()
         template.command = UnsafePointer(shellCommand)

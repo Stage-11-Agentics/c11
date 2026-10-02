@@ -426,7 +426,7 @@ Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 
 ```bash
 c11 skill install --tool claude        # Skills → ~/.claude/skills/
-c11 skill install --tool opencode      # Skills → ~/.opencode/skills/
+c11 skill install --tool opencode      # Skills → ~/.config/opencode/skills/
 c11 skill install --tool codex         # Skills → ~/.codex/skills/
 c11 skill install --tool kimi          # Skills → ~/.kimi/skills/
 c11 skill status [--json]              # Detection + install state for all tools

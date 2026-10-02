@@ -125,7 +125,7 @@ it preserves the value and uses a process-owned `/dev/fd/3` config through
 preserves both and continues without injecting the bundled plugin. Outside c11,
 or when the socket is unreachable, the wrapper transparently executes OpenCode.
 
-`c11 skill install --tool opencode` installs only skills in `~/.opencode/skills/`.
+`c11 skill install --tool opencode` installs only skills in `~/.config/opencode/skills/`.
 `c11 skill remove --tool opencode` removes only c11-installed skills. Neither
 operation creates, updates or deletes `~/.config/opencode/plugins/`.
 

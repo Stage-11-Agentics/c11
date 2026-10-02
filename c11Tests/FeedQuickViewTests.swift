@@ -106,18 +106,49 @@ final class FeedQuickViewTests: XCTestCase {
 
     func testHostRendersSameFixedSizeAcrossEmptyLoadingLongMissingAndFilters() {
         let model = FeedQuickViewModel()
-        let host = NSHostingView(rootView: FeedQuickView(model: model))
+        var frames: [String: CGRect] = [:]
+        let host = NSHostingView(rootView: FeedQuickView(model: model, onLayout: { frames[$0] = $1 }))
         host.frame = .init(origin: .zero, size: FeedQuickViewGeometry.size)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.orderOut(nil) }
+        var original: [String: CGRect] = [:]
         for state in [FeedQuickViewSnapshot(), .init(loading: false),
             .init(projection: .init(rows: [row(1, prompt: "Short"), row(2, prompt: String(repeating: "Long\n", count: 100)), row(3)]),
                   titles: [id(1): String(repeating: "Synthetic long name ", count: 50)], loading: false)] {
             model.apply(state)
             host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
             XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
+            for (key, size) in [("filters", NSSize(width: 200, height: 28)),
+                                ("filter.0", NSSize(width: 100, height: 28)), ("filter.1", NSSize(width: 100, height: 28)),
+                                ("hint", NSSize(width: 520, height: 28)), ("status", NSSize(width: 520, height: 16))] {
+                XCTAssertEqual(frames[key]?.size, size, key)
+                if let first = original[key] { XCTAssertEqual(frames[key], first, key) }
+                else { original[key] = frames[key] }
+            }
+            for (key, frame) in frames where key.hasPrefix("row.") { XCTAssertEqual(frame.height, 64, key) }
             model.switchFilter(.turns)
             host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
             model.switchFilter(.asks)
+        }
+        // Render the longest shipped strings from each built locale as stress
+        // labels, not new product translations. C11-291 owns the new keys.
+        for locale in ["ja", "uk", "ko", "zh-Hans", "zh-Hant", "ru"] {
+            let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: locale)
+            let localized = path.flatMap { NSDictionary(contentsOfFile: $0) as? [String: String] }
+            let longest = localized?.values.max(by: { $0.count < $1.count }) ?? String(repeating: "Synthetic long locale label ", count: 20)
+            frames = [:]
+            host.rootView = FeedQuickView(model: model, filterLabels: [longest, longest], onLayout: { frames[$0] = $1 })
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            XCTAssertEqual(frames["filters"]?.size, NSSize(width: 200, height: 28), locale)
+            XCTAssertEqual(frames["filter.0"]?.size, NSSize(width: 100, height: 28), locale)
+            XCTAssertEqual(frames["filter.1"]?.size, NSSize(width: 100, height: 28), locale)
+            XCTAssertEqual(frames["hint"], original["hint"], locale)
+            XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
         }
     }
 }

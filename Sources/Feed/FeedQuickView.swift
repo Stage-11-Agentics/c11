@@ -65,6 +65,7 @@ struct FeedQuickView: View {
         String(localized: "feed.quick.filter.asks", defaultValue: "Asks"),
         String(localized: "feed.quick.filter.turns", defaultValue: "Turns")
     ]
+    var onLayout: ((String, CGRect) -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,12 +81,14 @@ struct FeedQuickView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .feedQuickMeasure("filter.\(index)", observer: onLayout)
                         .accessibilityIdentifier(index == 0 ? "feed.quick.filter.asks" : "feed.quick.filter.turns")
                         .accessibilityLabel(filterLabels[index])
                         .accessibilityAddTraits(model.selection.filter == filter ? .isSelected : [])
                     }
                 }
                 .frame(width: FeedQuickViewGeometry.filterWidth, height: FeedQuickViewGeometry.filterHeight)
+                .feedQuickMeasure("filters", observer: onLayout)
                 .background(Color(nsColor: .controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius: 5))
                 Text(NotificationMenuSnapshotBuilder.attentionCountTitle(
                     flags: model.snapshot.projection.flagCount, asks: model.snapshot.projection.openAskCount))
@@ -94,10 +97,12 @@ struct FeedQuickView: View {
                     .accessibilityIdentifier("feed.quick.counts")
             }
             .padding(.horizontal, 12).frame(height: FeedQuickViewGeometry.header)
+            .feedQuickMeasure("header", observer: onLayout)
             Text(model.status.isEmpty ? " " : model.status)
                 .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
                 .frame(height: FeedQuickViewGeometry.status).accessibilityIdentifier("feed.quick.status")
+                .feedQuickMeasure("status", observer: onLayout)
             Divider()
             ScrollViewReader { scroll in
                 ZStack {
@@ -105,7 +110,8 @@ struct FeedQuickView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(model.rows, id: \.tabID) { row in
                                 FeedQuickViewRow(row: row, title: model.snapshot.titles[row.tabID] ?? row.tabID.uuidString,
-                                    now: model.snapshot.now, selected: model.selection.selectedTabID == row.tabID) {
+                                    now: model.snapshot.now, selected: model.selection.selectedTabID == row.tabID,
+                                    onLayout: onLayout) {
                                         model.select(row.tabID)
                                         model.openSelected()
                                     }
@@ -128,8 +134,11 @@ struct FeedQuickView: View {
                 .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity).frame(height: FeedQuickViewGeometry.hint)
                 .accessibilityIdentifier("feed.quick.hint")
+                .feedQuickMeasure("hint", observer: onLayout)
         }
         .frame(width: FeedQuickViewGeometry.size.width, height: FeedQuickViewGeometry.size.height)
+        .coordinateSpace(name: "feed.quick.layout")
+        .feedQuickMeasure("content", observer: onLayout)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityIdentifier("feed.quick.view")
     }
@@ -147,6 +156,7 @@ struct FeedQuickViewRow: View {
     let title: String
     let now: Date
     let selected: Bool
+    var onLayout: ((String, CGRect) -> Void)?
     let onOpen: () -> Void
 
     var body: some View {
@@ -169,6 +179,7 @@ struct FeedQuickViewRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .feedQuickMeasure("row.\(row.tabID.uuidString)", observer: onLayout)
         .accessibilityIdentifier("feed.quick.row.\(row.tabID.uuidString)")
         .accessibilityLabel(kindTitle + ": " + String(title.prefix(256)))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -221,5 +232,19 @@ struct FeedQuickViewRow: View {
         let rank = row.sourceRank.map { String(format: String(localized: "feed.quick.evidence", defaultValue: "%@ · rank %lld"), source, Int64($0)) } ?? source
         return row.confirmation == "unconfirmed"
             ? rank + " · " + String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed") : rank
+    }
+}
+
+private extension View {
+    /// Optional rendered-layout oracle. Production has no observer/GeometryReader.
+    func feedQuickMeasure(_ name: String, observer: ((String, CGRect) -> Void)?) -> some View {
+        background {
+            if let observer {
+                GeometryReader { proxy in
+                    Color.clear.onAppear { observer(name, proxy.frame(in: .named("feed.quick.layout"))) }
+                        .onChange(of: proxy.frame(in: .named("feed.quick.layout"))) { _, frame in observer(name, frame) }
+                }
+            }
+        }
     }
 }

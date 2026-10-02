@@ -242,19 +242,18 @@ enum PromptInputClassifier {
 
     private static func isSupportedDialog(_ lines: [Line], cursorY: Int) -> Bool {
         for optionIndex in lines.indices where isClaudeOption(lines[optionIndex]) {
-            let selected = lines[optionIndex].text.lowercased()
+            let selected = collapsedLowercased(lines[optionIndex].text)
             let following = lines.dropFirst(optionIndex + 1).prefix(6)
             guard let footer = following.first(where: hasDialogFooter) else { continue }
 
-            let afterText = following.map(\.text).joined(separator: " ").lowercased()
-            let context = lines[..<optionIndex].suffix(6).map(\.text).joined(separator: " ").lowercased()
-            let safetyChooser = context.contains("quick safety check")
-                && context.contains("project you created or one you trust")
-                && ((selected.contains("no, exit") && afterText.contains("yes, i trust this folder"))
-                    || (selected.contains("yes, i trust this folder") && afterText.contains("no, exit")))
-            let planChooser = context.contains("would you like to make this plan")
-                && ((selected.contains("yes, implement this plan") && afterText.contains("no, keep planning"))
-                    || (selected.contains("no, keep planning") && afterText.contains("yes, implement this plan")))
+            // The bounded capture can start below a heading that a narrow pane has
+            // wrapped far above the cursor, so a chooser is recognized by its
+            // selected option, its other option and its footer alone.
+            let afterText = collapsedLowercased(following.map(\.text).joined(separator: " "))
+            let safetyChooser = (selected.contains("no, exit") && afterText.contains("yes, i trust this folder"))
+                || (selected.contains("yes, i trust this folder") && afterText.contains("no, exit"))
+            let planChooser = (selected.contains("yes, implement this plan") && afterText.contains("no, keep planning"))
+                || (selected.contains("no, keep planning") && afterText.contains("yes, implement this plan"))
 
             // These layouts render the selection and its footer at the live
             // cursor. A stale chooser above a later composer must not block it.
@@ -264,6 +263,12 @@ enum PromptInputClassifier {
             }
         }
         return false
+    }
+
+    private static func collapsedLowercased(_ text: String) -> String {
+        text.lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
     }
 
     private static func hasDialogFooter(_ line: Line) -> Bool {

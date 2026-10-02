@@ -99,6 +99,29 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(plan).state, .dialog)
     }
 
+    func testNarrowPaneTrustChooserWithClippedHeadingIsStillADialog() {
+        // Recorded from a real Claude Code trust chooser in a 50%-width area. The
+        // capture window starts one row below the wrapped heading and the cursor
+        // sits on the selected option, four rows above the window's last row.
+        let clipped = region([
+            Row(y: 7, spans: [Span(text: " one you trust? (Like your own code, a well-known open")]),
+            Row(y: 8, spans: [Span(text: " source project, or work from your team). If not, take")]),
+            Row(y: 9, spans: [Span(text: " a moment to review what's in this folder first.")]),
+            Row(y: 10, spans: [Span(text: "")]),
+            Row(y: 11, spans: [Span(text: " Claude Code'll be able to read, edit, and execute")]),
+            Row(y: 12, spans: [Span(text: " files here.")]),
+            Row(y: 13, spans: [Span(text: "")]),
+            Row(y: 14, spans: [Span(text: " Security guide")]),
+            Row(y: 15, spans: [Span(text: "")]),
+            Row(y: 16, spans: [Span(text: " \u{276F} No, exit")]),
+            Row(y: 17, spans: [Span(text: "   Yes, I trust this folder")]),
+            Row(y: 18, spans: [Span(text: "")]),
+            Row(y: 19, spans: [Span(text: " Enter to confirm \u{00B7} Esc to cancel")]),
+            Row(y: 20, spans: [Span(text: "")]),
+        ], cursorY: 16)
+        XCTAssertEqual(PromptInputClassifier.classify(clipped).state, .dialog)
+    }
+
     func testVisibleOldChooserAboveLiveComposerDoesNotLookLikeDialog() {
         let input = region([
             Row(y: 0, spans: [Span(text: "Quick safety check: Is this a project you created or one you trust?")]),

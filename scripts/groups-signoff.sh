@@ -115,7 +115,20 @@ run_logged() {
 }
 
 quit_tagged() {
-  /usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+  # AppleScript can wait indefinitely when the tagged app has already exited
+  # but LaunchServices still has a stale bundle registration. The process
+  # probe below is authoritative, so keep the courtesy quit request bounded.
+  /usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 &
+  local quit_pid=$!
+  local quit_deadline=$((SECONDS + 5))
+  while kill -0 "$quit_pid" 2>/dev/null; do
+    if (( SECONDS >= quit_deadline )); then
+      kill "$quit_pid" 2>/dev/null || true
+      break
+    fi
+    sleep 0.25
+  done
+  wait "$quit_pid" 2>/dev/null || true
   local deadline=$((SECONDS + 30))
   while (( SECONDS < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then

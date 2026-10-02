@@ -159,6 +159,29 @@
       "t_ms": 4176
     },
     {
+      "t": "2026-10-02T02:59:56Z",
+      "source": "oracle",
+      "name": "ask-is-waiting",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled",
+        "time_order": "unknown"
+      },
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
+      },
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 10176
+    },
+    {
       "t": "2026-10-02T02:59:56.807Z",
       "source": "c11-event",
       "name": "liveness.derived",
@@ -171,8 +194,8 @@
         "workspace": "ws-repair"
       },
       "oracle": null,
-      "seq": 9,
-      "id": "ev-9",
+      "seq": 10,
+      "id": "ev-10",
       "t_ms": 10983
     },
     {
@@ -187,31 +210,9 @@
         "workspace": "ws-repair"
       },
       "oracle": null,
-      "seq": 10,
-      "id": "ev-10",
-      "t_ms": 10983
-    },
-    {
-      "t": "2026-10-02T02:59:56Z",
-      "source": "oracle",
-      "name": "ask-is-waiting",
-      "tool_name": null,
-      "session_id": null,
-      "tab": "tab-ask",
-      "attrs": {
-        "terminal_type": "claude-code",
-        "model": "haiku",
-        "lifecycle_state": "throttled"
-      },
-      "oracle": {
-        "mark": "waiting",
-        "unread": 1,
-        "activity": "idle",
-        "status": ""
-      },
       "seq": 11,
       "id": "ev-11",
-      "t_ms": 10176
+      "t_ms": 10983
     }
   ]
 }

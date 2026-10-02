@@ -55,9 +55,12 @@ enum LifecycleReplay {
             return false
         }
         guard before.seq < tool.seq, tool.seq < after.seq else { return false }
-        guard before.oracle?.mark == "waiting" else { return false }
+        guard let beforeOracle = before.oracle, let afterOracle = after.oracle else { return false }
+        guard beforeOracle.mark == "waiting", afterOracle.mark == "waiting" else { return false }
+        guard afterOracle.unread == beforeOracle.unread else { return false }
         guard let askTab = before.tab, let toolTab = tool.tab, askTab != toolTab else { return false }
-        return after.oracle != nil
+        guard after.tab == askTab else { return false }
+        return true
     }
 
     static func exitPlanFired(_ steps: [LifecycleReplayStep]) -> Bool {
@@ -366,8 +369,11 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
                 try assertObserved(item)
                 XCTAssertTrue(LifecycleReplay.siblingToolStartedAfterAskWasWaiting(item.steps))
                 XCTAssertEqual(item.intendedMark, "waiting")
+                let before = try XCTUnwrap(item.steps.first { $0.name == "ask-is-waiting" })
                 let after = try XCTUnwrap(item.steps.first { $0.name == "after-sibling" })
-                XCTAssertEqual(item.currentMark, after.oracle?.mark)
+                XCTAssertEqual(after.tab, before.tab)
+                XCTAssertEqual(after.oracle?.mark, item.intendedMark)
+                XCTAssertEqual(after.oracle?.unread, before.oracle?.unread)
             case "claude-bypass-exit-plan":
                 try assertObservedOrGap(item, observed: LifecycleReplay.exitPlanFired, intended: "waiting")
             case "claude-esc-interrupt":

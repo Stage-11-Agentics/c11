@@ -68,6 +68,20 @@ c11 mailbox recv --drain                   # robust floor: pull at turn boundari
 
 If `mailbox.delivery` is not set on the recipient, the envelope still lands in `<tab-name>/` inbox; the recipient drains it explicitly with `c11 mailbox recv`. Even with `stdin` set, draining at turn boundaries is the reliable delivery path — push is prompt-gated and best-effort.
 
+## Live messages page
+
+Open the local, self-contained view of both explicit `c11 send` traffic and mailbox traffic:
+
+```bash
+c11 messages view
+# compatibility alias:
+c11 mailbox view
+```
+
+c11 writes the page to `~/Library/Application Support/c11/messages/messages.html` (or the tagged app's equivalent state directory). `messages view` opens or reuses a c11 browser tab for that file. The page reloads after a debounced event-log rebuild, and c11 rebuilds it from the retained event log and mailbox files when the app starts, so it remains useful across relaunches. It does not start a localhost server; the messages directory is mode `0700` and the page is mode `0600`.
+
+The page has one timeline for both channels, a sender/recipient connection summary, per-mailbox lifecycle details, delivery health, and full message bodies. Search and filters cover workspace, agent, date, and channel. A queued send is shown as queued, a send is submitted only when its wire event says `submitted: true`, and an unknown `caller_title: null` is shown as an unknown caller (or its stable caller tab id). On rebuild, c11 supplements the current and rolled event logs with undrained inbox files, recipient `_read/` history, and root or nested `_rejected/` envelopes so older bodies survive log rotation. Agent-written fields are inserted as text in the browser page, the embedded JSON is protected against `</script>` breakout, and the page's CSP disallows network access.
+
 ---
 
 ## Addressing: stable handles and the title fallback

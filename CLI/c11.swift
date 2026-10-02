@@ -3462,6 +3462,16 @@ struct CMUXCLI {
                 jsonOutput: jsonOutput
             )
 
+        // C11-257 D: the messages page is the durable, visual view over both
+        // explicit sends and mailbox traffic.
+        case "messages":
+            try runMessagesCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat
+            )
+
         default:
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
@@ -8507,6 +8517,10 @@ struct CMUXCLI {
             """
         case "events":
             return eventsUsage()
+        case "messages":
+            return messagesUsage()
+        case "mailbox":
+            return mailboxUsage()
         case "help":
             return """
             Usage: c11 help
@@ -17989,6 +18003,9 @@ struct CMUXCLI {
 
           markdown [open] <path>             (open markdown file in formatted viewer tab with live reload)
 
+          messages view                         (open the live local agent-messages page)
+          mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)
+
           browser [--tab <id|ref|index> | <tab>] <subcommand> ...
           browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if tab supplied, behaves like navigate)
           browser open-split [url] [--allow-insecure-http]
@@ -18605,6 +18622,55 @@ extension CMUXCLI {
 
 extension CMUXCLI {
 
+    fileprivate func runMessagesCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        guard let sub = commandArgs.first else {
+            print(messagesUsage())
+            return
+        }
+        let rest = Array(commandArgs.dropFirst())
+        switch sub {
+        case "help", "-h", "--help":
+            print(messagesUsage())
+        case "view":
+            var params: [String: Any] = [:]
+            if let workspaceRaw = optionValue(rest, name: "--workspace") {
+                params["workspace_id"] = try resolveWorkspaceId(workspaceRaw, client: client)
+            }
+            let payload = try client.sendV2(method: "messages.view", params: params)
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: "Opened c11 messages page"
+            )
+        default:
+            throw CLIError(message: "unknown messages subcommand '\(sub)'. Use `c11 messages help` for usage.")
+        }
+    }
+
+    private func messagesUsage() -> String {
+        """
+        c11 messages — live agent traffic
+
+        Open the self-contained local page that renders explicit `c11 send`
+        events and durable mailbox traffic. The page is written under c11's
+        Application Support state directory and does not start a server.
+
+          view                 open or refresh the messages browser tab
+
+        View flags:
+          --workspace <ref>    target a workspace (default: selected workspace)
+
+        Alias:
+          c11 mailbox view
+        """
+    }
+
     fileprivate func runMailboxCommand(
         commandArgs: [String],
         client: SocketClient,
@@ -18622,6 +18688,13 @@ extension CMUXCLI {
             try runMailboxSendCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "recv":
             try runMailboxRecvCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "view":
+            try runMessagesCommand(
+                commandArgs: ["view"] + rest,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: .refs
+            )
         case "trace":
             try runMailboxTraceCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "tail":
@@ -18650,6 +18723,7 @@ extension CMUXCLI {
 
           send       deliver an envelope to a tab in any workspace
           recv       drain or peek the caller's inbox
+          view       open or refresh the live messages page
           trace      pretty-print _dispatch.log lines for an envelope id
           tail       follow _dispatch.log
           outbox-dir print the caller's outbox directory (for raw-bash writers)

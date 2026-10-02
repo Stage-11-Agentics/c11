@@ -20,10 +20,79 @@ extension TerminalController {
             return v2Result(id: id, self.v2SessionSave(params: params))
         case "mailbox.resolve":
             return v2Result(id: id, self.v2MailboxResolve(params: params))
+        case "messages.view":
+            return v2Result(id: id, self.v2MessagesView(params: params))
         case "sidebar.state":
             return v2Result(id: id, self.v2SidebarState(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+    }
+
+    /// Open or refresh the app-owned messages page. This is an explicit focus
+    /// command, so selecting the workspace and browser tab is intentional; the
+    /// writer itself never changes app focus.
+    private func v2MessagesView(params: [String: Any]) -> V2CallResult {
+        MessagesPageWriter.shared.start()
+        guard let pageURL = try? MessagesPageLayout.defaultPageURL() else {
+            return .err(code: "unavailable", message: "Messages page path is unavailable", data: nil)
+        }
+        if !FileManager.default.fileExists(atPath: pageURL.path) {
+            try? MessagesPageWriter.shared.rebuildNow()
+        }
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        return v2MainSync {
+            let requestedWorkspace = v2UUID(params, "workspace_id")
+                .flatMap { workspaceID in
+                    workspaceManager.workspaces.first(where: { $0.id == workspaceID })
+                }
+            let targetWorkspace = requestedWorkspace
+                ?? workspaceManager.selectedWorkspace
+                ?? workspaceManager.workspaces.first
+            guard let targetWorkspace else {
+                return .err(code: "unavailable", message: "No workspace available", data: nil)
+            }
+
+            var existing: (workspace: Workspace, tab: BrowserTab)?
+            for workspace in workspaceManager.workspaces {
+                if let tab = workspace.panels.values
+                    .compactMap({ $0 as? BrowserTab })
+                    .first(where: { tab in
+                        guard let currentURL = tab.currentURL else { return false }
+                        return currentURL.standardizedFileURL == pageURL.standardizedFileURL
+                    }) {
+                    existing = (workspace, tab)
+                    break
+                }
+            }
+
+            if let existing {
+                workspaceManager.selectedWorkspaceId = existing.workspace.id
+                existing.workspace.focusPanel(existing.tab.id)
+                existing.tab.reload()
+                return .ok([
+                    "url": pageURL.absoluteString,
+                    "workspace_id": existing.workspace.id.uuidString,
+                    "tab_id": existing.tab.id.uuidString,
+                    "reused": true,
+                ])
+            }
+
+            workspaceManager.selectedWorkspaceId = targetWorkspace.id
+            guard let pane = targetWorkspace.bonsplitController.focusedPaneId
+                    ?? targetWorkspace.bonsplitController.allPaneIds.first,
+                  let tab = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: true) else {
+                return .err(code: "unavailable", message: "No pane available for messages page", data: nil)
+            }
+            return .ok([
+                "url": pageURL.absoluteString,
+                "workspace_id": targetWorkspace.id.uuidString,
+                "tab_id": tab.id.uuidString,
+                "reused": false,
+            ])
         }
     }
 

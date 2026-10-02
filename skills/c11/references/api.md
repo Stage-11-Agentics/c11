@@ -10,6 +10,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Workspaces, areas, tabs](#workspaces-areas-tabs)
 - [Tab initialization quirk](#tab-initialization-quirk)
 - [Reading & sending](#reading--sending)
+- [Live messages page](#live-messages-page)
 - [Per-tab metadata](#per-tab-metadata)
 - [Agent declaration](#agent-declaration)
 - [Title & description](#title--description)
@@ -292,6 +293,17 @@ Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still 
 - Navigation: `home`, `end`, `pageup`, `pagedown`
 - Function keys: `f1`–`f12`
 - Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
+
+## Live messages page
+
+```bash
+c11 messages view [--workspace <id|ref>]
+c11 messages --help
+c11 messages -h
+c11 mailbox view                         # compatibility alias
+```
+
+`messages view` opens or reuses a c11 browser tab for the self-contained page at the active c11 state root. The page combines `tab.input_sent` and `mailbox.*` events with mailbox files, rebuilds on app start, and refreshes after a short debounce when new traffic is written. Rebuilds include undrained inbox files, recipient `_read/` history, and root or nested `_rejected/` envelopes so bodies older than the rolling event log remain visible. Queued sends stay queued, `submitted` is shown only when true on the event, and a null `caller_title` is rendered as an unknown caller or stable caller tab id. It has timeline, connection, per-mailbox, lifecycle, delivery-health, search, and workspace/agent/date/channel filter views. No localhost server is used.
 
 ## Per-tab metadata
 

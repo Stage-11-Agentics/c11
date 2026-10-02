@@ -3056,7 +3056,9 @@ struct CMUXCLI {
 
         case "read-selection":
             let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (tabRaw, trailing) = parseOption(rem0, name: "--surface")
+            let (tabRaw, rem1) = parseOption(rem0, name: "--surface")
+            let selectionJSONOut = jsonOutput || rem1.contains("--json")
+            let trailing = rem1.filter { $0 != "--json" }
             guard trailing.isEmpty else {
                 throw CLIError(message: String(format: String(localized: "cli.read_selection.arguments", defaultValue: "read-selection: unexpected arguments: %@"), trailing.joined(separator: " ")))
             }
@@ -3070,7 +3072,7 @@ struct CMUXCLI {
             let tabID = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsID)
             if let tabID { params["tab_id"] = tabID }
             let payload = try client.sendV2(method: "tab.read_selection", params: params)
-            if jsonOutput {
+            if selectionJSONOut {
                 print(jsonString(payload))
             } else if payload["has_selection"] as? Bool == true {
                 print((payload["text"] as? String) ?? "")

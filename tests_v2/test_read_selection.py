@@ -159,7 +159,7 @@ def main():
                 assert value['has_selection'] and value['text'] == 'SELECTIONFIXTURE', repr(value['text'])
                 assert not value['truncated']
                 assert read()['text'] == value['text'], 'reader changed selection'
-                result = subprocess.run([cli, '--socket', target, '--json', 'read-selection', '--workspace', state['workspace'], '--tab', state['tab']], capture_output=True, text=True, check=True, timeout=10)
+                result = subprocess.run([cli, '--socket', target, 'read-selection', '--workspace', state['workspace'], '--tab', state['tab'], '--json'], capture_output=True, text=True, check=True, timeout=10)
                 assert json.loads(result.stdout)['text'] == 'SELECTIONFIXTURE'
                 ui('click', x2+20,y2)
                 assert not read()['has_selection'], 'click did not clear selection'

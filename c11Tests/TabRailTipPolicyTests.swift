@@ -1,4 +1,5 @@
 import XCTest
+import Bonsplit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV

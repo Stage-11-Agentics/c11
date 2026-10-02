@@ -400,7 +400,7 @@ final class InternalTabDragBundleDeclarationTests: XCTestCase {
             "Expected app bundle to export bonsplit tab-transfer type, got \(exported)"
         )
         XCTAssertTrue(
-            exported.contains("com.cmux.sidebar-tab-reorder"),
+            exported.contains("com.stage11.c11.sidebar-tab-reorder"),
             "Expected app bundle to export sidebar tab-reorder type, got \(exported)"
         )
     }

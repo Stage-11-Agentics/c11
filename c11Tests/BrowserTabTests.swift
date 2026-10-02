@@ -2570,7 +2570,7 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
         XCTAssertFalse(overlay.isHidden, "Restoring visibility should restore the active drop-zone overlay")
     }
 
-    func testPortalRevealRefreshesHostedWebViewWithoutFrameDelta() {
+    func testPortalRevealInvalidatesWithoutWebKitLifecycleChurn() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
             styleMask: [.titled, .closable],
@@ -2616,10 +2616,10 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
             hiddenDisplayCount,
             "Revealing an existing portal-hosted browser should request repaint without forcing display"
         )
-        XCTAssertGreaterThan(
+        XCTAssertEqual(
             webView.reattachRenderingStateCount,
             hiddenReattachCount,
-            "Revealing an existing portal-hosted browser should trigger the WebKit reattach path"
+            "Ordinary tab visibility must repaint without WebKit lifecycle callbacks that can reload the page"
         )
     }
 
@@ -2655,7 +2655,6 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
 
         anchor1.removeFromSuperview()
         portal.synchronizeWebViewForAnchor(anchor1)
-        advanceAnimations()
 
         XCTAssertTrue(webView.superview === slot, "Visible browser entries should not detach during transient anchor removal")
         XCTAssertFalse(

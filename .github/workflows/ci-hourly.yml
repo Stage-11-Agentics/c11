@@ -152,9 +152,6 @@ jobs:
             c11Tests/KoreanIMEReturnCommitRegressionTests/testReturnAfterKoreanCommitAlsoSendsReturnToSurface
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalClickRecoversSplitActiveStateWhenFocusCallbackIsSuppressed
             c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalFirstResponderConvergesSplitActiveStateWhenSelectionAlreadyMatches
-            # C11-253: private WebKit enter/exit selectors vary by OS; this
-            # probe cannot prove rendering reattachment on the hosted runner.
-            c11Tests/BrowserWindowPortalLifecycleTests/testPortalRevealRefreshesHostedWebViewWithoutFrameDelta
             # C11-253: ttyname(stdin) can name a pty without making it the
             # host process's controlling tty; PROC_TTY_ONLY then has no match.
             c11Tests/TabLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY

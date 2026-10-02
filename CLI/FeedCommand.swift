@@ -121,11 +121,13 @@ enum FeedCommand {
     private static func printList(_ payload: [String: Any], json: Bool) {
         if json {
             print(jsonLine(payload))
+            fflush(stdout)
             return
         }
         let rows = payload["rows"] as? [[String: Any]] ?? []
         if rows.isEmpty {
             print("No feed rows.")
+            fflush(stdout)
             return
         }
         for row in rows {
@@ -138,6 +140,7 @@ enum FeedCommand {
             let tab = row["tab_id"] as? String ?? ""
             print("\(workspace)  \(tab)  \(kind)  \(state)  \(flagPart)  \(prompt)")
         }
+        fflush(stdout)
     }
 
     private static func watch(client: SocketClient, scope: FeedScope, json: Bool) throws {

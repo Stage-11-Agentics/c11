@@ -1,29 +1,16 @@
 name: macOS Compatibility
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'notes/**'
-      - 'Resources/Localizable.xcstrings'
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'notes/**'
-      - 'Resources/Localizable.xcstrings'
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   compat-tests:
-    # Only run for the repo itself, not forks (GhosttyKit download needs repo access).
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
@@ -32,10 +19,10 @@ jobs:
             timeout: 30
             smoke: true
             skip_zig: false
-          # macOS 26 (Tahoe) compat coverage dropped on the fork — GitHub-hosted
-          # runners don't offer macos-26 yet. Restore when available.
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}
+    env:
+      C11_COMPAT_DERIVED_DATA: ${{ runner.temp }}/c11-compat-derived
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,19 +32,19 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # Pick the latest Xcode installed on the runner. GitHub-hosted macos-14
-          # defaults to Xcode 15.4, but the project needs Xcode 16+ (Swift tools
-          # version 6.0 required by sentry-cocoa).
-          XCODE_APP="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort | tail -n 1)"
-          if [ -z "$XCODE_APP" ]; then
-            XCODE_APP="/Applications/Xcode.app"
+          # Select a process-scoped developer directory. Never mutate the
+          # hosted runner's global xcode-select state from a GitHub job.
+          XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+          if [ ! -d "$XCODE_DIR" ]; then
+            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
+            [ -n "$XCODE_APP" ] || { echo "No Xcode.app found under /Applications" >&2; exit 1; }
+            XCODE_DIR="$XCODE_APP/Contents/Developer"
           fi
-          XCODE_DIR="$XCODE_APP/Contents/Developer"
           if [ ! -d "$XCODE_DIR" ]; then
             echo "No Xcode found under /Applications" >&2
             exit 1
           fi
-          echo "Selected: $XCODE_APP"
+          echo "Selected developer directory: $XCODE_DIR"
           echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$XCODE_DIR"
           XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
@@ -79,32 +66,19 @@ jobs:
         run: |
           ./scripts/download-prebuilt-ghosttykit.sh
 
-      - name: Install zig
+      - name: Ensure process-scoped Zig
         if: ${{ !matrix.skip_zig }}
         run: |
-          ZIG_REQUIRED="0.15.2"
-          if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
-            echo "zig ${ZIG_REQUIRED} already installed"
-          else
-            case "$(uname -m)" in
-              arm64|aarch64) ZIG_HOST_ARCH="aarch64" ;;
-              x86_64) ZIG_HOST_ARCH="x86_64" ;;
-              *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
-            esac
-            echo "Installing zig ${ZIG_REQUIRED} (${ZIG_HOST_ARCH}) from tarball"
-            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
-            tar xf /tmp/zig.tar.xz -C /tmp
-            sudo mkdir -p /usr/local/bin /usr/local/lib
-            sudo cp -f /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
-            sudo cp -rf /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
-            export PATH="/usr/local/bin:$PATH"
-            zig version
-          fi
+          set -euo pipefail
+          ZIG_DIR="$(./scripts/ensure-zig.sh)"
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+          export PATH="$ZIG_DIR:$PATH"
+          zig version
 
       - name: Cache DerivedData
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
-          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          path: ${{ runner.temp }}/c11-compat-derived
           key: deriveddata-${{ matrix.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
           restore-keys: |
             deriveddata-${{ matrix.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
@@ -124,7 +98,8 @@ jobs:
           mkdir -p "$SOURCE_PACKAGES_DIR"
 
           for attempt in 1 2 3; do
-            if xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            if "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+              -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
               -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
               -resolvePackageDependencies; then
               exit 0
@@ -158,14 +133,20 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
-            -destination "platform=macOS" build
+            -destination "platform=macOS" \
+            -derivedDataPath "$C11_COMPAT_DERIVED_DATA" \
+            build
+          echo "C11_SMOKE_APP_PATH=$C11_COMPAT_DERIVED_DATA/Build/Products/Debug/c11 DEV.app" >> "$GITHUB_ENV"
 
       - name: Smoke test
         if: matrix.smoke
         run: |
           set -euo pipefail
           chmod +x scripts/smoke-test-ci.sh
-          scripts/smoke-test-ci.sh
+          C11_SMOKE_SOCKET_PATH="/tmp/c11-smoke-${GITHUB_RUN_ID}.sock" \
+            C11_SMOKE_LOG_PATH="$RUNNER_TEMP/c11-smoke-${GITHUB_RUN_ID}.log" \
+            scripts/smoke-test-ci.sh

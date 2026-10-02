@@ -1,0 +1,153 @@
+name: CI hourly (macOS)
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-hourly-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-xlarge
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+          if [ ! -d "$XCODE_DIR" ]; then
+            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
+            [ -n "$XCODE_APP" ] || { echo "No Xcode.app found under /Applications" >&2; exit 1; }
+            XCODE_DIR="$XCODE_APP/Contents/Developer"
+          fi
+          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DIR"
+          XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
+          XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
+          echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
+          echo "$XCODE_VERSION_OUTPUT"
+
+      - name: Cache GhosttyKit.xcframework
+        id: cache-ghosttykit
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
+
+      - name: Download pre-built GhosttyKit.xcframework
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Ensure process-scoped Zig
+        run: |
+          set -euo pipefail
+          ZIG_DIR="$(./scripts/ensure-zig.sh)"
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+          export PATH="$ZIG_DIR:$PATH"
+          zig version
+
+      - name: Cache DerivedData
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
+            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-
+            deriveddata-build-${{ runner.os }}-
+
+      - name: Cache Swift packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .ci-source-packages
+          key: spm-${{ runner.os }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          mkdir -p "$SOURCE_PACKAGES_DIR"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -resolvePackageDependencies
+
+      - name: Build app
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build
+
+      - name: SSH shell command availability
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
+            -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
+            -disableAutomaticPackageResolution -destination "platform=macOS" \
+            -showBuildSettings -json > "$RUNNER_TEMP/c11-build-settings.json"
+          CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
+          test -x "$CLI_BINARY"
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
+
+      - name: Shell helper lifetime and git reporting
+        run: bash tests/test_shell_git_watchers.sh
+
+      - name: Logic tests (gate)
+        # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
+        # mailbox, theme). The password-store class stays excluded because its
+        # SSH execution path requires Keychain access on the runner.
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -skip-testing:c11LogicTests/SocketControlPasswordStoreTests \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test
+
+      - name: Host-bound unit tests (advisory)
+        # Advisory while C11-99 Area C stabilizes the host-bound expectation
+        # timeouts. Failures still surface in the log but do not gate the run.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -only-testing:c11Tests \
+            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            -skip-testing:c11Tests/GhosttyConfigTests \
+            -skip-testing:c11Tests/NotificationBurstCoalescerTests \
+            -skip-testing:c11Tests/WorkspaceManagerReopenClosedBrowserFocusTests \
+            -skip-testing:c11Tests/TerminalNotificationDirectInteractionTests \
+            -skip-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests \
+            -skip-testing:c11Tests/BrowserTabHostContainerViewTests \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11304000000000000000001 /* TerminalTitleChurnFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000002 /* TerminalTitleChurnFilter.swift */; };
+		C11304000000000000000003 /* TerminalTitleChurnFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */; };
 		C11299000000000000000001 /* SessionRestoreNormalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */; };
 		022A09F1BE71E4DC6867B9FA /* ThemeRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */; };
 		0553CFD8D0141F43D50CA586 /* WorkspaceSnapshotSetCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */; };
@@ -572,6 +574,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11304000000000000000002 /* TerminalTitleChurnFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilter.swift; sourceTree = "<group>"; };
+		C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilterTests.swift; sourceTree = "<group>"; };
 		C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestoreNormalizationTests.swift; sourceTree = "<group>"; };
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		C11840000000000000000006 /* AttentionModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttentionModelTests.swift; sourceTree = "<group>"; };
@@ -1188,6 +1192,7 @@
 				A5001417 /* WorkspaceContentView.swift */,
 				A5001014 /* GhosttyConfig.swift */,
 				A5001015 /* GhosttyTerminalView.swift */,
+				C11304000000000000000002 /* TerminalTitleChurnFilter.swift */,
 				A5001531 /* TerminalWindowPortal.swift */,
 				A5001533 /* BrowserWindowPortal.swift */,
 				A5001019 /* TerminalController.swift */,
@@ -1597,6 +1602,7 @@
 				660A6F747C53032181B954F7 /* ConversationCrashRecoveryTests.swift */,
 				7B4202C77B3590FB8D760708 /* AgentDetectorTests.swift */,
 				C11191F0100000000000001 /* GhosttyDisplayIDGateTests.swift */,
+				C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */,
 				E223B0BAFC30EA2CC0F9BAC3 /* MainThreadHangDetectorTests.swift */,
 				C11220A0000000000000F001 /* HangLogRotatorTests.swift */,
 				945F336B8415FE35950216B4 /* HangPrecursorTrackerTests.swift */,
@@ -1964,6 +1970,7 @@
 				05F26BA3460B93D9FA5FFAD0 /* ConversationCrashRecoveryTests.swift in Sources */,
 				5C4604660F7CC322D5590BD7 /* AgentDetectorTests.swift in Sources */,
 				C11191A0100000000000001 /* GhosttyDisplayIDGateTests.swift in Sources */,
+				C11304000000000000000003 /* TerminalTitleChurnFilterTests.swift in Sources */,
 				E9E24C866C5E61B887F6E726 /* MainThreadHangDetectorTests.swift in Sources */,
 				C11220A0000000000000B001 /* HangLogRotatorTests.swift in Sources */,
 				399EC8FAEFA042ADC50DA60F /* HangPrecursorTrackerTests.swift in Sources */,
@@ -2032,6 +2039,7 @@
 				A5001407 /* WorkspaceContentView.swift in Sources */,
 				A5001004 /* GhosttyConfig.swift in Sources */,
 				A5001005 /* GhosttyTerminalView.swift in Sources */,
+				C11304000000000000000001 /* TerminalTitleChurnFilter.swift in Sources */,
 				A5001532 /* TerminalWindowPortal.swift in Sources */,
 				A5001534 /* BrowserWindowPortal.swift in Sources */,
 				A5001007 /* TerminalController.swift in Sources */,

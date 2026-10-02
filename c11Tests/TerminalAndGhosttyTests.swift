@@ -66,12 +66,28 @@ func dispatchedC11PointerHit(
         windowNumber: window.windowNumber, context: nil,
         eventNumber: 1, clickCount: 1, pressure: 1
     ))
-    NSApp.postEvent(event, atStart: false)
+    // AppKit posts mouse events through their Quartz representation. Supply
+    // a screen point in the display's Quartz coordinates, including any
+    // display scaling, so dispatch reconstructs the requested window point.
+    let screen = try XCTUnwrap(window.screen)
+    let displayNumber = try XCTUnwrap(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
+    let displayBounds = CGDisplayBounds(CGDirectDisplayID(displayNumber.uint32Value))
+    let screenPoint = window.convertPoint(toScreen: location)
+    let cgEvent = try XCTUnwrap(event.cgEvent)
+    cgEvent.location = CGPoint(
+        x: displayBounds.minX + (screenPoint.x - screen.frame.minX) * displayBounds.width / screen.frame.width,
+        y: displayBounds.minY + (screen.frame.maxY - screenPoint.y) * displayBounds.height / screen.frame.height
+    )
+    let postedEvent = try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+    XCTAssertEqual(postedEvent.windowNumber, window.windowNumber)
+    NSApp.postEvent(postedEvent, atStart: false)
     let delivered = await waitForC11HostCondition { received }
     XCTAssertTrue(delivered, "AppKit must dispatch the posted pointer event to the test window")
     XCTAssertEqual(currentType, .leftMouseDown, "hitTest must run under the production pointer guard")
     XCTAssertEqual(currentWindowNumber, window.windowNumber)
-    XCTAssertEqual(currentLocation, location)
+    let dispatchedLocation = try XCTUnwrap(currentLocation)
+    XCTAssertEqual(dispatchedLocation.x, location.x, accuracy: 0.01)
+    XCTAssertEqual(dispatchedLocation.y, location.y, accuracy: 0.01)
     return hit
 }
 

@@ -19,6 +19,8 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     private let model = TabRailTipModel()
     private var slots: [String: Slot] = [:]
     private var phase: Phase = .idle
+    /// The one area opened by Try Rail, so Undo can remove its persisted open bit.
+    private var previewedRailSlot: Slot?
     private var sawList = false
     /// True after this showing has written `lastOffered`. Cleared when the
     /// showing ends, so a later offer (after the 30-day gap) stamps again.
@@ -139,6 +141,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
     func performTryRail() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let slot = frontSlot(), let workspace = slot.workspace else { return }
+        previewedRailSlot = slot
         phase = .undo
         reanchoring = true
         anchorBeforeSwitch = slot.anchor
@@ -159,6 +162,12 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         anchorBeforeSwitch = nil
         stamped = false
         hidePopover()
+        if let slot = previewedRailSlot,
+           let workspace = slot.workspace,
+           workspace.bonsplitController.allPaneIds.contains(slot.paneId) {
+            workspace.bonsplitController.setRailOpen(false, inPane: slot.paneId)
+        }
+        previewedRailSlot = nil
         TabLayoutSettings.setMode(.tabs)
     }
 
@@ -171,6 +180,28 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
             return
         }
         guard let slot = frontSlot(), let workspace = slot.workspace else { return }
+        performShowList(in: slot, workspace: workspace)
+    }
+
+    /// The count-cell callback runs after the clicked area is focused and before
+    /// Bonsplit toggles its sheet. Consume only the active teaching action.
+    func performShowListFromCountCell(workspace: Workspace, paneId: PaneID) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard TabLayoutSettings.mode() == .tabs else { return false }
+        switch phase {
+        case .live, .pending:
+            break
+        case .idle, .undo:
+            return false
+        }
+        guard let slot = slots[slotID(workspace, paneId)],
+              frontSlot() === slot,
+              !slot.sheetOpen else { return false }
+        performShowList(in: slot, workspace: workspace)
+        return true
+    }
+
+    private func performShowList(in slot: Slot, workspace: Workspace) {
         sawList = true
         model.sawList = true
         hidePopover()
@@ -184,6 +215,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        previewedRailSlot = nil
         hidePopover()
     }
 
@@ -331,6 +363,7 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
+        previewedRailSlot = nil
         hidePopover()
     }
 
@@ -599,7 +632,7 @@ struct TabRailTipView: View {
                 Text(String(localized: "tabRailTip.undoTitle", defaultValue: "Tab Layout is Rail"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.text)
-                Text(String(localized: "tabRailTip.undoBody", defaultValue: "Every area keeps its tab list on the left. Undo puts Tabs back."))
+                Text(String(localized: "tabRailTip.undoBody", defaultValue: "This area's tab list stays open on the left. Undo puts Tabs back."))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.dim)
                     .fixedSize(horizontal: false, vertical: true)

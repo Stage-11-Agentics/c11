@@ -532,6 +532,9 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		998BA380BB49AA5278F556B3 /* JournalStorageLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */; };
 		A2B7B0EE04816F2F9B5CCD20 /* JournalEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732505E4F8E3443519782672 /* JournalEvent.swift */; };
 		768EEFDB4520319282C0B45C /* JournalEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732505E4F8E3443519782672 /* JournalEvent.swift */; };
+		C11274000000000000000002 /* ClaudeHookMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000001 /* ClaudeHookMapping.swift */; };
+		C11274000000000000000003 /* ClaudeHookMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000001 /* ClaudeHookMapping.swift */; };
+		C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000011 /* ClaudeHookMappingTests.swift */; };
 		E3867CBB3CF06F201C937F2F /* JournalSpool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C562C4BF3F41684F3E215BC /* JournalSpool.swift */; };
 		1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C562C4BF3F41684F3E215BC /* JournalSpool.swift */; };
 		2D304B403082C96B893A9199 /* JournalReplayPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */; };
@@ -1128,6 +1131,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReducer.swift; path = Journal/JournalReducer.swift; sourceTree = "<group>"; };
 		24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalStorageLayout.swift; path = Journal/JournalStorageLayout.swift; sourceTree = "<group>"; };
 		732505E4F8E3443519782672 /* JournalEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalEvent.swift; path = Journal/JournalEvent.swift; sourceTree = "<group>"; };
+		C11274000000000000000001 /* ClaudeHookMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeHookMapping.swift; path = Journal/ClaudeHookMapping.swift; sourceTree = "<group>"; };
+		C11274000000000000000011 /* ClaudeHookMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookMappingTests.swift; sourceTree = "<group>"; };
 		3C562C4BF3F41684F3E215BC /* JournalSpool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalSpool.swift; path = Journal/JournalSpool.swift; sourceTree = "<group>"; };
 		CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReplayPolicy.swift; path = Journal/JournalReplayPolicy.swift; sourceTree = "<group>"; };
 		5E6EFBCD7A7D8320A0DAFE52 /* JournalReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReducerTests.swift; path = JournalReducerTests.swift; sourceTree = "<group>"; };
@@ -1284,6 +1289,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */,
 				3C562C4BF3F41684F3E215BC /* JournalSpool.swift */,
 				732505E4F8E3443519782672 /* JournalEvent.swift */,
+				C11274000000000000000001 /* ClaudeHookMapping.swift */,
 				849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */,
 				24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */,
 				EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */,
@@ -1602,6 +1608,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				353D9F81533C5DBA22A6231B /* JournalStoreTests.swift */,
 				C112310000000000000000C1 /* AgentRosterTests.swift */,
 				5E6EFBCD7A7D8320A0DAFE52 /* JournalReducerTests.swift */,
+				C11274000000000000000011 /* ClaudeHookMappingTests.swift */,
 				C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */,
 				C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */,
 				C11259000000000000000401 /* WorkspaceReorderPlannerTests.swift */,
@@ -2035,6 +2042,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				E0487C8EB075EF8AC02786A3 /* JournalStoreTests.swift in Sources */,
 				C112310000000000000000C2 /* AgentRosterTests.swift in Sources */,
 				138D04FD78E6FA414487CCB9 /* JournalReducerTests.swift in Sources */,
+				C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */,
 				C11259000000000000000402 /* WorkspaceReorderPlannerTests.swift in Sources */,
 				C11259000000000000000302 /* WorkspaceGroupTests.swift in Sources */,
 				C11260000000000000000402 /* WorkspaceGroupDropPlannerTests.swift in Sources */,
@@ -2199,6 +2207,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				2D304B403082C96B893A9199 /* JournalReplayPolicy.swift in Sources */,
 				E3867CBB3CF06F201C937F2F /* JournalSpool.swift in Sources */,
 				A2B7B0EE04816F2F9B5CCD20 /* JournalEvent.swift in Sources */,
+				C11274000000000000000002 /* ClaudeHookMapping.swift in Sources */,
 				65631BA6FFA800CEC5F61F99 /* JournalCoordinator.swift in Sources */,
 				DD7DDF8F72DE2E0646F89E04 /* JournalStorageLayout.swift in Sources */,
 				31C140AD458A0058070C992D /* JournalReducer.swift in Sources */,
@@ -2471,6 +2480,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */,
 				1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */,
 				768EEFDB4520319282C0B45C /* JournalEvent.swift in Sources */,
+				C11274000000000000000003 /* ClaudeHookMapping.swift in Sources */,
 				998BA380BB49AA5278F556B3 /* JournalStorageLayout.swift in Sources */,
 				C112310000000000000000A3 /* AgentRoster.swift in Sources */,
 				C112310000000000000000D2 /* JournalReducer.swift in Sources */,

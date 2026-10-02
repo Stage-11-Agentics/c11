@@ -137,7 +137,7 @@ struct JournalDraft: Codable, Equatable {
             guard let s else { return true }
             return !s.isEmpty && s.utf8.count <= limit && s.utf8.allSatisfy { $0 >= 33 && $0 <= 126 && $0 != 47 && $0 != 92 }
         }
-        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "adapter_gap", "adapter_recovered", "connection_lost", "operator_response"]
+        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "adapter_gap", "adapter_recovered", "connection_lost", "operator_response"]
         guard schemaVersion == 1 else { throw JournalError.unsupportedVersion }
         guard source == adapter.source, emittedAtMs >= 0, occurredAtMs.map({ $0 >= 0 }) ?? true,
               (occurredAtMs == nil) == (timeQuality == .missing),

@@ -168,4 +168,18 @@ final class MailboxDispatchLogTests: XCTestCase {
         XCTAssertNil(obj?["elapsed_ms"])
         XCTAssertEqual(obj?["outcome"] as? String, "ok")
     }
+
+    /// `claim_failed` is a stdin handler line carrying the errno, so `trace`
+    /// shows why a push typed nothing.
+    func testClaimFailedSerializesAsStdinHandlerWithErrno() throws {
+        let str = MailboxDispatchLog.serialize(
+            event: .claimFailed(id: "A", recipient: "w", errno: EACCES),
+            at: Date(timeIntervalSince1970: 0)
+        )
+        let obj = try JSONSerialization.jsonObject(with: Data(str.dropLast().utf8)) as? [String: Any]
+        XCTAssertEqual(obj?["event"] as? String, "handler")
+        XCTAssertEqual(obj?["handler"] as? String, "stdin")
+        XCTAssertEqual(obj?["outcome"] as? String, "claim_failed")
+        XCTAssertEqual(obj?["errno"] as? Int, Int(EACCES))
+    }
 }

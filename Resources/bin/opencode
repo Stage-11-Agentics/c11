@@ -7,6 +7,11 @@
 
 set -uo pipefail
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# first so no early exec passes a parent's marker on.
+unset C11_AGENT_INTERACTIVE_PID
+
 find_real_opencode() {
     local self_dir
     self_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -49,6 +54,14 @@ case "${1:-}" in
         exec "$REAL_OPENCODE" "$@"
         ;;
 esac
+
+# Mark this launch as an interactive agent only when it reads and writes
+# its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it), and only while that PID's
+# process group owns the terminal.
+if [[ -t 0 && -t 1 ]] && [[ "${1:-}" != "run" ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
 
 self_dir="$(cd "$(dirname "$0")" && pwd)"
 c11_bin="$self_dir/c11"

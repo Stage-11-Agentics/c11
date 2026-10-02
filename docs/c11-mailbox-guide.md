@@ -60,13 +60,13 @@ c11 mailbox send --to watcher --body "build green sha=abc"
 # In tab "watcher":
 c11 set-title "watcher"
 c11 set-metadata mailbox.delivery stdin   # opt in to PTY injection
-# The framed block lands in the PTY the next time builder sends — at a shell
-# prompt it injects immediately; if watcher is mid-command it buffers and
-# flushes at the next prompt (see "Prompt-gated delivery" below).
+# The framed block lands in the PTY the next time builder sends. An agent at
+# its prompt gets it as a new turn at once; mid-turn, it lands when the turn
+# ends (see "When the push lands" below).
 c11 mailbox recv --drain                   # robust floor: pull at turn boundaries
 ```
 
-If `mailbox.delivery` is not set on the recipient, the envelope still lands in `<tab-name>/` inbox; the recipient drains it explicitly with `c11 mailbox recv`. Even with `stdin` set, draining at turn boundaries is the reliable delivery path — push is prompt-gated and best-effort.
+If `mailbox.delivery` is not set on the recipient, the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With `stdin` set, push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
 
 ---
 
@@ -100,7 +100,7 @@ These `tab:` / `role:` forms select *which tabs* match; the workspace `--to-work
 
 `tab:` and `role:` are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a tab whose title literally starts with `tab:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
 
-**Back-compat.** A tab with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive; the inbox directory is still keyed on the recipient's title.
+**Back-compat.** A tab with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive. Whatever handle resolves the recipient, its inbox directory is keyed on the recipient tab's UUID (lowercased), never on the title, so a title with `/`, a 100-byte title, or a rename never breaks delivery.
 
 ---
 
@@ -198,7 +198,7 @@ There are two receive modes. Which one fires depends on the recipient's `mailbox
 sequenceDiagram
     autonumber
     participant D as Dispatcher
-    participant Inbox as <tab-name>/<br/>inbox
+    participant Inbox as <tab-uuid>/<br/>inbox
     participant SH as stdin handler
     participant PTY as Recipient PTY
     participant Agent as Recipient agent
@@ -207,21 +207,23 @@ sequenceDiagram
     alt mailbox.delivery contains "stdin"
         D->>SH: deliver(envelope, surfaceId)
         SH->>SH: format <c11-msg> block (XML-escape attrs + body)
-        alt recipient shell at promptIdle
-            SH->>PTY: inject block now on @MainActor
-            PTY-->>Agent: \n<c11-msg ...>body</c11-msg>\n appears at the prompt
+        alt interactive agent at its prompt, owning its terminal
+            SH->>Inbox: claim: rename ULID.msg into _read/
+            SH->>PTY: paste block + Return on @MainActor (one turn)
+            PTY-->>Agent: \n<c11-msg ...>body</c11-msg>\n arrives as a new turn
             Agent->>Agent: dedupe by id, treat as system message
-        else commandRunning / unknown (busy)
+        else agent mid-turn, operator draft, or no interactive agent
             SH->>SH: buffer block (log "buffered")
-            Note over PTY: shell later returns to promptIdle
-            SH->>PTY: flush fresh buffered blocks FIFO (log "flushed")
+            Note over PTY: agent's turn ends (a shell prompt instead drops the buffer)
+            SH->>Inbox: claim each buffered envelope
+            SH->>PTY: paste all claimed blocks + one Return (log "flushed")
         end
     else delivery unset / silent
         Note over Agent: Inbox file sits until drained
     end
     Note over Agent: pull at every turn boundary — the robust floor
     Agent->>Inbox: c11 mailbox recv --drain
-    Inbox-->>Agent: prints + unlinks each .msg
+    Inbox-->>Agent: prints each .msg not yet claimed by a push
 ```
 
 ### When the framed block arrives in your PTY
@@ -241,21 +243,56 @@ Receive protocol:
 - Dedupe by `id`. Dispatch is at-least-once, so receivers MUST tolerate duplicates.
 - If you reply, send to `reply_to` (fall back to `from`) with `in_reply_to` set to the original id.
 
-### Prompt-gated delivery (the stdin doorbell is safe, not eager)
+### When the push lands
 
-c11 never pastes a `<c11-msg>` block into a PTY that has a foreground command running — that would corrupt the command's input stream (a build's stdin, a `vim` buffer, a REPL, or another agent's raw-mode input). Delivery gates on the recipient tab's already-tracked shell activity state (the same `promptIdle / commandRunning / unknown` signal c11 uses for close-confirmation):
+c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's stdin, a `vim` buffer, an agent's permission prompt, or a half-typed line in an agent's composer. Two gates decide when a push lands, depending on what owns the tab.
 
-| Recipient shell state | Push behavior |
+**Agent tabs** (Claude Code, Codex, Grok). An agent TUI keeps its shell "command running" for its whole life, so the gate is the agent's own turn edge, which c11 hears from the agent's lifecycle:
+
+| Harness | At its prompt when | Working when |
+|---------|--------------------|--------------|
+| Claude Code | session start (not after a compaction), each `Stop` hook | prompt submit, any submitted Return |
+| Codex | launch, each completed turn (its `notify` callback) | any submitted Return |
+| Grok | launch, each `turn_ended` in its session's `events.jsonl` | `turn_started`, any submitted Return |
+
+| Recipient agent state | Push behavior |
 |-----------------------|---------------|
-| `promptIdle` (at a prompt) | inject the block immediately |
-| `commandRunning` (a foreground command owns the terminal) | **buffer**, flush at the next prompt |
-| `unknown` (no shell-integration signal) | **buffer** (conservative — never corrupt on a guess) |
+| at its prompt, nothing typed since the last submit | paste and submit now: the mail arrives as a new turn within about a second |
+| mid-turn | **buffer**; at the end of that turn, paste everything buffered and submit it as one turn |
+| the operator typed into its composer since the last submit, or text was placed there with `c11 send --no-submit` | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
+| no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 
-Buffered blocks flush in FIFO order the moment the tab transitions back to `promptIdle`. Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path — a buffered message is delayed, never silently dropped.
+A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.)
 
-**Bounds.** Each tab buffers up to 64 blocks (oldest evicted past that, logged `evicted`). A buffered block older than a 10-minute freshness window at flush time is dropped (logged `expired`) rather than injected — this stops a long-lived agent TUI, whose shell stays `commandRunning` for its entire life, from dumping stale `<c11-msg>` blocks onto a bare shell hours later when it finally exits. Evicted/expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
+**Only an interactive agent that owns its terminal is ever typed into.** Two guards hold for every harness:
 
-**Why you still pull.** Because a live agent keeps its shell `commandRunning`, stdin push into a busy agent typically buffers and may never flush in time. The filesystem inbox copy is written *before* any push is attempted, so `c11 mailbox recv --drain` at every turn boundary is the delivery path that always works. Treat stdin push as a best-effort doorbell; treat the pull cadence as the contract.
+- *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p` bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the tab counts as an agent that is never at its prompt, so its mail is never pasted.
+- *Terminal ownership.* Before it claims, after the claim, and again just before the Return, the push asks the kernel four things, and every one must hold:
+  1. That PID is still the process that registered: its start time matches, so a later process reusing the PID never qualifies.
+  2. Its process group is the foreground process group of its terminal.
+  3. That terminal is the tab's own tty, as reported by shell integration. An agent under `tmux`, `screen` or an editor's terminal inside the tab fails this. A tab whose tty c11 was never told (no shell integration) never receives a push.
+  4. The tty is in non-canonical (raw) mode. An interactive TUI waiting for input holds raw mode. A print or one-shot run (`claude -cp`, `codex e`, `grok --single=…`, any form a wrapper does not recognize) leaves the tty canonical, and anything typed there would run in the shell after it exits.
+
+  If any check fails, nothing is typed: the claim is undone and the mail stays in the inbox for a drain.
+
+**Plain shells are never typed into.** A pasted block plus Return at a shell prompt runs as shell commands, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a tab with no interactive agent never receives a push, and an agent that exits returns its tab to the shell prompt, which drops anything buffered for it (logged `expired`). All of it stays in the inbox for `recv --drain`.
+
+**The recipient is re-checked after the claim and again just before the Return.** Each check runs the whole gate: the same agent turn, no operator draft, the agent still owning its terminal. If the agent has exited or lost the terminal, the push is dropped (logged `expired`, claims undone, mail stays in the inbox). If the gate merely closed (a draft, a new turn), the mail is requeued (logged `buffered`). The paste is bracketed, so text that reaches a program without its Return is never submitted.
+
+**Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. Claims run off the main thread; only the paste and its submit run on it.
+
+- If the file is already gone, a `recv --drain` took it first, and the push types nothing for it (logged `skipped`).
+- If the rename fails, the envelope stays in the inbox root and nothing is typed (logged `claim_failed` with its `errno`).
+- If the gate closed while the claim ran (an operator draft, a new turn), the claims are undone and the mail waits for the next edge.
+- `mailbox.delivered` with `via: "push"` fires only once the submit Return has been dispatched. If the tab closes or detaches before that, the claims are undone so a drain still finds the mail (logged `closed`).
+
+`_read/` is history, never re-delivered.
+
+Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path.
+
+**Bounds.** Each tab buffers up to 64 blocks (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, however long that takes, and drops when the tab returns to a shell prompt. Evicted and expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
+
+**Why you still pull.** The inbox copy is written before any push is attempted. Mail to an agent with no turn signal, mail behind an operator draft, and evicted mail are all still in the inbox, so `c11 mailbox recv --drain` at turn boundaries remains the floor that always works.
 
 ### Explicit inbox drain
 
@@ -265,7 +302,7 @@ c11 mailbox recv --peek     # list + print only, leave files in place
 c11 mailbox recv --tab watcher --drain   # drain on someone else's behalf
 ```
 
-Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender.
+Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the tab's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. `c11 mailbox inbox-dir` prints the UUID-keyed path.
 
 ### Exact PTY frame shape
 
@@ -383,14 +420,17 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the C11-144 stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted`, `skipped`, `claim_failed` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
 
 | stdin outcome | Meaning |
 |---------------|---------|
-| `buffered`    | recipient shell was busy; block queued to flush at the next prompt |
-| `flushed`     | a previously-buffered block was injected once the shell went idle |
-| `expired`     | a buffered block aged past the freshness window; dropped (inbox floor holds it) |
+| `buffered`    | recipient not ready (agent mid-turn, operator draft, or no interactive agent reading the terminal); block queued |
+| `flushed`     | a previously-buffered block was injected at the agent's next prompt edge |
+| `expired`     | dropped because no agent was left to read it (shell prompt, agent exited or lost the terminal); inbox floor holds it |
 | `evicted`     | a buffered block dropped because the per-tab cap was exceeded (inbox floor holds it) |
+| `skipped`     | the push found the envelope already claimed by a drain; nothing typed |
+| `claim_failed` | the push could not claim the envelope (`errno` on the line); it stays in the inbox, nothing typed |
+| `closed`      | after `ok`/`buffered`: the tab closed or detached before the submit Return; the claim was undone |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows
@@ -415,7 +455,7 @@ Setting `--reply-to` is only necessary when the reply should land somewhere othe
 
 ### Durable handoff
 
-A tab that may not exist yet still gets its inbox created on first delivery. Send to `archivist`; when an archivist tab is later created with `title = archivist`, it can drain the queued envelopes:
+An envelope lands in the recipient tab's inbox even when that tab is not reading right now, and stays there until it drains. The recipient must be a live tab when you send (an unknown recipient is rejected), and the inbox belongs to that tab:
 
 ```bash
 c11 mailbox recv --drain

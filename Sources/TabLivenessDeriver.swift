@@ -34,6 +34,23 @@ enum TabActivityResolver {
     }
 }
 
+/// Where an agent lifecycle edge came from. The sidebar treats them alike;
+/// the mailbox stdin gate trusts only `reported` prompt edges and `submit`
+/// Returns, because a notification-inferred idle can be a permission prompt.
+enum AgentLifecycleSource: Equatable {
+    /// An explicit lifecycle report from the agent's hooks or wrapper
+    /// (`report_agent_activity`, the Codex turn-complete notify).
+    case reported
+    /// A submit Return typed into the tab.
+    case submit
+    /// Inferred from a notification or other indirect evidence.
+    case inferred
+    /// A report from an agent that never reads its terminal (`claude -p`,
+    /// `--bg`, a piped run, or any report without the interactive marker):
+    /// the tab is an agent, but never one resting at a prompt.
+    case headless
+}
+
 enum TabActivityTerminalKindResolver {
     static func resolve(
         detectedTerminalType: String?,
@@ -155,7 +172,10 @@ enum TabLivenessDeriver {
     static func onAgentLifecycleChanged(
         surfaceId: UUID,
         workspaceId: UUID,
-        activity: SidebarActivityState
+        activity: SidebarActivityState,
+        source: AgentLifecycleSource = .inferred,
+        at eventAt: Date = Date(),
+        agentPid: pid_t? = nil
     ) {
         TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
@@ -183,6 +203,13 @@ enum TabLivenessDeriver {
                     }
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+                    workspace.noteMailboxAgentLifecycle(
+                        surfaceId: surfaceId,
+                        source: source,
+                        activity: activity,
+                        at: eventAt,
+                        agentPid: agentPid
+                    )
                 }
             }
         }

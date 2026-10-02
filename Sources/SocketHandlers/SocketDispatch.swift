@@ -449,7 +449,9 @@ extension TerminalController {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
-                    activity: activity
+                    activity: activity,
+                    source: Self.reportedAgentLifecycleSource(parsed.options),
+                    agentPid: Self.reportedAgentPID(parsed.options)
                 )
             }
         }

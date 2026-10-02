@@ -6733,6 +6733,12 @@ class TerminalController {
         let body = Self.trimmingTrailingNewlines(text)
         let wantsReturn = submit || body != text
 
+        // Text left in the input line without a submit is a draft the mailbox
+        // push must not splice onto (see `lastOperatorKeyAt`).
+        if !wantsReturn, !body.isEmpty {
+            terminalSurface.lastOperatorKeyAt = Date()
+        }
+
         if !body.isEmpty {
             if Self.socketTextIsPasteDeliverable(body) {
                 terminalSurface.sendText(body)

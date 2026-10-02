@@ -6052,7 +6052,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// reading its terminal right now?" (`MailboxAgentForeground`).
     private func mailboxAgentOwnsTerminal(surfaceId: UUID) -> Bool {
         MailboxAgentForeground.agentOwnsTerminal(
-            pid: mailboxStdinBuffer.agentPid(surfaceId: surfaceId),
+            process: mailboxStdinBuffer.agentProcess(surfaceId: surfaceId),
             tabTTYName: tabTTYNames[surfaceId]
         )
     }
@@ -6101,7 +6101,12 @@ final class Workspace: Identifiable, ObservableObject {
         switch source {
         case .reported:
             if let agentPid {
-                mailboxStdinBuffer.noteAgentProcess(surfaceId: surfaceId, pid: agentPid)
+                // Pin the process by its start time, read now while it reports.
+                let startTime = MailboxAgentForeground.processTerminalInfo(pid: agentPid)?.startTime
+                mailboxStdinBuffer.noteAgentProcess(
+                    surfaceId: surfaceId,
+                    process: .init(pid: agentPid, startTime: startTime)
+                )
             }
             mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: activity == .idle, at: eventAt)
             if activity == .idle {
@@ -6110,7 +6115,11 @@ final class Workspace: Identifiable, ObservableObject {
         case .submit:
             mailboxStdinBuffer.noteSubmit(surfaceId: surfaceId, at: eventAt)
         case .headless:
-            mailboxStdinBuffer.noteAgentProcess(surfaceId: surfaceId, pid: nil)
+            // A headless run nested in the tab (`claude -p` from the agent's
+            // own shell tool) must not unseat the interactive agent that still
+            // owns the terminal; it only marks a tab with no such agent.
+            guard !mailboxAgentOwnsTerminal(surfaceId: surfaceId) else { return }
+            mailboxStdinBuffer.noteAgentProcess(surfaceId: surfaceId, process: nil)
             mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
         case .inferred:
             return

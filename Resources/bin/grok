@@ -51,9 +51,15 @@ case "${1:-}" in
         exec "$REAL_GROK" "$@"
         ;;
 esac
+# One-shot forms, including `=` values and short-flag clusters (`-p<prompt>`,
+# `-cp`), run without reading the terminal: no c11 lifecycle for them.
 for arg in "$@"; do
     case "$arg" in
-        -p|--single|--prompt-file|--prompt-json)
+        --) break ;;
+        -p|-p?*|--single|--single=*|--prompt-file|--prompt-file=*|--prompt-json|--prompt-json=*)
+            exec "$REAL_GROK" "$@"
+            ;;
+        -[!-]*p*)
             exec "$REAL_GROK" "$@"
             ;;
     esac

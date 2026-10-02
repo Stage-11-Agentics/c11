@@ -98,7 +98,15 @@ struct MailboxStdinBuffer {
     /// The interactive agent process each tab's turn edges came from
     /// (`C11_AGENT_INTERACTIVE_PID`). A push types only while this process's
     /// group owns the tab's terminal.
-    private var agentPids: [UUID: pid_t] = [:]
+    private var agentPids: [UUID: AgentProcess] = [:]
+
+    /// An interactive agent process, pinned by its start time so a later
+    /// process that reuses the PID (an editor, a shell) is never mistaken
+    /// for it.
+    struct AgentProcess: Equatable {
+        let pid: pid_t
+        let startTime: UInt64?
+    }
 
     /// Inject-now vs buffer for an agent tab. Pure: every input is passed in.
     static func decideAgent(
@@ -285,13 +293,23 @@ struct MailboxStdinBuffer {
     }
 
     /// Record (or clear, with `nil`) the interactive agent process behind
-    /// the tab's turn edges.
-    mutating func noteAgentProcess(surfaceId: UUID, pid: pid_t?) {
-        agentPids[surfaceId] = pid
+    /// the tab's turn edges. A report for the PID already recorded keeps its
+    /// pinned start time.
+    mutating func noteAgentProcess(surfaceId: UUID, process: AgentProcess?) {
+        guard let process else {
+            agentPids.removeValue(forKey: surfaceId)
+            return
+        }
+        if agentPids[surfaceId]?.pid == process.pid, agentPids[surfaceId]?.startTime != nil { return }
+        agentPids[surfaceId] = process
+    }
+
+    func agentProcess(surfaceId: UUID) -> AgentProcess? {
+        agentPids[surfaceId]
     }
 
     func agentPid(surfaceId: UUID) -> pid_t? {
-        agentPids[surfaceId]
+        agentPids[surfaceId]?.pid
     }
 
     func agentTurn(surfaceId: UUID) -> AgentTurn? {
@@ -390,21 +408,47 @@ enum MailboxAgentForeground {
         /// Its controlling terminal (`NODEV` when it has none).
         let terminalDevice: dev_t
         let isZombie: Bool
+        /// Process start time in microseconds since the epoch.
+        var startTime: UInt64 = 0
     }
 
-    /// Pure decision. `tabTerminalDevice` is the tab's tty device when c11
-    /// knows it; any mismatch, missing process, zombie, missing terminal or
-    /// non-foreground group fails closed.
+    /// Pure decision. Fails closed on a missing process, a different process
+    /// reusing the registered PID (start time mismatch), a zombie, no
+    /// controlling terminal, a non-foreground group, a tab tty c11 does not
+    /// know (nil) or that differs from the agent's, and a terminal in
+    /// canonical (line) mode. An interactive TUI waiting for input holds its
+    /// tty non-canonical; a print or one-shot run leaves it canonical, and
+    /// anything typed there would be read by the shell after it exits. That
+    /// last check needs no argv parsing, so it covers every one-shot form a
+    /// wrapper does not recognize. `terminalIsCanonical` nil (unreadable)
+    /// fails closed too.
     static func agentOwnsTerminal(
         _ info: ProcessTerminalInfo?,
-        tabTerminalDevice: dev_t?
+        expectedStartTime: UInt64?,
+        tabTerminalDevice: dev_t?,
+        terminalIsCanonical: Bool?
     ) -> Bool {
         guard let info, !info.isZombie,
+              // Still the process that registered, not a later PID reuse.
+              let expectedStartTime, info.startTime == expectedStartTime,
               info.terminalDevice != -1,  // NODEV: no controlling terminal
               info.processGroup > 0,
-              info.terminalForegroundGroup == info.processGroup else { return false }
-        if let tabTerminalDevice, tabTerminalDevice != info.terminalDevice { return false }
+              info.terminalForegroundGroup == info.processGroup,
+              let tabTerminalDevice, tabTerminalDevice == info.terminalDevice,
+              terminalIsCanonical == false else { return false }
         return true
+    }
+
+    /// Whether the terminal at `path` is in canonical (line) mode, read with
+    /// `tcgetattr` on a non-blocking, non-controlling read-only descriptor.
+    /// `nil` when it cannot be opened or read.
+    static func terminalIsCanonical(path: String) -> Bool? {
+        let fd = open(path, O_RDONLY | O_NOCTTY | O_NONBLOCK)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var attrs = termios()
+        guard tcgetattr(fd, &attrs) == 0 else { return nil }
+        return (attrs.c_lflag & tcflag_t(ICANON)) != 0
     }
 
     /// Live read for `pid`, or nil when the process does not exist.
@@ -418,14 +462,28 @@ enum MailboxAgentForeground {
             processGroup: info.kp_eproc.e_pgid,
             terminalForegroundGroup: info.kp_eproc.e_tpgid,
             terminalDevice: info.kp_eproc.e_tdev,
-            isZombie: Int32(info.kp_proc.p_stat) == SZOMB
+            isZombie: Int32(info.kp_proc.p_stat) == SZOMB,
+            startTime: UInt64(info.kp_proc.p_starttime.tv_sec) * 1_000_000
+                + UInt64(info.kp_proc.p_starttime.tv_usec)
         )
     }
 
-    /// Live check for an agent process against the tab's tty name.
-    static func agentOwnsTerminal(pid: pid_t?, tabTTYName: String?) -> Bool {
-        guard let pid else { return false }
-        let tabDevice = tabTTYName.flatMap { TerminalPIDResolver.ttyDevice(for: $0) }
-        return agentOwnsTerminal(processTerminalInfo(pid: pid), tabTerminalDevice: tabDevice)
+    /// Live check for a registered agent process against the tab's tty name. A tab
+    /// whose tty c11 has not been told (no shell-integration `report_tty`)
+    /// cannot be verified and never receives a push.
+    static func agentOwnsTerminal(process: MailboxStdinBuffer.AgentProcess?, tabTTYName: String?) -> Bool {
+        guard let process, let tabTTYName else { return false }
+        let path = tabTTYName.hasPrefix("/") ? tabTTYName : "/dev/\(tabTTYName)"
+        guard let tabDevice = TerminalPIDResolver.ttyDevice(for: path) else { return false }
+        let info = processTerminalInfo(pid: process.pid)
+        // The process checks first: the termios read opens the device.
+        guard agentOwnsTerminal(
+            info, expectedStartTime: process.startTime,
+            tabTerminalDevice: tabDevice, terminalIsCanonical: false
+        ) else { return false }
+        return agentOwnsTerminal(
+            info, expectedStartTime: process.startTime,
+            tabTerminalDevice: tabDevice, terminalIsCanonical: terminalIsCanonical(path: path)
+        )
     }
 }

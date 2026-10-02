@@ -3937,8 +3937,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// When the operator last pressed a key in this terminal. Deliberately not
     /// `@Published`: it changes per keystroke and must never invalidate SwiftUI.
     var lastOperatorInputAt: Date?
-    /// Last operator keystroke into the PTY (not a click, not the text box).
-    /// The mailbox push reads it to avoid splicing onto an unsent draft.
+    /// Last input that may have left an unsent draft in the PTY's input
+    /// line: an operator keystroke (not a click, not the text box), or text
+    /// sent with `c11 send --no-submit`. The mailbox push reads it to avoid
+    /// splicing onto that draft.
     var lastOperatorKeyAt: Date?
     /// When the scrollback last grew while the surface was visible: real output,
     /// not an in-place repaint. Not `@Published`.

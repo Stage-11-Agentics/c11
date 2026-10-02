@@ -42,12 +42,18 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
         if wrapper == "pi":
             shutil.copy2(BIN / "pi-lifecycle.ts", wrapper_dir / "pi-lifecycle.ts")
         log = tmp / "real.log"
+        notify_log = tmp / "notify.log"
         make_executable(
             real_dir / wrapper,
             '#!/usr/bin/env bash\nprintf "%s %s\\n" "${C11_AGENT_INTERACTIVE_PID-__UNSET__}" "$$" > "$FAKE_LOG"\n',
         )
-        # Fake c11: answers ping, accepts everything else.
-        make_executable(wrapper_dir / "c11", "#!/usr/bin/env bash\nexit 0\n")
+        # Fake c11: answers ping, accepts everything else, and records the
+        # marker it sees on a `notify` (the Codex turn-complete callback).
+        make_executable(
+            wrapper_dir / "c11",
+            '#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == notify ]] && '
+            'printf "%s\\n" "${C11_AGENT_INTERACTIVE_PID-__UNSET__}" > "$FAKE_NOTIFY_LOG"; done\nexit 0\n',
+        )
         sock_path = str(tmp / "c11.sock")
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.bind(sock_path)
@@ -55,6 +61,7 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
             "PATH": f"{wrapper_dir}:{real_dir}:/usr/bin:/bin",
             "HOME": str(tmp),
             "FAKE_LOG": str(log),
+            "FAKE_NOTIFY_LOG": str(notify_log),
             "C11_AGENT_INTERACTIVE_PID": INHERITED,
             "TMPDIR": str(tmp),
         }
@@ -84,6 +91,10 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
             os.close(slave)
             os.close(master)
             sock.close()
+        if argv[:1] == ["__c11-notify"]:
+            if not notify_log.exists():
+                raise AssertionError(f"{wrapper} {argv}: notify never reached c11 ({err_path.read_text()!r})")
+            return notify_log.read_text().strip(), INHERITED
         if not log.exists():
             raise AssertionError(
                 f"{wrapper} {argv}: real binary not reached (rc={returncode}, {err_path.read_text()!r})"
@@ -102,13 +113,23 @@ CASES = [
     ("claude", ["hello"], False, True, False),          # stdout piped
     ("claude", ["agents"], True, True, False),          # early passthrough exec
     ("claude", ["hello"], True, False, False),          # outside c11
+    ("claude", ["-cp", "hello"], True, True, False),    # combined short flags
+    ("claude", ["-pc", "hello"], True, True, False),
     ("codex", [], True, True, True),
     ("codex", ["exec", "hi"], True, True, False),
     ("codex", [], False, True, False),
     ("codex", [], True, False, False),
+    ("codex", ["e", "hi"], True, True, False),              # `exec` alias
+    # The turn-complete callback is a child of the interactive Codex: it must
+    # keep (and report) that Codex's marker, here the inherited value.
+    ("codex", ["__c11-notify", '{"type":"agent-turn-complete"}'], True, True, True),
     ("grok", [], True, True, True),
     ("grok", ["-p", "hi"], True, True, False),
     ("grok", ["agent"], True, True, False),
+    ("grok", ["--single=hi"], True, True, False),
+    ("grok", ["-phi"], True, True, False),
+    ("grok", ["-cp", "hi"], True, True, False),
+    ("grok", ["--prompt-file=/tmp/x"], True, True, False),
     ("grok", [], False, True, False),
     ("opencode", [], True, True, True),
     ("opencode", ["run", "hi"], True, True, False),

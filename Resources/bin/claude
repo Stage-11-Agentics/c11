@@ -165,7 +165,10 @@ claude_interactive=1
 [[ -t 0 && -t 1 ]] || claude_interactive=0
 for arg in "$@"; do
     case "$arg" in
+        --) break ;;
         -p|--print|--print=*|--bg|--background) claude_interactive=0; break ;;
+        # Combined short flags (`-cp`, `-pc`): any cluster carrying `p`.
+        -[!-]*p*|-p?*) claude_interactive=0; break ;;
     esac
 done
 if [[ "$claude_interactive" == "1" ]]; then

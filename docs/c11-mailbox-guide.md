@@ -259,7 +259,7 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 |-----------------------|---------------|
 | at its prompt, nothing typed since the last submit | paste and submit now: the mail arrives as a new turn within about a second |
 | mid-turn | **buffer**; at the end of that turn, paste everything buffered and submit it as one turn |
-| the operator typed into its composer since the last submit | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
+| the operator typed into its composer since the last submit, or text was placed there with `c11 send --no-submit` | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
 | no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 
 A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.)
@@ -267,7 +267,13 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 **Only an interactive agent that owns its terminal is ever typed into.** Two guards hold for every harness:
 
 - *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p` bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the tab counts as an agent that is never at its prompt, so its mail is never pasted.
-- *Terminal ownership.* Before it claims, after the claim, and again just before the Return, the push asks the kernel whether that PID's process group is the foreground process group of the tab's terminal. If the shell, `vim`, a pipeline or anything else is reading the terminal, or the agent is gone or suspended, nothing is typed: the claim is undone and the mail stays in the inbox for a drain.
+- *Terminal ownership.* Before it claims, after the claim, and again just before the Return, the push asks the kernel four things, and every one must hold:
+  1. That PID is still the process that registered: its start time matches, so a later process reusing the PID never qualifies.
+  2. Its process group is the foreground process group of its terminal.
+  3. That terminal is the tab's own tty, as reported by shell integration. An agent under `tmux`, `screen` or an editor's terminal inside the tab fails this. A tab whose tty c11 was never told (no shell integration) never receives a push.
+  4. The tty is in non-canonical (raw) mode. An interactive TUI waiting for input holds raw mode. A print or one-shot run (`claude -cp`, `codex e`, `grok --single=…`, any form a wrapper does not recognize) leaves the tty canonical, and anything typed there would run in the shell after it exits.
+
+  If any check fails, nothing is typed: the claim is undone and the mail stays in the inbox for a drain.
 
 **Plain shells are never typed into.** A pasted block plus Return at a shell prompt runs as shell commands, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a tab with no interactive agent never receives a push, and an agent that exits returns its tab to the shell prompt, which drops anything buffered for it (logged `expired`). All of it stays in the inbox for `recv --drain`.
 

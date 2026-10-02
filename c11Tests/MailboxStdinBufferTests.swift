@@ -565,35 +565,83 @@ final class MailboxStdinBufferTests: XCTestCase {
 
     // MARK: - review r3: the agent must own the terminal
 
-    private func procInfo(pgid: pid_t, fg: pid_t, tty: dev_t = 0x1000007, zombie: Bool = false)
+    private func procInfo(pgid: pid_t, fg: pid_t, tty: dev_t = 0x1000007, zombie: Bool = false,
+                          start: UInt64 = 1_000_000)
         -> MailboxAgentForeground.ProcessTerminalInfo {
-        .init(processGroup: pgid, terminalForegroundGroup: fg, terminalDevice: tty, isZombie: zombie)
+        .init(processGroup: pgid, terminalForegroundGroup: fg, terminalDevice: tty, isZombie: zombie,
+              startTime: start)
     }
 
-    /// The kernel decides who reads the terminal: only the agent's own
-    /// foreground process group, on the tab's tty, qualifies.
-    func testAgentOwnsTerminalOnlyAsForegroundGroupOnTabTTY() {
-        let tty: dev_t = 0x1000007
-        XCTAssertTrue(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500), tabTerminalDevice: tty))
+    private func owns(_ info: MailboxAgentForeground.ProcessTerminalInfo?, start: UInt64? = 1_000_000,
+                      tab: dev_t? = 0x1000007, canonical: Bool? = false) -> Bool {
+        MailboxAgentForeground.agentOwnsTerminal(
+            info, expectedStartTime: start, tabTerminalDevice: tab, terminalIsCanonical: canonical
+        )
+    }
+
+    /// The kernel decides who reads the terminal: only the registered agent
+    /// process, as its terminal's foreground group, on the tab's tty, with
+    /// the tty in non-canonical (raw) mode.
+    func testAgentOwnsTerminalOnlyAsRawForegroundGroupOnTabTTY() {
+        XCTAssertTrue(owns(procInfo(pgid: 500, fg: 500)))
         // vim, the shell, or a pipeline holds the foreground (`--bg`, Ctrl-Z, exit).
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 777), tabTerminalDevice: tty))
-        // Another tab's terminal.
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, tty: 0x1000008), tabTerminalDevice: tty))
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 777)))
+        // Another tab's terminal (an agent under tmux/screen in this tab).
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, tty: 0x1000008)))
         // No controlling terminal, a zombie, or no process: fail closed.
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, tty: -1), tabTerminalDevice: nil))
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, zombie: true), tabTerminalDevice: tty))
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(nil, tabTerminalDevice: tty))
-        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(pid: nil, tabTTYName: nil))
-        // tty unknown to c11: the agent must still be its own terminal's foreground.
-        XCTAssertTrue(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500), tabTerminalDevice: nil))
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, tty: -1)))
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, zombie: true)))
+        XCTAssertFalse(owns(nil))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: nil, tabTTYName: "ttys001"))
     }
 
-    /// The live read returns this process's real process group.
-    func testProcessTerminalInfoReadsLiveProcess() throws {
+    /// r4 #2: a print or one-shot run is the foreground group but leaves its
+    /// tty canonical; anything typed would be read by the shell after it
+    /// exits. Canonical, or unreadable termios, fails closed.
+    func testCanonicalOrUnreadableTTYFailsClosed() {
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), canonical: true))
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), canonical: nil))
+    }
+
+    /// r4 #3: a tab whose tty c11 does not know cannot be verified.
+    func testUnknownTabTTYFailsClosed() {
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), tab: nil))
+        let process = MailboxStdinBuffer.AgentProcess(pid: getpid(), startTime: 1)
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, tabTTYName: nil))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(process: process, tabTTYName: "ttys-not-a-device"))
+    }
+
+    /// A later process reusing the registered PID (an editor in the same
+    /// tab) has a different start time: fail closed.
+    func testReusedPIDFailsClosed() {
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500, start: 2_000_000)))
+        XCTAssertFalse(owns(procInfo(pgid: 500, fg: 500), start: nil))
+    }
+
+    /// The live reads: this process's real process group and start time, and
+    /// a real pty's ICANON flag as set through termios.
+    func testLiveProcessAndTerminalModeReads() throws {
         let info = try XCTUnwrap(MailboxAgentForeground.processTerminalInfo(pid: getpid()))
         XCTAssertEqual(info.processGroup, getpgrp())
         XCTAssertFalse(info.isZombie)
+        XCTAssertGreaterThan(info.startTime, 0)
+        XCTAssertEqual(MailboxAgentForeground.processTerminalInfo(pid: getpid())?.startTime, info.startTime)
         XCTAssertNil(MailboxAgentForeground.processTerminalInfo(pid: 0))
+
+        var master: Int32 = -1
+        var slave: Int32 = -1
+        guard openpty(&master, &slave, nil, nil, nil) == 0 else { throw XCTSkip("openpty unavailable") }
+        defer { close(master); close(slave) }
+        let path = try XCTUnwrap(ttyname(slave).map { String(cString: $0) })
+        var attrs = termios()
+        XCTAssertEqual(tcgetattr(slave, &attrs), 0)
+        attrs.c_lflag |= tcflag_t(ICANON)
+        XCTAssertEqual(tcsetattr(slave, TCSANOW, &attrs), 0)
+        XCTAssertEqual(MailboxAgentForeground.terminalIsCanonical(path: path), true)
+        attrs.c_lflag &= ~tcflag_t(ICANON)
+        XCTAssertEqual(tcsetattr(slave, TCSANOW, &attrs), 0)
+        XCTAssertEqual(MailboxAgentForeground.terminalIsCanonical(path: path), false)
+        XCTAssertNil(MailboxAgentForeground.terminalIsCanonical(path: "/dev/c11-no-such-tty"))
     }
 
     func testAgentPushDropsWhenAgentDoesNotOwnTerminal() {
@@ -627,11 +675,14 @@ final class MailboxStdinBufferTests: XCTestCase {
     func testAgentProcessBookkeeping() {
         var buffer = MailboxStdinBuffer()
         let tab = UUID()
-        buffer.noteAgentProcess(surfaceId: tab, pid: 4242)
+        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4242, startTime: 7))
         XCTAssertEqual(buffer.agentPid(surfaceId: tab), 4242)
+        // A repeat report for the same PID keeps the pinned start time.
+        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4242, startTime: 9))
+        XCTAssertEqual(buffer.agentProcess(surfaceId: tab)?.startTime, 7)
         buffer.forgetAgent(surfaceId: tab)
         XCTAssertNil(buffer.agentPid(surfaceId: tab))
-        buffer.noteAgentProcess(surfaceId: tab, pid: 4243)
+        buffer.noteAgentProcess(surfaceId: tab, process: .init(pid: 4243, startTime: 8))
         buffer.removeSurface(tab)
         XCTAssertNil(buffer.agentPid(surfaceId: tab))
     }

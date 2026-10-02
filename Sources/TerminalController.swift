@@ -3887,9 +3887,9 @@ class TerminalController {
                     ghostty_surface_try_read_prompt_region(
                         surface,
                         &native,
-                        rowBuffer.baseAddress!, rowBuffer.count,
-                        cellBuffer.baseAddress!, cellBuffer.count,
-                        textBuffer.baseAddress!, textBuffer.count
+                        rowBuffer.baseAddress!, UInt(rowBuffer.count),
+                        cellBuffer.baseAddress!, UInt(cellBuffer.count),
+                        textBuffer.baseAddress!, UInt(textBuffer.count)
                     )
                 }
             }

@@ -695,15 +695,27 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
         XCTAssertNotNil(targetWindow.delegate, "The main window must have its close guard installed")
 
-        // The registered observer can run before NSWindowDelegate.windowWillClose.
-        // Unregistering context must leave the weak delegate alive for that callback.
-        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: targetWindow)
+        // NSWindow posts this before it calls its delegate. The AppDelegate
+        // observer unregisters the context during that notification; the
+        // close guard must remain alive until the following delegate callback.
+        let willCloseObserved = expectation(description: "willClose observed before delegate callback")
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: targetWindow,
+            queue: nil
+        ) { _ in
+            MainActor.assumeIsolated {
+                XCTAssertNotNil(
+                    targetWindow.delegate,
+                    "Unregistering the window must not release the close guard before windowWillClose"
+                )
+                willCloseObserved.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
 
-        XCTAssertNotNil(
-            targetWindow.delegate,
-            "Unregistering the window must not release the close guard before windowWillClose"
-        )
         closeWindow(withId: windowId)
+        wait(for: [willCloseObserved], timeout: 0)
         XCTAssertNil(targetWindow.delegate, "windowWillClose must release the guard after its final callback")
     }
 

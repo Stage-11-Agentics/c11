@@ -389,9 +389,9 @@ extension TerminalController {
                 }
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "action": actionName,
                     "selector": selector,
                     "element_ref": ref,
@@ -679,9 +679,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "selector": selector,
                     "element_ref": ref,
                     "ref": ref,
@@ -727,9 +727,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "selector": finalSelector,
                     "element_ref": ref,
                     "ref": ref,
@@ -782,9 +782,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "selector": finalSelector,
                     "element_ref": ref,
                     "ref": ref,
@@ -832,9 +832,9 @@ extension TerminalController {
                     }
                     return .ok([
                         "workspace_id": target.workspaceId.uuidString,
-                        "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                        "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                         "surface_id": surfaceId.uuidString,
-                        "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                        "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                         "frame_selector": selector
                     ])
                 }
@@ -923,9 +923,9 @@ extension TerminalController {
 
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "accepted": accept,
                     "dialog": v2NormalizeJSValue(dict["dialog"]),
                     "remaining": v2OrNull(dict["remaining"])
@@ -1246,9 +1246,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "type": storageType,
                     "key": v2OrNull(key),
                     "value": v2NormalizeJSValue(dict["value"])
@@ -1293,9 +1293,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "type": storageType,
                     "key": key
                 ])
@@ -1328,9 +1328,9 @@ extension TerminalController {
                 }
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "type": storageType,
                     "cleared": true
                 ])
@@ -1537,9 +1537,9 @@ extension TerminalController {
                 let items = (dict?["items"] as? [Any]) ?? []
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "entries": items.map(v2NormalizeJSValue),
                     "count": items.count
                 ])
@@ -1576,9 +1576,9 @@ extension TerminalController {
                 let items = (dict?["items"] as? [Any]) ?? []
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "errors": items.map(v2NormalizeJSValue),
                     "count": items.count
                 ])
@@ -1827,9 +1827,9 @@ extension TerminalController {
 
             return .ok([
                 "workspace_id": target.workspaceId.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                 "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                 "scripts": scriptCount
             ])
         }
@@ -1847,9 +1847,9 @@ extension TerminalController {
             case .success(let value):
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "value": v2NormalizeJSValue(value)
                 ])
             }
@@ -1891,9 +1891,9 @@ extension TerminalController {
 
             return .ok([
                 "workspace_id": target.workspaceId.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                 "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                 "styles": styleCount
             ])
         }

@@ -1795,8 +1795,8 @@ extension TerminalController {
                             "action": actionName,
                             "attempts": attempt
                         ]
-                        payload["workspace_ref"] = v2Ref(kind: .workspace, uuid: target.workspaceId)
-                        payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
+                        payload["workspace_ref"] = target.responseEnvelope["workspace_ref"] ?? NSNull()
+                        payload["surface_ref"] = target.responseEnvelope["surface_ref"] ?? NSNull()
                         if let resultValue = dict["value"] {
                             payload["value"] = v2NormalizeJSValue(resultValue)
                         }
@@ -2132,9 +2132,9 @@ extension TerminalController {
 
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "snapshot": snapshotText,
                     "title": title,
                     "url": url,
@@ -2361,9 +2361,9 @@ extension TerminalController {
             case .success:
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2393,9 +2393,9 @@ extension TerminalController {
             case .success:
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2425,9 +2425,9 @@ extension TerminalController {
             case .success:
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2525,9 +2525,9 @@ extension TerminalController {
                 }
                 var payload: [String: Any] = [
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2572,9 +2572,9 @@ extension TerminalController {
 
             var result: [String: Any] = [
                 "workspace_id": target.workspaceId.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                 "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                 "png_base64": imageData.base64EncodedString()
             ]
 
@@ -2681,9 +2681,9 @@ extension TerminalController {
                 let count = (value as? NSNumber)?.intValue ?? 0
                 return .ok([
                     "workspace_id": target.workspaceId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: target.workspaceId),
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "count": count
                 ])
             }

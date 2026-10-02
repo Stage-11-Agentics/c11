@@ -152,11 +152,14 @@ final class TabIdentityRestoreTests: XCTestCase {
 
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
-        let terminalTab = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        let initialTabId = try XCTUnwrap(workspace.panels.keys.first)
+        let terminalTab = try XCTUnwrap(workspace.newTerminalSplit(
+            from: initialTabId, orientation: .horizontal, insertFirst: false, focus: false
+        ))
         let browserPanel = try XCTUnwrap(
             workspace.newBrowserSurface(
                 inPane: paneId,
-                url: URL(string: "https://example.com"),
+                url: URL(string: "about:blank"),
                 focus: false
             )
         )
@@ -175,5 +178,10 @@ final class TabIdentityRestoreTests: XCTestCase {
         restored.restoreSessionSnapshot(snapshot)
 
         XCTAssertEqual(Set(restored.panels.keys), expected)
+        XCTAssertEqual(restored.bonsplitController.allPaneIds.count, 2)
+        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: markdownTab.id))
+        XCTAssertEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: browserPanel.id))
+        XCTAssertNotEqual(restored.paneId(forPanelId: initialTabId), restored.paneId(forPanelId: terminalTab.id))
+        XCTAssertEqual(restored.focusedPanelId, snapshot.focusedPanelId)
     }
 }

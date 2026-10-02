@@ -57520,11 +57520,11 @@
           }
         },
         "ja": { "stringUnit": { "state": "translated", "value": "ブラウザー %lld件" } },
-        "uk": { "stringUnit": { "state": "translated", "value": "%lld браузерів" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Браузери: %lld" } },
         "ko": { "stringUnit": { "state": "translated", "value": "브라우저 %lld개" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个浏览器" } },
         "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個瀏覽器" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "%lld браузеров" } }
+        "ru": { "stringUnit": { "state": "translated", "value": "Браузеры: %lld" } }
       }
     },
     "sidebar.workspacePulse.censusEmpty": {
@@ -57699,11 +57699,11 @@
           }
         },
         "ja": { "stringUnit": { "state": "translated", "value": "ドキュメント %lld件" } },
-        "uk": { "stringUnit": { "state": "translated", "value": "%lld документів" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Документи: %lld" } },
         "ko": { "stringUnit": { "state": "translated", "value": "문서 %lld개" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个文档" } },
         "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個文件" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "%lld документов" } }
+        "ru": { "stringUnit": { "state": "translated", "value": "Документы: %lld" } }
       }
     },
     "sidebar.workspacePulse.flagged.accessibility": {

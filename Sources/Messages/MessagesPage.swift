@@ -500,6 +500,9 @@ enum MessagesPageBuilder {
 }
 
 enum MessagesPageSource {
+    private static let sendEventMarker = Data(#""type":"tab.input_sent""#.utf8)
+    private static let mailboxEventMarker = Data(#""type":"mailbox.""#.utf8)
+
     static func load(stateURL: URL, fileManager: FileManager = .default) -> MessagesPageSourceData {
         MessagesPageSourceData(
             events: readEvents(stateURL: stateURL, fileManager: fileManager),
@@ -520,6 +523,7 @@ enum MessagesPageSource {
         var events: [MessagesPageEvent] = []
         for url in urls {
             guard let data = try? Data(contentsOf: url),
+                  data.range(of: sendEventMarker) != nil || data.range(of: mailboxEventMarker) != nil,
                   let text = String(data: data, encoding: .utf8) else { continue }
             for line in text.split(whereSeparator: \.isNewline) {
                 if let event = MessagesPageEvent(line: String(line)) {

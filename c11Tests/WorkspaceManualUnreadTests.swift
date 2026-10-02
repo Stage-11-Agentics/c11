@@ -168,8 +168,7 @@ final class CommandPaletteFuzzyMatcherTests: XCTestCase {
         )
 
         XCTAssertNotNil(renameScore)
-        XCTAssertNotNil(unrelatedScore)
-        XCTAssertGreaterThan(renameScore ?? 0, unrelatedScore ?? 0)
+        XCTAssertNil(unrelatedScore, "An unrelated command must not match rename")
     }
 
     func testTokenMatchingRequiresAllTokens() {
@@ -227,7 +226,7 @@ final class CommandPaletteFuzzyMatcherTests: XCTestCase {
 final class CommandPaletteSwitcherSearchIndexerTests: XCTestCase {
     func testKeywordsIncludeDirectoryBranchAndPortMetadata() {
         let metadata = CommandPaletteSwitcherSearchMetadata(
-            directories: ["/Users/example/dev/cmuxterm-hq/worktrees/feat-cmd-palette"],
+            directories: ["/Users/example/dev/c11-hq/worktrees/feat-cmd-palette"],
             branches: ["feature/cmd-palette-indexing"],
             ports: [3000, 9222]
         )
@@ -237,17 +236,17 @@ final class CommandPaletteSwitcherSearchIndexerTests: XCTestCase {
             metadata: metadata
         )
 
-        XCTAssertTrue(keywords.contains("/Users/example/dev/cmuxterm-hq/worktrees/feat-cmd-palette"))
+        XCTAssertTrue(keywords.contains("/Users/example/dev/c11-hq/worktrees/feat-cmd-palette"))
         XCTAssertTrue(keywords.contains("feat-cmd-palette"))
         XCTAssertTrue(keywords.contains("feature/cmd-palette-indexing"))
-        XCTAssertTrue(keywords.contains("cmd-palette-indexing"))
+        XCTAssertTrue(keywords.contains("indexing"))
         XCTAssertTrue(keywords.contains("3000"))
         XCTAssertTrue(keywords.contains(":9222"))
     }
 
     func testFuzzyMatcherMatchesDirectoryBranchAndPortMetadata() {
         let metadata = CommandPaletteSwitcherSearchMetadata(
-            directories: ["/tmp/cmuxterm/worktrees/issue-123-switcher-search"],
+            directories: ["/tmp/c11/worktrees/issue-123-switcher-search"],
             branches: ["fix/switcher-metadata"],
             ports: [4317]
         )
@@ -264,7 +263,7 @@ final class CommandPaletteSwitcherSearchIndexerTests: XCTestCase {
 
     func testWorkspaceDetailOmitsSplitDirectoryAndBranchTokens() {
         let metadata = CommandPaletteSwitcherSearchMetadata(
-            directories: ["/Users/example/dev/cmuxterm-hq/worktrees/feat-cmd-palette"],
+            directories: ["/Users/example/dev/c11-hq/worktrees/feat-cmd-palette"],
             branches: ["feature/cmd-palette-indexing"],
             ports: [3000]
         )
@@ -275,7 +274,7 @@ final class CommandPaletteSwitcherSearchIndexerTests: XCTestCase {
             detail: .workspace
         )
 
-        XCTAssertTrue(keywords.contains("/Users/example/dev/cmuxterm-hq/worktrees/feat-cmd-palette"))
+        XCTAssertTrue(keywords.contains("/Users/example/dev/c11-hq/worktrees/feat-cmd-palette"))
         XCTAssertTrue(keywords.contains("feature/cmd-palette-indexing"))
         XCTAssertTrue(keywords.contains("3000"))
         XCTAssertFalse(keywords.contains("feat-cmd-palette"))

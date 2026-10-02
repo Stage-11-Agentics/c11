@@ -1332,9 +1332,17 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
     func testRepeatedVisibilityRefreshPreservesNativeFieldEditorAndExplicitTerminalFocus() throws {
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let originalManager = appDelegate.workspaceManager
+        let originalSidebarState = appDelegate.sidebarState
+        let originalSidebarSelectionState = appDelegate.sidebarSelectionState
+        let originalControllerManager = TerminalController.shared.workspaceManager
         let manager = WorkspaceManager()
         appDelegate.workspaceManager = manager
-        defer { appDelegate.workspaceManager = originalManager }
+        defer {
+            appDelegate.workspaceManager = originalManager
+            appDelegate.sidebarState = originalSidebarState
+            appDelegate.sidebarSelectionState = originalSidebarSelectionState
+            TerminalController.shared.workspaceManager = originalControllerManager
+        }
 
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
@@ -1345,10 +1353,20 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
+        let windowId = UUID()
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        // The hosted app re-synchronizes active pointers while the run loop
+        // drains. Register this manager's actual window, as production does,
+        // so automatic recovery resolves this workspace even after that sync.
+        appDelegate.registerMainWindow(
+            window, windowId: windowId, workspaceManager: manager,
+            sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState()
+        )
         defer {
             hostedView.setActive(false)
             hostedView.removeFromSuperview()
-            window.orderOut(nil)
+            appDelegate.closeMainWindowWithoutPrompt(window)
         }
         let contentView = try XCTUnwrap(window.contentView)
         hostedView.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
@@ -1366,6 +1384,10 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         // Prove this fixture reaches automatic focus recovery, so the assertions
         // below cannot pass because the surface is inactive or unregistered.
         XCTAssertTrue(window.isKeyWindow)
+        XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager)
+        XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
+        XCTAssertTrue(hostedView.debugPortalActive)
+        XCTAssertTrue(hostedView.debugPortalVisibleInUI)
         XCTAssertTrue(window.makeFirstResponder(nil))
         hostedView.setVisibleInUI(true)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))

@@ -1798,6 +1798,19 @@ struct CMUXCLI {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
+        // Validate create input before any socket connection or routing query.
+        if ["new-workspace", "new-split", "new-area", "new-tab"].contains(command),
+           !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+            if commandArgs.contains("--command"), optionValue(commandArgs, name: "--command") == nil {
+                throw CLIError(message: String(localized: "cli.create.command.requiresValue", defaultValue: "--command requires text"))
+            }
+            _ = try resolvedCreateInput(
+                raw: optionValue(commandArgs, name: "--command"),
+                panelType: command == "new-workspace" || command == "new-split" ? "terminal" : optionValue(commandArgs, name: "--type"),
+                hasLayout: command == "new-workspace" && commandArgs.contains("--layout")
+            )
+        }
+
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -1841,6 +1854,7 @@ struct CMUXCLI {
             print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
             return
         }
+
 
         if command == "health" {
             try runHealth(commandArgs: commandArgs, jsonOutput: jsonOutput)
@@ -2289,6 +2303,9 @@ struct CMUXCLI {
                 throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --root <path>, --layout <path|name>, --title <text>")
             }
             var params: [String: Any] = [:]
+            if let input = try resolvedCreateInput(raw: commandOpt, panelType: "terminal", hasLayout: layoutOpt != nil) {
+                params["initial_input"] = input
+            }
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
@@ -2305,13 +2322,8 @@ struct CMUXCLI {
                 params["layout"] = try resolveBlueprintPlan(layoutRef, client: client)
             }
             let response = try client.sendV2(method: "workspace.create", params: params)
-            let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
-            print("OK \(wsId)")
-            if let commandText = commandOpt, !wsId.isEmpty {
-                let text = unescapeSendText(commandText + "\\n")
-                let sendParams: [String: Any] = ["text": text, "workspace_id": wsId]
-                _ = try client.sendV2(method: "tab.send_text", params: sendParams)
-            }
+            printV2Payload(response, jsonOutput: jsonOutput, idFormat: idFormat,
+                           fallbackText: createOKSummary(response, idFormat: idFormat, kinds: ["workspace"]))
 
         case "new-split":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
@@ -2319,14 +2331,17 @@ struct CMUXCLI {
             let (sfArg, rem2) = parseOption(rem1, name: "--surface")
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
+            let (createCommand, rem5) = parseOption(rem4, name: "--command")
+            let initialInput = try resolvedCreateInput(raw: createCommand, panelType: "terminal")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
             // The direction is the first non-flag token (so `--allow-undersized` can
             // appear on either side of it).
-            guard let direction = rem4.first(where: { !$0.hasPrefix("-") }) else {
+            guard let direction = rem5.first(where: { !$0.hasPrefix("-") }) else {
                 throw CLIError(message: "new-split requires a direction")
             }
             var params: [String: Any] = ["direction": direction]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
@@ -2347,7 +2362,7 @@ struct CMUXCLI {
             }
             let payload = try client.sendV2(method: "tab.split", params: params)
             printSizeWarning(payload)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat))
 
         case "list-areas":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
@@ -2419,12 +2434,14 @@ struct CMUXCLI {
         case "new-area":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: optionValue(commandArgs, name: "--command"), panelType: type)
             let direction = optionValue(commandArgs, name: "--direction") ?? "right"
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
             let title = optionValue(commandArgs, name: "--title")
             let cwd = optionValue(commandArgs, name: "--cwd")
             var params: [String: Any] = ["direction": direction]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             if let type { params["type"] = type }
@@ -2445,7 +2462,7 @@ struct CMUXCLI {
             }
             let payload = try client.sendV2(method: "area.create", params: params)
             printSizeWarning(payload)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "launch-agent":
             // Typed-agent launch: one command that owns per-agent invocation
@@ -2670,12 +2687,14 @@ struct CMUXCLI {
         case "new-tab":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: optionValue(commandArgs, name: "--command"), panelType: type)
             let paneRaw = optionValue(commandArgs, name: "--pane")
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
             let cwd = optionValue(commandArgs, name: "--cwd")
             let noFocus = commandArgs.contains("--no-focus")
             var params: [String: Any] = [:]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
@@ -2690,7 +2709,7 @@ struct CMUXCLI {
             }
             if noFocus { params["focus"] = false }
             let payload = try client.sendV2(method: "tab.create", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "close-tab":
             try rejectEmptyTargetFlags(commandArgs)
@@ -9119,7 +9138,7 @@ struct CMUXCLI {
             Flags:
               --cwd <path>           Set the working directory for the new workspace
               --root <path>          Set its stable agent-launch root (also the cwd when --cwd is omitted)
-              --command <text>       Send text+Enter to the new workspace after creation
+              --command <text>       Queue text+Return into the new shell; incompatible with --layout
               --title <text>         Set the workspace title inline (same as a follow-up rename)
               --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
@@ -9236,6 +9255,7 @@ struct CMUXCLI {
             Split the current area in the given direction.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
               --tab <id|ref>     Tab to split from (default: $C11_TAB_ID)
               --title <text>         Seed the new area's title metadata atomically with creation
@@ -9363,6 +9383,7 @@ struct CMUXCLI {
             Create a new area in the workspace.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Area type (default: terminal)
               --direction <left|right|up|down>    Split direction (default: right)
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -9464,6 +9485,7 @@ struct CMUXCLI {
             Create a new tab in an area.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Tab type (default: terminal)
               --area <id|ref>                     Target area
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -14032,6 +14054,20 @@ struct CMUXCLI {
         }
     }
 
+    private func resolvedCreateInput(raw: String?, panelType: String?, hasLayout: Bool = false) throws -> String? {
+        let decision = CreateInitialInput.decide(raw: raw, panelType: panelType, hasLayout: hasLayout)
+        if let message = decision.errorMessage(panelType: panelType) { throw CLIError(message: message) }
+        guard let input = decision.queuedInput else { return nil }
+        return try CapabilityFeatures.current.dispatch(.initialInput) { input }
+    }
+
+    private func createOKSummary(_ payload: [String: Any], idFormat: CLIIDFormat,
+                                 kinds: [String] = ["tab", "workspace"]) -> String {
+        let summary = v2OKSummary(payload, idFormat: idFormat, kinds: kinds)
+        guard payload["initial_input"] as? String == "queued" else { return summary }
+        return summary + " input=queued"
+    }
+
     private func v2OKSummary(_ payload: [String: Any], idFormat: CLIIDFormat, kinds: [String] = ["tab", "workspace"]) -> String {
         var parts = ["OK"]
         for kind in kinds {
@@ -18213,13 +18249,13 @@ struct CMUXCLI {
           workspace export-blueprint --name <name> [--workspace <ref>] [--description <text>] [--out <path>] [--force]
           ssh <destination> [--name <title>] [--port <n>] [--identity <path>] [--ssh-option <opt>] [-- <remote-command-args>]
           remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
-          new-split <left|right|up|down> [--workspace <id|ref>] [--tab <id|ref>] [--title <text>]
+          new-split <left|right|up|down> [--command <text>] [--workspace <id|ref>] [--tab <id|ref>] [--title <text>]
           list-areas [--workspace <id|ref>]
           list-area-tabs [--workspace <id|ref>] [--area <id|ref>]
           tree [--all] [--workspace <id|ref|index>]
           focus-area --area <id|ref> [--workspace <id|ref>]
-          new-area [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
-          new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
+          new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
+          new-tab [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
           close-tab [--tab <id|ref>] [--workspace <id|ref>]
           move-tab --tab <id|ref|index> [--area <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
           reorder-tab --tab <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)

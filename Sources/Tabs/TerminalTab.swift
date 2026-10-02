@@ -148,6 +148,7 @@ final class TerminalTab: TabContent, ObservableObject {
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
@@ -158,6 +159,7 @@ final class TerminalTab: TabContent, ObservableObject {
             configTemplate: configTemplate,
             workingDirectory: workingDirectory,
             initialCommand: initialCommand,
+            initialInput: initialInput,
             initialEnvironmentOverrides: initialEnvironmentOverrides,
             additionalEnvironment: additionalEnvironment
         )

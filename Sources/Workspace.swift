@@ -5438,6 +5438,7 @@ final class Workspace: Identifiable, ObservableObject {
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:]
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
@@ -5565,6 +5566,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,
             portOrdinal: portOrdinal,
             initialCommand: initialTerminalCommand,
+            initialInput: initialTerminalInput,
             initialEnvironmentOverrides: initialTerminalEnvironment
         )
         panels[terminalTab.id] = terminalTab
@@ -8557,7 +8559,8 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         focus: Bool = true,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        initialInput: String? = nil
     ) -> TerminalTab? {
         guard let paneId = paneIdForTab(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
@@ -8580,7 +8583,8 @@ final class Workspace: Identifiable, ObservableObject {
             configTemplate: inheritedConfig,
             workingDirectory: splitWorkingDirectory,
             portOrdinal: portOrdinal,
-            initialCommand: remoteTerminalStartupCommand
+            initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput
         )
         panels[newTab.id] = newTab
         tabTitles[newTab.id] = newTab.displayTitle
@@ -8653,6 +8657,7 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         focus: Bool? = nil,
         workingDirectory: String? = nil,
+        initialInput: String? = nil,
         startupEnvironment: [String: String] = [:],
         panelId: UUID? = nil,
         createdAt: Date? = Date()
@@ -8682,6 +8687,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: resolvedWorkingDirectory,
             portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput,
             additionalEnvironment: startupEnvironment
         )
         panels[newTab.id] = newTab

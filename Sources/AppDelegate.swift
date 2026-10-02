@@ -13607,8 +13607,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
               let window = context.window ?? NSApp.windows.first(where: {
                   $0.identifier?.rawValue == "cmux.main.\(context.windowId.uuidString)"
               }),
-              let (manager, _) = resolveFeedTarget(target),
-              selectFeedTarget(target) else { return false }
+              let (manager, workspace) = resolveFeedTarget(target) else { return false }
+        workspace.clearSplitZoom()
+        guard selectFeedTarget(target) else { return false }
         context.sidebarSelectionState.selection = .tabs
         // Only the explicit user jump raises the owning window, after validating both IDs.
         bringToFront(window)

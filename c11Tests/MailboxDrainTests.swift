@@ -126,6 +126,22 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertTrue(result.claimed[0].framed.contains("&lt;/c11-msg&gt;"))
     }
 
+    func testWorkspaceHasPendingMailSeesAnyInboxRoot() throws {
+        let root = inbox.deletingLastPathComponent()
+        XCTAssertFalse(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
+
+        // Outbox, processing and _read/ history are not pending mail.
+        for name in ["_outbox", "_processing"] {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data("{}".utf8).write(to: dir.appendingPathComponent("\(idB).msg"))
+        }
+        let entry = try deliver(id: idA)
+        XCTAssertTrue(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
+        XCTAssertNotNil(MailboxDrain.claim(entry))
+        XCTAssertFalse(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
+    }
+
     // MARK: - Framing
 
     func testFramingMatchesStdinPushForInlineBodies() throws {

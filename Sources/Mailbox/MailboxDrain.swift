@@ -34,6 +34,28 @@ enum MailboxDrain {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// True when any inbox root in the workspace holds an envelope. The hook
+    /// drain runs on every turn and resolving the caller's inbox costs a socket
+    /// round-trip, so an empty workspace answers from the filesystem alone.
+    /// Never a false negative: the caller's inbox is one of these directories,
+    /// whichever key (title or tab UUID) names it.
+    static func workspaceHasPendingMail(
+        mailboxesRoot: URL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        let inboxes = (try? fileManager.contentsOfDirectory(
+            at: mailboxesRoot,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for inbox in inboxes where !inbox.lastPathComponent.hasPrefix("_") {
+            let names = (try? fileManager.contentsOfDirectory(atPath: inbox.path)) ?? []
+            if names.contains(where: { $0.hasSuffix("." + MailboxLayout.envelopeExtension) }) {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Claims one inbox entry by renaming it into `_read/`. Returns the claimed
     /// file's new URL, or nil when another consumer already took it (or it
     /// could not be moved). `rename(2)` is atomic within the inbox's volume,

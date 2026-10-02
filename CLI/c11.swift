@@ -19079,10 +19079,22 @@ extension CMUXCLI {
         input: MailboxHookInput,
         client: SocketClient
     ) -> MailboxHookDrain? {
-        guard ProcessInfo.processInfo.environment["C11_MAILBOX_HOOK_DRAIN"] != "0",
+        let env = ProcessInfo.processInfo.environment
+        guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
               let event = input.event,
-              MailboxHookOutput.shouldDrain(format: format, input: input),
-              let caller = try? resolveMailboxCaller(client: client, fromOverride: nil, surfaceOverride: nil),
+              MailboxHookOutput.shouldDrain(format: format, input: input) else {
+            return nil
+        }
+        // Fast path: no pending mail anywhere in the workspace means no socket
+        // round-trip to resolve the caller's inbox.
+        if let workspaceId = (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+           let stateURL = try? MailboxLayout.defaultStateURL(),
+           !MailboxDrain.workspaceHasPendingMail(
+               mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId)
+           ) {
+            return nil
+        }
+        guard let caller = try? resolveMailboxCaller(client: client, fromOverride: nil, surfaceOverride: nil),
               let stateURL = try? MailboxLayout.defaultStateURL(),
               let inboxURL = try? MailboxLayout.inboxURL(
                   state: stateURL,

@@ -21,9 +21,10 @@ final class MessagesPageWriter {
     /// files whose size or modification date changed.
     private var eventLogCache = MessagesPageEventLogCache()
     /// Queue-confined durable mailbox snapshot. Plain `c11 send` events do
-    /// not touch envelope files, so they can reuse this snapshot; mailbox
-    /// events request a fresh scan so `_read/`, inbox, and `_rejected/` stay
-    /// authoritative.
+    /// not touch envelope files, and mailbox event payloads carry the body
+    /// needed by the live page, so both channels can reuse this snapshot.
+    /// Startup/relaunch still performs the full scan so older bodies survive
+    /// event-log rotation via `_read/`, inbox, and `_rejected/`.
     private var mailboxArtifactsCache: [MessagesPageMailboxArtifact]?
     private var mailboxRefreshRequested = true
 
@@ -66,7 +67,7 @@ final class MessagesPageWriter {
             ) { [weak self] notification in
                 guard let type = notification.object as? String,
                       MessagesPageWriter.isMessageEvent(type) else { return }
-                self?.scheduleRebuild(refreshMailbox: type.hasPrefix("mailbox."))
+                self?.scheduleRebuild(refreshMailbox: false)
             }
         }
         lock.unlock()

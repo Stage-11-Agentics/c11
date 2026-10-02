@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:55:16Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2YVGR3JBV6WYC847XHKR4",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2YVGR3JBV6WYC847XHKR4.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Frozen interleaving identity 009",
+  "token_usage": null,
+  "type": "file"
+}

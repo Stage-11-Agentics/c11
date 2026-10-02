@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:04:35Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3FX58YHCH37YSF9EK89ER",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z3FX58YHCH37YSF9EK89ER.md",
+    "size_bytes": 22228
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final preregistered protocol013 historical versus settled readiness",
+  "token_usage": null,
+  "type": "file"
+}

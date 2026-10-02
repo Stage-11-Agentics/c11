@@ -51,11 +51,11 @@ func dispatchedC11PointerHit(
     var hit: NSView?
     var currentType: NSEvent.EventType?
     var currentWindowNumber: Int?
-    var currentLocation: NSPoint?
+    var dispatchedLocation: NSPoint?
     window.onPointerEvent = { event in
         currentType = NSApp.currentEvent?.type
         currentWindowNumber = NSApp.currentEvent?.windowNumber
-        currentLocation = NSApp.currentEvent?.locationInWindow
+        dispatchedLocation = event.locationInWindow
         hit = host.hitTest(host.convert(event.locationInWindow, from: nil))
         received = true
     }
@@ -85,9 +85,10 @@ func dispatchedC11PointerHit(
     XCTAssertTrue(delivered, "AppKit must dispatch the posted pointer event to the test window")
     XCTAssertEqual(currentType, .leftMouseDown, "hitTest must run under the production pointer guard")
     XCTAssertEqual(currentWindowNumber, window.windowNumber)
-    let dispatchedLocation = try XCTUnwrap(currentLocation)
-    XCTAssertEqual(dispatchedLocation.x, location.x, accuracy: 0.01)
-    XCTAssertEqual(dispatchedLocation.y, location.y, accuracy: 0.01)
+    let deliveredLocation = try XCTUnwrap(dispatchedLocation)
+    let coordinateContext = "window=\(window.frame) screen=\(screen.frame) display=\(displayBounds) quartz=\(cgEvent.location) posted=\(postedEvent.locationInWindow) current=\(String(describing: NSApp.currentEvent?.locationInWindow))"
+    XCTAssertEqual(deliveredLocation.x, location.x, accuracy: 0.01, coordinateContext)
+    XCTAssertEqual(deliveredLocation.y, location.y, accuracy: 0.01, coordinateContext)
     return hit
 }
 

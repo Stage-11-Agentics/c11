@@ -2848,7 +2848,7 @@
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 2.5.1;
+				minimumVersion = 2.9.3;
 			};
 		};
 		A5001252 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {

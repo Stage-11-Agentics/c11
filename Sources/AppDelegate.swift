@@ -11775,18 +11775,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return false
         }
 
-        // When the notifications popover is open, Escape should dismiss it immediately.
-        if flags.isEmpty, event.keyCode == 53, titlebarAccessoryController.dismissNotificationsPopoverIfShown() {
-            return true
-        }
-
-        // When the notifications popover is showing an empty state, consume plain typing
-        // so key presses do not leak through into the focused terminal.
-        if flags.isDisjoint(with: [.command, .control, .option]),
-           titlebarAccessoryController.isNotificationsPopoverShown(),
-           (notificationStore?.notifications.isEmpty ?? false) {
-            return true
-        }
+        // Share the visible Feed's scoped router with its local monitor. Another
+        // window's Escape/Return/typing must not be swallowed by an open popover.
+        if titlebarAccessoryController.handleFeedQuickViewKey(event) { return true }
 
         let hasEventWindowContext = shortcutEventHasAddressableWindow(event)
         let didSynchronizeShortcutContext = synchronizeShortcutRoutingContext(event: event)
@@ -13642,7 +13633,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    private func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?) -> Bool {
+    func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?) -> Bool {
         guard let context = contextContainingWorkspaceId(target.workspaceID),
               let window = context.window ?? NSApp.windows.first(where: {
                   $0.identifier?.rawValue == "cmux.main.\(context.windowId.uuidString)"

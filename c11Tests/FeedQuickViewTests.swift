@@ -1,0 +1,123 @@
+import AppKit
+import SwiftUI
+import XCTest
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
+final class FeedQuickViewTests: XCTestCase {
+    private func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
+    private func row(_ n: Int, kind: FeedKind? = .question, flag: Bool = false, prompt: String? = nil) -> FeedRow {
+        .init(workspaceID: id(99), tabID: id(n), kind: kind, prompt: prompt, options: nil,
+            promptAvailable: prompt != nil, source: "hook", sourceRank: 4, openedAtMs: Int64(n),
+            state: kind == .turnEnd ? nil : "open", requestID: "synthetic", confirmation: "unconfirmed",
+            blocking: kind == .turnEnd ? false : true,
+            flag: flag ? .init(reason: "Synthetic flag", raisedAtMs: Int64(n), callerTabID: nil) : nil)
+    }
+
+    func testFiltersUseProjectionCountsAndNeverReplaceJumpSequence() {
+        let projection = FeedProjectionSnapshot(rows: AttentionOrder.ordered([
+            row(1, flag: true), row(2, kind: .permission), row(3, kind: .turnEnd), row(4, kind: .turnEnd, flag: true)]))
+        let tail = [AttentionOrder.Candidate(target: .init(workspaceID: id(99), tabID: id(3)), notificationID: id(103)),
+                    .init(target: .init(workspaceID: id(99), tabID: id(5)), notificationID: id(105))]
+        let jump = AttentionOrder.candidates(rows: projection.attentionRows, unreadTail: tail)
+        let model = FeedQuickViewModel()
+        var opened: [AttentionOrder.Target] = []
+        model.onOpen = { opened.append($0); return true }
+        model.apply(.init(projection: projection, loading: false))
+        XCTAssertEqual(model.rows, projection.attentionRows)
+        XCTAssertEqual(model.rows.map(\.tabID), [id(1), id(4), id(2)])
+        XCTAssertFalse(model.rows.contains { $0.kind == .turnEnd })
+        XCTAssertEqual(model.snapshot.projection.openAskCount, 2)
+        XCTAssertEqual(model.snapshot.projection.flagCount, 2)
+        model.move(1)
+        model.switchFilter(.turns)
+        XCTAssertEqual(model.selection.selectedTabID, id(4))
+        XCTAssertEqual(Set(model.rows.map(\.tabID)), Set([id(3), id(4)]))
+        model.switchFilter(.asks)
+        model.apply(.init(projection: .init(rows: Array(projection.rows.dropFirst())), loading: false))
+        XCTAssertTrue(opened.isEmpty)
+        XCTAssertEqual(jump.map { $0.target.tabID }, [id(1), id(4), id(2), id(3), id(5)])
+        XCTAssertEqual(AttentionOrder.candidates(rows: projection.attentionRows, unreadTail: tail), jump)
+    }
+
+    func testEnterOnlyOpensExactTargetAndUnavailableStaysWithoutDismissal() {
+        let model = FeedQuickViewModel()
+        model.apply(.init(projection: .init(rows: [row(1), row(2)]), loading: false))
+        model.move(1)
+        var attempts: [AttentionOrder.Target] = []
+        var dismissed = 0
+        model.onOpened = { dismissed += 1 }
+        model.onOpen = { attempts.append($0); return false }
+        model.openSelected()
+        XCTAssertEqual(attempts, [.init(workspaceID: id(99), tabID: id(2))])
+        XCTAssertEqual(dismissed, 0)
+        XCTAssertEqual(model.status, "That tab is unavailable")
+        XCTAssertEqual(model.selection.selectedTabID, id(2))
+        model.onOpen = { attempts.append($0); return true }
+        model.openSelected()
+        XCTAssertEqual(dismissed, 1)
+    }
+
+    func testKeyboardLifecycleScopeModifiersAndOriginalResponderRestoration() throws {
+        let owner = NSWindow(contentRect: .init(x: 0, y: 0, width: 600, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        let other = NSWindow(contentRect: .init(x: 0, y: 0, width: 600, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        defer { owner.orderOut(nil); other.orderOut(nil) }
+        let origin = NSTextView(frame: .init(x: 0, y: 0, width: 100, height: 100))
+        owner.contentView?.addSubview(origin)
+        owner.makeKeyAndOrderFront(nil)
+        owner.makeFirstResponder(origin)
+        let session = FeedQuickViewKeyboardSession()
+        var moves = 0, opens = 0, cancels = 0
+        func action(_ action: FeedQuickViewKeyboardSession.Action) {
+            switch action { case .move: moves += 1; case .open: opens += 1; case .cancel: cancels += 1; case .consume: break }
+        }
+        session.start(window: owner, action: action)
+        session.start(window: owner, action: action)
+        XCTAssertEqual(session.monitorInstallCount, 1)
+        func event(_ window: NSWindow, key: UInt16, flags: NSEvent.ModifierFlags = [], chars: String = "") throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: chars,
+                charactersIgnoringModifiers: chars, isARepeat: false, keyCode: key))
+        }
+        XCTAssertFalse(session.handle(try event(other, key: 125)))
+        XCTAssertFalse(session.handle(try event(other, key: 36)))
+        XCTAssertFalse(session.handle(try event(other, key: 53)))
+        XCTAssertFalse(session.handle(try event(owner, key: 125, flags: .option)))
+        XCTAssertTrue(session.handle(try event(owner, key: 125)))
+        XCTAssertTrue(session.handle(try event(owner, key: 36)))
+        XCTAssertTrue(session.handle(try event(owner, key: 53)))
+        XCTAssertEqual(moves, 1); XCTAssertEqual(opens, 1); XCTAssertEqual(cancels, 1)
+        let displaced = NSTextView(frame: .init(x: 0, y: 0, width: 100, height: 100))
+        owner.contentView?.addSubview(displaced)
+        owner.makeFirstResponder(displaced)
+        session.stop(restoreFocus: true)
+        XCTAssertTrue(owner.firstResponder === origin)
+        XCTAssertFalse(session.handle(try event(owner, key: 125)))
+        session.start(window: owner, action: action)
+        XCTAssertEqual(session.monitorInstallCount, 2)
+        origin.removeFromSuperview()
+        owner.makeFirstResponder(displaced)
+        session.stop(restoreFocus: true)
+        XCTAssertTrue(owner.firstResponder === displaced)
+    }
+
+    func testHostRendersSameFixedSizeAcrossEmptyLoadingLongMissingAndFilters() {
+        let model = FeedQuickViewModel()
+        let host = NSHostingView(rootView: FeedQuickView(model: model))
+        host.frame = .init(origin: .zero, size: FeedQuickViewGeometry.size)
+        for state in [FeedQuickViewSnapshot(), .init(loading: false),
+            .init(projection: .init(rows: [row(1, prompt: "Short"), row(2, prompt: String(repeating: "Long\n", count: 100)), row(3)]),
+                  titles: [id(1): String(repeating: "Synthetic long name ", count: 50)], loading: false)] {
+            model.apply(state)
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
+            model.switchFilter(.turns)
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
+            model.switchFilter(.asks)
+        }
+    }
+}

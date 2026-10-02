@@ -128,7 +128,12 @@ def seed(path: Path, base_ms: int) -> int:
 def measured(command: list[str]) -> tuple[subprocess.CompletedProcess[str], str, int, float]:
     started = perf_counter()
     result = subprocess.run(["/usr/bin/time", "-l", *command], text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise AssertionError(
+            f"measured command failed ({result.returncode}): {' '.join(command)}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
     elapsed_ms = (perf_counter() - started) * 1_000
     match = re.search(r"(?m)^\s*(\d+)\s+(maximum resident set size|peak memory footprint)\s*$",
                       result.stderr)

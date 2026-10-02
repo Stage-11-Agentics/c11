@@ -1,11 +1,11 @@
 {
   "behavior.animateWorkspaceCrossfade" : "false",
-  "chrome.dividers.color" : "#77221B",
+  "chrome.dividers.color" : "#82221B",
   "chrome.dividers.thicknessPt" : "1.000000",
   "chrome.markdownChrome.background" : "#0A0C0F",
-  "chrome.sidebar.activeTabFill" : "#C0392B",
+  "chrome.sidebar.activeTabFill" : "#D13929",
   "chrome.sidebar.activeTabFillFallback" : "#121519",
-  "chrome.sidebar.activeTabRail" : "#C0392B",
+  "chrome.sidebar.activeTabRail" : "#D13929",
   "chrome.sidebar.activeTabRailFallback" : "#C4A561",
   "chrome.sidebar.activeTabRailOpacity" : "0.950000",
   "chrome.sidebar.badgeFill" : "#C4A561",
@@ -20,7 +20,7 @@
   "chrome.titleBar.borderBottom" : "#2A2F36",
   "chrome.titleBar.foreground" : "#E9EAEB",
   "chrome.titleBar.foregroundSecondary" : "#8A8F96",
-  "chrome.windowFrame.color" : "#C0392B",
+  "chrome.windowFrame.color" : "#D13929",
   "chrome.windowFrame.inactiveOpacity" : "0.250000",
   "chrome.windowFrame.thicknessPt" : "1.500000",
   "chrome.windowFrame.unfocusedOpacity" : "0.600000"

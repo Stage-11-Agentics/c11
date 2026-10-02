@@ -51,6 +51,9 @@ public struct ThemedValueEvaluator {
         case let .hex(value):
             return colorFromHex(value)
 
+        case let .rgba(value):
+            return colorFromHex(value, includesAlpha: true)
+
         case let .variableRef(path):
             guard let resolved = colorLookup(path, context) else { return nil }
             return resolved.usingColorSpace(.sRGB) ?? resolved
@@ -192,7 +195,7 @@ public struct ThemedValueEvaluator {
                 return nil
             }
 
-        case let .hex(value):
+        case let .hex(value), let .rgba(value):
             return Double(value)
 
         case .variableRef, .modifier:
@@ -212,8 +215,8 @@ public struct ThemedValueEvaluator {
         return clamped
     }
 
-    private static func colorFromHex(_ value: UInt32) -> NSColor {
-        if value <= 0x00FF_FFFF {
+    private static func colorFromHex(_ value: UInt32, includesAlpha: Bool = false) -> NSColor {
+        if !includesAlpha && value <= 0x00FF_FFFF {
             let red = CGFloat((value >> 16) & 0xFF) / 255.0
             let green = CGFloat((value >> 8) & 0xFF) / 255.0
             let blue = CGFloat(value & 0xFF) / 255.0

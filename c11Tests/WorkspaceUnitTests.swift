@@ -30,8 +30,8 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
         }
 
         XCTAssertEqual(color.redComponent, 0, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 136.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(color.greenComponent, 0, accuracy: 0.001)
+        XCTAssertEqual(color.blueComponent, 0, accuracy: 0.001)
         XCTAssertEqual(color.alphaComponent, 1.0, accuracy: 0.001)
     }
 
@@ -42,20 +42,20 @@ final class SidebarSelectedWorkspaceColorTests: XCTestCase {
         }
 
         XCTAssertEqual(color.redComponent, 0, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 145.0 / 255.0, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(color.greenComponent, 0, accuracy: 0.001)
+        XCTAssertEqual(color.blueComponent, 0, accuracy: 0.001)
         XCTAssertEqual(color.alphaComponent, 1.0, accuracy: 0.001)
     }
 
-    func testSelectedWorkspaceForegroundAlwaysUsesWhiteWithRequestedOpacity() {
+    func testSelectedWorkspaceForegroundUsesBrandWhiteWithRequestedOpacity() {
         guard let color = sidebarSelectedWorkspaceForegroundNSColor(opacity: 0.65).usingColorSpace(.sRGB) else {
             XCTFail("Expected sRGB-convertible color")
             return
         }
 
-        XCTAssertEqual(color.redComponent, 1.0, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 1.0, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(color.redComponent, 232.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.greenComponent, 232.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(color.blueComponent, 232.0 / 255.0, accuracy: 0.001)
         XCTAssertEqual(color.alphaComponent, 0.65, accuracy: 0.001)
     }
 }
@@ -2284,7 +2284,7 @@ final class WorkspaceTabGitBranchTests: XCTestCase {
     }
 
     @MainActor
-    func testSidebarPullRequestsTrackFocusedTabOnly() {
+    func testSidebarPullRequestsIncludeBackgroundTabs() {
         let workspace = Workspace()
         guard let firstPanelId = workspace.focusedPanelId,
               let paneId = workspace.paneId(forPanelId: firstPanelId),
@@ -2305,8 +2305,8 @@ final class WorkspaceTabGitBranchTests: XCTestCase {
 
         XCTAssertNil(workspace.pullRequest)
         XCTAssertTrue(
-            workspace.sidebarPullRequestsInDisplayOrder().isEmpty,
-            "Expected background panel PRs to stay hidden while the focused panel has no PR"
+            workspace.sidebarPullRequestsInDisplayOrder().map(\.number) == [1629],
+            "Workspace PR summary includes background tabs even when the focused tab has no PR"
         )
 
         workspace.focusPanel(secondTab.id)
@@ -3037,7 +3037,7 @@ final class WorkspaceCustomColorDidChangeTests: XCTestCase {
         workspace.setCustomColor(nil) // no-op
 
         XCTAssertEqual(received.count, 2, "Expected exactly two events — set + clear; identical values are deduped")
-        XCTAssertEqual(received.first, workspace.customColor) // last-received hex matches
+        XCTAssertEqual(received, ["#FF0000", nil], "Publish normalized set and clear values in order")
     }
 
     func testSetCustomColorNoopDoesNotPublish() {

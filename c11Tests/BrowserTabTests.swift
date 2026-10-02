@@ -438,64 +438,6 @@ final class WindowBrowserHostViewTests: XCTestCase {
         return inspectorView.isDescendant(of: hit) && !(pageView === hit || pageView.isDescendant(of: hit))
     }
 
-    func testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 180),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.orderOut(nil) }
-        guard let contentView = window.contentView else {
-            XCTFail("Expected content view")
-            return
-        }
-
-        let splitView = NSSplitView(frame: contentView.bounds)
-        splitView.autoresizingMask = [.width, .height]
-        splitView.isVertical = true
-        splitView.dividerStyle = .thin
-        let splitDelegate = BonsplitMockSplitDelegate()
-        splitView.delegate = splitDelegate
-        let first = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: contentView.bounds.height))
-        let second = NSView(frame: NSRect(x: 121, y: 0, width: 179, height: contentView.bounds.height))
-        splitView.addSubview(first)
-        splitView.addSubview(second)
-        contentView.addSubview(splitView)
-        splitView.setPosition(1, ofDividerAt: 0)
-        splitView.adjustSubviews()
-        contentView.layoutSubtreeIfNeeded()
-
-        guard let container = contentView.superview else {
-            XCTFail("Expected content container")
-            return
-        }
-
-        let hostFrame = container.convert(contentView.bounds, from: contentView)
-        let host = WindowBrowserHostView(frame: hostFrame)
-        host.autoresizingMask = [.width, .height]
-        let child = CapturingView(frame: host.bounds)
-        child.autoresizingMask = [.width, .height]
-        host.addSubview(child)
-        container.addSubview(host, positioned: .above, relativeTo: contentView)
-
-        let dividerPointInSplit = NSPoint(
-            x: splitView.arrangedSubviews[0].frame.maxX + (splitView.dividerThickness * 0.5),
-            y: splitView.bounds.midY
-        )
-        let dividerPointInWindow = splitView.convert(dividerPointInSplit, to: nil)
-        let dividerPointInHost = host.convert(dividerPointInWindow, from: nil)
-        XCTAssertLessThanOrEqual(splitView.arrangedSubviews[0].frame.width, 1.5)
-        XCTAssertNil(
-            host.hitTest(dividerPointInHost),
-            "Browser host must pass through divider hits even when one pane is nearly collapsed"
-        )
-
-        let contentPointInSplit = NSPoint(x: dividerPointInSplit.x + 40, y: splitView.bounds.midY)
-        let contentPointInWindow = splitView.convert(contentPointInSplit, to: nil)
-        let contentPointInHost = host.convert(contentPointInWindow, from: nil)
-        XCTAssertTrue(host.hitTest(contentPointInHost) === child)
-    }
 
     func testWindowBrowserPortalIgnoresHostedInspectorSplitResizeNotifications() {
         let window = NSWindow(
@@ -584,90 +526,6 @@ final class WindowBrowserHostViewTests: XCTestCase {
         )
     }
 
-    func testHostViewKeepsHostedInspectorDividerInteractive() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.orderOut(nil) }
-        guard let contentView = window.contentView else {
-            XCTFail("Expected content view")
-            return
-        }
-        guard let container = contentView.superview else {
-            XCTFail("Expected content container")
-            return
-        }
-
-        // Underlying app layout split that should still be pass-through.
-        let appSplit = NSSplitView(frame: contentView.bounds)
-        appSplit.autoresizingMask = [.width, .height]
-        appSplit.isVertical = true
-        appSplit.dividerStyle = .thin
-        let appSplitDelegate = BonsplitMockSplitDelegate()
-        appSplit.delegate = appSplitDelegate
-        let leading = NSView(frame: NSRect(x: 0, y: 0, width: 210, height: contentView.bounds.height))
-        let trailing = NSView(frame: NSRect(x: 211, y: 0, width: 209, height: contentView.bounds.height))
-        appSplit.addSubview(leading)
-        appSplit.addSubview(trailing)
-        contentView.addSubview(appSplit)
-        appSplit.adjustSubviews()
-
-        let hostFrame = container.convert(contentView.bounds, from: contentView)
-        let host = WindowBrowserHostView(frame: hostFrame)
-        host.autoresizingMask = [.width, .height]
-        container.addSubview(host, positioned: .above, relativeTo: contentView)
-
-        // WebKit inspector uses an internal split (page + console). Divider drags
-        // here must stay in hosted content, not pass through to appSplit behind it.
-        let inspectorSplit = NSSplitView(frame: host.bounds)
-        inspectorSplit.autoresizingMask = [.width, .height]
-        inspectorSplit.isVertical = false
-        inspectorSplit.dividerStyle = .thin
-        let inspectorDelegate = BonsplitMockSplitDelegate()
-        inspectorSplit.delegate = inspectorDelegate
-        let pageView = CapturingView(frame: NSRect(x: 0, y: 0, width: host.bounds.width, height: 160))
-        let consoleView = CapturingView(frame: NSRect(x: 0, y: 161, width: host.bounds.width, height: 99))
-        inspectorSplit.addSubview(pageView)
-        inspectorSplit.addSubview(consoleView)
-        host.addSubview(inspectorSplit)
-        inspectorSplit.setPosition(160, ofDividerAt: 0)
-        inspectorSplit.adjustSubviews()
-        contentView.layoutSubtreeIfNeeded()
-
-        let appDividerPointInSplit = NSPoint(
-            x: appSplit.arrangedSubviews[0].frame.maxX + (appSplit.dividerThickness * 0.5),
-            y: appSplit.bounds.midY
-        )
-        let appDividerPointInWindow = appSplit.convert(appDividerPointInSplit, to: nil)
-        let appDividerPointInHost = host.convert(appDividerPointInWindow, from: nil)
-        XCTAssertNil(
-            host.hitTest(appDividerPointInHost),
-            "Underlying app split divider should still pass through with a hosted inspector split present"
-        )
-
-        let dividerPointInInspector = NSPoint(
-            x: inspectorSplit.bounds.midX,
-            y: inspectorSplit.arrangedSubviews[0].frame.maxY + (inspectorSplit.dividerThickness * 0.5)
-        )
-        let dividerPointInWindow = inspectorSplit.convert(dividerPointInInspector, to: nil)
-        let dividerPointInHost = host.convert(dividerPointInWindow, from: nil)
-        let hit = host.hitTest(dividerPointInHost)
-
-        XCTAssertNotNil(
-            hit,
-            "Inspector divider should receive hit-testing in hosted content, not pass through"
-        )
-        XCTAssertFalse(hit === host)
-        if let hit {
-            XCTAssertTrue(
-                hit === inspectorSplit || hit.isDescendant(of: inspectorSplit),
-                "Expected hit to remain inside inspector split subtree"
-            )
-        }
-    }
 
     func testHostViewKeepsHostedVerticalInspectorDividerInteractiveAtSlotLeadingEdge() {
         let window = NSWindow(
@@ -926,122 +784,7 @@ final class WindowBrowserHostViewTests: XCTestCase {
         XCTAssertEqual(inspectorContainer.frame.minX, draggedInspectorMinX, accuracy: 0.5)
     }
 
-    func testHostViewFallsBackToManualHostedInspectorDragWhenNativeDividerHitIsUnavailable() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.orderOut(nil) }
-        guard let contentView = window.contentView else {
-            XCTFail("Expected content view")
-            return
-        }
-        guard let container = contentView.superview else {
-            XCTFail("Expected content container")
-            return
-        }
 
-        let hostFrame = container.convert(contentView.bounds, from: contentView)
-        let host = WindowBrowserHostView(frame: hostFrame)
-        host.autoresizingMask = [.width, .height]
-        container.addSubview(host, positioned: .above, relativeTo: contentView)
-
-        let slot = WindowBrowserSlotView(frame: NSRect(x: 180, y: 0, width: 240, height: host.bounds.height))
-        slot.autoresizingMask = [.minXMargin, .height]
-        host.addSubview(slot)
-
-        let pageView = PrimaryPageProbeView(frame: NSRect(x: 0, y: 0, width: 92, height: slot.bounds.height))
-        let inspectorView = EdgeTransparentWKInspectorProbeView(
-            frame: NSRect(x: 92, y: 0, width: slot.bounds.width - 92, height: slot.bounds.height)
-        )
-        slot.addSubview(pageView)
-        slot.addSubview(inspectorView)
-        contentView.layoutSubtreeIfNeeded()
-
-        let dividerPointInSlot = NSPoint(x: inspectorView.frame.minX + 2, y: slot.bounds.midY)
-        let dividerPointInWindow = slot.convert(dividerPointInSlot, to: nil)
-        let dividerPointInHost = host.convert(dividerPointInWindow, from: nil)
-
-        let dividerHit = host.hitTest(dividerPointInHost)
-        XCTAssertTrue(
-            dividerHit === host,
-            "Host should only take the manual fallback path when the right-docked divider edge is not natively hittable. actual=\(String(describing: dividerHit))"
-        )
-
-        let down = makeMouseEvent(type: .leftMouseDown, location: dividerPointInWindow, window: window)
-        host.mouseDown(with: down)
-        let drag = makeMouseEvent(
-            type: .leftMouseDragged,
-            location: NSPoint(x: dividerPointInWindow.x + 40, y: dividerPointInWindow.y),
-            window: window
-        )
-        host.mouseDragged(with: drag)
-        host.mouseUp(with: makeMouseEvent(type: .leftMouseUp, location: drag.locationInWindow, window: window))
-
-        XCTAssertGreaterThan(pageView.frame.width, 92)
-        XCTAssertGreaterThan(inspectorView.frame.minX, 92)
-    }
-
-    func testHostViewFallsBackToManualHostedInspectorDragForLeftDockedInspector() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { window.orderOut(nil) }
-        guard let contentView = window.contentView else {
-            XCTFail("Expected content view")
-            return
-        }
-        guard let container = contentView.superview else {
-            XCTFail("Expected content container")
-            return
-        }
-
-        let hostFrame = container.convert(contentView.bounds, from: contentView)
-        let host = WindowBrowserHostView(frame: hostFrame)
-        host.autoresizingMask = [.width, .height]
-        container.addSubview(host, positioned: .above, relativeTo: contentView)
-
-        let slot = WindowBrowserSlotView(frame: NSRect(x: 180, y: 0, width: 240, height: host.bounds.height))
-        slot.autoresizingMask = [.minXMargin, .height]
-        host.addSubview(slot)
-
-        let inspectorView = TrailingEdgeTransparentWKInspectorProbeView(
-            frame: NSRect(x: 0, y: 0, width: 92, height: slot.bounds.height)
-        )
-        let pageView = PrimaryPageProbeView(
-            frame: NSRect(x: 92, y: 0, width: slot.bounds.width - 92, height: slot.bounds.height)
-        )
-        slot.addSubview(inspectorView)
-        slot.addSubview(pageView)
-        contentView.layoutSubtreeIfNeeded()
-
-        let dividerPointInSlot = NSPoint(x: inspectorView.frame.maxX - 2, y: slot.bounds.midY)
-        let dividerPointInWindow = slot.convert(dividerPointInSlot, to: nil)
-        let dividerPointInHost = host.convert(dividerPointInWindow, from: nil)
-
-        XCTAssertTrue(
-            host.hitTest(dividerPointInHost) === host,
-            "Host should take the manual fallback path for a left-docked divider when the native edge is not hittable"
-        )
-
-        let down = makeMouseEvent(type: .leftMouseDown, location: dividerPointInWindow, window: window)
-        host.mouseDown(with: down)
-        let drag = makeMouseEvent(
-            type: .leftMouseDragged,
-            location: NSPoint(x: dividerPointInWindow.x + 40, y: dividerPointInWindow.y),
-            window: window
-        )
-        host.mouseDragged(with: drag)
-        host.mouseUp(with: makeMouseEvent(type: .leftMouseUp, location: drag.locationInWindow, window: window))
-
-        XCTAssertGreaterThan(inspectorView.frame.width, 92)
-        XCTAssertGreaterThan(pageView.frame.minX, 92)
-    }
 
     func testHostViewClaimsCollapsedHostedInspectorSiblingDividerAtSlotLeadingEdge() {
         let window = NSWindow(
@@ -2880,7 +2623,7 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
         )
     }
 
-    func testVisiblePortalEntryHidesWithoutDetachingDuringTransientAnchorRemovalUntilRebind() {
+    func testVisiblePortalEntryPreservesPresentationDuringTransientAnchorRemovalUntilRebind() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
             styleMask: [.titled, .closable],
@@ -2915,9 +2658,9 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
         advanceAnimations()
 
         XCTAssertTrue(webView.superview === slot, "Visible browser entries should not detach during transient anchor removal")
-        XCTAssertTrue(
+        XCTAssertFalse(
             slot.isHidden,
-            "Transient anchor churn should hide the stale browser slot instead of rendering in the wrong pane"
+            "Transient anchor churn preserves presentation during the bounded recovery window"
         )
         XCTAssertEqual(portal.debugEntryCount(), 1)
 

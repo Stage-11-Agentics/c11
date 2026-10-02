@@ -71,6 +71,8 @@ priority; suppression reroutes routine attention, it never blocks escalation.
 | Flagged | Operator-designated priority mission, or a running agent now needs human action. Marks render violet; the flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
 | Flagged + suppressed | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
 
+Feed and the configured attention jump use oldest flags first, then oldest eligible open asks (tab UUID, then workspace UUID for ties). The jump continues through oldest eligible unread completions/legacy notices with exact tab targets.
+
 ### Flag
 
 ```bash

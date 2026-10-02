@@ -736,6 +736,28 @@ final class TerminalNotificationStore: ObservableObject {
                 signalEligible: Self.isSignalEligible
             )
             emitWaitingEdges(previous: previousUnreadByWorkspace, current: indexes.unreadCountByWorkspaceId)
+            rebuildAttentionUnreadTail()
+        }
+    }
+    private static let attentionOrderQueue = DispatchQueue(label: "com.stage11.c11.unread-order", qos: .utility)
+    private var attentionOrderRevision = 0
+    private(set) var attentionUnreadTail: [AttentionOrder.Candidate] = []
+
+    private func rebuildAttentionUnreadTail() {
+        attentionOrderRevision += 1
+        let revision = attentionOrderRevision
+        let notifications = notifications
+        Self.attentionOrderQueue.async { [weak self] in
+            let facts = notifications.compactMap { notification -> AttentionOrder.UnreadFact? in
+                guard !notification.isRead, let tabID = notification.surfaceId else { return nil }
+                return .init(target: .init(workspaceID: notification.workspaceId, tabID: tabID),
+                             notificationID: notification.id, createdAt: notification.createdAt)
+            }
+            let tail = AttentionOrder.unreadTail(facts)
+            DispatchQueue.main.async {
+                guard let self, self.attentionOrderRevision == revision else { return }
+                self.attentionUnreadTail = tail
+            }
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown

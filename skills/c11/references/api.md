@@ -820,7 +820,11 @@ c11 feed watch [--json] [--scope attention|all]
 
 `feed list` defaults to scope `attention`: open blocking asks and flag rows.
 `--scope all` adds non-suppressed `turn_end` rows. Both scopes use one projector.
-Rows sort by workspace UUID, then tab UUID. Generic `input` is unsupported.
+Rows sort flags first by raised time, then eligible open asks by opened time,
+oldest first with missing times last. Ties use tab UUID, then workspace UUID.
+The configured attention jump uses the same prefix, then oldest eligible unread
+completions/legacy notices with exact tab targets; `all` appends turns oldest first.
+Generic `input` is unsupported.
 
 `feed open` selects that workspace and focuses that tab inside c11. It does not
 activate the macOS app, mark anything read, or send an answer. A missing

@@ -2014,6 +2014,14 @@ struct CMUXCLI {
             return
         }
 
+        if command == "journal" {
+            try CapabilityFeatures.current.dispatch(.journalAnalytics) {
+                try JournalQueryCommand.run(commandArgs, socketPath: resolvedSocketPath,
+                                            explicitPassword: socketPasswordArg, globalJSON: jsonOutput)
+            }
+            return
+        }
+
         if command == "version" {
             print(versionSummary())
             return

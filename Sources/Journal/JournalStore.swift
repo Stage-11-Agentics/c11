@@ -118,6 +118,12 @@ final class JournalStore {
 
     func append(draft: JournalDraft, context: JournalContext) throws -> JournalAppendResult {
         try draft.validate()
+        if let model = context.modelID {
+            guard model.utf8.count <= 128, !model.isEmpty,
+                  model.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 58, 95].contains($0) }) else {
+                throw JournalError.invalidEvent
+            }
+        }
         let canonical = try draft.canonicalData()
         admissionLock.lock()
         guard pendingCount < budgets.queueEntries, pendingBytes + canonical.count <= budgets.queueBytes else {
@@ -180,7 +186,7 @@ final class JournalStore {
                 let total = try scalar("SELECT COALESCE(SUM(length(state)),0) FROM journal_current WHERE owner<>?", [.text(next.owner.key)])
                 guard data.count <= budgets.ownerBytes, total + Int64(data.count) <= Int64(budgets.currentBytes) else { throw JournalError.full }
                 try execute("INSERT INTO journal_current(owner,state,observed_at_ms,protected) VALUES(?,?,?,?) ON CONFLICT(owner) DO UPDATE SET state=excluded.state,observed_at_ms=excluded.observed_at_ms,protected=excluded.protected", [
-                    .text(next.owner.key), .data(data), .integer(now), .integer(next.paintsAttention ? 1 : 0)])
+                    .text(next.owner.key), .data(data), .integer(now), .integer(next.paintsAttention || next.phase == .working ? 1 : 0)])
             }
             try execute("UPDATE journal_meta SET value=? WHERE key='last_writer_observation'", [.integer(now)])
             try execute("COMMIT")

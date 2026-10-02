@@ -103,4 +103,51 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertThrowsError(try JournalDraft.decode(JSONSerialization.data(withJSONObject: json)))
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
+
+    // The audit's locked-database failure preserves the last committed evidence and a bounded wait.
+    func testSQLiteContentionReportsDegradedWithoutChangingBaseline() throws {
+        let store = try JournalStore(layout: layout, clock: { 1000 })
+        let ask = JournalTestData.draft(.questionRequested)
+        _ = try store.append(draft: ask, context: JournalContext(eligible: true))
+        var other: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(layout.database.path, &other), SQLITE_OK)
+        defer { sqlite3_exec(other, "ROLLBACK", nil, nil, nil); sqlite3_close(other) }
+        XCTAssertEqual(sqlite3_exec(other, "BEGIN IMMEDIATE", nil, nil, nil), SQLITE_OK)
+        let start = Date()
+        XCTAssertThrowsError(try store.append(draft: JournalTestData.draft(.turnStarted), context: JournalContext(eligible: true))) {
+            XCTAssertEqual($0 as? JournalError, .busy)
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1)
+        XCTAssertEqual(store.health(), .busy)
+        XCTAssertEqual(try store.current(owner: ask.owner!)?.phase, .blocked)
+        XCTAssertEqual(try store.readPage(after: 0).count, 1)
+    }
+
+    // History tuning cannot shorten the receipt floor; a retained old retry is looked up before expiry.
+    func testReceiptFloorAndRetainedExpiredRetry() throws {
+        var now: Int64 = 1000
+        var budget = JournalBudgets(); budget.historyMs = 1
+        let store = try JournalStore(layout: layout, budgets: budget, clock: { now })
+        let draft = JournalTestData.draft(.questionRequested)
+        _ = try store.append(draft: draft, context: JournalContext(eligible: true))
+        try store.prune(now: 60_000)
+        XCTAssertEqual(try store.readPage(after: 0).count, 1)
+        now = 86_400_000 + 2000
+        XCTAssertTrue(try store.append(draft: draft, context: JournalContext(eligible: true)).receipt.replayed)
+        var newID = draft; newID.eventID = UUID()
+        XCTAssertThrowsError(try store.append(draft: newID, context: JournalContext(eligible: true))) {
+            XCTAssertEqual($0 as? JournalError, .expired)
+        }
+    }
+
+    // Relaunch must not advertise yesterday's working state as live activity.
+    func testOldWorkingBaselineHasNoReplayAttention() throws {
+        let store = try JournalStore(layout: layout, clock: { 1000 })
+        let draft = JournalTestData.draft(.turnStarted)
+        _ = try store.append(draft: draft, context: JournalContext(eligible: true))
+        let baseline = try XCTUnwrap(store.current(owner: draft.owner!))
+        XCTAssertNil(JournalReplayPolicy.attention(baseline, matching: draft.owner))
+        XCTAssertTrue(JournalReplayPolicy.restored(baseline).isHistorical)
+        XCTAssertNil(JournalReplayPolicy.attention(baseline, matching: nil))
+    }
 }

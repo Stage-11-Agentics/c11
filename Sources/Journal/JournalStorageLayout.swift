@@ -37,7 +37,11 @@ struct JournalStorageLayout {
         var cursor = directory
         while cursor.path != "/" {
             var st = stat()
-            if lstat(cursor.path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK { throw JournalError.unavailable }
+            if lstat(cursor.path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFLNK {
+                // macOS exposes its root-owned temporary directories through these
+                // system links. User-owned links inside the storage path stay rejected.
+                guard st.st_uid == 0, ["/var", "/tmp"].contains(cursor.path) else { throw JournalError.unavailable }
+            }
             cursor.deleteLastPathComponent()
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

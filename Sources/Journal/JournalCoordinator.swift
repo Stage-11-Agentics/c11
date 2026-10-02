@@ -19,6 +19,22 @@ final class JournalCoordinator: @unchecked Sendable {
     func remove(tabID: UUID) {
         lock.lock(); targets.removeValue(forKey: tabID); snapshots.removeValue(forKey: tabID); lock.unlock()
     }
+    /// Conversation capture/claim/clear calls this after changing existing identity.
+    /// Invalidating the cached projection is cheap; resolving the replacement stays off main.
+    func ownershipChanged(tabID: UUID) {
+        lock.lock(); snapshots.removeValue(forKey: tabID); lock.unlock()
+        refreshOwners([tabID])
+    }
+    func refreshOwners(_ tabIDs: [UUID]? = nil) {
+        lock.lock(); let ids = tabIDs ?? Array(targets.keys); lock.unlock()
+        startupQueue.async { [self] in
+            guard let store = try? storage() else { return }
+            for id in ids {
+                guard let owner = exactOwner(tabID: id), let baseline = try? store.current(owner: owner) else { continue }
+                publish(baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline))
+            }
+        }
+    }
     func snapshot(tabID: UUID) -> JournalSnapshot? {
         lock.lock(); defer { lock.unlock() }; return snapshots[tabID]
     }
@@ -26,8 +42,7 @@ final class JournalCoordinator: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }; return targets[tabID]
     }
     func health() -> JournalError? {
-        lock.lock(); let error = storageError; let store = store; lock.unlock()
-        return error ?? store?.health()
+        lock.lock(); defer { lock.unlock() }; return storageError
     }
     func start(onProjection: @escaping @Sendable (JournalSnapshot) -> Void) {
         lock.lock()
@@ -62,20 +77,25 @@ final class JournalCoordinator: @unchecked Sendable {
 
     private final class OwnershipRead: @unchecked Sendable {
         let lock = NSLock()
-        var eligible = false
-        func set(_ value: Bool) { lock.lock(); eligible = value; lock.unlock() }
-        func get() -> Bool { lock.lock(); defer { lock.unlock() }; return eligible }
+        var owner: JournalOwner?
+        func set(_ value: JournalOwner?) { lock.lock(); owner = value; lock.unlock() }
+        func get() -> JournalOwner? { lock.lock(); defer { lock.unlock() }; return owner }
     }
     func isEligible(_ owner: JournalOwner) -> Bool {
-        guard !ConversationStorePolicy.isDisabled, target(tabID: owner.tabID) != nil else { return false }
+        exactOwner(tabID: owner.tabID) == owner
+    }
+    private func exactOwner(tabID: UUID) -> JournalOwner? {
+        guard !ConversationStorePolicy.isDisabled, target(tabID: tabID) != nil else { return nil }
         let read = OwnershipRead()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
-            let ref = await ConversationStore.shared.active(for: owner.tabID.uuidString)
-            read.set(ref?.isEligibleCausalOwner == true && ref?.kind == owner.agentKind && ref?.id == owner.sessionID)
+            let ref = await ConversationStore.shared.active(for: tabID.uuidString)
+            if let ref, ref.isEligibleCausalOwner {
+                read.set(JournalOwner(tabID: tabID, agentKind: ref.kind, sessionID: ref.id))
+            }
             done.signal()
         }
-        guard done.wait(timeout: .now() + .milliseconds(100)) == .success else { return false }
+        guard done.wait(timeout: .now() + .milliseconds(100)) == .success else { return nil }
         return read.get()
     }
 

@@ -45,6 +45,19 @@ enum JournalReducer {
         var reason = "state_transition"
         var preserveEvidence = false
         var evidenceOnly = false
+        func duplicate(_ reason: String) -> JournalFoldResult {
+            guard !context.historical, d.source.rank >= s.rank else { return unchanged(.duplicateEvidence, reason) }
+            var refreshed = s
+            refreshed.confirmation = .confirmed
+            refreshed.connection = .live
+            refreshed.observedAtMs = now
+            refreshed.observedTickNs = tick
+            refreshed.appInstanceID = instanceID
+            refreshed.lastSequence = sequence
+            refreshed.lastLiveSequence = sequence
+            refreshed.lastLiveEmittedAtMs = d.emittedAtMs
+            return JournalFoldResult(snapshot: refreshed, effect: .duplicateEvidence, reason: reason, fromPhase: nil, fromSinceMs: nil)
+        }
 
         switch d.kind {
         case .sessionStarted:
@@ -63,9 +76,11 @@ enum JournalReducer {
                 return unchanged(.duplicateEvidence, "turn_already_terminal")
             }
             if s.phase == .blocked {
-                // A native prompt with a new turn ID is positive continuation evidence.
-                guard !transcript, d.source.rank >= s.rank,
-                      let newTurn = d.turnID, newTurn != s.turnID else {
+                // The existing native submission boundary is positive continuation;
+                // tool/status activity is not. Missing IDs remain explicitly missing.
+                let nativeSubmission = ["UserPromptSubmit", "chat.message"].contains(d.nativeEvent)
+                let newTurn = d.turnID != nil && d.turnID != s.turnID
+                guard !transcript, d.source.rank >= s.rank, nativeSubmission || newTurn else {
                     return unchanged(.advisory, "unresolved_request")
                 }
             }
@@ -76,7 +91,7 @@ enum JournalReducer {
                 guard newNativeTurn || newerNativeTime else { return unchanged(.duplicateEvidence, "ambiguous_turn_start") }
             }
             if s.phase == .working && (d.turnID == nil || d.turnID == s.turnID) {
-                return unchanged(.duplicateEvidence, "turn_already_working")
+                return duplicate("turn_already_working")
             }
             s.phase = .working
             s.turnID = d.turnID
@@ -92,7 +107,7 @@ enum JournalReducer {
             if s.phase == .error && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             let requestReason: JournalReason = d.kind == .questionRequested ? .question : (d.kind == .planReviewRequested ? .planReview : .approval)
             if s.phase == .blocked && s.requestID == d.requestID && s.reason == requestReason {
-                return unchanged(.duplicateEvidence, "request_already_blocked")
+                return duplicate("request_already_blocked")
             }
             s.phase = .blocked
             s.reason = requestReason
@@ -113,7 +128,7 @@ enum JournalReducer {
             guard supportsTurn else { return unchanged(.advisory, "unsupported_turn") }
             guard s.phase != .blocked else { return unchanged(.advisory, "unresolved_request") }
             guard s.phase != .error || d.source.rank >= s.rank else { return unchanged(.advisory, "lower_confidence") }
-            if s.terminalBarrier && s.phase == .idle { return unchanged(.duplicateEvidence, "turn_already_terminal") }
+            if s.terminalBarrier && s.phase == .idle { return duplicate("turn_already_terminal") }
             s.phase = .idle
             s.turnOutcome = d.kind == .turnCompleted ? "completed" : nil
             s.turnID = d.turnID ?? s.turnID
@@ -137,7 +152,7 @@ enum JournalReducer {
             }
         case .errorReported:
             guard caps.contains("error"), d.reasonCode == .sessionFailure else { return unchanged(.observation, "tool_or_unsupported_error") }
-            if s.phase == .error { return unchanged(.duplicateEvidence, "error_already_observed") }
+            if s.phase == .error { return duplicate("error_already_observed") }
             if s.phase == .blocked && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             s.phase = .error
             s.reason = .sessionFailure

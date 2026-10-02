@@ -144,7 +144,7 @@ struct JournalDraft: Codable, Equatable {
               (tabID == nil) == (workspaceID == nil),
               opaque(agentKind, 64), agentKind.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45 }),
               opaque(sessionID), opaque(parentSessionID), opaque(turnID), opaque(requestID),
-              opaque(adapterVersion, 64), nativeNames.contains(nativeEvent),
+              opaque(adapterVersion, 64), adapterVersion.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) }), nativeNames.contains(nativeEvent),
               signal == nil || kind == .stateChanged,
               resolution == nil || kind == .attentionResolved else { throw JournalError.invalidEvent }
         guard try canonicalData().count <= 4096 else { throw JournalError.invalidEvent }

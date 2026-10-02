@@ -13,6 +13,68 @@ import UserNotifications
 @testable import c11
 #endif
 
+// C11-253: yield the main actor while AppKit/SwiftUI perform queued work.
+// Conditions fail at a bounded deadline; no nested run loop or fixed success delay.
+@MainActor
+func waitForC11HostCondition(timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+    while !condition() {
+        guard ProcessInfo.processInfo.systemUptime < deadline else { return false }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return true
+}
+
+@MainActor
+final class C11PointerProbeWindow: NSWindow {
+    var onPointerEvent: ((NSEvent) -> Void)?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            // Probe inside real AppKit dispatch without entering NSSplitView's
+            // blocking drag-tracking loop, even if a late event follows timeout.
+            // Production hitTest remains unchanged.
+            onPointerEvent?(event)
+            return
+        }
+        super.sendEvent(event)
+    }
+}
+
+@MainActor
+func dispatchedC11PointerHit(
+    in window: C11PointerProbeWindow,
+    at location: NSPoint,
+    host: NSView
+) async throws -> NSView? {
+    var received = false
+    var hit: NSView?
+    var currentType: NSEvent.EventType?
+    var currentWindowNumber: Int?
+    var currentLocation: NSPoint?
+    window.onPointerEvent = { event in
+        currentType = NSApp.currentEvent?.type
+        currentWindowNumber = NSApp.currentEvent?.windowNumber
+        currentLocation = NSApp.currentEvent?.locationInWindow
+        hit = host.hitTest(host.convert(event.locationInWindow, from: nil))
+        received = true
+    }
+    defer { window.onPointerEvent = nil }
+    let event = try XCTUnwrap(NSEvent.mouseEvent(
+        with: .leftMouseDown, location: location, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil,
+        eventNumber: 1, clickCount: 1, pressure: 1
+    ))
+    NSApp.postEvent(event, atStart: false)
+    let delivered = await waitForC11HostCondition { received }
+    XCTAssertTrue(delivered, "AppKit must dispatch the posted pointer event to the test window")
+    XCTAssertEqual(currentType, .leftMouseDown, "hitTest must run under the production pointer guard")
+    XCTAssertEqual(currentWindowNumber, window.windowNumber)
+    XCTAssertEqual(currentLocation, location)
+    return hit
+}
+
 @MainActor
 final class GhosttyPasteboardHelperTests: XCTestCase {
     func testHTMLOnlyPasteboardExtractsPlainText() {
@@ -1111,6 +1173,61 @@ final class WindowTerminalHostViewTests: XCTestCase {
         XCTAssertNil(host.hitTest(NSPoint(x: 10, y: 10)))
     }
 
+    func testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed() async throws {
+        let window = C11PointerProbeWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 180),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        guard let contentView = window.contentView else {
+            XCTFail("Expected content view")
+            return
+        }
+
+        let splitView = NSSplitView(frame: contentView.bounds)
+        splitView.autoresizingMask = [.width, .height]
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        let splitDelegate = BonsplitMockSplitDelegate()
+        splitView.delegate = splitDelegate
+        let first = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: contentView.bounds.height))
+        let second = NSView(frame: NSRect(x: 121, y: 0, width: 179, height: contentView.bounds.height))
+        splitView.addSubview(first)
+        splitView.addSubview(second)
+        contentView.addSubview(splitView)
+        splitView.setPosition(1, ofDividerAt: 0)
+        splitView.adjustSubviews()
+        contentView.layoutSubtreeIfNeeded()
+
+        let host = WindowTerminalHostView(frame: contentView.bounds)
+        host.autoresizingMask = [.width, .height]
+        let child = CapturingView(frame: host.bounds)
+        child.autoresizingMask = [.width, .height]
+        host.addSubview(child)
+        contentView.addSubview(host)
+
+        let dividerPointInSplit = NSPoint(
+            x: splitView.arrangedSubviews[0].frame.maxX + (splitView.dividerThickness * 0.5),
+            y: splitView.bounds.midY
+        )
+        let dividerPointInWindow = splitView.convert(dividerPointInSplit, to: nil)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        XCTAssertLessThanOrEqual(splitView.arrangedSubviews[0].frame.width, 1.5)
+        let dividerHit = try await dispatchedC11PointerHit(in: window, at: dividerPointInWindow, host: host)
+        XCTAssertNil(
+            dividerHit,
+            "Host view must pass through divider hits even when one pane is nearly collapsed"
+        )
+
+        let contentPointInSplit = NSPoint(x: dividerPointInSplit.x + 40, y: splitView.bounds.midY)
+        let contentPointInWindow = splitView.convert(contentPointInSplit, to: nil)
+        let contentHit = try await dispatchedC11PointerHit(in: window, at: contentPointInWindow, host: host)
+        XCTAssertTrue(contentHit === child, "Ordinary portal content must remain interactive under the same pointer dispatch")
+    }
+
     func testHostViewReturnsSubviewWhenSubviewIsHit() {
         let host = WindowTerminalHostView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
         let child = CapturingView(frame: NSRect(x: 20, y: 15, width: 40, height: 30))
@@ -1618,6 +1735,60 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
     }
 
+    func testSearchOverlayFocusesSearchFieldAfterDeferredAttach() async {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = surface.hostedView
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+
+        guard let contentView = window.contentView else {
+            XCTFail("Expected content view")
+            return
+        }
+        hostedView.frame = contentView.bounds
+        hostedView.autoresizingMask = [.width, .height]
+        contentView.addSubview(hostedView)
+
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        hostedView.setVisibleInUI(true)
+        hostedView.setActive(true)
+
+        let searchState = TerminalSurface.SearchState(needle: "")
+        surface.searchState = searchState
+        hostedView.setSearchOverlay(searchState: searchState)
+        defer { withExtendedLifetime(surface) {} }
+        let focused = await waitForC11HostCondition {
+            contentView.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            guard let field = self.findEditableTextField(in: hostedView) else { return false }
+            return self.firstResponderOwnsTextField(window.firstResponder, textField: field)
+        }
+        XCTAssertTrue(focused, "Deferred attachment must eventually focus Find without a test-injected focus request")
+
+        guard let searchField = findEditableTextField(in: hostedView) else {
+            XCTFail("Expected mounted find text field")
+            return
+        }
+
+        XCTAssertTrue(
+            firstResponderOwnsTextField(window.firstResponder, textField: searchField),
+            "Deferred search overlay attach should still move focus into the find field"
+        )
+    }
+
     func testStartOrFocusTerminalSearchReusesExistingSearchState() {
         let surface = TerminalSurface(
             workspaceId: UUID(),
@@ -1827,6 +1998,26 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 #else
         throw XCTSkip("Debug-only regression test")
 #endif
+    }
+
+    func testSearchOverlayMountDoesNotRetainTerminalSurface() async {
+        var surface: TerminalSurface? = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        weak var weakSurface = surface
+        let hostedView = surface!.hostedView
+        hostedView.setSearchOverlay(searchState: TerminalSurface.SearchState(needle: "retain-check"))
+        let mounted = await waitForC11HostCondition { hostedView.debugHasSearchOverlay() }
+        XCTAssertTrue(mounted, "Exercise a mounted overlay before releasing the terminal")
+        surface = nil
+        let released = await waitForC11HostCondition { weakSurface == nil }
+        XCTAssertTrue(released, "Mounted search overlay must not retain TerminalSurface")
+        XCTAssertNil(weakSurface, "Mounted search overlay must not retain TerminalSurface")
+        XCTAssertTrue(hostedView.debugHasSearchOverlay(), "Keep the overlay alive during the lifetime assertion")
+        hostedView.setSearchOverlay(searchState: nil)
     }
 
     func testSearchOverlaySurvivesPortalRebindDuringSplitLikeChurn() {
@@ -2396,6 +2587,103 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         )
     }
 
+
+    func testScheduledExternalGeometrySyncWaitsForQueuedLayoutShift() async {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 420),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+            window.orderOut(nil)
+        }
+
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        guard let contentView = window.contentView else {
+            XCTFail("Expected content view")
+            return
+        }
+
+        let shiftedContainer = NSView(frame: NSRect(x: 40, y: 60, width: 260, height: 180))
+        contentView.addSubview(shiftedContainer)
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 180))
+        shiftedContainer.addSubview(anchor)
+        let hosted = surface.hostedView
+        TerminalWindowPortalRegistry.bind(
+            hostedView: hosted,
+            to: anchor,
+            visibleInUI: true,
+            expectedSurfaceId: surface.id,
+            expectedGeneration: surface.portalBindingGeneration()
+        )
+        TerminalWindowPortalRegistry.synchronizeForAnchor(anchor)
+
+        let anchorCenter = NSPoint(x: anchor.bounds.midX, y: anchor.bounds.midY)
+        let originalWindowPoint = anchor.convert(anchorCenter, to: nil)
+        let originalAnchorFrameInWindow = anchor.convert(anchor.bounds, to: nil)
+        XCTAssertNotNil(
+            TerminalWindowPortalRegistry.terminalViewAtWindowPoint(originalWindowPoint, in: window),
+            "Initial hit-testing should resolve the portal-hosted terminal at its original window position"
+        )
+
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, trigger: "test")
+        DispatchQueue.main.async {
+            shiftedContainer.frame.origin.x += 72
+            contentView.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
+
+        defer { withExtendedLifetime(surface) {} }
+        let expectedTrailingPoint = NSPoint(
+            x: originalAnchorFrameInWindow.maxX + 36,
+            y: originalAnchorFrameInWindow.midY
+        )
+        let expectedRetiredPoint = NSPoint(
+            x: originalAnchorFrameInWindow.minX + 36,
+            y: originalAnchorFrameInWindow.midY
+        )
+        let moved = await waitForC11HostCondition {
+            shiftedContainer.frame.origin.x == 112 &&
+                TerminalWindowPortalRegistry.terminalViewAtWindowPoint(expectedRetiredPoint, in: window) == nil &&
+                TerminalWindowPortalRegistry.terminalViewAtWindowPoint(expectedTrailingPoint, in: window) != nil
+        }
+        XCTAssertTrue(moved, "The queued layout shift must retire the old hit region and expose the new trailing region")
+
+        let shiftedAnchorFrameInWindow = anchor.convert(anchor.bounds, to: nil)
+        XCTAssertGreaterThan(
+            shiftedAnchorFrameInWindow.minX,
+            originalAnchorFrameInWindow.minX + 1,
+            "The queued layout shift should move the anchor to the right"
+        )
+        XCTAssertGreaterThan(
+            shiftedAnchorFrameInWindow.maxX,
+            originalAnchorFrameInWindow.maxX + 1,
+            "The shifted anchor should expose a new trailing region outside the stale portal frame"
+        )
+        let retiredStaleWindowPoint = NSPoint(
+            x: (originalAnchorFrameInWindow.minX + shiftedAnchorFrameInWindow.minX) / 2,
+            y: shiftedAnchorFrameInWindow.midY
+        )
+        let shiftedWindowPoint = NSPoint(
+            x: (originalAnchorFrameInWindow.maxX + shiftedAnchorFrameInWindow.maxX) / 2,
+            y: shiftedAnchorFrameInWindow.midY
+        )
+        XCTAssertNil(
+            TerminalWindowPortalRegistry.terminalViewAtWindowPoint(retiredStaleWindowPoint, in: window),
+            "The queued external sync should wait until the later layout shift settles, clearing the stale portal location"
+        )
+        XCTAssertNotNil(
+            TerminalWindowPortalRegistry.terminalViewAtWindowPoint(shiftedWindowPoint, in: window),
+            "The delayed external sync should move the portal-hosted terminal to the queued layout shift position"
+        )
+    }
 
     func testScheduledExternalGeometrySyncKeepsDragDrivenResizeResponsive() {
         let window = NSWindow(

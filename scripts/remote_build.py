@@ -20,6 +20,10 @@ EXCLUDED = (".git", ".lattice", ".etch", "DerivedData", "build", "build-*",
             "c11d/zig-out", "c11d/.zig-cache", "web/node_modules")
 
 
+class ToolchainError(ValueError):
+    """Missing, unusable or unsupported native build tools (exit 3)."""
+
+
 def run(args, cwd=None, **kwargs):
     return subprocess.run([str(a) for a in args], cwd=cwd, check=True, **kwargs)
 
@@ -217,10 +221,13 @@ def remote(payload, locked=False):
         env = os.environ.copy()
         env["DEVELOPER_DIR"] = manifest["developer_dir"]
         env["PATH"] = (manifest["zig_dir"] or str(Path.home() / "zig-0.15.2")) + ":/opt/homebrew/bin:/usr/local/bin:" + env["PATH"]
-        result["xcode"] = run(["xcodebuild", "-version"], env=env, stdout=subprocess.PIPE).stdout.decode().strip()
-        result["zig"] = run(["zig", "version"], env=env, stdout=subprocess.PIPE).stdout.decode().strip()
-        if result["xcode"].splitlines()[0] != "Xcode 26.3" or result["zig"] != "0.15.2":
-            raise ValueError("requires process-scoped Xcode 26.3 and Zig 0.15.2")
+        try:
+            result["xcode"] = run(["xcodebuild", "-version"], env=env, stdout=subprocess.PIPE).stdout.decode().strip()
+            result["zig"] = run(["zig", "version"], env=env, stdout=subprocess.PIPE).stdout.decode().strip()
+        except (OSError, subprocess.CalledProcessError, UnicodeError) as error:
+            raise ToolchainError(f"toolchain unavailable: {error}") from error
+        if result["xcode"].splitlines()[:1] != ["Xcode 26.3"] or result["zig"] != "0.15.2":
+            raise ToolchainError("requires process-scoped Xcode 26.3 and Zig 0.15.2")
         env["C11_BUILD_LOCK_LABEL"] = "remote:" + manifest["slug"]
         mode = manifest["mode"]
         tag = manifest["tag"]
@@ -244,6 +251,18 @@ def remote(payload, locked=False):
         build_log = (artifacts / "build.log").read_text()
         if mode == "test" and ("Test Suite " in build_log or "Testing started" in build_log):
             result["compile"] = "ok"
+        # Failed assertions still produce diagnostic bundles. Snapshot them before
+        # returning the native status or allowing the next request to clean source.
+        try:
+            for i, argument in enumerate(manifest["extra"]):
+                if argument == "-resultBundlePath" and i + 1 < len(manifest["extra"]):
+                    bundle = source / manifest["extra"][i + 1]
+                    if bundle.is_dir() and bundle.resolve().is_relative_to(source.resolve()):
+                        shutil.copytree(bundle, artifacts / "tests.xcresult", symlinks=True)
+        except OSError as error:
+            if not build.returncode:
+                raise
+            result["result_bundle_error"] = str(error)
         if build.returncode:
             raise subprocess.CalledProcessError(build.returncode, command)
         if mode == "test":
@@ -256,18 +275,14 @@ def remote(payload, locked=False):
             shutil.copytree(app, artifacts / app.name, symlinks=True)
             result["app"] = app.name
             result["executable_sha256"] = digest(artifacts / app.name / "Contents/MacOS/c11")
-        for i, argument in enumerate(manifest["extra"]):
-            if argument == "-resultBundlePath" and i + 1 < len(manifest["extra"]):
-                bundle = source / manifest["extra"][i + 1]
-                if bundle.is_dir() and bundle.resolve().is_relative_to(source):
-                    shutil.copytree(bundle, artifacts / "tests.xcresult", symlinks=True)
         result["compile"] = "ok"
         result["ok"] = True
         code = 0
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         result["ok"] = False
         result["error"] = str(error)
-        code = error.returncode if isinstance(error, subprocess.CalledProcessError) else 4
+        code = 3 if isinstance(error, ToolchainError) else (
+            error.returncode if isinstance(error, subprocess.CalledProcessError) else 4)
         print(f"[remote-build] failure: {error}", file=sys.stderr)
     (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print("C11_REMOTE_RESULT " + json.dumps({"invocation": manifest["invocation"], "artifacts": str(artifacts),

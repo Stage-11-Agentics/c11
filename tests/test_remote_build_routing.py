@@ -88,6 +88,48 @@ class RoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be provisioned, clean"):
             remote.snapshot(self.worktree, self.payload, self.args)
 
+    def test_toolchain_refusal_returns_three_and_keeps_result_and_previous_app(self):
+        real_run = remote.run
+        for tool in ("xcodebuild", "zig"):
+            for failure in ("missing", "unusable", "wrong-version", "empty-version"):
+                with self.subTest(tool=tool, failure=failure):
+                    case = self.base / (tool + "-" + failure)
+                    case.mkdir()
+                    payload = case / "payload"
+                    payload.mkdir()
+                    manifest = remote.snapshot(self.worktree, payload, self.args)
+                    fake = case / "tools"
+                    fake.mkdir()
+                    for name, version in (("xcodebuild", "Xcode 26.3"), ("zig", "0.15.2")):
+                        path = fake / name
+                        if name == tool and failure == "missing":
+                            continue
+                        if name == tool and failure == "unusable":
+                            path.write_text("#!/bin/sh\necho unavailable >&2\nexit 51\n")
+                        else:
+                            if name == tool:
+                                version = "unsupported version" if failure == "wrong-version" else ""
+                            path.write_text("#!/bin/sh\nprintf '%s\\n' '" + version + "'\n")
+                        path.chmod(0o755)
+                    home = case / "home"
+                    previous = home / "Library/Developer/Xcode/DerivedData/c11-fixture/Build/Products/Debug/c11 DEV fixture.app"
+                    previous.mkdir(parents=True)
+                    (previous / "sentinel").write_text("previous app")
+                    def run_fixture(args, **kwargs):
+                        if str(args[0]) in ("xcodebuild", "zig"):
+                            args = [fake / str(args[0]), *args[1:]]
+                        return real_run(args, **kwargs)
+                    with patch.dict(os.environ, HOME=str(home)), patch.object(remote, "run", run_fixture):
+                        self.assertEqual(remote.remote(payload, locked=True), 3)
+                    artifacts = home / "c11-builds/fixture/artifacts" / manifest["invocation"]
+                    result = json.loads((artifacts / "result.json").read_text())
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["compile"], "failed")
+                    self.assertIn("error", result)
+                    self.assertNotIn("app", result)
+                    self.assertFalse((artifacts / "build.log").exists())
+                    self.assertEqual((previous / "sentinel").read_text(), "previous app")
+
     def test_bundle_cache_reuses_complete_pinned_bundles(self):
         manifest = remote.snapshot(self.worktree, self.payload, self.args)
         home = self.base / "cache-home"
@@ -144,12 +186,16 @@ class RoutingTests(unittest.TestCase):
         scripts.mkdir()
         wrapper = scripts / "test-unit-local.sh"
         wrapper.write_text("#!/bin/sh\n[ \"$1\" = test ] || exit 88\n"
+                           "while [ $# -gt 0 ]; do\n"
+                           "  if [ \"$1\" = -resultBundlePath ]; then\n"
+                           "    mkdir -p \"$2\"; printf diagnostic > \"$2/failure.txt\"; break\n"
+                           "  fi\n  shift\ndone\n"
                            "echo 'Test Suite Fixture started'\n"
                            "echo 'Executed 1 test'\n"
                            "echo '** TEST FAILED **'\nexit 65\n")
         wrapper.chmod(0o755)
         self.args.mode = "test"
-        self.args.extra = ["-only-testing:c11LogicTests/Fixture"]
+        self.args.extra = ["-only-testing:c11LogicTests/Fixture", "-resultBundlePath", "failure.xcresult"]
         manifest = remote.snapshot(self.worktree, self.payload, self.args)
         home = self.base / "home"
         home.mkdir()
@@ -164,9 +210,25 @@ class RoutingTests(unittest.TestCase):
         (self.payload / "identity.json").write_text(json.dumps(manifest))
         with patch.dict(os.environ, HOME=str(home)):
             self.assertEqual(remote.remote(self.payload, locked=True), 65)
-        result = json.loads((home / "c11-builds/fixture/artifacts" / manifest["invocation"] / "result.json").read_text())
+        artifacts = home / "c11-builds/fixture/artifacts" / manifest["invocation"]
+        result = json.loads((artifacts / "result.json").read_text())
         self.assertEqual(result["compile"], "ok")
         self.assertEqual(result["tests"], "failed")
+        self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
+        # Exercise the client's failed-request retrieval with the emitted artifacts.
+        for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
+            (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
+        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '[]'; exit 0;; *mkdir*) exit 0;; *) exit 65;; esac\n")
+        (fake / "rsync").write_text("#!/bin/sh\nfor last do :; done\ncase \"$*\" in *atlas:c11-builds/fixture/artifacts/*) cp -R \"$TEST_ARTIFACTS/.\" \"$last\";; esac\n")
+        for name in ("ssh", "rsync"):
+            (fake / name).chmod(0o755)
+        with patch.object(remote, "__file__", str(scripts / "remote_build.py")), \
+                patch.dict(os.environ, HOME=str(home), PATH=str(fake) + ":" + os.environ["PATH"],
+                           TEST_ARTIFACTS=str(artifacts)):
+            self.assertEqual(remote.client(self.args), 65)
+        retrieved = list((self.worktree / "build-remote").glob("*/tests.xcresult/failure.txt"))
+        self.assertEqual(len(retrieved), 1)
+        self.assertEqual(retrieved[0].read_text(), "diagnostic")
         # Reuse the tag after a gitlink changes. Its old bundle origin cannot
         # supply the new module commit; the explicit new module bundle must.
         source = home / "c11-builds/fixture/source"
@@ -186,6 +248,7 @@ class RoutingTests(unittest.TestCase):
         with patch.dict(os.environ, HOME=str(home)):
             self.assertEqual(remote.remote(again, locked=True), 65)
         self.assertEqual(git(source / "ghostty", "rev-parse", "HEAD"), updated["submodules"]["ghostty"])
+        self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
 
     def test_remote_failure_preserves_local_app_and_never_launches(self):
         # Fake transports exercise the actual client failure path, not source structure.
@@ -206,10 +269,13 @@ class RoutingTests(unittest.TestCase):
         (app / "sentinel").write_text("old artifact")
         marker = self.base / "launched"
         self.args.launch = True
-        with patch.object(remote, "__file__", str(fixture_scripts / "remote_build.py")), \
-                patch.dict(os.environ, {"HOME": str(home), "PATH": str(fake) + ":" + os.environ["PATH"],
-                                        "LAUNCH_MARKER": str(marker)}):
-            self.assertEqual(remote.client(self.args), 23)
+        for status in (23, 3):
+            with self.subTest(status=status):
+                (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '[]'; exit 0;; *mkdir*) exit 0;; *) exit " + str(status) + ";; esac\n")
+                with patch.object(remote, "__file__", str(fixture_scripts / "remote_build.py")), \
+                        patch.dict(os.environ, {"HOME": str(home), "PATH": str(fake) + ":" + os.environ["PATH"],
+                                                "LAUNCH_MARKER": str(marker)}):
+                    self.assertEqual(remote.client(self.args), status)
         self.assertEqual((app / "sentinel").read_text(), "old artifact")
         self.assertFalse(marker.exists())
 

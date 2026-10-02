@@ -115,7 +115,10 @@ final class CmuxWebView: WKWebView {
 
     override func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
         markLoadIssued()
-        return super.loadHTMLString(string, baseURL: baseURL)
+        // WebKit routes this through load(_:mimeType:characterEncodingName:baseURL:).
+        // That Swift override has a nonoptional URL, so a nil HTML base traps
+        // while bridging WebKit's Objective-C call. Use its blank-document base.
+        return super.loadHTMLString(string, baseURL: baseURL ?? URL(string: "about:blank")!)
     }
 
     override func loadFileURL(_ URL: URL, allowingReadAccessTo readAccessURL: URL) -> WKNavigation? {
@@ -581,7 +584,10 @@ final class CmuxWebView: WKWebView {
         guard let host = url.host?.lowercased(), host.contains("google.") else { return nil }
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let queryItems = comps.queryItems else { return nil }
-        let map = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name.lowercased(), $0.value ?? "") })
+        let map = Dictionary(
+            queryItems.map { ($0.name.lowercased(), $0.value ?? "") },
+            uniquingKeysWith: { first, _ in first }
+        )
         let candidates = ["imgurl", "mediaurl", "url", "q"]
         for key in candidates {
             guard let raw = map[key], !raw.isEmpty,
@@ -603,7 +609,7 @@ final class CmuxWebView: WKWebView {
         return nil
     }
 
-    private func normalizedLinkedDownloadURL(_ url: URL) -> URL {
+    func normalizedLinkedDownloadURL(_ url: URL) -> URL {
         resolveGoogleRedirectURL(url) ?? url
     }
 

@@ -110,7 +110,8 @@ end tell''' % self.args.pid
     def execute(self):
         self.preflight()
         self.workspace = self.rpc('workspace.create')['workspace_id']
-        self.rpc('workspace.rename', {'workspace_id': self.workspace, 'title': 'Synthetic Feed quick view'})
+        self.rpc('workspace.rename', {'workspace_id': self.workspace,
+                 'title': 'Synthetic long workspace 日本語 한국어 中文 Українська Русский ' * 8})
         anchor = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
         older, newer, flagged, turn, inserted = [self.rpc('tab.create', {'workspace_id': self.workspace,
             'type': 'terminal', 'focus': False})['tab_id'] for _ in range(5)]

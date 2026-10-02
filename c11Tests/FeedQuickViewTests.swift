@@ -104,7 +104,7 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertTrue(owner.firstResponder === displaced)
     }
 
-    func testHostRendersSameFixedSizeAcrossEmptyLoadingLongMissingAndFilters() {
+    func testHostRendersSameFixedSizeAcrossEmptyLoadingLongMissingAndFilters() throws {
         let model = FeedQuickViewModel()
         var frames: [String: CGRect] = [:]
         let host = NSHostingView(rootView: FeedQuickView(model: model, onLayout: { frames[$0] = $1 }))
@@ -115,7 +115,8 @@ final class FeedQuickViewTests: XCTestCase {
         var original: [String: CGRect] = [:]
         for state in [FeedQuickViewSnapshot(), .init(loading: false),
             .init(projection: .init(rows: [row(1, prompt: "Short"), row(2, prompt: String(repeating: "Long\n", count: 100)), row(3)]),
-                  titles: [id(1): String(repeating: "Synthetic long name ", count: 50)], loading: false)] {
+                  titles: [id(1): String(repeating: "Synthetic long name ", count: 50)], loading: false),
+            .init(projection: .init(rows: (1...120).map { row($0, flag: true) }), loading: false)] {
             model.apply(state)
             host.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
@@ -137,9 +138,9 @@ final class FeedQuickViewTests: XCTestCase {
         // Render the longest shipped strings from each built locale as stress
         // labels, not new product translations. C11-291 owns the new keys.
         for locale in ["ja", "uk", "ko", "zh-Hans", "zh-Hant", "ru"] {
-            let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: locale)
-            let localized = path.flatMap { NSDictionary(contentsOfFile: $0) as? [String: String] }
-            let longest = localized?.values.max(by: { $0.count < $1.count }) ?? String(repeating: "Synthetic long locale label ", count: 20)
+            let path = try XCTUnwrap(Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: locale), locale)
+            let localized = try XCTUnwrap(NSDictionary(contentsOfFile: path) as? [String: String], locale)
+            let longest = try XCTUnwrap(localized.values.max(by: { $0.count < $1.count }), locale)
             frames = [:]
             host.rootView = FeedQuickView(model: model, filterLabels: [longest, longest], onLayout: { frames[$0] = $1 })
             host.layoutSubtreeIfNeeded()
@@ -149,6 +150,14 @@ final class FeedQuickViewTests: XCTestCase {
             XCTAssertEqual(frames["filter.1"]?.size, NSSize(width: 100, height: 28), locale)
             XCTAssertEqual(frames["hint"], original["hint"], locale)
             XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let image = NSImage(size: host.bounds.size)
+            image.addRepresentation(bitmap)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Feed fixed geometry longest shipped label " + locale
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 }

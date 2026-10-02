@@ -129,6 +129,8 @@ class Fixture:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("C11_", "CMUX_"))}
         env.update({
             "HOME": self.home,
+            # Foundation resolves Application Support from this, not HOME.
+            "CFFIXED_USER_HOME": self.home,
             "CMUX_SOCKET_PATH": sock_path,
             "CMUX_WORKSPACE_ID": WORKSPACE,
             "C11_TAB_ID": TAB,

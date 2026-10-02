@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:43:56Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2A3R7HRPZQT639SA33JVP",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2A3R7HRPZQT639SA33JVP.json",
+    "size_bytes": 6643
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding pre-sample seal 004 under Orchestrator quiet grant",
+  "token_usage": null,
+  "type": "file"
+}

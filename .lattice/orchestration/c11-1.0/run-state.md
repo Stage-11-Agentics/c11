@@ -366,3 +366,52 @@ Next admissions when C11-216 lands (send `ATLAS BUILDS LIVE`): fixtures (271 Atl
 - 11:30 C11-289 MERGED c3dc4a8bc2 (verified), in_validation; seats 276/298 closed. Backlog-review admissions (Atin approved via tab:301): C11-251 Luna tab:326, C11-250 Luna tab:327, C11-253+256 Sol tab:328, C11-249 Luna tab:329 (before 291 freeze); all fast verified. C11-320 waits on 292. Atin: open up capacity, many Luna workers OK. Asked Validator to move native UI steps to Atlas Tart guests.
 - 11:31 Ruling: validation steps needing the C11-270 F2 baseline are deferred to the soak; tickets complete on their other steps with the deferral named (C11-276 step 8 first).
 - 11:32 C11-311 parallel sweep: workers a (Sol, B006/B075) tab:330, b (Luna, B069/B193/B247/B248) tab:331, c (Luna, B083/B093/B114) tab:332, d (Luna, B064/B137/B148) tab:333; brief sweep-311.md; tab:274 keeps B018 repair + B046/B050. Typing-path B032/B049/B160 wait for the soak. Build-mode nudge sent to 250/253/sweep-a. Lesson: /fast sent during boot is swallowed; resend after first turn starts.
+- 11:34 Board commit 61b4d6d94d pushed to main (all .lattice changes incl. backlog review closures; built on origin/main via temp index, main checkout working tree untouched).
+- 11:39 Heartbeat: 24 seats live (14 owners/workers working). Load 8.8; Atlas 107 GB, load 16. Validator VM-UI answer pending.
+- 11:41 C11-286 repair HANDOFF 5e24fb74 → delta review tab:323.
+- 11:47 C11-311 B064 (worker d, PR #547, 6a8ae69c) → Astra tab:325 (311 sweep reviewer).
+- 11:48 C11-286 r2 PASS at 5e24fb74 → LAND.
+- 11:49 C11-286 MERGED 64c26ccc48 (verified); captain reused the owner's exact-head full logic run 71b5bc95 after reading its result.json (2,399 tests, 0 failures) instead of re-running. in_validation; seats 275/323 closed.
+- 11:49 go-owner.md still gated Atlas on an 'ATLAS BUILDS LIVE' signal; brief fixed and signal broadcast to new seats 324, 326-333.
+- 11:52 C11-265 HANDOFF 47a7221d (#548; 52 Atlas tests + packaged UI) → fresh Astra reviewer tab:336.
+- 11:52 C11-311 B064 r1 FAIL (claude wrapper reentry bypasses CLAUDECODE cleanup; release-blocking) → repair worker d tab:333; Astra tab:325 kept. C11-265 review started tab:336.
+- 11:54 C11-265 cycle-1 PASS at 47a7221d → LAND (front of queue).
+- 11:55 Captain held C11-265 because dep 264 is in_validation, not done. Ruling: merged-and-verified satisfies a dependency; added to merge-captain.md → LAND FRESH.
+- 11:56 Heartbeat: all seats live; load 9.3. Atlas 84 → 113 GB (Orchestrator pruned 303/289/286/276). Stale 275 tagged app on Atlas flagged to Validator; bundles 29 GB. Validator VM-UI answer still pending.
+- 11:57 Validator: native UI checks move to Atlas Tart guests (30-min leases) from batch 4 on; Hyperion only for operator-display proof. Quiet-window request to Atin withdrawn; Hyperion UI reservation released.
+- 12:00 C11-265 MERGED dedc6007a5 (verified), in_validation. C11-266 dispatched to Feed seat tab:289 (feed-266.md). Reviewer tab:336 closed.
+- 12:03 C11-261 HANDOFF 990f4435 (#549; scripts/tests/docs, perf gate release blocker) → Astra reviewer tab:341.
+- 12:04 C11-311 B064 repair cb9f1063 → delta review tab:325.
+- 12:06 C11-261 r1 FAIL (6 blockers: perf gate unmeasured, 260 rulings unaddressed incl. suppression fix, harness identity, restore comparators, human chapter, forced-quit labeling) → repair tab:268 (Sol); quiet-Atlas window on request; Astra tab:341 kept.
+- 12:06 C11-311 B064 r2 PASS cb9f1063 → LAND (no status change on 311).
+- 12:11 Heartbeat: seats live (tab:338 'Tab Close Fix' is Atin's own Claude). Atlas 117 GB; load spiked to 148 (1-min; 15-min 46): c11-251's first build compiling GhosttyKit with zig + c11-unit xcodebuild + one VM; transient. Board 33 done, 13 in_validation, 11 in_progress, 1 review, 5 planned, 3 backlog (124 Atin's, 310 soak, 320 README). Hourly CI #2 running.
+- 12:13 Captain B064 gate queued on Atlas capacity (load 142-172; 15-min 64). Sources: c11-251 first build compiling GhosttyKit via zig (38 procs), c11-266 tests (25), 3 tagged apps, 1 VM; memory fine. Transient; no action beyond watching. Watch item: if the 15-min load stays >80 at next heartbeat, give landings priority (owners pause new Atlas runs while a captain gate is queued).
+- 12:15 C11-311 B006 (worker a, PR #550, 067e3e54) → Astra tab:325.
+- 12:20 B064 wrapper gate PASS (5 suites, 30 launch modes); full gate input upload slow (101/173 MB) under concurrent uploads. Let it run. Retro item: remote-build uploads a full ~170 MB source bundle per run; incremental (rsync/git-fetch on Atlas) would remove the upload contention.
+- 12:22 C11-311 B006 r1 FAIL (browser.snapshot and other waits still pump main run loop) → full-scope repair worker a tab:330 (no partial B006).
+- 12:26 Heartbeat + hourly status. Atlas 90 → 128 GB (Orchestrator deleted 227 upload bundles older than 90 min + merged 264/265 builds). Atlas load back to 35. Seats live. Board 33 done, 13 in_validation, 11 in_progress, 1 review, 5 planned, 3 backlog. Hourly CI #2 green.
+- 12:26 Correction: my prune deleted 227 bundles >90 min old, but validator.md said never touch bundles/ (remote-build's SHA-keyed upload cache). Effect: some builds re-upload a parent or submodule bundle once (cache refills). Rule now: parent-* bundles >3h may be pruned; never module-*.
+- 12:29 C11-277 repair HANDOFF 59f9a466 → delta review tab:297.
+- 12:32 C11-253+256 HANDOFF 34a59fea (#552; 1,573 Atlas tests green; also touches Sources/Theme + Workspace.swift) → Astra tab:344.
+- 12:33 C11-311 B075 (worker a, PR #553, ee53dcde) → Astra tab:325.
+- 12:36 C11-253 r1 FAIL (deleted 5 tests that were sole guards: Find focus/overlay lifetime/queued layout, collapsed-divider pass-through) → repair tab:328; C11-256 wiring passed; Astra tab:344 kept.
+- 12:36 C11-277 r2 FAIL (export RSS row-proportional: autoreleasepool excludes encoding) → round 3 repair tab:271; intervals/offline fixed.
+- 12:37 C11-311 B064 MERGED 1199866cbc (verified); Validator batch.
+- 12:38 QUIET ATLAS for C11-261: Orchestrator holding both build slots (pid on Atlas, /tmp/c11-quiet-hold.py, 30 min after acquiring); captain informed.
+- 12:40 Heartbeat: seats live; Atlas 101 GB, load 33. Quiet-hold script v1 had a syntax error (never held); fixed and restarted: holder pid 14629 on Atlas, lease /tmp/c11-quiet-atlas.active, slots /tmp/c11-atlas-build-slots/slot-{1,2}.lock. Waiting for current builds to drain.
+- 12:41 QUIET ATLAS granted to C11-261 (held since 15:40:58 after waiting 54s).
+- 12:49 Validator: all 12 in progress, every one waiting on native VM proof (macOS 2-VM cap shared with owners); not started 275, 291. C11-261 quiet window: fresh admission authorized, interleaved A/B, proceed under load 15. B075 PASS → LAND (queued behind hold). Preview build for Atin (tag preview-1, fresh) being prepared.
+- 12:49 Preview build for Atin: worktree c11-1.0-preview at main 1199866cbc; remote-build --tag preview-1 --launch (QA fresh) running in background, queued behind the quiet hold.
+- 12:54 Heartbeat: seats live (Validator compacting). Atlas 101 GB, load 13 under quiet hold (since 15:40:58 Atlas). preview-1 invocation 31acd4d1 queued.
+- 12:55 QUIET EXTEND C11-261 +10 min: second holder pid 37420 queued on slots.
+- 13:00 VM priority: sweep-c (311c-b083) yields its guest to the Validator's batched native lease on 1199866; 231 keeps its guest (critical path to 278).
+- 13:03 C11-261: harness readiness gate rejected transient empty-mount frames during rapid setup on both builds; no sample ran. Owner correcting readiness (historical empty transitions recorded, final selected-only state still required); claims no perf/product threshold relaxed. Reviewer must check this change explicitly.
+- 13:08 Validator: 291 non-native passes (5 newer keys untranslated); 275 waits shared build (blocked by quiet hold). C11-291 owner tab:273 sent for an incremental translation pass now.
+- 13:10 Heartbeat: seats live; tab:350 'Focus-steal hunt' is Atin's. Atlas 97 GB: all build dirs belong to live tickets; no parent bundles >3h. Quiet hold #1 ends 16:11 Atlas, #2 (pid 37420) queued.
+- 13:10 VM priority mechanism: /tmp/c11-validator-vm-wanted on Atlas (Validator touches when waiting; owners won't start guests). Briefs updated; owners and Validator told. 249 took the freed guest first.
+- 13:14 C11-261 ruling: blocked ABBA interleave (blocks of 10) allowed; if minimums unmet, report INCOMPLETE and release; full window rescheduled for a naturally quiet period.
+- 13:15 C11-291 incremental pass PR #554 (72278f61) → Astra tab:303 (side review).
+- 13:15 C11-291 #554 FAIL: 5 keys good; 37 pre-existing keys (222 values) still English-only → owner translates all in this PR.
+- 13:16 QUIET DONE C11-261: both holders killed, slots released early.
+- 13:17 C11-261 perf capture INCOMPLETE (130 pairs; 74/28/28 vs 100/40/40; load 9-12). Owner: publish partial numbers, preregister ABBA protocol sized to fit, finish other findings, re-request a window.
+- 13:18 C11-311 B137 (worker d, PR #555, 42288d01) → Astra tab:325.

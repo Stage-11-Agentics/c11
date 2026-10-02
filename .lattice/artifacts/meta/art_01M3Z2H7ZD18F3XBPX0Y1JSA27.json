@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:47:50Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2H7ZD18F3XBPX0Y1JSA27",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2H7ZD18F3XBPX0Y1JSA27.json",
+    "size_bytes": 6643
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Final a2e448b74 candidate versus dedc6007a main; existing Atlas bundles, Python 3.14 global monotonic clock, external Orchestrator quiet hold; no samples yet. Supersedes unused seals 001-004.",
+  "tags": [],
+  "title": "Repair round 1 frozen pair identity 005",
+  "token_usage": null,
+  "type": "file"
+}

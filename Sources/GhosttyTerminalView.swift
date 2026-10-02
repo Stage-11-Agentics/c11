@@ -4044,8 +4044,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ///   * defers the Return until the pending-text queue flushes (which
     ///     happens on surface attach, when `view.window` is guaranteed
     ///     non-nil) when the surface is not yet ready.
-    func sendSubmitFormText(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .newlines)
+    func sendSubmitFormText(_ text: String, preserveNewlines: Bool = false) {
+        let trimmed = preserveNewlines ? text : text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
         performInputTransaction { [weak self] finish in
             guard let self else { return finish() }

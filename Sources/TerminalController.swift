@@ -6846,11 +6846,13 @@ class TerminalController {
     func deliverSocketSendText(
         _ text: String,
         submit: Bool,
+        preserveNewlines: Bool = false,
         terminalSurface: TerminalSurface,
         surface: ghostty_surface_t
     ) -> Bool {
-        let body = Self.trimmingTrailingNewlines(text)
-        let wantsReturn = submit || body != text
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        let body = delivery.body
+        let wantsReturn = delivery.wantsReturn
 
         // One input transaction from the first byte to the submit Return, so
         // no other writer (the mailbox push, another send, the text box)

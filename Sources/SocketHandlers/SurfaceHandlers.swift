@@ -856,6 +856,7 @@ extension TerminalController {
         // attached) the trailing `\r` is appended to the queued payload so the
         // flush on attach submits the line.
         let submit = v2Bool(params, "submit") ?? true
+        let preserveNewlines = v2Bool(params, "preserve_newlines") ?? false
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
@@ -890,7 +891,7 @@ extension TerminalController {
         // nothing has reached the target yet and the payload flushes on attach.
         let queued: Bool
         nonisolated(unsafe) var submitted = false
-        let wantsReturn = submit || TerminalController.trimmingTrailingNewlines(text) != text
+        let wantsReturn = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines).wantsReturn
         let phaseBSema = DispatchSemaphore(value: 0)
         if resolvedSurface != nil {
             // C11-26 review B2: revalidate the live surface pointer inside the
@@ -908,6 +909,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -925,7 +927,7 @@ extension TerminalController {
                     // Same newline rule as the live path (see deliverSocketSendText):
                     // a trailing newline means "and press Enter".
                     if wantsReturn {
-                        resolved.terminalPanel.surface.sendSubmitFormText(text)
+                        resolved.terminalPanel.surface.sendSubmitFormText(text, preserveNewlines: preserveNewlines)
                     } else {
                         resolved.terminalPanel.sendText(text)
                     }
@@ -948,6 +950,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -956,7 +959,7 @@ extension TerminalController {
                     return
                 }
                 if wantsReturn {
-                    resolved.terminalPanel.surface.sendSubmitFormText(text)
+                    resolved.terminalPanel.surface.sendSubmitFormText(text, preserveNewlines: preserveNewlines)
                 } else {
                     resolved.terminalPanel.sendText(text)
                 }

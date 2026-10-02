@@ -11,9 +11,14 @@ enum AgentRoster {
     static let blockedModifiers: UInt = shiftModifier | controlModifier | optionModifier | commandModifier
 
     struct RetainedEvent {
-        var sequence: Int64
-        var committedAtMs: Int64
-        var draft: JournalDraft
+        let event: JournalEvent
+
+        var sequence: Int64 { event.sequence }
+        var committedAtMs: Int64 { event.committedAtMs }
+        var draft: JournalDraft { event.draft }
+        var effect: JournalEffect { event.effect }
+        var attribution: String { event.attribution }
+        var toPhase: JournalPhase? { event.toPhase }
     }
 
     struct LiveTab {
@@ -41,6 +46,17 @@ enum AgentRoster {
     struct SheetClock: Equatable {
         var applies: Bool
         var since: Date?
+    }
+
+    static let pickerCommitKeyCode: UInt16? = nil
+
+    static func isPotentialSubmitKey(_ keyCode: UInt16) -> Bool {
+        keyCode == 36 || keyCode == 76 || keyCode == pickerCommitKeyCode
+    }
+
+    private static func isBehindBaseline(_ event: RetainedEvent, through sequence: Int64?) -> Bool {
+        guard let sequence else { return true }
+        return event.sequence <= sequence
     }
 
     static func waitingReason(_ reason: JournalReason?) -> String? {
@@ -91,6 +107,7 @@ enum AgentRoster {
                 let events = eventsByOwner[row.owner.key] ?? []
                 let classified = classifyRestore(
                     eventsNewestFirst: events,
+                    throughSequence: row.lastSequence,
                     truncated: truncatedOwners.contains(row.owner.key),
                     storePruned: storePruned
                 )
@@ -112,11 +129,19 @@ enum AgentRoster {
         ]
     }
 
-    static func classifyRestore(eventsNewestFirst: [RetainedEvent], truncated: Bool, storePruned: Bool) -> RestoreClassification {
+    static func classifyRestore(
+        eventsNewestFirst: [RetainedEvent],
+        throughSequence: Int64? = nil,
+        truncated: Bool,
+        storePruned: Bool
+    ) -> RestoreClassification {
         var sawStart = false
         var endedAfter = false
         var lostAfter = false
-        for event in eventsNewestFirst.reversed() {
+        let committedEvidence = eventsNewestFirst.filter {
+            $0.effect == .applied && $0.attribution == "exact" && isBehindBaseline($0, through: throughSequence)
+        }
+        for event in committedEvidence.reversed() {
             if event.draft.kind == .sessionStarted {
                 sawStart = true
                 endedAfter = false
@@ -137,7 +162,7 @@ enum AgentRoster {
                 connection: lostAfter ? "disconnected" : "unknown"
             )
         }
-        let lost = eventsNewestFirst.contains { $0.draft.signal == .connectionLost }
+        let lost = committedEvidence.contains { $0.draft.signal == .connectionLost }
         return RestoreClassification(
             label: "unknown",
             coverage: truncated || storePruned ? "event_pruned" : "retained",
@@ -145,22 +170,31 @@ enum AgentRoster {
         )
     }
 
-    static func turnStartMs(turnID: String?, eventsNewestFirst: [RetainedEvent]) -> Int64? {
+    static func turnStartMs(turnID: String?, throughSequence: Int64? = nil, eventsNewestFirst: [RetainedEvent]) -> Int64? {
         guard let turnID,
-              let row = eventsNewestFirst.first(where: { $0.draft.kind == .turnStarted && $0.draft.turnID == turnID }) else {
+              let row = eventsNewestFirst.first(where: {
+                  $0.effect == .applied && $0.attribution == "exact"
+                      && isBehindBaseline($0, through: throughSequence)
+                      && $0.toPhase == .working && $0.draft.kind == .turnStarted && $0.draft.turnID == turnID
+              }) else {
             return nil
         }
         if row.draft.timeQuality == .nativeLocal { return row.draft.occurredAtMs }
         return row.committedAtMs
     }
 
-    static func restoredAsk(snapshot: JournalSnapshot, eventsNewestFirst: [RetainedEvent]) -> (requestID: String?, eventID: UUID, openedAtMs: Int64)? {
+    static func restoredAsk(
+        snapshot: JournalSnapshot,
+        eventsNewestFirst: [RetainedEvent]
+    ) -> (requestID: String?, eventID: UUID, openedAtMs: Int64, draft: JournalDraft)? {
         guard snapshot.phase == .blocked,
               let row = eventsNewestFirst.first(where: {
-                  isAsk($0.draft.kind) && (snapshot.requestID == nil || $0.draft.requestID == snapshot.requestID)
+                  $0.effect == .applied && $0.attribution == "exact" && $0.sequence <= snapshot.lastSequence
+                      && $0.toPhase == .blocked && isAsk($0.draft.kind)
+                      && (snapshot.requestID == nil || $0.draft.requestID == snapshot.requestID)
               }) else { return nil }
         let opened = row.draft.timeQuality == .nativeLocal ? (row.draft.occurredAtMs ?? row.committedAtMs) : row.committedAtMs
-        return (row.draft.requestID, row.draft.eventID, opened)
+        return (row.draft.requestID, row.draft.eventID, opened, row.draft)
     }
 
     static func isAsk(_ kind: JournalKind) -> Bool {

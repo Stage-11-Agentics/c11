@@ -9138,13 +9138,14 @@ struct CMUXCLI {
         do {
             let store = try JournalStore(layout: layout, readOnly: true)
             let now = Int64(Date().timeIntervalSince1970 * 1000)
-            let currents = try store.listCurrent()
+            let currents = try store.listCurrent().map(JournalReplayPolicy.restored)
             let unattributed = try store.unattributedCount()
             let coverage = try store.coverage()
             var events: [String: [AgentRoster.RetainedEvent]] = [:]
             var truncated = Set<String>()
             for row in currents where row.isHistorical {
-                let page = try store.retainedOwnerEvents(owner: row.owner, limit: AgentRoster.restoreLimit)
+                let page = try store.retainedOwnerEvents(
+                    owner: row.owner, throughSequence: row.lastSequence, limit: AgentRoster.restoreLimit)
                 events[row.owner.key] = page.events
                 if page.truncated { truncated.insert(row.owner.key) }
             }

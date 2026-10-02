@@ -229,17 +229,31 @@ final class JournalStore {
 
     func listCurrent() throws -> [JournalSnapshot] { try baselines() }
 
-    func retainedOwnerEvents(owner: JournalOwner, limit: Int = AgentRoster.restoreLimit) throws -> (events: [AgentRoster.RetainedEvent], truncated: Bool) {
+    func retainedOwnerEvents(
+        owner: JournalOwner,
+        throughSequence: Int64? = nil,
+        limit: Int = AgentRoster.restoreLimit
+    ) throws -> (events: [AgentRoster.RetainedEvent], truncated: Bool) {
         try queue.sync {
             let cap = max(1, min(200, limit))
-            let stmt = try statement("SELECT sequence,committed_at_ms,draft FROM journal_events WHERE tab_id=? AND session_id=? AND agent_kind=? ORDER BY sequence DESC LIMIT ?", [
-                .text(owner.tabID.uuidString), .text(owner.sessionID), .text(owner.agentKind), .integer(Int64(cap + 1))])
+            var sql = "SELECT sequence,committed_at_ms,event FROM journal_events WHERE tab_id=? AND session_id=? AND agent_kind=?"
+            var bindings: [Bind] = [.text(owner.tabID.uuidString), .text(owner.sessionID), .text(owner.agentKind)]
+            if let throughSequence {
+                sql += " AND sequence<=?"
+                bindings.append(.integer(throughSequence))
+            }
+            sql += " ORDER BY sequence DESC LIMIT ?"
+            bindings.append(.integer(Int64(cap + 1)))
+            let stmt = try statement(sql, bindings)
             defer { sqlite3_finalize(stmt) }
             var rows: [AgentRoster.RetainedEvent] = []
             var code = sqlite3_step(stmt)
             while code == SQLITE_ROW {
-                let draft = try JournalDraft.decode(blob(stmt, 2))
-                rows.append(AgentRoster.RetainedEvent(sequence: sqlite3_column_int64(stmt, 0), committedAtMs: sqlite3_column_int64(stmt, 1), draft: draft))
+                let event = try JSONDecoder().decode(JournalEvent.self, from: blob(stmt, 2))
+                guard event.sequence == sqlite3_column_int64(stmt, 0),
+                      event.committedAtMs == sqlite3_column_int64(stmt, 1),
+                      event.draft.owner == owner else { throw JournalError.unavailable }
+                rows.append(AgentRoster.RetainedEvent(event: event))
                 code = sqlite3_step(stmt)
             }
             guard code == SQLITE_DONE else { throw failure() }

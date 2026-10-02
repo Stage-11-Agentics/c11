@@ -78,7 +78,7 @@ final class AgentRosterTests: XCTestCase {
         let started = retained(.sessionStarted, sequence: 1, native: "SessionStart")
         let ended = retained(.sessionEnded, sequence: 2, native: "SessionEnd")
         let lost = retained(.stateChanged, sequence: 3, native: "connection_lost", source: .c11, signal: .connectionLost)
-        let restarted = retained(.sessionStarted, sequence: 4, native: "SessionStart")
+        let restarted = retained(.sessionStarted, sequence: 4, native: "SessionStart", effect: .observation)
         XCTAssertEqual(
             AgentRoster.classifyRestore(eventsNewestFirst: [started], truncated: false, storePruned: false),
             AgentRoster.RestoreClassification(label: "historical_candidate", coverage: "retained", connection: "unknown")
@@ -89,7 +89,7 @@ final class AgentRosterTests: XCTestCase {
         )
         XCTAssertEqual(
             AgentRoster.classifyRestore(eventsNewestFirst: [restarted, ended, started], truncated: false, storePruned: false),
-            AgentRoster.RestoreClassification(label: "historical_candidate", coverage: "retained", connection: "unknown")
+            AgentRoster.RestoreClassification(label: "ended", coverage: "retained", connection: "disconnected")
         )
         XCTAssertEqual(
             AgentRoster.classifyRestore(eventsNewestFirst: [lost], truncated: false, storePruned: false),
@@ -195,10 +195,10 @@ final class AgentRosterTests: XCTestCase {
         native.turnID = "turn-a"
         native.timeQuality = .nativeLocal
         native.occurredAtMs = 4_000
-        let row = AgentRoster.RetainedEvent(sequence: 2, committedAtMs: 9_000, draft: native)
+        let row = retained(native, sequence: 2, committedAtMs: 9_000, toPhase: .working)
         XCTAssertEqual(AgentRoster.turnStartMs(turnID: "turn-a", eventsNewestFirst: [row]), 4_000)
         native.timeQuality = .observed
-        let observed = AgentRoster.RetainedEvent(sequence: 2, committedAtMs: 9_000, draft: native)
+        let observed = retained(native, sequence: 2, committedAtMs: 9_000, toPhase: .working)
         XCTAssertEqual(AgentRoster.turnStartMs(turnID: "turn-a", eventsNewestFirst: [observed]), 9_000)
         XCTAssertNil(AgentRoster.turnStartMs(turnID: "missing", eventsNewestFirst: [observed]))
         XCTAssertNil(AgentRoster.turnStartMs(turnID: nil, eventsNewestFirst: [observed]))
@@ -214,13 +214,18 @@ final class AgentRosterTests: XCTestCase {
         let snap = snapshot(tab: tabA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
         var blocked = snap
         blocked.requestID = "request-a"
+        blocked.lastSequence = 3
+        var advisory = newer
+        advisory.eventID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!
+        advisory.occurredAtMs = 3_000
         let events = [
-            AgentRoster.RetainedEvent(sequence: 2, committedAtMs: 8_000, draft: newer),
-            AgentRoster.RetainedEvent(sequence: 1, committedAtMs: 7_000, draft: older),
+            retained(advisory, sequence: 3, committedAtMs: 9_000, effect: .advisory, toPhase: nil),
+            retained(newer, sequence: 2, committedAtMs: 8_000, effect: .duplicateEvidence, toPhase: .blocked),
+            retained(older, sequence: 1, committedAtMs: 7_000, toPhase: .blocked),
         ]
         let restored = AgentRoster.restoredAsk(snapshot: blocked, eventsNewestFirst: events)
-        XCTAssertEqual(restored?.eventID, newer.eventID)
-        XCTAssertEqual(restored?.openedAtMs, 2_000)
+        XCTAssertEqual(restored?.eventID, older.eventID)
+        XCTAssertEqual(restored?.openedAtMs, 1_000)
         let clock = AgentRoster.sheetClock(phase: .working, activity: .running, flagged: false, historical: false, sinceMs: 5_000_000)
         XCTAssertEqual(clock, AgentRoster.SheetClock(applies: true, since: Date(timeIntervalSince1970: 5_000)))
         XCTAssertEqual(
@@ -259,12 +264,38 @@ final class AgentRosterTests: XCTestCase {
         return row
     }
 
-    private func retained(_ kind: JournalKind, sequence: Int64, native: String, source: JournalSource = .hook, signal: JournalSignal? = nil) -> AgentRoster.RetainedEvent {
+    private func retained(
+        _ kind: JournalKind,
+        sequence: Int64,
+        native: String,
+        source: JournalSource = .hook,
+        signal: JournalSignal? = nil,
+        effect: JournalEffect = .applied,
+        attribution: String = "exact",
+        toPhase: JournalPhase? = nil
+    ) -> AgentRoster.RetainedEvent {
         var draft = JournalTestData.draft(kind)
         draft.nativeEvent = native
         draft.source = source
         draft.adapter = source == .c11 ? .c11 : .claudeHook
         draft.signal = signal
-        return AgentRoster.RetainedEvent(sequence: sequence, committedAtMs: 10_000 + sequence, draft: draft)
+        return retained(draft, sequence: sequence, committedAtMs: 10_000 + sequence, effect: effect, attribution: attribution, toPhase: toPhase)
+    }
+
+    private func retained(
+        _ draft: JournalDraft,
+        sequence: Int64,
+        committedAtMs: Int64,
+        effect: JournalEffect = .applied,
+        attribution: String = "exact",
+        toPhase: JournalPhase?
+    ) -> AgentRoster.RetainedEvent {
+        let event = JournalEvent(
+            sequence: sequence, committedAtMs: committedAtMs, observedTickNs: UInt64(sequence),
+            appInstanceID: JournalTestData.instance, draft: draft, draftHash: "fixture",
+            attribution: attribution, confidenceRank: draft.source.rank, capabilities: draft.adapter.capabilities,
+            modelID: nil, foldVersion: 1, effect: effect, effectReason: "fixture",
+            fromPhase: nil, toPhase: toPhase, fromSinceMs: nil)
+        return AgentRoster.RetainedEvent(event: event)
     }
 }

@@ -82,7 +82,9 @@ final class JournalCoordinator: @unchecked Sendable {
             guard let store = try? storage() else { return }
             for id in ids {
                 guard let owner = exactOwner(tabID: id), let baseline = try? store.current(owner: owner) else { continue }
-                publish(baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline))
+                let attached = baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline)
+                publish(attached)
+                try? hydrateCaches(store: store, snapshot: attached)
             }
         }
     }
@@ -244,13 +246,16 @@ final class JournalCoordinator: @unchecked Sendable {
     func rosterDocument(live: [AgentRoster.LiveTab], now: Int64) -> [String: Any] {
         do {
             let store = try storage()
-            let currents = try store.listCurrent()
+            let currents = try store.listCurrent().map { row in
+                row.appInstanceID == store.instanceID ? row : JournalReplayPolicy.restored(row)
+            }
             let unattributed = try store.unattributedCount()
             let coverage = try store.coverage()
             var events: [String: [AgentRoster.RetainedEvent]] = [:]
             var truncated: Set<String> = []
             for row in currents where row.isHistorical {
-                let page = try store.retainedOwnerEvents(owner: row.owner, limit: AgentRoster.restoreLimit)
+                let page = try store.retainedOwnerEvents(
+                    owner: row.owner, throughSequence: row.lastSequence, limit: AgentRoster.restoreLimit)
                 events[row.owner.key] = page.events
                 if page.truncated { truncated.insert(row.owner.key) }
             }
@@ -312,19 +317,30 @@ final class JournalCoordinator: @unchecked Sendable {
         let rows = snapshots
         lock.unlock()
         for (tab, snap) in rows {
-            let page = try store.retainedOwnerEvents(owner: snap.owner, limit: AgentRoster.restoreLimit)
-            let turn = AgentRoster.turnStartMs(turnID: snap.turnID, eventsNewestFirst: page.events)
-            let restored = AgentRoster.restoredAsk(snapshot: snap, eventsNewestFirst: page.events)
-            lock.lock()
-            if let turn { turnStartedMs[tab] = turn } else { turnStartedMs.removeValue(forKey: tab) }
-            if let restored, let workspace = snap.workspaceID {
-                openAsks[tab] = JournalOpenAsk(
-                    owner: snap.owner, workspaceID: workspace, requestID: restored.requestID,
-                    eventID: restored.eventID, openedAtMs: restored.openedAtMs, pickerKeyCode: nil, pickerModifierRaw: 0)
-            } else {
-                openAsks.removeValue(forKey: tab)
-            }
-            lock.unlock()
+            guard tab == snap.owner.tabID else { continue }
+            try hydrateCaches(store: store, snapshot: snap)
+        }
+    }
+
+    private func hydrateCaches(store: JournalStore, snapshot snap: JournalSnapshot) throws {
+        guard isEligible(snap.owner), target(tabID: snap.owner.tabID) == snap.workspaceID else { return }
+        let tab = snap.owner.tabID
+        let page = try store.retainedOwnerEvents(
+            owner: snap.owner, throughSequence: snap.lastSequence, limit: AgentRoster.restoreLimit)
+        let turn = AgentRoster.turnStartMs(turnID: snap.turnID, throughSequence: snap.lastSequence, eventsNewestFirst: page.events)
+        let restored = AgentRoster.restoredAsk(snapshot: snap, eventsNewestFirst: page.events)
+        lock.lock()
+        defer { lock.unlock() }
+        guard owners[tab] == snap.owner, targets[tab] == snap.workspaceID,
+              snapshots[tab]?.owner == snap.owner,
+              (snapshots[tab]?.lastSequence ?? Int64.max) <= snap.lastSequence else { return }
+        if turnStartedMs[tab] == nil, let turn { turnStartedMs[tab] = turn }
+        if openAsks[tab] == nil, let restored, let workspace = snap.workspaceID {
+            openAsks[tab] = JournalOpenAsk(
+                owner: snap.owner, workspaceID: workspace, requestID: restored.requestID,
+                eventID: restored.eventID, openedAtMs: restored.openedAtMs,
+                pickerKeyCode: JournalOpenAsk.pickerKeyCode(draft: restored.draft),
+                pickerModifierRaw: 0)
         }
     }
 
@@ -357,7 +373,12 @@ struct JournalOpenAsk: Sendable {
         guard let owner = draft.owner, let workspace = draft.workspaceID ?? snapshot.workspaceID else { return nil }
         let opened = draft.timeQuality == .nativeLocal ? (draft.occurredAtMs ?? committedAtMs) : committedAtMs
         return JournalOpenAsk(owner: owner, workspaceID: workspace, requestID: draft.requestID, eventID: draft.eventID,
-                              openedAtMs: opened, pickerKeyCode: nil, pickerModifierRaw: 0)
+                              openedAtMs: opened, pickerKeyCode: pickerKeyCode(draft: draft), pickerModifierRaw: 0)
+    }
+
+    static func pickerKeyCode(draft: JournalDraft?) -> UInt16? {
+        guard let draft, draft.toolClass == .askUserQuestion, draft.agentKind == "claude-code" else { return nil }
+        return AgentRoster.pickerCommitKeyCode
     }
 }
 

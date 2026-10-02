@@ -563,6 +563,8 @@ c11 sidebar-state [--workspace <id|ref>]
 
 These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. Every command above fails without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.
 
+The workspace metadata commands follow the same rule: `set-workspace-metadata`, `get-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` need `--workspace` or `$C11_WORKSPACE_ID` and fail otherwise. Raw `workspace.set_metadata`, `workspace.get_metadata` and `workspace.clear_metadata` require `workspace_id` (`missing_ref` without it), and v1 `reset_sidebar` requires `--tab`.
+
 **Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
 
 ## Resize areas

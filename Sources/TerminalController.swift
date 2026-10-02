@@ -3332,19 +3332,13 @@ class TerminalController {
     func v2ResolveWorkspaceForMetadata(
         params: [String: Any]
     ) -> (workspaceManager: WorkspaceManager, workspaceId: UUID)? {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
-        if let explicit = v2UUID(params, "workspace_id") {
-            return v2MainSync {
-                guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
-                return (workspaceManager, explicit)
-            }
-        }
+        // C11-251: callers reject a missing/empty `workspace_id` first; an
+        // unresolvable one is "not found", never the selected workspace.
+        guard let explicit = v2UUID(params, "workspace_id"),
+              let workspaceManager = v2ResolveWorkspaceManager(params: params) else { return nil }
         return v2MainSync {
-            guard let selected = workspaceManager.selectedWorkspaceId,
-                  workspaceManager.workspaces.contains(where: { $0.id == selected }) else {
-                return nil
-            }
-            return (workspaceManager, selected)
+            guard workspaceManager.workspaces.contains(where: { $0.id == explicit }) else { return nil }
+            return (workspaceManager, explicit)
         }
     }
 
@@ -9730,6 +9724,7 @@ class TerminalController {
     }
 
     func resetSidebar(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = "OK"
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {

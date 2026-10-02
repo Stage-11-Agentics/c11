@@ -11089,7 +11089,7 @@ struct CMUXCLI {
             must match [A-Za-z0-9_.-]+ and cap at 1024 chars each.
 
             Flags:
-              --workspace <id|ref>     Target workspace (default: current)
+              --workspace <id|ref>     Required outside c11; defaults to $C11_WORKSPACE_ID
               --json '{...}'           Full JSON object of keys/values
               --json                   Emit raw JSON result
 
@@ -11102,7 +11102,8 @@ struct CMUXCLI {
             Usage: c11 get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
 
             Read workspace metadata via workspace.get_metadata. With a key, prints
-            just that value. Without a key, prints all keys/values.
+            just that value. Without a key, prints all keys/values. The workspace is
+            --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
 
             Examples:
               c11 get-workspace-metadata
@@ -11113,7 +11114,8 @@ struct CMUXCLI {
             Usage: c11 clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
 
             Clear workspace metadata keys via workspace.clear_metadata. With no
-            key, clears the entire workspace metadata dictionary.
+            key, clears the entire workspace metadata dictionary. The workspace is
+            --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
 
             Examples:
               c11 clear-workspace-metadata description
@@ -11123,14 +11125,16 @@ struct CMUXCLI {
             return """
             Usage: c11 set-workspace-description <text> [--workspace <id|ref>]
 
-            Sugar for `c11 set-workspace-metadata description <text>`.
+            Sugar for `c11 set-workspace-metadata description <text>`. The workspace
+            is --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
             """
         case "set-workspace-icon":
             return """
             Usage: c11 set-workspace-icon <glyph> [--workspace <id|ref>]
 
             Sugar for `c11 set-workspace-metadata icon <glyph>`. Supports emoji
-            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill").
+            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill"). The workspace
+            is --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
             """
         case "set-app-focus":
             return """
@@ -13664,9 +13668,13 @@ struct CMUXCLI {
         commandArgs: [String],
         client: SocketClient,
         windowOverride: String?
-    ) throws -> String? {
-        let raw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
-        return try normalizeWorkspaceHandle(raw, client: client)
+    ) throws -> String {
+        // C11-251: explicit --workspace or the caller's workspace environment only;
+        // never the selected workspace, and a global --window is not a target.
+        guard let raw = optionValue(commandArgs, name: "--workspace") ?? sidebarWorkspaceFromEnv() else {
+            throw CLIError(message: String(localized: "cli.workspace.target.required", defaultValue: "workspace command requires --workspace or C11_WORKSPACE_ID; it will not use the selected workspace"))
+        }
+        return try resolveWorkspaceId(raw, client: client)
     }
 
     /// `c11 set-workspace-metadata <key> <value>` — wraps workspace.set_metadata.
@@ -13711,7 +13719,7 @@ struct CMUXCLI {
         )
 
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if !metadata.isEmpty {
             params["metadata"] = metadata
         } else if let singleKey, let singleValue {
@@ -13740,7 +13748,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if let keyFilter { params["key"] = keyFilter }
 
         let payload = try client.sendV2(method: "workspace.get_metadata", params: params)
@@ -13786,7 +13794,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = [:]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         if !keys.isEmpty { params["keys"] = keys }
 
         let payload = try client.sendV2(method: "workspace.clear_metadata", params: params)
@@ -13814,7 +13822,7 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         var params: [String: Any] = ["key": key, "value": value]
-        if let workspaceId { params["workspace_id"] = workspaceId }
+        params["workspace_id"] = workspaceId
         let payload = try client.sendV2(method: "workspace.set_metadata", params: params)
         printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }

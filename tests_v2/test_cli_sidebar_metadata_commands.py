@@ -148,8 +148,19 @@ def main() -> int:
             block_response = _send_v1(f"report_meta_block sblock --tab={selected_workspace} -- block-keep")
             _must(block_response.startswith("OK"), f"report_meta_block with a target should succeed, got {block_response!r}")
 
+            desc_response = _run_cli(cli, ["set-workspace-description", "keep-desc", "--workspace", selected_workspace])
+            _must(desc_response != "", f"set-workspace-description with a target should print a result: {desc_response!r}")
+            icon_response = _run_cli(cli, ["set-workspace-icon", "🦊", "--workspace", selected_workspace])
+            _must(icon_response != "", f"set-workspace-icon with a target should print a result: {icon_response!r}")
+
             window_id = client.current_window()
             targetless_cases = [
+                ["set-workspace-metadata", "description", "stray"],
+                ["get-workspace-metadata"],
+                ["clear-workspace-metadata"],
+                ["clear-workspace-metadata", "description"],
+                ["set-workspace-description", "stray"],
+                ["set-workspace-icon", "X"],
                 ["set-status", "stray", "value"],
                 ["set-progress", "0.9", "--label", "stray"],
                 ["log", "--", "stray log"],
@@ -202,6 +213,7 @@ def main() -> int:
                 "list_status",
                 "list_log",
                 "sidebar_state",
+                "reset_sidebar",
             ]
             for command in raw_v1_cases:
                 response = _send_v1(command)
@@ -217,6 +229,29 @@ def main() -> int:
             kept_blocks = _send_v1(f"list_meta_blocks --tab={selected_workspace}")
             _must("sblock=block-keep" in kept_blocks, f"metadata block should survive rejected calls: {kept_blocks!r}")
             _must("stray" not in kept_blocks, f"rejected raw block write should not create blocks: {kept_blocks!r}")
+
+            # Raw workspace metadata methods never fall back to the selected workspace.
+            for method, base_params in [
+                ("workspace.set_metadata", {"key": "description", "value": "stray"}),
+                ("workspace.get_metadata", {}),
+                ("workspace.clear_metadata", {}),
+                ("workspace.clear_metadata", {"keys": ["description"]}),
+            ]:
+                for extra, expected_code in [
+                    ({}, "missing_ref"),
+                    ({"workspace_id": ""}, "empty_ref"),
+                    ({"workspace_id": "00000000-0000-0000-0000-000000000000"}, "not_found"),
+                ]:
+                    resp = _send_v2(method, {**base_params, **extra})
+                    err = resp.get("error")
+                    _must(
+                        resp.get("ok") is False and isinstance(err, dict) and err.get("code") == expected_code,
+                        f"raw {method} {extra!r} should fail with {expected_code}, got {resp!r}",
+                    )
+            kept_desc = _run_cli(cli, ["get-workspace-metadata", "description", "--workspace", selected_workspace])
+            _must(kept_desc == "keep-desc", f"selected description should survive rejected calls: {kept_desc!r}")
+            kept_icon = _run_cli(cli, ["get-workspace-metadata", "icon", "--workspace", selected_workspace])
+            _must(kept_icon == "🦊", f"selected icon should survive rejected calls: {kept_icon!r}")
 
             raw_v2_state = _send_v2("sidebar.state", {})
             raw_v2_error = raw_v2_state.get("error")
@@ -290,10 +325,38 @@ def main() -> int:
             _must("progress=none" in cleared_env_state, f"C11 target progress should clear: {cleared_env_state!r}")
             _must("log_count=0" in cleared_env_state, f"C11 target log should clear: {cleared_env_state!r}")
 
+            _run_cli(cli, ["set-workspace-description", "env-desc"], extra_env=env, clear_workspace_env=True)
+            env_desc = _run_cli(cli, ["get-workspace-metadata", "description", "--workspace", env_workspace])
+            _must(env_desc == "env-desc", f"C11_WORKSPACE_ID should target workspace metadata writes: {env_desc!r}")
+            env_get = _run_cli(cli, ["get-workspace-metadata", "description"], extra_env=env, clear_workspace_env=True)
+            _must(env_get == "env-desc", f"C11_WORKSPACE_ID should target workspace metadata reads: {env_get!r}")
+            explicit_over_env = _run_cli(
+                cli,
+                ["get-workspace-metadata", "description", "--workspace", selected_workspace],
+                extra_env=env,
+                clear_workspace_env=True,
+            )
+            _must(explicit_over_env == "keep-desc", f"--workspace should override env for workspace metadata: {explicit_over_env!r}")
+            _run_cli(cli, ["clear-workspace-metadata"], extra_env=env, clear_workspace_env=True)
+            env_cleared = _run_cli(cli, ["get-workspace-metadata", "description", "--workspace", env_workspace])
+            _must(env_cleared == "(unset)", f"env-targeted clear should empty the env workspace metadata: {env_cleared!r}")
+            _must(
+                _run_cli(cli, ["get-workspace-metadata", "description", "--workspace", selected_workspace]) == "keep-desc",
+                "env-targeted workspace metadata clear should not touch the selected workspace",
+            )
+
             selected_after = _run_cli(cli, ["sidebar-state", "--workspace", selected_workspace])
             _must("status_count=2" in selected_after, f"clears should not touch selected workspace: {selected_after!r}")
             _must("progress=0.25 selected" in selected_after, f"selected progress should survive env clears: {selected_after!r}")
             _must("[info] selected log" in selected_after, f"selected log should survive env clears: {selected_after!r}")
+
+            _run_cli(cli, ["set-status", "after", "x", "--workspace", env_workspace])
+            reset_response = _send_v1(f"reset_sidebar --tab={env_workspace}")
+            _must(reset_response.startswith("OK"), f"reset_sidebar with an explicit target should succeed, got {reset_response!r}")
+            reset_state = _run_cli(cli, ["sidebar-state", "--workspace", env_workspace])
+            _must("status_count=0" in reset_state, f"reset_sidebar should clear the targeted workspace: {reset_state!r}")
+            selected_final = _run_cli(cli, ["sidebar-state", "--workspace", selected_workspace])
+            _must("status_count=2" in selected_final, f"reset_sidebar should not touch the selected workspace: {selected_final!r}")
 
             for workspace_id in created_workspaces:
                 client.close_workspace(workspace_id)

@@ -833,10 +833,74 @@ func terminalKeyboardCopyModeResolve(
     return .perform(action, count: count)
 }
 
-private final class GhosttySurfaceCallbackContext {
+/// One queued main turn, retaining only the newest scalar callback payload.
+/// Clear admission before applying: a native bounded drain can wake us again
+/// while the current turn is still executing. Never call native/UI code locked.
+final class GhosttyCallbackCoalescer<Value> {
+    private let lock = NSLock()
+    private var pending: Value?
+    private var queued = false
+    private let schedule: (@escaping () -> Void) -> Void
+#if DEBUG
+    struct Stats: Codable {
+        var requests = 0
+        var enqueued = 0
+        var drained = 0
+        var pending = 0
+        var maxPending = 0
+    }
+    private var stats = Stats()
+
+    func debugStats() -> Stats {
+        lock.lock()
+        defer { lock.unlock() }
+        return stats
+    }
+#endif
+
+    init(schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.schedule = schedule
+    }
+
+    func submit(_ value: Value, apply: @escaping (Value) -> Void) {
+        lock.lock()
+        pending = value
+#if DEBUG
+        stats.requests += 1
+#endif
+        guard !queued else {
+            lock.unlock()
+            return
+        }
+        queued = true
+#if DEBUG
+        stats.enqueued += 1
+        stats.pending += 1
+        stats.maxPending = max(stats.maxPending, stats.pending)
+#endif
+        lock.unlock()
+
+        schedule { [self] in
+            lock.lock()
+            let value = pending
+            pending = nil
+            queued = false
+#if DEBUG
+            stats.pending -= 1
+            stats.drained += 1
+#endif
+            lock.unlock()
+            if let value { apply(value) }
+        }
+    }
+}
+
+final class GhosttySurfaceCallbackContext {
     weak var surfaceView: GhosttyNSView?
     weak var terminalSurface: TerminalSurface?
     let surfaceId: UUID
+    let scrollbarUpdates = GhosttyCallbackCoalescer<GhosttyScrollbar>()
+    private let cellSizeUpdates = GhosttyCallbackCoalescer<CGSize>()
 
     init(surfaceView: GhosttyNSView, terminalSurface: TerminalSurface) {
         self.surfaceView = surfaceView
@@ -850,6 +914,50 @@ private final class GhosttySurfaceCallbackContext {
 
     var runtimeSurface: ghostty_surface_t? {
         terminalSurface?.surface ?? surfaceView?.terminalSurface?.surface
+    }
+
+    /// Each native runtime gets a new context, even when its Swift view survives.
+    /// Resolve weak targets only on main, after the native callback has returned.
+    private var currentSurfaceView: GhosttyNSView? {
+        precondition(Thread.isMainThread)
+        guard let terminalSurface,
+              terminalSurface.surfaceCallbackContext?.takeUnretainedValue() === self,
+              let surfaceView,
+              surfaceView.terminalSurface === terminalSurface else { return nil }
+        return surfaceView
+    }
+
+    func enqueueScrollbarUpdate(_ scrollbar: GhosttyScrollbar) {
+        scrollbarUpdates.submit(scrollbar) { [weak self] scrollbar in
+            guard let surfaceView = self?.currentSurfaceView else { return }
+            surfaceView.scrollbar = scrollbar
+            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
+            NotificationCenter.default.post(
+                name: .ghosttyDidUpdateScrollbar,
+                object: surfaceView,
+                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
+            )
+        }
+    }
+
+    func updateCellSize(_ cellSize: CGSize) {
+        // Surface.init reports this synchronously, before Swift receives the
+        // native surface pointer. Preserve that main-thread initialization order.
+        if Thread.isMainThread {
+            applyCellSize(cellSize)
+        } else {
+            cellSizeUpdates.submit(cellSize) { [weak self] in self?.applyCellSize($0) }
+        }
+    }
+
+    private func applyCellSize(_ cellSize: CGSize) {
+        guard let surfaceView = currentSurfaceView else { return }
+        surfaceView.cellSize = cellSize
+        NotificationCenter.default.post(
+            name: .ghosttyDidUpdateCellSize,
+            object: surfaceView,
+            userInfo: [GhosttyNotificationKey.cellSize: cellSize]
+        )
     }
 }
 
@@ -868,6 +976,7 @@ class GhosttyApp {
     }()
 
     private(set) var app: ghostty_app_t?
+    private let tickRequests = GhosttyCallbackCoalescer<Void>()
     private(set) var config: ghostty_config_t?
     private(set) var defaultBackgroundColor: NSColor = .windowBackgroundColor
     private(set) var defaultBackgroundOpacity: Double = 1.0
@@ -1067,9 +1176,8 @@ class GhosttyApp {
         runtimeConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
         runtimeConfig.supports_selection_clipboard = true
         runtimeConfig.wakeup_cb = { userdata in
-            DispatchQueue.main.async {
-                GhosttyApp.shared.tick()
-            }
+            guard let userdata else { return }
+            Unmanaged<GhosttyApp>.fromOpaque(userdata).takeUnretainedValue().scheduleTick()
         }
         runtimeConfig.action_cb = { app, target, action in
             return GhosttyApp.shared.handleAction(target: target, action: action)
@@ -1572,6 +1680,16 @@ class GhosttyApp {
         #endif
     }
 
+    private func scheduleTick() {
+        tickRequests.submit(()) { [weak self] in self?.tick() }
+    }
+
+#if DEBUG
+    func debugTickSchedulingStats() -> GhosttyCallbackCoalescer<Void>.Stats {
+        tickRequests.debugStats()
+    }
+#endif
+
     func tick() {
         guard let app = app else { return }
 
@@ -2045,6 +2163,22 @@ class GhosttyApp {
             return false
         }
         let callbackContext = Self.callbackContext(from: ghostty_surface_userdata(target.target.surface))
+        // The current native scrollbar path uses the main mailbox; coalesce its
+        // bursts. Copy scalars here and keep any future off-main delivery from
+        // reading view/model state before reaching the context's main flush.
+        if action.tag == GHOSTTY_ACTION_SCROLLBAR {
+            guard let callbackContext else { return false }
+            callbackContext.enqueueScrollbarUpdate(GhosttyScrollbar(c: action.action.scrollbar))
+            return true
+        }
+        if action.tag == GHOSTTY_ACTION_CELL_SIZE {
+            guard let callbackContext else { return false }
+            callbackContext.updateCellSize(CGSize(
+                width: CGFloat(action.action.cell_size.width),
+                height: CGFloat(action.action.cell_size.height)
+            ))
+            return true
+        }
         let callbackWorkspaceId = callbackContext?.workspaceId
         let callbackSurfaceId = callbackContext?.surfaceId
 
@@ -2158,28 +2292,6 @@ class GhosttyApp {
                 guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
                 return workspaceManager.toggleSplitZoom(workspaceId: workspaceId, surfaceId: surfaceId)
             }
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let scrollbar = GhosttyScrollbar(c: action.action.scrollbar)
-            surfaceView.scrollbar = scrollbar
-            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateScrollbar,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
-            )
-            return true
-        case GHOSTTY_ACTION_CELL_SIZE:
-            let cellSize = CGSize(
-                width: CGFloat(action.action.cell_size.width),
-                height: CGFloat(action.action.cell_size.height)
-            )
-            surfaceView.cellSize = cellSize
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateCellSize,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.cellSize: cellSize]
-            )
-            return true
         case GHOSTTY_ACTION_START_SEARCH:
             guard let terminalSurface = surfaceView.terminalSurface else { return true }
             let needle = action.action.start_search.needle.flatMap { String(cString: $0) }
@@ -2779,7 +2891,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// arrives until the user selects the tab. We attach into this window, let the
     /// PTY spawn, and release it when the real window arrives (`reconcileAttachedWindowIfNeeded`).
     private var headlessStartupWindow: NSWindow?
-    private var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
+    fileprivate var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
     private var lastFocusState: Bool = false
@@ -4500,6 +4612,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 #if DEBUG
+    var debugCallbackContext: GhosttySurfaceCallbackContext? {
+        surfaceCallbackContext?.takeUnretainedValue()
+    }
+
     @MainActor
     func setNeedsConfirmCloseOverrideForTesting(_ value: Bool?) {
         needsConfirmCloseOverrideForTesting = value

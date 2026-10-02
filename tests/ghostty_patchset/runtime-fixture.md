@@ -97,3 +97,34 @@ Normal RPCs have a four-second socket timeout. Probe receipt/display has a two-s
 The 30 streams occupy one terminal workspace each; the fixture does not create 30 simultaneously visible panes. Comparison requires the same direct-initial-command workload version on both artifacts. It records actual duration rather than claiming a prolonged soak. App-tick timing/count metrics are explicitly unperformed in `result.json`. Render/occlusion screenshots, physical keyboard testing, full shutdown safety fixtures, packaged no-harness smoke, and C11-270's longer load run remain separate proof gates.
 
 Engine SHA is recorded as the caller's claim. The harness hashes the actual app executable, each `Contents/MacOS/*.dylib` (including the Debug implementation library), bundled CLI, fixture source, and optional UI driver; map those hashes to the recorded build manifest before accepting exact-artifact evidence.
+
+## C11-302 wakeup comparison
+
+Run this same fixture with `--comparison-only --streams 30 --samples 100` on the
+post-C11-294 baseline and the wakeup candidate. Use the same PID-scoped UI driver
+on both. The per-sample readiness observations already retain the full
+`debug.terminal.render_stats` response. In the candidate's DEBUG build it also
+contains `tickScheduling` (app-wide) and `scrollbarScheduling` (the requested
+surface's current native callback context). Both expose cumulative `requests`,
+`enqueued`, `drained`, `pending`, and `maxPending`. Pending excludes a currently
+executing callback; one queued successor may coexist with that callback.
+These counters measure Swift scheduling, not native mailbox contents or tick
+durations, and are absent from Release builds.
+
+Compare the resulting reports with:
+
+```sh
+python3 tests/ghostty_patchset/compare-wakeups.py \
+  /tmp/c11-302-baseline-runtime/result.json \
+  /tmp/c11-302-candidate-runtime/result.json \
+  --out /tmp/c11-302-comparison.json
+```
+
+The predeclared preliminary gate requires zero misses and Return-to-PTY p95/p99
+no higher than baseline plus the greater of 5 ms or 20% of that percentile.
+It also requires actual coalescing, tick progress, and `maxPending == 1` in the
+production scheduler snapshots. The comparison checks matching fixture, engine,
+driver, hardware, workload, and measurement versions. Report all percentiles,
+maximum, and load averages, including failures. This is not the fleet soak.
+Final output without extra input, a real scrollbar drag, font/cell-size changes,
+OSC background/config reset, and runtime-context teardown have separate evidence.

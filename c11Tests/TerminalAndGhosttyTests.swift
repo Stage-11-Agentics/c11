@@ -3350,3 +3350,399 @@ final class ColdTerminalReadTests: XCTestCase {
         XCTAssertEqual(code, "not_found")
     }
 }
+
+final class GhosttyCallbackCoalescerTests: XCTestCase {
+    /// Records actual scheduled closures, without running them until a test
+    /// admits a turn. Never hold the scheduler lock while executing user code.
+    private final class Scheduler {
+        private let lock = NSLock()
+        private var jobs: [() -> Void] = []
+        private var enqueued = 0
+
+        func enqueue(_ job: @escaping () -> Void) {
+            lock.lock()
+            jobs.append(job)
+            enqueued += 1
+            lock.unlock()
+        }
+
+        var scheduledCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return enqueued
+        }
+
+        var pendingCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return jobs.count
+        }
+
+        @discardableResult
+        func runNext() -> Bool {
+            lock.lock()
+            let job = jobs.isEmpty ? nil : jobs.removeFirst()
+            lock.unlock()
+            guard let job else { return false }
+            job()
+            return true
+        }
+    }
+
+    private final class Values<Element> {
+        private let lock = NSLock()
+        private var storage: [Element] = []
+
+        func append(_ value: Element) {
+            lock.lock()
+            storage.append(value)
+            lock.unlock()
+        }
+
+        var snapshot: [Element] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+    }
+
+    func testConcurrentBurstSchedulesOneClosureAndAppliesLatestPayload() {
+        let scheduler = Scheduler()
+        let coalescer = GhosttyCallbackCoalescer<Int>(schedule: scheduler.enqueue)
+        let received = Values<Int>()
+
+        DispatchQueue.concurrentPerform(iterations: 256) { value in
+            coalescer.submit(value, apply: received.append)
+        }
+        // concurrentPerform has joined every producer; this is unambiguously
+        // the final request, regardless of the order of the concurrent burst.
+        coalescer.submit(-1, apply: received.append)
+
+        XCTAssertEqual(scheduler.scheduledCount, 1)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertEqual(received.snapshot, [])
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(received.snapshot, [-1])
+        XCTAssertEqual(scheduler.pendingCount, 0)
+        XCTAssertFalse(scheduler.runNext())
+        XCTAssertEqual(scheduler.scheduledCount, 1)
+#if DEBUG
+        let stats = coalescer.debugStats()
+        XCTAssertEqual(stats.requests, 257)
+        XCTAssertEqual(stats.enqueued, 1)
+        XCTAssertEqual(stats.drained, 1)
+        XCTAssertEqual(stats.pending, 0)
+        XCTAssertEqual(stats.maxPending, 1)
+#endif
+    }
+
+    func testRequestsDuringApplyProduceOneSuccessorWithLatestPayload() {
+        let scheduler = Scheduler()
+        let coalescer = GhosttyCallbackCoalescer<Int>(schedule: scheduler.enqueue)
+        let received = Values<Int>()
+        coalescer.submit(1) { value in
+            received.append(value)
+            coalescer.submit(2, apply: received.append)
+            coalescer.submit(3, apply: received.append)
+        }
+
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(received.snapshot, [1])
+        XCTAssertEqual(scheduler.scheduledCount, 2)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(received.snapshot, [1, 3])
+        XCTAssertEqual(scheduler.scheduledCount, 2)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+    }
+
+    func testBoundedBatchesReachFinalSentinelWithoutAnotherExternalRequest() {
+        let scheduler = Scheduler()
+        let coalescer = GhosttyCallbackCoalescer<Void>(schedule: scheduler.enqueue)
+        let expected = Array(0..<70) + [-999]
+        let batchLimit = 8
+        let expectedTurns = (expected.count + batchLimit - 1) / batchLimit
+        var remaining = expected[...]
+        var consumed: [Int] = []
+        var batchSizes: [Int] = []
+
+        func drainBatch(_: Void) {
+            let batch = remaining.prefix(batchLimit)
+            consumed.append(contentsOf: batch)
+            batchSizes.append(batch.count)
+            remaining = remaining.dropFirst(batch.count)
+            if !remaining.isEmpty {
+                // Model the native bounded drain waking Swift before this
+                // apply returns. Several wakeups must admit only one turn.
+                for _ in 0..<16 {
+                    coalescer.submit((), apply: drainBatch)
+                }
+            }
+        }
+
+        coalescer.submit((), apply: drainBatch) // The only external request.
+        for _ in 0..<expectedTurns {
+            XCTAssertEqual(scheduler.pendingCount, 1)
+            XCTAssertTrue(scheduler.runNext())
+        }
+        XCTAssertEqual(consumed, expected)
+        XCTAssertEqual(consumed.last, -999)
+        XCTAssertEqual(batchSizes.count, expectedTurns)
+        XCTAssertTrue(batchSizes.allSatisfy { $0 > 0 && $0 <= batchLimit })
+        XCTAssertEqual(scheduler.scheduledCount, expectedTurns)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+        XCTAssertFalse(scheduler.runNext())
+    }
+
+    func testTwoInstancesRetainIndependentFinalValues() {
+        let scheduler = Scheduler()
+        let first = GhosttyCallbackCoalescer<Int>(schedule: scheduler.enqueue)
+        let second = GhosttyCallbackCoalescer<Int>(schedule: scheduler.enqueue)
+        let firstValues = Values<Int>()
+        let secondValues = Values<Int>()
+        for value in 0..<128 {
+            first.submit(value, apply: firstValues.append)
+            second.submit(-value, apply: secondValues.append)
+        }
+        first.submit(1001, apply: firstValues.append)
+        second.submit(-2002, apply: secondValues.append)
+
+        XCTAssertEqual(scheduler.scheduledCount, 2)
+        XCTAssertEqual(scheduler.pendingCount, 2)
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(firstValues.snapshot, [1001])
+        XCTAssertEqual(secondValues.snapshot, [-2002])
+        XCTAssertEqual(scheduler.pendingCount, 0)
+
+        first.submit(3003, apply: firstValues.append)
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(firstValues.snapshot, [1001, 3003])
+        XCTAssertEqual(secondValues.snapshot, [-2002])
+        XCTAssertEqual(scheduler.scheduledCount, 3)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+    }
+
+    func testProducerDuringFlushRetainsLatestSuccessor() {
+        let scheduler = Scheduler()
+        let coalescer = GhosttyCallbackCoalescer<Int>(schedule: scheduler.enqueue)
+        let received = Values<Int>()
+        let waitResults = Values<DispatchTimeoutResult>()
+        let runResults = Values<Bool>()
+        let enteredApply = DispatchSemaphore(value: 0)
+        let releaseApply = DispatchSemaphore(value: 0)
+        let flush = DispatchGroup()
+
+        coalescer.submit(0) { value in
+            received.append(value)
+            enteredApply.signal()
+            waitResults.append(releaseApply.wait(timeout: .now() + 5))
+        }
+        flush.enter()
+        DispatchQueue.global().async {
+            runResults.append(scheduler.runNext())
+            flush.leave()
+        }
+        defer {
+            releaseApply.signal()
+            XCTAssertEqual(flush.wait(timeout: .now() + 5), .success)
+        }
+        guard enteredApply.wait(timeout: .now() + 5) == .success else {
+            return XCTFail("Scheduled flush never entered apply")
+        }
+
+        // The flushing worker is held inside apply. This producer can publish
+        // a successor before that worker returns, without a race or a sleep.
+        for value in 1...128 {
+            coalescer.submit(value, apply: received.append)
+        }
+        coalescer.submit(999, apply: received.append)
+        XCTAssertEqual(received.snapshot, [0])
+        XCTAssertEqual(scheduler.scheduledCount, 2)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        releaseApply.signal()
+        guard flush.wait(timeout: .now() + 5) == .success else {
+            return XCTFail("Flushing worker did not finish after release")
+        }
+
+        XCTAssertEqual(runResults.snapshot, [true])
+        XCTAssertEqual(waitResults.snapshot, [.success])
+        XCTAssertTrue(scheduler.runNext())
+        XCTAssertEqual(received.snapshot, [0, 999])
+        XCTAssertEqual(scheduler.scheduledCount, 2)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+    }
+
+    func testDefaultSchedulerAppliesOnMainForWorkerRequest() async {
+        let coalescer = GhosttyCallbackCoalescer<Int>()
+        let applied = expectation(description: "Default scheduler applies on main")
+        let requestThreads = Values<Bool>()
+        let applyThreads = Values<Bool>()
+        let received = Values<Int>()
+        DispatchQueue.global().async {
+            requestThreads.append(Thread.isMainThread)
+            coalescer.submit(42) { value in
+                applyThreads.append(Thread.isMainThread)
+                received.append(value)
+                applied.fulfill()
+            }
+        }
+
+        await fulfillment(of: [applied], timeout: 5)
+        XCTAssertEqual(requestThreads.snapshot, [false])
+        XCTAssertEqual(applyThreads.snapshot, [true])
+        XCTAssertEqual(received.snapshot, [42])
+    }
+}
+
+#if DEBUG
+@MainActor
+final class GhosttySurfaceCallbackContextTests: XCTestCase {
+    /// A real native surface in a hidden window. Mounting synchronously creates
+    /// the runtime; these tests never activate or show a window.
+    private func makeSurface() throws -> (NSWindow, TerminalSurface) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let contentView = try XCTUnwrap(window.contentView)
+        surface.hostedView.frame = contentView.bounds
+        contentView.addSubview(surface.hostedView)
+        _ = try XCTUnwrap(surface.surface, "Mounting must create a real native surface")
+        return (window, surface)
+    }
+
+    private func passMainQueueTurn() async {
+        let marker = expectation(description: "Previously queued callbacks have run")
+        DispatchQueue.main.async { marker.fulfill() }
+        await fulfillment(of: [marker], timeout: 5)
+    }
+
+    func testQueuedScrollbarCallbackDoesNotNotifyAfterRuntimeRelease() async throws {
+        let (window, surface) = try makeSurface()
+        defer {
+            surface.releaseSurfaceForTesting()
+            window.orderOut(nil)
+        }
+        let oldContext = try XCTUnwrap(surface.debugCallbackContext)
+        let view = try XCTUnwrap(oldContext.surfaceView)
+        var notifications = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidUpdateScrollbar, object: view, queue: nil
+        ) { _ in notifications += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        oldContext.enqueueScrollbarUpdate(GhosttyScrollbar(c: .init(total: 100, offset: 37, len: 10)))
+        surface.releaseSurfaceForTesting()
+        XCTAssertNil(surface.surface)
+        XCTAssertNil(surface.debugCallbackContext)
+        let previousOffset = view.scrollbar?.offset
+        await passMainQueueTurn()
+
+        XCTAssertEqual(notifications, 0)
+        XCTAssertEqual(view.scrollbar?.offset, previousOffset)
+        XCTAssertTrue(oldContext.surfaceView === view, "Keep the stale context alive through delivery")
+    }
+
+    func testRecreatedRuntimeRejectsOldContextAndAppliesNewContextToSameView() async throws {
+        let (window, surface) = try makeSurface()
+        defer {
+            surface.releaseSurfaceForTesting()
+            window.orderOut(nil)
+        }
+        let oldContext = try XCTUnwrap(surface.debugCallbackContext)
+        let view = try XCTUnwrap(oldContext.surfaceView)
+        let staleOffset: UInt64 = 999_937
+        var staleScrollbarNotifications = 0
+        var notifiedCellSizes: [CGSize] = []
+        let scrollbarObserver = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidUpdateScrollbar, object: view, queue: nil
+        ) { notification in
+            if let scrollbar = notification.userInfo?[GhosttyNotificationKey.scrollbar] as? GhosttyScrollbar,
+               scrollbar.offset == staleOffset {
+                staleScrollbarNotifications += 1
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(scrollbarObserver) }
+        oldContext.enqueueScrollbarUpdate(
+            GhosttyScrollbar(c: .init(total: 1_000_000, offset: staleOffset, len: 10))
+        )
+        surface.releaseSurfaceForTesting()
+        surface.attachToView(view)
+        _ = try XCTUnwrap(surface.surface, "Explicit same-view attachment must recreate the runtime")
+        let newContext = try XCTUnwrap(surface.debugCallbackContext)
+        XCTAssertFalse(oldContext === newContext)
+        XCTAssertTrue(newContext.surfaceView === view)
+
+        let cellObserver = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidUpdateCellSize, object: view, queue: nil
+        ) { notification in
+            if let size = notification.userInfo?[GhosttyNotificationKey.cellSize] as? CGSize {
+                notifiedCellSizes.append(size)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(cellObserver) }
+        let currentSize = CGSize(width: 19, height: 29)
+        newContext.updateCellSize(currentSize)
+        oldContext.updateCellSize(CGSize(width: 97, height: 101))
+        XCTAssertEqual(view.cellSize, currentSize)
+        XCTAssertEqual(notifiedCellSizes, [currentSize])
+
+        await passMainQueueTurn()
+        XCTAssertEqual(staleScrollbarNotifications, 0)
+        XCTAssertTrue(oldContext.surfaceView === newContext.surfaceView)
+    }
+
+    func testInitialCellSizeIsDeliveredBeforeNativeCreationReturns() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        defer {
+            surface.releaseSurfaceForTesting()
+            window.orderOut(nil)
+        }
+        XCTAssertNil(surface.surface)
+        var initialSizes: [CGSize] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .ghosttyDidUpdateCellSize, object: nil, queue: nil
+        ) { notification in
+            guard let view = notification.object as? GhosttyNSView,
+                  view.terminalSurface === surface,
+                  surface.surface == nil,
+                  let size = notification.userInfo?[GhosttyNotificationKey.cellSize] as? CGSize else { return }
+            XCTAssertTrue(Thread.isMainThread)
+            initialSizes.append(size)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let contentView = try XCTUnwrap(window.contentView)
+        surface.hostedView.frame = contentView.bounds
+        contentView.addSubview(surface.hostedView)
+        _ = try XCTUnwrap(surface.surface, "Mounting must create a real native surface")
+        let view = try XCTUnwrap(surface.debugCallbackContext?.surfaceView)
+        // No run-loop turn has occurred. The initializer's callback must already
+        // have published dimensions while Swift's native handle was still nil.
+        XCTAssertFalse(initialSizes.isEmpty)
+        XCTAssertTrue(initialSizes.allSatisfy { $0.width > 0 && $0.height > 0 })
+        XCTAssertGreaterThan(view.cellSize.width, 0)
+        XCTAssertGreaterThan(view.cellSize.height, 0)
+    }
+}
+#endif

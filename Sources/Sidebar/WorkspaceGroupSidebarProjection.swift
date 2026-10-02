@@ -24,7 +24,7 @@ struct WorkspaceGroupMemberAttention: Equatable {
     init(tabs: [WorkspaceGroupTabAttention] = [], unreadCount: Int = 0) {
         flaggedCount = tabs.reduce(0) { $0 + ($1.isFlagged ? 1 : 0) }
         waitingCount = tabs.reduce(0) { $0 + ($1.isWaiting && !$1.isSuppressed ? 1 : 0) }
-        // The workspace notification index includes workspace-scoped demand once.
+        // Raw unread history includes suppressed and workspace-scoped entries once.
         // Do not sum per-tab notification counts or WorkspacePulse's synthetic waiting fallback.
         self.unreadCount = unreadCount
     }
@@ -226,7 +226,7 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
                                                                   isSuppressed: attention.suppressed)
                             }
                             return WorkspaceGroupMemberAttention(tabs: tabs,
-                                unreadCount: notificationStore.unreadCount(forWorkspaceId: workspace.id))
+                                unreadCount: notificationStore.rawUnreadCount(forWorkspaceId: workspace.id))
                         })
                 }
             },

@@ -1,0 +1,2804 @@
+{
+  "head": "c7351e3ff4f8b149cd7528c7287d6d9a60887d86",
+  "tagged_build": {
+    "invocation": "859101a10b544c9299b2cb43e21be5dd",
+    "head": "c7351e3ff4f8b149cd7528c7287d6d9a60887d86",
+    "parent_head": "a42e9b9251f62715f58525c1805db4b9156902cb",
+    "branch": "c11-1.0/C11-298-single-instance",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-298-instance",
+    "slug": "c11-298-instance",
+    "mode": "debug",
+    "extra": [],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "na",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "app": "c11 DEV c11-298-instance.app",
+    "executable_sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9",
+    "ok": true,
+    "local_executable_sha256": "015cecb012e5f2e8117175a25654896bee1ba664c6af6d530c3ddc8e00c30dcc"
+  },
+  "fixture": {
+    "app": {
+      "path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app",
+      "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+      "executable": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+      "build": "131",
+      "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+    },
+    "copied_app": {
+      "path": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app",
+      "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+      "executable": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+      "build": "131",
+      "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+    },
+    "incumbent_pid": 650,
+    "socket": "/tmp/c11-sandbox-c11-298-instance.sock",
+    "window_id": "F41CD6BE-FBDB-4496-8167-7812ED092468",
+    "workspace_id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+    "tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+    "second_tab_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+    "shell_pid": 1644,
+    "child_pid": 1877,
+    "marker": "C11_326eb3e5e8d74bf58742f8f8f910aec2",
+    "heartbeat_file": "/Volumes/My Shared Files/out/duplicate-run1/heartbeat.txt",
+    "child_seconds": 300,
+    "session_file": "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json",
+    "persistence_paths": [
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty",
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean"
+    ],
+    "settled_files": {
+      "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+        "device": 16777227,
+        "inode": 539973,
+        "mtime_ns": 1790927327534139945,
+        "size": 6621,
+        "sha256": "38017cdf7f6ed827d49082fd73216e56353a4162833fe54a224427daba2f293b"
+      },
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+        "device": 16777227,
+        "inode": 533727,
+        "mtime_ns": 1790927266113122796,
+        "size": 18,
+        "sha256": "806cdae4fa95284deb73fce139bcb0a5821e9fca468ac7b0f2b334162dbb4d6a"
+      },
+      "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+    }
+  },
+  "duplicate_proof": {
+    "result": "PASS",
+    "attempts": [
+      {
+        "phase": "same-bundle",
+        "result": "PASS",
+        "bundle": {
+          "path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app",
+          "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+          "executable": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+          "build": "131",
+          "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+        },
+        "launched_at": 1790927330.2337651,
+        "newcomer_pid": 2020,
+        "incumbent_pid": 650,
+        "observed_pids": [
+          2020
+        ],
+        "socket_identity": [
+          16777227,
+          533809
+        ],
+        "before_files": {
+          "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+            "device": 16777227,
+            "inode": 540000,
+            "mtime_ns": 1790927330194530528,
+            "size": 6625,
+            "sha256": "5d861a396896153d3165b839a5f6696be43cd8bcf1411685fe12c2528d68418c"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+            "device": 16777227,
+            "inode": 533727,
+            "mtime_ns": 1790927266113122796,
+            "size": 18,
+            "sha256": "806cdae4fa95284deb73fce139bcb0a5821e9fca468ac7b0f2b334162dbb4d6a"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+        },
+        "after_files": {
+          "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+            "device": 16777227,
+            "inode": 540000,
+            "mtime_ns": 1790927330194530528,
+            "size": 6625,
+            "sha256": "5d861a396896153d3165b839a5f6696be43cd8bcf1411685fe12c2528d68418c"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+            "device": 16777227,
+            "inode": 533727,
+            "mtime_ns": 1790927266113122796,
+            "size": 18,
+            "sha256": "806cdae4fa95284deb73fce139bcb0a5821e9fca468ac7b0f2b334162dbb4d6a"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+        },
+        "heartbeat_before": 15,
+        "heartbeat_after": 20,
+        "shell": {
+          "phase": "same-bundle",
+          "shell_pid": 1644,
+          "child_pid": 1877,
+          "capture": "[omitted: raw shell capture contained identifying shell prompts; structured synthetic proof_line retained]",
+          "proof_line": "C11_YIELD_2ed3de5ad530463ba342fbfb80a5d03c 1644 C11_326eb3e5e8d74bf58742f8f8f910aec2"
+        },
+        "graph": {
+          "identities": {
+            "F41CD6BE-FBDB-4496-8167-7812ED092468": {
+              "ref": "window:1",
+              "workspaces": {
+                "A291FC4E-A745-4DE3-80F7-31A244E2F248": {
+                  "ref": "workspace:1",
+                  "areas": {
+                    "95368559-6D6A-4B86-9793-6C8180CC5BB7": {
+                      "ref": "area:1",
+                      "tabs": {
+                        "F19FA8D8-C4C4-452C-8270-535CC05AD59D": "tab:2"
+                      }
+                    },
+                    "E23F321E-5EE9-48CC-BBA0-1D869C109FA4": {
+                      "ref": "area:2",
+                      "tabs": {
+                        "1FD7717D-0CAF-4273-878D-06773BAD41D8": "tab:5"
+                      }
+                    },
+                    "ACAE81A4-F5D4-4C35-9881-7376A841B58E": {
+                      "ref": "area:3",
+                      "tabs": {
+                        "DAA57B70-68FC-40E3-AEFF-71919749EE7E": "tab:3"
+                      }
+                    },
+                    "135A640D-B1CD-41C2-818B-74AF239603AF": {
+                      "ref": "area:4",
+                      "tabs": {
+                        "A679AA1E-5984-4B2C-83A4-B63B55AA6094": "tab:4"
+                      }
+                    }
+                  }
+                },
+                "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F": {
+                  "ref": "workspace:2",
+                  "areas": {
+                    "8AD6713F-FB29-40D3-A062-52365CF0AD94": {
+                      "ref": "area:5",
+                      "tabs": {
+                        "F5067142-7A4F-464D-830F-DA5A5A69DE6E": "tab:6"
+                      }
+                    },
+                    "065644CE-53BC-4E41-850E-30B7ADC8C99A": {
+                      "ref": "area:6",
+                      "tabs": {
+                        "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4": "tab:7"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "tree": {
+            "active": {
+              "window_id": "F41CD6BE-FBDB-4496-8167-7812ED092468",
+              "surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+              "surface_ref": "surface:6",
+              "root_directory": "/Volumes/My Shared Files/out/duplicate-run1",
+              "workspace_id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+              "tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+              "surface_type": "terminal",
+              "is_browser_surface": false,
+              "window_ref": "window:1",
+              "area_ref": "area:5",
+              "workspace_ref": "workspace:2",
+              "tab_type": "terminal",
+              "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+              "is_browser_tab": false,
+              "tab_ref": "tab:6",
+              "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+              "pane_ref": "pane:5"
+            },
+            "scope": "all",
+            "windows": [
+              {
+                "key": false,
+                "id": "F41CD6BE-FBDB-4496-8167-7812ED092468",
+                "visible": true,
+                "ref": "window:1",
+                "selected_workspace_id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+                "selected_workspace_ref": "workspace:2",
+                "workspaces": [
+                  {
+                    "title": "Workspace 1",
+                    "pinned": false,
+                    "ref": "workspace:1",
+                    "content_area": {
+                      "pixels": {
+                        "height": 668,
+                        "width": 824
+                      }
+                    },
+                    "areas": [
+                      {
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:top"
+                          ],
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              0,
+                              334
+                            ]
+                          },
+                          "percent": {
+                            "H": [
+                              0,
+                              0.5
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          }
+                        },
+                        "selected_surface_ref": "surface:2",
+                        "surface_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "selected_surface_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "selected_tab_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "tabs": [
+                          {
+                            "index": 0,
+                            "being_seen": false,
+                            "focused": true,
+                            "tty": "ttys000",
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "title": "$HOME",
+                            "last_seen_at": null,
+                            "pane_ref": "pane:1",
+                            "ref": "tab:2",
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "url": null,
+                            "selected_in_pane": true,
+                            "area_ref": "area:1",
+                            "index_in_pane": 0,
+                            "type": "terminal",
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "selected": true
+                          }
+                        ],
+                        "tab_refs": [
+                          "tab:2"
+                        ],
+                        "selected_tab_ref": "tab:2",
+                        "tab_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "focused": true,
+                        "surface_refs": [
+                          "surface:2"
+                        ],
+                        "id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                        "index": 0,
+                        "surface_count": 1,
+                        "surfaces": [
+                          {
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "selected_in_area": true,
+                            "title": "$HOME",
+                            "ref": "tab:2",
+                            "last_seen_at": null,
+                            "url": null,
+                            "index_in_pane": 0,
+                            "tty": "ttys000",
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "selected": true,
+                            "index": 0,
+                            "focused": true,
+                            "pane_ref": "pane:1",
+                            "selected_in_pane": true,
+                            "area_ref": "area:1",
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "being_seen": false
+                          }
+                        ],
+                        "tab_count": 1,
+                        "ref": "area:1"
+                      },
+                      {
+                        "tab_count": 1,
+                        "tabs": [
+                          {
+                            "selected_in_pane": true,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "index_in_pane": 0,
+                            "url": null,
+                            "selected_in_area": true,
+                            "index_in_area": 0,
+                            "title": "welcome.md",
+                            "pane_ref": "pane:2",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "being_seen": false,
+                            "focused": false,
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "area_ref": "area:2",
+                            "ref": "tab:5",
+                            "last_seen_at": null,
+                            "index": 1,
+                            "tty": null,
+                            "selected": true,
+                            "type": "markdown"
+                          }
+                        ],
+                        "surface_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "focused": false,
+                        "id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                        "ref": "area:2",
+                        "surface_count": 1,
+                        "selected_surface_ref": "surface:5",
+                        "surfaces": [
+                          {
+                            "being_seen": false,
+                            "tty": null,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "area_ref": "area:2",
+                            "ref": "tab:5",
+                            "type": "markdown",
+                            "url": null,
+                            "pane_ref": "pane:2",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "selected": true,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "focused": false,
+                            "title": "welcome.md",
+                            "last_seen_at": null,
+                            "index": 1,
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "index_in_pane": 0,
+                            "selected_in_pane": true,
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4"
+                          }
+                        ],
+                        "tab_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "tab_refs": [
+                          "tab:5"
+                        ],
+                        "selected_tab_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "selected_tab_ref": "tab:5",
+                        "surface_refs": [
+                          "surface:5"
+                        ],
+                        "selected_surface_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:bottom"
+                          ],
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              334,
+                              668
+                            ]
+                          },
+                          "percent": {
+                            "V": [
+                              0.5,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          }
+                        },
+                        "index": 1
+                      },
+                      {
+                        "layout": {
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "split_path": [
+                            "H:right",
+                            "V:top"
+                          ],
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              0,
+                              334
+                            ]
+                          }
+                        },
+                        "index": 2,
+                        "tabs": [
+                          {
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "selected": true,
+                            "tty": null,
+                            "being_seen": false,
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "ref": "tab:3",
+                            "url": "https://www.stage11.ai/",
+                            "pane_ref": "pane:3",
+                            "index_in_pane": 0,
+                            "type": "browser",
+                            "area_ref": "area:3",
+                            "index_in_area": 0,
+                            "focused": false,
+                            "selected_in_pane": true,
+                            "title": "Stage 11 Agentics",
+                            "last_seen_at": null,
+                            "selected_in_area": true,
+                            "index": 2
+                          }
+                        ],
+                        "tab_count": 1,
+                        "focused": false,
+                        "surfaces": [
+                          {
+                            "url": "https://www.stage11.ai/",
+                            "selected_in_area": true,
+                            "selected_in_pane": true,
+                            "type": "browser",
+                            "tty": null,
+                            "index_in_pane": 0,
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "being_seen": false,
+                            "index_in_area": 0,
+                            "focused": false,
+                            "title": "Stage 11 Agentics",
+                            "selected": true,
+                            "area_ref": "area:3",
+                            "last_seen_at": null,
+                            "index": 2,
+                            "ref": "tab:3",
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "pane_ref": "pane:3",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E"
+                          }
+                        ],
+                        "tab_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "selected_tab_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "selected_surface_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "ref": "area:3",
+                        "surface_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                        "surface_refs": [
+                          "surface:3"
+                        ],
+                        "tab_refs": [
+                          "tab:3"
+                        ],
+                        "selected_tab_ref": "tab:3",
+                        "surface_count": 1,
+                        "selected_surface_ref": "surface:3"
+                      },
+                      {
+                        "selected_surface_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "focused": false,
+                        "tab_refs": [
+                          "tab:4"
+                        ],
+                        "selected_tab_ref": "tab:4",
+                        "surface_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "layout": {
+                          "split_path": [
+                            "H:right",
+                            "V:bottom"
+                          ],
+                          "pixels": {
+                            "V": [
+                              334,
+                              668
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          },
+                          "percent": {
+                            "V": [
+                              0.5,
+                              1
+                            ],
+                            "H": [
+                              0.5,
+                              1
+                            ]
+                          }
+                        },
+                        "ref": "area:4",
+                        "tab_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "selected_tab_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                        "tab_count": 1,
+                        "selected_surface_ref": "surface:4",
+                        "index": 3,
+                        "surface_count": 1,
+                        "surfaces": [
+                          {
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "selected": true,
+                            "tty": "ttys001",
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "selected_in_pane": true,
+                            "last_seen_at": null,
+                            "area_ref": "area:4",
+                            "title": "$HOME",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "focused": false,
+                            "type": "terminal",
+                            "index": 3,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "url": null,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "ref": "tab:4",
+                            "pane_ref": "pane:4"
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:4"
+                        ],
+                        "tabs": [
+                          {
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "url": null,
+                            "title": "$HOME",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "index_in_pane": 0,
+                            "last_seen_at": null,
+                            "pane_ref": "pane:4",
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "area_ref": "area:4",
+                            "tty": "ttys001",
+                            "selected": true,
+                            "selected_in_area": true,
+                            "selected_in_pane": true,
+                            "focused": false,
+                            "being_seen": false,
+                            "index": 3,
+                            "ref": "tab:4",
+                            "type": "terminal",
+                            "index_in_area": 0
+                          }
+                        ]
+                      }
+                    ],
+                    "selected": false,
+                    "root_directory": null,
+                    "id": "A291FC4E-A745-4DE3-80F7-31A244E2F248",
+                    "panes": [
+                      {
+                        "id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                        "focused": true,
+                        "tab_refs": [
+                          "tab:2"
+                        ],
+                        "surface_refs": [
+                          "surface:2"
+                        ],
+                        "ref": "area:1",
+                        "surface_count": 1,
+                        "selected_surface_ref": "surface:2",
+                        "surface_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:top"
+                          ],
+                          "percent": {
+                            "H": [
+                              0,
+                              0.5
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              0,
+                              334
+                            ]
+                          }
+                        },
+                        "surfaces": [
+                          {
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "ref": "tab:2",
+                            "index": 0,
+                            "last_seen_at": null,
+                            "index_in_pane": 0,
+                            "focused": true,
+                            "tty": "ttys000",
+                            "selected": true,
+                            "being_seen": false,
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "area_ref": "area:1",
+                            "title": "$HOME",
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "url": null,
+                            "pane_ref": "pane:1",
+                            "type": "terminal",
+                            "selected_in_pane": true,
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7"
+                          }
+                        ],
+                        "selected_tab_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "index": 0,
+                        "selected_tab_ref": "tab:2",
+                        "tabs": [
+                          {
+                            "ref": "tab:2",
+                            "url": null,
+                            "index": 0,
+                            "tty": "ttys000",
+                            "pane_ref": "pane:1",
+                            "being_seen": false,
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "focused": true,
+                            "selected_in_pane": true,
+                            "area_ref": "area:1",
+                            "selected": true,
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "index_in_pane": 0,
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "title": "$HOME",
+                            "last_seen_at": null,
+                            "selected_in_area": true,
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                          }
+                        ],
+                        "tab_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "tab_count": 1,
+                        "selected_surface_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                      },
+                      {
+                        "id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                        "tab_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "focused": false,
+                        "selected_surface_ref": "surface:5",
+                        "selected_tab_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "index": 1,
+                        "surfaces": [
+                          {
+                            "url": null,
+                            "ref": "tab:5",
+                            "last_seen_at": null,
+                            "title": "welcome.md",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "index": 1,
+                            "selected": true,
+                            "area_ref": "area:2",
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "focused": false,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "index_in_pane": 0,
+                            "selected_in_pane": true,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "being_seen": false,
+                            "type": "markdown",
+                            "tty": null,
+                            "pane_ref": "pane:2"
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:5"
+                        ],
+                        "selected_tab_ref": "tab:5",
+                        "tab_refs": [
+                          "tab:5"
+                        ],
+                        "selected_surface_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:bottom"
+                          ],
+                          "percent": {
+                            "V": [
+                              0.5,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              334,
+                              668
+                            ]
+                          }
+                        },
+                        "ref": "area:2",
+                        "surface_count": 1,
+                        "surface_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "tabs": [
+                          {
+                            "selected": true,
+                            "focused": false,
+                            "selected_in_area": true,
+                            "url": null,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "tty": null,
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "index": 1,
+                            "selected_in_pane": true,
+                            "index_in_pane": 0,
+                            "ref": "tab:5",
+                            "last_seen_at": null,
+                            "type": "markdown",
+                            "being_seen": false,
+                            "title": "welcome.md",
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "area_ref": "area:2",
+                            "index_in_area": 0,
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "pane_ref": "pane:2"
+                          }
+                        ],
+                        "tab_count": 1
+                      },
+                      {
+                        "surface_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "selected_tab_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "surfaces": [
+                          {
+                            "being_seen": false,
+                            "pane_ref": "pane:3",
+                            "last_seen_at": null,
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "index_in_pane": 0,
+                            "index": 2,
+                            "selected_in_pane": true,
+                            "index_in_area": 0,
+                            "selected": true,
+                            "url": "https://www.stage11.ai/",
+                            "selected_in_area": true,
+                            "tty": null,
+                            "type": "browser",
+                            "area_ref": "area:3",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "focused": false,
+                            "ref": "tab:3",
+                            "title": "Stage 11 Agentics"
+                          }
+                        ],
+                        "selected_tab_ref": "tab:3",
+                        "selected_surface_ref": "surface:3",
+                        "selected_surface_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "ref": "area:3",
+                        "tabs": [
+                          {
+                            "tty": null,
+                            "selected_in_pane": true,
+                            "index_in_area": 0,
+                            "index_in_pane": 0,
+                            "index": 2,
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "pane_ref": "pane:3",
+                            "being_seen": false,
+                            "selected_in_area": true,
+                            "type": "browser",
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "title": "Stage 11 Agentics",
+                            "area_ref": "area:3",
+                            "last_seen_at": null,
+                            "selected": true,
+                            "url": "https://www.stage11.ai/",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "ref": "tab:3",
+                            "focused": false
+                          }
+                        ],
+                        "index": 2,
+                        "surface_count": 1,
+                        "layout": {
+                          "split_path": [
+                            "H:right",
+                            "V:top"
+                          ],
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "V": [
+                              0,
+                              334
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          }
+                        },
+                        "tab_count": 1,
+                        "focused": false,
+                        "tab_refs": [
+                          "tab:3"
+                        ],
+                        "tab_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                        "surface_refs": [
+                          "surface:3"
+                        ]
+                      },
+                      {
+                        "tabs": [
+                          {
+                            "index_in_pane": 0,
+                            "ref": "tab:4",
+                            "being_seen": false,
+                            "tty": "ttys001",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "selected_in_pane": true,
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "url": null,
+                            "last_seen_at": null,
+                            "type": "terminal",
+                            "index_in_area": 0,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "area_ref": "area:4",
+                            "selected_in_area": true,
+                            "focused": false,
+                            "index": 3,
+                            "selected": true,
+                            "title": "$HOME",
+                            "pane_ref": "pane:4"
+                          }
+                        ],
+                        "tab_refs": [
+                          "tab:4"
+                        ],
+                        "selected_tab_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "surface_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "tab_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "index": 3,
+                        "layout": {
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0.5,
+                              1
+                            ]
+                          },
+                          "pixels": {
+                            "V": [
+                              334,
+                              668
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          },
+                          "split_path": [
+                            "H:right",
+                            "V:bottom"
+                          ]
+                        },
+                        "surfaces": [
+                          {
+                            "selected": true,
+                            "index": 3,
+                            "url": null,
+                            "selected_in_area": true,
+                            "title": "$HOME",
+                            "focused": false,
+                            "index_in_pane": 0,
+                            "area_ref": "area:4",
+                            "index_in_area": 0,
+                            "ref": "tab:4",
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "last_seen_at": null,
+                            "tty": "ttys001",
+                            "type": "terminal",
+                            "pane_ref": "pane:4",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "selected_in_pane": true,
+                            "being_seen": false
+                          }
+                        ],
+                        "selected_surface_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "focused": false,
+                        "selected_tab_ref": "tab:4",
+                        "tab_count": 1,
+                        "surface_count": 1,
+                        "id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                        "surface_refs": [
+                          "surface:4"
+                        ],
+                        "selected_surface_ref": "surface:4",
+                        "ref": "area:4"
+                      }
+                    ],
+                    "index": 0
+                  },
+                  {
+                    "content_area": {
+                      "pixels": {
+                        "width": 824,
+                        "height": 668
+                      }
+                    },
+                    "id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+                    "root_directory": "/Volumes/My Shared Files/out/duplicate-run1",
+                    "areas": [
+                      {
+                        "tab_count": 1,
+                        "ref": "area:5",
+                        "selected_tab_ref": "tab:6",
+                        "tabs": [
+                          {
+                            "type": "terminal",
+                            "index": 0,
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "ref": "tab:6",
+                            "last_seen_at": null,
+                            "index_in_pane": 0,
+                            "selected": true,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "index_in_area": 0,
+                            "area_ref": "area:5",
+                            "selected_in_area": true,
+                            "focused": true,
+                            "being_seen": false,
+                            "url": null,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "pane_ref": "pane:5",
+                            "selected_in_pane": true,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "tty": "ttys002"
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:6"
+                        ],
+                        "selected_tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "focused": true,
+                        "tab_refs": [
+                          "tab:6"
+                        ],
+                        "id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                        "selected_surface_ref": "surface:6",
+                        "index": 0,
+                        "surfaces": [
+                          {
+                            "being_seen": false,
+                            "tty": "ttys002",
+                            "selected": true,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "selected_in_area": true,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "ref": "tab:6",
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "focused": true,
+                            "pane_ref": "pane:5",
+                            "url": null,
+                            "type": "terminal",
+                            "index": 0,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "selected_in_pane": true,
+                            "index_in_area": 0,
+                            "area_ref": "area:5",
+                            "last_seen_at": null,
+                            "index_in_pane": 0
+                          }
+                        ],
+                        "layout": {
+                          "pixels": {
+                            "V": [
+                              0,
+                              668
+                            ],
+                            "H": [
+                              0,
+                              412
+                            ]
+                          },
+                          "split_path": [
+                            "H:left"
+                          ],
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          }
+                        },
+                        "surface_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "surface_count": 1,
+                        "selected_surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "tab_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ]
+                      },
+                      {
+                        "tab_refs": [
+                          "tab:7"
+                        ],
+                        "focused": false,
+                        "selected_tab_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "tabs": [
+                          {
+                            "area_ref": "area:6",
+                            "selected": true,
+                            "being_seen": false,
+                            "type": "terminal",
+                            "index_in_area": 0,
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "selected_in_pane": true,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "tty": "ttys003",
+                            "focused": false,
+                            "last_seen_at": null,
+                            "ref": "tab:7",
+                            "pane_ref": "pane:6",
+                            "selected_in_area": true,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "index": 1,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "url": null,
+                            "index_in_pane": 0
+                          }
+                        ],
+                        "surface_count": 1,
+                        "selected_tab_ref": "tab:7",
+                        "tab_count": 1,
+                        "id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                        "surfaces": [
+                          {
+                            "selected_in_pane": true,
+                            "type": "terminal",
+                            "index_in_area": 0,
+                            "index": 1,
+                            "focused": false,
+                            "being_seen": false,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "last_seen_at": null,
+                            "url": null,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "index_in_pane": 0,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "ref": "tab:7",
+                            "pane_ref": "pane:6",
+                            "selected_in_area": true,
+                            "tty": "ttys003",
+                            "area_ref": "area:6",
+                            "selected": true
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:7"
+                        ],
+                        "selected_surface_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "surface_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "index": 1,
+                        "ref": "area:6",
+                        "selected_surface_ref": "surface:7",
+                        "layout": {
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0,
+                              1
+                            ]
+                          },
+                          "pixels": {
+                            "V": [
+                              0,
+                              668
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          },
+                          "split_path": [
+                            "H:right"
+                          ]
+                        },
+                        "tab_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ]
+                      }
+                    ],
+                    "ref": "workspace:2",
+                    "panes": [
+                      {
+                        "ref": "area:5",
+                        "layout": {
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "split_path": [
+                            "H:left"
+                          ],
+                          "pixels": {
+                            "V": [
+                              0,
+                              668
+                            ],
+                            "H": [
+                              0,
+                              412
+                            ]
+                          }
+                        },
+                        "surfaces": [
+                          {
+                            "index": 0,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "tty": "ttys002",
+                            "selected_in_area": true,
+                            "last_seen_at": null,
+                            "ref": "tab:6",
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "index_in_area": 0,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "type": "terminal",
+                            "selected": true,
+                            "selected_in_pane": true,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "focused": true,
+                            "url": null,
+                            "area_ref": "area:5",
+                            "pane_ref": "pane:5"
+                          }
+                        ],
+                        "selected_tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                        "selected_surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "focused": true,
+                        "tabs": [
+                          {
+                            "index_in_area": 0,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "type": "terminal",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "tty": "ttys002",
+                            "pane_ref": "pane:5",
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "last_seen_at": null,
+                            "selected": true,
+                            "area_ref": "area:5",
+                            "selected_in_area": true,
+                            "ref": "tab:6",
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "url": null,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "index": 0,
+                            "focused": true,
+                            "selected_in_pane": true
+                          }
+                        ],
+                        "tab_refs": [
+                          "tab:6"
+                        ],
+                        "surface_count": 1,
+                        "tab_count": 1,
+                        "surface_refs": [
+                          "surface:6"
+                        ],
+                        "tab_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "selected_tab_ref": "tab:6",
+                        "index": 0,
+                        "selected_surface_ref": "surface:6",
+                        "surface_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ]
+                      },
+                      {
+                        "id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                        "index": 1,
+                        "ref": "area:6",
+                        "layout": {
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              0,
+                              668
+                            ]
+                          },
+                          "split_path": [
+                            "H:right"
+                          ],
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0,
+                              1
+                            ]
+                          }
+                        },
+                        "surface_refs": [
+                          "surface:7"
+                        ],
+                        "surface_count": 1,
+                        "surfaces": [
+                          {
+                            "url": null,
+                            "selected_in_pane": true,
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "focused": false,
+                            "ref": "tab:7",
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "type": "terminal",
+                            "pane_ref": "pane:6",
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "tty": "ttys003",
+                            "last_seen_at": null,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "selected": true,
+                            "index": 1,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "area_ref": "area:6"
+                          }
+                        ],
+                        "focused": false,
+                        "tab_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "selected_tab_ref": "tab:7",
+                        "tab_count": 1,
+                        "selected_tab_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "selected_surface_ref": "surface:7",
+                        "selected_surface_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "surface_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "tab_refs": [
+                          "tab:7"
+                        ],
+                        "tabs": [
+                          {
+                            "selected": true,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "last_seen_at": null,
+                            "url": null,
+                            "area_ref": "area:6",
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "focused": false,
+                            "index_in_pane": 0,
+                            "index": 1,
+                            "being_seen": false,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "selected_in_area": true,
+                            "ref": "tab:7",
+                            "tty": "ttys003",
+                            "pane_ref": "pane:6",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "selected_in_pane": true
+                          }
+                        ]
+                      }
+                    ],
+                    "index": 1,
+                    "selected": true,
+                    "pinned": false,
+                    "title": "C11-298 synthetic fleet"
+                  }
+                ],
+                "workspace_count": 2,
+                "index": 0
+              }
+            ],
+            "caller": null
+          }
+        }
+      },
+      {
+        "phase": "copied-bundle",
+        "result": "PASS",
+        "bundle": {
+          "path": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app",
+          "bundle_id": "com.stage11.c11.debug.c11.298.instance",
+          "executable": "$HOME/c11-298-copy/c11 DEV c11-298-instance.app/Contents/MacOS/c11",
+          "build": "131",
+          "sha256": "2545b8ced7e899443f068a4a714b7f5e8ae257478158ab4e47b0125eef8395b9"
+        },
+        "launched_at": 1790927332.233452,
+        "newcomer_pid": 2101,
+        "incumbent_pid": 650,
+        "observed_pids": [
+          2101
+        ],
+        "socket_identity": [
+          16777227,
+          533809
+        ],
+        "before_files": {
+          "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+            "device": 16777227,
+            "inode": 540037,
+            "mtime_ns": 1790927331919458527,
+            "size": 6621,
+            "sha256": "4e609bb8f98dd72754be0460e93b197d86fa6222d0f6c7b1d4ebc0f76205188e"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+            "device": 16777227,
+            "inode": 533727,
+            "mtime_ns": 1790927266113122796,
+            "size": 18,
+            "sha256": "806cdae4fa95284deb73fce139bcb0a5821e9fca468ac7b0f2b334162dbb4d6a"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+        },
+        "after_files": {
+          "$HOME/Library/Application Support/c11/session-com.stage11.c11.debug.c11.298.instance.json": {
+            "device": 16777227,
+            "inode": 540037,
+            "mtime_ns": 1790927331919458527,
+            "size": 6621,
+            "sha256": "4e609bb8f98dd72754be0460e93b197d86fa6222d0f6c7b1d4ebc0f76205188e"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.dirty": {
+            "device": 16777227,
+            "inode": 533727,
+            "mtime_ns": 1790927266113122796,
+            "size": 18,
+            "sha256": "806cdae4fa95284deb73fce139bcb0a5821e9fca468ac7b0f2b334162dbb4d6a"
+          },
+          "$HOME/.c11/runtime/shutdown.com.stage11.c11.debug.c11.298.instance.clean": null
+        },
+        "heartbeat_before": 22,
+        "heartbeat_after": 23,
+        "shell": {
+          "phase": "copied-bundle",
+          "shell_pid": 1644,
+          "child_pid": 1877,
+          "capture": "[omitted: raw shell capture contained identifying shell prompts; structured synthetic proof_line retained]",
+          "proof_line": "C11_YIELD_1ca4d18315b843c4874ed5c0b82f067b 1644 C11_326eb3e5e8d74bf58742f8f8f910aec2"
+        },
+        "graph": {
+          "identities": {
+            "F41CD6BE-FBDB-4496-8167-7812ED092468": {
+              "ref": "window:1",
+              "workspaces": {
+                "A291FC4E-A745-4DE3-80F7-31A244E2F248": {
+                  "ref": "workspace:1",
+                  "areas": {
+                    "95368559-6D6A-4B86-9793-6C8180CC5BB7": {
+                      "ref": "area:1",
+                      "tabs": {
+                        "F19FA8D8-C4C4-452C-8270-535CC05AD59D": "tab:2"
+                      }
+                    },
+                    "E23F321E-5EE9-48CC-BBA0-1D869C109FA4": {
+                      "ref": "area:2",
+                      "tabs": {
+                        "1FD7717D-0CAF-4273-878D-06773BAD41D8": "tab:5"
+                      }
+                    },
+                    "ACAE81A4-F5D4-4C35-9881-7376A841B58E": {
+                      "ref": "area:3",
+                      "tabs": {
+                        "DAA57B70-68FC-40E3-AEFF-71919749EE7E": "tab:3"
+                      }
+                    },
+                    "135A640D-B1CD-41C2-818B-74AF239603AF": {
+                      "ref": "area:4",
+                      "tabs": {
+                        "A679AA1E-5984-4B2C-83A4-B63B55AA6094": "tab:4"
+                      }
+                    }
+                  }
+                },
+                "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F": {
+                  "ref": "workspace:2",
+                  "areas": {
+                    "8AD6713F-FB29-40D3-A062-52365CF0AD94": {
+                      "ref": "area:5",
+                      "tabs": {
+                        "F5067142-7A4F-464D-830F-DA5A5A69DE6E": "tab:6"
+                      }
+                    },
+                    "065644CE-53BC-4E41-850E-30B7ADC8C99A": {
+                      "ref": "area:6",
+                      "tabs": {
+                        "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4": "tab:7"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "tree": {
+            "active": {
+              "root_directory": "/Volumes/My Shared Files/out/duplicate-run1",
+              "tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+              "tab_ref": "tab:6",
+              "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+              "window_ref": "window:1",
+              "tab_type": "terminal",
+              "surface_type": "terminal",
+              "workspace_id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+              "window_id": "F41CD6BE-FBDB-4496-8167-7812ED092468",
+              "workspace_ref": "workspace:2",
+              "surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+              "is_browser_surface": false,
+              "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+              "pane_ref": "pane:5",
+              "area_ref": "area:5",
+              "is_browser_tab": false,
+              "surface_ref": "surface:6"
+            },
+            "windows": [
+              {
+                "ref": "window:1",
+                "workspaces": [
+                  {
+                    "id": "A291FC4E-A745-4DE3-80F7-31A244E2F248",
+                    "ref": "workspace:1",
+                    "content_area": {
+                      "pixels": {
+                        "height": 668,
+                        "width": 824
+                      }
+                    },
+                    "areas": [
+                      {
+                        "selected_surface_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "surface_refs": [
+                          "surface:2"
+                        ],
+                        "focused": true,
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:top"
+                          ],
+                          "pixels": {
+                            "V": [
+                              0,
+                              334
+                            ],
+                            "H": [
+                              0,
+                              412
+                            ]
+                          },
+                          "percent": {
+                            "H": [
+                              0,
+                              0.5
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          }
+                        },
+                        "surface_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "ref": "area:1",
+                        "index": 0,
+                        "tab_refs": [
+                          "tab:2"
+                        ],
+                        "selected_surface_ref": "surface:2",
+                        "selected_tab_ref": "tab:2",
+                        "tabs": [
+                          {
+                            "index_in_pane": 0,
+                            "selected_in_pane": true,
+                            "url": null,
+                            "selected_in_area": true,
+                            "index_in_area": 0,
+                            "pane_ref": "pane:1",
+                            "title": "$HOME",
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "being_seen": false,
+                            "focused": true,
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "area_ref": "area:1",
+                            "ref": "tab:2",
+                            "last_seen_at": null,
+                            "selected": true,
+                            "tty": "ttys000",
+                            "index": 0,
+                            "type": "terminal"
+                          }
+                        ],
+                        "surfaces": [
+                          {
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "selected_in_area": true,
+                            "title": "$HOME",
+                            "ref": "tab:2",
+                            "last_seen_at": null,
+                            "url": null,
+                            "index_in_pane": 0,
+                            "tty": "ttys000",
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "selected": true,
+                            "index": 0,
+                            "selected_in_pane": true,
+                            "pane_ref": "pane:1",
+                            "focused": true,
+                            "area_ref": "area:1",
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "being_seen": false
+                          }
+                        ],
+                        "id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                        "tab_count": 1,
+                        "selected_tab_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "tab_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "surface_count": 1
+                      },
+                      {
+                        "selected_tab_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "index": 1,
+                        "tab_count": 1,
+                        "focused": false,
+                        "tabs": [
+                          {
+                            "last_seen_at": null,
+                            "selected_in_pane": true,
+                            "area_ref": "area:2",
+                            "being_seen": false,
+                            "type": "markdown",
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "title": "welcome.md",
+                            "pane_ref": "pane:2",
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "index_in_area": 0,
+                            "tty": null,
+                            "ref": "tab:5",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "index_in_pane": 0,
+                            "index": 1,
+                            "url": null,
+                            "focused": false,
+                            "selected": true,
+                            "selected_in_area": true
+                          }
+                        ],
+                        "id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                        "ref": "area:2",
+                        "tab_refs": [
+                          "tab:5"
+                        ],
+                        "surface_count": 1,
+                        "surface_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "surfaces": [
+                          {
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "index": 1,
+                            "type": "markdown",
+                            "tty": null,
+                            "selected": true,
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "being_seen": false,
+                            "focused": false,
+                            "area_ref": "area:2",
+                            "last_seen_at": null,
+                            "ref": "tab:5",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "title": "welcome.md",
+                            "index_in_area": 0,
+                            "index_in_pane": 0,
+                            "url": null,
+                            "selected_in_area": true,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "selected_in_pane": true,
+                            "pane_ref": "pane:2"
+                          }
+                        ],
+                        "tab_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "selected_tab_ref": "tab:5",
+                        "selected_surface_ref": "surface:5",
+                        "surface_refs": [
+                          "surface:5"
+                        ],
+                        "selected_surface_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "layout": {
+                          "percent": {
+                            "H": [
+                              0,
+                              0.5
+                            ],
+                            "V": [
+                              0.5,
+                              1
+                            ]
+                          },
+                          "pixels": {
+                            "V": [
+                              334,
+                              668
+                            ],
+                            "H": [
+                              0,
+                              412
+                            ]
+                          },
+                          "split_path": [
+                            "H:left",
+                            "V:bottom"
+                          ]
+                        }
+                      },
+                      {
+                        "selected_tab_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "selected_surface_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "tab_count": 1,
+                        "id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                        "surface_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "focused": false,
+                        "tabs": [
+                          {
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "selected": true,
+                            "tty": null,
+                            "being_seen": false,
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "ref": "tab:3",
+                            "url": "https://www.stage11.ai/",
+                            "pane_ref": "pane:3",
+                            "type": "browser",
+                            "index_in_pane": 0,
+                            "area_ref": "area:3",
+                            "index_in_area": 0,
+                            "last_seen_at": null,
+                            "selected_in_pane": true,
+                            "focused": false,
+                            "title": "Stage 11 Agentics",
+                            "selected_in_area": true,
+                            "index": 2
+                          }
+                        ],
+                        "selected_surface_ref": "surface:3",
+                        "tab_refs": [
+                          "tab:3"
+                        ],
+                        "selected_tab_ref": "tab:3",
+                        "tab_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "index": 2,
+                        "ref": "area:3",
+                        "surface_refs": [
+                          "surface:3"
+                        ],
+                        "surfaces": [
+                          {
+                            "being_seen": false,
+                            "tty": null,
+                            "area_ref": "area:3",
+                            "ref": "tab:3",
+                            "type": "browser",
+                            "url": "https://www.stage11.ai/",
+                            "pane_ref": "pane:3",
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "selected": true,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "focused": false,
+                            "title": "Stage 11 Agentics",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "index": 2,
+                            "index_in_pane": 0,
+                            "last_seen_at": null,
+                            "selected_in_pane": true,
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E"
+                          }
+                        ],
+                        "layout": {
+                          "split_path": [
+                            "H:right",
+                            "V:top"
+                          ],
+                          "pixels": {
+                            "V": [
+                              0,
+                              334
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          },
+                          "percent": {
+                            "V": [
+                              0,
+                              0.5
+                            ],
+                            "H": [
+                              0.5,
+                              1
+                            ]
+                          }
+                        },
+                        "surface_count": 1
+                      },
+                      {
+                        "selected_surface_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "layout": {
+                          "split_path": [
+                            "H:right",
+                            "V:bottom"
+                          ],
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              334,
+                              668
+                            ]
+                          },
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0.5,
+                              1
+                            ]
+                          }
+                        },
+                        "surface_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "index": 3,
+                        "tab_refs": [
+                          "tab:4"
+                        ],
+                        "surface_count": 1,
+                        "selected_surface_ref": "surface:4",
+                        "tabs": [
+                          {
+                            "being_seen": false,
+                            "pane_ref": "pane:4",
+                            "last_seen_at": null,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "index_in_pane": 0,
+                            "index": 3,
+                            "selected_in_pane": true,
+                            "index_in_area": 0,
+                            "selected": true,
+                            "url": null,
+                            "selected_in_area": true,
+                            "tty": "ttys001",
+                            "type": "terminal",
+                            "area_ref": "area:4",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "focused": false,
+                            "ref": "tab:4",
+                            "title": "$HOME"
+                          }
+                        ],
+                        "selected_tab_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "surface_refs": [
+                          "surface:4"
+                        ],
+                        "id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                        "surfaces": [
+                          {
+                            "pane_ref": "pane:4",
+                            "selected": true,
+                            "selected_in_pane": true,
+                            "index_in_pane": 0,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "index": 3,
+                            "area_ref": "area:4",
+                            "title": "$HOME",
+                            "type": "terminal",
+                            "focused": false,
+                            "url": null,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "last_seen_at": null,
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "tty": "ttys001",
+                            "ref": "tab:4",
+                            "being_seen": false
+                          }
+                        ],
+                        "tab_count": 1,
+                        "selected_tab_ref": "tab:4",
+                        "tab_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "ref": "area:4",
+                        "focused": false
+                      }
+                    ],
+                    "root_directory": null,
+                    "panes": [
+                      {
+                        "surface_refs": [
+                          "surface:2"
+                        ],
+                        "index": 0,
+                        "tab_refs": [
+                          "tab:2"
+                        ],
+                        "tab_count": 1,
+                        "focused": true,
+                        "surface_count": 1,
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:top"
+                          ],
+                          "percent": {
+                            "H": [
+                              0,
+                              0.5
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              0,
+                              334
+                            ]
+                          }
+                        },
+                        "selected_tab_ref": "tab:2",
+                        "selected_tab_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "ref": "area:1",
+                        "selected_surface_id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                        "tabs": [
+                          {
+                            "index_in_pane": 0,
+                            "ref": "tab:2",
+                            "being_seen": false,
+                            "tty": "ttys000",
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "selected_in_pane": true,
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "url": null,
+                            "last_seen_at": null,
+                            "type": "terminal",
+                            "index_in_area": 0,
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "area_ref": "area:1",
+                            "selected_in_area": true,
+                            "focused": true,
+                            "index": 0,
+                            "selected": true,
+                            "pane_ref": "pane:1",
+                            "title": "$HOME"
+                          }
+                        ],
+                        "selected_surface_ref": "surface:2",
+                        "tab_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ],
+                        "surfaces": [
+                          {
+                            "selected_in_area": true,
+                            "pane_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "url": null,
+                            "id": "F19FA8D8-C4C4-452C-8270-535CC05AD59D",
+                            "ref": "tab:2",
+                            "pane_ref": "pane:1",
+                            "being_seen": false,
+                            "index_in_area": 0,
+                            "area_ref": "area:1",
+                            "type": "terminal",
+                            "index": 0,
+                            "selected": true,
+                            "area_id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                            "last_seen_at": null,
+                            "index_in_pane": 0,
+                            "focused": true,
+                            "title": "$HOME",
+                            "tty": "ttys000",
+                            "selected_in_pane": true
+                          }
+                        ],
+                        "id": "95368559-6D6A-4B86-9793-6C8180CC5BB7",
+                        "surface_ids": [
+                          "F19FA8D8-C4C4-452C-8270-535CC05AD59D"
+                        ]
+                      },
+                      {
+                        "tab_count": 1,
+                        "ref": "area:2",
+                        "selected_tab_ref": "tab:5",
+                        "tabs": [
+                          {
+                            "tty": null,
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "last_seen_at": null,
+                            "ref": "tab:5",
+                            "selected": true,
+                            "index_in_pane": 0,
+                            "index": 1,
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "index_in_area": 0,
+                            "area_ref": "area:2",
+                            "selected_in_area": true,
+                            "focused": false,
+                            "being_seen": false,
+                            "url": null,
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "title": "welcome.md",
+                            "pane_ref": "pane:2",
+                            "selected_in_pane": true,
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "type": "markdown"
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:5"
+                        ],
+                        "selected_tab_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "focused": false,
+                        "tab_refs": [
+                          "tab:5"
+                        ],
+                        "id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                        "selected_surface_ref": "surface:5",
+                        "index": 1,
+                        "surfaces": [
+                          {
+                            "being_seen": false,
+                            "tty": null,
+                            "selected": true,
+                            "pane_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "selected_in_area": true,
+                            "title": "welcome.md",
+                            "ref": "tab:5",
+                            "file_path": "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/welcome.md",
+                            "id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                            "focused": false,
+                            "pane_ref": "pane:2",
+                            "url": null,
+                            "type": "markdown",
+                            "index": 1,
+                            "area_id": "E23F321E-5EE9-48CC-BBA0-1D869C109FA4",
+                            "selected_in_pane": true,
+                            "index_in_area": 0,
+                            "area_ref": "area:2",
+                            "last_seen_at": null,
+                            "index_in_pane": 0
+                          }
+                        ],
+                        "layout": {
+                          "split_path": [
+                            "H:left",
+                            "V:bottom"
+                          ],
+                          "percent": {
+                            "V": [
+                              0.5,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              334,
+                              668
+                            ]
+                          }
+                        },
+                        "surface_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ],
+                        "surface_count": 1,
+                        "selected_surface_id": "1FD7717D-0CAF-4273-878D-06773BAD41D8",
+                        "tab_ids": [
+                          "1FD7717D-0CAF-4273-878D-06773BAD41D8"
+                        ]
+                      },
+                      {
+                        "tab_refs": [
+                          "tab:3"
+                        ],
+                        "focused": false,
+                        "selected_tab_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "tabs": [
+                          {
+                            "selected_in_pane": true,
+                            "type": "browser",
+                            "index_in_area": 0,
+                            "index": 2,
+                            "focused": false,
+                            "being_seen": false,
+                            "title": "Stage 11 Agentics",
+                            "url": "https://www.stage11.ai/",
+                            "last_seen_at": null,
+                            "index_in_pane": 0,
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "ref": "tab:3",
+                            "pane_ref": "pane:3",
+                            "selected_in_area": true,
+                            "tty": null,
+                            "area_ref": "area:3",
+                            "selected": true
+                          }
+                        ],
+                        "surface_count": 1,
+                        "selected_tab_ref": "tab:3",
+                        "tab_count": 1,
+                        "id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                        "surfaces": [
+                          {
+                            "area_ref": "area:3",
+                            "selected": true,
+                            "being_seen": false,
+                            "type": "browser",
+                            "index_in_area": 0,
+                            "pane_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "selected_in_pane": true,
+                            "title": "Stage 11 Agentics",
+                            "tty": null,
+                            "focused": false,
+                            "last_seen_at": null,
+                            "ref": "tab:3",
+                            "pane_ref": "pane:3",
+                            "selected_in_area": true,
+                            "id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                            "index": 2,
+                            "area_id": "ACAE81A4-F5D4-4C35-9881-7376A841B58E",
+                            "url": "https://www.stage11.ai/",
+                            "index_in_pane": 0
+                          }
+                        ],
+                        "surface_refs": [
+                          "surface:3"
+                        ],
+                        "selected_surface_id": "DAA57B70-68FC-40E3-AEFF-71919749EE7E",
+                        "surface_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ],
+                        "selected_surface_ref": "surface:3",
+                        "ref": "area:3",
+                        "index": 2,
+                        "layout": {
+                          "percent": {
+                            "H": [
+                              0.5,
+                              1
+                            ],
+                            "V": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              0,
+                              334
+                            ]
+                          },
+                          "split_path": [
+                            "H:right",
+                            "V:top"
+                          ]
+                        },
+                        "tab_ids": [
+                          "DAA57B70-68FC-40E3-AEFF-71919749EE7E"
+                        ]
+                      },
+                      {
+                        "layout": {
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              334,
+                              668
+                            ]
+                          },
+                          "split_path": [
+                            "H:right",
+                            "V:bottom"
+                          ],
+                          "percent": {
+                            "V": [
+                              0.5,
+                              1
+                            ],
+                            "H": [
+                              0.5,
+                              1
+                            ]
+                          }
+                        },
+                        "ref": "area:4",
+                        "surfaces": [
+                          {
+                            "index": 3,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "tty": "ttys001",
+                            "selected_in_area": true,
+                            "last_seen_at": null,
+                            "ref": "tab:4",
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "index_in_area": 0,
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "selected_in_pane": true,
+                            "selected": true,
+                            "type": "terminal",
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "title": "$HOME",
+                            "focused": false,
+                            "url": null,
+                            "area_ref": "area:4",
+                            "pane_ref": "pane:4"
+                          }
+                        ],
+                        "selected_tab_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                        "focused": false,
+                        "selected_surface_id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                        "tabs": [
+                          {
+                            "index_in_area": 0,
+                            "pane_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "type": "terminal",
+                            "title": "$HOME",
+                            "tty": "ttys001",
+                            "pane_ref": "pane:4",
+                            "last_seen_at": null,
+                            "selected": true,
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "area_ref": "area:4",
+                            "selected_in_area": true,
+                            "id": "A679AA1E-5984-4B2C-83A4-B63B55AA6094",
+                            "ref": "tab:4",
+                            "url": null,
+                            "area_id": "135A640D-B1CD-41C2-818B-74AF239603AF",
+                            "index": 3,
+                            "focused": false,
+                            "selected_in_pane": true
+                          }
+                        ],
+                        "tab_refs": [
+                          "tab:4"
+                        ],
+                        "surface_count": 1,
+                        "tab_count": 1,
+                        "surface_refs": [
+                          "surface:4"
+                        ],
+                        "tab_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ],
+                        "selected_tab_ref": "tab:4",
+                        "selected_surface_ref": "surface:4",
+                        "index": 3,
+                        "surface_ids": [
+                          "A679AA1E-5984-4B2C-83A4-B63B55AA6094"
+                        ]
+                      }
+                    ],
+                    "pinned": false,
+                    "title": "Workspace 1",
+                    "selected": false,
+                    "index": 0
+                  },
+                  {
+                    "id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+                    "panes": [
+                      {
+                        "selected_surface_ref": "surface:6",
+                        "surface_count": 1,
+                        "ref": "area:5",
+                        "index": 0,
+                        "tab_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                        "surfaces": [
+                          {
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "tty": "ttys002",
+                            "being_seen": false,
+                            "area_ref": "area:5",
+                            "focused": true,
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "index_in_pane": 0,
+                            "index": 0,
+                            "pane_ref": "pane:5",
+                            "selected": true,
+                            "selected_in_area": true,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "url": null,
+                            "ref": "tab:6",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "selected_in_pane": true,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "last_seen_at": null
+                          }
+                        ],
+                        "focused": true,
+                        "tab_count": 1,
+                        "layout": {
+                          "pixels": {
+                            "V": [
+                              0,
+                              668
+                            ],
+                            "H": [
+                              0,
+                              412
+                            ]
+                          },
+                          "split_path": [
+                            "H:left"
+                          ],
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          }
+                        },
+                        "surface_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "surface_refs": [
+                          "surface:6"
+                        ],
+                        "tabs": [
+                          {
+                            "selected": true,
+                            "focused": true,
+                            "selected_in_area": true,
+                            "url": null,
+                            "tty": "ttys002",
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "index": 0,
+                            "selected_in_pane": true,
+                            "index_in_pane": 0,
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "ref": "tab:6",
+                            "type": "terminal",
+                            "being_seen": false,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "last_seen_at": null,
+                            "area_ref": "area:5",
+                            "index_in_area": 0,
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "pane_ref": "pane:5"
+                          }
+                        ],
+                        "selected_tab_ref": "tab:6",
+                        "selected_surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "tab_refs": [
+                          "tab:6"
+                        ],
+                        "selected_tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                      },
+                      {
+                        "selected_tab_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "ref": "area:6",
+                        "surface_refs": [
+                          "surface:7"
+                        ],
+                        "id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                        "surface_count": 1,
+                        "index": 1,
+                        "layout": {
+                          "pixels": {
+                            "H": [
+                              412,
+                              824
+                            ],
+                            "V": [
+                              0,
+                              668
+                            ]
+                          },
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0.5,
+                              1
+                            ]
+                          },
+                          "split_path": [
+                            "H:right"
+                          ]
+                        },
+                        "tab_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "focused": false,
+                        "selected_surface_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "surfaces": [
+                          {
+                            "selected": true,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "index_in_area": 0,
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "ref": "tab:7",
+                            "index": 1,
+                            "pane_ref": "pane:6",
+                            "type": "terminal",
+                            "last_seen_at": null,
+                            "index_in_pane": 0,
+                            "focused": false,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "selected_in_pane": true,
+                            "tty": "ttys003",
+                            "being_seen": false,
+                            "area_ref": "area:6",
+                            "url": null,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "selected_in_area": true
+                          }
+                        ],
+                        "selected_tab_ref": "tab:7",
+                        "tabs": [
+                          {
+                            "type": "terminal",
+                            "url": null,
+                            "last_seen_at": null,
+                            "selected_in_pane": true,
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "area_ref": "area:6",
+                            "index": 1,
+                            "ref": "tab:7",
+                            "index_in_area": 0,
+                            "selected": true,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "selected_in_area": true,
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "index_in_pane": 0,
+                            "being_seen": false,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "tty": "ttys003",
+                            "focused": false,
+                            "pane_ref": "pane:6"
+                          }
+                        ],
+                        "selected_surface_ref": "surface:7",
+                        "surface_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "tab_count": 1,
+                        "tab_refs": [
+                          "tab:7"
+                        ]
+                      }
+                    ],
+                    "index": 1,
+                    "ref": "workspace:2",
+                    "selected": true,
+                    "areas": [
+                      {
+                        "selected_tab_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "surface_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "surface_refs": [
+                          "surface:6"
+                        ],
+                        "selected_surface_id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                        "focused": true,
+                        "ref": "area:5",
+                        "surfaces": [
+                          {
+                            "selected": true,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "url": null,
+                            "last_seen_at": null,
+                            "area_ref": "area:5",
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "index_in_pane": 0,
+                            "focused": true,
+                            "index": 0,
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "being_seen": false,
+                            "index_in_area": 0,
+                            "type": "terminal",
+                            "selected_in_area": true,
+                            "ref": "tab:6",
+                            "pane_ref": "pane:5",
+                            "selected_in_pane": true,
+                            "tty": "ttys002",
+                            "title": "…/My Shared Files/out/duplicate-run1"
+                          }
+                        ],
+                        "layout": {
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0,
+                              0.5
+                            ]
+                          },
+                          "pixels": {
+                            "H": [
+                              0,
+                              412
+                            ],
+                            "V": [
+                              0,
+                              668
+                            ]
+                          },
+                          "split_path": [
+                            "H:left"
+                          ]
+                        },
+                        "tab_ids": [
+                          "F5067142-7A4F-464D-830F-DA5A5A69DE6E"
+                        ],
+                        "tab_refs": [
+                          "tab:6"
+                        ],
+                        "selected_tab_ref": "tab:6",
+                        "selected_surface_ref": "surface:6",
+                        "index": 0,
+                        "surface_count": 1,
+                        "id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                        "tab_count": 1,
+                        "tabs": [
+                          {
+                            "pane_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "selected": true,
+                            "tty": "ttys002",
+                            "being_seen": false,
+                            "index_in_pane": 0,
+                            "selected_in_pane": true,
+                            "last_seen_at": null,
+                            "area_ref": "area:5",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "id": "F5067142-7A4F-464D-830F-DA5A5A69DE6E",
+                            "focused": true,
+                            "type": "terminal",
+                            "index": 0,
+                            "index_in_area": 0,
+                            "selected_in_area": true,
+                            "url": null,
+                            "area_id": "8AD6713F-FB29-40D3-A062-52365CF0AD94",
+                            "ref": "tab:6",
+                            "pane_ref": "pane:5"
+                          }
+                        ]
+                      },
+                      {
+                        "tab_count": 1,
+                        "surface_refs": [
+                          "surface:7"
+                        ],
+                        "surface_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "surfaces": [
+                          {
+                            "selected_in_area": true,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                            "focused": false,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "last_seen_at": null,
+                            "index_in_area": 0,
+                            "index_in_pane": 0,
+                            "pane_ref": "pane:6",
+                            "ref": "tab:7",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "url": null,
+                            "selected_in_pane": true,
+                            "tty": "ttys003",
+                            "being_seen": false,
+                            "area_ref": "area:6",
+                            "index": 1,
+                            "type": "terminal",
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "selected": true
+                          }
+                        ],
+                        "id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                        "tab_ids": [
+                          "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                        ],
+                        "selected_tab_ref": "tab:7",
+                        "selected_surface_ref": "surface:7",
+                        "tabs": [
+                          {
+                            "ref": "tab:7",
+                            "url": null,
+                            "index": 1,
+                            "tty": "ttys003",
+                            "pane_ref": "pane:6",
+                            "being_seen": false,
+                            "area_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "focused": false,
+                            "selected_in_pane": true,
+                            "area_ref": "area:6",
+                            "selected": true,
+                            "index_in_area": 0,
+                            "pane_id": "065644CE-53BC-4E41-850E-30B7ADC8C99A",
+                            "index_in_pane": 0,
+                            "type": "terminal",
+                            "title": "…/My Shared Files/out/duplicate-run1",
+                            "last_seen_at": null,
+                            "selected_in_area": true,
+                            "id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4"
+                          }
+                        ],
+                        "focused": false,
+                        "layout": {
+                          "percent": {
+                            "V": [
+                              0,
+                              1
+                            ],
+                            "H": [
+                              0.5,
+                              1
+                            ]
+                          },
+                          "split_path": [
+                            "H:right"
+                          ],
+                          "pixels": {
+                            "V": [
+                              0,
+                              668
+                            ],
+                            "H": [
+                              412,
+                              824
+                            ]
+                          }
+                        },
+                        "selected_surface_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "selected_tab_id": "46137BDD-1BF9-455E-B9E8-A3FDEA0B66F4",
+                        "ref": "area:6",
+                        "surface_count": 1,
+                        "index": 1,
+                        "tab_refs": [
+                          "tab:7"
+                        ]
+                      }
+                    ],
+                    "title": "C11-298 synthetic fleet",
+                    "root_directory": "/Volumes/My Shared Files/out/duplicate-run1",
+                    "pinned": false,
+                    "content_area": {
+                      "pixels": {
+                        "height": 668,
+                        "width": 824
+                      }
+                    }
+                  }
+                ],
+                "key": false,
+                "selected_workspace_id": "C6A7BFB5-0ED8-4E56-B4A6-83A1BEBF901F",
+                "index": 0,
+                "workspace_count": 2,
+                "selected_workspace_ref": "workspace:2",
+                "id": "F41CD6BE-FBDB-4496-8167-7812ED092468",
+                "visible": true
+              }
+            ],
+            "caller": null,
+            "scope": "all"
+          }
+        }
+      }
+    ],
+    "limits": "Supplied persistence paths unchanged; no process-attributed filesystem trace. Quit, relaunch, coexistence, helper and signed-update gates are separate."
+  },
+  "helper": {
+    "pid": 1945,
+    "command": [
+      "$HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/bin/c11",
+      "--socket",
+      "/tmp/c11-sandbox-c11-298-instance.sock",
+      "wait-for",
+      "c11_298_fixture_b5b1545b799c4a83b95a6df03d2462fc",
+      "--timeout",
+      "60"
+    ],
+    "scope": "actual bundled CLI process survival; LaunchServices registration unproven",
+    "before": "1945  1637 Fri Oct  2 07:48:49 2026     $HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/bin/c11",
+    "after": "1945  1637 Fri Oct  2 07:48:49 2026     $HOME/c11-sandbox/apps/c11-298-instance/c11 DEV c11-298-instance.app/Contents/Resources/bin/c11",
+    "result": "PASS",
+    "dismissal": "wait-for signal",
+    "exit_code": 0
+  },
+  "dismissal": "App menu and confirmation synthesized Quit; PID 650 absent\n",
+  "limits": "Process/socket proof only. macOS Setup Assistant obscured screenshot; no readable UI, Quit/Cancel, restart or coexistence proof yet. Guest was deleted to pause for C11-297 merge repair.",
+  "_disclosure_sanitization": {
+    "note": "Sanitized copy. Literal $HOME replaces home directory prefixes in keys and values. Identifying raw shell captures omitted; structured fixture proof lines, synthetic graph UUIDs, hashes, numeric observations, results and scope limitations preserved.",
+    "omitted_fields": [
+      "/duplicate_proof/attempts/0/shell/capture",
+      "/duplicate_proof/attempts/1/shell/capture"
+    ]
+  }
+}

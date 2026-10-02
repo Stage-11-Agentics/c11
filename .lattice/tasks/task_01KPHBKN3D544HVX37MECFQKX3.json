@@ -1,7 +1,8 @@
 {
-  "assigned_to": null,
+  "acceptance_criteria": [],
+  "assigned_to": "human:atin",
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-04-18T22:33:00Z",
   "created_by": "human:atin",
@@ -10,7 +11,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPHBKN3D544HVX37MECFQKX3",
-  "last_event_id": "ev_01KT9WVB8TY6D4522W8Z79W8RG",
+  "last_event_id": "ev_01M3YXZYEQDM5C6TWFH15MPKC9",
   "last_status_changed_at": "2026-04-18T22:33:00Z",
   "linked_files": [],
   "priority": "medium",
@@ -20,13 +21,13 @@
   "short_id": "C11-124",
   "status": "backlog",
   "tags": [
-    "marketing",
-    "readme",
-    "showcase",
-    "inspiration"
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p2",
+    "marketing"
   ],
-  "title": "c11 setup examples \u2014 YouTube recordings + README showcase of real hyperengineer workflows",
+  "title": "c11 walkthrough video for 1.0 (Atin records), linked from the README",
   "type": "task",
-  "updated_at": "2026-06-04T18:03:10Z",
+  "updated_at": "2026-10-02T18:28:29Z",
   "urgency": null
 }

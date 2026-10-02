@@ -1,0 +1,127 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-cli",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-281-send-contract",
+      "linked_at": "2026-10-02T06:24:52Z",
+      "linked_by": "agent:codex-cli",
+      "repo": null
+    }
+  ],
+  "comment_count": 18,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAgents send code and multi-line briefs into other tabs all day. Today a backslash-n in the text becomes a real newline, an unknown flag is typed into the terminal, and the words `delivered`, `queued`, and `submitted` are not in the skill. A caller cannot tell a paste the PTY accepted from one waiting on attach, or from one the agent has actually seen. Backlog item: C3.\n\n## Evidence\n- c11: `CLI/c11.swift:2947-2976` on origin/main (0ff8887e5e) parses `--workspace`, `--surface`, and `--no-submit` for `send`, then joins the remainder and runs `unescapeSendText` (`:11923-11929`), which rewrites `\\n`, `\\r`, and `\\t`. There is no stdin form. An unknown `--flag` in that remainder is part of the text.\n- c11: `sendTextSummary` (`:5224-5228`) appends `queued=1` only when the payload says queued. It does not mention `delivered` or `submitted`.\n- c11: `Sources/SocketHandlers/SurfaceHandlers.swift:846-980`. `v2SurfaceSendText` sets `submitted`, `queued`, and `delivered` (`:977-979`). `delivered` is `!queued`. `Sources/TerminalController.swift:6643-6727` (`deliverSocketSendText`) pastes prose through `ghostty_surface_text`, strips trailing newlines, and schedules one Return after the paste-settle delay. `submitted` means that Return was dispatched, not that the agent consumed it.\n- Upstream: cmux #13849, #14837, #14937. `cmux paste` reads an argument or stdin, rejects unknown flags, and returns `delivery: delivered|queued`. `--submit` sends an agent-aware key later. A failed submit returns `submitted: false` and is not an error.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71d. Fable row 4.4 and Astra row 4.4 (core). Astra's acceptance line: literal backslashes and trailing newlines obey the documented mode, and a queued paste is never reported as an agent-acknowledged message.\n- Overlap: C11-140 section B already says `send` does not reject unknown flags (`c11 send --text \"hi\"` types `--text hi`). That audit ticket stays the June 2026 I/O list (UTF-8 framing, short writes, the focus-allowance stack). This ticket owns the 1.0 delivery contract, including that one bullet, so it is not done twice.\n\n## Scope\nIn: `c11 send --raw` (no escape rewriting), `c11 send -` to read stdin, and `c11 paste` as a documented alias of `send --raw`. Reject unknown `--flags` before the text is assembled. Document `delivered`, `queued`, and `submitted` in `skills/c11/references/api.md`, with the meanings in Evidence. Default `send` keeps today's escape rewriting.\nOut: the draft guard (backlog A5). Long `launch-agent` prompts (C11-258, backlog C8). The bracketed-paste split across terminal replies (bug harvest #4, Ghostty). Byte-exact delivery of C0 controls. `socketTextIsPasteDeliverable` (`TerminalController.swift:6662-6673`) still sends those as key events, because Ghostty's paste encoder replaces them with spaces. Do not promise byte-exact for those. cmux's ctrl+enter upgrade for multi-line Claude Code. The skill already says a multi-line send arrives as one turn. Verify that on a tagged build before porting anything. If it holds, do not port the upgrade. `new-workspace --command`'s discarded send result moves to C2 with `initial_input`. Do not re-add a follow-up send here.\n\n## Approach\nParse flags up to `--`. Unknown `--name` is a CLI error. `--raw` skips `unescapeSendText`. `-` with no other text reads stdin. `paste` calls the same path as `send --raw` and accepts the same targeting flags. Keep `--no-submit`. Human output names the three states in words, not only `queued=1`. JSON already returns the booleans. Leave them. Update the c11 skill and sync the installed copy on the landing machine. Register feature flag `send.raw` if C6's list exists. Comment on C11-140 when the PR opens, pointing the unknown-flag bullet here.\n\n## Acceptance criteria\n1. `c11 send --tab <t> --raw 'printf %s \\n'` delivers the four characters backslash, n, to the terminal. The same call without `--raw` delivers a newline, as today.\n2. `c11 send --tab <t> --bogus hello` exits non-zero, prints an error that names `--bogus`, and the tab's screen does not contain `--bogus`. This is the C11-140 bullet.\n3. `printf 'line1\\nline2\\n' | c11 paste --tab <t> --no-submit` inserts both lines and does not submit. `c11 paste --help` describes it as `send --raw`.\n4. Against a tab whose PTY is not attached yet, the JSON has `queued: true`, `delivered: false`. The human line does not say the agent saw it. After attach, the text is in the scrollback. Against an attached shell, `delivered: true`. With submit, `submitted: true` means the Return was scheduled, and the skill says so.\n5. A multi-line `c11 send` into a Claude Code tab on a tagged build becomes one turn. Record the result. Port a ctrl+enter submit only if that run shows the submit was swallowed.\n\n## Validation\n`c11LogicTests` or a CLI-level test for flag parsing and `--raw`, if a seam exists that does not boot the app. A `tests_v2` script against a tagged build for criteria 1 through 4. Criterion 5 is one computer-use or `read-screen` check on a real Claude Code tab. No soak. Do not claim the agent processed the text.\n\n## Dependencies\nRelated to C2. C11-140 section B holds the unknown-flag note. C11-173 (done) is the paste-submit path this builds on. Do not reopen it. Feature flag name lives with C6.\n\n## Risks\nTyping latency: CLI-side parsing only. Do not add work to `deliverSocketSendText` beyond the raw/unescape choice, which happens before the socket call. Main thread: `tab.send_text` is already a socket-worker method (`SocketDispatch.swift:64-65`). Leave it there. Doctrine: no tenant config writes. Localization: new CLI errors use `String(localized:)`. Six-locale fill is X1. Public repo: document the three states. Do not describe Ghostty's control-byte stripping as an attack note. One sentence in the skill is enough.\n\nSize: S\u2013M. Tier: P1. Doctrine check: `send` reports what c11 did with the bytes. It does not report what the agent thought.",
+  "done_at": "2026-10-02T15:55:17Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XT05X0BD50W1B5M3B33RYW",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWD1ZETN3F9HPSTV7ZVJ9C",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWP18W62TNR3XFX9CXZXWD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWP1DSQB9EXK5HZG00BSJA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWP1JRXC6E5YBD0TT5K2NB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXKEJ4WVDMZG288GXWDRX1",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXSQK96YVKGESQMCS4M22N",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYBAHCF0P9V1Z6YKP6NVJH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZ4T0E1VXZJDFHPM0AZHNX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YN7DH4X5GV53RDDSKMHWSA",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YN7DKEQ5S6S2K59ZEEF121",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YN7DR1XQSR9MAXT11R5C0R",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YN7DQXTAZP8Z013JG983YP",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FN4MAW3RB7T9VGFJGS70",
+  "last_event_id": "ev_01M3YN7DR1XQSR9MAXT11R5C0V",
+  "last_status_changed_at": "2026-10-02T15:55:17Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FN1AH08NPPRGGTT47V0T",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T03:17:45Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3WPMYYQBP8VJN6X48RTV1TD",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-281",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Document send delivery and add --raw, stdin, and unknown-flag errors",
+  "type": "task",
+  "updated_at": "2026-10-02T15:55:17Z",
+  "urgency": null
+}

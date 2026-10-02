@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-01T05:49:35Z",
+  "created_by": "agent:c11-sweep-orch",
+  "custom_fields": {},
+  "id": "art_01M3V05MJ7TQZD9TYXEQGAHT9C",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3V05MJ7TQZD9TYXEQGAHT9C.md",
+    "size_bytes": 376
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR #470 squash-merged to main as 44ec47a81. Fresh-context Sonnet review PASS at b671bdd1e; repair delta (selected-workspace predicate, fail unless final send is OK) attested at 52ddabfa0 by orchestrat",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

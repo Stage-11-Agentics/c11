@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:01:20Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YS0BTCM9X3T531J6P5CT7W",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YS0BTCM9X3T531J6P5CT7W.html",
+    "size_bytes": 807147
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-308 Batch 4 standalone runtime validation",
+  "token_usage": null,
+  "type": "file"
+}

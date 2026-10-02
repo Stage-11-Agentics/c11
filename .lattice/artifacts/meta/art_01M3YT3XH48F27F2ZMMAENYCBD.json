@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:20:45Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YT3XH48F27F2ZMMAENYCBD",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YT3XH48F27F2ZMMAENYCBD.html",
+    "size_bytes": 15198
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-283 Batch 4 routing evidence; native key proof pending",
+  "token_usage": null,
+  "type": "file"
+}

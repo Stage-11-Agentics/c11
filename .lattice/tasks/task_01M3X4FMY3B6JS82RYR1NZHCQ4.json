@@ -1,0 +1,88 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-cli",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-279-canonical-routing-keys",
+      "linked_at": "2026-10-02T05:06:26Z",
+      "linked_by": "agent:codex-cli",
+      "repo": null
+    }
+  ],
+  "comment_count": 7,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nA misspelled routing key is ignored, and the command then acts on the focused tab. With many agents in flight, that sends input, metadata, or a close to the wrong surface. Backlog item: C1.\n\n## Evidence\n- c11: `Sources/SocketHandlers/LegacyWireAliases.swift:175-185` on origin/main (0ff8887e5e) copies listed aliases onto the key handlers read, and leaves every other key untouched. The legal set is the `legacyKeyPairs` table (`:91-143`) plus `paramSources` (`:149-160`). Canonical names are `tab_id` and `area_id`. Listed aliases include `surface_id`, `pane_id`, and `panel_id`, and the `*_ref` spellings in that table.\n- c11: `Sources/SocketHandlers/SocketDispatch.swift:25-42` (`parseV2SocketRequest`, off main) and `:948-950` (`processV2Command`) are the two seams that call `canonicalParams`. `Sources/TerminalController.swift:2654-2658` returns nil when a key is absent. `v2ResolveWorkspace` at `:3044-3053` then falls back to `selectedWorkspaceId`.\n- c11: `v2RejectUnresolvedTargetRefs` (`Sources/TerminalController.swift:2717-2748`) rejects an empty or dead ref on destructive verbs only. It does not reject an unknown key.\n- Upstream: cmux #13214 (`78b9683d4a`). `ControlRequestParser.unsupportedTargetAlias` strips `_`, lowercases, and rejects any non-exact spelling of a routing id with `invalid_params` and the canonical name. A typo that does not normalize to a known selector (`surfce_id`) is still ignored there.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71a and the gap table. Fable row 4.1 and Astra row 4.1 both mark it core. `c11-1.0.html` agrees.\n\n## Scope\nIn: one check at the C11-248 alias seam. A top-level param key that normalizes to a routing selector (window, workspace, tab, area, surface, pane, panel, and the prefixed and `*ref` forms already in the alias table) and is neither canonical nor a listed alias returns `invalid_params` naming the canonical key. Listed aliases keep working. The check runs in both parse seams, before dispatch.\nOut: a per-method registry of every unknown key (report 06 calls that 1.x, and C6 does not build it). Stable tab numbers (D15, parked). Removing the C11-248 aliases. Scanning nested blobs (`metadata`, `payload`, `plan`, and the other `opaqueKeys`).\n\n## Approach\nAdd a pure function on `LegacyWireAliases` that inspects top-level keys and returns the offending key plus the canonical name, or nil. Call it from `parseV2SocketRequest` and from `processV2Command` immediately after `canonicalParams`. Normalize by stripping `_` and lowercasing, the way #13214 does, and treat an unlisted `*ref` spelling as a selector too. Do not reject a key that does not normalize to a selector. Error shape: code `invalid_params`, message like `Unsupported parameter 'surfaceId'; use 'tab_id'`. C11-248 is in progress and owns this file. Build against the table on origin/main. If that ticket is still editing the table, coordinate. Do not wait on it once the table you read is the one on the branch.\n\n## Acceptance criteria\n1. A `c11LogicTests` case feeds `{surfaceId: <live tab>}` and `{tabRef: <ref>}` through the pure function and gets `invalid_params` naming `tab_id` or `tab_ref`. The same case accepts `tab_id`, `surface_id`, `pane_id`, `panel_id`, `area_id`, and `workspace_id`.\n2. On a tagged build, `tab.send_text` with `surfaceId` returns that error and the focused tab's screen is unchanged. The same call with `surface_id` still delivers.\n3. A params object whose only odd key is inside `metadata` is accepted. A key such as `title` or `text` is accepted.\n4. `surfce_id` still does not match a selector. The skill states that limit in one sentence, so nobody treats this as a general unknown-key filter.\n\n## Validation\nUnit test on `c11-logic` for the pure function. One `tests_v2` script against a tagged build's socket for the live send case. No soak. The check is a single pass over the top-level keys of a socket request, off the keystroke path.\n\n## Dependencies\nC11-248 owns `LegacyWireAliases.swift` (in progress). No backlog dependency. Feature-flag name for C6, if that list exists when this lands: `routing.canonical_keys`.\n\n## Risks\nTyping latency: keep the check on the socket parse, not in `hitTest` or `forceRefresh`. Main thread: both seams already parse before the main-actor dispatch. Run the check there. Doctrine: no tenant config writes. Localization: the error string is operator-visible. Use `String(localized:)` and leave the six-locale fill to X1. Public repo: this is a footgun fix. The error text can name the canonical key.\n\nSize: S\u2013M. Tier: P1. Doctrine check: a bad key is rejected. c11 does not guess a target.",
+  "done_at": "2026-10-02T15:52:13Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XWP0YYRMMBTDJ2G6ANWXNC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXKC5JWG0ZJ0DKX8CBRE0X",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYSKB64RBJHBNCDXXASKD6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZ27F35CADKRA2F5GPMA6S",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YN0T0ZR26AZT0VTYQZ7PB1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YN0T3B3862FZGNQ3BAGEYH",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YN1T2S4J0S1XMRKXG25PRX",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YN1T2QMK3FT02TRQ01YC8B",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FMY3B6JS82RYR1NZHCQ4",
+  "last_event_id": "ev_01M3YN1T2SJCYQMEMT937XAE5G",
+  "last_status_changed_at": "2026-10-02T15:52:13Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-279",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Reject misspelled routing keys instead of hitting the focused tab",
+  "type": "bug",
+  "updated_at": "2026-10-02T15:52:13Z",
+  "urgency": null
+}

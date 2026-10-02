@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:29:30Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3XR9A8CRBVYD131831EVJ4Z",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3XR9A8CRBVYD131831EVJ4Z.gz",
+    "size_bytes": 474628
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Head53d88b7c08; additive conflicts in TerminalController.swift and project.pbxproj; main262/299/300 behavior retained. Exact-head build-host tests/build/live checks pass; one push; no perf run. Public derivative omits all images and binary test results; original embedded hashes are historical identifiers. See PUBLIC-OMISSIONS-MANIFEST.json. Original payload withdrawn; sanitized replacement: art_01M3XXCZ4QSBZNZSG6B5B13KT3.",
+  "tags": [],
+  "title": "C11-259 main merge: 22 assertions and both live scenarios pass (original payload withdrawn)",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:24:50Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3Y2ABQZ9JTNRW6KJTPXR6P6",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3Y2ABQZ9JTNRW6KJTPXR6P6.png",
+    "size_bytes": 119711
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact tagged f41a6790a5 native Appearance Dark; neutral prompt; 1320x880 window.",
+  "tags": [],
+  "title": "Folder controls readable in Dark after contrast repair",
+  "token_usage": null,
+  "type": "file"
+}

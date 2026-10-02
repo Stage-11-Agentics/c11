@@ -1,0 +1,34 @@
+{
+  "c11-288-chrome-denied": {
+    "profileID": "77CD8567-50AF-47F9-8B7F-DAE4C17557CE",
+    "historyEntries": 1,
+    "url": "http://127.0.0.1:19288/c11-288",
+    "title": "c11-288-synthetic",
+    "visitCount": 1,
+    "path": "$HOME/Library/Application Support/com.stage11.c11.staging/browser_profiles/77cd8567-50af-47f9-8b7f-dae4c17557ce/browser_history.json"
+  },
+  "c11-288-chrome": {
+    "profileID": "C892A92C-40F6-4798-A8D1-D0F3A50283BD",
+    "historyEntries": 1,
+    "url": "http://127.0.0.1:19288/c11-288",
+    "title": "c11-288-synthetic",
+    "visitCount": 1,
+    "path": "$HOME/Library/Application Support/com.stage11.c11.staging/browser_profiles/c892a92c-40f6-4798-a8d1-d0f3a50283bd/browser_history.json"
+  },
+  "c11-288-arc": {
+    "profileID": "B8CFCEA9-FCB0-4321-B311-5832CDF0121F",
+    "historyEntries": 1,
+    "url": "http://127.0.0.1:19288/c11-288",
+    "title": "c11-288-synthetic",
+    "visitCount": 1,
+    "path": "$HOME/Library/Application Support/com.stage11.c11.staging/browser_profiles/b8cfcea9-fcb0-4321-b311-5832cdf0121f/browser_history.json"
+  },
+  "c11-288-safari": {
+    "profileID": "24D81127-4EAB-47F4-8061-A892D9BE7845",
+    "historyEntries": 1,
+    "url": "http://127.0.0.1:19288/c11-288",
+    "title": "c11-288-synthetic",
+    "visitCount": 1,
+    "path": "$HOME/Library/Application Support/com.stage11.c11.staging/browser_profiles/24d81127-4eab-47f4-8061-a892d9be7845/browser_history.json"
+  }
+}

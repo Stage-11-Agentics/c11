@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T11:20:19Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3Y5FZ2AP3NKVC7KJVBY6XE5",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3Y5FZ2AP3NKVC7KJVBY6XE5.zip",
+    "size_bytes": 1337
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Coexistence restart and warning-disabled Quit at 876fbadf08",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,3 @@
+# Takeover from a Grok owner (Grok hit its weekly limit)
+
+You take over this ticket from a Grok owner whose work is committed and pushed on the branch already checked out in your worktree. Keep every commit. First: `git log --oneline origin/main..HEAD`, `git diff origin/main...HEAD --stat`, read the ticket's latest Lattice comments (a handoff note may or may not exist), and read the stored plan. Then decide what is done, what is missing and what is wrong; finish the ticket to its full acceptance (Grok has skipped acceptance rows before: verify each one yourself). Atlas validation, PR at handoff (reuse the existing PR if one exists), `HANDOFF <ticket> REVIEW <head>`.

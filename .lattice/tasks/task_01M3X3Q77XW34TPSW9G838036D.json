@@ -1,0 +1,96 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-history",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-262-focus-history",
+      "linked_at": "2026-10-02T05:28:33Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    }
+  ],
+  "comment_count": 10,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:30:05Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nAfter inspecting several workers, the operator needs to return to the tab actually read, and an agent needs a bounded, readable account of that navigation. Backlog item: W4; D20 explicitly makes agent-readable `c11 history` core 1.0.\n\n## Evidence\n- c11: `Sources/TabSeenClock.swift:6-38,138-171` on origin/main (0ff8887e5e) defines real operator visibility, transition timestamps and persistence seeding. It is event-driven, not a per-keystroke sampler. C11-243 is already done and is the foundation, not a duplicate history ticket.\n- c11: `Sources/WorkspaceManager.swift:1085-1088,3886-3957` holds a capped workspace-only back/forward history. `Sources/SocketHandlers/WorkspaceHandlers.swift:41-42` dispatches workspace.last. `Sources/SessionPersistence.swift:379-389` persists last_seen_at, not a navigation trail; `Sources/WorkspaceManager.swift:5690-5703` and `Sources/Workspace.swift:278-279` preserve workspace/tab UUIDs on restore.\n- c11: `Sources/SessionPersistence.swift:524-535` has no durable window ID in its snapshot. Resolve restored window/area location from the live workspace/tab UUID rather than assuming every focus-context ID survives. `Sources/c11App.swift:1021-1030` binds browser Back/Forward to Cmd+[ and Cmd+].\n- Upstream: cmux #4160/#8654/#9329 and #9296; `Packages/macOS/CmuxWorkspaces/Sources/CmuxWorkspaces/Navigation/FocusHistoryModel.swift` at upstream/main (920ff39ff7) supplies capped history, duplicate pruning and navigation-recording suppression patterns. Its raw-focus source is not c11's source.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a74a; Fable row 4.13; Astra rows 4.13/4.13b and \u00a75 point 9 (UUID history does not depend on stable short ordinals). BACKLOG.md W4/D20 overrides the older if-time/agent-history deferral recommendations in `c11-1.0.html`. Its D16/D15 exclusions preserve browser shortcuts and exclude stable tab-number work.\n\n## Scope\nIn: dwell-qualified seen history, bounded UUID persistence, `c11 history [--json] [--limit N]`, `c11 history back|forward`, rebindable navigation actions and compatibility for workspace.last. History is available to agents under the existing local socket access model.\nOut: browser shortcut remapping (D16), stable tab numbers (D15), Recently Closed/reopening processes, account restore, a searchable history pane, journal/analytics implementation, screen-content classification and automatic task-priority inference. W1-W3 groups are not prerequisites. Do not reintroduce the older proposal to postpone agent readability.\n\n## Approach\nFeed a small, testable history model from TabSeenTracker visibility transitions, with an injectable clock and a documented tunable dwell threshold (proposal: about one second). Store workspace/tab UUID, seen time and dwell; use current window/area context to locate a moved/restored live target. Cap retention (proposal: 200 entries), prune closed targets, deduplicate consecutive visits and truncate forward history only for a new qualified visit. Back/forward traversal must not record itself and destroy its forward branch. Keep persistence off keystroke paths at the existing snapshot cadence, documenting the autosave loss window. Expose titles, current refs, UUIDs and dwell in JSON without transcript bodies. Add configurable actions without stealing existing browser chords, and update/sync the c11 skill/API reference.\n\n## Acceptance criteria\n1. With an injected clock and a one-second configured threshold, visits to A for two seconds, B for 0.2 seconds and C for two seconds retain A/C while skipping B. Repeated observations of the same tab do not multiply entries; cap/limit behavior and ordering are documented and tested.\n2. Background socket focus changes, lock, screensaver and sleep do not generate visits or count unseen time toward dwell. A foreground socket change that genuinely changes the seen tab can qualify, matching C11-243's definition rather than guessing input provenance.\n3. On a tagged build, dwell on A/B/C, go back to B and forward to C, then back to B and dwell on D. Forward C is discarded only for the new qualified visit; traversal itself preserves the branch. Closed targets are skipped; empty/boundary histories return a documented result. workspace.last retains its documented workspace-navigation behavior.\n4. `c11 history --json --limit 2` returns at most two correctly ordered entries with target UUID/current ref, title, timestamp and dwell; readable output describes the same visits. Reading history changes neither focus nor seen data. Invalid limits return actionable errors. Back/forward are explicit in-app focus commands and never activate/raise the macOS app.\n5. Save and restart a tagged fixture with terminal/browser/markdown targets; history resolves restored UUIDs even if short refs/window/area IDs change. Moving a tab resolves its current location; closing it prunes the dead target without reopening a process. Old snapshots with no history still restore.\n6. Bind history navigation to available custom keys and drive it through the UI. Browser Cmd+[ / Cmd+] still navigate browser pages. No existing default chord is silently reassigned.\n7. New UI/help strings are localized in all six locales, the skill examples match the commands, and the installed skill is synced. History stays within its documented cap and exposes no prompt/tool bodies or private transcript content.\n\n## Validation\nExtend the injectable seen-clock behavioral tests and snapshot/history fixtures; use tests_v2 on a tagged socket for JSON, traversal, dead targets and restart. A fresh-context computer-use pass proves dwell selection, custom keys, browser shortcut preservation and background-focus behavior. Compare navigation churn during typing against F2's baseline; build and soak on Atlas after F1/C11-216 using build locks and tagged QA launch. Do not use source-text tests or claim runtime verification from build-for-testing alone.\n\n## Dependencies\nC11-243 is the completed foundation, confirmed in origin/main; no reopening needed. F1 (C11-216) for build/soak execution; F2 for performance comparison. No dependency on D15, account restoration, W1-W3 or J2. The lead links cross-workstream dependencies.\n\n## Risks\nDwell/navigation feedback can destroy forward history or inflate dwell through sleep. Avoid main-thread I/O and all per-key sampling. Persist minimal bounded attention metadata; do not treat history as consent or an instruction to agents. No tenant config writes. Localize six locales and keep public fixtures/screenshots synthetic. Snapshot cadence is not synchronous crash durability.\n\nSize: M. Tier: P1. Doctrine check: observe operator-visible navigation and expose a local primitive; no agent hooks, tenant config changes or inferred task policy.\n",
+  "done_at": "2026-10-02T09:46:05Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XK6VX5CSFCE6VZN2SRWZ80",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XKKWHEP9M2WXD49YPHJK4Z",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XNTHM43PV5H6JY3XFAXBPA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XYPEQNAZ5PDPATB9QMT2JV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y032ZYHYCXMTYYEPB5G5YG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y03DRTQWFZ3VGCS3TFSWWH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y03DRQ3T5AKFX1CZ7R0XQG",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y05KV997RAG1ZADRHVT6D5",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3Q77XW34TPSW9G838036D",
+  "last_event_id": "ev_01M3Y05KVCHWPGZC6Y1FGD0WGC",
+  "last_status_changed_at": "2026-10-02T09:46:05Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:46:32Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:49Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-262",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:workspaces",
+    "tier:p1"
+  ],
+  "title": "Seen-based focus history with persistent UUIDs and agent-readable c11 history",
+  "type": "task",
+  "updated_at": "2026-10-02T09:47:17Z",
+  "urgency": null
+}

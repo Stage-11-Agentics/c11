@@ -1,0 +1,80 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-cli",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-284-guide-features",
+      "linked_at": "2026-10-02T04:16:22Z",
+      "linked_by": "agent:codex-cli",
+      "repo": null
+    }
+  ],
+  "comment_count": 12,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nInstalled skill copies go stale, and an agent then follows commands the running app does not have. The copy inside the app bundle matches that build. There is no way to print it, and `capabilities` is a method list with no feature flags, so a skill cannot tell what this build actually supports. Backlog item: C6.\n\n## Evidence\n- c11: `CLI/c11.swift` has no `guide`, `--skill`, or `rpc` case on origin/main (0ff8887e5e). `git grep` for those command names in the CLI is empty. `c11 skill` manages installed copies (`skills/c11/references/api.md:409-425`) and does not print the skill text.\n- c11: `Sources/SocketHandlers/SystemHandlers.swift:53-120` (`v2Capabilities`) returns a hand-kept `methods` array. There is no `features` list and no build identity in that payload. The CLI `capabilities` case (`CLI/c11.swift`, the `case \"capabilities\"` next to `ping`) connects to the socket before it can print anything.\n- c11: `CLAUDE.md` states the install is a one-time copy into `~/.claude/skills/<name>/`, and `scripts/sync-installed-skills.sh` is the refresh. A printed guide does not replace that sync.\n- Upstream: cmux #12468 prints `guide` and `--skill` before the CLI looks for a socket. cmux #16460 shows a hand-kept capabilities list drifting from dispatch. `rpc` is the other half of report 06 \u00a71i and is backlog C7, not this ticket.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71i. `c11-1.0.html` marks `c11 guide` and the feature flags core, and marks `c11 rpc` if-time. Fable bundled guide and rpc as one row. The backlog splits them. Astra row 4.9: print CLI build identity and guide version, and compare server identity when a socket is connected. A PATH binary can differ from the app.\n\n## Scope\nIn: `c11 guide` and `c11 --skill` print the c11 skill bundled in the same build as the CLI, with no socket required. The output includes the CLI's build identity (version and a git sha or build stamp the binary already has). When a socket connects, also print or JSON-encode the server identity from `system.capabilities` or `system.brand` so a mismatch is visible. Add a versioned `features` array on `system.capabilities`, generated from the same table as `methods` or from a small explicit registry next to dispatch, not a second hand-kept list that can drift. Seed it with flags for behavior already on origin/main that skills branch on, and leave named slots for C1 (`routing.canonical_keys`), C2 (`create.initial_input`), C3 (`send.raw`), C4 (`read_selection.terminal`), and C5 (`window.route_without_focus`). Those slots appear only when the behavior is in the build.\nOut: `c11 rpc` (C7). `config doctor` (parked, report 06 \u00a71j). Parameter schemas for every method (report 06 defers that to the 1.x registry). Rewriting the installed skill, or auto-syncing it on launch. The summonable fork-walkthrough agent (C11-104's area). That is a different product.\n\n## Approach\nShip the skill markdown in the app bundle next to the CLI, or read it from the bundle's `Resources` if it is already copied there. `guide` and `--skill` run before `SocketClient.connect`. Exit 0 even when no app is running. `features` is an array of `{id, version}` or strings plus a `features_version` integer. Bump `features_version` when a flag's meaning changes. Add a test that every `features` id is also mentioned by the dispatch or by a registry the dispatch reads, so a stale string fails in `c11-logic`. Document `c11 guide` in the skill itself, including the line that an installed copy can be older than `c11 guide`. Do not have `guide` write `~/.claude/skills`.\n\n## Acceptance criteria\n1. With no c11 app running, `c11 guide` prints the skill markdown and a build identity, and exits 0. `c11 --skill` prints the same body.\n2. The printed text includes a command that exists in this CLI and does not include a command the CLI help rejects. Check one added command and one removed one against `c11 --help`.\n3. Against a running tagged build, `c11 capabilities --json` includes `features` and a server identity. If the CLI sha and the server sha differ, the JSON says so rather than printing only the CLI's copy.\n4. A unit test fails if a feature id is added to the capabilities payload without a registry entry the dispatch table shares. Run it on `c11-logic`.\n5. `c11 guide` does not create or modify `~/.claude/skills/c11`. Confirm with mtime before and after.\n\n## Validation\n`c11-logic` for the registry test. A `tests_v2` or CLI smoke against a tagged build for criteria 1 through 3 and 5. No computer-use pass. No soak. Guide is offline. Capabilities is one socket call.\n\n## Dependencies\nNone required to start. C1, C2, C3, C4, and C5 register the flag names above when they land. If this ticket lands first, the array exists and those tickets add their ids. If one of them lands first, it adds the id in the same shape this ticket specifies, or leaves a one-line note in its PR. Do not block those tickets on this one.\n\n## Risks\nTyping latency: none. Main thread: `system.capabilities` is a snapshot. Keep the handler as it is. Do not rebuild the method list by walking live windows. Doctrine: printing the bundled skill is not a tenant-config write. The sync script remains the way an installed copy updates. Localization: `guide` prints the English skill source. Do not run it through the six-locale catalog. Public repo: the skill is already public.\n\nSize: S\u2013M. Tier: P1. Doctrine check: the running build tells the truth about itself. It does not rewrite the operator's skill install.",
+  "done_at": "2026-10-02T09:05:55Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XG6ZZFTZGTST14M7QGYE75",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XGQ1VS82EFN3S76G6AK4DE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWP0N6TGT335XEGN4RM6HX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWP0T3G9MPZSETGRAW8C9X",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XXSVY0XB1QJSYYRDDQX16V",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XXSW0BQVMQ4G378WZNVC84",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXSW2JMAAKSEPSB1HVY25S",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XXSW2F94YJX9ZNF956PR7B",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+  "last_event_id": "ev_01M3XXSW2JMAAKSEPSB1HVY25V",
+  "last_status_changed_at": "2026-10-02T09:05:55Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-284",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Print the bundled skill and a versioned capabilities.features list",
+  "type": "task",
+  "updated_at": "2026-10-02T09:05:55Z",
+  "urgency": null
+}

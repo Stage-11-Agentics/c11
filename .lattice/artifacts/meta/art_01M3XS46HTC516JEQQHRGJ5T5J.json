@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:44:11Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3XS46HTC516JEQQHRGJ5T5J",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": "art_01M3XS46HTC516JEQQHRGJ5T5J.log",
+    "size_bytes": 2176
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Fresh signed B actual current reply and return to idle",
+  "token_usage": null,
+  "type": "file"
+}

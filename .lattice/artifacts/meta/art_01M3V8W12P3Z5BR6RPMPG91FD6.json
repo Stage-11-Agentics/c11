@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-01T08:21:37Z",
+  "created_by": "agent:c11-sweep-orch",
+  "custom_fields": {},
+  "id": "art_01M3V8W12P3Z5BR6RPMPG91FD6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3V8W12P3Z5BR6RPMPG91FD6.md",
+    "size_bytes": 953
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR #474 squash-merged to main as dde263f1f; vendor/bonsplit pinned at d20db068 (bonsplit#10 merged with a merge commit; contains bonsplit#9 05e158a and #10 ba5bb79, verified with merge-base). Prototyp",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

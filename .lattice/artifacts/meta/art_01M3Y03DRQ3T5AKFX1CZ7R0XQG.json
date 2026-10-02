@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:46:05Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3Y03DRQ3T5AKFX1CZ7R0XQG",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Y03DRQ3T5AKFX1CZ7R0XQG.md",
+    "size_bytes": 798
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-262 PASS at b6f239bd077164d2ff2e7aa18d5464d4e885fd35. Actual tagged history/dwell/traversal/schema/non-focus behavior, browser/markdown move and two resumes, native Settings shortcut recording/res",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

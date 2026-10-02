@@ -1,0 +1,126 @@
+{
+  "scenario": "100 routine create/list/workspace-clear cycles, 5 warm-ups, menu extra on, command empty, same guest, both remote build host build slots reserved",
+  "limits": "socket/store completion, not banner delivery/menu paint/typing latency or C11-270 soak",
+  "rows": [
+    {
+      "order": "baseline then candidate",
+      "case": "baseline",
+      "source_sha": "7bb785741750ddeb8ab12b4cf6472593fb8c3550",
+      "elapsed_seconds": 10.558238125,
+      "p50_cycle_ms": 103.5335,
+      "p95_cycle_ms": 119.056209,
+      "host_load_before": [
+        10.75732421875,
+        16.279296875,
+        17.01416015625
+      ],
+      "host_load_after": [
+        9.42578125,
+        15.7109375,
+        16.79736328125
+      ],
+      "guest_load_before": [
+        1.96240234375,
+        1.8837890625,
+        1.88037109375
+      ],
+      "guest_load_after": [
+        3.32275390625,
+        2.1689453125,
+        1.98095703125
+      ],
+      "pass": true,
+      "count": 100
+    },
+    {
+      "order": "baseline then candidate",
+      "case": "candidate",
+      "source_sha": "b0fc4000f2e4061698a73d4c1aa0cf45669bdd4b",
+      "elapsed_seconds": 12.257899917,
+      "p50_cycle_ms": 122.335458,
+      "p95_cycle_ms": 130.150458,
+      "host_load_before": [
+        9.42578125,
+        15.7109375,
+        16.79736328125
+      ],
+      "host_load_after": [
+        8.302734375,
+        15.1533203125,
+        16.5791015625
+      ],
+      "guest_load_before": [
+        3.13671875,
+        2.1494140625,
+        1.97509765625
+      ],
+      "guest_load_after": [
+        2.8076171875,
+        2.11083984375,
+        1.96337890625
+      ],
+      "pass": true,
+      "count": 100
+    },
+    {
+      "order": "candidate then baseline",
+      "case": "baseline",
+      "source_sha": "7bb785741750ddeb8ab12b4cf6472593fb8c3550",
+      "elapsed_seconds": 12.403207208,
+      "p50_cycle_ms": 123.62875,
+      "p95_cycle_ms": 135.907708,
+      "host_load_before": [
+        6.91015625,
+        11.31005859375,
+        14.6533203125
+      ],
+      "host_load_after": [
+        6.59033203125,
+        10.71337890625,
+        14.29833984375
+      ],
+      "guest_load_before": [
+        2.1357421875,
+        2.05029296875,
+        1.95361328125
+      ],
+      "guest_load_after": [
+        2.763671875,
+        2.1943359375,
+        2.00634765625
+      ],
+      "pass": true,
+      "count": 100
+    },
+    {
+      "order": "candidate then baseline",
+      "case": "candidate",
+      "source_sha": "b0fc4000f2e4061698a73d4c1aa0cf45669bdd4b",
+      "elapsed_seconds": 10.542852750000002,
+      "p50_cycle_ms": 104.626875,
+      "p95_cycle_ms": 111.552125,
+      "host_load_before": [
+        7.345703125,
+        11.759765625,
+        14.90673828125
+      ],
+      "host_load_after": [
+        6.91015625,
+        11.31005859375,
+        14.6533203125
+      ],
+      "guest_load_before": [
+        2.12744140625,
+        2.0390625,
+        1.94775390625
+      ],
+      "guest_load_after": [
+        2.34130859375,
+        2.0869140625,
+        1.96533203125
+      ],
+      "pass": true,
+      "count": 100
+    }
+  ]
+}

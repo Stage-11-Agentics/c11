@@ -1,0 +1,16 @@
+MERGED; reviewed runtime/validation evidence accepted
+C11-298 / PR #531: https://github.com/Stage-11-Agentics/c11/pull/531
+Landing head: 876fbadf08aacb56af4f62202259716f9de111e5
+Squash merge: 9cc9e3222ae53f5056360063df7dac2056a3e737
+Base immediately before merge: f731745df1e7c0ed1e24bfa98e87b0160465eb1e
+GitHub MERGED verified; fetched origin/main contains the merge. Dependencies done; intended diff has 4 files, no Lattice noise. No behind-only Captain rebase.
+Review: ev_01M3Y5Z3SPYZZTT4PTW82S65ZJ
+Validation: ev_01M3Y5HW66QX7QKZM75FRBJPM2
+Every non-skipped exact-head hosted check SUCCESS (build, compatibility, workflow guards, daemon, web, GhosttyKit, and any mailbox/Python checks). Draft Drawbridge SKIPPED. Snapshot and URLs: /tmp/c11-pr531-before-merge.json.
+Exact-head Grok PASS ev_01M3Y5Z3SPYZZTT4PTW82S65ZJ at 876fbadf08aacb56af4f62202259716f9de111e5. Dependencies C11-216 and C11-312 are done; PRs #498 and #503 are merged and present on main. Ordinary owner merges only; actual merge-tree against current main is clean. No Captain branch integration or skill changes.
+Owner exact-head Debug compile and 18 targeted policy/readiness/updater tests passed (invocation e4c4f4374f6341f49a14adad0a750015; clean head, no overlay). An initial cached dependency-module compile failure was recovered by cache cleanup without source changes, as disclosed in validation.
+Signed proof provenance art_01M3XXXX8A7CGPV23274RQAQZ5: proof-only builds 29801/29802, source 876fbadf08aacb56af4f62202259716f9de111e5, producer 7edd59b882df9a6c5eda80566d34514acdd1b332, runs 36985327649/36985330895. Owner independently verified archive/manifests, signatures, notarization/staples and Gatekeeper. No Captain signing or workflow dispatch.
+Signed native runtime art_01M3Y551F6ZKGVT96FNW1DK7KB (SHA-256 e238604979ef490d3e1621ab310e73a2c3733763256377636aec8bbf12d11ab3), macOS 26.6.2: premature same-bundle newcomer yielded without disturbing incumbent shell/child heartbeat, workspace graph, socket or persistence; real update installed build 29802, restored two workspaces/six tab UUIDs and a functioning shell, then normal confirmed Quit exited. Installed executable SHA-256 a5bb3027ced40b9967784d5f28639d530d10456d2a02f75c091ab64e309887bc matches signed B provenance. Feed server reaped and guest deleted.
+Separate exact-source tagged runtime art_01M3Y5FZ2AP3NKVC7KJVBY6XE5 (SHA-256 af18ac4aa94d4c87debfc92d7577cbfe371df06f7054549f79803b4bee2a4b25): different-tag apps coexisted with live shells; real app.restart preserved workspace/tab identities and left the other app intact; warning-disabled Quit exited without a sheet; both apps normally dismissed and guest deleted.
+Limits preserved: 10-20 ms process sampling is not a kernel event trace; browser content restoration is outside this proof. Same-path open -n -W waiter was inconclusive and is not claimed passed. Simultaneous cold-start arbitration and older incumbent binaries remain documented limits. The separate coexistence proof is same-guest tagged Debug, not signed or separate-guest coexistence. One same-run update-menu action was retried after updateAvailable; no artifact changes or signing rerun. User accepts signed runtime proof for completion.
+No Captain local build/test/app launch, release, tagging or publication.

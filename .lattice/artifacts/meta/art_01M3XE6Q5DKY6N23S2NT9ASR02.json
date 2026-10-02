@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T04:33:19Z",
+  "created_by": "agent:codex-atlas",
+  "custom_fields": {},
+  "id": "art_01M3XE6Q5DKY6N23S2NT9ASR02",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XE6Q5DKY6N23S2NT9ASR02.md",
+    "size_bytes": 4507
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-216 final-head Atlas validation",
+  "token_usage": null,
+  "type": "file"
+}

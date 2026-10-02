@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:44:14Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XWJ57BKY5EPX9SCWX1FQ9V",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3XWJ57BKY5EPX9SCWX1FQ9V.png",
+    "size_bytes": 332373
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 sanitized tagged-window proof (unchanged receipt pixels)",
+  "token_usage": null,
+  "type": "file"
+}

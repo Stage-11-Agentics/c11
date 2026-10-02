@@ -1,0 +1,71 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-launch",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-269-runtime-hygiene",
+      "linked_at": "2026-10-02T06:11:58Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    }
+  ],
+  "comment_count": 6,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nLaunching Claude must not change its inherited signal behavior, and installing c11 skills must not also persist an agent plugin in tenant configuration. Backlog item: C9.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `CLI/c11.swift:18117-18118` ignores SIGPIPE globally; `:15820-15834` execs Claude from claude-teams without resetting it. The backlog/report\u2019s older 17639 line is stale on this baseline.\n- `Sources/SkillInstaller.swift:50-64` enables the OpenCode plugins destination; `:776-849` creates it and copies plugins. `Resources/bin/opencode:73-92` already injects the bundled plugin per process through OPENCODE_CONFIG_CONTENT or /dev/fd/3.\n- Upstream: `CLI/cmux.swift:42780-42784` on upstream/main (`920ff39ff7`) uses default SIGPIPE plus per-fd stdio handling; use as comparative evidence, not a wholesale I/O rewrite. No specific upstream PR is asserted for this narrow claude-teams repair.\n- Research: report 03 \u201cLead\u2019s hypothesis\u201d, OpenCode caveat; `c11-1.0.html` \u00a7bugs/loose ends; BACKLOG C9. CLAUDE.md\u2019s tenant-config boundary and PHILOSOPHY.md\u2019s host/primitive principle govern the result.\n- Duplicate check: C11-210 is completed CLI broken-pipe exception repair, not child exec hygiene. C11-151 is OpenCode exact-session resume, not the installer\u2019s plugin side effect.\n\n## Scope\nIn: restore default SIGPIPE before claude-teams exec; disable persistent c11-notify.js installation/update in OpenCode\u2019s config while retaining the runtime wrapper rail. Keep both small process-boundary fixes in this one S-sized backlog item.\nOut: undoing C11-210\u2019s safe CLI writes, broad signal-handler redesign, deleting user files, rewriting tenant configuration, expanding OpenCode resume (C11-151), new adapters or doctrine rewrites owned by J8.\n\n## Approach\nReset only at the child-exec boundary and retain c11\u2019s own safe broken-pipe behavior. Remove the plugin-copy side effect from skill installation entry points without removing skill installation itself or the bundled runtime plugin. Preserve operator-owned runtime config slots according to the wrapper\u2019s existing precedence. Existing persisted copies may still exist: document an operator-controlled cleanup path rather than silently deleting tenant state, and do not claim duplicate loading is eliminated on those machines until cleanup is performed.\n\n## Acceptance criteria\n1. A fake Claude executable launched through claude-teams observes SIGPIPE at default disposition; both resolved-path and PATH lookup exec routes are covered. The c11 CLI still exits cleanly when its own stdout/stderr reader closes (C11-210 regression).\n2. Installing/updating OpenCode skills against a temporary home leaves the plugins directory absent when initially absent, and leaves an existing plugin plus unrelated tenant files byte-identical. Ordinary requested skill copies still install.\n3. An interactive OpenCode wrapper launch in c11 loads the bundled plugin through its per-process rail when a runtime slot is available; existing OPENCODE_CONFIG_CONTENT/OPENCODE_CONFIG values obey the documented fallback and are not overwritten.\n4. Outside c11 or without a reachable c11 socket the wrapper remains transparent. With both runtime config slots occupied, the documented fallback remains intact; no persistent plugin is written to compensate.\n5. Docs/help no longer instruct agents to persist c11-notify.js; the treatment of older installed copies is explicit and does not remove or overwrite user-owned files.\n\n## Validation\nUse subprocess signal-disposition probes through the built CLI, behavioral SkillInstaller tests with temporary homes, and a fake OpenCode executable that captures per-process config without leaking real user data. Run the tagged CLI/wrapper once through the actual packaged path and verify a runtime lifecycle signal. Use tests_v2 for that signal; a small computer-use check of Settings installation is appropriate if its UI changes. No fleet soak is required for a boundary-only fix.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nNo mandatory backlog dependency. Coordinate with J8 for doctrine/skill wording and C11-151 for the preserved OpenCode runtime plugin. C11-210 must stay fixed. F1 / C11-216 supplies builds. No new ticket or status change for those related items is part of this task.\n\n## Risks\nChanging SIGPIPE globally could reintroduce the fixed CLI crash, so reset at exec. Existing plugin copies make duplicate loading possible (research inference); avoid declaring those files safe to delete merely because their name matches. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: S. Tier: P1. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M3XQNKVSQFQRGECP3678SVRS",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XQNKY2D4RX95VKF1R95ZHE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQZ0YBN7GKBXGFN7BX62HE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XSXQZJJDNEBFG124QYNZVE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YNC53WW59TW4NTHCZY18GD",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YNC568R3CVJ5DNVPKQJMEV",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3WRXD0V83MKS46ZCJ4QM0",
+  "last_event_id": "ev_01M3YNENQQCF28MTKH7PKENQV0",
+  "last_status_changed_at": "2026-10-02T15:09:20Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-269",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p1"
+  ],
+  "title": "Runtime hygiene: reset claude-teams SIGPIPE and stop persistent OpenCode plugin installs",
+  "type": "chore",
+  "updated_at": "2026-10-02T15:59:14Z",
+  "urgency": null
+}

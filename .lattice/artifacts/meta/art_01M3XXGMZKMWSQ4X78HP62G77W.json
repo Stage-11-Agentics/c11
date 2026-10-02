@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:00:53Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XXGMZKMWSQ4X78HP62G77W",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3XXGMZKMWSQ4X78HP62G77W.html",
+    "size_bytes": 108235
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Batch 3 sanitized scoped OSC-title PASS",
+  "token_usage": null,
+  "type": "file"
+}

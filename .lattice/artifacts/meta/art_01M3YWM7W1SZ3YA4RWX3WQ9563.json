@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T18:04:37Z",
+  "created_by": "agent:astra-review-303",
+  "custom_fields": {},
+  "id": "art_01M3YWM7W1SZ3YA4RWX3WQ9563",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3YWM7W1SZ3YA4RWX3WQ9563.md",
+    "size_bytes": 4876
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Round 2 exact-head delta review PASS",
+  "token_usage": null,
+  "type": "file"
+}

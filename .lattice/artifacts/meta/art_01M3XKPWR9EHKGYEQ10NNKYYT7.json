@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:09:32Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XKPWR9EHKGYEQ10NNKYYT7",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XKPWR9EHKGYEQ10NNKYYT7.json",
+    "size_bytes": 40776
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact-head Atlas launch validation",
+  "token_usage": null,
+  "type": "file"
+}

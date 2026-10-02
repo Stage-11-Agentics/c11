@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T10:33:11Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3Y2SNASSHA4H2JATBNWKCTN",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Y2SNASSHA4H2JATBNWKCTN.json",
+    "size_bytes": 1766
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-260: 35 English folder keys for six-locale pass",
+  "token_usage": null,
+  "type": "file"
+}

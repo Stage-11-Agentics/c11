@@ -49,6 +49,31 @@ final class AgentStartupProbeTests: XCTestCase {
         ], kind: "claude-code"), .init(pid: 42, executable: "node"))
     }
 
+    func testClaudeNativeInstallerVersionPathProvidesProcessEvidence() {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/share/claude/versions/2.1.284").path
+        let native = AgentStartupProbe.ProcessSnapshot(pid: 42, processGroup: 42, executablePath: path, arguments: [])
+        XCTAssertEqual(evidence([native], kind: "claude-code"), .init(pid: 42, executable: "2.1.284"))
+        XCTAssertNil(evidence([native], kind: "codex"))
+    }
+
+    func testVersionNamesOutsideExactClaudeInstallerDirectoryAreNotIdentity() {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/share/claude/versions").path
+        for path in [
+            "/tmp/unrelated/2.1.284",
+            "/tmp/.local/share/claude/versions/2.1.284",
+            "\(directory)/helpers/2.1.284",
+            "\(directory)/2.1.284.old",
+            "\(directory)/2.1",
+            "\(directory)/2.x.284",
+            "\(directory)/２.1.284",
+        ] {
+            let unrelated = AgentStartupProbe.ProcessSnapshot(pid: 42, processGroup: 42, executablePath: path, arguments: [])
+            XCTAssertNil(evidence([unrelated], kind: "claude-code"), path)
+        }
+    }
+
     func testKimiPythonScriptAndModuleForms() {
         XCTAssertNotNil(evidence([process("python3.13", arguments: ["python3", "/home/bin/kimi"])], kind: "kimi"))
         XCTAssertNotNil(evidence([process("python3", arguments: ["python3", "-m", "kimi_cli"])], kind: "kimi"))
@@ -149,9 +174,8 @@ final class AgentStartupProbeTests: XCTestCase {
     }
 
     func testNativeSnapshotReadsForegroundGroupInsteadOfHighestPIDOnRealPTY() throws {
-        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/python3") else {
-            throw XCTSkip("PTY fixture requires the Xcode Python interpreter")
-        }
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/usr/bin/python3"),
+                      "PTY fixture requires the Xcode Python interpreter")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }

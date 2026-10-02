@@ -95,6 +95,7 @@ enum AgentStartupProbe {
         guard let names = nativeNames[kind] else { return false }
         let executable = basename(process.executablePath)
         if names.contains(executable) { return true }
+        if kind == "claude-code", isClaudeNativeVersionPath(process.executablePath) { return true }
         let isPython = executable == "python" || executable == "python3"
             || executable.hasPrefix("python3.")
         let isJavaScript = ["node", "bun", "deno"].contains(executable)
@@ -124,8 +125,25 @@ enum AgentStartupProbe {
         }
     }
 
+    /// Claude's official native installer execs a version-named Mach-O, so
+    /// proc_pidpath reports e.g. ~/.local/share/claude/versions/2.1.284 rather
+    /// than the ~/.local/bin/claude symlink. Limit this exception to the exact
+    /// current user's installer directory and a three-part ASCII version.
+    private static func isClaudeNativeVersionPath(_ path: String) -> Bool {
+        let versions = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/share/claude/versions", isDirectory: true).path
+        guard URL(fileURLWithPath: path).deletingLastPathComponent().path == versions else { return false }
+        let parts = basename(path).split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 3 && parts.allSatisfy { part in
+            !part.isEmpty && part.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }
+        }
+    }
+
     /// Actual kernel foreground group, restricted to processes with this
-    /// controlling TTY. Recheck it after enumeration to fail closed on churn.
+    /// controlling TTY. Darwin rejects tcgetpgrp with ENOTTY when the queried
+    /// TTY is outside this process's controlling session (as an app's terminals
+    /// are). proc_bsdinfo.e_tpgid exposes that TTY's kernel foreground group
+    /// without acquiring the terminal. Recheck a witness after enumeration.
     static func nativeSnapshot(ttyName: String) -> Snapshot? {
         let path = ttyName.hasPrefix("/") ? ttyName : "/dev/\(ttyName)"
         let descriptor = open(path, O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC)
@@ -133,8 +151,8 @@ enum AgentStartupProbe {
         defer { close(descriptor) }
         var ttyStat = stat()
         guard fstat(descriptor, &ttyStat) == 0 else { return nil }
-        let group = tcgetpgrp(descriptor)
-        guard group > 0 else { return nil }
+        let descriptorGroup = tcgetpgrp(descriptor)
+        var group: pid_t? = descriptorGroup > 0 ? descriptorGroup : nil
         let type = UInt32(PROC_TTY_ONLY)
         let device = UInt32(truncatingIfNeeded: ttyStat.st_rdev)
         let byteCount = proc_listpids(type, device, nil, 0)
@@ -145,14 +163,24 @@ enum AgentStartupProbe {
         }
         guard written > 0 else { return nil }
         var processes: [ProcessSnapshot] = []
+        var witnessPID: pid_t?
         let scanDeadline = ProcessInfo.processInfo.systemUptime + 0.1
         for pid in pids.prefix(min(pids.count, Int(written) / MemoryLayout<pid_t>.stride)) where pid > 0 {
             guard ProcessInfo.processInfo.systemUptime < scanDeadline else { return nil }
             var info = proc_bsdinfo()
             let size = Int32(MemoryLayout<proc_bsdinfo>.size)
             guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
-                  info.pbi_pgid == UInt32(group), info.e_tdev == device,
+                  info.e_tdev == device,
                   info.pbi_status != UInt32(SZOMB) else { continue }
+            guard info.e_tpgid > 0, info.e_tpgid <= UInt32(Int32.max) else { return nil }
+            let observedGroup = pid_t(info.e_tpgid)
+            if let group {
+                guard observedGroup == group else { return nil }
+            } else {
+                group = observedGroup
+            }
+            if witnessPID == nil { witnessPID = pid }
+            guard info.pbi_pgid == info.e_tpgid else { continue }
             var pathBuffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
             guard proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count)) > 0 else { continue }
             let executablePath = String(cString: pathBuffer)
@@ -160,11 +188,16 @@ enum AgentStartupProbe {
             let interpreter = ["node", "bun", "deno", "python", "python3"].contains(name)
                 || name.hasPrefix("python3.")
             processes.append(ProcessSnapshot(
-                pid: pid, processGroup: group, executablePath: executablePath,
+                pid: pid, processGroup: observedGroup, executablePath: executablePath,
                 arguments: interpreter ? invocationTokens(pid: pid) : []
             ))
         }
-        guard tcgetpgrp(descriptor) == group else { return nil }
+        guard let group, let witnessPID else { return nil }
+        var witness = proc_bsdinfo()
+        let witnessSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(witnessPID, PROC_PIDTBSDINFO, 0, &witness, witnessSize) == witnessSize,
+              witness.e_tdev == device, witness.e_tpgid == UInt32(group) else { return nil }
+        if descriptorGroup > 0, tcgetpgrp(descriptor) != group { return nil }
         return Snapshot(foregroundGroup: group, processes: processes)
     }
 

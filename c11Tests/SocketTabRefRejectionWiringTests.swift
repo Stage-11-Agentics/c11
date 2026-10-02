@@ -1,5 +1,6 @@
 import XCTest
 import Darwin
+import AppKit
 @testable import c11
 
 /// C11-165 COR-1 — the *wiring* half of COR-4. The pure seam
@@ -71,6 +72,50 @@ final class SocketTabRefRejectionWiringTests: XCTestCase {
         """)
         XCTAssertEqual(code, "empty_ref",
                        "rename with an empty surface_id must be rejected")
+    }
+
+    func testWindowCloseRejectsAttachedSheetWithInvalidState() throws {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "cmux.main.\(windowId.uuidString)"
+        }) else {
+            XCTFail("Expected test main window")
+            return
+        }
+        let sheet = NSPanel(
+            contentRect: CGRect(x: 0, y: 0, width: 240, height: 90),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            if window.attachedSheet === sheet {
+                window.endSheet(sheet, returnCode: .cancel)
+            }
+            sheet.close()
+            window.close()
+        }
+
+        window.beginSheet(sheet, completionHandler: nil)
+        XCTAssertTrue(window.attachedSheet === sheet, "The test precondition requires an attached sheet")
+
+        let response = TerminalController.shared.processV2Command("""
+        {"id":297,"method":"window.close","params":{"window_id":"\(windowId.uuidString)"}}
+        """)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual((object["error"] as? [String: Any])?["code"] as? String, "invalid_state")
+        XCTAssertTrue(window.attachedSheet === sheet, "The close request must leave the sheet attached")
+        XCTAssertTrue(NSApp.windows.contains(where: { $0 === window }), "The close request must leave the window open")
+
+        let legacyResponse = TerminalController.shared.processCommand("close_window \(windowId.uuidString)")
+        XCTAssertEqual(legacyResponse, "ERROR: invalid_state: Window has an attached sheet")
+        XCTAssertTrue(window.attachedSheet === sheet, "The legacy close request must also leave the sheet attached")
     }
 }
 

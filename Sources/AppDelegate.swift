@@ -6370,6 +6370,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    enum MainWindowCloseResult {
+        case closed
+        case notFound
+        case invalidState
+    }
+
     /// Explicit socket frame mutation requires AppKit's main thread, but no focus change.
     func resizeMainWindow(windowId: UUID, width: CGFloat?, height: CGFloat?) -> Result<(frame: CGRect, screenDisplayID: UInt32?, screenFrame: CGRect?, screenVisibleFrame: CGRect?, clamped: Bool, changed: Bool), WindowResizePlan.Failure> {
         guard let window = windowForMainWindowId(windowId) else { return .failure(.notFound) }
@@ -6400,10 +6406,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Socket `window.close`: an agent asked for this exact window, so no prompt.
-    func closeMainWindow(windowId: UUID) -> Bool {
-        guard let window = windowForMainWindowId(windowId) else { return false }
+    func closeMainWindow(windowId: UUID) -> MainWindowCloseResult {
+        guard let window = windowForMainWindowId(windowId) else { return .notFound }
+        guard window.attachedSheet == nil else { return .invalidState }
         closeMainWindowWithoutPrompt(window)
-        return true
+        return .closed
     }
 
     // MARK: - Main window close guard
@@ -6444,6 +6451,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     fileprivate func mainWindowCloseGuardDidClose(_ window: NSWindow) {
         mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
     }
+
+#if DEBUG
+    func debugHasMainWindowCloseGuard(for window: NSWindow) -> Bool {
+        mainWindowCloseGuards[ObjectIdentifier(window)] != nil
+    }
+
+    func debugUnregisterMainWindow(_ window: NSWindow) {
+        unregisterMainWindow(window)
+    }
+#endif
 
     @objc private func mainWindowCloseButtonPressed(_ sender: NSButton) {
         guard let window = sender.window else { return }
@@ -13555,7 +13572,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
-        mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
         if !isTerminatingApp,
            !closesUnansweredResumePicker,
            mainWindowContexts.count == 1,

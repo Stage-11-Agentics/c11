@@ -233,7 +233,8 @@ public final class AreaInteractionRuntime: ObservableObject {
     @Published public private(set) var pendingTextInputValues: [UUID: String] = [:]
     /// Which button is highlighted per panel for an active `.confirm` card.
     /// Driven by arrow / tab keys; Return resolves the selected option.
-    /// Reset to `.confirm` on `present` / queue advance / clear.
+    /// The card reads through `confirmSelectionForDisplay` so a missing value
+    /// uses the same safe `.cancel` fallback as Return-key routing.
     @Published public private(set) var confirmSelection: [UUID: ConfirmSelectionField] = [:]
     /// Focus pivot per panel for an active `.textInput` card. `.field` is the
     /// default on present (text field owns first responder). Tab cycles
@@ -396,7 +397,7 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// active interaction isn't a `.confirm` variant.
     public func moveConfirmSelection(panelId: UUID, direction: ConfirmMoveDirection) {
         guard case .confirm? = active[panelId] else { return }
-        let current = confirmSelection[panelId] ?? .cancel
+        let current = confirmSelectionForDisplay(panelId: panelId)
         let next: ConfirmSelectionField
         switch direction {
         case .left: next = .cancel
@@ -527,10 +528,23 @@ public final class AreaInteractionRuntime: ObservableObject {
     /// highlighted. Used by Return key routing.
     public func acceptSelectedConfirm(panelId: UUID) {
         guard case .confirm(let c)? = active[panelId] else { return }
-        let selection = confirmSelection[panelId] ?? .cancel
+        let selection = confirmSelectionForDisplay(panelId: panelId)
         let result: ConfirmResult = (selection == .cancel) ? .cancelled : .confirmed
         resolveConfirm(panelId: panelId, result: result, ifInteractionId: c.id)
     }
+
+    /// Selection shown by a confirm card. A missing published value must agree
+    /// with Return-key routing so the highlight never advertises the wrong action.
+    public func confirmSelectionForDisplay(panelId: UUID) -> ConfirmSelectionField {
+        confirmSelection[panelId] ?? .cancel
+    }
+
+#if DEBUG
+    /// Tests only: reproduces a confirm card whose published selection is missing.
+    func debugClearConfirmSelection(panelId: UUID) {
+        confirmSelection[panelId] = nil
+    }
+#endif
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }
     /// A destructive card starts on Cancel so a reflexive Return keeps things

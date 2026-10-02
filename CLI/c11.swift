@@ -1792,11 +1792,35 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        let isSendText = ["send", "send-tab", "paste"].contains(command)
+        let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
+            .contains(where: { $0 == "--help" || $0 == "-h" })
+        let sendInput: SendTextParse?
+        if isSendText && !sendWantsHelp {
+            sendInput = try SendTextParse.parse(commandArgs, paste: command == "paste")
+            jsonOutput = jsonOutput || sendInput?.json == true
+        } else {
+            sendInput = nil
+        }
         // Guide (including its help) is bundled, offline content. Socket
         // discovery probes listeners, so return before resolving any path.
         if command == "guide" {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
+        }
+        var rpcCall: (method: String, params: [String: Any])?
+        if command == "rpc" {
+            if commandArgs == ["--help"] || commandArgs == ["-h"] {
+                _ = dispatchSubcommandHelp(command: command, commandArgs: commandArgs)
+                return
+            }
+            do {
+                rpcCall = try CapabilityFeatures.current.dispatch(.rpc) {
+                    try RpcCommand.parse(commandArgs)
+                }
+            } catch let error as RpcCommand.ValidationError {
+                throw CLIError(message: error.description)
+            }
         }
         // Remove the literal command value before inspecting create flags. A
         // body such as "--layout" is input, not another CLI option.
@@ -1849,8 +1873,10 @@ struct CMUXCLI {
 
         // Check for --help/-h on subcommands before connecting to the socket,
         // so help text is available even when cmux is not running.
-        if command != "__tmux-compat",
+        if command != "rpc",
+           command != "__tmux-compat",
            command != "claude-teams",
+           (!isSendText || sendWantsHelp),
            (createArgs.contains("--help") || createArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return
@@ -1973,7 +1999,7 @@ struct CMUXCLI {
 
         // Admission and advertised support share the feature registry. The
         // send handlers below still enforce the explicit-tab contract.
-        if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
+        if ["send", "paste", "send-key", "send-tab", "send-key-tab"].contains(command) {
             try CapabilityFeatures.current.dispatch(.explicitTab) {}
         }
         let client = SocketClient(path: resolvedSocketPath)
@@ -2062,6 +2088,13 @@ struct CMUXCLI {
             let server = response["server"] as? [String: Any]
             response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
+
+        case "rpc":
+            guard let rpcCall else { preconditionFailure("rpc must be parsed before connect") }
+            let response = try CapabilityFeatures.current.dispatch(.rpc) {
+                try client.sendV2(method: rpcCall.method, params: rpcCall.params)
+            }
+            print(jsonString(response))
 
         case "brand":
             let response = try client.sendV2(method: "system.brand")
@@ -3082,26 +3115,23 @@ struct CMUXCLI {
                 print((payload["text"] as? String) ?? "")
             }
 
-        case "send":
-            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
-            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send")
-            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send")
-            let envSurface = Self.callerTabEnv()
+        case "send", "send-tab", "paste":
+            guard let parsed = sendInput else { throw CLIError(message: "send requires text") }
+            let wsArg = try requireNonEmptyHandle(parsed.workspace, flag: "--workspace", command: command)
+            let tabArg = try requireNonEmptyHandle(parsed.tab, flag: "--tab", command: command)
+            let envTab = Self.callerTabEnv()
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
-            // Require explicit surface targeting. Shell-integrated callers inside a c11
-            // surface have CMUX_SURFACE_ID set automatically. External callers must pass
-            // --surface. The windowId path is excluded: --window without --surface still
-            // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
-            guard sfArg != nil || envSurface != nil else {
+            let surfaceArg = tabArg ?? (wsArg == nil && windowId == nil ? envTab : nil)
+            // Preserve explicit-target admission, including --window's exclusion
+            // from ambient focused-tab routing. send-tab always needs its flag.
+            guard (command == "send-tab" ? tabArg != nil : tabArg != nil || envTab != nil) else {
                 throw CLIError(message: "send requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
-            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
-            guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
-            let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text, "submit": !noSubmit]
+            if parsed.raw { try requireRawSendSupport(client: client) }
+            let stdin = parsed.input == .stdin ? FileHandle.standardInput.readDataToEndOfFile() : Data()
+            let text = try parsed.text(stdin: stdin)
+            var params: [String: Any] = ["text": text, "submit": parsed.submit]
+            if parsed.raw { params["preserve_newlines"] = true }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -3147,34 +3177,6 @@ struct CMUXCLI {
             }
             let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
-
-        case "send-tab":
-            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
-            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-tab")
-            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-tab") else {
-                throw CLIError(message: "send-tab requires --tab")
-            }
-            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
-            guard !rawText.isEmpty else { throw CLIError(message: "send-tab requires text") }
-            let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text, "submit": !noSubmit]
-            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
-            if let wsId { params["workspace_id"] = wsId }
-            let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["tab_id"] = sfId }
-            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-                params["caller_tab_id"] = callerTabId
-            }
-            let payload = try client.sendV2(method: "tab.send_text", params: params)
-            printV2Payload(
-                payload,
-                jsonOutput: jsonOutput,
-                idFormat: idFormat,
-                fallbackText: sendTextSummary(payload, idFormat: idFormat)
-            )
 
         case "send-key-tab":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
@@ -5398,10 +5400,31 @@ struct CMUXCLI {
     /// Say so when the target had no PTY yet and the payload is waiting to flush
     /// on attach — that is the one case where the send has *not* reached anyone.
     private func sendTextSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
-        let base = v2OKSummary(payload, idFormat: idFormat)
-        let queued = (payload["queued"] as? Bool) ?? false
-        guard queued else { return base }
-        return base + " queued=1 (tab not attached yet; payload flushes on attach)"
+        let status = SendTextDelivery.summary(
+            queued: (payload["queued"] as? Bool) ?? false,
+            submitted: (payload["submitted"] as? Bool) ?? false
+        )
+        return v2OKSummary(payload, idFormat: idFormat) + " " + status
+    }
+
+    private func requireRawSendSupport(client: SocketClient) throws {
+        let unavailable = CLIError(message: String(
+            localized: "cli.send.raw_unavailable",
+            defaultValue: "This server does not support raw/paste delivery. Use a build advertising send.raw."
+        ))
+        guard CapabilityFeatures.current.supports(.rawSend) else { throw unavailable }
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(method: "system.capabilities")
+        } catch let error as CLIError where error.message.contains("method_not_found") {
+            throw unavailable
+        }
+        let supported = (payload["features"] as? [[String: Any]])?.contains {
+            $0["id"] as? String == CapabilityFeatures.ID.rawSend.rawValue && ($0["version"] as? Int ?? 0) >= 1
+        } ?? false
+        guard supported else {
+            throw unavailable
+        }
     }
 
     /// An exported-but-empty env var is not a target. Treat it as unset so the
@@ -8974,6 +8997,14 @@ struct CMUXCLI {
             Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
             sha_match is null when either build has no commit stamp.
             """
+        case "rpc":
+            return """
+            Usage: c11 rpc <method> [json] [--json]
+
+            Call one local socket method and print its result as JSON.
+            Params must be a JSON object. Prefer a friendly command when available.
+            Remote commands over c11 ssh remain unavailable.
+            """
         case "guide":
             return """
             Usage: c11 guide [page] [--json]
@@ -10232,20 +10263,28 @@ struct CMUXCLI {
               c11 read-screen
               c11 read-screen --tab tab:2 --scrollback --lines 200
             """
-        case "send":
-            return """
-            Usage: c11 send [flags] [--] <text>
+        case "send", "send-tab", "paste":
+            return String(localized: "cli.send.help", defaultValue: """
+            Usage: c11 \(command) [flags] [--] <text | ->
 
-            Send text to a terminal tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
+            Send text to a terminal tab. paste is an alias for send --raw;
+            paste with no text reads stdin. send - reads stdin explicitly.
+            Default send decodes \\n and \\r as Return, \\t as Tab.
+            --raw preserves literal escapes and newline content.
+            For raw/paste, --no-submit suppresses c11's additional Return.
+            Default send still treats a trailing newline as submit. Newline content
+            can execute in a program that does not use bracketed paste.
+            Unknown --flags are errors before --; use -- for literal flag text.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
+              --workspace <id|ref>   Target workspace (default: caller workspace)
+              --tab <id|ref>         Target tab (required for send-tab)
+              --raw                 Literal escape/newline handling (send.raw required)
+              --no-submit           Do not schedule an additional Return
+              --json                Report delivered, queued and submitted booleans
 
-            Example:
-              c11 send "echo hello"
-              c11 send --tab tab:2 "ls -la\\n"
-            """
+            Delivery reports PTY input or queueing, never agent acknowledgment.
+            """)
         case "send-key":
             return """
             Usage: c11 send-key [flags] [--] <key>
@@ -10260,19 +10299,6 @@ struct CMUXCLI {
             Example:
               c11 send-key enter
               c11 send-key --tab tab:2 ctrl+c
-            """
-        case "send-tab":
-            return """
-            Usage: c11 send-tab --tab <id|ref> [flags] [--] <text>
-
-            Send text to a specific tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
-
-            Flags:
-              --tab <id|ref>       Target tab (required)
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-
-            Example:
-              c11 send-tab --tab tab:2 "echo hello\\n"
             """
         case "send-key-tab":
             return """
@@ -18623,6 +18649,7 @@ struct CMUXCLI {
           version
           guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
+          rpc <method> [json] [--json]
           brand [--json]
           history [list] [--json] [--limit <1...200>]
           history back [--json]
@@ -18679,9 +18706,10 @@ struct CMUXCLI {
           current-workspace
           read-selection [--workspace <id|ref>] [--tab <id|ref>]
           read-screen [--workspace <id|ref>] [--tab <id|ref>] [--scrollback] [--lines <n>]
-          send [--workspace <id|ref>] [--tab <id|ref>] <text>
+          send [--workspace <id|ref>] [--tab <id|ref>] [--raw] [--no-submit] <text | ->
+          paste [--workspace <id|ref>] [--tab <id|ref>] [--no-submit] [text | -]
           send-key [--workspace <id|ref>] [--tab <id|ref>] <key>
-          send-tab --tab <id|ref> [--workspace <id|ref>] <text>
+          send-tab --tab <id|ref> [--workspace <id|ref>] [--raw] [--no-submit] <text | ->
           send-key-tab --tab <id|ref> [--workspace <id|ref>] <key>
           notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--tab <id|ref>]
           area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]

@@ -12,6 +12,7 @@ struct CapabilityFeatures {
         case rawSend = "send.raw"
         case terminalSelection = "read_selection.terminal"
         case windowRouteWithoutFocus = "window.route_without_focus"
+        case rpc = "cli.rpc"
     }
 
     struct Entry {
@@ -30,11 +31,12 @@ struct CapabilityFeatures {
         Entry(id: .workspaceAreaTab, version: 1, enabled: true),
         Entry(id: .explicitTab, version: 1, enabled: true),
         Entry(id: .offlineEvents, version: 1, enabled: true),
-        Entry(id: .canonicalRoutingKeys, version: 1, enabled: false),
+        Entry(id: .canonicalRoutingKeys, version: 1, enabled: true),
         Entry(id: .initialInput, version: 1, enabled: true),
-        Entry(id: .rawSend, version: 1, enabled: false),
+        Entry(id: .rawSend, version: 1, enabled: true),
         Entry(id: .terminalSelection, version: 1, enabled: true),
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: false),
+        Entry(id: .rpc, version: 1, enabled: true),
     ])
 
     private let entries: [ID: Entry]

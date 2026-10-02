@@ -505,6 +505,7 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */; };
 		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
 		F5D4593C9E4FA636B735FFBF /* TomlSubsetParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F003 /* TomlSubsetParserTests.swift */; };
+		C11C249A01B2C3D4E5F60702 /* TabRailTipCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C249A01B2C3D4E5F60701 /* TabRailTipCenterTests.swift */; };
 		F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */; };
 		F60C0DEA00000000000C0001 /* Grok.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60C0DEA00000000000C0002 /* Grok.swift */; };
 		F60C0DEA00000000000C0101 /* GitHubCopilot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60C0DEA00000000000C0102 /* GitHubCopilot.swift */; };
@@ -1112,6 +1113,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		F4C57DBBB7C3C6C27357EBA8 /* BrowserHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserHandlers.swift; sourceTree = "<group>"; };
 		F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceTests.swift; sourceTree = "<group>"; };
 		F5B86DD36D8CB96AA0FD94E1 /* PaneHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneHandlers.swift; sourceTree = "<group>"; };
+		C11C249A01B2C3D4E5F60701 /* TabRailTipCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabRailTipCenterTests.swift; sourceTree = "<group>"; };
 		F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegateShortcutRoutingTests.swift; sourceTree = "<group>"; };
 		F60C0DEA00000000000C0002 /* Grok.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Grok.swift; path = Conversation/Strategies/Grok.swift; sourceTree = "<group>"; };
 		F60C0DEA00000000000C0102 /* GitHubCopilot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = GitHubCopilot.swift; path = Conversation/Strategies/GitHubCopilot.swift; sourceTree = "<group>"; };
@@ -1667,6 +1669,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */,
 				FA100001A1B2C3D4E5F60718 /* BrowserImportMappingTests.swift */,
 				F6000001A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift */,
+				C11C249A01B2C3D4E5F60701 /* TabRailTipCenterTests.swift */,
 				A5001703 /* TextBoxInputTests.swift */,
 				A5F1002001A1B2C3D4E5F003 /* TomlSubsetParserTests.swift */,
 				A5F1002001A1B2C3D4E5F004 /* TomlSubsetParserFuzzTests.swift */,
@@ -2620,6 +2623,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,
 				C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */,
 				F6000000A1B2C3D4E5F60718 /* AppDelegateShortcutRoutingTests.swift in Sources */,
+				C11C249A01B2C3D4E5F60702 /* TabRailTipCenterTests.swift in Sources */,
 				A5001702 /* TextBoxInputTests.swift in Sources */,
 				A5F1001001A1B2C3D4E5F009 /* ThemedValueEvaluatorTests.swift in Sources */,
 				A5F1001001A1B2C3D4E5F013 /* ThemeManagerLifecycleTests.swift in Sources */,

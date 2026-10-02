@@ -611,7 +611,7 @@ public struct C11Theme: Codable, Equatable, Sendable {
         case let .modifier(_, args):
             return args.flatMap { extractVariableDependencies(from: $0, variables: variables) }
 
-        case .hex, .structured:
+        case .hex, .rgba, .structured:
             return []
         }
     }

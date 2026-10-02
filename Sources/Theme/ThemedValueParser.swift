@@ -63,7 +63,7 @@ private struct Parser {
             return try parseVariableExpression()
         }
         if next == "#" {
-            return .hex(try parseHexLiteral())
+            return try parseHexLiteral()
         }
         if next == "-" || next.isNumber {
             return .structured(.number(try parseNumberLiteral()))
@@ -169,7 +169,7 @@ private struct Parser {
         return arguments
     }
 
-    private mutating func parseHexLiteral() throws -> UInt32 {
+    private mutating func parseHexLiteral() throws -> ThemedValueAST {
         guard consume("#") else {
             throw error(kind: .invalidHex, message: "hex literal must start with '#'")
         }
@@ -181,7 +181,7 @@ private struct Parser {
             throw error(kind: .invalidHex, message: "expected 6 or 8 hex digits")
         }
 
-        return value
+        return literal.count == 8 ? .rgba(value) : .hex(value)
     }
 
     private mutating func parseNumberLiteral() throws -> Double {

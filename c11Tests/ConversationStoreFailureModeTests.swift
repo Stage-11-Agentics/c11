@@ -86,8 +86,8 @@ final class ConversationStoreFailureModeTests: XCTestCase {
     func testTuiCrashesBeforeHookFires() {
         let mock = ConversationScraperTests.MockFS()
         mock.home = URL(fileURLWithPath: "/Users/test")
-        let sessionsDir = URL(fileURLWithPath: "/Users/test/.claude/sessions")
-        mock.directoryEntries[sessionsDir] = [
+        let sessionsDir = URL(fileURLWithPath: "/Users/test/.claude/projects")
+        mock.recursiveEntries[sessionsDir] = [
             ConversationFilesystemEntry(
                 url: sessionsDir.appendingPathComponent("\(claudeId).jsonl"),
                 fileName: "\(claudeId).jsonl",
@@ -154,6 +154,9 @@ final class ConversationStoreFailureModeTests: XCTestCase {
                 size: 4096
             )
         ]
+        for entry in mock.recursiveEntries[root] ?? [] {
+            mock.sessionHeads[entry.url.path] = "{\"type\":\"session_meta\",\"payload\":{\"cwd\":\"\(cwd)\"}}"
+        }
         let scraper = CodexScraper(filesystem: mock)
         let candidates = scraper.candidates(cwd: cwd)
         XCTAssertEqual(candidates.count, 2)
@@ -184,7 +187,7 @@ final class ConversationStoreFailureModeTests: XCTestCase {
             XCTFail("expected skip on ambiguous ref")
             return
         }
-        XCTAssertEqual(reason, "ambiguous",
+        XCTAssertEqual(reason, "quarantined:ambiguous_global_assignment",
                        "resume must NOT auto-fire — neither pane resumes the other's session")
     }
 
@@ -236,7 +239,7 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let strategy = ClaudeCodeStrategy()
         let candidate = ScrapeCandidate(
             id: claudeId,
-            filePath: "/Users/test/.claude/sessions/\(claudeId).jsonl",
+            filePath: "/Users/test/.claude/projects/\(claudeId).jsonl",
             mtime: Date(),
             size: 4096,
             cwd: cwd

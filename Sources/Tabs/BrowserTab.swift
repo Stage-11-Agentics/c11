@@ -4257,6 +4257,7 @@ final class BrowserTab: TabContent, ObservableObject {
                 message = "Navigation did not start"
             }
             completion(.failure(message))
+            return token
         }
         return token
     }

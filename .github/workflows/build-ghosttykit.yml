@@ -11,15 +11,8 @@ concurrency:
 
 jobs:
   build-ghosttykit:
-    # This workflow has no pull_request trigger. Keep the guard adjacent to the
-    # paid runner so a future trigger cannot silently make fork PRs run on Atlas.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, atlas]
+    runs-on: macos-15
     timeout-minutes: 45
-    env:
-      C11_ATLAS_BUILD_SLUG: c11-build-ghosttykit
-      C11_ATLAS_SLOTS_DIR: /tmp/c11-atlas-build-slots
-      C11_BUILD_LOCK_TIMEOUT: '5400'
     permissions:
       contents: write
     steps:
@@ -83,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           cd ghostty
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" zig build \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" zig build \
             -Demit-xcframework=true -Demit-macos-app=false \
             -Dxcframework-target=universal -Doptimize=ReleaseFast
 

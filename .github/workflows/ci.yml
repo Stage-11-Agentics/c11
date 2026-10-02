@@ -19,12 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate paid-runner fork guards
-        run: ./tests/test_ci_self_hosted_guard.sh
-
-      - name: Validate hourly Atlas CI policy
-        run: ./tests/test_ci_schedule_policy.sh
-
       - name: Validate Atlas admission helpers
         run: ./tests/test_ci_atlas_tools.sh
 

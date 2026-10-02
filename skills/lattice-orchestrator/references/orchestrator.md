@@ -144,14 +144,23 @@ exact review/gate against a base another merge is about to replace.
 For c11 1.0, `.github/workflows/ci.yml` is the PR fast lane only: require its
 workflow guards, remote-daemon tests, and web typecheck. The native app build,
 logic/host tests, compatibility smoke, and GhosttyKit packaging run on the
-hourly main workflows on the internal Atlas runner (`self-hosted, macOS, atlas`),
+hourly main workflows on GitHub-hosted `macos-15` and `macos-15-xlarge` runners,
 never on fork pull requests. The Merge Captain does not wait for an hourly run
-to land a ready PR. At the exact PR head, require fresh review evidence and the
-cheap checks, then use `scripts/remote-build.sh` on Atlas for changes that touch
-CI/build tooling. A Ghostty or bonsplit pointer change keeps the hosted
-GhosttyKit checksum-flow exception and is not replaced by the generic Atlas
-fallback. After landing, an hourly main failure is a fix-forward incident: do
-not reclassify an older PR as green or use a rerun to conceal a broken main.
+to land a ready PR. At the exact PR head, require fresh review evidence, the
+cheap checks, and `scripts/remote-build.sh` on Atlas for every Swift or native
+change. This is an exact-head gate after the branch includes current
+`origin/main`; a docs-only change is exempt only when the diff is limited to
+documentation or prose and has no Swift, native workflow, script, project,
+submodule, test, or build-input change. No self-hosted runner is registered or
+used in this PR. An access-restricted runner is a documented follow-up whose
+repository, trigger, and network boundary require Atin's decision.
+
+For a Ghostty or bonsplit pointer change, manually dispatch `Build GhosttyKit`
+against the internal bump branch, wait for the prerelease non-`latest` artifact
+and bot checksum commit, refresh the PR checks at that bot-created head, then
+run the exact-head Atlas gate before landing. After landing, an hourly main
+failure is a fix-forward incident: do not reclassify an older PR as green or use
+a rerun to conceal a broken main.
 
 For the front PR only:
 

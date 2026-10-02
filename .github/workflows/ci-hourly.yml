@@ -1,4 +1,4 @@
-name: CI hourly (Atlas)
+name: CI hourly (macOS)
 
 on:
   schedule:
@@ -14,16 +14,8 @@ permissions:
 
 jobs:
   build:
-    # This workflow has no pull_request trigger. Keep the guard adjacent to the
-    # paid runner anyway so a future trigger cannot silently make fork PRs run
-    # on Atlas.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, atlas]
+    runs-on: macos-15-xlarge
     timeout-minutes: 45
-    env:
-      C11_ATLAS_BUILD_SLUG: c11-ci-hourly-build
-      C11_ATLAS_SLOTS_DIR: /tmp/c11-atlas-build-slots
-      C11_BUILD_LOCK_TIMEOUT: '5400'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +79,7 @@ jobs:
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           mkdir -p "$SOURCE_PACKAGES_DIR"
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" xcodebuild \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -resolvePackageDependencies
@@ -96,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" xcodebuild \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
@@ -107,7 +99,7 @@ jobs:
       - name: SSH shell command availability
         run: |
           set -euo pipefail
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" xcodebuild \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
             -disableAutomaticPackageResolution -destination "platform=macOS" \
@@ -128,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" xcodebuild \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
@@ -144,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          "$GITHUB_WORKSPACE/scripts/ci-atlas-run.sh" xcodebuild \
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
             -only-testing:c11Tests \
             -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \

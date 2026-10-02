@@ -3725,3 +3725,67 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
         XCTAssertTrue(terminal.hostedView.isHidden)
     }
 }
+
+@MainActor
+final class AreaInteractionOverlayFocusTests: XCTestCase {
+    func testHiddenHostPreservesFieldEditorOnInitialAndUnrelatedUpdates() throws {
+        try withFixture { window, field, runtime, panelId, _ in
+            XCTAssertTrue(window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(window.firstResponder)
+            drainUpdates()
+            XCTAssertTrue(window.firstResponder === editor, "Initial empty publication must not clear focus")
+            let otherPanel = UUID()
+            runtime.present(panelId: otherPanel, interaction: .confirm(confirm()))
+            drainUpdates()
+            XCTAssertTrue(window.firstResponder === editor)
+            runtime.cancelActive(panelId: otherPanel)
+            drainUpdates()
+            XCTAssertTrue(window.firstResponder === editor, "Another panel's dismissal must not clear focus")
+            XCTAssertFalse(runtime.hasActive(panelId: panelId))
+        }
+    }
+
+    func testVisibleHostStillRestoresPriorFieldEditorWhenDismissed() throws {
+        try withFixture { window, field, runtime, panelId, host in
+            drainUpdates()
+            XCTAssertTrue(window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(window.firstResponder)
+            runtime.present(panelId: panelId, interaction: .confirm(confirm()))
+            drainUpdates()
+            XCTAssertFalse(host.isHidden)
+            XCTAssertTrue(window.firstResponder === host)
+            runtime.cancelActive(panelId: panelId)
+            drainUpdates()
+            XCTAssertTrue(host.isHidden)
+            XCTAssertTrue(window.firstResponder === editor)
+        }
+    }
+
+    private func drainUpdates() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func confirm() -> ConfirmContent {
+        ConfirmContent(title: "Close?", message: nil, confirmLabel: "Close",
+                       cancelLabel: "Cancel", role: .destructive, source: .local,
+                       completion: { _ in })
+    }
+
+    private func withFixture(
+        _ body: (NSWindow, NSTextField, AreaInteractionRuntime, UUID, AreaInteractionOverlayHost) throws -> Void
+    ) throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = try XCTUnwrap(window.contentView)
+        let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 200, height: 24))
+        content.addSubview(field)
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+        let host = AreaInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        host.frame = NSRect(x: 0, y: 40, width: 400, height: 160)
+        content.addSubview(host)
+        try body(window, field, runtime, panelId, host)
+    }
+}

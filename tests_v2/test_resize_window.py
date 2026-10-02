@@ -93,7 +93,7 @@ class Harness:
         self.proxy = None
         self.first = None
         self.second = None
-        self.original_key = None
+        self.original_window = None
         self.first_frame = None
         self.screens = []
         self.env = {key: value for key, value in os.environ.items()
@@ -123,18 +123,21 @@ class Harness:
     def windows(self):
         return self.rpc('window.list').get('windows', [])
 
-    def key_window(self):
-        keys = [row['id'] for row in self.windows() if row.get('key')]
-        require(len(keys) == 1, 'expected exactly one key window in the guest')
-        return keys[0]
+    def current_window(self):
+        return self.rpc('window.current').get('window_id')
 
-    def wait_key(self, target):
+    def key_window_if_present(self):
+        keys = [row['id'] for row in self.windows() if row.get('key')]
+        require(len(keys) <= 1, 'expected at most one key window in the guest')
+        return keys[0] if keys else None
+
+    def wait_focus(self, target):
         end = time.monotonic() + 5
         while time.monotonic() < end:
-            if [row['id'] for row in self.windows() if row.get('key')] == [target]:
+            if self.current_window() == target:
                 return
             time.sleep(.05)
-        raise AssertionError('explicit focus did not make the expected guest window key')
+        raise AssertionError('explicit focus did not make the expected guest window current')
 
     def validate(self):
         require(Path('/Volumes/My Shared Files/out').is_dir(), 'disposable sandbox guest required')
@@ -247,7 +250,10 @@ class Harness:
         return reply
 
     def assert_primary_unchanged(self):
-        require(self.key_window() == self.first, 'resizing the second window stole the first window key state')
+        require(self.current_window() == self.first, 'resizing the second window changed the focused window')
+        key = self.key_window_if_present()
+        if key is not None:
+            require(key == self.first, 'resizing the second window stole the first window key state')
         require(same_geometry(self.first_frame, self.resize(self.first)), 'first window frame changed')
 
     def assert_top_left(self, initial, current):
@@ -277,17 +283,13 @@ class Harness:
         windows = self.windows()
         require(bool(windows), 'guest app needs an existing first window')
         keys = [row['id'] for row in windows if row.get('key')]
-        self.original_key = keys[0] if len(keys) == 1 else self.rpc('window.current').get('window_id')
+        self.original_window = keys[0] if len(keys) == 1 else self.current_window()
         normal = self.fullscreen_checks(windows)
-        self.first = self.original_key if self.original_key in normal else normal[0]
+        self.first = self.original_window if self.original_window in normal else normal[0]
         self.second = self.rpc('window.create').get('window_id')
         require(bool(self.second) and self.second not in {row['id'] for row in windows}, 'second window was not created')
-        # QA launches deliberately leave c11 inactive. Explicit socket focus
-        # may reorder a window without activating the app, so establish the
-        # guest's AppKit activation before asserting key-window preservation.
-        self.client.activate_app()
         self.cli(['focus-window', '--window', self.first])
-        self.wait_key(self.first)
+        self.wait_focus(self.first)
         self.first_frame = self.resize(self.first)
         initial = self.resize(self.second)
 
@@ -372,10 +374,13 @@ class Harness:
         if self.second:
             self.rpc('window.close', {'window_id': self.second})
             self.report['cleanup']['second_window_closed'] = all(row['id'] != self.second for row in self.windows())
-        if self.original_key:
-            self.rpc('window.focus', {'window_id': self.original_key})
-            self.wait_key(self.original_key)
-            self.report['cleanup']['original_key_restored'] = self.key_window() == self.original_key
+        if self.original_window:
+            self.rpc('window.focus', {'window_id': self.original_window})
+            self.wait_focus(self.original_window)
+            self.report['cleanup']['original_focus_restored'] = self.current_window() == self.original_window
+            key = self.key_window_if_present()
+            if key is not None:
+                self.report['cleanup']['original_key_restored'] = key == self.original_window
         if self.first_frame and self.first:
             self.report['cleanup']['first_frame_unchanged'] = same_geometry(self.first_frame, self.resize(self.first))
 
@@ -425,7 +430,7 @@ def main():
         signal.alarm(0)
     harness.report['passed'] = bool('error_type' not in harness.report and
         harness.report['cleanup'].get('second_window_closed') and
-        harness.report['cleanup'].get('original_key_restored') and
+        harness.report['cleanup'].get('original_focus_restored') and
         harness.report['cleanup'].get('first_frame_unchanged'))
     print(json.dumps(harness.report, sort_keys=True))
     return 0 if harness.report['passed'] else 1

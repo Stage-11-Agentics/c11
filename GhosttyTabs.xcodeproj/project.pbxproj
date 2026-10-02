@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11299000000000000000001 /* SessionRestoreNormalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */; };
 		022A09F1BE71E4DC6867B9FA /* ThemeRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */; };
 		0553CFD8D0141F43D50CA586 /* WorkspaceSnapshotSetCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */; };
 		05F26BA3460B93D9FA5FFAD0 /* ConversationCrashRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 660A6F747C53032181B954F7 /* ConversationCrashRecoveryTests.swift */; };
@@ -552,6 +553,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestoreNormalizationTests.swift; sourceTree = "<group>"; };
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		C11840000000000000000006 /* AttentionModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttentionModelTests.swift; sourceTree = "<group>"; };
 		C1124300000000000000A003 /* TabSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabSeenClockTests.swift; sourceTree = "<group>"; };
@@ -1467,6 +1469,7 @@
 				D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */,
 				4D11AA02B2C3D4E5F6071921 /* MarkdownTabFontScaleTests.swift */,
 				D7003BF1A1B2C3D4E5F60718 /* TabIdentityRestoreTests.swift */,
+				C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */,
 				D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */,
 				D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */,
 				D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */,
@@ -1852,7 +1855,7 @@
 				AF258345FA9BD35CA62B9C6C /* MetadataPersistenceUncoercibleTests.swift in Sources */,
 				1BA5C5B28E1CE348469E1778 /* MetadataStoreRevisionCounterTests.swift in Sources */,
 				B7E1FE741AF25A83EC395EA7 /* AreaInteractionRuntimeTests.swift in Sources */,
-				DE686C76120208E59FAE152A /* TabIdentityRestoreTests.swift in Sources */,
+				C11299000000000000000001 /* SessionRestoreNormalizationTests.swift in Sources */,
 				2A1AAF5C5915A2960E874202 /* AreaMetadataPersistenceTests.swift in Sources */,
 				6E7E7BF7FE70B34844D472DB /* AreaMetadataStoreTests.swift in Sources */,
 				82BBB769071BCA11F1484D56 /* SessionPersistenceTests.swift in Sources */,
@@ -2239,6 +2242,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DE686C76120208E59FAE152A /* TabIdentityRestoreTests.swift in Sources */,
 				C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */,
 				F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 				F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,

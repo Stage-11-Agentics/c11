@@ -516,6 +516,65 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var activeAgentSurfaceId: UUID? = nil
 }
 
+/// Repair the duplicate identities seen in B024 before any restore consumer
+/// creates tabs, rehydrates metadata, or schedules agent resumes.
+enum SessionRestoreNormalization {
+    struct Drop: Equatable {
+        enum Reason: String {
+            case duplicateRecord = "duplicate_record"
+            case duplicateLayoutReference = "duplicate_layout_reference"
+        }
+
+        let tabId: UUID
+        let reason: Reason
+
+        func diagnostic(workspaceId: UUID) -> String {
+            "session.restore.drop workspace=\(workspaceId) tab=\(tabId) reason=\(reason.rawValue)"
+        }
+    }
+
+    static func normalize(_ input: SessionWorkspaceSnapshot) -> (snapshot: SessionWorkspaceSnapshot, drops: [Drop]) {
+        var snapshot = input
+        var drops: [Drop] = []
+        var knownIds = Set<UUID>()
+        snapshot.panels = input.panels.filter { panel in
+            guard knownIds.insert(panel.id).inserted else {
+                drops.append(Drop(tabId: panel.id, reason: .duplicateRecord))
+                return false
+            }
+            return true
+        }
+
+        var placedIds = Set<UUID>()
+        func normalizeLayout(_ node: SessionWorkspaceLayoutSnapshot) -> SessionWorkspaceLayoutSnapshot {
+            switch node {
+            case .pane(var pane):
+                pane.panelIds = pane.panelIds.filter { id in
+                    // restorePane already ignores unknown records. Leave those
+                    // references alone rather than broadening this repair.
+                    guard knownIds.contains(id) else { return true }
+                    guard placedIds.insert(id).inserted else {
+                        drops.append(Drop(tabId: id, reason: .duplicateLayoutReference))
+                        return false
+                    }
+                    return true
+                }
+                if let selected = pane.selectedPanelId,
+                   knownIds.contains(selected), !pane.panelIds.contains(selected) {
+                    pane.selectedPanelId = pane.panelIds.first { knownIds.contains($0) }
+                }
+                return .pane(pane)
+            case .split(var split):
+                split.first = normalizeLayout(split.first)
+                split.second = normalizeLayout(split.second)
+                return .split(split)
+            }
+        }
+        snapshot.layout = normalizeLayout(input.layout)
+        return (snapshot, drops)
+    }
+}
+
 struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]

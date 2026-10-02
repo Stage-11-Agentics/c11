@@ -263,7 +263,11 @@ extension Workspace {
         )
     }
 
-    func restoreSessionSnapshot(_ snapshot: SessionWorkspaceSnapshot) {
+    func restoreSessionSnapshot(_ savedSnapshot: SessionWorkspaceSnapshot) {
+        let (snapshot, drops) = SessionRestoreNormalization.normalize(savedSnapshot)
+        for drop in drops {
+            NSLog("%@", drop.diagnostic(workspaceId: snapshot.id))
+        }
         restoredTerminalScrollbackByTabId.removeAll(keepingCapacity: false)
 
         let normalizedCurrentDirectory = snapshot.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)

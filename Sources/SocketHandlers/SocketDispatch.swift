@@ -22,6 +22,33 @@ private enum AgentLaunchContextSnapshot {
 // tiers are preserved exactly: nonisolated members stay nonisolated (off-main);
 // processCommand/processV2Command stay main-actor. Mechanical relocation only.
 extension TerminalController {
+    nonisolated static func isStartupIndependentV2Method(_ method: String) -> Bool {
+        ["system.ping", "system.capabilities", "system.brand", "auth.login"].contains(method)
+    }
+
+    /// Gate before worker routing or async acknowledgement. The bundled shells
+    /// do not retry their TTY/state reports, so retain those until the graph is
+    /// complete; all other graph-dependent callers must retry.
+    nonisolated func startupNotReadyResponse(for command: String) -> String? {
+        guard !isInitialSessionRestoreReady else { return nil }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let request = parseV2SocketRequest(trimmed) {
+            guard !Self.isStartupIndependentV2Method(request.method) else { return nil }
+            return v2Error(id: request.id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
+        guard !trimmed.hasPrefix("{") else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1)
+        let head = parts.first.map(String.init)?.lowercased() ?? ""
+        guard !["ping", "auth", "help"].contains(head) else { return nil }
+        if ["report_tty", "report_shell_state"].contains(head) {
+            let args = parts.count > 1 ? String(parts[1]) : ""
+            if deferStartupShellReport(command: head, args: args) { return "OK" }
+            // Readiness may have completed between the first check and enqueue.
+            if isInitialSessionRestoreReady { return nil }
+        }
+        return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
+    }
+
     private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
         guard command.hasPrefix("{"),
               let data = command.data(using: .utf8),
@@ -59,6 +86,10 @@ extension TerminalController {
         #if DEBUG
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
+
+        if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
+            return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
 
         switch request.method {
         case "history.list":
@@ -106,9 +137,23 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         if let response = Self.socketWorkerImmediateV1Response(command) {
             return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
                 response
+            }
+        }
+
+        // The legacy launch parser reads caller files and stages runtime copies.
+        // Keep it on the worker; only its target/send snapshots enter main.
+        let legacyParts = command.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ", maxSplits: 1).map(String.init)
+        if legacyParts.first?.lowercased() == "default_agent", legacyParts.count == 2 {
+            let tokens = Self.tokenizeArgsStatic(legacyParts[1])
+            if tokens.first == "launch" {
+                return withSocketCommandPolicy(commandKey: "default_agent", isV2: false) {
+                    defaultAgentLaunch(tokens: Array(tokens.dropFirst()))
+                }
             }
         }
 
@@ -188,6 +233,8 @@ extension TerminalController {
     /// Dispatch a v1 command to its nonisolated worker variant.
     private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
         switch head {
+        case "clear_notifications":
+            return clearNotificationsWorker(args)
         case "report_pwd":
             return reportPwdWorker(args)
         case "report_shell_state":
@@ -338,6 +385,31 @@ extension TerminalController {
             i += 1
         }
         return (positional, options)
+    }
+
+    private nonisolated func clearNotificationsWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawPanel = parsed.options["panel"] ?? parsed.options["surface"] else {
+            // Interactive all/workspace clears retain their synchronous result.
+            return nil
+        }
+        guard let panelId = UUID(uuidString: rawPanel),
+              let rawWorkspace = parsed.options["tab"],
+              let workspaceId = UUID(uuidString: rawWorkspace),
+              parsed.positional.isEmpty else {
+            return "ERROR: Scoped clear requires workspace and originating tab UUIDs"
+        }
+        // Hook-frequency parsing is worker-owned. A missing/stale association
+        // is a queued no-op, never a workspace-wide clear or focus fallback.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let workspace = self.workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else { return }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            }
+        }
+        return "OK"
     }
 
     private nonisolated func reportPwdWorker(_ args: String) -> String? {
@@ -557,6 +629,7 @@ extension TerminalController {
     }
 
     func processCommand(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Empty command" }
 
@@ -973,7 +1046,9 @@ extension TerminalController {
             )
         }
 
-        v2MainSync { self.v2RefreshKnownRefs() }
+        if !isInitialSessionRestoreReady && !Self.isStartupIndependentV2Method(method) {
+            return v2Error(id: id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
 
 
         return withSocketCommandPolicy(commandKey: method, isV2: true) {
@@ -1040,6 +1115,7 @@ extension TerminalController {
     /// Parsing/planning runs off-main; only surface creation + stamping is
     /// main-synced (socket threading policy).
     nonisolated func v2AgentLaunch(params: [String: Any]) -> V2CallResult {
+        let responseDeadline = Date().addingTimeInterval(8)
         guard !Thread.isMainThread else {
             return .err(
                 code: "internal_error",
@@ -1129,7 +1205,7 @@ extension TerminalController {
         // Resolve inherited cwd from the surface that invoked the CLI, not the
         // app process. This snapshot is the only main-thread work before launch
         // planning; git/config I/O remains off-main.
-        let contextGate = FailClosedCommitGate<AgentLaunchContextSnapshot> {
+        let contextGate = AgentLaunchDeadlineGate<AgentLaunchContextSnapshot>(deadline: responseDeadline) {
             MainActor.assumeIsolated {
                 guard let workspaceManager = self.v2ResolveWorkspaceManager(params: params) else {
                     return .failure(.err(
@@ -1180,7 +1256,7 @@ extension TerminalController {
             }
         }
         contextGate.enqueueOnMain()
-        guard let contextSnapshot = contextGate.wait(timeout: 8) else {
+        guard let contextSnapshot = contextGate.wait() else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
         let workspaceManager: WorkspaceManager
@@ -1248,14 +1324,26 @@ extension TerminalController {
             // recipe field through here so this stays the one launch composer.
             commandOverride: v2RawString(params, "command_override")
         )
+        let stagedPrompt: LaunchPromptStore.StagedPrompt?
+        do {
+            if let prompt = request.prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                stagedPrompt = try LaunchPromptStore.shared.stage(prompt: prompt)
+            } else {
+                stagedPrompt = nil
+            }
+        } catch {
+            return .err(code: "prompt_staging_failed", message: "Could not stage the launch prompt", data: nil)
+        }
         let plan: AgentLaunchPlan
         switch AgentLaunchPlanner.plan(
             request: request,
             userDefault: userDefault,
             projectConfig: projectConfig,
-            userTemplate: userTemplate
+            userTemplate: userTemplate,
+            promptFilePath: stagedPrompt?.url.path
         ) {
         case .failure(let error):
+            if let stagedPrompt { LaunchPromptStore.shared.discard(stagedPrompt) }
             return .err(code: error.code, message: error.message, data: nil)
         case .success(let composed):
             plan = composed
@@ -1387,12 +1475,21 @@ extension TerminalController {
                                 title: ws.tabTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }
+                        if let stagedPrompt {
+                            try LaunchPromptStore.shared.retain(stagedPrompt, owner: panel.launchPromptOwner)
+                        }
                     },
                     sendCommand: {
                         // Attention is committed before the launch line can
                         // run, so even a fast completion cannot escape
                         // dispatch-time suppression.
-                        panel.sendText(plan.launchLine + "\n")
+                        panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
+                            launchLine: plan.launchLine, delayedPrompt: plan.delayedPrompt
+                        )) { [weak workspaceManager, weak panel] in
+                            guard let workspaceManager, let panel,
+                                  let live = workspaceManager.workspaces.first(where: { $0.id == ws.id }) else { return false }
+                            return live.terminalPanel(for: panel.id) === panel
+                        }
                     }
                 )
             } catch let error as TabMetadataStore.WriteError {
@@ -1401,20 +1498,6 @@ extension TerminalController {
             } catch {
                 result = .err(code: "internal_error", message: "\(error)", data: nil)
                 return result
-            }
-
-            if let delayedPrompt = plan.delayedPrompt {
-                // Post-boot delivery for TUIs with no argv prompt. Same fixed
-                // delay rail as `default-agent launch` (readiness detection is
-                // a follow-up there too).
-                let panelId = panel.id
-                let wsId = ws.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak workspaceManager] in
-                    guard let workspaceManager,
-                          let liveWs = workspaceManager.workspaces.first(where: { $0.id == wsId }),
-                          let livePanel = liveWs.terminalPanel(for: panelId) else { return }
-                    livePanel.surface.sendSubmitFormText(delayedPrompt)
-                }
             }
 
             // Make the just-minted refs resolvable by the caller's next command.
@@ -1430,6 +1513,9 @@ extension TerminalController {
             result = .ok([
                 "agent": agent,
                 "command": plan.launchLine,
+                "prompt_file": self.v2OrNull(stagedPrompt?.url.path),
+                "startup": "pending",
+                "startup_process": NSNull(),
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -1484,17 +1570,42 @@ extension TerminalController {
             }
             return result
         }
-        let commitGate = FailClosedCommitGate<V2CallResult> {
+        let commitGate = AgentLaunchDeadlineGate<V2CallResult>(deadline: responseDeadline) {
             MainActor.assumeIsolated {
-                commit()
+                let outcome = commit()
+                if case .err = outcome, let stagedPrompt {
+                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(stagedPrompt) }
+                }
+                return outcome
             }
         }
         commitGate.enqueueOnMain()
-        return commitGate.wait(timeout: 8) ?? .err(
-            code: "main_thread_timeout",
-            message: "main thread did not begin the agent launch before the deadline",
-            data: nil
-        )
+        guard let outcome = commitGate.wait() else {
+            if commitGate.cancelledBeforeStart, let stagedPrompt {
+                LaunchPromptStore.shared.discard(stagedPrompt)
+            }
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within the launch deadline", data: nil)
+        }
+        guard case .ok(let rawPayload) = outcome, var payload = rawPayload as? [String: Any],
+              let wsRaw = payload["workspace_id"] as? String, let wsId = UUID(uuidString: wsRaw),
+              let tabRaw = payload["surface_id"] as? String, let tabId = UUID(uuidString: tabRaw) else { return outcome }
+        let probeDeadline = min(responseDeadline, Date().addingTimeInterval(5))
+        let startup = AgentStartupProbe.observe(ttyName: {
+            let snapshot = AgentLaunchDeadlineGate<String?>(deadline: probeDeadline) {
+                MainActor.assumeIsolated {
+                    guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
+                          ws.terminalPanel(for: tabId) != nil else { return nil }
+                    return ws.tabTTYNames[tabId]
+                }
+            }
+            snapshot.enqueueOnMain()
+            return snapshot.wait() ?? nil
+        }, expectedKind: plan.kind, deadline: probeDeadline)
+        payload["startup"] = startup.status.rawValue
+        if let process = startup.process {
+            payload["startup_process"] = ["pid": process.pid, "executable": process.executable]
+        }
+        return .ok(payload)
     }
 
     /// Best-effort binary availability check for the launch line's argv[0].

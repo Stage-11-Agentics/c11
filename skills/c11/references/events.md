@@ -47,6 +47,7 @@ The seventeen taxonomy types below are the closed v1 enum. The envelope fields `
 |--------|--------------|---------|-------|
 | `surface.created` | workspace + surface | `{kind, title?}` | A new tab opened. `kind` is terminal / browser / markdown. |
 | `surface.closed` | workspace + surface | — | Tab torn down. |
+| `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
 | `workspace.selected` | workspace (the selected one) | `{previous?}` | Sidebar workspace switch. `previous` is the prior workspace UUID. |
 | `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane` (the tab and area scopes); `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
 | `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |

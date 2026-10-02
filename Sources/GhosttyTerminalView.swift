@@ -2748,6 +2748,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private let configTemplate: ghostty_surface_config_s?
     private let workingDirectory: String?
     private let initialCommand: String?
+    private var initialInput: String?
     private let initialEnvironmentOverrides: [String: String]
     var requestedWorkingDirectory: String? { workingDirectory }
     private var additionalEnvironment: [String: String]
@@ -2914,6 +2915,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         configTemplate: ghostty_surface_config_s?,
         workingDirectory: String? = nil,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
@@ -2924,6 +2926,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         self.workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCommand = initialCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.initialCommand = (trimmedCommand?.isEmpty == false) ? trimmedCommand : nil
+        self.initialInput = (initialInput?.isEmpty == false) ? initialInput : nil
         self.initialEnvironmentOverrides = Self.mergedNormalizedEnvironment(base: [:], overrides: initialEnvironmentOverrides)
         self.additionalEnvironment = Self.mergedNormalizedEnvironment(base: [:], overrides: additionalEnvironment)
         // Match Ghostty's own SurfaceView: ensure a non-zero initial frame so the backing layer
@@ -2936,12 +2939,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
         hostedView.attachSurface(self)
         TerminalSurfaceRegistry.shared.register(self)
 
-        // Surfaces with startup work (`initialCommand`) must spawn their PTY before
+        // Surfaces with startup work (`initialCommand` or `initialInput`) must spawn their PTY before
         // the user focuses the workspace; otherwise the agent restore / cold-boot
         // path stalls until the operator selects the tab. Ghostty's surface creation
         // expects a non-nil `view.window`, so we install the view in a hidden
         // bootstrap window now and swap to the real window when AppKit moves it there.
-        if self.initialCommand != nil {
+        if self.initialCommand != nil || self.initialInput != nil {
             MainActor.assumeIsolated {
                 scheduleHeadlessRuntimeStartIfNeeded(reason: "startup")
             }
@@ -3744,6 +3747,20 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
+        // Ghostty copies initial_input during native creation. Keep its UTF-8
+        // pointer alive alongside command/cwd, and never inherit a prior input.
+        let createWithInitialInput = { [self] in
+            if let initialInput {
+                initialInput.withCString { input in
+                    surfaceConfig.initial_input = input
+                    createSurface()
+                }
+            } else {
+                surfaceConfig.initial_input = nil
+                createSurface()
+            }
+        }
+
         let createWithCommandAndWorkingDirectory = { [self] in
             if let initialCommand, !initialCommand.isEmpty {
                 initialCommand.withCString { cCommand in
@@ -3751,19 +3768,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     if let workingDirectory, !workingDirectory.isEmpty {
                         workingDirectory.withCString { cWorkingDir in
                             surfaceConfig.working_directory = cWorkingDir
-                            createSurface()
+                            createWithInitialInput()
                         }
                     } else {
-                        createSurface()
+                        createWithInitialInput()
                     }
                 }
             } else if let workingDirectory, !workingDirectory.isEmpty {
                 workingDirectory.withCString { cWorkingDir in
                     surfaceConfig.working_directory = cWorkingDir
-                    createSurface()
+                    createWithInitialInput()
                 }
             } else {
-                createSurface()
+                createWithInitialInput()
             }
         }
 
@@ -3790,6 +3807,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         guard let createdSurface = surface else { return }
+        // One native creation consumes this request. Runtime reconstruction and
+        // reparenting must never execute the caller's command a second time.
+        initialInput = nil
         recordRuntimeSurfaceCreation()
 
         // Session scrollback replay must be one-shot. Reusing it on a later runtime

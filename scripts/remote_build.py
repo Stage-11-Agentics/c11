@@ -102,6 +102,7 @@ def snapshot(root, payload, args):
     for index, name in enumerate(SUBMODULES):
         run(["git", "-c", "pack.threads=2", "-C", root / name, "bundle", "create", payload / f"module-{index}.bundle", "HEAD"])
     manifest = {"invocation": uuid.uuid4().hex, "head": head,
+                "parent_head": git(root, "rev-parse", "HEAD^"),
                 "branch": git(root, "branch", "--show-current"), "submodules": modules,
                 "overlay": overlays, "dirty": bool(overlays), "tag": args.tag,
                 "slug": slug(args.tag), "mode": args.mode, "extra": args.extra,
@@ -136,10 +137,15 @@ for name,key in json.loads(sys.argv[2]).items():
         try: os.link(dst,src)
         except FileExistsError: pass
         hits.append(name)
+    elif name=='parent.bundle':
+        seed=cache/('parent-'+sys.argv[4]+'.bundle')
+        if seed.is_file():
+            try: os.link(seed,src)
+            except FileExistsError: pass
 print(json.dumps(hits))
 """
     response = run([*ssh, shlex.join(["python3", "-c", code, relative, json.dumps(bundles),
-                                     "populate" if populate else "prepare"])], stdout=subprocess.PIPE)
+                                     "populate" if populate else "prepare", manifest["parent_head"]])], stdout=subprocess.PIPE)
     return json.loads(response.stdout)
 
 
@@ -187,7 +193,9 @@ def remote(payload, locked=False):
         if not (source / ".git").is_dir():
             run(["git", "clone", "--quiet", payload / "parent.bundle", source])
         else:
-            run(["git", "-C", source, "fetch", "--quiet", payload / "parent.bundle", "HEAD"])
+            # Pinned module bundles are fetched below. Recursive fetch would ask
+            # their old bundle origins for unrelated historical gitlinks.
+            run(["git", "-C", source, "fetch", "--no-recurse-submodules", "--quiet", payload / "parent.bundle", "HEAD"])
         run(["git", "-C", source, "reset", "--hard", manifest["head"]], stdout=subprocess.DEVNULL)
         # Clear old overlays without deleting build caches or required submodule repositories.
         run(["git", "-C", source, "clean", "-fd", "-e", "ghostty", "-e", "vendor/bonsplit"],
@@ -199,7 +207,7 @@ def remote(payload, locked=False):
                     shutil.rmtree(module)
                 run(["git", "clone", "--quiet", payload / f"module-{index}.bundle", module])
             else:
-                run(["git", "-C", module, "fetch", "--quiet", payload / f"module-{index}.bundle", "HEAD"])
+                run(["git", "-C", module, "fetch", "--no-recurse-submodules", "--quiet", payload / f"module-{index}.bundle", "HEAD"])
             run(["git", "-C", module, "reset", "--hard", manifest["submodules"][name]], stdout=subprocess.DEVNULL)
         apply_overlay(source, payload, manifest)
         prior_overlay.write_text(json.dumps(manifest["overlay"]) + "\n")
@@ -280,7 +288,9 @@ def client(args):
         run([*ssh, shlex.join(["mkdir", "-p", relative])])
         cached = bundle_cache(ssh, relative, manifest)
         excludes = [arg for name in cached for arg in ("--exclude", name)]
-        run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", *excludes, str(payload) + "/", host + ":" + relative + "/"])
+        # Default rsync temp+rename preserves the hard-linked cache seed while
+        # sending only changed bundle blocks. Never use --inplace here.
+        run(["rsync", "-a", "--checksum", "-e", "ssh -o BatchMode=yes", *excludes, str(payload) + "/", host + ":" + relative + "/"])
         bundle_cache(ssh, relative, manifest, populate=True)
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])
         print(f"[remote-build] host={host} tag={args.tag} invocation={manifest['invocation']} head={manifest['head']}", flush=True)
@@ -291,7 +301,7 @@ def client(args):
         local.mkdir(parents=True)
         (local / "transport.log").write_text(process.stdout)
         remote_artifacts = f"c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/"
-        retrieved = subprocess.run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", host + ":" + remote_artifacts, str(local) + "/"])
+        retrieved = subprocess.run(["rsync", "-az", "-e", "ssh -o BatchMode=yes", host + ":" + remote_artifacts, str(local) + "/"])
         print(f"[remote-build] logs and identity: {local}")
         if process.returncode:
             return process.returncode

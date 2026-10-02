@@ -100,6 +100,21 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(set(hits), {"parent.bundle", "module-0.bundle", "module-1.bundle"})
         for name in hits:
             self.assertEqual(remote.digest(incoming / name), remote.digest(self.payload / name))
+        old_hash = remote.digest(self.payload / "parent.bundle")
+        (self.worktree / "tracked").write_text("advanced parent")
+        git(self.worktree, "commit", "-qam", "advance parent")
+        changed_payload = self.base / "changed-payload"
+        changed_payload.mkdir()
+        changed = remote.snapshot(self.worktree, changed_payload, self.args)
+        destination = self.base / "delta-incoming"
+        destination.mkdir()
+        with patch.dict(os.environ, HOME=str(home)):
+            hits = remote.bundle_cache(["bash", "-c"], str(destination), changed)
+        self.assertNotIn("parent.bundle", hits)
+        self.assertEqual(remote.digest(destination / "parent.bundle"), old_hash)
+        remote.run(["rsync", "-a", "--checksum", str(changed_payload) + "/", str(destination) + "/"])
+        self.assertEqual(remote.digest(destination / "parent.bundle"), remote.digest(changed_payload / "parent.bundle"))
+        self.assertEqual(remote.digest(self.payload / "parent.bundle"), old_hash)
 
     def test_reload_build_failure_does_not_stage_or_launch_existing_app(self):
         scripts = self.base / "scripts"
@@ -152,6 +167,25 @@ class RoutingTests(unittest.TestCase):
         result = json.loads((home / "c11-builds/fixture/artifacts" / manifest["invocation"] / "result.json").read_text())
         self.assertEqual(result["compile"], "ok")
         self.assertEqual(result["tests"], "failed")
+        # Reuse the tag after a gitlink changes. Its old bundle origin cannot
+        # supply the new module commit; the explicit new module bundle must.
+        source = home / "c11-builds/fixture/source"
+        git(source, "config", "fetch.recurseSubmodules", "true")
+        module = self.worktree / "ghostty"
+        git(module, "config", "user.name", "Fixture")
+        git(module, "config", "user.email", "fixture@example.invalid")
+        (module / "tracked").write_text("new module commit")
+        git(module, "commit", "-qam", "advance module")
+        git(self.worktree, "add", "ghostty")
+        git(self.worktree, "commit", "-qm", "advance gitlink")
+        again = self.base / "again"
+        again.mkdir()
+        updated = remote.snapshot(self.worktree, again, self.args)
+        updated["zig_dir"] = str(fake)
+        (again / "identity.json").write_text(json.dumps(updated))
+        with patch.dict(os.environ, HOME=str(home)):
+            self.assertEqual(remote.remote(again, locked=True), 65)
+        self.assertEqual(git(source / "ghostty", "rev-parse", "HEAD"), updated["submodules"]["ghostty"])
 
     def test_remote_failure_preserves_local_app_and_never_launches(self):
         # Fake transports exercise the actual client failure path, not source structure.

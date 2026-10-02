@@ -4,6 +4,11 @@
 Run inside the ticket's isolated Tart guest after sandbox-up. UI events target
 the exact tagged PID; socket calls only build/query the fixture. The active
 phase is capped at five minutes and cleanup dismisses copy mode/TextBox state.
+
+The IME-composition case uses a macOS dead key (Option-E). It needs the guest
+Ghostty config to carry `macos-option-as-alt = false` (guest only) and the app
+relaunched afterwards; otherwise Option-E reaches the shell as ESC+e, no
+composition starts, and the following Return is an ordinary submit.
 """
 import json
 import argparse

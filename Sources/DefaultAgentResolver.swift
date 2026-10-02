@@ -190,7 +190,7 @@ enum DefaultAgentResolver {
         return (agent, ResolvedAgentLaunch(
             command: command,
             bareCommand: bare,
-            initialPrompt: chosenConfig.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            initialPrompt: chosenConfig.initialPrompt,
             envOverrides: chosenConfig.envMap
         ))
     }
@@ -238,7 +238,7 @@ enum DefaultAgentResolver {
         return (agent, merged, ResolvedAgentLaunch(
             command: command,
             bareCommand: bare,
-            initialPrompt: merged.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            initialPrompt: merged.initialPrompt,
             envOverrides: env
         ))
     }
@@ -321,21 +321,10 @@ enum DefaultAgentResolver {
         )
     }
 
-    /// Build the shell command line for an agent's config. For claude-code, an
-    /// initial prompt is appended as a single-quoted positional argument
-    /// (claude accepts that). For other agents the prompt is delivered via a
-    /// separate post-launch sendText so each TUI's input contract is honored.
-    /// Visible for testing.
+    /// Initial prompt bodies are staged off-main by the launch caller. Keep
+    /// the resolver pure and never bake the body into a terminal shell line.
     static func buildCommand(agent: AgentType, config: AgentConfig) -> String {
-        let launcher = launcherCommand(agent: agent, config: config)
-        guard !launcher.isEmpty else { return "" }
-        if agent == .claudeCode {
-            let prompt = config.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !prompt.isEmpty {
-                return "\(launcher) \(shellQuote(prompt))"
-            }
-        }
-        return launcher
+        launcherCommand(agent: agent, config: config)
     }
 
     /// The launcher: the operator's `command` with the pinned model flag
@@ -355,7 +344,7 @@ enum DefaultAgentResolver {
             result += " \(flag)"
         }
         // System-prompt flag rides after model/effort but before claude-code's
-        // positional prompt (baked later in buildCommand), matching the launch
+        // initial prompt (staged by the launch caller), matching the launch
         // line the planner composes.
         if let flag = systemPromptFlag(agent: agent, config: config, command: result) {
             result += " \(flag)"
@@ -509,6 +498,7 @@ enum AgentLaunchPlanError: Error, Equatable {
     case effortFlagUnsupported(String)
     case systemPromptUnsupported(String)
     case invalidEffort(value: String, allowed: [String])
+    case promptFileRequired
 
     var code: String {
         switch self {
@@ -518,6 +508,7 @@ enum AgentLaunchPlanError: Error, Equatable {
         case .effortFlagUnsupported: return "effort_flag_unsupported"
         case .systemPromptUnsupported: return "system_prompt_unsupported"
         case .invalidEffort: return "invalid_effort"
+        case .promptFileRequired: return "prompt_file_required"
         }
     }
 
@@ -534,6 +525,8 @@ enum AgentLaunchPlanError: Error, Equatable {
             return "agent '\(kind)' declares no effort-flag syntax; --effort is not supported for it"
         case .systemPromptUnsupported(let kind):
             return "agent '\(kind)' declares no system-prompt-flag syntax; --system-prompt-mode is not supported for it"
+        case .promptFileRequired:
+            return "a non-empty launch prompt must be staged before command composition"
         case .invalidEffort(let value, let allowed):
             return "invalid effort '\(value)' — allowed: \(allowed.joined(separator: ", "))"
         }
@@ -568,7 +561,8 @@ enum AgentLaunchPlanner {
         request: AgentLaunchRequest,
         userDefault: DefaultAgentConfig,
         projectConfig: DefaultAgentConfig?,
-        userTemplate: UserAgentLaunchTemplate?
+        userTemplate: UserAgentLaunchTemplate?,
+        promptFilePath: String? = nil
     ) -> Result<AgentLaunchPlan, AgentLaunchPlanError> {
         let kind = request.kind.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -683,20 +677,17 @@ enum AgentLaunchPlanner {
             }
         }
 
-        // Prompt: one-shot argv where the template supports it; post-boot send
-        // otherwise.
-        var delayedPrompt: String?
-        let prompt = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let prompt, !prompt.isEmpty {
-            switch template.promptDelivery {
-            case .positional:
-                line += " \(DefaultAgentResolver.shellQuote(prompt))"
-            case .flag(let flagName):
-                line += " \(flagName) \(DefaultAgentResolver.shellQuote(prompt))"
-            case .postBoot:
-                delayedPrompt = prompt
-            }
+        // The body never travels through the shell; only this short owned-file
+        // instruction does. Preserve the template's argv/post-boot contract.
+        if request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+           promptFilePath == nil {
+            return .failure(.promptFileRequired)
         }
+        let delivery = LaunchPromptDelivery.compose(
+            command: line, delivery: template.promptDelivery, promptFilePath: promptFilePath
+        )
+        line = delivery.launchLine
+        let delayedPrompt = delivery.delayedPrompt
 
         // Spawn env: operator/template env first, then the launch identity,
         // then caller extras (caller wins on collision). Both C11_* and the

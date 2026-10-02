@@ -513,6 +513,12 @@
 		C11284000000000000000013 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
 		C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000021 /* CapabilityFeaturesTests.swift */; };
 		C11284000000000000000032 /* BundledSkillTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000031 /* BundledSkillTests.swift */; };
+		C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */; };
+		C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */; };
+		C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */; };
+		C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */; };
+		C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */; };
+		C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1057,6 +1063,12 @@
 		C11284000000000000000011 /* BundledSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkill.swift; sourceTree = "<group>"; };
 		C11284000000000000000021 /* CapabilityFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeaturesTests.swift; sourceTree = "<group>"; };
 		C11284000000000000000031 /* BundledSkillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillTests.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStore.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbe.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDelivery.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStoreTests.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbeTests.swift; sourceTree = "<group>"; };
+		C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDeliveryTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1219,6 +1231,9 @@
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
 				C11284000000000000000011 /* BundledSkill.swift */,
 				C11284000000000000000001 /* CapabilityFeatures.swift */,
+				C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */,
+				C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */,
+				C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* TabManifestView.swift */,
@@ -1578,6 +1593,9 @@
 				C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */,
 				C11284000000000000000031 /* BundledSkillTests.swift */,
 				C11284000000000000000021 /* CapabilityFeaturesTests.swift */,
+				C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */,
+				C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */,
+				C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */,
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
@@ -1901,6 +1919,9 @@
 				9C51A1CE6AEEBF2E0B4C3E61 /* ChromeScaleTokensTests.swift in Sources */,
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,
 				C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */,
+				C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */,
+				C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */,
+				C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
@@ -2072,6 +2093,9 @@
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */,
+				C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */,
+				C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */,
+				C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
 				D7010BF0A1B2C3D4E5F60718 /* AreaMetadataStore.swift in Sources */,
 				D7C24001A1B2C3D4E5F60718 /* TabManifestView.swift in Sources */,

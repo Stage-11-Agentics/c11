@@ -2024,6 +2024,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
     }
 
     private final class FakeInspector: NSObject {
+        var onClose: (() -> Void)?
         enum HideBehavior {
             case unsupported
             case noEffect
@@ -2079,6 +2080,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             closeCount += 1
             visible = false
             attached = false
+            onClose?()
         }
     }
 
@@ -2139,6 +2141,89 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         panel.restoreDeveloperToolsAfterAttachIfNeeded()
         XCTAssertTrue(panel.isDeveloperToolsVisible())
         XCTAssertEqual(inspector.showCount, 2)
+    }
+
+    func testReplacementRestoresDetachedInspectorWithoutConsumingProgrammaticClose() async {
+        let (panel, oldInspector) = makePanelWithInspector()
+        let oldWebView = panel.webView
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        host.addSubview(oldWebView)
+        let inspectorWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 180),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        inspectorWindow.isReleasedWhenClosed = false
+        inspectorWindow.title = "Web Inspector test fixture"
+        inspectorWindow.contentView = WKInspectorProbeView(frame: inspectorWindow.contentView!.bounds)
+        inspectorWindow.orderFront(nil)
+        defer {
+            oldInspector.onClose = nil
+            panel.close()
+            oldWebView.cmuxSetUnitTestInspector(nil)
+            panel.webView.cmuxSetUnitTestInspector(nil)
+            inspectorWindow.close()
+        }
+        XCTAssertTrue(panel.showDeveloperTools())
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(panel.preferredDeveloperToolsVisible)
+        oldInspector.onClose = {
+            XCTAssertTrue(panel.webView === oldWebView)
+            XCTAssertTrue(oldWebView.superview === host)
+            inspectorWindow.close()
+        }
+
+        panel.debugSimulateWebContentProcessTermination()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(oldInspector.closeCount, 1)
+        XCTAssertFalse(panel.webView === oldWebView)
+        let replacementInspector = FakeInspector()
+        panel.webView.cmuxSetUnitTestInspector(replacementInspector)
+        host.addSubview(panel.webView)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        // Hidden during replacement/attachment is not a manual dismissal.
+        panel.syncDeveloperToolsPreferenceFromInspector()
+        XCTAssertTrue(panel.preferredDeveloperToolsVisible)
+        panel.restoreDeveloperToolsAfterAttachIfNeeded()
+        XCTAssertTrue(panel.isDeveloperToolsVisible())
+        XCTAssertTrue(panel.preferredDeveloperToolsVisible)
+        XCTAssertEqual(replacementInspector.showCount, 1)
+        XCTAssertEqual(replacementInspector.attachCount, 0, "Detached presentation must remain detached")
+
+        // Once restored, a real detached-window close still consumes intent.
+        inspectorWindow.orderFront(nil)
+        replacementInspector.close()
+        inspectorWindow.close()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertFalse(panel.preferredDeveloperToolsVisible)
+        panel.restoreDeveloperToolsAfterAttachIfNeeded()
+        XCTAssertEqual(replacementInspector.showCount, 1)
+    }
+
+    func testClosingReplacementBeforeInspectorAttachCancelsRestore() async {
+        let (panel, _) = makePanelWithInspector()
+        let oldWebView = panel.webView
+        XCTAssertTrue(panel.showDeveloperTools())
+        panel.debugSimulateWebContentProcessTermination()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertFalse(panel.webView === oldWebView)
+        let replacementInspector = FakeInspector()
+        panel.webView.cmuxSetUnitTestInspector(replacementInspector)
+        panel.close()
+        panel.restoreDeveloperToolsAfterAttachIfNeeded()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(panel.preferredDeveloperToolsVisible)
+        XCTAssertEqual(replacementInspector.showCount, 0)
+        XCTAssertEqual(replacementInspector.closeCount, 1)
+        oldWebView.cmuxSetUnitTestInspector(nil)
+        panel.webView.cmuxSetUnitTestInspector(nil)
     }
 
     func testSyncRespectsManualCloseAndPreventsUnexpectedRestore() {

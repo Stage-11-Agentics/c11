@@ -2516,6 +2516,7 @@ final class BrowserTab: TabContent, ObservableObject {
     @Published private(set) var preferredDeveloperToolsVisible: Bool = false
     private var preferredDeveloperToolsPresentation: DeveloperToolsPresentation = .unknown
     private var forceDeveloperToolsRefreshOnNextAttach: Bool = false
+    private var developerToolsReplacementRestorePending = false
     private var developerToolsRestoreRetryWorkItem: DispatchWorkItem?
     private var developerToolsRestoreRetryAttempt: Int = 0
     private let developerToolsRestoreRetryDelay: TimeInterval = 0.05
@@ -3600,7 +3601,7 @@ final class BrowserTab: TabContent, ObservableObject {
         let desiredZoom = max(minPageZoom, min(maxPageZoom, oldWebView.pageZoom))
         let restoreDevTools = preferredDeveloperToolsVisible
 
-        shutdownDeveloperTools(in: oldWebView)
+        shutdownDeveloperTools(in: oldWebView, restoreAfterReplacement: restoreDevTools)
         if reason == "webcontent_process_terminated" {
             unfocus()
             closeOwnedPopups()
@@ -3765,7 +3766,10 @@ final class BrowserTab: TabContent, ObservableObject {
         }
     }
 
-    private func shutdownDeveloperTools(in oldWebView: WKWebView) {
+    private func shutdownDeveloperTools(in oldWebView: WKWebView, restoreAfterReplacement: Bool = false) {
+        // Set this before closing: detached inspectors post a window-close event.
+        // Real host teardown uses the default and cancels replacement restoration.
+        developerToolsReplacementRestorePending = restoreAfterReplacement
         cancelDeveloperToolsRestoreRetry()
         developerToolsTransitionSettleWorkItem?.cancel()
         developerToolsTransitionSettleWorkItem = nil
@@ -4827,8 +4831,13 @@ extension BrowserTab {
                 Self.isDetachedInspectorWindow(window)
             }
             guard isDetachedInspectorWindow else { return }
+            guard !self.isClosed, !self.developerToolsReplacementRestorePending else { return }
+            let closingWebViewInstanceID = self.webViewInstanceID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                // A close queued for the old view must not dismiss its replacement.
+                guard !self.isClosed, !self.developerToolsReplacementRestorePending,
+                      self.webViewInstanceID == closingWebViewInstanceID else { return }
                 guard self.preferredDeveloperToolsPresentation == .detached else { return }
                 guard self.preferredDeveloperToolsVisible else { return }
                 guard !self.isDeveloperToolsVisible() else { return }
@@ -4968,6 +4977,7 @@ extension BrowserTab {
         source: String
     ) -> Bool {
         guard !isClosed else { return false }
+        if !targetVisible { developerToolsReplacementRestorePending = false }
         if isDeveloperToolsTransitionInFlight {
             pendingDeveloperToolsTransitionTargetVisible = targetVisible
             preferredDeveloperToolsVisible = targetVisible
@@ -5119,7 +5129,7 @@ extension BrowserTab {
             cancelDeveloperToolsRestoreRetry()
             return
         }
-        if preserveVisibleIntent && preferredDeveloperToolsVisible {
+        if (preserveVisibleIntent || developerToolsReplacementRestorePending) && preferredDeveloperToolsVisible {
             return
         }
         preferredDeveloperToolsVisible = false
@@ -5161,6 +5171,7 @@ extension BrowserTab {
 
     @discardableResult
     func consumeAttachedDeveloperToolsManualCloseIfNeeded(inspector: NSObject? = nil) -> Bool {
+        guard !developerToolsReplacementRestorePending else { return false }
         guard preferredDeveloperToolsVisible else { return false }
         guard preferredDeveloperToolsPresentation != .detached else { return false }
         guard !isDeveloperToolsTransitionInFlight else { return false }
@@ -5195,6 +5206,7 @@ extension BrowserTab {
     func restoreDeveloperToolsAfterAttachIfNeeded() {
         guard !isClosed else { return }
         guard preferredDeveloperToolsVisible else {
+            developerToolsReplacementRestorePending = false
             cancelDeveloperToolsRestoreRetry()
             forceDeveloperToolsRefreshOnNextAttach = false
             return
@@ -5210,6 +5222,7 @@ extension BrowserTab {
 
         let visible = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visible {
+            developerToolsReplacementRestorePending = false
             developerToolsDetachedOpenGraceDeadline = nil
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
@@ -5223,7 +5236,7 @@ extension BrowserTab {
         }
 
         let detachedOpenStillSettling = developerToolsDetachedOpenGraceDeadline.map { $0 > Date() } ?? false
-        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling {
+        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling && !developerToolsReplacementRestorePending {
             preferredDeveloperToolsVisible = false
             developerToolsDetachedOpenGraceDeadline = nil
             cancelDeveloperToolsRestoreRetry()
@@ -5254,6 +5267,7 @@ extension BrowserTab {
         preferredDeveloperToolsVisible = true
         let visibleAfterShow = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visibleAfterShow {
+            developerToolsReplacementRestorePending = false
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
             cancelDeveloperToolsRestoreRetry()

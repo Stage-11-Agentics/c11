@@ -5279,15 +5279,21 @@ struct CMUXCLI {
     }
 
     private func requireRawSendSupport(client: SocketClient) throws {
-        let payload = try client.sendV2(method: "system.capabilities")
+        let unavailable = CLIError(message: String(
+            localized: "cli.send.raw_unavailable",
+            defaultValue: "This server does not support raw/paste delivery. Use a build advertising send.raw."
+        ))
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(method: "system.capabilities")
+        } catch let error as CLIError where error.message.contains("method_not_found") {
+            throw unavailable
+        }
         let supported = (payload["features"] as? [[String: Any]])?.contains {
             $0["id"] as? String == "send.raw" && ($0["version"] as? Int ?? 0) >= 1
         } ?? false
         guard supported else {
-            throw CLIError(message: String(
-                localized: "cli.send.raw_unavailable",
-                defaultValue: "This server does not support raw/paste delivery. Use a build advertising send.raw."
-            ))
+            throw unavailable
         }
     }
 

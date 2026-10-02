@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """C11-281 built CLI fixtures (--offline) and isolated tagged PTY proof.
 
-Live mode requires C11_CLI and an explicitly supplied C11_281_SOCKET. Never use
-the operator's session. Collector mode runs inside one disposable terminal.
+Live mode requires C11_CLI, C11_281_SOCKET and C11_281_EVENT_LOG (that tagged
+app's per-instance log). Never use the operator's session. Collector mode runs
+inside one disposable terminal.
 """
 
 import argparse
@@ -142,7 +143,7 @@ def wait_until(predicate, description, timeout=12):
     raise AssertionError(description)
 
 
-def live(cli, socket_path):
+def live(cli, socket_path, event_log):
     sys.path.insert(0, str(Path(__file__).parent))
     from cmux import cmux
     with tempfile.TemporaryDirectory(prefix="c11-281-pty-") as directory, cmux(socket_path) as client:
@@ -160,9 +161,20 @@ def live(cli, socket_path):
                                           "text": command, "submit": True})
             wait_until(lambda: (root / "ready").exists(), "collector did not start")
 
-            def collect(arguments, stdin, body, submitted):
+            def events():
+                lines = Path(event_log).read_text().splitlines()
+                result = []
+                for index, line in enumerate(lines):
+                    try:
+                        result.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        assert index == len(lines) - 1, line
+                return result
+
+            def collect(arguments, stdin, body, submitted, event_text=None):
                 path = root / "bytes"
                 before = len(path.read_bytes()) if path.exists() else 0
+                last_seq = max(event["seq"] for event in events())
                 proc = cli_run(cli, socket_path, "--json", arguments[0], "--workspace", workspace,
                                "--tab", tab, *arguments[1:], stdin=stdin)
                 payload = json.loads(proc.stdout)
@@ -174,12 +186,22 @@ def live(cli, socket_path):
                 time.sleep(0.3)
                 actual = path.read_bytes()[before:]
                 assert actual == expected, (actual, expected)
+                sent = wait_until(lambda: [event for event in events()
+                                           if event["seq"] > last_seq
+                                           and event["type"] == "tab.input_sent"
+                                           and event.get("surface", "").lower() == tab.lower()],
+                                  "send event was not recorded")
+                assert len(sent) == 1, sent
+                record = sent[0]["payload"]
+                assert record["text"] == (body if event_text is None else event_text), record
+                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+                assert record["submitted"] is submitted and not record.get("queued", False), record
 
             collect(["send", "--raw", "--no-submit", r"literal\n"], None, r"literal\n", False)
             collect(["paste", "--no-submit"], "\nline1\nline2\r\n", "\nline1\nline2\r\n", False)
             collect(["paste", "--no-submit"], "\n", "\n", False)
             collect(["send", "--raw", "-"], "\n", "\n", True)
-            collect(["send", "--no-submit", r"literal\n"], None, "literal", True)
+            collect(["send", "--no-submit", r"literal\n"], None, "literal", True, event_text="literal\r")
             before = (root / "bytes").read_bytes()
             for flag in ("--bogus", "--text"):
                 proc = cli_run(cli, socket_path, "send", "--workspace", workspace,
@@ -187,7 +209,7 @@ def live(cli, socket_path):
                 assert flag in proc.stderr, proc.stderr
             time.sleep(0.3)
             assert (root / "bytes").read_bytes() == before, "unknown flag reached the PTY"
-            print("PASS C11-281 attached PTY byte/Return boundary and unknown-flag rejection")
+            print("PASS C11-281 attached PTY bytes, Return boundary, single full attributed event, and flag rejection")
         finally:
             (root / "stop").touch()
             client.close_workspace(workspace)
@@ -205,7 +227,7 @@ def main():
     if args.offline:
         offline(cli)
     else:
-        live(cli, os.environ["C11_281_SOCKET"])
+        live(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
 
 
 if __name__ == "__main__":

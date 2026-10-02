@@ -1528,10 +1528,10 @@ struct cmuxApp: App {
     @ViewBuilder
     private func splitCommandButton(title: String, shortcut: StoredShortcut, action: @escaping () -> Void) -> some View {
         if let key = shortcut.keyEquivalent {
-            Button(title, action: action)
+            Button(title) { SocketCommandContext.withContext(nil, action) }
                 .keyboardShortcut(key, modifiers: shortcut.eventModifiers)
         } else {
-            Button(title, action: action)
+            Button(title) { SocketCommandContext.withContext(nil, action) }
         }
     }
 

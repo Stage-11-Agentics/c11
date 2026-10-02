@@ -153,8 +153,7 @@ an ordinal to persist. Names can repeat and are not selectors.
 All verbs accept `--window <ref|uuid>` and `--json`; omitted window means the caller's
 window. `move --workspace <w> --to-group <g|none>` transfers a member. `delete` and
 `ungroup` detach members without closing tabs or processes; empty folders persist.
-Group pin and workspace pin are independent. Only `focus` changes selection, and it
-never activates the app; focusing an empty folder returns `empty_group`.
+Group pin and workspace pin are independent. `focus` keeps an already selected member; changing to another member is blocked for socket callers. An empty folder returns `empty_group`.
 
 `c11 reorder-workspaces --order workspace:3,workspace:1 --dry-run --json` predicts a
 partial priority order within the pinned and unpinned segments. Remove `--dry-run`
@@ -210,7 +209,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 
 - **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-areas` / `list-area-tabs`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
 - **Per-tab `last_seen_at` says when the operator last looked at a tab.** Every tab in `c11 tree --json` / `tab.list` carries `last_seen_at` (ISO-8601, second precision, `null` = never seen) and `being_seen`. A tab is seen while it is the selected tab of the focused area in the selected workspace of the key c11 window, with c11 frontmost, the window on the active Space and visible, and the screen unlocked. Because it follows what is on screen, a socket focus change while c11 is in the background stamps nothing; while c11 is frontmost it stamps the tab that left and marks the new one `being_seen`. Details: [references/api.md](references/api.md).
-- **`c11 history --json --limit 50` reads completed, dwell-qualified seen visits.** UUID targets survive restore; `history back` / `history forward` navigate without activating the app. Live titles are returned but never persisted in history. The open visit is not listed. Schema, privacy and key bindings: [references/api.md](references/api.md#focus-history).
+- **`c11 history --json --limit 50` reads completed, dwell-qualified seen visits.** UUID targets survive restore; `history back` / `history forward` may focus within the selected workspace, while cross-workspace navigation returns `workspace_switch_blocked`. Live titles are returned but never persisted in history. The open visit is not listed. Schema, privacy and key bindings: [references/api.md](references/api.md#focus-history).
 - **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --tab <t> "npm test"`. `send --text "…"` is an unknown-flag error; use `--` before literal flag text.
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.

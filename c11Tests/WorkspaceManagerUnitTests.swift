@@ -1665,11 +1665,14 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
         let original = try XCTUnwrap(manager.selectedWorkspace)
         let recent = manager.addWorkspace(select: false)
         let neighbour = manager.addWorkspace(select: false)
+        manager.workspaces = [original, neighbour, recent]
         // Runtime history fixture: last-seen UUID beats an index neighbour.
         let snapshot = FocusHistorySnapshot(entries: [
             FocusHistoryEntry(workspaceId: recent.id, panelId: UUID(), seenAt: Date(), dwell: 2)
         ], index: 0)
-        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 1, history: snapshot), recent.id)
+        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 0, history: snapshot), recent.id)
+        XCTAssertEqual(manager.closeFallback(excluding: original.id, index: 0,
+            history: FocusHistorySnapshot(entries: [], index: nil)), neighbour.id)
         manager.closeWorkspace(original)
         XCTAssertTrue(manager.workspaces.contains { $0.id == neighbour.id })
     }

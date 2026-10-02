@@ -358,9 +358,9 @@ handles from `list-workspaces` and `workspace-group list`.
   group. Neither toggles the other. Group moves clamp within the group's pin segment.
   Root display order is pinned groups, pinned ungrouped workspaces, unpinned groups,
   unpinned ungrouped workspaces. Members follow the canonical flat workspace order.
-- Only group `focus` may change selection: keep the selected member, otherwise select
-  the first member and expand the group. Empty groups return `empty_group`. No group
-  command activates or raises a macOS window; other verbs preserve selection and focus.
+- Group `focus` keeps the selected member. A request to select another member returns
+  `workspace_switch_blocked`; empty groups return `empty_group`. No group command
+  activates or raises a macOS window; other verbs preserve selection and focus.
 - Cross-window group operations fail with `wrong_window`. Moving a workspace to another
   window with `move-workspace-to-window` clears membership and keeps the source folder.
 - `--order` is a nonempty partial priority list. The result is requested pinned,
@@ -697,8 +697,9 @@ The CLI sends its own cwd and resolves a relative `--layout` file path against i
 
 `c11 history [--json] [--limit N]` reads the app-wide trail of completed visits;
 `c11 history back [--json]` and `c11 history forward [--json]` navigate it.
-Listing never changes focus, including with a global `--window`. Navigation is
-explicit in-app focus intent and does not activate or raise the macOS app.
+Listing never changes focus, including with a global `--window`. Navigation may
+focus a tab in the selected workspace; crossing to another workspace returns
+`workspace_switch_blocked`. Neither navigation nor listing activates c11.
 `workspace.last` attempts navigation and is blocked for socket callers. Use `workspace.current`'s `previous_workspace_id` to resolve previous workspace targets without navigating.
 
 Visits qualify after 1 second of continuous **being seen**, using the same
@@ -826,8 +827,9 @@ The configured attention jump uses the same prefix, then oldest eligible unread
 completions/legacy notices with exact tab targets; `all` appends turns oldest first.
 Generic `input` is unsupported.
 
-`feed open` selects that workspace and focuses that tab inside c11. It does not
-activate the macOS app, mark anything read, or send an answer. A missing
+`feed open` focuses that tab when its workspace is already selected; cross-workspace
+opening returns `workspace_switch_blocked`. It does not activate the macOS app,
+mark anything read, or send an answer. A missing
 workspace or tab returns `unavailable` and changes nothing. `list` and `watch`
 never move focus.
 

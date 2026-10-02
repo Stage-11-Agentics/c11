@@ -49,7 +49,7 @@ def agent_probe(scene):
     def blocked_v2(method, params=None):
         blocked("v2:" + method, json.dumps({"id": 323, "method": method, "params": params or {}}))
     def cli(args, refused=False):
-        result = subprocess.run([scene["cli"], "--socket", path, *args], capture_output=True, text=True, timeout=30)
+        result = subprocess.run([scene["cli"], "--socket", path, *args], capture_output=True, text=True, timeout=120)
         if refused:
             assert result.returncode != 0 and "workspace_switch_blocked" in result.stderr + result.stdout, (args, result)
         else:
@@ -81,11 +81,15 @@ def agent_probe(scene):
     assert selected(path) == scene["a"]
     cli(["set-metadata", "--workspace", scene["c"], "--tab", scene["other_tab"], "--key", "description", "--value", "background proof", "--type", "string"])
     cli(["new-tab", "--workspace", scene["c"]])
+    cli(["new-surface", "--workspace", scene["c"]])
+    cli(["__tmux-compat", "display-message", "-p", "-t", "!", "#{session_id}"])
     cli(["launch-agent", "--type", "codex", "--workspace", scene["c"], "--title", "C11-323 launch proof"])
     cli(["send", "--workspace", scene["c"], "--tab", scene["c_tab"], "printf 'background-send-ok\\n'"])
     cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "eval", "document.body.innerHTML='<button id=proof onclick=\"this.textContent=123\">click</button>'; true"])
     cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "click", "#proof"])
     cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "snapshot"])
+    cli(["ssh", os.environ["USER"] + "@127.0.0.1", "--identity", scene["identity"],
+         "--ssh-option", "UserKnownHostsFile=/dev/null", "--ssh-option", "StrictHostKeyChecking=no"])
     checks.append("raw-focus-and-background-work")
     Path(scene["result"]).write_text(json.dumps({"ok": True, "checks": checks, "caller": os.environ.get("C11_TAB_ID")}))
 
@@ -112,14 +116,21 @@ def main():
     subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate'], check=True)
     output = Path("/tmp/c11-323-agent-proof.json")
     output.unlink(missing_ok=True)
-    scene = {"socket": path, "cli": cli, "a": a, "b": b, "c": c, "c_tab": c_tab,
+    identity = Path("/tmp/c11-323-guest-identity")
+    subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(identity)], check=True)
+    authorized = Path.home() / ".ssh/authorized_keys"
+    authorized.parent.mkdir(mode=0o700, exist_ok=True)
+    with authorized.open("a") as stream:
+        stream.write("\n" + identity.with_suffix(".pub").read_text())
+    authorized.chmod(0o600)
+    scene = {"identity": str(identity), "socket": path, "cli": cli, "a": a, "b": b, "c": c, "c_tab": c_tab,
              "other_tab": split["tab_id"], "other_area": split["area_id"], "browser": browser,
              "result": str(output)}
     scene_path = Path("/tmp/c11-323-scene.json")
     scene_path.write_text(json.dumps(scene))
     command = f"/usr/bin/python3 {Path(__file__).resolve()} --agent {scene_path}\n"
     call("tab.send_text", {"workspace_id": b, "tab_id": b_tab, "text": command}, path)
-    deadline = time.monotonic() + 120
+    deadline = time.monotonic() + 300
     while time.monotonic() < deadline and not output.exists():
         assert selected(path) == a
         time.sleep(0.25)

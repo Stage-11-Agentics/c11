@@ -1051,6 +1051,9 @@ enum SocketDeadline {
 }
 
 final class SocketClient {
+    /// A validated global CLI scope. Propagate it to routing requests, including
+    /// helper lookups, without changing the app's key window or caller identity.
+    var scopedWindow: String?
     // Stable string used at both the throw site and the catch site in sendV2.
     // Extracting it prevents the catch clause from silently missing the timeout
     // if the throw-site message is ever edited.
@@ -1385,6 +1388,12 @@ final class SocketClient {
     }
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        var params = params
+        if let scopedWindow, params["window_id"] == nil,
+           method.hasPrefix("workspace.") || method.hasPrefix("tab.") || method.hasPrefix("area.")
+            || ["system.identify", "system.tree", "agent.launch", "config.launch", "notification.create"].contains(method) {
+            params["window_id"] = scopedWindow
+        }
         if method == "system.capabilities" {
             return try sendV2Raw(method: method, params: params, deadline: deadline)
         }
@@ -2012,10 +2021,15 @@ struct CMUXCLI {
             return
         }
 
-        // If the user explicitly targets a window, focus it first so commands route correctly.
-        if let windowId, command != "workspace-group", command != "reorder-workspaces" {
-            let normalizedWindow = try normalizeWindowHandle(windowId, client: client) ?? windowId
-            _ = try client.sendV2(method: "window.focus", params: ["window_id": normalizedWindow])
+        // A routing flag is not a focus command. Resolve once, then carry the
+        // selected window on requests and their ref-resolution lookups.
+        if let rawWindow = windowId {
+            windowId = try CapabilityFeatures.current.dispatch(.windowRouteWithoutFocus) {
+                try resolveScopedWindow(rawWindow, client: client)
+            }
+            if command != "browser", command != "markdown" {
+                client.scopedWindow = windowId
+            }
         }
 
         switch command {
@@ -3032,7 +3046,7 @@ struct CMUXCLI {
             // surface have CMUX_SURFACE_ID set automatically. External callers must pass
             // --surface. The windowId path is excluded: --window without --surface still
             // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
-            guard sfArg != nil || envSurface != nil else {
+            guard surfaceArg != nil else {
                 throw CLIError(message: "send requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
@@ -3064,7 +3078,7 @@ struct CMUXCLI {
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting (same policy as send).
             // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
-            guard sfArg != nil || envSurface != nil else {
+            guard surfaceArg != nil else {
                 throw CLIError(message: "send-key requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -5227,12 +5241,32 @@ struct CMUXCLI {
         throw CLIError(message: "Window index not found")
     }
 
+    private func resolveScopedWindow(_ raw: String, client: SocketClient) throws -> String {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let listed = try client.sendV2(method: "window.list")
+        let windows = listed["windows"] as? [[String: Any]] ?? []
+        for window in windows {
+            let id = window["id"] as? String
+            let ref = window["ref"] as? String
+            if !token.isEmpty,
+               id?.caseInsensitiveCompare(token) == .orderedSame
+                || ref?.caseInsensitiveCompare(token) == .orderedSame
+                || (Int(token) != nil && intFromAny(window["index"]) == Int(token)),
+               let handle = id ?? ref {
+                return handle
+            }
+        }
+        throw CLIError(message: String(format:
+            String(localized: "cli.window.unknown", defaultValue: "Unknown window '%@'."), raw))
+    }
+
     private func normalizeWorkspaceHandle(
         _ raw: String?,
         client: SocketClient,
         windowHandle: String? = nil,
         allowCurrent: Bool = false
     ) throws -> String? {
+        let windowHandle = windowHandle ?? client.scopedWindow
         guard let raw else {
             if !allowCurrent { return nil }
             let current = try client.sendV2(method: "workspace.current")
@@ -8733,6 +8767,21 @@ struct CMUXCLI {
         // real ref or omit the flag.
         if let raw, raw.isEmpty {
             throw CLIError(message: "--workspace received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
+        }
+        if let raw, client.scopedWindow != nil {
+            let listed = try client.sendV2(method: "workspace.list")
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            for item in items {
+                let id = item["id"] as? String
+                let ref = item["ref"] as? String
+                if id?.caseInsensitiveCompare(raw) == .orderedSame
+                    || ref.map(Self.canonicalHandle) == Self.canonicalHandle(raw)
+                    || (Int(raw) != nil && intFromAny(item["index"]) == Int(raw)),
+                   let id {
+                    return id
+                }
+            }
+            throw CLIError(message: "Workspace ref not found: \(raw)")
         }
         if let raw, isUUID(raw) {
             return raw
@@ -14253,6 +14302,13 @@ struct CMUXCLI {
             insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
             resolvedWorkspaceId = workspaceId
         }
+        if !resolvedExplicitWorkspace, resolvedWorkspaceId == nil, windowOverride != nil {
+            // v1 sidebar commands have no window parameter; carry the scoped
+            // window's selected workspace explicitly instead of ambient focus.
+            let workspaceId = try resolveWorkspaceId(nil, client: client)
+            insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
+            resolvedWorkspaceId = workspaceId
+        }
 
         // C11-171: resolve an explicit surface ref against the resolved workspace
         // and forward it as a uuid, so the app mirrors the canonical key onto the
@@ -14688,7 +14744,17 @@ struct CMUXCLI {
         }
 
         do {
-            let payload = try client.sendV2(method: "system.tree", params: params)
+            var payload = try client.sendV2(method: "system.tree", params: params)
+            if let scopedWindow = client.scopedWindow {
+                let nodes = payload["windows"] as? [[String: Any]] ?? []
+                let scopedNodes = nodes.filter { treeItemMatchesHandle($0, handle: scopedWindow) }
+                if scopedNodes.isEmpty {
+                    // Older system.tree implementations ignore window_id and
+                    // snapshot ambient focus. Resolve the target's nodes here.
+                    return try buildLegacyTreePayload(options: options, params: params, client: client)
+                }
+                payload["windows"] = scopedNodes
+            }
             return treePayloadWithMarkers(payload)
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
             // Back-compat fallback for older servers that don't support system.tree.
@@ -14753,7 +14819,9 @@ struct CMUXCLI {
         }
 
         let targetWindows: [[String: Any]]
-        if options.scope == .all {
+        if let scopedWindow = client.scopedWindow {
+            targetWindows = allWindows.filter { treeItemMatchesHandle($0, handle: scopedWindow) }
+        } else if options.scope == .all {
             targetWindows = allWindows
         } else if let currentWindowHandle = activePath.windowHandle {
             let currentOnly = allWindows.filter { treeItemMatchesHandle($0, handle: currentWindowHandle) }

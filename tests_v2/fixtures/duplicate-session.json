@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "createdAt": 1,
+  "windows": [
+    {
+      "frame": {
+        "x": 50,
+        "y": 50,
+        "width": 1120,
+        "height": 840
+      },
+      "tabManager": {
+        "selectedWorkspaceIndex": 0,
+        "workspaces": [
+          {
+            "id": "00000000-0000-0000-0000-000000000299",
+            "processTitle": "Duplicate restore fixture",
+            "isPinned": false,
+            "currentDirectory": "/tmp",
+            "focusedPanelId": "00000000-0000-0000-0000-00000000000C",
+            "panels": [
+              {
+                "id": "00000000-0000-0000-0000-00000000000A",
+                "type": "terminal",
+                "title": "Synthetic 0",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {
+                  "workingDirectory": "/tmp"
+                },
+                "metadata": {
+                  "fixture": "first"
+                }
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000000A",
+                "type": "terminal",
+                "title": "Discarded duplicate",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {
+                  "workingDirectory": "/tmp"
+                },
+                "metadata": {
+                  "fixture": "discarded"
+                }
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000000B",
+                "type": "terminal",
+                "title": "Synthetic 1",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {
+                  "workingDirectory": "/tmp"
+                },
+                "metadata": {
+                  "fixture": "control"
+                }
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000000C",
+                "type": "terminal",
+                "title": "Synthetic 2",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {
+                  "workingDirectory": "/tmp"
+                },
+                "metadata": {
+                  "fixture": "control"
+                }
+              }
+            ],
+            "statusEntries": [],
+            "logEntries": [],
+            "layout": {
+              "type": "split",
+              "split": {
+                "orientation": "horizontal",
+                "dividerPosition": 0.4,
+                "first": {
+                  "type": "pane",
+                  "pane": {
+                    "panelIds": [
+                      "00000000-0000-0000-0000-00000000000A",
+                      "00000000-0000-0000-0000-00000000000A",
+                      "00000000-0000-0000-0000-00000000000B"
+                    ],
+                    "selectedPanelId": "00000000-0000-0000-0000-00000000000B"
+                  }
+                },
+                "second": {
+                  "type": "pane",
+                  "pane": {
+                    "panelIds": [
+                      "00000000-0000-0000-0000-00000000000A",
+                      "00000000-0000-0000-0000-00000000000C"
+                    ],
+                    "selectedPanelId": "00000000-0000-0000-0000-00000000000A"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sidebar": {
+        "isVisible": true,
+        "selection": "tabs",
+        "width": 200
+      }
+    }
+  ]
+}

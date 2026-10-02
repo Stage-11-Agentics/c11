@@ -83,7 +83,7 @@ def main() -> None:
         missing = str(root / "missing.sock")
         result = run_hook(cli, root, missing, payload)
         assert result.returncode == 0, result.stderr
-        assert result.elapsed < 0.75, result.elapsed
+        assert result.elapsed < 0.350, result.elapsed
         assert_empty_object(result.stdout)
         files = spool_files(root)
         assert len(files) == 1, files
@@ -115,9 +115,10 @@ def main() -> None:
         try:
             silent = run_hook(cli, silent_root, silent_address, payload, password="held-secret")
             assert silent.returncode == 0, silent.stderr
-            assert silent.elapsed < 0.75, silent.elapsed
+            assert silent.elapsed < 0.350, silent.elapsed
             assert_empty_object(silent.stdout)
             assert len(spool_files(silent_root)) == 1, spool_files(silent_root)
+            print(f'PASS silent authenticated peer: wall_ms={silent.elapsed * 1000:.1f} socket_budget_ms=250')
         finally:
             silent_listener.shutdown()
             silent_listener.server_close()
@@ -136,9 +137,10 @@ def main() -> None:
             try:
                 locked = run_hook(cli, locked_root, locked_address, payload)
                 assert locked.returncode == 0, locked.stderr
-                assert locked.elapsed < 0.75, locked.elapsed
+                assert locked.elapsed < 0.350, locked.elapsed
                 assert_empty_object(locked.stdout)
                 assert len(spool_files(locked_root)) == 1, spool_files(locked_root)
+                print(f'PASS held state lock: wall_ms={locked.elapsed * 1000:.1f} socket_budget_ms=250')
             finally:
                 locked_listener.shutdown()
                 locked_listener.server_close()

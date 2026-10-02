@@ -2174,6 +2174,9 @@ struct CMUXCLI {
         // credential lookup consume the hook's entire timeout.
         let priorProcessDeadline = SocketClient.processDeadline
         if command == "claude-hook" {
+            // Hook auth and compatibility commands each return one line. Do
+            // not spend the aggregate budget waiting for multiline idle gaps.
+            client.usesSingleLineResponses = true
             SocketClient.processDeadline = min(
                 priorProcessDeadline ?? .distantFuture,
                 Date().addingTimeInterval(0.250)
@@ -3685,7 +3688,8 @@ struct CMUXCLI {
             do {
                 try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft)
                 cliTelemetry.breadcrumb("claude-hook.completed")
-            } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+            } catch let error as CLIError where isAdvisoryHookConnectivityError(error)
+                || error.message == SocketClient.commandTimedOutMessage {
                 // claude-hook is advisory — it signals c11 about Claude Code
                 // lifecycle events (prompt submitted, notification, etc.) so
                 // the sidebar can update. When c11 isn't running (socket
@@ -3694,6 +3698,7 @@ struct CMUXCLI {
                 // doesn't surface a hook-error banner on every prompt. Real
                 // hook bugs (malformed input, logic errors) still propagate.
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")
@@ -18193,7 +18198,9 @@ struct CMUXCLI {
                 return
             }
 
-            _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
+            // Compatibility UI writes are advisory: even a stalled clear must
+            // reach reportAgentActivity's structural append/spool below.
+            _ = try? sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
             _ = try? reportAgentActivity(
                 client: client, workspaceId: workspaceId, surfaceId: resolvedSurface, activity: "working"
             )
@@ -18205,7 +18212,7 @@ struct CMUXCLI {
             } else {
                 statusValue = "Running"
             }
-            try setClaudeStatus(
+            try? setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
                 surfaceId: resolvedSurface,

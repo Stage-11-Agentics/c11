@@ -260,10 +260,35 @@ final class ClaudeHookMappingTests: XCTestCase {
                     XCTAssertNotNil(oracle["mark"], label)
                     XCTAssertNotNil(oracle["activity"], label)
                     observedOracleCount += 1
+                    let checkpoint = "\(label), checkpoint \(event["name"] ?? "unknown")"
+                    let captureTab = try XCTUnwrap(event["tab"] as? String, checkpoint)
+                    let checkpointTab = captureTab == "tab-sibling" ? tabB : tabA
+                    let projected = try XCTUnwrap(states.values.first {
+                        $0.owner.tabID == checkpointTab
+                    }, checkpoint)
                     if name == "claude-normal-tool-stop" {
                         // The captured oracle is the old working symptom. The executable
                         // projection below is the intended idle completion.
                         XCTAssertEqual(oracle["mark"] as? String, "working", label)
+                        XCTAssertEqual(projected.phase, .idle, checkpoint)
+                        XCTAssertTrue(projected.terminalBarrier, checkpoint)
+                        XCTAssertEqual(projected.turnOutcome, "completed", checkpoint)
+                    } else {
+                        XCTAssertEqual(oracle["mark"] as? String, "waiting", checkpoint)
+                        XCTAssertEqual(projected.phase, .blocked, checkpoint)
+                        XCTAssertEqual(projected.reason, .question, checkpoint)
+                        XCTAssertEqual(projected.requestID, "tool-1", checkpoint)
+                        XCTAssertFalse(projected.terminalBarrier, checkpoint)
+                    }
+                    if let attrs = event["attrs"] as? [String: Any],
+                       let siblingMark = attrs["sibling_mark"] as? String {
+                        let sibling = try XCTUnwrap(states.values.first {
+                            $0.owner.tabID == tabB
+                        }, checkpoint)
+                        XCTAssertEqual(siblingMark, "working", checkpoint)
+                        XCTAssertEqual(sibling.phase, .working, checkpoint)
+                        XCTAssertNil(sibling.reason, checkpoint)
+                        XCTAssertFalse(sibling.terminalBarrier, checkpoint)
                     }
                     continue
                 }

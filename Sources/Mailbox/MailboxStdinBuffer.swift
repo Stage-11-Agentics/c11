@@ -23,10 +23,14 @@ import Foundation
 /// Notification-driven idleness (a Claude permission prompt, an unread
 /// badge) never opens the gate: a paste there answers the prompt.
 ///
-/// **Plain shells**: `.promptIdle` → inject; `.commandRunning` / `.unknown`
-/// → buffer and flush when the shell returns to its prompt. An agent tab
-/// whose shell is back at `.promptIdle` has exited, so the shell rule applies
-/// and its buffered agent blocks drop instead of landing on a bare shell.
+/// **Nothing else is ever typed into.** A paste plus Return into a shell,
+/// `vim`, a pipeline or an agent that is not reading its terminal runs or
+/// corrupts whatever is there. So the push types only into an interactive
+/// agent (its wrapper's `C11_AGENT_INTERACTIVE_PID` on its turn edges) whose
+/// process group the kernel reports as the terminal's foreground
+/// (`MailboxAgentForeground`). Mail for any other tab, or for an agent that
+/// is busy, backgrounded or gone, buffers; a shell prompt edge (the agent
+/// exited, or there never was one) drops the buffer. The inbox keeps it all.
 ///
 /// **Doorbell, not delivery.** The dispatcher always copies the envelope into
 /// the recipient's filesystem inbox *before* invoking this handler, and the
@@ -42,13 +46,12 @@ struct MailboxStdinBuffer {
     /// One queued framed block awaiting a safe moment to inject. `block` is the
     /// fully-formatted, XML-escaped `<c11-msg>` string; `id`/`recipientName`
     /// are carried so the flush path can log a coherent `handler` event for
-    /// `c11 mailbox trace`. `forAgent` records which gate buffered it.
+    /// `c11 mailbox trace`.
     struct Entry: Equatable {
         let id: String
         let recipientName: String
         let block: String
         let bufferedAt: Date
-        var forAgent: Bool = false
     }
 
     enum Decision: Equatable {
@@ -66,8 +69,8 @@ struct MailboxStdinBuffer {
     enum FlushTrigger: Equatable {
         /// The agent reached its prompt: everything queued is deliverable.
         case agentPrompt
-        /// The shell returned to its prompt: shell entries flush if fresh;
-        /// agent entries drop because their agent has exited.
+        /// The shell returned to its prompt: no agent is reading the
+        /// terminal, so everything queued drops (the inbox keeps it).
         case shellPrompt
     }
 
@@ -85,13 +88,6 @@ struct MailboxStdinBuffer {
     /// inbox floor still holds it). Generous: real handoff traffic is sparse.
     static let perSurfaceCap = 64
 
-    /// Shell entries older than this at flush time are expired, not
-    /// injected: a message buffered behind a long foreground command is stale
-    /// by the time the prompt returns. Agent entries never expire; an agent
-    /// reaches its prompt many times an hour and the message is still meant
-    /// for it.
-    static let freshnessWindow: TimeInterval = 600
-
     private var queues: [UUID: [Entry]] = [:]
     private var turns: [UUID: AgentTurn] = [:]
     private var lastSubmitAt: [UUID: Date] = [:]
@@ -103,16 +99,6 @@ struct MailboxStdinBuffer {
     /// (`C11_AGENT_INTERACTIVE_PID`). A push types only while this process's
     /// group owns the tab's terminal.
     private var agentPids: [UUID: pid_t] = [:]
-
-    /// Inject-now vs buffer for a plain shell, purely from its activity state.
-    static func decide(state: Workspace.TabShellActivityState) -> Decision {
-        switch state {
-        case .promptIdle:
-            return .injectNow
-        case .commandRunning, .unknown:
-            return .buffer
-        }
-    }
 
     /// Inject-now vs buffer for an agent tab. Pure: every input is passed in.
     static func decideAgent(
@@ -143,9 +129,9 @@ struct MailboxStdinBuffer {
         ignoringInFlight: Bool = false
     ) -> Decision {
         if !ignoringInFlight, pushesInFlight.contains(surfaceId) { return .buffer }
-        if shell == .promptIdle { return .injectNow }
-        guard isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
-            return Self.decide(state: shell)
+        // A shell at its prompt, or a tab with no agent: nothing to type into.
+        guard shell != .promptIdle, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
+            return .buffer
         }
         return Self.decideAgent(
             turn: turns[surfaceId],
@@ -199,7 +185,8 @@ struct MailboxStdinBuffer {
                       lastPushAt: lastPushAt
                   ) == .injectNow else { return .requeue }
         case .shellPrompt:
-            guard shell == .promptIdle else { return .requeue }
+            // Nothing is ever typed at a shell prompt.
+            return .drop
         }
         return surfaceAttached ? .paste : .requeue
     }
@@ -331,7 +318,7 @@ struct MailboxStdinBuffer {
     mutating func drainForFlush(
         surfaceId: UUID,
         now: Date,
-        trigger: FlushTrigger = .shellPrompt
+        trigger: FlushTrigger
     ) -> FlushResult {
         guard let queue = queues[surfaceId], !queue.isEmpty else {
             return FlushResult(fresh: [], expired: [])
@@ -344,12 +331,7 @@ struct MailboxStdinBuffer {
             case .agentPrompt:
                 fresh.append(entry)
             case .shellPrompt:
-                if !entry.forAgent,
-                   now.timeIntervalSince(entry.bufferedAt) <= Self.freshnessWindow {
-                    fresh.append(entry)
-                } else {
-                    expired.append(entry)
-                }
+                expired.append(entry)
             }
         }
         return FlushResult(fresh: fresh, expired: expired)

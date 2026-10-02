@@ -5793,16 +5793,19 @@ final class Workspace: Identifiable, ObservableObject {
             id: envelopeId,
             recipientName: recipientName,
             block: block,
-            bufferedAt: Date(),
-            forAgent: shell != .promptIdle
-                && mailboxStdinBuffer.isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind)
+            bufferedAt: Date()
         )
-        let decision = mailboxStdinBuffer.decide(
+        var decision = mailboxStdinBuffer.decide(
             surfaceId: surfaceId,
             shell: shell,
             isAgentKind: isAgentKind,
             lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
         )
+        // The kernel check belongs to the decision too, so the trace says
+        // `buffered` (not `ok`) when the agent is not reading its terminal.
+        if decision == .injectNow, !mailboxAgentOwnsTerminal(surfaceId: surfaceId) {
+            decision = .buffer
+        }
         let immediate = decision == .injectNow
             && mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) == 0
         if let evicted = mailboxStdinBuffer.enqueue(surfaceId: surfaceId, entry: entry) {
@@ -5815,7 +5818,7 @@ final class Workspace: Identifiable, ObservableObject {
         if decision == .injectNow {
             startMailboxPush(
                 surfaceId: surfaceId,
-                trigger: entry.forAgent ? .agentPrompt : .shellPrompt,
+                trigger: .agentPrompt,
                 immediateId: immediate ? envelopeId : nil
             )
         }

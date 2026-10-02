@@ -78,19 +78,15 @@ final class MailboxDispatchLog {
     /// C11-144 delivery-safety lifecycle (all emitted as `handler` events with
     /// handler="stdin" so a buffered message's full path is visible in
     /// `c11 mailbox trace <id>` — never a silent drop):
-    /// - `buffered`: the recipient was busy (an agent mid-turn or with an
-    ///   operator draft, or a shell running a command); the framed block was
-    ///   queued to flush at the next turn end or prompt.
+    /// - `buffered`: the recipient was not ready (an agent mid-turn, an
+    ///   operator draft, or no interactive agent reading the terminal); the
+    ///   framed block was queued for the agent's next prompt edge.
     /// - `flushed`: a previously-buffered block was injected at the agent's
-    ///   next turn end or the shell's return to `promptIdle`.
-    /// - `expired`: a buffered shell block aged past the freshness window, or
-    ///   a buffered agent block whose agent exited to the shell; dropped from
-    ///   the buffer (the filesystem inbox + `recv --drain` floor still holds it).
-    /// - `skipped`: the push found the envelope already claimed by a drain.
-    /// - `claim_failed`: the push could not claim the envelope (with `errno`);
-    ///   it stays in the inbox root and nothing was typed.
-    /// - `closed` (after `ok`/`buffered`): the tab closed or detached before
-    ///   the submit Return was dispatched; the claim was undone.
+    ///   next prompt edge.
+    /// - `expired`: a buffered block dropped because no agent was left to
+    ///   read it (the tab returned to a shell prompt, or the agent exited or
+    ///   lost the terminal); the filesystem inbox + `recv --drain` floor
+    ///   still holds it.
     /// - `evicted`: a buffered block was dropped because the per-surface buffer
     ///   cap was exceeded (oldest-first; inbox floor still holds it).
     ///

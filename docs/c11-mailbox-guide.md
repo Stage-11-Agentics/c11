@@ -207,14 +207,14 @@ sequenceDiagram
     alt mailbox.delivery contains "stdin"
         D->>SH: deliver(envelope, surfaceId)
         SH->>SH: format <c11-msg> block (XML-escape attrs + body)
-        alt agent at its prompt (or shell at promptIdle)
+        alt interactive agent at its prompt, owning its terminal
             SH->>Inbox: claim: rename ULID.msg into _read/
             SH->>PTY: paste block + Return on @MainActor (one turn)
             PTY-->>Agent: \n<c11-msg ...>body</c11-msg>\n arrives as a new turn
             Agent->>Agent: dedupe by id, treat as system message
-        else agent mid-turn, operator draft, or shell busy
+        else agent mid-turn, operator draft, or no interactive agent
             SH->>SH: buffer block (log "buffered")
-            Note over PTY: agent's turn ends (or shell returns to promptIdle)
+            Note over PTY: agent's turn ends (a shell prompt instead drops the buffer)
             SH->>Inbox: claim each buffered envelope
             SH->>PTY: paste all claimed blocks + one Return (log "flushed")
         end
@@ -262,19 +262,16 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 | the operator typed into its composer since the last submit | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
 | no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 
-A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. A print-mode run (`claude -p`) never reads its terminal, so the Claude wrapper marks it headless: it counts as an agent that is never at its prompt, and its mail is never pasted. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.) A turn that is interrupted (Esc) sends no turn-end signal, so buffered mail waits for the next completed turn. Grok launched with `--continue` has no session id for c11 to follow, so it reports no turn edges.
+A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.)
 
-**Plain shells** keep the shell-state gate:
+**Only an interactive agent that owns its terminal is ever typed into.** Two guards hold for every harness:
 
-| Recipient shell state | Push behavior |
-|-----------------------|---------------|
-| `promptIdle` (at a prompt) | inject the block immediately |
-| `commandRunning` (a foreground command owns the terminal) | **buffer**, flush at the next prompt |
-| `unknown` (no shell-integration signal) | **buffer** (conservative: never corrupt on a guess) |
+- *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p` bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the tab counts as an agent that is never at its prompt, so its mail is never pasted.
+- *Terminal ownership.* Before it claims, after the claim, and again just before the Return, the push asks the kernel whether that PID's process group is the foreground process group of the tab's terminal. If the shell, `vim`, a pipeline or anything else is reading the terminal, or the agent is gone or suspended, nothing is typed: the claim is undone and the mail stays in the inbox for a drain.
 
-An agent that exits returns its tab to the shell prompt; mail buffered for it is dropped from the buffer (logged `expired`) rather than pasted onto the bare shell, and stays in the inbox.
+**Plain shells are never typed into.** A pasted block plus Return at a shell prompt runs as shell commands, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a tab with no interactive agent never receives a push, and an agent that exits returns its tab to the shell prompt, which drops anything buffered for it (logged `expired`). All of it stays in the inbox for `recv --drain`.
 
-**The recipient is re-checked before typing and before the Return.** A push admitted for an agent's prompt is dropped (logged `expired`, claims undone, mail stays in the inbox) if that agent has exited by the time its claims come back, or by the moment its submit Return would go out. The paste is bracketed, so text that reaches a shell without its Return is never executed.
+**The recipient is re-checked after the claim and again just before the Return.** Each check runs the whole gate: the same agent turn, no operator draft, the agent still owning its terminal. If the agent has exited or lost the terminal, the push is dropped (logged `expired`, claims undone, mail stays in the inbox). If the gate merely closed (a draft, a new turn), the mail is requeued (logged `buffered`). The paste is bracketed, so text that reaches a program without its Return is never submitted.
 
 **Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. Claims run off the main thread; only the paste and its submit run on it.
 
@@ -287,7 +284,7 @@ An agent that exits returns its tab to the shell prompt; mail buffered for it is
 
 Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path.
 
-**Bounds.** Each tab buffers up to 64 blocks (oldest evicted past that, logged `evicted`). Agent mail stays buffered until it is delivered. Shell mail older than 10 minutes at flush time is dropped (logged `expired`) instead of injected. Evicted and expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
+**Bounds.** Each tab buffers up to 64 blocks (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, however long that takes, and drops when the tab returns to a shell prompt. Evicted and expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
 
 **Why you still pull.** The inbox copy is written before any push is attempted. Mail to an agent with no turn signal, mail behind an operator draft, and evicted mail are all still in the inbox, so `c11 mailbox recv --drain` at turn boundaries remains the floor that always works.
 
@@ -421,9 +418,9 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safe
 
 | stdin outcome | Meaning |
 |---------------|---------|
-| `buffered`    | recipient was busy (agent mid-turn, operator draft, or shell running a command); block queued |
-| `flushed`     | a previously-buffered block was injected at the agent's turn end or the shell's prompt |
-| `expired`     | a buffered shell block aged past the freshness window, or its agent exited; dropped (inbox floor holds it) |
+| `buffered`    | recipient not ready (agent mid-turn, operator draft, or no interactive agent reading the terminal); block queued |
+| `flushed`     | a previously-buffered block was injected at the agent's next prompt edge |
+| `expired`     | dropped because no agent was left to read it (shell prompt, agent exited or lost the terminal); inbox floor holds it |
 | `evicted`     | a buffered block dropped because the per-tab cap was exceeded (inbox floor holds it) |
 | `skipped`     | the push found the envelope already claimed by a drain; nothing typed |
 | `claim_failed` | the push could not claim the envelope (`errno` on the line); it stays in the inbox, nothing typed |

@@ -15,11 +15,10 @@ final class MailboxStdinBufferTests: XCTestCase {
         id: String = "01K3A2B7X8PQRTVWYZ0123456J",
         recipient: String = "watcher",
         block: String = "<c11-msg/>",
-        at: Date = Date(timeIntervalSince1970: 1_000),
-        forAgent: Bool = false
+        at: Date = Date(timeIntervalSince1970: 1_000)
     ) -> MailboxStdinBuffer.Entry {
         MailboxStdinBuffer.Entry(
-            id: id, recipientName: recipient, block: block, bufferedAt: at, forAgent: forAgent
+            id: id, recipientName: recipient, block: block, bufferedAt: at
         )
     }
 
@@ -27,18 +26,18 @@ final class MailboxStdinBufferTests: XCTestCase {
         Date(timeIntervalSince1970: 1_000 + seconds)
     }
 
-    // MARK: - decide()
+    // MARK: - nothing is typed into a shell
 
-    func testDecideInjectsWhenPromptIdle() {
-        XCTAssertEqual(MailboxStdinBuffer.decide(state: .promptIdle), .injectNow)
-    }
-
-    func testDecideBuffersWhenCommandRunning() {
-        XCTAssertEqual(MailboxStdinBuffer.decide(state: .commandRunning), .buffer)
-    }
-
-    func testDecideBuffersWhenUnknown() {
-        XCTAssertEqual(MailboxStdinBuffer.decide(state: .unknown), .buffer)
+    /// A shell at its prompt, or a tab with no agent, is never typed into:
+    /// a paste plus Return there runs as shell commands.
+    func testShellsAreNeverTypedInto() {
+        let buffer = MailboxStdinBuffer()
+        for shell in [Workspace.TabShellActivityState.promptIdle, .commandRunning, .unknown] {
+            XCTAssertEqual(
+                buffer.decide(surfaceId: UUID(), shell: shell, isAgentKind: false, lastOperatorKeyAt: nil),
+                .buffer, "\(shell)"
+            )
+        }
     }
 
     // MARK: - enqueue / drain FIFO
@@ -55,7 +54,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         }
         XCTAssertEqual(buffer.pendingCount(surfaceId: surface), 3)
 
-        let result = buffer.drainForFlush(surfaceId: surface, now: base.addingTimeInterval(1))
+        let result = buffer.drainForFlush(surfaceId: surface, now: base.addingTimeInterval(1), trigger: .agentPrompt)
         XCTAssertEqual(result.fresh.map(\.id), ["id-0", "id-1", "id-2"])
         XCTAssertTrue(result.expired.isEmpty)
         // Drained — queue is now empty.
@@ -65,7 +64,7 @@ final class MailboxStdinBufferTests: XCTestCase {
 
     func testDrainOfEmptySurfaceIsNoOp() {
         var buffer = MailboxStdinBuffer()
-        let result = buffer.drainForFlush(surfaceId: UUID(), now: Date())
+        let result = buffer.drainForFlush(surfaceId: UUID(), now: Date(), trigger: .agentPrompt)
         XCTAssertTrue(result.fresh.isEmpty)
         XCTAssertTrue(result.expired.isEmpty)
     }
@@ -76,45 +75,24 @@ final class MailboxStdinBufferTests: XCTestCase {
         let b = UUID()
         buffer.enqueue(surfaceId: a, entry: entry(id: "a0"))
         buffer.enqueue(surfaceId: b, entry: entry(id: "b0"))
-        let drainA = buffer.drainForFlush(surfaceId: a, now: Date(timeIntervalSince1970: 1_001))
+        let drainA = buffer.drainForFlush(surfaceId: a, now: Date(timeIntervalSince1970: 1_001), trigger: .agentPrompt)
         XCTAssertEqual(drainA.fresh.map(\.id), ["a0"])
         // b untouched.
         XCTAssertEqual(buffer.pendingCount(surfaceId: b), 1)
     }
 
-    // MARK: - freshness window
+    // MARK: - shell prompt drops
 
-    func testStaleEntriesExpireRatherThanFlush() {
+    /// A shell prompt edge means no agent is reading the terminal: whatever
+    /// was buffered drops (the inbox keeps it), regardless of age.
+    func testShellPromptFlushDropsEverything() {
         var buffer = MailboxStdinBuffer()
         let surface = UUID()
-        let bufferedAt = Date(timeIntervalSince1970: 1_000)
-        buffer.enqueue(surfaceId: surface, entry: entry(id: "stale", at: bufferedAt))
-        buffer.enqueue(
-            surfaceId: surface,
-            entry: entry(id: "fresh", at: bufferedAt.addingTimeInterval(
-                MailboxStdinBuffer.freshnessWindow
-            ))
-        )
-
-        // Flush far enough out that the first entry is past the window but the
-        // second is exactly on the boundary (<= window → fresh).
-        let now = bufferedAt
-            .addingTimeInterval(MailboxStdinBuffer.freshnessWindow)
-            .addingTimeInterval(1)
-        let result = buffer.drainForFlush(surfaceId: surface, now: now)
-        XCTAssertEqual(result.expired.map(\.id), ["stale"])
-        XCTAssertEqual(result.fresh.map(\.id), ["fresh"])
-    }
-
-    func testEntryExactlyAtWindowBoundaryIsFresh() {
-        var buffer = MailboxStdinBuffer()
-        let surface = UUID()
-        let bufferedAt = Date(timeIntervalSince1970: 1_000)
-        buffer.enqueue(surfaceId: surface, entry: entry(id: "edge", at: bufferedAt))
-        let now = bufferedAt.addingTimeInterval(MailboxStdinBuffer.freshnessWindow)
-        let result = buffer.drainForFlush(surfaceId: surface, now: now)
-        XCTAssertEqual(result.fresh.map(\.id), ["edge"])
-        XCTAssertTrue(result.expired.isEmpty)
+        buffer.enqueue(surfaceId: surface, entry: entry(id: "a", at: t(0)))
+        buffer.enqueue(surfaceId: surface, entry: entry(id: "b", at: t(59)))
+        let result = buffer.drainForFlush(surfaceId: surface, now: t(60), trigger: .shellPrompt)
+        XCTAssertTrue(result.fresh.isEmpty)
+        XCTAssertEqual(result.expired.map(\.id), ["a", "b"])
     }
 
     // MARK: - per-surface cap eviction
@@ -136,7 +114,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertEqual(evictions, ["id-0"])
         XCTAssertEqual(buffer.pendingCount(surfaceId: surface), MailboxStdinBuffer.perSurfaceCap)
 
-        let result = buffer.drainForFlush(surfaceId: surface, now: base.addingTimeInterval(1))
+        let result = buffer.drainForFlush(surfaceId: surface, now: base.addingTimeInterval(1), trigger: .agentPrompt)
         XCTAssertEqual(result.fresh.first?.id, "id-1")
         XCTAssertEqual(result.fresh.count, MailboxStdinBuffer.perSurfaceCap)
     }
@@ -289,7 +267,7 @@ final class MailboxStdinBufferTests: XCTestCase {
 
     /// A plain shell keeps the shell rule; any tab whose shell is back at its
     /// prompt has no foreground agent and takes the shell rule too.
-    func testShellRuleForPlainShellsAndExitedAgents() {
+    func testPlainShellsAndExitedAgentsBuffer() {
         var buffer = MailboxStdinBuffer()
         let shell = UUID()
         XCTAssertEqual(
@@ -301,10 +279,11 @@ final class MailboxStdinBufferTests: XCTestCase {
             .buffer
         )
         let exited = UUID()
-        buffer.noteAgentTurn(surfaceId: exited, atPrompt: false, at: t(0))
+        buffer.noteAgentTurn(surfaceId: exited, atPrompt: true, at: t(0))
+        // The agent's shell is back at its prompt: it exited, so nothing types.
         XCTAssertEqual(
             buffer.decide(surfaceId: exited, shell: .promptIdle, isAgentKind: true, lastOperatorKeyAt: nil),
-            .injectNow
+            .buffer
         )
         buffer.forgetAgent(surfaceId: exited)
         XCTAssertNil(buffer.agentTurn(surfaceId: exited))
@@ -335,23 +314,11 @@ final class MailboxStdinBufferTests: XCTestCase {
     func testAgentPromptFlushNeverExpires() {
         var buffer = MailboxStdinBuffer()
         let tab = UUID()
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "old", at: t(0), forAgent: true))
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "new", at: t(7_000), forAgent: true))
+        buffer.enqueue(surfaceId: tab, entry: entry(id: "old", at: t(0)))
+        buffer.enqueue(surfaceId: tab, entry: entry(id: "new", at: t(7_000)))
         let result = buffer.drainForFlush(surfaceId: tab, now: t(10_000), trigger: .agentPrompt)
         XCTAssertEqual(result.fresh.map(\.id), ["old", "new"])
         XCTAssertTrue(result.expired.isEmpty)
-    }
-
-    /// The agent exited to its shell: its buffered mail must not be pasted
-    /// onto the bare prompt (the inbox still holds it).
-    func testShellPromptFlushDropsAgentEntries() {
-        var buffer = MailboxStdinBuffer()
-        let tab = UUID()
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "agent", at: t(0), forAgent: true))
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "shell", at: t(0)))
-        let result = buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .shellPrompt)
-        XCTAssertEqual(result.fresh.map(\.id), ["shell"])
-        XCTAssertEqual(result.expired.map(\.id), ["agent"])
     }
 
     func testJoinedBlockIsOnePasteInOrder() {
@@ -560,11 +527,10 @@ final class MailboxStdinBufferTests: XCTestCase {
                                attached: false), .requeue)
     }
 
-    /// A shell push admitted at a prompt waits if a command started meanwhile.
-    func testShellPushRequiresShellStillAtPrompt() {
-        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil), .paste)
-        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .commandRunning, turn: nil), .requeue)
-        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil, attached: false), .requeue)
+    /// A shell-prompt push never pastes, whatever the shell is doing.
+    func testShellPushAlwaysDrops() {
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil), .drop)
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .commandRunning, turn: nil), .drop)
     }
 
     /// A headless agent's reports mark the tab as an agent that is never at
@@ -578,7 +544,7 @@ final class MailboxStdinBufferTests: XCTestCase {
             buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: false, lastOperatorKeyAt: nil),
             .buffer
         )
-        buffer.enqueue(surfaceId: tab, entry: entry(id: "m", forAgent: true))
+        buffer.enqueue(surfaceId: tab, entry: entry(id: "m"))
         buffer.forgetAgent(surfaceId: tab)  // the run exits; shell back at its prompt
         let flush = buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .shellPrompt)
         XCTAssertTrue(flush.fresh.isEmpty)
@@ -627,15 +593,6 @@ final class MailboxStdinBufferTests: XCTestCase {
                 surfaceAttached: true, agentOwnsTerminal: false
             ),
             .drop
-        )
-        // A shell push does not depend on an agent process.
-        XCTAssertEqual(
-            MailboxStdinBuffer.pushVerdict(
-                admittedAs: .shellPrompt, admittedTurn: nil, shell: .promptIdle, turn: nil,
-                lastSubmitAt: nil, lastOperatorKeyAt: nil, lastPushAt: nil,
-                surfaceAttached: true, agentOwnsTerminal: false
-            ),
-            .paste
         )
     }
 

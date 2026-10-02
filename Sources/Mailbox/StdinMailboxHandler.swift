@@ -56,8 +56,9 @@ final class StdinMailboxHandler: MailboxHandler {
 
     enum WriteOutcome: Equatable {
         case ok(bytes: Int)
-        /// The recipient was busy (an agent mid-turn, or a shell running a
-        /// command), so the block was queued to flush at its next prompt. Still a delivery, logged
+        /// The recipient was not ready (an agent mid-turn, an operator
+        /// draft, or no interactive agent reading the terminal), so the block
+        /// was queued for the agent's next prompt edge. Still a delivery, logged
         /// as `buffered` rather than dropped.
         case buffered(bytes: Int)
         /// The envelope was already claimed from the inbox by a drain, so

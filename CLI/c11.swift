@@ -5701,7 +5701,8 @@ struct CMUXCLI {
         while index < args.count {
             let option = args[index]
             guard parsed[option] == nil, !present.contains(option) else {
-                throw CLIError(message: "Duplicate option: \(option)")
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.duplicateOption",
+                    defaultValue: "Duplicate option: \(option)"))
             }
             if flags.contains(option) {
                 present.insert(option)
@@ -5709,12 +5710,14 @@ struct CMUXCLI {
             } else if values.contains(option) {
                 guard index + 1 < args.count, !args[index + 1].hasPrefix("--"),
                       !args[index + 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    throw CLIError(message: "\(option) requires a nonempty value")
+                    throw CLIError(message: String(localized: "cli.workspaceGroup.error.emptyOptionValue",
+                        defaultValue: "\(option) requires a nonempty value"))
                 }
                 parsed[option] = args[index + 1]
                 index += 2
             } else {
-                throw CLIError(message: "Unexpected argument: \(option)")
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.unexpectedArgument",
+                    defaultValue: "Unexpected argument: \(option)"))
             }
         }
         return (parsed, present)
@@ -5731,7 +5734,8 @@ struct CMUXCLI {
             }
         }
         guard let window = try normalizeWindowHandle(nil, client: client, allowCurrent: true) else {
-            throw CLIError(message: "No current window")
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.noCurrentWindow",
+                defaultValue: "No current window"))
         }
         return window
     }
@@ -5740,7 +5744,8 @@ struct CMUXCLI {
         do {
             return try client.sendV2(method: method, params: params)
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
-            throw CLIError(message: "\(method) is unavailable: this c11 app does not support workspace groups/batch reorder. Update the app.")
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.unsupportedMethod",
+                defaultValue: "\(method) is unavailable: this c11 app does not support workspace groups/batch reorder. Update the app."))
         }
     }
 
@@ -5749,12 +5754,14 @@ struct CMUXCLI {
         if isUUID(value) { return value }
         let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0] == "workspace_group", let ordinal = Int(parts[1]), ordinal > 0 else {
-            throw CLIError(message: "Invalid group handle: \(value) (expected UUID or workspace_group:N)")
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidHandle",
+                defaultValue: "Invalid group handle: \(value) (expected UUID or \("workspace_group:N"))"))
         }
         let payload = try workspaceGroupRequest("workspace.group.list", params: ["window_id": window], client: client)
         let groups = payload["workspace_groups"] as? [[String: Any]] ?? []
         guard let group = groups.first(where: { ($0["ref"] as? String) == value }), let id = group["id"] as? String else {
-            throw CLIError(message: "group_not_found: \(value) in window \(window)")
+            throw CLIError(message: "group_not_found: " + String(localized: "cli.workspaceGroup.error.groupNotFound",
+                defaultValue: "\(value) in window \(window)"))
         }
         return id
     }
@@ -5764,7 +5771,8 @@ struct CMUXCLI {
         return try values.map { value in
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, let id = try normalizeWorkspaceHandle(trimmed, client: client, windowHandle: window) else {
-                throw CLIError(message: "Workspace lists must be nonempty comma-separated handles")
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidWorkspaceList",
+                    defaultValue: "Workspace lists must be nonempty comma-separated handles"))
             }
             return id
         }
@@ -5774,7 +5782,10 @@ struct CMUXCLI {
         commandArgs: [String], client: SocketClient, jsonOutput: Bool,
         idFormat: CLIIDFormat, windowOverride: String?
     ) throws {
-        guard let verb = commandArgs.first else { throw CLIError(message: "workspace-group requires a verb; see --help") }
+        guard let verb = commandArgs.first else {
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.missingVerb",
+                defaultValue: "\("workspace-group") requires a verb; see \("--help")"))
+        }
         var values: Set<String> = ["--window"]
         var flags: Set<String> = ["--json"]
         switch verb {
@@ -5786,11 +5797,16 @@ struct CMUXCLI {
         case "move": values.formUnion(["--group", "--workspace", "--to-group", "--before", "--after", "--index"])
         case "set-color": values.formUnion(["--group", "--color"]); flags.insert("--clear")
         case "set-icon": values.formUnion(["--group", "--icon"]); flags.insert("--clear")
-        default: throw CLIError(message: "Unknown workspace-group verb: \(verb)")
+        default:
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.unknownVerb",
+                defaultValue: "Unknown \("workspace-group") verb: \(verb)"))
         }
         let options = try parseWorkspaceGroupOptions(Array(commandArgs.dropFirst()), values: values, flags: flags)
         func required(_ key: String) throws -> String {
-            guard let value = options.values[key] else { throw CLIError(message: "workspace-group \(verb) requires \(key)") }
+            guard let value = options.values[key] else {
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.missingOption",
+                    defaultValue: "\("workspace-group") \(verb) requires \(key)"))
+            }
             return value
         }
         let window = try workspaceGroupWindow(options.values["--window"] ?? windowOverride, client: client)
@@ -5807,7 +5823,8 @@ struct CMUXCLI {
         if verb == "set-color" || verb == "set-icon" {
             let key = verb == "set-color" ? "color" : "icon"
             guard (options.values["--\(key)"] != nil) != options.flags.contains("--clear") else {
-                throw CLIError(message: "Specify exactly one of --\(key) or --clear")
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.propertyOrClear",
+                    defaultValue: "Specify exactly one of \("--" + key) or \("--clear")"))
             }
             if options.flags.contains("--clear") { params[key] = NSNull() }
             else { params[key] = options.values["--\(key)"]! }
@@ -5815,10 +5832,14 @@ struct CMUXCLI {
         if verb == "move" {
             let memberMove = options.values["--workspace"] != nil
             let placement = ["--before", "--after", "--index"].filter { options.values[$0] != nil }
-            guard placement.count <= 1 else { throw CLIError(message: "Specify only one of --before, --after or --index") }
+            guard placement.count <= 1 else {
+                throw CLIError(message: String(localized: "cli.workspaceGroup.error.conflictingPlacement",
+                    defaultValue: "Specify only one of \("--before"), \("--after") or \("--index")"))
+            }
             if memberMove {
                 guard options.values["--group"] == nil, options.values["--index"] == nil else {
-                    throw CLIError(message: "Member moves do not accept --group or --index")
+                    throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidMemberMove",
+                        defaultValue: "Member moves do not accept \("--group") or \("--index")"))
                 }
                 params["workspace_id"] = try normalizeWorkspaceHandle(required("--workspace"), client: client, windowHandle: window)
                 let destination = try required("--to-group")
@@ -5826,7 +5847,8 @@ struct CMUXCLI {
                 else { params["to_group_id"] = try normalizeWorkspaceGroupHandle(destination, window: window, client: client) }
             } else {
                 guard options.values["--to-group"] == nil, placement.count == 1 else {
-                    throw CLIError(message: "Group moves require one of --before, --after or --index and do not accept --to-group")
+                    throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidGroupMove",
+                        defaultValue: "Group moves require one of \("--before"), \("--after") or \("--index") and do not accept \("--to-group")"))
                 }
             }
             for key in ["before", "after"] {
@@ -5839,14 +5861,19 @@ struct CMUXCLI {
                 }
             }
             if let raw = options.values["--index"] {
-                guard let index = Int(raw), index >= 0 else { throw CLIError(message: "--index requires a nonnegative integer") }
+                guard let index = Int(raw), index >= 0 else {
+                    throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidIndex",
+                        defaultValue: "\("--index") requires a nonnegative integer"))
+                }
                 params["index"] = index
             }
         }
         let payload = try workspaceGroupRequest("workspace.group.\(verb.replacingOccurrences(of: "-", with: "_"))", params: params, client: client)
         if verb == "list", !(jsonOutput || options.flags.contains("--json")) {
             let groups = payload["workspace_groups"] as? [[String: Any]] ?? []
-            if groups.isEmpty { print("No workspace groups") }
+            if groups.isEmpty {
+                print(String(localized: "cli.workspaceGroup.list.empty", defaultValue: "No workspace groups"))
+            }
             for group in groups {
                 print("\(textHandle(group, idFormat: idFormat)) \(group["name"] as? String ?? "") members=\(group["member_count"] ?? 0)\((group["is_pinned"] as? Bool) == true ? " [pinned]" : "")\((group["is_collapsed"] as? Bool) == true ? " [collapsed]" : "")")
             }
@@ -5863,7 +5890,10 @@ struct CMUXCLI {
         idFormat: CLIIDFormat, windowOverride: String?
     ) throws {
         let options = try parseWorkspaceGroupOptions(commandArgs, values: ["--window", "--order"], flags: ["--json", "--dry-run"])
-        guard let order = options.values["--order"] else { throw CLIError(message: "reorder-workspaces requires --order <comma-separated-handles>") }
+        guard let order = options.values["--order"] else {
+            throw CLIError(message: String(localized: "cli.reorderWorkspaces.error.missingOrder",
+                defaultValue: "\("reorder-workspaces") requires \("--order") <comma-separated-handles>"))
+        }
         let window = try workspaceGroupWindow(options.values["--window"] ?? windowOverride, client: client)
         let ids = try workspaceGroupWorkspaceIDs(order, window: window, client: client)
         let payload = try workspaceGroupRequest("workspace.reorder_batch", params: [

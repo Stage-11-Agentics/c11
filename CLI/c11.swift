@@ -10534,7 +10534,7 @@ struct CMUXCLI {
             """
         case "break-pane":
             return """
-            Usage: c11 break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
+            Usage: c11 break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>]
 
             Move a pane/surface out into its own pane context.
 
@@ -10542,11 +10542,10 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
               --pane <id|ref>        Source pane
               --surface <id|ref>     Source surface
-              --no-focus             Do not focus the result
             """
         case "join-pane":
             return """
-            Usage: c11 join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
+            Usage: c11 join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>]
 
             Join a pane/surface into another pane.
 
@@ -10555,13 +10554,12 @@ struct CMUXCLI {
               --workspace <id|ref>    Workspace context (default: $CMUX_WORKSPACE_ID)
               --pane <id|ref>         Source pane
               --surface <id|ref>      Source surface
-              --no-focus              Do not focus the result
             """
         case "next-window", "previous-window", "last-window":
             return """
             Usage: c11\(command)
 
-            Switch workspace selection (next/previous/last) in the current window.
+            Reserved for operator navigation. Socket workspace changes return workspace_switch_blocked.
             """
         case "last-pane":
             return """
@@ -10580,7 +10578,7 @@ struct CMUXCLI {
 
             Flags:
               --content   Search terminal content in addition to workspace titles
-              --select    Select the first match
+              --select    Request selection; cross-workspace socket changes return workspace_switch_blocked
             """
         case "clear-history":
             return """
@@ -19499,8 +19497,8 @@ struct CMUXCLI {
           pipe-pane --command <shell-command> [--workspace <id|ref>] [--surface <id|ref>]
           wait-for [-S|--signal] <name> [--timeout <seconds>]
           swap-pane --pane <id|ref> --target-pane <id|ref> [--workspace <id|ref>]
-          break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
-          join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
+          break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>]
+          join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>]
           next-window | previous-window | last-window
           last-pane [--workspace <id|ref>]
           find-window [--content] [--select] <query>

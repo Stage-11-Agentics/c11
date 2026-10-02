@@ -27,7 +27,9 @@ extension ConfigCommandCore {
         task: String? = nil
     ) -> AgentLaunchRequest {
         let cfg = saved.config
-        let prompt = promptOverride?.nonEmpty ?? cfg.initialPrompt?.nonEmpty
+        let rawPrompt = promptOverride?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? promptOverride : cfg.initialPrompt
+        let prompt = rawPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawPrompt : nil
         return AgentLaunchRequest(
             kind: cfg.harness,
             model: cfg.model,
@@ -173,7 +175,7 @@ extension TerminalController {
         }
         if let command = request.commandOverride?.nonEmpty { launchParams["command_override"] = command }
         if !request.extraEnv.isEmpty { launchParams["env"] = request.extraEnv }
-        if let prompt = request.prompt?.nonEmpty { launchParams["prompt"] = prompt }
+        if let prompt = request.prompt { launchParams["prompt"] = prompt }
         switch inputs.placement {
         case .newWorkspace: launchParams["new_workspace"] = true
         case .pane(let p): launchParams["pane_id"] = p

@@ -183,19 +183,26 @@ skill card's attention model; parent-side patterns in
 
 ### Prompt delivery (`--prompt` | `--prompt-file`)
 
-Delivered per the template's `promptDelivery`:
+Both flags preserve the supplied UTF-8 text in a private c11 runtime file. The
+shell receives only `Read the file at <owned path> and follow it exactly.`:
 
-- `positional` — appended to the launch argv, single-quoted (claude, codex, grok,
-  pi, omp). One shot; no ready-state race.
-- `flag <name>` — appended as `<name> '<prompt>'`, for CLIs whose TUI takes an
-  initial prompt only via a named flag (opencode `--prompt`). Same one-shot
-  argv delivery as `positional`, no ready-state race.
-- `post-boot` — typed into the TUI after a fixed delay (kimi, github-copilot),
-  the same best-effort rail `default-agent launch` uses today. Racy by nature;
-  prefer kinds with argv delivery for orchestration.
+- `positional` appends the quoted instruction to argv (Claude, Codex, Grok,
+  pi, omp).
+- `flag <name>` appends the quoted instruction through the template's flag
+  (opencode `--prompt`).
+- `post-boot` waits until the launcher has actually received its Return, then
+  waits 2.5 seconds before submitting the instruction (kimi, github-copilot).
+  An unattached terminal never queues both submissions into one buffer. The TUI
+  delay remains best effort; it does not detect readiness.
 
-`--prompt-file` reads the prompt from a file (use it for anything longer than a
-sentence — shell escaping of inline prompts is the caller's problem).
+`--prompt-file` reads the caller's file and stages an independent copy. c11
+never deletes or rewrites the caller's file. Owned directories are mode 0700 and
+files 0600; creation rejects symlinks and existing files. The owned copy remains
+readable until its terminal tab closes, then is removed asynchronously. A crash
+can leave files in that process's runtime directory; there is no cross-process
+sweep. Saved `config launch` uses the same delivery. Settings' Claude initial
+prompt and `default-agent launch` also stage copies; Settings retains its existing
+unsent initial-prompt behavior for other kinds. System-prompt flags are unchanged.
 
 ### Output
 
@@ -210,6 +217,9 @@ Human-readable by default; `--json` prints one object:
   "workspace_ref": "workspace:4",
   "area_ref": "area:9",
   "tab_ref": "tab:341",
+  "startup": "started",
+  "startup_process": { "pid": 1234, "executable": "/path/to/codex" },
+  "prompt_file": "/path/to/c11/runtime/launch-prompts/process/file.txt",
   "cwd": "/path/to/project",
   "cwd_source": "workspace_root",
   "config_source": "/path/to/project/.c11/agents.json",
@@ -232,6 +242,15 @@ Human-readable by default; `--json` prints one object:
 
 Refs are immediately valid targets for `send`, `read-screen`, `set-*`.
 
+`startup` is `started` only when c11 observes an identified provider process
+in the terminal's foreground process group. `startup_process` contains its PID
+and executable, without arguments. This does not prove TUI readiness or that the
+agent read the prompt. Unknown commands, missing executables, shell continuation,
+and unavailable process evidence remain `pending`, with null process evidence.
+Errors return the existing nonzero failure response. Observation lasts at most
+five seconds within the launch handler's shared eight-second main-admission
+and observation deadline. Human output includes `startup=<state>`.
+
 ### Errors and warnings
 
 Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message":…}}`):
@@ -245,6 +264,8 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `invalid_effort` | value outside the template's declared allowed list |
 | `invalid_params` | bad `cwd`, or `new_workspace` combined with `area_id`/`workspace_id` |
 | `not_found` | target workspace or area doesn't resolve |
+| `prompt_staging_failed` | the private prompt copy could not be created |
+| `main_thread_timeout` | main admission or commit exceeded the launch deadline |
 
 A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
 socket call. A launch binary that can't be found is a **warning**, not an

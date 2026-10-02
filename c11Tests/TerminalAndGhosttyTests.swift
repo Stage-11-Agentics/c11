@@ -1329,6 +1329,69 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
     }
 
+    func testRepeatedVisibilityRefreshPreservesNativeFieldEditorAndExplicitTerminalFocus() throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let originalManager = appDelegate.workspaceManager
+        let manager = WorkspaceManager()
+        appDelegate.workspaceManager = manager
+        defer { appDelegate.workspaceManager = originalManager }
+
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        let hostedView = terminal.hostedView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            hostedView.setActive(false)
+            hostedView.removeFromSuperview()
+            window.orderOut(nil)
+        }
+        let contentView = try XCTUnwrap(window.contentView)
+        hostedView.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
+        contentView.addSubview(hostedView)
+        let field = NSTextField(frame: NSRect(x: 20, y: 235, width: 260, height: 24))
+        field.stringValue = "Original group"
+        contentView.addSubview(field)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        hostedView.setActive(true)
+        hostedView.setVisibleInUI(true)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        // Prove this fixture reaches automatic focus recovery, so the assertions
+        // below cannot pass because the surface is inactive or unregistered.
+        XCTAssertTrue(window.isKeyWindow)
+        XCTAssertTrue(window.makeFirstResponder(nil))
+        hostedView.setVisibleInUI(true)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder())
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(firstResponderOwnsTextField(editor, textField: field))
+
+        for _ in 0..<3 {
+            hostedView.setVisibleInUI(true)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+            XCTAssertTrue(window.firstResponder === editor,
+                          "Unchanged visibility must not reclaim focus from a native group editor")
+        }
+        editor.selectAll(nil)
+        editor.insertText("Services", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "Services")
+
+        // A deliberate terminal focus request must still end editing and focus
+        // the terminal; the guard applies only to background recovery.
+        hostedView.moveFocus()
+        XCTAssertTrue(hostedView.isSurfaceViewFirstResponder())
+        XCTAssertEqual(field.stringValue, "Services")
+    }
+
     func testSearchOverlayMountsAndUnmountsWithSearchState() {
         let surface = TerminalSurface(
             workspaceId: UUID(),

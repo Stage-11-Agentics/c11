@@ -9147,6 +9147,17 @@ final class GhosttySurfaceScrollView: NSView {
 #endif
             return
         }
+        // Visibility/layout refreshes are not a request to leave a native editor.
+        // SwiftUI popovers can use the main window's shared field editor, so a
+        // key-window check alone does not protect group name/icon entry. Keep this
+        // guard on automatic recovery; explicit moveFocus/ensureFocus still work.
+        if let editor = window.firstResponder as? NSTextView,
+           editor.isFieldEditor, editor.isEditable {
+            return
+        }
+        if let field = window.firstResponder as? NSTextField, field.isEditable {
+            return
+        }
         if surfaceView.terminalSurface?.searchState != nil {
             // Find bar is open. Restore focus based on what the user last intended.
             restoreSearchFocus(window: window)

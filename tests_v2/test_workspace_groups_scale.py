@@ -627,6 +627,9 @@ def signal_eligible(notice: dict[str, Any], records: list[dict[str, Any]]) -> bo
 
 def setup_attention(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
     """Repeatable C2 scene: real exact-tab unread on declared synthetic agent tabs."""
+    # This command is confined to the disposable tagged fixture. Reset its notice
+    # history once so repeated C2 setup does not accumulate additional unread.
+    client._call("notification.clear")
     caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
     for number in range(9, 15):
         name = f"g60-w{number:02d}"

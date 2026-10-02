@@ -196,6 +196,36 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 }
 
+final class BonsplitClosePaneFocusTests: XCTestCase {
+    @MainActor
+    func testClosingUnfocusedPanePreservesFocusInNestedSplit() {
+        let controller = BonsplitController()
+        guard let paneA = controller.focusedPaneId,
+              let paneB = controller.splitPane(paneA, orientation: .horizontal),
+              let paneC = controller.splitPane(paneB, orientation: .vertical) else {
+            return XCTFail("Expected a nested three-pane layout")
+        }
+
+        controller.focusPane(paneA)
+        XCTAssertTrue(controller.closePane(paneC))
+        XCTAssertEqual(controller.focusedPaneId, paneA)
+    }
+
+    @MainActor
+    func testClosingFocusedPaneFocusesItsSiblingInNestedSplit() {
+        let controller = BonsplitController()
+        guard let paneA = controller.focusedPaneId,
+              let paneB = controller.splitPane(paneA, orientation: .horizontal),
+              let paneC = controller.splitPane(paneB, orientation: .vertical) else {
+            return XCTFail("Expected a nested three-pane layout")
+        }
+
+        controller.focusPane(paneC)
+        XCTAssertTrue(controller.closePane(paneC))
+        XCTAssertEqual(controller.focusedPaneId, paneB)
+    }
+}
+
 
 final class WorkspaceShortcutMapperTests: XCTestCase {
     func testCommandNineMapsToLastWorkspaceIndex() {

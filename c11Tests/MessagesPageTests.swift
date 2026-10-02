@@ -159,6 +159,29 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(rejected.lifecycle.map(\.state), ["rejected"])
     }
 
+    func testMailboxOnlyEventLogIsReadWithoutASeparateSendMarker() throws {
+        let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
+        let noise = #"{"ts":"2026-10-02T00:00:00.000Z","type":"surface.created","v":1}"#
+        let log = [noise, acceptedLine, deliveredLine].joined(separator: "\n") + "\n"
+        try log.write(
+            to: eventsDirectory.appendingPathComponent("events-mailbox-only.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 2)
+        XCTAssertTrue(source.events.allSatisfy { $0.type.hasPrefix("mailbox.") })
+
+        let snapshot = MessagesPageBuilder.build(events: source.events)
+        let mailbox = try XCTUnwrap(snapshot.messages.first)
+        XCTAssertEqual(mailbox.body, "C11_257_MAILBOX_BODY_PROOF")
+        XCTAssertEqual(mailbox.sender, "C11-257-Lane-A")
+        XCTAssertEqual(mailbox.recipient, "C11-257-Mailbox-Target")
+        XCTAssertEqual(mailbox.status, "delivered")
+    }
+
     func testRendererEscapesAgentTextAndEmbedsNoNetworkPage() throws {
         let malicious = #"</script><script>alert("owned")</script> & <b>text</b>"#
         let payload: [String: Any] = [
@@ -196,6 +219,10 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertFalse(html.contains("</script><script>alert(\"owned\")"))
         XCTAssertFalse(html.contains("http://"))
         XCTAssertFalse(html.contains("https://"))
+        XCTAssertTrue(html.contains("Date (UTC)"))
+        XCTAssertTrue(html.contains("queued at send"))
+        XCTAssertTrue(html.contains("body truncated at source"))
+        XCTAssertTrue(html.contains("sessionStorage"))
     }
 
     func testSnapshotKeepsNewestRecordsWithinExplicitBound() {
@@ -229,6 +256,53 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(snapshot.messages.count, 3)
         XCTAssertTrue(snapshot.wasBounded)
         XCTAssertEqual(snapshot.messages.map(\.body), ["message-4", "message-5", "message-6"])
+    }
+
+    func testSnapshotAlsoBoundsEmbeddedBodyBytes() {
+        let events = (0..<3).map { index in
+            MessagesPageEvent(object: [
+                "instance": "byte-bound",
+                "payload": [
+                    "caller_title": "sender",
+                    "kind": "text",
+                    "submitted": true,
+                    "target_title": "target",
+                    "text": String(repeating: "x", count: 128),
+                ],
+                "seq": index + 1,
+                "ts": "2026-10-02T00:00:0\(index).000Z",
+                "type": "tab.input_sent",
+            ])!
+        }
+
+        let snapshot = MessagesPageBuilder.build(
+            events: events,
+            generatedAt: "now",
+            messageByteLimit: 1_000
+        )
+        XCTAssertEqual(snapshot.messages.count, 1)
+        XCTAssertEqual(snapshot.messages.first?.body.count, 128)
+        XCTAssertEqual(snapshot.messages.first?.sequence, 3)
+        XCTAssertTrue(snapshot.wasBounded)
+        XCTAssertEqual(snapshot.messageByteLimit, 1_000)
+    }
+
+    func testPagePathIsSharedOnlyForProductionBundle() {
+        XCTAssertEqual(
+            MessagesPageLayout.pageFileName(bundleIdentifier: "com.stage11.c11"),
+            "messages.html"
+        )
+        XCTAssertEqual(
+            MessagesPageLayout.pageFileName(bundleIdentifier: "com.stage11.c11.debug.da8"),
+            "messages-com.stage11.c11.debug.da8.html"
+        )
+        let state = URL(fileURLWithPath: "/tmp/c11-messages-state", isDirectory: true)
+        XCTAssertTrue(MessagesPageLayout.isMessagesPageURL(
+            MessagesPageLayout.pageURL(state: state, bundleIdentifier: "com.stage11.c11.debug.da8")
+        ))
+        XCTAssertTrue(MessagesPageWriter.isRunningUnderXCTest([
+            "XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"
+        ]))
     }
 
     func testWriterCreatesOwnerOnlyPageAtomically() throws {

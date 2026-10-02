@@ -29,22 +29,21 @@ extension TerminalController {
         }
     }
 
-    /// Open or refresh the app-owned messages page. This is an explicit focus
-    /// command, so selecting the workspace and browser tab is intentional; the
-    /// writer itself never changes app focus.
+    /// Open or refresh the app-owned messages page. The page writer is always
+    /// asynchronous here: a missing page schedules an off-main rebuild and
+    /// returns immediately, so a socket request cannot wedge the app behind a
+    /// writer-queue sync. This method is deliberately not a focus intent;
+    /// opening a monitoring view must preserve the operator's workspace/tab.
     private func v2MessagesView(params: [String: Any]) -> V2CallResult {
         MessagesPageWriter.shared.start()
         guard let pageURL = try? MessagesPageLayout.defaultPageURL() else {
             return .err(code: "unavailable", message: "Messages page path is unavailable", data: nil)
         }
-        if !FileManager.default.fileExists(atPath: pageURL.path) {
-            try? MessagesPageWriter.shared.rebuildNow()
-        }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
-        return v2MainSync {
+        let targetWorkspaceID = v2MainSync {
             let requestedWorkspace = v2UUID(params, "workspace_id")
                 .flatMap { workspaceID in
                     workspaceManager.workspaces.first(where: { $0.id == workspaceID })
@@ -52,48 +51,83 @@ extension TerminalController {
             let targetWorkspace = requestedWorkspace
                 ?? workspaceManager.selectedWorkspace
                 ?? workspaceManager.workspaces.first
-            guard let targetWorkspace else {
-                return .err(code: "unavailable", message: "No workspace available", data: nil)
-            }
+            return targetWorkspace?.id
+        }
+        guard let targetWorkspaceID else {
+            return .err(code: "unavailable", message: "No workspace available", data: nil)
+        }
 
-            var existing: (workspace: Workspace, tab: BrowserTab)?
-            for workspace in workspaceManager.workspaces {
-                if let tab = workspace.panels.values
-                    .compactMap({ $0 as? BrowserTab })
-                    .first(where: { tab in
-                        guard let currentURL = tab.currentURL else { return false }
-                        return currentURL.standardizedFileURL == pageURL.standardizedFileURL
-                    }) {
-                    existing = (workspace, tab)
-                    break
+        if !FileManager.default.fileExists(atPath: pageURL.path) {
+            MessagesPageWriter.shared.ensurePage { [weak self, weak workspaceManager] result in
+                guard case let .success(readyURL) = result,
+                      let self,
+                      let workspaceManager else { return }
+                DispatchQueue.main.async {
+                    _ = self.v2OpenMessagesPage(
+                        pageURL: readyURL,
+                        workspaceManager: workspaceManager,
+                        targetWorkspaceID: targetWorkspaceID
+                    )
                 }
-            }
-
-            if let existing {
-                workspaceManager.selectedWorkspaceId = existing.workspace.id
-                existing.workspace.focusPanel(existing.tab.id)
-                existing.tab.reload()
-                return .ok([
-                    "url": pageURL.absoluteString,
-                    "workspace_id": existing.workspace.id.uuidString,
-                    "tab_id": existing.tab.id.uuidString,
-                    "reused": true,
-                ])
-            }
-
-            workspaceManager.selectedWorkspaceId = targetWorkspace.id
-            guard let pane = targetWorkspace.bonsplitController.focusedPaneId
-                    ?? targetWorkspace.bonsplitController.allPaneIds.first,
-                  let tab = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: true) else {
-                return .err(code: "unavailable", message: "No pane available for messages page", data: nil)
             }
             return .ok([
                 "url": pageURL.absoluteString,
-                "workspace_id": targetWorkspace.id.uuidString,
-                "tab_id": tab.id.uuidString,
-                "reused": false,
+                "workspace_id": targetWorkspaceID.uuidString,
+                "pending": true,
             ])
         }
+
+        return v2MainSync {
+            v2OpenMessagesPage(
+                pageURL: pageURL,
+                workspaceManager: workspaceManager,
+                targetWorkspaceID: targetWorkspaceID
+            )
+        }
+    }
+
+    @MainActor
+    private func v2OpenMessagesPage(
+        pageURL: URL,
+        workspaceManager: WorkspaceManager,
+        targetWorkspaceID: UUID
+    ) -> V2CallResult {
+        var existing: (workspace: Workspace, tab: BrowserTab)?
+        for workspace in workspaceManager.workspaces {
+            if let tab = workspace.panels.values
+                .compactMap({ $0 as? BrowserTab })
+                .first(where: { tab in
+                    guard let currentURL = tab.currentURL else { return false }
+                    return currentURL.standardizedFileURL.path == pageURL.standardizedFileURL.path
+                }) {
+                existing = (workspace, tab)
+                break
+            }
+        }
+
+        if let existing {
+            // Reload the page in place, but do not select its workspace or tab.
+            existing.tab.reload()
+            return .ok([
+                "url": pageURL.absoluteString,
+                "workspace_id": existing.workspace.id.uuidString,
+                "tab_id": existing.tab.id.uuidString,
+                "reused": true,
+            ])
+        }
+
+        guard let targetWorkspace = workspaceManager.workspaces.first(where: { $0.id == targetWorkspaceID }),
+              let pane = targetWorkspace.bonsplitController.focusedPaneId
+                    ?? targetWorkspace.bonsplitController.allPaneIds.first,
+              let tab = targetWorkspace.newBrowserSurface(inPane: pane, url: pageURL, focus: false) else {
+            return .err(code: "unavailable", message: "No pane available for messages page", data: nil)
+        }
+        return .ok([
+            "url": pageURL.absoluteString,
+            "workspace_id": targetWorkspace.id.uuidString,
+            "tab_id": tab.id.uuidString,
+            "reused": false,
+        ])
     }
 
     func v2TabAction(params: [String: Any]) -> V2CallResult {

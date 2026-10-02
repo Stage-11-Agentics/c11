@@ -18640,6 +18640,17 @@ extension CMUXCLI {
             var params: [String: Any] = [:]
             if let workspaceRaw = optionValue(rest, name: "--workspace") {
                 params["workspace_id"] = try resolveWorkspaceId(workspaceRaw, client: client)
+            } else {
+                // `messages.view` is non-focus-intent. Carry the invoking
+                // c11 tab's workspace so the app can open the page there
+                // without selecting the operator's currently visible one.
+                let environment = ProcessInfo.processInfo.environment
+                let callerWorkspace = environment["C11_WORKSPACE_ID"]
+                    ?? environment["CMUX_WORKSPACE_ID"]
+                if let callerWorkspace,
+                   let workspaceID = UUID(uuidString: callerWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    params["workspace_id"] = workspaceID.uuidString
+                }
             }
             let payload = try client.sendV2(method: "messages.view", params: params)
             printV2Payload(
@@ -18664,7 +18675,7 @@ extension CMUXCLI {
           view                 open or refresh the messages browser tab
 
         View flags:
-          --workspace <ref>    target a workspace (default: selected workspace)
+          --workspace <ref>    target a workspace (default: caller workspace)
 
         Alias:
           c11 mailbox view

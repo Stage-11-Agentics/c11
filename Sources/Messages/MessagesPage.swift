@@ -5,22 +5,46 @@ enum MessagesPageLayout {
     static let directoryName = "messages"
     static let fileName = "messages.html"
 
+    private static let productionBundleIdentifier = "com.stage11.c11"
+
     static func directoryURL(state: URL) -> URL {
         state.appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    static func pageURL(state: URL) -> URL {
-        directoryURL(state: state).appendingPathComponent(fileName, isDirectory: false)
+    static func pageURL(
+        state: URL,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> URL {
+        directoryURL(state: state).appendingPathComponent(
+            pageFileName(bundleIdentifier: bundleIdentifier),
+            isDirectory: false
+        )
     }
 
     static func defaultPageURL() throws -> URL {
         pageURL(state: try EventLogLayout.defaultStateURL())
     }
 
+    static func pageFileName(bundleIdentifier: String?) -> String {
+        guard let bundleIdentifier,
+              !bundleIdentifier.isEmpty,
+              bundleIdentifier != productionBundleIdentifier else {
+            return fileName
+        }
+        let safeBundleIdentifier = bundleIdentifier.replacingOccurrences(
+            of: "[^A-Za-z0-9._-]",
+            with: "_",
+            options: .regularExpression
+        )
+        return "messages-\(safeBundleIdentifier.isEmpty ? "c11" : safeBundleIdentifier).html"
+    }
+
     static func isMessagesPageURL(_ url: URL) -> Bool {
         guard url.isFileURL else { return false }
-        return url.lastPathComponent == fileName
-            && url.deletingLastPathComponent().lastPathComponent == directoryName
+        let name = url.lastPathComponent
+        let isPage = name == fileName
+            || (name.hasPrefix("messages-") && name.hasSuffix(".html"))
+        return isPage && url.deletingLastPathComponent().lastPathComponent == directoryName
     }
 }
 
@@ -37,8 +61,12 @@ struct MessagesPageEvent {
     let payload: [String: Any]
 
     init?(line: String) {
-        guard let data = line.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data),
+        guard let data = line.data(using: .utf8) else { return nil }
+        self.init(data: data)
+    }
+
+    init?(data: Data) {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any] else {
             return nil
         }
@@ -142,10 +170,16 @@ struct MessagesPageSnapshot: Equatable {
     let generatedAt: String
     let totalObserved: Int
     let messageLimit: Int
+    let messageByteLimit: Int
+    let estimatedMessageBytes: Int
     let messages: [MessagesPageRecord]
 
     var wasBounded: Bool {
-        totalObserved > messages.count
+        totalObserved > messages.count || estimatedMessageBytes > messageByteLimit
+    }
+
+    var wasByteBounded: Bool {
+        estimatedMessageBytes > messageByteLimit
     }
 
     var jsonObject: [String: Any] {
@@ -171,6 +205,8 @@ struct MessagesPageSnapshot: Equatable {
             "generated_at": generatedAt,
             "total_observed": totalObserved,
             "message_limit": messageLimit,
+            "message_byte_limit": messageByteLimit,
+            "estimated_message_bytes": estimatedMessageBytes,
             "bounded": wasBounded,
             "summary": [
                 "channels": channels,
@@ -250,12 +286,16 @@ private enum MessagesPageDates {
 
 enum MessagesPageBuilder {
     static let defaultMessageLimit = 10_000
+    /// Keep the self-contained file in the tens-of-megabytes range even when
+    /// individual event bodies approach Lane A's 256 KiB envelope limit.
+    static let defaultMessageByteLimit = 16 * 1024 * 1024
 
     static func build(
         events: [MessagesPageEvent],
         mailboxArtifacts: [MessagesPageMailboxArtifact] = [],
         generatedAt: String = MessagesPageDates.now(),
-        messageLimit: Int = defaultMessageLimit
+        messageLimit: Int = defaultMessageLimit,
+        messageByteLimit: Int = defaultMessageByteLimit
     ) -> MessagesPageSnapshot {
         var sends: [MessagesPageRecord] = []
         var mailbox: [String: MessagesPageRecord] = [:]
@@ -274,13 +314,34 @@ enum MessagesPageBuilder {
 
         let observed = (sends + Array(mailbox.values)).sorted(by: orderedBefore)
         let limit = max(1, messageLimit)
-        let messages = observed.count > limit ? Array(observed.suffix(limit)) : observed
+        let byteLimit = max(1, messageByteLimit)
+        let candidates = observed.count > limit ? Array(observed.suffix(limit)) : observed
+        var messages: [MessagesPageRecord] = []
+        var estimatedBytes = 0
+        for message in candidates.reversed() {
+            let messageBytes = estimatedJSONBytes(for: message)
+            if !messages.isEmpty && estimatedBytes + messageBytes > byteLimit {
+                break
+            }
+            messages.append(message)
+            estimatedBytes += messageBytes
+        }
+        messages.reverse()
         return MessagesPageSnapshot(
             generatedAt: generatedAt,
             totalObserved: observed.count,
             messageLimit: limit,
+            messageByteLimit: byteLimit,
+            estimatedMessageBytes: estimatedBytes,
             messages: messages
         )
+    }
+
+    private static func estimatedJSONBytes(for message: MessagesPageRecord) -> Int {
+        // This is intentionally conservative: the body is the dominant term,
+        // and the fixed allowance covers routing/lifecycle metadata without
+        // serializing every candidate a second time during a rebuild.
+        message.body.utf8.count + 768
     }
 
     private static func makeSendRecord(event: MessagesPageEvent, fallbackIndex: Int) -> MessagesPageRecord {
@@ -511,7 +572,13 @@ fileprivate struct MessagesPageEventLogSignature: Equatable {
 
 enum MessagesPageSource {
     private static let sendEventMarker = Data(#""type":"tab.input_sent""#.utf8)
-    private static let mailboxEventMarker = Data(#""type":"mailbox.""#.utf8)
+    private static let mailboxEventMarker = Data(#""type":"mailbox."#.utf8)
+
+    private struct DispatchHistory {
+        var lifecycle: [MessagesPageLifecycle] = []
+        var from: String?
+        var to: String?
+    }
 
     static func load(stateURL: URL, fileManager: FileManager = .default) -> MessagesPageSourceData {
         var eventLogCache = MessagesPageEventLogCache()
@@ -572,14 +639,23 @@ enum MessagesPageSource {
 
             var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? Data(contentsOf: url),
-                  data.range(of: sendEventMarker) != nil || data.range(of: mailboxEventMarker) != nil,
-                  let text = String(data: data, encoding: .utf8) else {
+                  data.range(of: sendEventMarker) != nil || data.range(of: mailboxEventMarker) != nil else {
                 eventLogCache.signatures[url] = signature
                 eventLogCache.eventsByURL[url] = []
                 continue
             }
-            for line in text.split(whereSeparator: \.isNewline) {
-                if let event = MessagesPageEvent(line: String(line)) {
+            // Event logs contain many lifecycle/UI records that the page does
+            // not consume. Check the raw line for a message type before
+            // invoking JSONSerialization, and cache only decoded message
+            // events. This keeps a qualifying 8 MiB log from turning into a
+            // retained dictionary for every unrelated event.
+            for line in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
+                guard line.range(of: sendEventMarker) != nil
+                        || line.range(of: mailboxEventMarker) != nil else { continue }
+                if let event = MessagesPageEvent(data: Data(line)) {
+                    guard event.type == "tab.input_sent" || event.type.hasPrefix("mailbox.") else {
+                        continue
+                    }
                     parsedEvents.append(event)
                 }
             }
@@ -615,29 +691,36 @@ enum MessagesPageSource {
                 for case let url as URL in enumerator where url.pathExtension == MailboxLayout.envelopeExtension {
                     let id = url.deletingPathExtension().lastPathComponent
                     guard !id.isEmpty else { continue }
+                    // B/C may atomically move an envelope while this rebuild
+                    // walks the tree. Do not publish a synthetic body-less
+                    // pending record for a file that disappeared or could not
+                    // be decoded during that race.
+                    guard fileManager.fileExists(atPath: url.path),
+                          let object = jsonObject(at: url, fileManager: fileManager) else {
+                        continue
+                    }
                     let state = fileState(for: url)
-                    let object = jsonObject(at: url, fileManager: fileManager)
                     let artifact = mailboxArtifact(
                         object: object,
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
                         state: state,
-                        lifecycle: dispatch[id] ?? []
+                        dispatch: dispatch[id]
                     )
                     artifacts.append(artifact)
                     seenIDs.insert(id)
                 }
             }
 
-            for (id, lifecycle) in dispatch where !seenIDs.contains(id) {
-                let state = lifecycle.last?.state == "rejected" ? "rejected" : nil
+            for (id, history) in dispatch where !seenIDs.contains(id) {
+                let state = history.lifecycle.last?.state == "rejected" ? "rejected" : nil
                 artifacts.append(
                     MessagesPageMailboxArtifact(
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
-                        timestamp: lifecycle.first?.timestamp,
-                        from: nil,
-                        to: nil,
+                        timestamp: history.lifecycle.first?.timestamp,
+                        from: history.from,
+                        to: history.to,
                         body: nil,
                         bodyRef: nil,
                         topic: nil,
@@ -645,7 +728,7 @@ enum MessagesPageSource {
                         inReplyTo: nil,
                         urgent: nil,
                         fileState: state,
-                        lifecycle: lifecycle
+                        lifecycle: history.lifecycle
                     )
                 )
             }
@@ -658,15 +741,15 @@ enum MessagesPageSource {
         workspace: String,
         id: String,
         state: String,
-        lifecycle: [MessagesPageLifecycle]
+        dispatch: DispatchHistory?
     ) -> MessagesPageMailboxArtifact {
         let object = object ?? [:]
         return MessagesPageMailboxArtifact(
             workspace: workspace,
             id: MessagesPageJSON.string(object["id"]) ?? id,
             timestamp: MessagesPageJSON.string(object["ts"]),
-            from: MessagesPageJSON.string(object["from"]),
-            to: MessagesPageJSON.string(object["to"]),
+            from: MessagesPageJSON.string(object["from"]) ?? dispatch?.from,
+            to: MessagesPageJSON.string(object["to"]) ?? dispatch?.to,
             body: MessagesPageJSON.string(object["body"]),
             bodyRef: MessagesPageJSON.string(object["body_ref"]),
             topic: MessagesPageJSON.string(object["topic"]),
@@ -674,7 +757,7 @@ enum MessagesPageSource {
             inReplyTo: MessagesPageJSON.string(object["in_reply_to"]),
             urgent: MessagesPageJSON.bool(object["urgent"]),
             fileState: state,
-            lifecycle: lifecycle
+            lifecycle: dispatch?.lifecycle ?? []
         )
     }
 
@@ -697,10 +780,10 @@ enum MessagesPageSource {
     private static func readDispatchLog(
         at url: URL,
         fileManager: FileManager
-    ) -> [String: [MessagesPageLifecycle]] {
+    ) -> [String: DispatchHistory] {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else { return [:] }
-        var result: [String: [MessagesPageLifecycle]] = [:]
+        var result: [String: DispatchHistory] = [:]
         for line in text.split(whereSeparator: \.isNewline) {
             guard let data = String(line).data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data),
@@ -708,6 +791,14 @@ enum MessagesPageSource {
                   let id = MessagesPageJSON.string(dictionary["id"]),
                   let event = MessagesPageJSON.string(dictionary["event"]) else { continue }
             let timestamp = MessagesPageJSON.string(dictionary["ts"]) ?? ""
+            var history = result[id] ?? DispatchHistory()
+            if let from = MessagesPageJSON.string(dictionary["from"]) {
+                history.from = from
+            }
+            if let to = MessagesPageJSON.string(dictionary["to"])
+                ?? MessagesPageJSON.string(dictionary["recipient"]) {
+                history.to = to
+            }
             let detail: String?
             if event == "handler" {
                 let handler = MessagesPageJSON.string(dictionary["handler"])
@@ -720,12 +811,13 @@ enum MessagesPageSource {
                 detail = MessagesPageJSON.string(dictionary["reason"])
                     ?? MessagesPageJSON.string(dictionary["recipient"])
             }
-            result[id, default: []].append(
+            history.lifecycle.append(
                 MessagesPageLifecycle(state: event, timestamp: timestamp, detail: detail)
             )
+            result[id] = history
         }
         for id in result.keys {
-            result[id]?.sort { $0.timestamp < $1.timestamp }
+            result[id]?.lifecycle.sort { $0.timestamp < $1.timestamp }
         }
         return result
     }
@@ -772,6 +864,8 @@ enum MessagesPageRenderer {
             .controls { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
             input, select { min-height: 32px; border: 1px solid GrayText; border-radius: 5px; padding: 4px 8px; background: Canvas; color: CanvasText; }
             input { flex: 1 1 260px; }
+            .date-control { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: GrayText; }
+            .date-control input { min-width: 145px; }
             .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
             .card, article, details { border: 1px solid color-mix(in srgb, CanvasText 24%, transparent); border-radius: 6px; padding: 10px; }
             .card strong { display: block; font-size: 20px; margin-bottom: 3px; }
@@ -796,7 +890,7 @@ enum MessagesPageRenderer {
               <select id="channel"><option value="all">All channels</option><option value="send">c11 send</option><option value="mailbox">Mailbox</option></select>
               <select id="workspace"><option value="">All workspaces</option></select>
               <select id="agent"><option value="">All agents</option></select>
-              <input id="date" type="date" aria-label="Filter by date">
+              <label class="date-control" for="date">Date (UTC)<input id="date" type="date" aria-label="Filter by date (UTC)"></label>
             </div>
             <section aria-labelledby="health-heading"><h2 id="health-heading">Health</h2><div id="health" class="summary"></div></section>
             <section aria-labelledby="graph-heading"><h2 id="graph-heading">Connections</h2><div id="graph" class="summary"></div></section>
@@ -809,6 +903,33 @@ enum MessagesPageRenderer {
             "use strict";
             const data = JSON.parse(document.getElementById("messages-data").textContent || "{}");
             const messages = Array.isArray(data.messages) ? data.messages : [];
+            const stateStorageKey = "c11.messages.state.v1";
+            const defaultState = {
+              search: "", channel: "all", workspace: "", agent: "", date: "",
+              selectedMessageID: null, openMailboxes: [], scrollY: 0
+            };
+            const parseState = (raw) => {
+              try {
+                const value = JSON.parse(raw);
+                return Object.assign({}, defaultState, value || {});
+              } catch (_) { return null; }
+            };
+            const readState = () => {
+              try {
+                const stored = sessionStorage.getItem(stateStorageKey);
+                const parsed = stored ? parseState(stored) : null;
+                if (parsed) return parsed;
+              } catch (_) {}
+              try {
+                if (location.hash.startsWith("#state=")) {
+                  const parsed = parseState(decodeURIComponent(location.hash.slice(7)));
+                  if (parsed) return parsed;
+                }
+              } catch (_) {}
+              return Object.assign({}, defaultState);
+            };
+            const state = readState();
+            let selectedMessageID = state.selectedMessageID || null;
             const text = (parent, tag, value, className) => {
               const element = document.createElement(tag);
               if (className) element.className = className;
@@ -817,6 +938,28 @@ enum MessagesPageRenderer {
               return element;
             };
             const clear = (element) => { while (element.firstChild) element.removeChild(element.firstChild); };
+            const messageBody = (message) => {
+              const body = message.body || (message.body_ref ? `body_ref: ${message.body_ref}` : "(no inline body)");
+              return message.truncated ? `${body}\n\n[body truncated at source]` : body;
+            };
+            const mailboxKey = (message) => {
+              const recipient = message.recipient || message.target_title || message.sender_id || senderLabel(message) || "unknown mailbox";
+              return `${message.workspace || "unknown workspace"}::${recipient}`;
+            };
+            const saveState = () => {
+              const next = {
+                search: document.getElementById("search").value,
+                channel: document.getElementById("channel").value,
+                workspace: document.getElementById("workspace").value,
+                agent: document.getElementById("agent").value,
+                date: document.getElementById("date").value,
+                selectedMessageID,
+                openMailboxes: [...document.querySelectorAll("#mailboxes details[open]")].map((item) => item.dataset.mailboxKey),
+                scrollY: window.scrollY || 0
+              };
+              try { sessionStorage.setItem(stateStorageKey, JSON.stringify(next)); } catch (_) {}
+              try { history.replaceState(null, "", `#state=${encodeURIComponent(JSON.stringify(next))}`); } catch (_) {}
+            };
             const card = (parent, title, value, detail) => {
               const element = document.createElement("div");
               element.className = "card";
@@ -851,6 +994,11 @@ enum MessagesPageRenderer {
                 target.appendChild(option);
               });
             };
+            const formatBytes = (value) => {
+              const bytes = Number(value || 0);
+              if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+              return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+            };
             const renderHealth = () => {
               const target = document.getElementById("health");
               clear(target);
@@ -880,7 +1028,7 @@ enum MessagesPageRenderer {
               clear(target);
               const groups = {};
               messages.filter((message) => message.channel === "mailbox").forEach((message) => {
-                const key = message.id;
+                const key = mailboxKey(message);
                 groups[key] = groups[key] || [];
                 groups[key].push(message);
               });
@@ -888,14 +1036,17 @@ enum MessagesPageRenderer {
               if (!keys.length) return text(target, "div", "No mailbox traffic yet.", "muted");
               keys.forEach((key) => {
                 const details = document.createElement("details");
+                details.dataset.mailboxKey = key;
+                details.open = Array.isArray(state.openMailboxes) && state.openMailboxes.includes(key);
                 const first = groups[key][0];
                 const summary = document.createElement("summary");
-                summary.textContent = `${senderLabel(first)} → ${first.recipient || "?"} · ${first.status || "observed"}`;
+                summary.textContent = `${first.workspace || "unknown workspace"} · ${first.recipient || first.target_title || "?"} · ${groups[key].length} messages`;
                 details.appendChild(summary);
                 groups[key].forEach((message) => {
                   text(details, "div", `${message.timestamp} · ${message.status}`, "muted");
-                  text(details, "pre", message.body || (message.body_ref ? `body_ref: ${message.body_ref}` : "(no inline body)"));
+                  text(details, "pre", messageBody(message));
                 });
+                details.addEventListener("toggle", saveState);
                 target.appendChild(details);
               });
             };
@@ -906,14 +1057,21 @@ enum MessagesPageRenderer {
               if (!visible.length) return text(target, "div", "No messages match the current filter.", "empty muted");
               visible.slice().reverse().forEach((message) => {
                 const article = document.createElement("article");
+                article.dataset.messageId = message.id;
+                if (message.id === selectedMessageID) article.classList.add("selected");
+                article.addEventListener("click", () => {
+                  selectedMessageID = message.id;
+                  renderTimeline();
+                  saveState();
+                });
                 const heading = document.createElement("header");
                 text(heading, "span", message.channel === "send" ? "c11 send" : "mailbox");
                 text(heading, "span", message.timestamp, "muted");
                 article.appendChild(heading);
                 const route = [senderLabel(message), "→", message.recipient || message.target_title || message.surface || "?"];
                 text(article, "div", route.join(" "), "route");
-                text(article, "div", [message.status, message.queued === true ? "pending flush" : null, message.submitted === true ? "submitted" : null, message.workspace, message.topic].filter(Boolean).join(" · "), "muted");
-                text(article, "pre", message.body || (message.body_ref ? `body_ref: ${message.body_ref}` : "(no inline body)"));
+                text(article, "div", [message.status, message.queued === true ? "queued at send" : null, message.submitted === true ? "submitted" : null, message.truncated ? "body truncated" : null, message.workspace, message.topic].filter(Boolean).join(" · "), "muted");
+                text(article, "pre", messageBody(message));
                 const lifecycle = Array.isArray(message.lifecycle) ? message.lifecycle : [];
                 if (lifecycle.length) {
                   const list = document.createElement("ul");
@@ -924,18 +1082,27 @@ enum MessagesPageRenderer {
               });
             };
             document.getElementById("generated").textContent = `Generated ${data.generated_at || "unknown"}`;
-            document.getElementById("bound").textContent = data.bounded ? `Showing latest ${data.message_limit} of ${data.total_observed}` : "Showing all observed traffic";
+            document.getElementById("bound").textContent = data.bounded
+              ? `Showing latest ${data.message_limit} messages / ${formatBytes(data.message_byte_limit)} page budget of ${data.total_observed} observed`
+              : `Showing all observed traffic / ${formatBytes(data.message_byte_limit)} page budget`;
             populate("workspace", messages.map((message) => message.workspace));
             populate("agent", messages.flatMap((message) => [senderLabel(message), message.sender_id, message.recipient]));
-            document.getElementById("search").addEventListener("input", renderTimeline);
-            document.getElementById("channel").addEventListener("change", renderTimeline);
-            document.getElementById("workspace").addEventListener("change", renderTimeline);
-            document.getElementById("agent").addEventListener("change", renderTimeline);
-            document.getElementById("date").addEventListener("change", renderTimeline);
+            document.getElementById("search").value = state.search || "";
+            document.getElementById("channel").value = state.channel || "all";
+            document.getElementById("workspace").value = state.workspace || "";
+            document.getElementById("agent").value = state.agent || "";
+            document.getElementById("date").value = state.date || "";
+            document.getElementById("search").addEventListener("input", () => { renderTimeline(); saveState(); });
+            document.getElementById("channel").addEventListener("change", () => { renderTimeline(); saveState(); });
+            document.getElementById("workspace").addEventListener("change", () => { renderTimeline(); saveState(); });
+            document.getElementById("agent").addEventListener("change", () => { renderTimeline(); saveState(); });
+            document.getElementById("date").addEventListener("change", () => { renderTimeline(); saveState(); });
+            window.addEventListener("scroll", saveState, { passive: true });
             renderHealth();
             renderGraph();
             renderMailboxes();
             renderTimeline();
+            if (state.scrollY) window.scrollTo(0, state.scrollY);
           })();
           </script>
         </body>

@@ -4022,7 +4022,7 @@ final class BrowserTab: TabContent, ObservableObject {
         messagesPageReloadObserver = NotificationCenter.default.addObserver(
             forName: MessagesPageWriter.pageDidWriteNotification,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] notification in
             guard let writtenURL = notification.object as? URL else {
                 return
@@ -4030,7 +4030,13 @@ final class BrowserTab: TabContent, ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self,
                       let messagesPageURL = self.messagesPageURL,
-                      writtenURL.standardizedFileURL == messagesPageURL.standardizedFileURL else {
+                      let currentURL = self.currentURL,
+                      MessagesPageLayout.isMessagesPageURL(currentURL),
+                      writtenURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path,
+                      currentURL.standardizedFileURL.path == messagesPageURL.standardizedFileURL.path else {
+                    // A browser back/forward navigation may leave the
+                    // observer installed while the current document is no
+                    // longer the messages page. Never reload that document.
                     return
                 }
                 self.reload()

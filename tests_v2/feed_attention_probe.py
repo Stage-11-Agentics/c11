@@ -18,30 +18,19 @@ import uuid
 from attention_menu_bar_probe import Probe, JXA
 
 
-KEY_JXA = JXA.replace("var se = Application('System Events');", r'''
-    if (operation === 'type-burst') {
-        for (var i = 0; i < 40; i++) {
-            $.CGEventPostToPid(pid, $.CGEventCreateKeyboardEvent(null, 0, true));
-            $.CGEventPostToPid(pid, $.CGEventCreateKeyboardEvent(null, 0, false));
-        }
-        return '{}';
-    }
-    if (operation === 'jump-shortcut') {
-        var flags = (1 << 20) | (1 << 18); // Command-Control-Return, current default.
-        [true, false].forEach(function(down) {
-            var event = $.CGEventCreateKeyboardEvent(null, 36, down);
-            $.CGEventSetFlags(event, flags);
-            $.CGEventPostToPid(pid, event);
-        });
-        return '{}';
-    }
-    var se = Application('System Events');
-''')
-
-
 class FeedProbe(Probe):
     def ui(self, operation, *args):
-        result = self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', KEY_JXA,
+        if operation in ('jump-shortcut', 'type-burst'):
+            if super().ui('foreground') != self.args.pid:
+                raise RuntimeError('Exact tagged PID must be foreground for keyboard action')
+            action = 'key code 36 using {command down, control down}' if operation == 'jump-shortcut' else \
+                'keystroke "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+            script = 'tell application "System Events"\nset p to first process whose unix id is %d\n' \
+                     'if not frontmost of p then error "Tagged PID is not foreground"\n' \
+                     'tell p to %s\nend tell' % (self.args.pid, action)
+            self.run(['/usr/bin/osascript', '-e', script])
+            return {}
+        result = self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', JXA,
                            str(self.args.pid), operation, *args])
         return json.loads(result.stdout)
 
@@ -57,6 +46,7 @@ class FeedProbe(Probe):
         self.rpc('workspace.select', {'workspace_id': self.workspace})
         self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': anchor})
         self.eventually(lambda: len(self.ui('inspect')['candidates']) == 1, 'Status extra unavailable')
+        self.ui('background')
         self.ui('open')
         self.eventually(lambda: any('No flags · no open asks' in r['name'] for r in self.status()['rows']), 'Missing zero attention UI')
         self.screenshot('01-zero-attention')
@@ -83,6 +73,7 @@ class FeedProbe(Probe):
         self.eventually(lambda: '1 flag · 3 open asks' in str(self.status()['help']), 'Live ask count not published')
         rows = self.rpc('feed.list')['rows']
         self.check([r['tab_id'] for r in rows] == [flagged, older, newer], 'Feed flags then oldest asks')
+        self.ui('background')
         self.ui('open')
         self.check(any('1 flag · 3 open asks' in r['name'] for r in self.status()['rows']), 'Actual menu shows separate flag/ask counts')
         self.screenshot('02-flag-and-asks-menu')
@@ -170,6 +161,13 @@ class FeedProbe(Probe):
             self.rpc('tab.list', {'workspace_id': self.workspace}) # Synchronous main-query latency proxy.
             times.append((time.monotonic() - start) * 1000)
         self.ui('activate')
+        # Selection is a setup oracle, not proof of AppKit first-responder focus.
+        # Click inside the verified tagged window's terminal before typing.
+        window = self.report['display_enumeration']['windows'][0]['kCGWindowBounds']
+        self.check(self.ui('foreground') == self.args.pid, 'Exact tagged PID foreground before terminal click')
+        self.run(['/opt/homebrew/bin/cliclick', 'c:%d,%d' % (window['X'] + 550, window['Y'] + 200)])
+        self.eventually(lambda: self.rpc('debug.terminal.is_focused', {'tab_id': anchor}).get('focused'),
+                        'Actual terminal click did not establish first responder')
         time.sleep(0.2)
         started = time.monotonic()
         self.ui('type-burst')

@@ -3975,7 +3975,39 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
+    /// Programmatic text into the PTY. While another writer's input
+    /// transaction is in flight (between its paste and its Return), this
+    /// waits its turn instead of splicing into that writer's input line.
+    /// Text left without a trailing newline is a draft for the mailbox push.
     func sendText(_ text: String) {
+        guard !text.isEmpty else { return }
+        writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
+    }
+
+    /// Run an instantaneous write now, unless another writer's transaction
+    /// is in flight and this is not that transaction's own work; then run it
+    /// as the next transaction, in order.
+    func writeOrDefer(_ work: @escaping () -> Void) {
+        if inputTransactionActive, !isRunningInputTransactionBody {
+            performInputTransaction { finish in
+                work()
+                finish()
+            }
+            return
+        }
+        work()
+    }
+
+    /// Write now, inside the current transaction (or with none active).
+    /// `marksDraft: false` is for the mailbox push's own paste.
+    func writeProgrammaticText(_ text: String, marksDraft: Bool = true) {
+        writeTextNow(text)
+        if marksDraft, let last = text.unicodeScalars.last, last.value != 0x0A, last.value != 0x0D {
+            lastOperatorKeyAt = Date()
+        }
+    }
+
+    private func writeTextNow(_ text: String) {
         guard let data = text.data(using: .utf8), !data.isEmpty else { return }
         // C11-24: bump the per-surface activity timestamp. Off-main and
         // debounced; safe to call from this entry point because sendText
@@ -4015,11 +4047,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func sendSubmitFormText(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
-        sendText(trimmed)
-        if surface == nil {
-            pendingSubmitOnFlush = true
-        } else {
-            scheduleSubmitReturnAfterPasteDelay()
+        performInputTransaction { [weak self] finish in
+            guard let self else { return finish() }
+            self.writeProgrammaticText(trimmed)
+            if self.surface == nil {
+                // Submitted on attach (`flushPendingTextIfNeeded`), which
+                // runs its own transaction.
+                self.pendingSubmitOnFlush = true
+                finish()
+            } else {
+                self.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            }
         }
     }
 
@@ -4039,16 +4077,24 @@ final class TerminalSurface: Identifiable, ObservableObject {
             completion(false)
             return
         }
-        sendText(trimmed)
-        let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.surface != nil, shouldSubmit() else {
-                completion(false)
-                return
+        // Only into an idle input slot: the push never queues behind (or
+        // splices into) another writer's paste-then-Return.
+        let started = tryInputTransaction { [weak self] finish in
+            guard let self else { finish(); completion(false); return }
+            self.writeProgrammaticText(trimmed, marksDraft: false)
+            let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.surface != nil, shouldSubmit() else {
+                    finish()
+                    completion(false)
+                    return
+                }
+                self.sendKeyNow(.returnKey)
+                finish()
+                completion(true)
             }
-            self.sendKey(.returnKey)
-            completion(true)
         }
+        if !started { completion(false) }
     }
 
     /// Dispatch a synthetic Return as a distinct key event after the
@@ -4056,15 +4102,82 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// socket `send` submit path, both of which type text first and must let a
     /// paste-detecting TUI finish ingesting before the Return lands (a Return
     /// inside the input burst is silently swallowed).
-    func scheduleSubmitReturnAfterPasteDelay() {
+    /// Call from inside an input transaction; `then` (the transaction's
+    /// finish) runs once the Return has gone out.
+    func scheduleSubmitReturnAfterPasteDelay(then finish: @escaping () -> Void = {}) {
         let delayMs = TextBoxBehavior.returnKeyDelayMs
         if delayMs <= 0 {
-            sendKey(.returnKey)
+            sendKeyNow(.returnKey)
+            finish()
             return
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.sendKey(.returnKey)
+            self?.sendKeyNow(.returnKey)
+            finish()
+        }
+    }
+
+    // MARK: - Programmatic input transactions
+    //
+    // One programmatic writer at a time per tab. A transaction spans from a
+    // writer's first byte to its Return (or the end of a no-submit write):
+    // `c11 send`/`send-key`, the text box submit, layout/launch submits, the
+    // attach-time flush, and the mailbox push all run inside one. Anything
+    // else that writes while one is in flight waits its turn, so no writer
+    // ever lands inside another's paste-then-Return window. Main thread only.
+
+    private var inputTransactionActive = false
+    private var isRunningInputTransactionBody = false
+    private var pendingInputTransactions: [(_ finish: @escaping () -> Void) -> Void] = []
+    /// Bumped when a transaction starts. The mailbox push compares it across
+    /// its claim hop: any other writer in between means requeue.
+    private(set) var inputTransactionEpoch: UInt64 = 0
+    /// A writer that never finishes cannot wedge the tab's input.
+    static let inputTransactionWatchdog: TimeInterval = 3
+
+    var isInputTransactionActive: Bool { inputTransactionActive }
+
+    /// Run `body` as the tab's next input transaction: now if the slot is
+    /// free, else after the transactions ahead of it. `body` must call
+    /// `finish` once its last byte (or its Return) is out.
+    func performInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+        if inputTransactionActive {
+            pendingInputTransactions.append(body)
+            return
+        }
+        beginInputTransaction(body)
+    }
+
+    /// Run `body` only if the slot is free right now. Returns whether it ran.
+    @discardableResult
+    func tryInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) -> Bool {
+        guard !inputTransactionActive else { return false }
+        beginInputTransaction(body)
+        return true
+    }
+
+    private func beginInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+        inputTransactionActive = true
+        inputTransactionEpoch &+= 1
+        let epoch = inputTransactionEpoch
+        var finished = false
+        let finish: () -> Void = { [weak self] in
+            guard !finished else { return }
+            finished = true
+            self?.endInputTransaction(epoch: epoch)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputTransactionWatchdog) { finish() }
+        isRunningInputTransactionBody = true
+        body(finish)
+        isRunningInputTransactionBody = false
+    }
+
+    private func endInputTransaction(epoch: UInt64) {
+        guard inputTransactionActive, inputTransactionEpoch == epoch else { return }
+        inputTransactionActive = false
+        if !pendingInputTransactions.isEmpty {
+            beginInputTransaction(pendingInputTransactions.removeFirst())
         }
     }
 
@@ -4166,6 +4279,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Inject straight into Ghostty when there is no window; every key in
     /// `TerminalKey` is a control key, so the keycode alone encodes it.
     func sendKey(_ key: TextBoxKeyRouting.TerminalKey) {
+        writeOrDefer { [weak self] in self?.sendKeyNow(key) }
+    }
+
+    /// Send now, inside the current transaction (or with none active).
+    func sendKeyNow(_ key: TextBoxKeyRouting.TerminalKey) {
         if case .returnKey = key {
             TabLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
@@ -4303,7 +4421,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // here because surface creation gates on it (createSurface(for:)).
         if pendingSubmitOnFlush {
             pendingSubmitOnFlush = false
-            scheduleSubmitReturnAfterPasteDelay()
+            performInputTransaction { [weak self] finish in
+                guard let self else { return finish() }
+                self.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            }
         }
         #if DEBUG
         dlog(
@@ -4312,7 +4433,31 @@ final class TerminalSurface: Identifiable, ObservableObject {
         #endif
     }
 
+    /// Run a Ghostty binding action (AppleScript `perform action`, the
+    /// command palette). An action that writes into the input line (`text:`,
+    /// `csi:`, `esc:`, a paste) is a programmatic writer like any other: it
+    /// waits behind an in-flight input transaction and leaves a draft unless
+    /// it ends in a Return.
     func performBindingAction(_ action: String) -> Bool {
+        guard surface != nil else { return false }
+        guard Self.bindingActionWritesInput(action) else { return runBindingAction(action) }
+        var result = true
+        writeOrDefer { [weak self] in
+            guard let self else { return }
+            result = self.runBindingAction(action)
+            if result, !(action.hasSuffix("\\r") || action.hasSuffix("\\n")) {
+                self.lastOperatorKeyAt = Date()
+            }
+        }
+        return result
+    }
+
+    static func bindingActionWritesInput(_ action: String) -> Bool {
+        let name = action.split(separator: ":", maxSplits: 1).first.map(String.init) ?? action
+        return ["text", "csi", "esc", "paste_from_clipboard", "paste_from_selection"].contains(name)
+    }
+
+    private func runBindingAction(_ action: String) -> Bool {
         guard let surface = surface else { return false }
         return action.withCString { cString in
             ghostty_surface_binding_action(surface, cString, UInt(strlen(cString)))
@@ -5328,8 +5473,21 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         dlog("ime.ax.setValue len=\(content.count)")
 #endif
 
-        let inject = {
-            self.insertText(content, replacementRange: NSRange(location: NSNotFound, length: 0))
+        // An accessibility client typing into the terminal is a programmatic
+        // writer: it waits behind an in-flight input transaction and leaves a
+        // draft for the mailbox push.
+        let inject = { [weak self] in
+            guard let self else { return }
+            let write = { [weak self] in
+                guard let self else { return }
+                self.insertText(content, replacementRange: NSRange(location: NSNotFound, length: 0))
+                self.terminalSurface?.lastOperatorKeyAt = Date()
+            }
+            if let terminalSurface = self.terminalSurface {
+                terminalSurface.writeOrDefer(write)
+            } else {
+                write()
+            }
         }
         if Thread.isMainThread {
             inject()

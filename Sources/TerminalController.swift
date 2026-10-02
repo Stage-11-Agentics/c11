@@ -6605,11 +6605,44 @@ class TerminalController {
         return result.isEmpty ? "ERROR: No tab selected" : result
     }
 
+    /// The raw socket key/text write every v1 and v2 send path ends in. It
+    /// takes part in the tab's input transactions (it waits behind another
+    /// writer's paste-then-Return), records a bare Return as a submit edge,
+    /// and records typed text as a draft, in event order.
     private func sendKeyEvent(
         surface: ghostty_surface_t,
         keycode: UInt32,
         mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE,
         text: String? = nil
+    ) {
+        guard let terminalSurface = TerminalSurface.owning(surface) else {
+            Self.writeKeyEvent(surface: surface, keycode: keycode, mods: mods, text: text)
+            return
+        }
+        terminalSurface.writeOrDefer { [weak terminalSurface] in
+            guard let terminalSurface, let live = terminalSurface.surface else { return }
+            Self.writeKeyEvent(surface: live, keycode: keycode, mods: mods, text: text)
+            if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE {
+                // A socket-sent Return submits whatever is in the input
+                // line, exactly like a typed Return.
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: terminalSurface.id,
+                    workspaceId: terminalSurface.workspaceId,
+                    activity: .working,
+                    source: .submit
+                )
+            } else if let text, !text.isEmpty, text != "\r", text != "\n" {
+                // Typed text sits in the input line until a Return: a draft.
+                terminalSurface.lastOperatorKeyAt = Date()
+            }
+        }
+    }
+
+    private static func writeKeyEvent(
+        surface: ghostty_surface_t,
+        keycode: UInt32,
+        mods: ghostty_input_mods_e,
+        text: String?
     ) {
         var keyEvent = ghostty_input_key_s()
         keyEvent.action = GHOSTTY_ACTION_PRESS
@@ -6626,19 +6659,6 @@ class TerminalController {
         } else {
             keyEvent.text = nil
             _ = ghostty_surface_key(surface, keyEvent)
-        }
-        // A socket-sent Return (`send-key enter`, a `\r` in `send` text)
-        // submits whatever is in the input line, exactly like a typed Return:
-        // record the submit edge so the agent turn and the mailbox draft
-        // guard see it.
-        if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE,
-           let terminalSurface = TerminalSurface.owning(surface) {
-            TabLivenessDeriver.onAgentLifecycleChanged(
-                surfaceId: terminalSurface.id,
-                workspaceId: terminalSurface.workspaceId,
-                activity: .working,
-                source: .submit
-            )
         }
     }
 
@@ -6746,26 +6766,36 @@ class TerminalController {
         let body = Self.trimmingTrailingNewlines(text)
         let wantsReturn = submit || body != text
 
-        // Text left in the input line without a submit is a draft the mailbox
-        // push must not splice onto (see `lastOperatorKeyAt`).
-        if !wantsReturn, !body.isEmpty {
-            terminalSurface.lastOperatorKeyAt = Date()
-        }
-
-        if !body.isEmpty {
-            if Self.socketTextIsPasteDeliverable(body) {
-                terminalSurface.sendText(body)
-            } else {
-                sendSocketText(body, surface: surface)
+        // One input transaction from the first byte to the submit Return, so
+        // no other writer (the mailbox push, another send, the text box)
+        // lands in the paste-settle window. If one is in flight, this runs
+        // after it; the live surface is re-read then.
+        terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
+            guard let self, let terminalSurface, let surface = terminalSurface.surface else {
+                return finish()
             }
-        }
-
-        if wantsReturn {
-            // The Return must land *after* the target has finished ingesting the
-            // paste — a Return inside the paste-processing window is silently
-            // dropped by Claude Code and codex. Same paste-settle delay the
-            // interactive text box uses.
-            terminalSurface.scheduleSubmitReturnAfterPasteDelay()
+            if !body.isEmpty {
+                if Self.socketTextIsPasteDeliverable(body) {
+                    terminalSurface.writeProgrammaticText(body, marksDraft: false)
+                } else {
+                    self.sendSocketText(body, surface: surface)
+                }
+            }
+            if wantsReturn {
+                // The Return must land *after* the target has finished
+                // ingesting the paste — a Return inside the paste-processing
+                // window is silently dropped by Claude Code and codex. Same
+                // paste-settle delay the interactive text box uses.
+                terminalSurface.scheduleSubmitReturnAfterPasteDelay(then: finish)
+            } else {
+                // Text left in the input line without a submit is a draft the
+                // mailbox push must not splice onto. Stamped after the write,
+                // so it is newer than any Return the key sequence contained.
+                if !body.isEmpty {
+                    terminalSurface.lastOperatorKeyAt = Date()
+                }
+                finish()
+            }
         }
         return wantsReturn
     }

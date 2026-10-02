@@ -3168,3 +3168,116 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         XCTAssertEqual(passReported, [true])
     }
 }
+
+/// One programmatic input transaction at a time per tab. A writer between its
+/// paste and its Return owns the input line; every other programmatic writer
+/// waits its turn, and the mailbox push never starts inside it.
+@MainActor
+final class TerminalSurfaceInputTransactionTests: XCTestCase {
+    private func makeSurface() -> TerminalSurface {
+        TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+    }
+
+    func testTransactionsRunOneAtATimeInOrder() {
+        let surface = makeSurface()
+        var log: [String] = []
+        var finishA: (() -> Void)?
+        surface.performInputTransaction { finish in log.append("A start"); finishA = finish }
+        XCTAssertTrue(surface.isInputTransactionActive)
+        let epochA = surface.inputTransactionEpoch
+        surface.performInputTransaction { finish in log.append("B"); finish() }
+        surface.performInputTransaction { finish in log.append("C"); finish() }
+        XCTAssertEqual(log, ["A start"], "B and C wait while A is between its paste and its Return")
+        finishA?()
+        XCTAssertEqual(log, ["A start", "B", "C"])
+        XCTAssertFalse(surface.isInputTransactionActive)
+        XCTAssertEqual(surface.inputTransactionEpoch, epochA + 2)
+    }
+
+    /// The mailbox push only ever takes an idle slot.
+    func testTryInputTransactionRefusesWhileBusy() {
+        let surface = makeSurface()
+        var finishA: (() -> Void)?
+        surface.performInputTransaction { finish in finishA = finish }
+        var ran = false
+        XCTAssertFalse(surface.tryInputTransaction { finish in ran = true; finish() })
+        XCTAssertFalse(ran)
+        finishA?()
+        XCTAssertTrue(surface.tryInputTransaction { finish in ran = true; finish() })
+        XCTAssertTrue(ran)
+    }
+
+    /// An out-of-band write (AppleScript, drag and drop, a key from the text
+    /// box) during another writer's transaction runs after it, not inside it.
+    func testOutOfBandWritesWaitForTheTransactionInFlight() {
+        let surface = makeSurface()
+        var log: [String] = []
+        var finishA: (() -> Void)?
+        surface.performInputTransaction { finish in log.append("A"); finishA = finish }
+        surface.writeOrDefer { log.append("out-of-band") }
+        XCTAssertEqual(log, ["A"])
+        finishA?()
+        XCTAssertEqual(log, ["A", "out-of-band"])
+        // With the slot idle, the same write runs at once.
+        surface.writeOrDefer { log.append("idle write") }
+        XCTAssertEqual(log, ["A", "out-of-band", "idle write"])
+    }
+
+    /// A transaction that never finishes cannot wedge the tab's input.
+    func testWatchdogReleasesAStuckTransaction() {
+        let surface = makeSurface()
+        surface.performInputTransaction { _ in }
+        let next = expectation(description: "queued transaction runs after the watchdog")
+        surface.performInputTransaction { finish in finish(); next.fulfill() }
+        wait(for: [next], timeout: TerminalSurface.inputTransactionWatchdog + 2)
+        XCTAssertFalse(surface.isInputTransactionActive)
+    }
+
+    /// A text-box or `c11 send` submit is in flight: the mailbox push refuses
+    /// at once (no paste into the shared input line) and reports `false`, so
+    /// the push requeues and the mail becomes its own later turn.
+    func testMailboxPushNeverStartsInsideAnotherSubmit() {
+        let surface = makeSurface()
+        var finishSubmit: (() -> Void)?
+        surface.performInputTransaction { finish in finishSubmit = finish }
+        var reported: [Bool] = []
+        var rechecks = 0
+        surface.sendSubmitFormText("<c11-msg>mail</c11-msg>", shouldSubmit: { rechecks += 1; return true }) {
+            reported.append($0)
+        }
+        XCTAssertEqual(reported, [false])
+        XCTAssertEqual(rechecks, 0, "nothing was pasted, so nothing to re-check")
+        finishSubmit?()
+        XCTAssertFalse(surface.isInputTransactionActive)
+    }
+
+    /// Programmatic text left without a newline is a draft; a submitted line
+    /// is not.
+    func testProgrammaticTextWithoutNewlineMarksADraft() {
+        let surface = makeSurface()
+        XCTAssertNil(surface.lastOperatorKeyAt)
+        surface.sendText("ls\n")
+        XCTAssertNil(surface.lastOperatorKeyAt)
+        surface.sendText("half a line")
+        XCTAssertNotNil(surface.lastOperatorKeyAt)
+        let stamped = surface.lastOperatorKeyAt
+        surface.writeProgrammaticText("<c11-msg/>", marksDraft: false)
+        XCTAssertEqual(surface.lastOperatorKeyAt, stamped, "the push's own paste is not a draft")
+    }
+
+    /// Binding actions that write into the input line join the slot; the
+    /// rest (scrolling, search, copy) do not.
+    func testBindingActionsThatWriteInputAreProgrammaticWriters() {
+        for action in ["text:hello", "csi:A", "esc:d", "paste_from_clipboard", "paste_from_selection"] {
+            XCTAssertTrue(TerminalSurface.bindingActionWritesInput(action), action)
+        }
+        for action in ["copy_to_clipboard", "scroll_page_lines:3", "search:needle", "end_search"] {
+            XCTAssertFalse(TerminalSurface.bindingActionWritesInput(action), action)
+        }
+    }
+}

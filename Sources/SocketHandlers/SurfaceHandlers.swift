@@ -1027,16 +1027,25 @@ extension TerminalController {
             // C11-26 review B2: revalidate the live surface pointer on
             // @MainActor before sendNamedKey. See v2SurfaceSendText for the
             // teardown-between-phases rationale.
-            guard let liveSurface = resolved.terminalPanel.surface.surface else {
+            guard resolved.terminalPanel.surface.surface != nil else {
                 phaseBOutcome = .surfaceNotReady
                 return
             }
-            if sendNamedKey(liveSurface, keyName: key) {
-                resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendKey")
-                phaseBOutcome = .ok
-            } else {
+            guard TerminalController.namedKeyEvent(for: key) != nil else {
                 phaseBOutcome = .unknownKey
+                return
             }
+            // An input transaction like every programmatic writer: a key sent
+            // while another writer's paste-then-Return is in flight waits for
+            // it instead of landing inside it.
+            let terminalSurface = resolved.terminalPanel.surface
+            terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
+                defer { finish() }
+                guard let self, let terminalSurface, let liveSurface = terminalSurface.surface else { return }
+                _ = self.sendNamedKey(liveSurface, keyName: key)
+                terminalSurface.forceRefresh(reason: "terminalController.v2SurfaceSendKey")
+            }
+            phaseBOutcome = .ok
         }
         phaseBSema.wait()
 

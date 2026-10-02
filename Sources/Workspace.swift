@@ -5794,12 +5794,14 @@ final class Workspace: Identifiable, ObservableObject {
             block: block,
             bufferedAt: Date()
         )
-        let decision = mailboxStdinBuffer.decide(
+        var decision = mailboxStdinBuffer.decide(
             surfaceId: surfaceId,
             isAgentKind: isAgentKind,
             agentOwnsTerminal: mailboxAgentOwnsTerminal(surfaceId: surfaceId),
             lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
         )
+        // Another writer is between its paste and its Return: wait.
+        if terminalTab.surface.isInputTransactionActive { decision = .buffer }
         let immediate = decision == .injectNow
             && mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) == 0
         if let evicted = mailboxStdinBuffer.enqueue(surfaceId: surfaceId, entry: entry) {
@@ -5853,7 +5855,8 @@ final class Workspace: Identifiable, ObservableObject {
         if trigger == .agentPrompt {
             // Only while the tab's interactive agent owns its terminal, at
             // its prompt, with no draft (see `MailboxStdinBuffer.decide`).
-            guard mailboxStdinBuffer.decide(
+            guard !terminalTab.surface.isInputTransactionActive,
+                  mailboxStdinBuffer.decide(
                       surfaceId: surfaceId,
                       isAgentKind: true,
                       agentOwnsTerminal: mailboxAgentOwnsTerminal(surfaceId: surfaceId),
@@ -5871,6 +5874,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         mailboxStdinBuffer.beginPush(surfaceId: surfaceId)
         let admittedTurn = mailboxStdinBuffer.agentTurn(surfaceId: surfaceId)
+        let admittedInputEpoch = terminalTab.surface.inputTransactionEpoch
         let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, tabId: surfaceId)
         Self.mailboxPushIOQueue.async { [weak self] in
             var claimed: [MailboxStdinBuffer.Entry] = []
@@ -5897,6 +5901,7 @@ final class Workspace: Identifiable, ObservableObject {
                         claimed: claimed,
                         trigger: trigger,
                         admittedTurn: admittedTurn,
+                        admittedInputEpoch: admittedInputEpoch,
                         immediateId: immediateId,
                         inbox: inbox,
                         dispatcher: dispatcher
@@ -5911,6 +5916,7 @@ final class Workspace: Identifiable, ObservableObject {
         claimed: [MailboxStdinBuffer.Entry],
         trigger: MailboxStdinBuffer.FlushTrigger,
         admittedTurn: MailboxStdinBuffer.AgentTurn?,
+        admittedInputEpoch: UInt64,
         immediateId: String?,
         inbox: URL,
         dispatcher: MailboxDispatcher
@@ -5932,12 +5938,19 @@ final class Workspace: Identifiable, ObservableObject {
         // Re-check on main for the same recipient kind the push was admitted
         // as: the agent can exit, start a turn, or the operator can start a
         // draft while the claims run.
-        let verdict = mailboxPushVerdict(
+        var verdict = mailboxPushVerdict(
             surfaceId: surfaceId,
             terminalTab: terminalTab,
             trigger: trigger,
             admittedTurn: admittedTurn
         )
+        // Another writer started (or is still) writing since admission: its
+        // text may be in the input line. Wait for the next edge.
+        if verdict == .paste,
+           terminalTab.surface.isInputTransactionActive
+            || terminalTab.surface.inputTransactionEpoch != admittedInputEpoch {
+            verdict = .requeue
+        }
         switch verdict {
         case .drop:
             Self.undoMailboxClaims(claimed, inbox: inbox)
@@ -5970,7 +5983,9 @@ final class Workspace: Identifiable, ObservableObject {
         // have exited, lost the terminal, started a turn, or the operator may
         // have typed inside the paste-settle window. A bracketed paste alone
         // never executes, so withholding the Return keeps it inert.
-        var preReturnVerdict: MailboxStdinBuffer.PushVerdict = .paste
+        // `.requeue` until the re-check runs: if the input slot was taken
+        // after all (the paste never happened), the mail waits, not drops.
+        var preReturnVerdict: MailboxStdinBuffer.PushVerdict = .requeue
         let stillTheRecipient: () -> Bool = { [weak self, weak terminalTab] in
             guard let self, let terminalTab else {
                 preReturnVerdict = .drop

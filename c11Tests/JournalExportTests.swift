@@ -55,8 +55,14 @@ final class JournalExportTests: XCTestCase {
         let data = try JournalExport.encode(
             events: [event], baselines: [], coverage: JournalAnalyticsFixture.coverage(highWater: event.sequence),
             filters: JournalQueryFilters(fromMs: 0, toMs: 9_000))
-        let object = try XCTUnwrap(String(decoding: data, as: UTF8.self).split(separator: "\n").dropFirst().first)
-        let eventObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(object.utf8)) as? [String: Any])
+        let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+        let eventLine = try XCTUnwrap(lines.first { line in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
+                return false
+            }
+            return object["record_type"] as? String == "event"
+        })
+        let eventObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(eventLine.utf8)) as? [String: Any])
         XCTAssertEqual(eventObject["record_type"] as? String, "event")
         XCTAssertEqual(eventObject["kind"] as? String, JournalKind.stateChanged.rawValue)
         XCTAssertEqual(eventObject["signal"] as? String, JournalSignal.operatorResponse.rawValue)

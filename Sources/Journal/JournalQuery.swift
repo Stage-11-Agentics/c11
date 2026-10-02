@@ -637,12 +637,16 @@ enum JournalQuery {
         let start = max(from, interval.startWall)
         let clippedEnd = min(to, end)
         guard clippedEnd > start else { return 0 }
-        let wallSpan = max(0, end - interval.startWall)
-        if let duration = interval.durationMs, wallSpan > 0 {
-            let wallOverlap = clippedEnd - start
-            return max(0, Int64((Double(duration) * Double(wallOverlap) / Double(wallSpan)).rounded()))
+        let wallOverlap = clippedEnd - start
+        let coversWholeInterval = from <= interval.startWall
+            && interval.endWall.map { $0 <= to } == true
+        if coversWholeInterval, let duration = interval.durationMs {
+            return max(0, duration)
         }
-        return clippedEnd - start
+        // Monotonic ticks are authoritative for a complete observed interval.
+        // A query boundary has only committed wall-clock evidence, so partial
+        // clipping must use that wall span rather than inventing a tick rate.
+        return wallOverlap
     }
 
     private static func intervalDuration(_ interval: TimelineInterval, from: Int64, to: Int64) -> Int64 {

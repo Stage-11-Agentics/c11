@@ -86,6 +86,10 @@ def main():
                                     result["server"] = {"commit": server_sha}
                                 stream.write((json.dumps({"id": request["id"], "ok": True, "result": result}) + "\n").encode())
                                 stream.flush()
+                                # c11's socket is persistent: its read loop
+                                # updates SO_RCVTIMEO after the response. Keep
+                                # the peer alive until the client disconnects.
+                                stream.read()
                     except Exception as error:
                         errors.append(error)
 

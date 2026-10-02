@@ -67,6 +67,58 @@ final class BrowserAwaitPolicyTests: XCTestCase {
             TerminalController.executionPolicy(forV2Method: "browser.snapshot"),
             .mainActor
         )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.cookies.clear"),
+            .socketWorker
+        )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.state.load"),
+            .socketWorker
+        )
+    }
+
+    // C11-311 B078: a clear request without a scope must not silently become
+    // a profile-wide delete, and explicit `all` cannot be mixed with filters.
+    func testCookieClearFilterRequiresAnUnambiguousScope() {
+        XCTAssertNil(BrowserCookieClearFilter(params: [:]))
+        XCTAssertNil(BrowserCookieClearFilter(params: ["all": false]))
+        XCTAssertNil(BrowserCookieClearFilter(params: ["all": true, "name": "sid"]))
+        XCTAssertNotNil(BrowserCookieClearFilter(params: ["all": true]))
+        XCTAssertNotNil(BrowserCookieClearFilter(params: ["name": "sid"]))
+    }
+
+    // C11-311 B078: URL matching follows cookie domain/path/secure scope, not
+    // substring matching that would include an unrelated host or path.
+    func testCookieClearURLFilterMatchesCookieScope() {
+        let filter = BrowserCookieClearFilter(params: [
+            "url": "https://app.example.com/account/settings"
+        ])!
+
+        XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
+        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "app.example.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "notexample.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/accounts", secure: true)))
+        XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+
+        let httpFilter = BrowserCookieClearFilter(params: [
+            "url": "http://app.example.com/account/settings"
+        ])!
+        XCTAssertFalse(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
+        XCTAssertTrue(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+    }
+
+    private func makeCookie(domain: String, path: String, secure: Bool) -> HTTPCookie {
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: "session",
+            .value: "value",
+            .domain: domain,
+            .path: path
+        ]
+        if secure {
+            properties[.secure] = "TRUE"
+        }
+        return HTTPCookie(properties: properties)!
     }
 
     // MARK: - hasIssuedLoad

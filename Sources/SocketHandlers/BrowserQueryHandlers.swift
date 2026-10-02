@@ -5,6 +5,126 @@ import Foundation
 import Bonsplit
 import WebKit
 
+/// The pure decision used by `browser.cookies.clear`. A URL scope is a
+/// request scope: cookie domains must match exactly or as a real subdomain,
+/// secure cookies only apply to HTTPS, and cookie paths use the RFC path
+/// boundary rather than a substring test.
+struct BrowserCookieClearFilter {
+    let clearAll: Bool
+    let name: String?
+    let domain: String?
+    let url: URL?
+    let path: String?
+
+    init?(params: [String: Any]) {
+        let all: Bool?
+        if let rawAll = params["all"] {
+            if let value = rawAll as? Bool {
+                all = value
+            } else if let value = rawAll as? NSNumber {
+                all = value.boolValue
+            } else if let value = rawAll as? String {
+                switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "1", "true", "yes", "on": all = true
+                case "0", "false", "no", "off": all = false
+                default: return nil
+                }
+            } else {
+                return nil
+            }
+        } else {
+            all = nil
+        }
+
+        func string(_ key: String) -> String? {
+            guard let raw = params[key] as? String else { return nil }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+
+        let name = string("name")
+        let domain = string("domain").map(Self.normalizedDomain)
+        let path = string("path")
+        let url: URL?
+        if let rawURL = string("url") {
+            guard let parsed = URL(string: rawURL),
+                  let scheme = parsed.scheme?.lowercased(),
+                  (scheme == "http" || scheme == "https"),
+                  parsed.host != nil else {
+                return nil
+            }
+            url = parsed
+        } else {
+            url = nil
+        }
+
+        let hasFilter = name != nil || domain != nil || url != nil || path != nil
+        if all == true {
+            guard !hasFilter else { return nil }
+        } else {
+            // `all: false` is still a filter operation. Treating it as an
+            // omitted selector would accidentally delete every cookie.
+            guard hasFilter else { return nil }
+        }
+
+        self.clearAll = all == true
+        self.name = name
+        self.domain = domain
+        self.url = url
+        self.path = path
+    }
+
+    func matches(_ cookie: HTTPCookie) -> Bool {
+        if clearAll { return true }
+        if let name, cookie.name != name { return false }
+        if let domain, !Self.domainMatches(cookie.domain, filterDomain: domain) { return false }
+        if let path, cookie.path != path { return false }
+
+        if let url {
+            guard let host = url.host,
+                  Self.cookieDomainMatchesHost(cookie.domain, host: host) else {
+                return false
+            }
+            if cookie.isSecure && url.scheme?.lowercased() != "https" {
+                return false
+            }
+            let requestPath = url.path.isEmpty ? "/" : url.path
+            guard Self.cookiePathApplies(cookie.path, to: requestPath) else { return false }
+        }
+
+        return true
+    }
+
+    private static func normalizedDomain(_ raw: String) -> String {
+        raw.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+    }
+
+    private static func domainMatches(_ cookieDomain: String, filterDomain: String) -> Bool {
+        let cookie = normalizedDomain(cookieDomain)
+        let filter = normalizedDomain(filterDomain)
+        guard !cookie.isEmpty, !filter.isEmpty else { return false }
+        return cookie == filter || cookie.hasSuffix(".\(filter)")
+    }
+
+    private static func cookieDomainMatchesHost(_ cookieDomain: String, host: String) -> Bool {
+        let cookie = normalizedDomain(cookieDomain)
+        let host = normalizedDomain(host)
+        guard !cookie.isEmpty, !host.isEmpty else { return false }
+        return host == cookie || host.hasSuffix(".\(cookie)")
+    }
+
+    private static func cookiePathApplies(_ cookiePath: String, to requestPath: String) -> Bool {
+        let cookiePath = cookiePath.isEmpty ? "/" : cookiePath
+        guard cookiePath != requestPath else { return true }
+        guard requestPath.hasPrefix(cookiePath) else { return false }
+        if cookiePath.hasSuffix("/") { return true }
+        guard cookiePath.count < requestPath.count else { return false }
+        let boundary = requestPath.index(requestPath.startIndex, offsetBy: cookiePath.count)
+        return requestPath[boundary] == "/"
+    }
+}
+
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 // Browser is split across two files to stay under the per-file size ceiling;
@@ -929,7 +1049,7 @@ extension TerminalController {
         } ?? false
     }
 
-    func v2BrowserCookieFromObject(_ raw: [String: Any], fallbackURL: URL?) -> HTTPCookie? {
+    nonisolated func v2BrowserCookieFromObject(_ raw: [String: Any], fallbackURL: URL?) -> HTTPCookie? {
         var props: [HTTPCookiePropertyKey: Any] = [:]
         if let name = raw["name"] as? String {
             props[.name] = name
@@ -1044,21 +1164,21 @@ extension TerminalController {
     }
 
     func v2BrowserCookiesClear(params: [String: Any]) -> V2CallResult {
+        guard let filter = BrowserCookieClearFilter(params: params) else {
+            return .err(
+                code: "invalid_params",
+                message: "Specify all: true or at least one cookie filter",
+                data: nil
+            )
+        }
+
         return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
             let store = browserPanel.webView.configuration.websiteDataStore.httpCookieStore
             guard let cookies = v2BrowserCookieStoreAll(store) else {
                 return .err(code: "timeout", message: "Timed out reading cookies", data: nil)
             }
 
-            let name = v2String(params, "name")
-            let domain = v2String(params, "domain")
-            let clearAll = params["all"] == nil && name == nil && domain == nil
-            let targets = cookies.filter { cookie in
-                if clearAll { return true }
-                if let name, cookie.name != name { return false }
-                if let domain, !cookie.domain.contains(domain) { return false }
-                return true
-            }
+            let targets = cookies.filter(filter.matches)
 
             var removed = 0
             for cookie in targets {
@@ -1074,6 +1194,42 @@ extension TerminalController {
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                 "cleared": removed
             ])
+        }
+    }
+
+    nonisolated func v2BrowserCookiesClearOffMain(params: [String: Any]) -> V2CallResult {
+        guard let filter = BrowserCookieClearFilter(params: params) else {
+            return .err(
+                code: "invalid_params",
+                message: "Specify all: true or at least one cookie filter",
+                data: nil
+            )
+        }
+
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            guard let cookies = v2BrowserCookieStoreAllOffMain(target.cookieStore) else {
+                return .err(code: "timeout", message: "Timed out reading cookies", data: nil)
+            }
+
+            let targets = cookies.filter(filter.matches)
+            var removed = 0
+            for cookie in targets {
+                guard v2BrowserCookieStoreDeleteOffMain(target.cookieStore, cookie: cookie) else {
+                    return .err(
+                        code: "timeout",
+                        message: "Timed out clearing cookie",
+                        data: ["name": cookie.name]
+                    )
+                }
+                removed += 1
+            }
+
+            var response = target.responseEnvelope
+            response["cleared"] = removed
+            return .ok(response)
         }
     }
 
@@ -1599,6 +1755,139 @@ extension TerminalController {
                 "path": path,
                 "loaded": true
             ])
+        }
+    }
+
+    nonisolated func v2BrowserStateLoadOffMain(params: [String: Any]) -> V2CallResult {
+        guard let path = v2String(params, "path") else {
+            return .err(code: "invalid_params", message: "Missing path", data: nil)
+        }
+
+        let url = URL(fileURLWithPath: path)
+        let raw: [String: Any]
+        do {
+            let data = try Data(contentsOf: url)
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return .err(code: "invalid_params", message: "State file must contain a JSON object", data: ["path": path])
+            }
+            raw = object
+        } catch {
+            return .err(code: "not_found", message: "Failed to read state file", data: ["path": path, "error": error.localizedDescription])
+        }
+
+        let restoredURL: URL?
+        if let rawURL = raw["url"] as? String, !rawURL.isEmpty {
+            guard let parsedURL = URL(string: rawURL),
+                  browserNavigationOrigin(parsedURL) != nil else {
+                return .err(code: "invalid_params", message: "State file URL is invalid", data: ["url": rawURL])
+            }
+            restoredURL = parsedURL
+        } else {
+            restoredURL = nil
+        }
+
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            let deadline = ProcessInfo.processInfo.systemUptime + 30.0
+            let remaining: () -> TimeInterval = {
+                max(0.05, deadline - ProcessInfo.processInfo.systemUptime)
+            }
+
+            let frameSelector = (raw["frame_selector"] as? String).flatMap {
+                $0.isEmpty ? nil : $0
+            }
+            v2SetBrowserFrameSelectorOffMain(surfaceId: target.surfaceId, selector: frameSelector)
+
+            var cookies: [HTTPCookie] = []
+            if let cookieRows = raw["cookies"] as? [[String: Any]] {
+                cookies.reserveCapacity(cookieRows.count)
+                for row in cookieRows {
+                    guard let cookie = v2BrowserCookieFromObject(
+                        row,
+                        fallbackURL: restoredURL ?? target.currentURL
+                    ) else {
+                        return .err(code: "invalid_params", message: "Invalid cookie payload", data: ["cookie": row])
+                    }
+                    cookies.append(cookie)
+                }
+            }
+
+            for cookie in cookies {
+                guard v2BrowserCookieStoreSetOffMain(
+                    target.cookieStore,
+                    cookie: cookie,
+                    timeout: min(3.0, remaining())
+                ) else {
+                    return .err(
+                        code: "timeout",
+                        message: "Timed out setting cookie",
+                        data: ["name": cookie.name]
+                    )
+                }
+            }
+
+            if let restoredURL {
+                switch v2BrowserNavigateForStateLoadOffMain(
+                    target.browserTab,
+                    url: restoredURL,
+                    timeout: remaining()
+                ) {
+                case .failure(let message):
+                    if message.contains("Timed out") {
+                        return .err(code: "timeout", message: message, data: ["url": restoredURL.absoluteString])
+                    }
+                    return .err(code: "navigation_failed", message: message, data: ["url": restoredURL.absoluteString])
+                case .success:
+                    break
+                }
+            } else if raw["storage"] is [String: Any],
+                      !Self.v2BrowserWebViewHasIssuedLoad(target.webView) {
+                return .err(
+                    code: "no_document",
+                    message: Self.v2BrowserNoDocumentMessage,
+                    data: ["surface_id": target.surfaceId.uuidString]
+                )
+            }
+
+            if let storage = raw["storage"] as? [String: Any] {
+                let storageLiteral = v2JSONLiteral(storage)
+                let script = """
+                (() => {
+                  const payload = \(storageLiteral);
+                  const apply = (st, data) => {
+                    if (!st || !data || typeof data !== 'object') return;
+                    st.clear();
+                    for (const [k, v] of Object.entries(data)) {
+                      st.setItem(String(k), v == null ? '' : String(v));
+                    }
+                  };
+                  apply(window.localStorage, payload.local);
+                  apply(window.sessionStorage, payload.session);
+                  return true;
+                })()
+                """
+
+                switch v2RunBrowserJavaScriptOffMain(
+                    target.webView,
+                    frameSelector: frameSelector,
+                    script: script,
+                    timeout: min(10.0, remaining())
+                ) {
+                case .failure(let message):
+                    return .err(code: "js_error", message: message, data: nil)
+                case .success(let value):
+                    guard (value as? Bool) == true else {
+                        return .err(code: "js_error", message: "Storage script did not confirm success", data: nil)
+                    }
+                }
+            }
+
+            var response = target.responseEnvelope
+            response["path"] = path
+            response["loaded"] = true
+            return .ok(response)
         }
     }
 

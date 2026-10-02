@@ -2348,6 +2348,11 @@ class TerminalController {
         "browser.profiles.clear",
         "browser.profiles.delete",
         "browser.cookies.clear",
+        // B006: reading/setting cookies and saving storage also await WebKit.
+        // Keep those waits and state-file writes off the main actor.
+        "browser.cookies.get",
+        "browser.cookies.set",
+        "browser.state.save",
         "browser.state.load",
     ]
 

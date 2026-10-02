@@ -105,6 +105,9 @@ secure-cookie rules, so a host substring does not clear an unrelated origin.
 `state load` waits for the saved URL's navigation to finish on the expected
 origin before applying localStorage/sessionStorage. A failed or wrong-origin
 navigation returns an error without writing storage.
+Cookie get/set/clear and state save/load wait on socket workers, so pending
+WebKit callbacks leave unrelated workspace and tab commands available.
+`state save` reports a cookie-read timeout instead of saving an empty cookie jar.
 
 ### Diagnostics
 

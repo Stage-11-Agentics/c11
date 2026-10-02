@@ -1009,7 +1009,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserCookieDict(_ cookie: HTTPCookie) -> [String: Any] {
+    nonisolated func v2BrowserCookieDict(_ cookie: HTTPCookie) -> [String: Any] {
         var out: [String: Any] = [
             "name": cookie.name,
             "value": cookie.value,
@@ -1089,10 +1089,12 @@ extension TerminalController {
         return HTTPCookie(properties: props)
     }
 
-    func v2BrowserCookiesGet(params: [String: Any]) -> V2CallResult {
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            let store = browserPanel.webView.configuration.websiteDataStore.httpCookieStore
-            guard var cookies = v2BrowserCookieStoreAll(store) else {
+    nonisolated func v2BrowserCookiesGet(params: [String: Any]) -> V2CallResult {
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            guard var cookies = v2BrowserCookieStoreAllOffMain(target.cookieStore) else {
                 return .err(code: "timeout", message: "Timed out reading cookies", data: nil)
             }
 
@@ -1106,20 +1108,18 @@ extension TerminalController {
                 cookies = cookies.filter { $0.path == path }
             }
 
-            return .ok([
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "cookies": cookies.map(v2BrowserCookieDict)
-            ])
+            var response = target.responseEnvelope
+            response["cookies"] = cookies.map(v2BrowserCookieDict)
+            return .ok(response)
         }
     }
 
-    func v2BrowserCookiesSet(params: [String: Any]) -> V2CallResult {
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            let store = browserPanel.webView.configuration.websiteDataStore.httpCookieStore
-            let fallbackURL = browserPanel.currentURL
+    nonisolated func v2BrowserCookiesSet(params: [String: Any]) -> V2CallResult {
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        case .result(let result):
+            return result
+        case .ready(let target):
+            let fallbackURL = target.currentURL
 
             var cookieObjects: [[String: Any]] = []
             if let rows = params["cookies"] as? [[String: Any]] {
@@ -1147,20 +1147,16 @@ extension TerminalController {
                 guard let cookie = v2BrowserCookieFromObject(raw, fallbackURL: fallbackURL) else {
                     return .err(code: "invalid_params", message: "Invalid cookie payload", data: ["cookie": raw])
                 }
-                if v2BrowserCookieStoreSet(store, cookie: cookie) {
+                if v2BrowserCookieStoreSetOffMain(target.cookieStore, cookie: cookie) {
                     setCount += 1
                 } else {
                     return .err(code: "timeout", message: "Timed out setting cookie", data: ["name": cookie.name])
                 }
             }
 
-            return .ok([
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "set": setCount
-            ])
+            var response = target.responseEnvelope
+            response["set"] = setCount
+            return .ok(response)
         }
     }
 
@@ -1629,12 +1625,15 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserStateSave(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserStateSave(params: [String: Any]) -> V2CallResult {
         guard let path = v2String(params, "path") else {
             return .err(code: "invalid_params", message: "Missing path", data: nil)
         }
 
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: true) {
+        case .result(let result):
+            return result
+        case .ready(let target):
             let storageScript = """
             (() => {
               const readStorage = (st) => {
@@ -1654,21 +1653,23 @@ extension TerminalController {
             """
 
             let storageValue: Any
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: storageScript, timeout: 10.0) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: storageScript, timeout: 10.0) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
                 storageValue = v2NormalizeJSValue(value)
             }
 
-            let store = browserPanel.webView.configuration.websiteDataStore.httpCookieStore
-            let cookies = (v2BrowserCookieStoreAll(store) ?? []).map(v2BrowserCookieDict)
+            guard let cookieItems = v2BrowserCookieStoreAllOffMain(target.cookieStore) else {
+                return .err(code: "timeout", message: "Timed out reading cookies", data: nil)
+            }
+            let cookies = cookieItems.map(v2BrowserCookieDict)
 
             let state: [String: Any] = [
-                "url": browserPanel.currentURL?.absoluteString ?? "",
+                "url": target.currentURL?.absoluteString ?? "",
                 "cookies": cookies,
                 "storage": storageValue,
-                "frame_selector": v2OrNull(v2BrowserFrameSelectorBySurface[surfaceId])
+                "frame_selector": v2OrNull(target.frameSelector)
             ]
 
             do {
@@ -1678,14 +1679,10 @@ extension TerminalController {
                 return .err(code: "internal_error", message: "Failed to write state file", data: ["path": path, "error": error.localizedDescription])
             }
 
-            return .ok([
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "path": path,
-                "cookies": cookies.count
-            ])
+            var response = target.responseEnvelope
+            response["path"] = path
+            response["cookies"] = cookies.count
+            return .ok(response)
         }
     }
 

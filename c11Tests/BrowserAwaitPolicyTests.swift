@@ -77,6 +77,35 @@ final class BrowserAwaitPolicyTests: XCTestCase {
         )
     }
 
+    // B006: these remaining cookie/state calls wait for WebKit callbacks too.
+    // Exercise the same policy decision used before socket dispatch.
+    func testCookieAndStateSaveWaitsUseSocketWorkerPolicy() {
+        for method in ["browser.cookies.get", "browser.cookies.set", "browser.state.save"] {
+            XCTAssertEqual(TerminalController.executionPolicy(forV2Method: method), .socketWorker, method)
+        }
+    }
+
+    @MainActor
+    func testWorkerAwaitAllowsMainQueueCallbackDelivery() {
+        let controller = TerminalController.shared
+        let done = expectation(description: "worker received callback")
+        let heartbeat = expectation(description: "main queue remains available")
+        DispatchQueue.global().async {
+            let result: String? = controller.v2AwaitCallback(timeout: 2.0) { finish in
+                DispatchQueue.main.async {
+                    // Model a pending WebKit callback while unrelated main work runs.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        finish("cookie result")
+                    }
+                    DispatchQueue.main.async { heartbeat.fulfill() }
+                }
+            }
+            XCTAssertEqual(result, "cookie result")
+            done.fulfill()
+        }
+        wait(for: [heartbeat, done], timeout: 5.0)
+    }
+
     // C11-311 B078: a clear request without a scope must not silently become
     // a profile-wide delete, and explicit `all` cannot be mixed with filters.
     func testCookieClearFilterRequiresAnUnambiguousScope() {

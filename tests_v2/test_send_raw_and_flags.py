@@ -7,6 +7,8 @@ inside one disposable terminal.
 """
 
 import argparse
+from contextlib import contextmanager
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,6 +49,65 @@ def cli_run(cli, socket_path, *arguments, stdin=None, ok=True):
                           capture_output=True, text=True, timeout=25, env=environment)
     assert (proc.returncode == 0) == ok, (arguments, proc.returncode, proc.stderr)
     return proc
+
+
+@contextmanager
+def fragmented_requests(socket_path, directory):
+    """Relay built-CLI requests, deliberately pausing inside UTF-8 sequences."""
+    path = str(Path(directory) / "fragment.sock")
+    errors, splits = [], []
+    stopped = threading.Event()
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(path)
+    listener.listen(4)
+    listener.settimeout(0.1)
+
+    def relay():
+        try:
+            while not stopped.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                with connection, socket.socket(socket.AF_UNIX) as upstream:
+                    upstream.connect(socket_path)
+                    with connection.makefile("rb") as incoming, upstream.makefile("rb") as outgoing:
+                        for request in incoming:
+                            if len(request) > 8192:
+                                cuts = [i for i in range(4000, 4095) if request[i] & 0xC0 == 0x80]
+                                assert cuts, "large fixture must contain UTF-8 on the wire near a read boundary"
+                                cut = cuts[0]
+                                try:
+                                    request[:cut].decode("utf-8")
+                                except UnicodeDecodeError:
+                                    pass
+                                else:
+                                    raise AssertionError("fragment did not end inside a multibyte character")
+                                upstream.sendall(request[:cut])
+                                # The listener's blocking read consumes this fragment before
+                                # the remainder arrives, instead of coalescing both writes.
+                                time.sleep(0.15)
+                                for offset in range(cut, len(request), 4095):
+                                    upstream.sendall(request[offset:offset + 4095])
+                                    time.sleep(0.005)
+                                splits.append({"wire_bytes": len(request), "split": cut})
+                            else:
+                                upstream.sendall(request)
+                            response = outgoing.readline()
+                            assert response, "upstream disconnected without a response"
+                            connection.sendall(response)
+        except Exception as error:
+            errors.append(error)
+
+    peer = threading.Thread(target=relay, daemon=True)
+    peer.start()
+    try:
+        yield path, splits
+    finally:
+        stopped.set()
+        peer.join(timeout=5)
+        listener.close()
+        assert not peer.is_alive() and not errors, errors
 
 
 def offline(cli):
@@ -175,11 +236,11 @@ def live(cli, socket_path, event_log):
                         assert index == len(lines) - 1, line
                 return result
 
-            def collect(arguments, stdin, body, submitted, event_text=None):
+            def collect(arguments, stdin, body, submitted, event_text=None, route=None):
                 path = root / "bytes"
                 before = len(path.read_bytes()) if path.exists() else 0
                 last_seq = max(event["seq"] for event in events())
-                proc = cli_run(cli, socket_path, "--json", arguments[0], "--workspace", workspace,
+                proc = cli_run(cli, route or socket_path, "--json", arguments[0], "--workspace", workspace,
                                "--tab", tab, *arguments[1:], stdin=stdin)
                 payload = json.loads(proc.stdout)
                 assert payload["delivered"] is True and payload["queued"] is False, payload
@@ -189,7 +250,7 @@ def live(cli, socket_path, event_log):
                            "collector did not receive expected input")
                 time.sleep(0.3)
                 actual = path.read_bytes()[before:]
-                assert actual == expected, (actual, expected)
+                assert actual == expected, (len(actual), len(expected), hashlib.sha256(actual).hexdigest(), hashlib.sha256(expected).hexdigest())
                 sent = wait_until(lambda: [event for event in events()
                                            if event["seq"] > last_seq
                                            and event["type"] == "tab.input_sent"
@@ -206,6 +267,13 @@ def live(cli, socket_path, event_log):
             collect(["paste", "--no-submit"], "\n", "\n", False)
             collect(["send", "--raw", "-"], "\n", "\n", True)
             collect(["send", "--no-submit", r"literal\n"], None, "literal", True, event_text="literal\r")
+            ascii_body = "C11281_LARGE_ASCII_" + "0123456789abcdef" * 4096
+            collect(["send", "--raw", "--no-submit", "-"], ascii_body, ascii_body, False)
+            utf8_body = "界🙂é" * 8192 + "\nUTF8_END\n"
+            with fragmented_requests(socket_path, directory) as (route, splits):
+                collect(["send", "--raw", "--no-submit", "-"], utf8_body, utf8_body, False, route=route)
+                assert len(splits) == 1, splits
+                print("PASS C11-281 large ASCII/UTF-8 stdin byte-exact PTY; forced split", splits[0])
             before = (root / "bytes").read_bytes()
             for flag in ("--bogus", "--text"):
                 proc = cli_run(cli, socket_path, "send", "--workspace", workspace,
@@ -268,6 +336,77 @@ def queued(cli, socket_path, event_log):
             client.close_workspace(workspace)
 
 
+def queued_bytes(cli, socket_path, event_log):
+    """Pre-attach queue, then the real flush into an attached raw PTY oracle.
+
+    The bounded Debug flush hold permits the collector to start after runtime
+    attach without consuming the pre-attach queue. Releasing it executes the
+    ordinary flush, including any Return outside the paste envelope.
+    """
+    import shlex
+    sys.path.insert(0, str(Path(__file__).parent))
+    from cmux import cmux
+    cases = [
+        (["send", "--raw", "--no-submit", "\nleading\ninterior\ntrailing\n"], None, "\nleading\ninterior\ntrailing\n", False),
+        (["send", "--raw", "--no-submit", "\n"], None, "\n", False),
+        (["send", "--raw", "--no-submit", "-"], "\nstdin界🙂\n", "\nstdin界🙂\n", False),
+        (["paste", "--no-submit"], "\n", "\n", False),
+        (["send", "--raw", "-"], "\nsubmitted\n", "\nsubmitted\n", True),
+    ]
+    with tempfile.TemporaryDirectory(prefix="c11-281-queued-bytes-") as directory, cmux(socket_path) as client:
+        workspace = None
+        try:
+            for index, (arguments, stdin, body, submitted) in enumerate(cases):
+                # An inactive workspace avoids the visible-tab eager-start path.
+                workspace = client._call("workspace.create")["workspace_id"]
+                anchor_tab = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+                root = Path(directory) / str(index)
+                root.mkdir()
+                tab = client._call("debug.terminal.runtime_start_hold", {
+                    "workspace_id": workspace, "tab_id": anchor_tab,
+                    "create": True, "hold": True, "hold_flush": True
+                })["tab_id"]
+                target = {"workspace_id": workspace, "tab_id": tab}
+                last_seq = max(json.loads(line)["seq"] for line in Path(event_log).read_text().splitlines())
+                proc = cli_run(cli, socket_path, "--json", arguments[0], "--workspace", workspace,
+                               "--tab", tab, *arguments[1:], stdin=stdin)
+                payload = json.loads(proc.stdout)
+                assert payload["queued"] and not payload["delivered"], payload
+                assert payload["submitted"] is submitted, payload
+                # Start the runtime while leaving its pending flush held.
+                client._call("debug.terminal.runtime_start_hold", {**target, "hold": False})
+                client._call("workspace.select", {"workspace_id": workspace})
+                client._call("tab.focus", target)
+                command = shlex.join([sys.executable, str(Path(__file__).resolve()), "--collector", str(root)])
+                response = client._call("tab.send_text", {**target, "text": command, "submit": True})
+                assert response["delivered"] and not response["queued"], response
+                wait_until(lambda: (root / "ready").exists(), "queued-byte collector did not start", timeout=5)
+                path = root / "bytes"
+                assert not path.read_bytes(), "fixture flushed before the PTY oracle was ready"
+                client._call("debug.terminal.runtime_start_hold", {**target, "hold": False, "hold_flush": False})
+                expected = b"\x1b[200~" + body.encode() + b"\x1b[201~" + (b"\r" if submitted else b"")
+                wait_until(lambda: path.exists() and len(path.read_bytes()) >= len(expected), "queued bytes did not flush")
+                time.sleep(0.3)
+                actual = path.read_bytes()
+                assert actual == expected, (index, actual, expected)
+                sent = [json.loads(line) for line in Path(event_log).read_text().splitlines()]
+                sent = [event for event in sent if event["seq"] > last_seq and event["type"] == "tab.input_sent"
+                        and event.get("surface", "").lower() == tab.lower() and event["payload"]["text"] != command]
+                assert len(sent) == 1, sent
+                record = sent[0]["payload"]
+                assert record["text"] == body and record["queued"] and record["submitted"] is submitted, record
+                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+                (root / "stop").touch()
+                print("PASS C11-281 queued byte/Return oracle", index, len(body.encode()), "submitted", submitted)
+                client.close_workspace(workspace)
+                workspace = None
+        finally:
+            for stop_dir in Path(directory).iterdir():
+                (stop_dir / "stop").touch()
+            if workspace is not None:
+                client.close_workspace(workspace)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--offline", action="store_true")
@@ -282,6 +421,7 @@ def main():
     else:
         live(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
         queued(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
+        queued_bytes(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
 
 
 if __name__ == "__main__":

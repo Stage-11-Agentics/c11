@@ -50,12 +50,15 @@ extension TerminalController {
                 } else {
                     fixture = terminal
                 }
-                let hold = v2Bool(params, "hold") ?? true
+                let hold = v2Bool(params, "hold") ?? (v2Bool(params, "hold_flush") == nil)
                 guard fixture.surface.debugHoldRuntimeStart(hold) else {
                     return .err(code: "invalid_state", message: String(
                         localized: "socket.debug.runtime_hold_attached",
                         defaultValue: "The terminal runtime is already attached."
                     ), data: nil)
+                }
+                if let holdFlush = v2Bool(params, "hold_flush") {
+                    fixture.surface.debugHoldPendingFlush(holdFlush)
                 }
                 return .ok(["held": hold, "maximum_seconds": 10, "tab_id": fixture.id.uuidString])
             })

@@ -2028,19 +2028,21 @@ class TerminalController {
         respond: (String) -> String
     ) {
         var buffer = [UInt8](repeating: 0, count: 4096)
-        var pending = ""
+        var pending = Data()
 
         while shouldContinue() {
             let keepReading: Bool = autoreleasepool {
                 let bytesRead = read(socket, &buffer, buffer.count - 1)
                 guard bytesRead > 0 else { return false }
 
-                let chunk = String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? ""
-                pending.append(chunk)
+                // A read may end inside a UTF-8 character. Decode only after
+                // the complete newline-framed request has arrived.
+                pending.append(contentsOf: buffer[0..<bytesRead])
 
-                while let newlineIndex = pending.firstIndex(of: "\n") {
-                    let line = String(pending[..<newlineIndex])
-                    pending = String(pending[pending.index(after: newlineIndex)...])
+                while let newlineIndex = pending.firstIndex(of: 0x0A) {
+                    let line = String(data: pending[..<newlineIndex], encoding: .utf8)
+                    pending.removeSubrange(...newlineIndex)
+                    guard let line else { continue }
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
 

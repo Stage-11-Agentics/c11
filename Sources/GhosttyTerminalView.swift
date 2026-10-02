@@ -2774,6 +2774,24 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var backgroundSurfaceStartQueued = false
     #if DEBUG
     private var debugRuntimeStartHoldUntil: TimeInterval?
+    private var debugPendingFlushHoldUntil: TimeInterval?
+
+    /// Let a raw-mode PTY oracle start before consuming the actual pre-attach
+    /// queue. Explicit release uses the production flush, with a bounded fallback.
+    @MainActor
+    func debugHoldPendingFlush(_ hold: Bool) {
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugPendingFlushHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugPendingFlushHoldUntil == expiry else { return }
+                self.debugPendingFlushHoldUntil = nil
+                self.flushPendingTextIfNeeded()
+            }
+        } else {
+            flushPendingTextIfNeeded()
+        }
+    }
 
     /// A bounded, per-tab fixture for the socket timeout/queue path. It never
     /// tears down a live runtime and automatically releases after ten seconds.
@@ -4454,6 +4472,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func flushPendingTextIfNeeded() {
+        #if DEBUG
+        if let expiry = debugPendingFlushHoldUntil,
+           ProcessInfo.processInfo.systemUptime < expiry { return }
+        #endif
         guard let surface = surface, !pendingTextQueue.isEmpty else { return }
         let queued = pendingTextQueue
         let queuedBytes = pendingTextBytes

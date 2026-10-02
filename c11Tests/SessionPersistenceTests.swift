@@ -1672,6 +1672,19 @@ final class SocketClientCommandLoopTests: XCTestCase {
 
         closeClientAndWaitForLoopExit()
     }
+
+    func testMultibyteUTF8AcrossReadBoundariesAndMultipleFrames() {
+        startLoop { "echo:\($0)" }
+
+        // The 4095-byte read ceiling bisects the first three-byte character;
+        // subsequent boundaries fall inside the repeated multibyte payload.
+        let body = String(repeating: "a", count: 4094) + String(repeating: "界🙂é", count: 4096)
+        send(body + "\nnext\n")
+        XCTAssertEqual(readLine(), "echo:" + body)
+        XCTAssertEqual(readLine(), "echo:next")
+
+        closeClientAndWaitForLoopExit()
+    }
 }
 
 final class SidebarDragFailsafePolicyTests: XCTestCase {

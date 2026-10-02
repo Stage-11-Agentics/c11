@@ -16,6 +16,8 @@ This card is deliberately short. It covers **orientation** — the one thing eve
 
 Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `tab:3`. **A bare number from the operator is a tab ref.** With the "Show Tab Numbers in Tab Titles" setting on, every tab displays `N: title` where N is its `tab:N` ordinal — so "send that to 292" means target `tab:292` (with its `--workspace`). Always write the `tab:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_TAB_NUM`.
 
+**Short refs last only for the current c11 process.** `tab:N`, `area:N`, `workspace:N`, and `window:N` ordinals start over at launch; a ref saved before a restart can name a different object afterward. Keep using short refs for live targets. To find the same tab after a restart, store its UUID from `c11 --id-format both tree --json` or `$C11_TAB_ID`, and use that UUID. `$C11_WORKSPACE_ID` likewise identifies the workspace; do not store its ordinal across a restart.
+
 **Where new work goes:** a new **area** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **tab** when an area just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise. **Wanting agents isolated from each other is not a reason for a new workspace** — same-workspace agents are already separate processes with separate context; blindness between agents comes from their prompts, never from topology (see [references/orchestration.md](references/orchestration.md#isolation-is-a-prompt-rule-not-a-topology-rule)).
 
 ## Boot fast, orient lazily

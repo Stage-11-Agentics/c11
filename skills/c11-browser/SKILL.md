@@ -42,7 +42,7 @@ c11 browser open https://example.com --workspace workspace:2 --window window:1 -
 Notes:
 - CLI output defaults to short refs (`tab:N`, `area:N`, `workspace:N`, `window:N`).
 - UUIDs are still accepted on input; only request UUID output when needed (`--id-format uuids|both`).
-- Keep using one `tab:N` per task unless you intentionally switch.
+- Keep using one `tab:N` per task within the current c11 process unless you intentionally switch. Short refs (`tab:N`, `area:N`, `workspace:N`, `window:N`) start over after a restart; store the tab UUID from `c11 --id-format both tree --json` to find that same browser tab afterward.
 - **Default to a tab in the existing browser area.** If the workspace already has a browser area, open new pages as tabs inside it rather than spawning a new browser area — browsers are tabbed by default, and a fresh area each time is the awkward interaction to avoid. Find the browser area in `c11 tree --json` and add the tab with `c11 new-tab --type browser --url <url> --area <browser-area-ref>`. Open a new browser area (`c11 new-area --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser tab when one is available.
 
 ## Plain `http://` Navigation

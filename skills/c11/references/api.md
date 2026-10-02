@@ -31,6 +31,8 @@ window:1   workspace:1   area:2   tab:3   tab:1
 
 **Operator-spoken tab numbers are tab refs.** With the "Show Tab Numbers in Tab Titles" setting on (Settings → Tabs & Areas), every tab renders as `N: title` where N is its `tab:N` ordinal. When the operator says "send this to 292", target `tab:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth tab in list order), which is a different tab. Your own number is `$C11_TAB_NUM`.
 
+`tab:N`, `area:N`, `workspace:N`, and `window:N` are process-local ordinals that start over when c11 restarts; keep them for live targets. Tabs and workspaces retain their UUIDs when restored from a saved session, so store those UUIDs from `c11 --id-format both tree --json` (or `$C11_TAB_ID` / `$C11_WORKSPACE_ID`) for targeting after a restart. Restored areas and windows receive new UUIDs; rediscover them with `c11 --id-format both tree --json` after a restart.
+
 **`--workspace` AND `--tab` must be used together** when targeting a remote tab. Either flag alone fails or targets the wrong thing.
 
 ```bash
@@ -53,7 +55,7 @@ Auto-exported into every c11 tab child process.
 |-----|---------|
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_TAB_ID` | Auto-set; default for `--tab` |
-| `C11_TAB_NUM` | Integer N of this tab's `tab:N` ref — the number shown in the tab bar when tab-number display is on. Address yourself as `tab:$C11_TAB_NUM` |
+| `C11_TAB_NUM` | Integer N of this tab's `tab:N` ref — the number shown in the tab bar when tab-number display is on. Address yourself as `tab:$C11_TAB_NUM` in this process; store `C11_TAB_ID` across a restart |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
 | `C11_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 |

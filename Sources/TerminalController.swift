@@ -829,7 +829,12 @@ class TerminalController {
     nonisolated static func reportedAgentLifecycleSource(
         _ options: [String: String]
     ) -> AgentLifecycleSource {
-        options["source"]?.lowercased() == "notification" ? .inferred : .reported
+        switch options["source"]?.lowercased() {
+        case "notification": return .inferred
+        // A print-mode agent (`claude -p`): an agent, never at a prompt.
+        case "headless": return .headless
+        default: return .reported
+        }
     }
 
     /// Update which window's TabManager receives socket commands.

@@ -484,5 +484,98 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "notification"]), .inferred)
         XCTAssertEqual(TerminalController.reportedAgentLifecycleSource([:]), .reported)
         XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["tab": "x", "panel": "y"]), .reported)
+        // `claude -p` (the wrapper's C11_CLAUDE_HEADLESS marker): an agent,
+        // never at a prompt.
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "headless"]), .headless)
+    }
+
+    // MARK: - review r2: re-check after the claim hop
+
+    private func verdict(
+        _ trigger: MailboxStdinBuffer.FlushTrigger,
+        admitted: MailboxStdinBuffer.AgentTurn?,
+        shell: Workspace.TabShellActivityState,
+        turn: MailboxStdinBuffer.AgentTurn?,
+        submitAt: Date? = nil,
+        keyAt: Date? = nil,
+        pushAt: Date? = nil,
+        attached: Bool = true
+    ) -> MailboxStdinBuffer.PushVerdict {
+        MailboxStdinBuffer.pushVerdict(
+            admittedAs: trigger, admittedTurn: admitted, shell: shell, turn: turn,
+            lastSubmitAt: submitAt, lastOperatorKeyAt: keyAt, lastPushAt: pushAt,
+            surfaceAttached: attached
+        )
+    }
+
+    /// The r2 finding: the agent exits while its claims are off-main and the
+    /// shell reports `promptIdle`. The push must drop, never paste into zsh.
+    func testAgentPushDropsWhenAgentExitedDuringHop() {
+        let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .promptIdle, turn: atPrompt), .drop)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .promptIdle, turn: nil), .drop)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: nil), .drop)
+    }
+
+    /// Through the buffer: `forgetAgent` (the shell's promptIdle edge) during
+    /// the hop turns an admitted agent push into a drop.
+    func testForgetAgentDuringHopDropsAdmittedPush() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        let admitted = buffer.agentTurn(surfaceId: tab)
+        buffer.beginPush(surfaceId: tab)
+        buffer.forgetAgent(surfaceId: tab)
+        XCTAssertEqual(
+            buffer.pushVerdict(surfaceId: tab, admittedAs: .agentPrompt, admittedTurn: admitted,
+                               shell: .promptIdle, lastOperatorKeyAt: nil, surfaceAttached: true),
+            .drop
+        )
+    }
+
+    func testAgentPushPastesWhenNothingChanged() {
+        let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt), .paste)
+    }
+
+    func testAgentPushRequeuesWhenGateClosedDuringHop() {
+        let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
+        // A new turn started.
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning,
+                               turn: .init(atPrompt: false, since: t(1))), .requeue)
+        // A fresh prompt edge replaced the admitted one.
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning,
+                               turn: .init(atPrompt: true, since: t(2))), .requeue)
+        // The operator started a draft.
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt,
+                               submitAt: t(0), keyAt: t(1)), .requeue)
+        // The surface detached.
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt,
+                               attached: false), .requeue)
+    }
+
+    /// A shell push admitted at a prompt waits if a command started meanwhile.
+    func testShellPushRequiresShellStillAtPrompt() {
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil), .paste)
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .commandRunning, turn: nil), .requeue)
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil, attached: false), .requeue)
+    }
+
+    /// A headless agent's reports mark the tab as an agent that is never at
+    /// its prompt: mail buffers, and drops when the run exits to the shell.
+    func testHeadlessAgentNeverOpensGateAndDropsOnExit() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(0))  // SessionStart, headless
+        XCTAssertTrue(buffer.isAgent(surfaceId: tab, isAgentKind: false))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: false, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        buffer.enqueue(surfaceId: tab, entry: entry(id: "m", forAgent: true))
+        buffer.forgetAgent(surfaceId: tab)  // the run exits; shell back at its prompt
+        let flush = buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .shellPrompt)
+        XCTAssertTrue(flush.fresh.isEmpty)
+        XCTAssertEqual(flush.expired.map(\.id), ["m"])
     }
 }

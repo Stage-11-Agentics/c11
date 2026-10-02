@@ -4014,9 +4014,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Mailbox push: the same paste + delayed Return as `sendSubmitFormText`,
     /// but it never queues for a later attach and it reports whether the
     /// Return was dispatched. `false` means nothing was submitted: the
-    /// surface was not attached at paste time, or it was torn down before the
-    /// Return. The caller undoes its claim on `false`.
-    func sendSubmitFormText(_ text: String, completion: @escaping (Bool) -> Void) {
+    /// surface was not attached at paste time, it was torn down before the
+    /// Return, or `shouldSubmit` (checked just before the Return) said no.
+    /// The caller undoes its claim on `false`.
+    func sendSubmitFormText(
+        _ text: String,
+        shouldSubmit: @escaping () -> Bool = { true },
+        completion: @escaping (Bool) -> Void
+    ) {
         let trimmed = text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty, surface != nil else {
             completion(false)
@@ -4025,7 +4030,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         sendText(trimmed)
         let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.surface != nil else {
+            guard let self, self.surface != nil, shouldSubmit() else {
                 completion(false)
                 return
             }
@@ -4069,8 +4074,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
-    /// Build a synthetic `NSEvent` for a named key and deliver it to the
-    /// terminal surface the same way AppKit would route a real keystroke.
 #if DEBUG
     /// Test seam (`debug.terminal.operator_keys`): feed `text` through the real
     /// `keyDown` handling as if the operator typed it: the touched/key clocks,
@@ -4110,6 +4113,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 #endif
 
+    /// Build a synthetic `NSEvent` for a named key and deliver it to the
+    /// terminal surface the same way AppKit would route a real keystroke.
     func sendSyntheticKey(
         characters: String,
         keyCode: UInt16,

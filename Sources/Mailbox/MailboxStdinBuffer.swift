@@ -151,6 +151,71 @@ struct MailboxStdinBuffer {
         )
     }
 
+    /// What a push does once its claims come back to main. The recipient
+    /// must still be the kind it was admitted as: mail admitted at an agent's
+    /// prompt is never typed into the shell that agent exited to.
+    enum PushVerdict: Equatable {
+        /// Type the claimed blocks now.
+        case paste
+        /// Same recipient, but the gate closed meanwhile (a draft, a new
+        /// turn, a command started, the surface detached): undo the claims
+        /// and wait for the next edge.
+        case requeue
+        /// The agent the mail was admitted for has exited: undo the claims
+        /// and drop the entries; the inbox keeps them for a drain.
+        case drop
+    }
+
+    /// Pure re-check after the claim hop. `admittedTurn` is the agent's turn
+    /// record when the push was admitted; any change to it means the prompt
+    /// the push was admitted for is gone.
+    static func pushVerdict(
+        admittedAs trigger: FlushTrigger,
+        admittedTurn: AgentTurn?,
+        shell: Workspace.TabShellActivityState,
+        turn: AgentTurn?,
+        lastSubmitAt: Date?,
+        lastOperatorKeyAt: Date?,
+        lastPushAt: Date?,
+        surfaceAttached: Bool
+    ) -> PushVerdict {
+        switch trigger {
+        case .agentPrompt:
+            guard shell != .promptIdle, let turn else { return .drop }
+            guard turn == admittedTurn,
+                  decideAgent(
+                      turn: turn,
+                      lastSubmitAt: lastSubmitAt,
+                      lastOperatorKeyAt: lastOperatorKeyAt,
+                      lastPushAt: lastPushAt
+                  ) == .injectNow else { return .requeue }
+        case .shellPrompt:
+            guard shell == .promptIdle else { return .requeue }
+        }
+        return surfaceAttached ? .paste : .requeue
+    }
+
+    /// `pushVerdict` against this buffer's own clocks for `surfaceId`.
+    func pushVerdict(
+        surfaceId: UUID,
+        admittedAs trigger: FlushTrigger,
+        admittedTurn: AgentTurn?,
+        shell: Workspace.TabShellActivityState,
+        lastOperatorKeyAt: Date?,
+        surfaceAttached: Bool
+    ) -> PushVerdict {
+        Self.pushVerdict(
+            admittedAs: trigger,
+            admittedTurn: admittedTurn,
+            shell: shell,
+            turn: turns[surfaceId],
+            lastSubmitAt: lastSubmitAt[surfaceId],
+            lastOperatorKeyAt: lastOperatorKeyAt,
+            lastPushAt: lastPushAt[surfaceId],
+            surfaceAttached: surfaceAttached
+        )
+    }
+
     func isAgent(surfaceId: UUID, isAgentKind: Bool) -> Bool {
         isAgentKind || turns[surfaceId] != nil
     }

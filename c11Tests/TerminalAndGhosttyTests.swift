@@ -3082,3 +3082,33 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         )
     }
 }
+
+/// The mailbox push's submit reports whether its Return went out, so the push
+/// can undo its inbox claim instead of marking undelivered mail delivered.
+@MainActor
+final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
+    func testSubmitReportsFalseForUnattachedSurfaceWithoutQueueing() {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        XCTAssertNil(surface.surface)
+        var reported: [Bool] = []
+        surface.sendSubmitFormText("<c11-msg>hi</c11-msg>") { reported.append($0) }
+        XCTAssertEqual(reported, [false], "an unattached surface must refuse at once, not queue for attach")
+    }
+
+    func testSubmitReportsFalseForEmptyText() {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        var reported: [Bool] = []
+        surface.sendSubmitFormText("\n\n") { reported.append($0) }
+        XCTAssertEqual(reported, [false])
+    }
+}

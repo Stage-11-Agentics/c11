@@ -17116,7 +17116,11 @@ struct CMUXCLI {
         activity: String,
         fromNotification: Bool = false
     ) throws {
-        let source = fromNotification ? " --source=notification" : ""
+        // A print-mode claude (the wrapper exports C11_CLAUDE_HEADLESS) never
+        // reads its terminal: its reports mark the tab as an agent but never
+        // as resting at a prompt.
+        let headless = ProcessInfo.processInfo.environment["C11_CLAUDE_HEADLESS"] == "1"
+        let source = headless ? " --source=headless" : (fromNotification ? " --source=notification" : "")
         _ = try sendV1Command(
             "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)\(source)",
             client: client

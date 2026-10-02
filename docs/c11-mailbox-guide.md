@@ -262,7 +262,7 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 | the operator typed into its composer since the last submit | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
 | no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 
-A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.) A turn that is interrupted (Esc) sends no turn-end signal, so buffered mail waits for the next completed turn. Grok launched with `--continue` has no session id for c11 to follow, so it reports no turn edges.
+A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. A print-mode run (`claude -p`) never reads its terminal, so the Claude wrapper marks it headless: it counts as an agent that is never at its prompt, and its mail is never pasted. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.) A turn that is interrupted (Esc) sends no turn-end signal, so buffered mail waits for the next completed turn. Grok launched with `--continue` has no session id for c11 to follow, so it reports no turn edges.
 
 **Plain shells** keep the shell-state gate:
 
@@ -273,6 +273,8 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 | `unknown` (no shell-integration signal) | **buffer** (conservative: never corrupt on a guess) |
 
 An agent that exits returns its tab to the shell prompt; mail buffered for it is dropped from the buffer (logged `expired`) rather than pasted onto the bare shell, and stays in the inbox.
+
+**The recipient is re-checked before typing and before the Return.** A push admitted for an agent's prompt is dropped (logged `expired`, claims undone, mail stays in the inbox) if that agent has exited by the time its claims come back, or by the moment its submit Return would go out. The paste is bracketed, so text that reaches a shell without its Return is never executed.
 
 **Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. Claims run off the main thread; only the paste and its submit run on it.
 

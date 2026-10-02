@@ -45,6 +45,9 @@ enum AgentLifecycleSource: Equatable {
     case submit
     /// Inferred from a notification or other indirect evidence.
     case inferred
+    /// A report from an agent that never reads its terminal (`claude -p`):
+    /// the tab is an agent, but never one resting at a prompt.
+    case headless
 }
 
 enum TabActivityTerminalKindResolver {

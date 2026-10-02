@@ -121,9 +121,16 @@ extension TerminalController {
                 return
             }
             // Codex's notify callback fires only on a completed agent turn, so
-            // this is an explicit prompt edge for the mailbox stdin gate.
+            // this is an explicit prompt edge for the mailbox stdin gate. It
+            // goes through the deriver queue like every other lifecycle edge,
+            // so a Return typed just before it is applied first.
             if params[LegacyCodexNotifyGuard.payloadKey] != nil {
-                ws.noteMailboxAgentLifecycle(surfaceId: surfaceId, source: .reported, activity: .idle)
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: surfaceId,
+                    workspaceId: ws.id,
+                    activity: .idle,
+                    source: .reported
+                )
             }
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: ws.id,
@@ -167,9 +174,16 @@ extension TerminalController {
                 return
             }
             // Codex's notify callback fires only on a completed agent turn, so
-            // this is an explicit prompt edge for the mailbox stdin gate.
+            // this is an explicit prompt edge for the mailbox stdin gate. It
+            // goes through the deriver queue like every other lifecycle edge,
+            // so a Return typed just before it is applied first.
             if params[LegacyCodexNotifyGuard.payloadKey] != nil {
-                ws.noteMailboxAgentLifecycle(surfaceId: surfaceId, source: .reported, activity: .idle)
+                TabLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: surfaceId,
+                    workspaceId: ws.id,
+                    activity: .idle,
+                    source: .reported
+                )
             }
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: ws.id,

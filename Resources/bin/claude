@@ -151,6 +151,18 @@ done
 # the actual claude process PID, which hooks use for stale-session detection.
 export CMUX_CLAUDE_PID=$$
 
+# A print-mode run (`-p` / `--print`) never reads its terminal, so its
+# SessionStart and Stop hooks must not tell c11 it rests at a prompt: mail
+# pasted there would sit in the PTY and run in the shell after it exits.
+# Hooks inherit this marker; set or clear it on every launch so a nested
+# interactive claude never inherits a parent's.
+unset C11_CLAUDE_HEADLESS
+for arg in "$@"; do
+    case "$arg" in
+        -p|--print) export C11_CLAUDE_HEADLESS=1; break ;;
+    esac
+done
+
 # Declare agent identity via `c11 set-agent` (source=declare). Runs in the
 # background so startup latency is unaffected. Precedence at the store level
 # ensures a prior explicit value is not overwritten.

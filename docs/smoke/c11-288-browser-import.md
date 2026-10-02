@@ -17,7 +17,7 @@ The packaged Release wizard exercised normal discovery and import in disposable 
 
 `BrowserDataImporter.importWebKitHistory` selected `history_items.title`. Real Safari stores `title` on `history_visits`; `history_items` has no such column. The wizard warned (not silent) but imported nothing from any real Safari history. The query now lives in `readWebKitHistoryRows` and takes `history_visits.title` from the most recent visit of each URL (SQLite returns bare columns from the `MAX(visit_time)` row). Counts, last-visit time, domain filter and the 5000-row cap are unchanged.
 
-Test: `BrowserImportMappingTests.testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched` builds a database with Safari 26.6.2's observed `history_items` and `history_visits` columns, two visits to one URL plus one filtered-out host, and asserts the latest visit's title, the visit count, the last-visit date, the domain filter, and unchanged source bytes. It fails on the old query with the same SQLite error the wizard showed. The fixture seeder's Safari schema was corrected to match.
+Test: `BrowserImportMappingTests.testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched` builds a database with Safari 26.6.2's observed `history_items` and `history_visits` columns, two visits to one URL plus one filtered-out host, and asserts the latest visit's title, the visit count, the last-visit date, the domain filter, and unchanged source bytes. On Atlas (tag `c11-288`, `c11LogicTests/BrowserImportMappingTests`) it fails with the old query (`no such column: history_items.title`, 1 failure in 17) and passes with the fix (17 tests, 0 failures). The fixture seeder's Safari schema was corrected to match.
 
 ## Numbered smoke steps (Validator scenario)
 
@@ -54,5 +54,4 @@ Test: `BrowserImportMappingTests.testSafariHistoryReadsLatestVisitTitleFromRealS
 | Chrome selected profile, SIGNED IN | `art_01M3Z2P8WK7AD2A6DN5561BVN5` |
 | Arc selected profile, SIGNED OUT | `art_01M3Z2P90BECYKR979F54BPJJ3` |
 | Boolean-only loopback server log | `art_01M3Z2TFDF6NEEPJJE2H1CYYDK` |
-| Native Chrome 154 history import result | attached in the final native pass |
-| Native Safari schema and failing result (pre-fix) | attached in the final native pass |
+| Native Chrome 154 history import result, Safari schema and failing pre-fix result, red and green test excerpts | attached to C11-288 by the final owner (titles begin Native Chrome, Native Safari, Chrome destination, Red run, Green run) |

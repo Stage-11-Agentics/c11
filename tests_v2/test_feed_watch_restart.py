@@ -51,7 +51,7 @@ def main():
         workspace = client.new_workspace()
         tab = client.list_surfaces(workspace)[0][1]
         try:
-            session = "synthetic-restart-264"
+            session = str(uuid.uuid4())
             client._call("conversation.push", {"tab_id": tab, "kind": "claude-code", "id": session, "source": "hook", "state": "alive"})
             draft = {"schema_version": 1, "event_id": str(uuid.uuid4()), "kind": "agent.turn.started",
                      "emitted_at_ms": int(time.time() * 1000), "workspace_id": workspace, "tab_id": tab,

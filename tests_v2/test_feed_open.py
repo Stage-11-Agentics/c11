@@ -60,7 +60,7 @@ def main():
             subprocess.run(aqua(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate']), check=True)
             def frontmost():
                 return subprocess.check_output(aqua(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true']), text=True).strip()
-            assert frontmost() == "Finder"
+            eventually(lambda: frontmost() == "Finder", "Finder activation settled")
 
             opened = subprocess.run(
                 [cli, "--socket", path, "feed", "open", ask_tab, "--workspace", ask_workspace, "--json"],

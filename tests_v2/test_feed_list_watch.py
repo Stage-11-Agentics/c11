@@ -76,6 +76,7 @@ def main():
             ask_workspace = client.new_workspace(window)
             other_workspace = client.new_workspace(window)
             ask_tab = client.list_surfaces(ask_workspace)[0][1]
+            client._call("tab.create", {"workspace_id": ask_workspace, "type": "terminal", "focus": False})
             other_tab = client.list_surfaces(other_workspace)[0][1]
             session = str(uuid.uuid4())
             client._call("conversation.push", {

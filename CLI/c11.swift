@@ -501,6 +501,12 @@ private final class ClaudeHookSessionStore {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
+    enum NonBlockingLookup {
+        case found(ClaudeHookSessionRecord)
+        case missing
+        case unavailable
+    }
+
     init(
         processEnv: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
@@ -521,6 +527,24 @@ private final class ClaudeHookSessionStore {
         return try withLockedState { state in
             state.sessions[normalized]
         }
+    }
+
+    /// Journal observers may run on Claude's synchronous hook deadline. Never
+    /// wait behind another hook's state-store writer on this path: a contended
+    /// lock is an unavailable owner lookup, so the caller spools its already
+    /// constructed structural draft and returns neutral hook output.
+    func lookupNonBlocking(sessionId: String) -> NonBlockingLookup {
+        let normalized = normalizeSessionId(sessionId)
+        guard !normalized.isEmpty else { return .missing }
+        let lockPath = statePath + ".lock"
+        let fd = open(lockPath, O_CREAT | O_RDWR, mode_t(S_IRUSR | S_IWUSR))
+        guard fd >= 0 else { return .unavailable }
+        defer { Darwin.close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return .unavailable }
+        defer { _ = flock(fd, LOCK_UN) }
+        let state = loadUnlocked()
+        guard let record = state.sessions[normalized] else { return .missing }
+        return .found(record)
     }
 
     func upsert(
@@ -710,6 +734,32 @@ enum SocketPasswordResolver {
             return filePassword
         }
         return loadFromKeychain(socketPath: socketPath)
+    }
+
+    /// Resolve credentials without allowing a keychain or filesystem stall to
+    /// consume a synchronous Claude hook's aggregate deadline.
+    static func resolve(explicit: String?, socketPath: String, deadline: Date?) -> String? {
+        guard let deadline else {
+            return resolve(explicit: explicit, socketPath: socketPath)
+        }
+        let read = PasswordRead()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            read.set(resolve(explicit: explicit, socketPath: socketPath))
+            done.signal()
+        }
+        let remaining = max(0, deadline.timeIntervalSinceNow)
+        guard remaining > 0.01, done.wait(timeout: .now() + remaining) == .success else {
+            return nil
+        }
+        return read.get()
+    }
+
+    private final class PasswordRead: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: String?
+        func set(_ value: String?) { lock.lock(); self.value = value; lock.unlock() }
+        func get() -> String? { lock.lock(); defer { lock.unlock() }; return value }
     }
 
     private static func normalized(_ value: String?) -> String? {
@@ -2074,8 +2124,7 @@ struct CMUXCLI {
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let journalHookArgs = Array(commandArgs.dropFirst())
         let journalWorkspace = optionValue(journalHookArgs, name: "--workspace") ?? processEnv["CMUX_WORKSPACE_ID"] ?? processEnv["C11_WORKSPACE_ID"]
-        let journalTab = optionValue(journalHookArgs, name: "--surface")
-            ?? (optionValue(journalHookArgs, name: "--workspace") == nil ? Self.callerTabEnv() : nil)
+        let journalTab = optionValue(journalHookArgs, name: "--surface") ?? Self.callerTabEnv()
         let journalHookDraft = journalHookObject.flatMap {
             JournalCommand.claudeDraft(subcommand: commandArgs.first ?? "", input: $0,
                 tabID: journalTab.flatMap(UUID.init(uuidString:)), workspaceID: journalWorkspace.flatMap(UUID.init(uuidString:)))
@@ -2120,6 +2169,25 @@ struct CMUXCLI {
         if Self.isMailboxHookDrain(command: command, commandArgs: commandArgs) {
             Self.boundSocketToClaimCutoff()
         }
+        // Claude hooks have one aggregate budget. Keep it armed through
+        // authentication, owner resolution, journal append, and the neutral
+        // fallback path; resetting it after connect lets a silent peer or a
+        // credential lookup consume the hook's entire timeout.
+        let priorProcessDeadline = SocketClient.processDeadline
+        if command == "claude-hook" {
+            // Hook auth and compatibility commands each return one line. Do
+            // not spend the aggregate budget waiting for multiline idle gaps.
+            client.usesSingleLineResponses = true
+            SocketClient.processDeadline = min(
+                priorProcessDeadline ?? .distantFuture,
+                Date().addingTimeInterval(0.250)
+            )
+        }
+        defer {
+            if command == "claude-hook" {
+                SocketClient.processDeadline = priorProcessDeadline
+            }
+        }
         cliTelemetry.breadcrumb(
             "socket.connect.attempt",
             data: [
@@ -2128,9 +2196,6 @@ struct CMUXCLI {
             ]
         )
         do {
-            let previousDeadline = SocketClient.processDeadline
-            defer { SocketClient.processDeadline = previousDeadline }
-            if command == "claude-hook" { SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(0.250)) }
             try client.connect()
             cliTelemetry.breadcrumb("socket.connect.success", data: ["path": resolvedSocketPath])
         } catch {
@@ -2145,6 +2210,7 @@ struct CMUXCLI {
                isAdvisoryHookConnectivityError(cliError) {
                 if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
                 return
             }
             // A harness hook drain (`mailbox recv --hook-format`) runs on every
@@ -2157,11 +2223,20 @@ struct CMUXCLI {
         }
         defer { client.close() }
 
-        try authenticateClientIfNeeded(
-            client,
-            explicitPassword: socketPasswordArg,
-            socketPath: resolvedSocketPath
-        )
+        do {
+            try authenticateClientIfNeeded(
+                client,
+                explicitPassword: socketPasswordArg,
+                socketPath: resolvedSocketPath
+            )
+        } catch {
+            if command == "claude-hook" {
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
+                if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
+                return
+            }
+            throw error
+        }
 
         let idFormat = try resolvedIDFormat(jsonOutput: jsonOutput, raw: idFormatArg)
 
@@ -3629,7 +3704,8 @@ struct CMUXCLI {
             do {
                 try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft)
                 cliTelemetry.breadcrumb("claude-hook.completed")
-            } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+            } catch let error as CLIError where isAdvisoryHookConnectivityError(error)
+                || error.message == SocketClient.commandTimedOutMessage {
                 // claude-hook is advisory — it signals c11 about Claude Code
                 // lifecycle events (prompt submitted, notification, etc.) so
                 // the sidebar can update. When c11 isn't running (socket
@@ -3638,6 +3714,8 @@ struct CMUXCLI {
                 // doesn't surface a hook-error banner on every prompt. Real
                 // hook bugs (malformed input, logic errors) still propagate.
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
+                if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")
                 cliTelemetry.captureError(stage: "claude_hook_dispatch", error: error)
@@ -5282,7 +5360,8 @@ struct CMUXCLI {
     ) throws {
         if let socketPassword = SocketPasswordResolver.resolve(
             explicit: explicitPassword,
-            socketPath: socketPath
+            socketPath: socketPath,
+            deadline: SocketClient.processDeadline
         ) {
             let authResponse = try client.send(command: "auth \(socketPassword)")
             if authResponse.hasPrefix("ERROR:"),
@@ -10950,18 +11029,23 @@ struct CMUXCLI {
             """
         case "claude-hook":
             return """
-            Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit> [flags]
+            Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [flags]
 
             Hook for Claude Code integration. Reads JSON from stdin.
 
             Subcommands:
-              session-start   Signal that a Claude session has started
-              active          Alias for session-start
-              stop            Signal that a Claude session has stopped
-              idle            Alias for stop
-              notification    Forward a Claude notification
-              notify          Alias for notification
-              prompt-submit   Clear notification and set Running on user prompt
+              session-start      Signal that a Claude session has started
+              active             Alias for session-start
+              stop               Signal that a Claude session has stopped
+              idle               Alias for stop
+              notification       Forward a Claude notification
+              notify             Alias for notification
+              prompt-submit      Clear notification and set Running on user prompt
+              stop-failure       Record a StopFailure observation
+              permission-request Record a non-ask permission observation and print {}
+              subagent-start     Record a child spawn
+              subagent-stop      Record a child completion
+              pre-compact        Record a compaction observation
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -17636,6 +17720,13 @@ struct CMUXCLI {
         }
         let parsedInput = parseClaudeHookInput(rawInput: rawInput)
         let sessionStore = ClaudeHookSessionStore()
+        func nonBlockingSession(_ sessionID: String?) -> ClaudeHookSessionRecord? {
+            guard let sessionID else { return nil }
+            if case .found(let record) = sessionStore.lookupNonBlocking(sessionId: sessionID) {
+                return record
+            }
+            return nil
+        }
         telemetry.breadcrumb(
             "claude-hook.input",
             data: [
@@ -17645,7 +17736,19 @@ struct CMUXCLI {
                 "has_surface_flag": optionValue(hookArgs, name: "--surface") != nil
             ]
         )
-        let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
+        func spoolJournalDraft() {
+            if let journalDraft { _ = JournalCommand.spool(journalDraft) }
+        }
+        let fallbackWorkspaceId: String
+        do {
+            fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
+        } catch {
+            // Owner discovery is advisory. Preserve the pre-created structural
+            // draft and keep the hook's output neutral when the peer is silent.
+            spoolJournalDraft()
+            if subcommand == "permission-request" { print("{}") }
+            return
+        }
         var journalDelivery: JournalCommand.Delivery?
         func managedJournalDelivery(_ delivery: JournalCommand.Delivery) -> Bool {
             switch delivery {
@@ -17663,6 +17766,40 @@ struct CMUXCLI {
             let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
             journalDelivery = delivery
             return managedJournalDelivery(delivery)
+        }
+        func appendResolvedJournal() {
+            var workspaceId = fallbackWorkspaceId
+            var preferredSurface = surfaceArg
+            if let sessionId = parsedInput.sessionId {
+                switch sessionStore.lookupNonBlocking(sessionId: sessionId) {
+                case .found(let mapped):
+                    do {
+                        workspaceId = try resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client)
+                        preferredSurface = mapped.surfaceId
+                    } catch {
+                        spoolJournalDraft()
+                        return
+                    }
+                case .missing:
+                    break
+                case .unavailable:
+                    // Do not take LOCK_EX on a hook observer's deadline path.
+                    // The draft was constructed before connect and remains
+                    // recoverable in the existing spool.
+                    spoolJournalDraft()
+                    return
+                }
+            }
+            do {
+                let resolvedSurface = try resolveSurfaceIdForClaudeHook(
+                    preferredSurface,
+                    workspaceId: workspaceId,
+                    client: client
+                )
+                _ = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
+            } catch {
+                spoolJournalDraft()
+            }
         }
         func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
                                  activity: String, fromNotification: Bool = false) throws {
@@ -17789,7 +17926,7 @@ struct CMUXCLI {
             var workspaceId = fallbackWorkspaceId
             var surfaceId = surfaceArg
             if let sessionId = parsedInput.sessionId,
-               let mapped = try? sessionStore.lookup(sessionId: sessionId),
+               let mapped = nonBlockingSession(sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 surfaceId = mapped.surfaceId
@@ -17813,7 +17950,7 @@ struct CMUXCLI {
             // Update session with transcript summary and send completion notification.
             let completion = summarizeClaudeHookStop(
                 parsedInput: parsedInput,
-                sessionRecord: (try? sessionStore.lookup(sessionId: parsedInput.sessionId ?? ""))
+                sessionRecord: nonBlockingSession(parsedInput.sessionId)
             )
             if let sessionId = parsedInput.sessionId, let completion {
                 try? sessionStore.upsert(
@@ -17854,7 +17991,7 @@ struct CMUXCLI {
             var workspaceId = fallbackWorkspaceId
             var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
-               let mapped = try? sessionStore.lookup(sessionId: sessionId),
+               let mapped = nonBlockingSession(sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 preferredSurface = mapped.surfaceId
@@ -17890,7 +18027,7 @@ struct CMUXCLI {
             var workspaceId = fallbackWorkspaceId
             var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
-               let mapped = try? sessionStore.lookup(sessionId: sessionId),
+               let mapped = nonBlockingSession(sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 preferredSurface = mapped.surfaceId
@@ -17948,7 +18085,7 @@ struct CMUXCLI {
             // Only clear when we are the primary cleanup path (Stop didn't fire first).
             // If Stop already consumed the session, consumedSession is nil and we skip
             // to avoid wiping the completion notification that Stop just delivered.
-            let mappedSession = parsedInput.sessionId.flatMap { try? sessionStore.lookup(sessionId: $0) }
+            let mappedSession = nonBlockingSession(parsedInput.sessionId)
             let cleanupWorkspace = mappedSession?.workspaceId ?? fallbackWorkspaceId
             guard let cleanupSurface = try? resolveSurfaceIdForClaudeHook(
                 mappedSession?.surfaceId ?? surfaceArg,
@@ -18033,7 +18170,7 @@ struct CMUXCLI {
             var claudePid: Int? = nil
             var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
-               let mapped = try? sessionStore.lookup(sessionId: sessionId),
+               let mapped = nonBlockingSession(sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 claudePid = mapped.pid
@@ -18045,6 +18182,7 @@ struct CMUXCLI {
             )
             let toolName = parsedInput.object?["tool_name"] as? String
             if subcommand == "post-tool-use", toolName != "AskUserQuestion", toolName != "ExitPlanMode" {
+                _ = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
                 print("OK")
                 return
             }
@@ -18121,7 +18259,9 @@ struct CMUXCLI {
                 return
             }
 
-            _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
+            // Compatibility UI writes are advisory: even a stalled clear must
+            // reach reportAgentActivity's structural append/spool below.
+            _ = try? sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
             _ = try? reportAgentActivity(
                 client: client, workspaceId: workspaceId, surfaceId: resolvedSurface, activity: "working"
             )
@@ -18133,7 +18273,7 @@ struct CMUXCLI {
             } else {
                 statusValue = "Running"
             }
-            try setClaudeStatus(
+            try? setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
                 surfaceId: resolvedSurface,
@@ -18144,11 +18284,21 @@ struct CMUXCLI {
             )
             print("OK")
 
+        case "stop-failure", "subagent-start", "subagent-stop", "pre-compact":
+            telemetry.breadcrumb("claude-hook.\(subcommand)")
+            appendResolvedJournal()
+            print("OK")
+
+        case "permission-request":
+            telemetry.breadcrumb("claude-hook.permission-request")
+            appendResolvedJournal()
+            print("{}")
+
         case "help", "--help", "-h":
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use> [--workspace <id|index>] [--tab <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 
@@ -19048,7 +19198,7 @@ struct CMUXCLI {
           feed watch [--json] [--scope attention|all]
           clear-notifications
           agent-event append --stdin
-          claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]
+          claude-hook <session-start|stop|notification|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|ref>] [--tab <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--tab <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-tab <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]

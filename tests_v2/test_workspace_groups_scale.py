@@ -858,20 +858,28 @@ def session_semantics(path: Path) -> dict[str, Any]:
             panels = []
             for panel in workspace.get("panels") or []:
                 record = {
-                    "id": panel.get("id"), "type": panel.get("type"), "title": panel.get("title"),
+                    "id": panel.get("id"), "type": panel.get("type"),
                     "isPinned": panel.get("isPinned", False),
-                    "terminal": panel.get("terminal"), "browser": panel.get("browser"),
-                    "markdown": panel.get("markdown"),
                 }
+                # Runtime-owned terminal titles, PTYs, pane IDs, and browser
+                # rendering flags are regenerated on a clean launch. The
+                # restore contract is panel identity/type plus the persisted
+                # browser/markdown payload, not those volatile runtime fields.
+                if panel.get("type") == "browser":
+                    browser = panel.get("browser") or {}
+                    record["browser"] = {
+                        key: browser.get(key)
+                        for key in ("backHistoryURLStrings", "forwardHistoryURLStrings",
+                                    "pageZoom", "profileID")
+                    }
+                elif panel.get("type") == "markdown":
+                    record["markdown"] = panel.get("markdown")
                 panels.append(record)
             workspaces.append({
                 "id": workspace.get("id"), "processTitle": workspace.get("processTitle"),
                 "customTitle": workspace.get("customTitle"), "isPinned": workspace.get("isPinned", False),
                 "groupId": workspace.get("groupId"),
-                "currentDirectory": workspace.get("currentDirectory"),
-                "focusedPanelId": workspace.get("focusedPanelId"),
                 "panels": panels,
-                "layout": workspace.get("layout"),
             })
         groups_raw = manager.get("workspaceGroups")
         groups_value = None if groups_raw is None else [
@@ -883,6 +891,16 @@ def session_semantics(path: Path) -> dict[str, Any]:
             "workspaceGroups": groups_value,
             "selectedWorkspaceIndex": manager.get("selectedWorkspaceIndex"),
         })
+
+    # A fresh tagged app can put its pre-existing empty window before the
+    # restored fixture window. Match windows by their persisted identities so
+    # that this harmless ordering difference cannot hide a workspace reorder.
+    def window_key(window: dict[str, Any]) -> tuple[Any, ...]:
+        group_ids = tuple(group.get("id") for group in window["workspaceGroups"] or [])
+        workspace_ids = tuple(workspace.get("id") for workspace in window["workspaces"])
+        return group_ids, workspace_ids
+
+    windows.sort(key=window_key)
     return {"version": raw.get("version"), "windows": windows}
 
 

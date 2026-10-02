@@ -138,7 +138,9 @@ it with QA mode:
 11. **A11 clean restart.** `post-resume.json` must preserve group identity,
     group order, names, color/icon, collapse/pin state, workspace order,
     membership, and panel identities. This is a clean-restart proof, not a
-    crash-injection proof.
+    crash-injection proof. The comparator matches windows by persisted
+    workspace/group identity and ignores regenerated pane IDs, terminal
+    titles, PTYs, and browser rendering flags.
 12. **A12 pre-group snapshot.** Replace the tagged session file with
     `tests_v2/fixtures/pre-group-session.json`, resume, and assert one
     ungrouped workspace with no `workspaceGroups` and no invented folder.

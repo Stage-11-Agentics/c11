@@ -28,7 +28,7 @@ def require(condition, message):
 
 
 def test_environment():
-    """Reject defaults, production paths, symlinks and direct tagged host apps."""
+    """Reject defaults, production paths, symlinks and unreserved host tags."""
     raw = os.environ.get("C11_SOCKET")
     require(bool(raw), "Set C11_SOCKET explicitly to the isolated QA socket")
     path = Path(raw)
@@ -37,7 +37,11 @@ def test_environment():
     require(not path.is_symlink(), "Refusing a symlinked socket")
     require(resolved.parent == Path("/tmp").resolve(), "QA socket must be under /tmp")
     sandbox = re.fullmatch(r"c11-sandbox-[A-Za-z0-9_.-]+\.sock", path.name)
-    require(bool(sandbox), "Run through scripts/sandbox-tests-v2.sh in the isolated guest")
+    reserved_tag = os.environ.get("C11_GROUPS_TEST_TAG", "")
+    reserved = (re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", reserved_tag) is not None
+                and path.name == f"c11-debug-{reserved_tag}.sock")
+    require(bool(sandbox) or reserved,
+            "Use the sandbox runner, or explicitly reserve a dedicated tag with C11_GROUPS_TEST_TAG")
     require(path.is_socket(), f"QA socket does not exist: {path}")
     cli = os.environ.get("C11_CLI")
     require(bool(cli) and Path(cli).is_file() and os.access(cli, os.X_OK),

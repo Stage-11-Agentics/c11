@@ -1124,6 +1124,7 @@ struct cmuxApp: App {
         } else {
             TerminalController.shared.stop()
         }
+        appDelegate.resumeStartupSessionAfterSocketChange()
     }
 
     private var currentSocketMode: SocketControlMode {

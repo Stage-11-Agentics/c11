@@ -22,6 +22,25 @@ private enum AgentLaunchContextSnapshot {
 // tiers are preserved exactly: nonisolated members stay nonisolated (off-main);
 // processCommand/processV2Command stay main-actor. Mechanical relocation only.
 extension TerminalController {
+    nonisolated static func isStartupIndependentV2Method(_ method: String) -> Bool {
+        ["system.ping", "system.capabilities", "system.brand", "auth.login"].contains(method)
+    }
+
+    /// Reject before worker routing or async telemetry acknowledgement: startup
+    /// callers must retry, not observe an empty tree or a falsely successful send.
+    nonisolated func startupNotReadyResponse(for command: String) -> String? {
+        guard !isInitialSessionRestoreReady else { return nil }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let request = parseV2SocketRequest(trimmed) {
+            guard !Self.isStartupIndependentV2Method(request.method) else { return nil }
+            return v2Error(id: request.id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
+        guard !trimmed.hasPrefix("{") else { return nil }
+        let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
+        guard !["ping", "auth", "help"].contains(head) else { return nil }
+        return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
+    }
+
     private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
         guard command.hasPrefix("{"),
               let data = command.data(using: .utf8),
@@ -104,6 +123,7 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         if let response = Self.socketWorkerImmediateV1Response(command) {
             return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
                 response
@@ -555,6 +575,7 @@ extension TerminalController {
     }
 
     func processCommand(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Empty command" }
 
@@ -971,7 +992,9 @@ extension TerminalController {
             )
         }
 
-        v2MainSync { self.v2RefreshKnownRefs() }
+        if !isInitialSessionRestoreReady && !Self.isStartupIndependentV2Method(method) {
+            return v2Error(id: id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
 
 
         return withSocketCommandPolicy(commandKey: method, isV2: true) {

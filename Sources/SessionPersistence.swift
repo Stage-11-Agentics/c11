@@ -627,8 +627,11 @@ enum SessionPersistenceStore {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         let decoder = JSONDecoder()
-        guard let snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
+        guard var snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
         guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        // A window without workspaces is not a restorable window. In particular,
+        // do not turn stale empty-window records into extra fallback workspaces.
+        snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
         guard !snapshot.windows.isEmpty else { return nil }
         return snapshot
     }

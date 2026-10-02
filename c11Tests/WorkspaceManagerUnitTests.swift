@@ -1224,3 +1224,125 @@ final class WorkspaceManagerAreaInteractionScopeTests: XCTestCase {
         XCTAssertFalse(manager.hasActivePaneInteraction)
     }
 }
+
+@MainActor
+final class TerminalControllerRefLifecycleTests: XCTestCase {
+    func testKnownRefsSeedOnlyOnceAndOnlyAfterInitialRestoreIsReady() throws {
+        _ = try XCTUnwrap(AppDelegate.shared)
+        let controller = TerminalController.makeForTesting()
+        controller.setInitialSessionRestoreReady(false)
+        controller.v2RefreshKnownRefs()
+        XCTAssertEqual(controller.debugKnownRefSeedCount, 0)
+        XCTAssertTrue(controller.v2RefByUUID.values.allSatisfy(\.isEmpty))
+
+        controller.setInitialSessionRestoreReady(true)
+        controller.v2RefreshKnownRefs()
+        XCTAssertEqual(controller.debugKnownRefSeedCount, 1)
+        for _ in 0..<100 {
+            for method in ["system.ping", "system.capabilities"] {
+                let response = controller.processV2Command("{\"id\":297,\"method\":\"\(method)\"}")
+                let result = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+                XCTAssertEqual(result["ok"] as? Bool, true)
+            }
+            // Worker entry points may still invoke the idempotent fallback.
+            controller.v2RefreshKnownRefs()
+        }
+        XCTAssertEqual(controller.debugKnownRefSeedCount, 1,
+                       "Worker requests must not repeat the startup graph walk")
+    }
+
+    func testPublishedAdditionsHaveRefsBeforeTheNewCollectionIsInstalled() throws {
+        let controller = TerminalController.shared
+        let manager = WorkspaceManager()
+        defer { manager.workspaces.forEach { $0.teardownAllPanels() } }
+        var sawWorkspaceInsertion = false
+        let workspaceSubscription = manager.$workspaces.sink { newWorkspaces in
+            for workspace in newWorkspaces where !manager.workspaces.contains(where: { $0.id == workspace.id }) {
+                sawWorkspaceInsertion = true
+                XCTAssertNotNil(controller.v2RefByUUID[.workspace]?[workspace.id])
+            }
+        }
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        XCTAssertTrue(sawWorkspaceInsertion)
+        let root = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        XCTAssertNotNil(controller.v2RefByUUID[.pane]?[root.id])
+
+        var sawTabInsertion = false
+        let panelSubscription = workspace.$panels.sink { newPanels in
+            for id in newPanels.keys where workspace.panels[id] == nil {
+                sawTabInsertion = true
+                XCTAssertNotNil(controller.v2RefByUUID[.surface]?[id],
+                                "Ref registration must consume newPanels, not the old workspace.panels")
+            }
+        }
+        _ = try XCTUnwrap(workspace.newBrowserSurface(inPane: root, focus: false))
+        XCTAssertTrue(sawTabInsertion)
+        withExtendedLifetime((workspaceSubscription, panelSubscription)) {}
+    }
+
+    func testSplitMoveAndClosePreserveRefsWithoutReseeding() throws {
+        let controller = TerminalController.shared
+        let source = WorkspaceManager()
+        let destination = WorkspaceManager()
+        defer {
+            source.workspaces.forEach { $0.teardownAllPanels() }
+            destination.workspaces.forEach { $0.teardownAllPanels() }
+        }
+        let workspace = source.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let initialTab = try XCTUnwrap(workspace.panels.keys.first)
+        let split = try XCTUnwrap(workspace.newTerminalSplit(from: initialTab, orientation: .horizontal))
+        let area = try XCTUnwrap(workspace.paneId(forPanelId: split.id))
+        let areaRef = try XCTUnwrap(controller.v2RefByUUID[.pane]?[area.id])
+        let tabRef = try XCTUnwrap(controller.v2RefByUUID[.surface]?[split.id])
+        let workspaceRef = try XCTUnwrap(controller.v2RefByUUID[.workspace]?[workspace.id])
+        let seedCount = controller.debugKnownRefSeedCount
+
+        let detachedTab = try XCTUnwrap(workspace.detachTab(panelId: split.id))
+        let target = destination.workspaces[0]
+        let targetArea = try XCTUnwrap(target.bonsplitController.allPaneIds.first)
+        XCTAssertEqual(target.attachDetachedTab(detachedTab, inPane: targetArea, focus: false), split.id)
+        XCTAssertEqual(controller.v2RefByUUID[.surface]?[split.id], tabRef)
+        XCTAssertTrue(target.closeTab(split.id, force: true))
+        XCTAssertNil(target.panels[split.id])
+        XCTAssertEqual(controller.v2ResolveHandleRef(tabRef), split.id,
+                       "Closed refs remain tombstones instead of being recycled")
+        XCTAssertEqual(controller.v2ResolveHandleRef(areaRef), area.id)
+
+        let movedWorkspace = try XCTUnwrap(source.detachWorkspace(workspaceId: workspace.id))
+        destination.attachWorkspace(movedWorkspace, select: false)
+        XCTAssertEqual(controller.v2RefByUUID[.workspace]?[workspace.id], workspaceRef)
+        destination.closeWorkspace(movedWorkspace)
+        XCTAssertEqual(controller.v2ResolveHandleRef(workspaceRef), workspace.id)
+        let nextWorkspace = source.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        XCTAssertNotEqual(controller.v2RefByUUID[.workspace]?[nextWorkspace.id], workspaceRef)
+        XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount,
+                       "Lifecycle hooks must not enumerate the global graph")
+    }
+
+    func testSnapshotRestoreRegistersNewAreasAndRetainsRestoredTabRefs() throws {
+        let controller = TerminalController.shared
+        let original = Workspace()
+        let restored = Workspace()
+        defer {
+            original.teardownAllPanels()
+            restored.teardownAllPanels()
+        }
+        let initialTab = try XCTUnwrap(original.panels.keys.first)
+        _ = try XCTUnwrap(original.newTerminalSplit(from: initialTab, orientation: .horizontal))
+        let snapshot = original.sessionSnapshot(includeScrollback: false, conversationsByPanelId: [:])
+        let tabRefs = Dictionary(uniqueKeysWithValues: try snapshot.panels.map { panel in
+            (panel.id, try XCTUnwrap(controller.v2RefByUUID[.surface]?[panel.id]))
+        })
+        let seedCount = controller.debugKnownRefSeedCount
+        restored.restoreSessionSnapshot(snapshot)
+        XCTAssertEqual(Set(restored.panels.keys), Set(tabRefs.keys))
+        XCTAssertEqual(restored.bonsplitController.allPaneIds.count, 2)
+        for area in restored.bonsplitController.allPaneIds {
+            XCTAssertNotNil(controller.v2RefByUUID[.pane]?[area.id])
+        }
+        for (id, ref) in tabRefs {
+            XCTAssertEqual(controller.v2RefByUUID[.surface]?[id], ref)
+        }
+        XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount)
+    }
+}

@@ -2,6 +2,17 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "socket.error.sessionNotReady": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session restoration is still in progress. Try again shortly."
+          }
+        }
+      }
+    },
     "about.appName": {
       "extractionState": "manual",
       "localizations": {

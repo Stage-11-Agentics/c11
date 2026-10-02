@@ -7,6 +7,58 @@ import Darwin
 @testable import c11
 #endif
 
+@MainActor
+final class SocketStartupReadinessTests: XCTestCase {
+    private func request(_ method: String) -> String {
+        "{\"id\":297,\"method\":\"\(method)\",\"params\":{\"tab_id\":\"tab:1\"}}"
+    }
+
+    private func assertNotReady(_ response: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any], file: file, line: line)
+        XCTAssertEqual(object["id"] as? Int, 297, file: file, line: line)
+        XCTAssertEqual(object["ok"] as? Bool, false, file: file, line: line)
+        XCTAssertEqual((object["error"] as? [String: Any])?["code"] as? String, "not_ready", file: file, line: line)
+    }
+
+    func testPendingRestoreRejectsGraphAndWorkerCommandsBeforeTargetResolution() throws {
+        let controller = TerminalController.makeForTesting()
+        controller.setInitialSessionRestoreReady(false)
+        // Worker sends, browser evaluation and async telemetry must not bypass
+        // the same startup boundary as the main-actor tree/close handlers.
+        for method in ["system.tree", "system.identify", "workspace.close", "tab.send_text", "surface.send_text", "browser.eval", "tab.set_metadata", "agent.launch"] {
+            try assertNotReady(controller.processCommandUsingSocketExecutionPolicy(request(method)))
+        }
+        try assertNotReady(controller.processV2Command(request("system.tree")))
+        if case .err(.err(let code, _, _)) = controller.resolveSurfaceSendTargets(params: [:]) {
+            XCTAssertEqual(code, "not_ready")
+        } else { XCTFail("Direct target resolution must reject an incomplete graph") }
+    }
+
+    func testPingStaysAvailableAndV1MutationIsNotAcknowledgedDuringRestore() {
+        let controller = TerminalController.makeForTesting()
+        controller.setInitialSessionRestoreReady(false)
+        XCTAssertEqual(controller.processCommandUsingSocketExecutionPolicy("ping"), "PONG")
+        XCTAssertTrue(controller.processCommandUsingSocketExecutionPolicy("report_pwd /tmp --tab=tab:1").hasPrefix("ERROR: not_ready:"))
+        XCTAssertTrue(controller.processCommand("close_workspace").hasPrefix("ERROR: not_ready:"))
+        for method in ["system.ping", "system.capabilities", "system.brand", "auth.login"] {
+            XCTAssertNil(controller.startupNotReadyResponse(for: request(method)))
+        }
+        let ping = controller.processV2Command(request("system.ping"))
+        XCTAssertTrue(ping.contains("\"pong\":true"))
+    }
+
+    func testCompletedRestoreReleasesStartupRejectionWithoutAListenerSideEffect() {
+        let controller = TerminalController.makeForTesting()
+        controller.setInitialSessionRestoreReady(false)
+        XCTAssertNotNil(controller.startupNotReadyResponse(for: request("system.tree")))
+        controller.setInitialSessionRestoreReady(true)
+        XCTAssertNil(controller.startupNotReadyResponse(for: request("system.tree")))
+        XCTAssertNil(controller.startupNotReadyResponse(for: "report_pwd /tmp"))
+        XCTAssertEqual(controller.socketPathSnapshot, "")
+        XCTAssertFalse(controller.isListeningForStartupRestore)
+    }
+}
+
 /// C11-105 regressions. Both checks are host-less and run inside the
 /// `c11LogicTests` target so they can guard fast local iteration without
 /// touching real sockets or the prod c11's bind file.

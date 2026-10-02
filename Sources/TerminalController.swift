@@ -168,6 +168,29 @@ class TerminalController {
     private nonisolated(unsafe) var pendingAcceptLoopResumeGeneration: UInt64?
     private nonisolated(unsafe) var listenerStartInProgress = false
     private nonisolated let listenerStateLock = NSLock()
+    private nonisolated let initialRestoreLock = NSLock()
+    private nonisolated(unsafe) var initialRestoreReady = true
+
+    /// Workers read only this synchronized bit, never the partially installed graph.
+    nonisolated var isInitialSessionRestoreReady: Bool {
+        initialRestoreLock.lock()
+        defer { initialRestoreLock.unlock() }
+        return initialRestoreReady
+    }
+
+    func setInitialSessionRestoreReady(_ ready: Bool) {
+        initialRestoreLock.lock()
+        initialRestoreReady = ready
+        initialRestoreLock.unlock()
+    }
+
+    nonisolated var isListeningForStartupRestore: Bool {
+        withListenerState { isRunning && serverSocket >= 0 }
+    }
+
+    nonisolated static var sessionNotReadyMessage: String {
+        String(localized: "socket.error.sessionNotReady", defaultValue: "Session restoration is still in progress. Try again shortly.")
+    }
     private var clientHandlers: [Int32: Thread] = [:]
     var workspaceManager: WorkspaceManager?
     var accessMode: SocketControlMode = .c11Only
@@ -298,6 +321,14 @@ class TerminalController {
         .pane: [:],
         .surface: [:],
     ]
+
+    // Handle maps are process-lifetime tombstones: closing/moving an object
+    // never frees its ordinal for reuse. Lifecycle hooks register new objects;
+    // only the initial, complete startup graph needs a full walk.
+    private var v2DidSeedKnownRefs = false
+#if DEBUG
+    private(set) var debugKnownRefSeedCount = 0
+#endif
 
     struct V2BrowserElementRefEntry {
         let surfaceId: UUID
@@ -2654,7 +2685,12 @@ class TerminalController {
     }
 
     func v2RefreshKnownRefs() {
-        guard let app = AppDelegate.shared else { return }
+        guard isInitialSessionRestoreReady, !v2DidSeedKnownRefs,
+              let app = AppDelegate.shared else { return }
+        v2DidSeedKnownRefs = true
+#if DEBUG
+        debugKnownRefSeedCount += 1
+#endif
 
         let windows = app.listMainWindowSummaries()
         for item in windows {
@@ -3211,13 +3247,11 @@ class TerminalController {
 
     @MainActor
     func resolveSurfaceSendTargets(params: [String: Any]) -> TabSendPhaseAOutcome {
-        // C11-26: Worker-policy methods skip processV2Command's
-        // `v2MainSync { v2RefreshKnownRefs() }` (Sources/TerminalController.swift:2132).
-        // Without this refresh, a fresh `surface:N` / `workspace:N` ref handle is
-        // unresolved on the first worker call and `v2UUID(...)` silently falls
-        // back to the focused panel — meaning text/keys can be injected into the
-        // wrong terminal. Refresh here so the handle map is current before any
-        // resolution call below.
+        guard isInitialSessionRestoreReady else {
+            return .err(.err(code: "not_ready", message: Self.sessionNotReadyMessage, data: nil))
+        }
+        // Usually seeded at startup completion. This is an idempotent fallback
+        // for direct callers; lifecycle hooks register later tab/area additions.
         v2RefreshKnownRefs()
 
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
@@ -9671,9 +9705,9 @@ class TerminalController {
     /// a delayed sendText to deliver the prompt after the agent has booted.
     ///
     /// Resolution parity with `send` (C11-121): the surface ref is resolved the
-    /// same way `v2SurfaceSendText` resolves it — `v2RefreshKnownRefs()` is run
-    /// first so a `surface:N` handle minted moments earlier by `new-split` is
-    /// already in the map, and a freshly-split surface whose PTY has not attached
+    /// same way `v2SurfaceSendText` resolves it. Lifecycle hooks register refs
+    /// before creation returns; the refresh below only seeds once. A freshly
+    /// split surface whose PTY has not attached
     /// yet is started in the background and waited on (bounded) before the line is
     /// sent. This closes the two C11-121 races: (1) a `new-split` ref that send
     /// resolves but launch did not, and (2) launch erroring/returning a non-truthful
@@ -9701,10 +9735,8 @@ class TerminalController {
 
         var result = "ERROR: surface not found: \(surfaceId.uuidString)"
         v2MainSync {
-            // Resolve the ref → panel exactly like send does. v2RefreshKnownRefs()
-            // guarantees a just-minted `surface:N` handle (e.g. from `new-split`
-            // moments earlier) is already in the resolution map, so launch no
-            // longer races behind send for a brand-new surface.
+            // The startup seed is idempotent; later refs arrive synchronously
+            // through lifecycle hooks, including freshly split tabs.
             v2RefreshKnownRefs()
 
             var targetTab: TerminalTab?

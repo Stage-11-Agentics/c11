@@ -446,6 +446,36 @@ final class CmuxMainThreadTurnProfiler {
 #endif
 
 enum FinderServicePathResolver {
+    static func servicePathURLs(from pasteboard: NSPasteboard) -> [URL] {
+        if let pathURLs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !pathURLs.isEmpty {
+            return pathURLs
+        }
+
+        let filenamesType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
+        if let paths = pasteboard.propertyList(forType: filenamesType) as? [String] {
+            let urls = paths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map { URL(fileURLWithPath: $0) }
+            if !urls.isEmpty {
+                return urls
+            }
+        }
+
+        if let raw = pasteboard.string(forType: .string), !raw.isEmpty {
+            return raw
+                .split(whereSeparator: \.isNewline)
+                .compactMap { line -> URL? in
+                    let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return nil }
+                    if let url = URL(string: text), url.scheme != nil {
+                        return url.isFileURL ? url : nil
+                    }
+                    return URL(fileURLWithPath: text)
+                }
+        }
+
+        return []
+    }
+
     private static func canonicalDirectoryPath(_ path: String) -> String {
         guard path.count > 1 else { return path }
         var canonical = path
@@ -467,11 +497,23 @@ enum FinderServicePathResolver {
         return standardized.deletingLastPathComponent()
     }
 
-    static func orderedUniqueDirectories(from pathURLs: [URL]) -> [String] {
+    static func orderedUniqueDirectories(
+        from pathURLs: [URL],
+        applicationBundleURL: URL = Bundle.main.bundleURL
+    ) -> [String] {
         var seen: Set<String> = []
         var directories: [String] = []
+        let bundleComponents = applicationBundleURL.resolvingSymlinksInPath()
+            .standardizedFileURL.pathComponents
 
         for url in pathURLs {
+            guard url.isFileURL else { continue }
+            // Launch Services may deliver the running app itself as an open
+            // request. Compare the original target before taking a file's
+            // parent, and resolve symlinks so aliases into the bundle cannot
+            // accidentally suppress session restoration.
+            let targetComponents = url.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+            guard !targetComponents.starts(with: bundleComponents) else { continue }
             let directoryURL = resolvedDirectoryURL(from: url)
             let path = canonicalDirectoryPath(directoryURL.path(percentEncoded: false))
             guard !path.isEmpty else { continue }
@@ -2347,6 +2389,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var resolvedResumeRecoveryMode: ResumeRecoveryMode?
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
+    private(set) var didCompleteInitialSessionRestore = false
+    private var deferredStartupSessionRestore: ((NSWindow) -> Void)?
     private var isApplyingStartupSessionRestore = false
     private var isAwaitingStartupResumeDecision = false
     private weak var startupResumePickerParentWindow: NSWindow?
@@ -3318,6 +3362,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.sidebarState = sidebarState
         disableSuddenTerminationIfNeeded()
         installLifecycleSnapshotObserversIfNeeded()
+        TerminalController.shared.setInitialSessionRestoreReady(didCompleteInitialSessionRestore)
+        // Listen before ContentView registers a window and installs restored
+        // terminals. Their bundled wrappers perform their ping immediately.
+        if let config = socketListenerConfigurationIfEnabled() {
+            TerminalController.shared.start(
+                workspaceManager: workspaceManager,
+                socketPath: TerminalController.shared.activeSocketPath(preferredPath: config.path),
+                accessMode: config.mode
+            )
+        }
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
 #if DEBUG
@@ -3327,23 +3381,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupMultiWindowNotificationsUITestIfNeeded()
         setupDisplayResolutionUITestDiagnosticsIfNeeded()
 
-        // UI tests sometimes don't run SwiftUI `.onAppear` soon enough (or at all) on the VM.
-        // The automation socket is a core testing primitive, so ensure it's started here when
-        // we detect XCTest, even if the main view lifecycle is flaky.
-        let env = ProcessInfo.processInfo.environment
-        if isRunningUnderXCTest(env) {
-            let raw = UserDefaults.standard.string(forKey: SocketControlSettings.appStorageKey)
-                ?? SocketControlSettings.defaultMode.rawValue
-            let userMode = SocketControlSettings.migrateMode(raw)
-            let mode = SocketControlSettings.effectiveMode(userMode: userMode)
-            if mode != .off {
-                TerminalController.shared.start(
-                    workspaceManager: workspaceManager,
-                    socketPath: SocketControlSettings.socketPath(),
-                    accessMode: mode
-                )
-                scheduleUITestSocketSanityCheckIfNeeded()
-            }
+        // The listener now starts above for every launch, including XCTest
+        // hosts whose SwiftUI onAppear callback is delayed or skipped.
+        if isRunningUnderXCTest(ProcessInfo.processInfo.environment),
+           socketListenerConfigurationIfEnabled() != nil {
+            scheduleUITestSocketSanityCheckIfNeeded()
         }
 #endif
     }
@@ -3616,9 +3658,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func attemptStartupSessionRestoreIfNeeded(primaryWindow: NSWindow) {
         guard !didAttemptStartupSessionRestore else { return }
-        didAttemptStartupSessionRestore = true
-        guard !didHandleExplicitOpenIntentAtStartup else { return }
         guard let primaryContext = contextForMainTerminalWindow(primaryWindow) else { return }
+        if deferStartupUntilSocketIsListening({ [weak self] window in
+            self?.attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        }) { return }
+        didAttemptStartupSessionRestore = true
+        guard !didHandleExplicitOpenIntentAtStartup else {
+            finishInitialSessionReadiness()
+            return
+        }
 
         // C11-34: per-workspace resume picker. Sits between
         // snapshot-load and snapshot-apply: the operator picks which
@@ -3647,7 +3695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             LaunchResumePicker.presentSheet(
                 on: primaryWindow,
                 snapshot: snapshot,
-                onSheetEnded: { [weak self] in self?.endStartupResumeDecisionWait() }
+                onSheetEnded: { [weak self] in self?.startupResumeSheetDidEnd() }
             ) { [weak self] decision in
                 guard let self else { return }
                 self.endStartupResumeDecisionWait()
@@ -3687,10 +3735,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         primaryWindow: NSWindow,
         primaryContext: MainWindowContext
     ) {
+        if deferStartupUntilSocketIsListening({ [weak self] window in
+            guard let self, let context = self.contextForMainTerminalWindow(window) else { return }
+            self.applyResolvedStartupSessionRestore(primaryWindow: window, primaryContext: context)
+        }) { return }
         let startupSnapshot = startupSessionSnapshot
         let primaryWindowSnapshot = startupSnapshot?.windows.first
         if let primaryWindowSnapshot {
             isApplyingStartupSessionRestore = true
+            NSLog("session.restore.begin socket_listening=%d", TerminalController.shared.isListeningForStartupRestore ? 1 : 0)
 #if DEBUG
             dlog(
                 "session.restore.start windows=\(startupSnapshot?.windows.count ?? 0) " +
@@ -3746,6 +3799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else {
                 completeStartupSessionRestore()
             }
+        } else {
+            completeStartupSessionRestore()
         }
     }
 
@@ -3756,9 +3811,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startupResumePickerParentWindow = nil
     }
 
+    private func startupResumeSheetDidEnd() {
+        // endSheet may notify before the decision closure runs. Give that
+        // closure its turn; only an unanswered sheet counts as cancellation.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isAwaitingStartupResumeDecision else { return }
+            self.endStartupResumeDecisionWait()
+            self.startupSessionSnapshot = nil
+            self.finishInitialSessionReadiness()
+        }
+    }
+
+    private func deferStartupUntilSocketIsListening(_ retry: @escaping (NSWindow) -> Void) -> Bool {
+        guard socketListenerConfigurationIfEnabled() != nil,
+              !TerminalController.shared.isListeningForStartupRestore else { return false }
+        deferredStartupSessionRestore = retry
+        NSLog("session.restore.deferred reason=socket_not_listening")
+        return true
+    }
+
+    /// Called after listener recovery or an explicit change to socket mode.
+    func resumeStartupSessionAfterSocketChange() {
+        guard socketListenerConfigurationIfEnabled() == nil
+                || TerminalController.shared.isListeningForStartupRestore,
+              let retry = deferredStartupSessionRestore,
+              let window = mainWindowContexts.values.compactMap(\.window).first else { return }
+        // A picker parent can close while the listener is unavailable. Keep
+        // the continuation until a registered window can receive the snapshot.
+        deferredStartupSessionRestore = nil
+        retry(window)
+    }
+
+    private func finishInitialSessionReadiness() {
+        guard !didCompleteInitialSessionRestore else { return }
+        didCompleteInitialSessionRestore = true
+        deferredStartupSessionRestore = nil
+        TerminalController.shared.setInitialSessionRestoreReady(true)
+        TerminalController.shared.v2RefreshKnownRefs()
+        NSLog("session.restore.ready")
+    }
+
     private func completeStartupSessionRestore() {
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
+        finishInitialSessionReadiness()
         _ = saveSessionSnapshot(includeScrollback: false)
     }
 
@@ -4182,6 +4278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didInstallLifecycleSnapshotObservers else { return }
         didInstallLifecycleSnapshotObservers = true
 
+        let socketObserver = NotificationCenter.default.addObserver(
+            forName: .socketListenerDidStart, object: TerminalController.shared, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.resumeStartupSessionAfterSocketChange() }
+        }
+        lifecycleSnapshotObservers.append(socketObserver)
+
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         let powerOffObserver = workspaceCenter.addObserver(
             forName: NSWorkspace.willPowerOffNotification,
@@ -4478,6 +4581,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         conversationsByPanelId conversationsByTabId: [String: TabConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
+        // A bind/listen failure must not let the launch seed overwrite the
+        // pending session. Preserve it on quit as well as on autosave.
+        if deferredStartupSessionRestore != nil
+            || (!didCompleteInitialSessionRestore && startupSessionSnapshot != nil) { return false }
         // While the resume picker is open, the file on disk is the only copy
         // of the session it offers; the empty launch window must not replace
         // it, whether the operator answers, quits, or c11 crashes first.
@@ -5053,6 +5160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState: SidebarState,
         sidebarSelectionState: SidebarSelectionState
     ) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .window, uuid: windowId)
         workspaceManager.window = window
         installMainWindowCloseGuard(on: window)
 
@@ -5098,6 +5206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        resumeStartupSessionAfterSocketChange()
         if !isTerminatingApp {
             _ = saveSessionSnapshot(includeScrollback: false)
         }
@@ -6862,9 +6971,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         target: ServiceOpenTarget,
         error: AutoreleasingUnsafeMutablePointer<NSString>
     ) {
-        prepareForExplicitOpenIntentAtStartup()
-
-        let pathURLs = servicePathURLs(from: pasteboard)
+        let pathURLs = FinderServicePathResolver.servicePathURLs(from: pasteboard)
         guard !pathURLs.isEmpty else {
             error.pointee = Self.serviceErrorNoPath
             return
@@ -6876,6 +6983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        prepareForExplicitOpenIntentAtStartup()
         for directory in directories {
             switch target {
             case .window:
@@ -6884,34 +6992,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 openWorkspaceFromService(workingDirectory: directory)
             }
         }
-    }
-
-    private func servicePathURLs(from pasteboard: NSPasteboard) -> [URL] {
-        if let pathURLs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !pathURLs.isEmpty {
-            return pathURLs
-        }
-
-        let filenamesType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
-        if let paths = pasteboard.propertyList(forType: filenamesType) as? [String] {
-            let urls = paths.map { URL(fileURLWithPath: $0) }
-            if !urls.isEmpty {
-                return urls
-            }
-        }
-
-        if let raw = pasteboard.string(forType: .string), !raw.isEmpty {
-            return raw
-                .split(whereSeparator: \.isNewline)
-                .map { line in
-                    let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let fileURL = URL(string: text), fileURL.isFileURL {
-                        return fileURL
-                    }
-                    return URL(fileURLWithPath: text)
-                }
-        }
-
-        return []
     }
 
     private func openWorkspaceFromService(workingDirectory: String) {
@@ -6926,11 +7006,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !didAttemptStartupSessionRestore {
             startupSessionSnapshot = nil
             didAttemptStartupSessionRestore = true
+            finishInitialSessionReadiness()
         }
     }
 
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
-        FinderServicePathResolver.orderedUniqueDirectories(from: urls.filter { $0.isFileURL })
+        FinderServicePathResolver.orderedUniqueDirectories(from: urls)
     }
 
     private func openWorkspaceForExternalDirectory(
@@ -13325,6 +13406,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             && isAwaitingStartupResumeDecision
         if window === startupResumePickerParentWindow {
             endStartupResumeDecisionWait()
+            startupSessionSnapshot = nil
+            finishInitialSessionReadiness()
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)

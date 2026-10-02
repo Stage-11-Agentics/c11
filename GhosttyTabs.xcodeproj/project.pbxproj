@@ -464,6 +464,8 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C1128102A1B2C3D4E5F60719 /* SendTextParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */; };
 		C1128104A1B2C3D4E5F60718 /* SendTextParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */; };
 		DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
+		C30800000000000000000002 /* SendKeyArgs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30800000000000000000001 /* SendKeyArgs.swift */; };
+		C30800000000000000000003 /* SendKeyArgs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30800000000000000000001 /* SendKeyArgs.swift */; };
 		DH021BF0A1B2C3D4E5F60719 /* DoctorCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */; };
 		E1000000A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */; };
 		E123B16B00B33A73F7527FF1 /* PiConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B79605DD09AE47DB4B228AD /* PiConversationTests.swift */; };
@@ -1023,6 +1025,7 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIResolutionSnapshot.swift; sourceTree = "<group>"; };
 C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendTextParse.swift; sourceTree = "<group>"; };
 		C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendTextParseTests.swift; sourceTree = "<group>"; };
+		C30800000000000000000001 /* SendKeyArgs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendKeyArgs.swift; sourceTree = "<group>"; };
 		DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctorCommand.swift; sourceTree = "<group>"; };
 		DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIResolutionSnapshotTests.swift; sourceTree = "<group>"; };
 		DH023BF1A1B2C3D4E5F60718 /* TerminalControllerTelemetryWorkerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalControllerTelemetryWorkerTests.swift; sourceTree = "<group>"; };
@@ -1329,6 +1332,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */,
 				DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */,
 				C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */,
+				C30800000000000000000001 /* SendKeyArgs.swift */,
 				A5001620 /* AppleScriptSupport.swift */,
 				A5001090 /* AppDelegate.swift */,
 				A5001091 /* NotificationsPage.swift */,
@@ -2209,6 +2213,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */,
 				C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */,
+				C30800000000000000000002 /* SendKeyArgs.swift in Sources */,
 				A5001621 /* AppleScriptSupport.swift in Sources */,
 				A5001093 /* AppDelegate.swift in Sources */,
 				A5001094 /* NotificationsPage.swift in Sources */,
@@ -2365,6 +2370,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */,
 				C1128102A1B2C3D4E5F60719 /* SendTextParse.swift in Sources */,
+				C30800000000000000000003 /* SendKeyArgs.swift in Sources */,
 				DH021BF0A1B2C3D4E5F60719 /* DoctorCommand.swift in Sources */,
 				CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,
 				D7200BF0A1B2C3D4E5F60719 /* MailboxLayout.swift in Sources */,

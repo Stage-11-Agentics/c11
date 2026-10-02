@@ -428,6 +428,8 @@ Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still 
 - Function keys: `f1`–`f12`
 - Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
 
+`ctrl-c`, `ctrl-d`, `ctrl-z`, and `ctrl-<letter>` are real key events, so a Kitty TUI such as Claude Code or Codex can be interrupted; pass one key per call, a second key is an error, and send the next key in a second call.
+
 ## Live messages page
 
 ```bash

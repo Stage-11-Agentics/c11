@@ -2773,6 +2773,46 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// submits the typed line on cold start.
     private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    #if DEBUG
+    private var debugRuntimeStartHoldUntil: TimeInterval?
+    private var debugPendingFlushHoldUntil: TimeInterval?
+
+    /// Let a raw-mode PTY oracle start before consuming the actual pre-attach
+    /// queue. Explicit release uses the production flush, with a bounded fallback.
+    @MainActor
+    func debugHoldPendingFlush(_ hold: Bool) {
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugPendingFlushHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugPendingFlushHoldUntil == expiry else { return }
+                self.debugPendingFlushHoldUntil = nil
+                self.flushPendingTextIfNeeded()
+            }
+        } else {
+            flushPendingTextIfNeeded()
+        }
+    }
+
+    /// A bounded, per-tab fixture for the socket timeout/queue path. It never
+    /// tears down a live runtime and automatically releases after ten seconds.
+    @MainActor
+    func debugHoldRuntimeStart(_ hold: Bool) -> Bool {
+        guard !hold || surface == nil else { return false }
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugRuntimeStartHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugRuntimeStartHoldUntil == expiry else { return }
+                self.debugRuntimeStartHoldUntil = nil
+                self.requestBackgroundSurfaceStartIfNeeded()
+            }
+        } else {
+            requestBackgroundSurfaceStartIfNeeded()
+        }
+        return true
+    }
+    #endif
     /// Borderless, off-screen `NSWindow` used to bootstrap Ghostty's runtime surface
     /// before AppKit moves the view into a real portal-backed window. Required because
     /// `ghostty_surface_new` (via `attachToView`) gates on `view.window != nil`; for
@@ -3456,6 +3496,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private func createSurface(for view: GhosttyNSView) {
         #if DEBUG
+        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
         let terminfo = getenv("TERMINFO").flatMap { String(cString: $0) } ?? "(unset)"
         let xdg = getenv("XDG_DATA_DIRS").flatMap { String(cString: $0) } ?? "(unset)"
@@ -4011,6 +4052,24 @@ final class TerminalSurface: Identifiable, ObservableObject {
         writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
     }
 
+    /// Queue fallback for socket sends, using the same newline policy as the
+    /// attached path. A raw draft ending in a newline is still a draft for
+    /// mailbox admission; it must not look like a submitted line on attach.
+    func sendQueuedSocketText(_ text: String, submit: Bool, preserveNewlines: Bool) {
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        if delivery.wantsReturn {
+            sendSubmitFormText(text, preserveNewlines: preserveNewlines)
+        } else if preserveNewlines {
+            guard !text.isEmpty else { return }
+            writeOrDefer { [weak self] in
+                self?.writeProgrammaticText(text)
+                self?.lastOperatorKeyAt = Date()
+            }
+        } else {
+            sendText(text)
+        }
+    }
+
     /// Run an instantaneous write now, unless another writer's transaction
     /// is in flight and this is not that transaction's own work; then run it
     /// as the next transaction, in order.
@@ -4071,8 +4130,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ///   * defers the Return until the pending-text queue flushes (which
     ///     happens on surface attach, when `view.window` is guaranteed
     ///     non-nil) when the surface is not yet ready.
-    func sendSubmitFormText(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .newlines)
+    func sendSubmitFormText(_ text: String, preserveNewlines: Bool = false) {
+        let trimmed = preserveNewlines ? text : text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
         performInputTransaction { [weak self] finish in
             guard let self else { return finish() }
@@ -4433,6 +4492,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func flushPendingTextIfNeeded() {
+        #if DEBUG
+        if let expiry = debugPendingFlushHoldUntil,
+           ProcessInfo.processInfo.systemUptime < expiry { return }
+        #endif
         guard let surface = surface, !pendingTextQueue.isEmpty else { return }
         let queued = pendingTextQueue
         let queuedBytes = pendingTextBytes

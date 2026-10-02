@@ -27,6 +27,41 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugType(params: params))
         case "debug.terminal.operator_keys":
             return v2Result(id: id, self.v2DebugTerminalOperatorKeys(params: params))
+        case "debug.terminal.runtime_start_hold":
+            return v2Result(id: id, v2MainSync {
+                guard let tabId = v2UUID(params, "tab_id"),
+                      let located = AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
+                      ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                    return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                }
+                let fixture: TerminalTab
+                if v2Bool(params, "create") == true {
+                    // Create and hold on this same main turn, before the normal
+                    // eager-load callbacks can start the new fixture runtime.
+                    guard let pane = located.workspace.paneId(forPanelId: tabId),
+                          let created = located.workspace.newTerminalSurface(inPane: pane, focus: false) else {
+                        return .err(code: "internal_error", message: String(
+                            localized: "socket.debug.runtime_hold_create",
+                            defaultValue: "Failed to create the fixture terminal tab."
+                        ), data: nil)
+                    }
+                    fixture = created
+                } else {
+                    fixture = terminal
+                }
+                let hold = v2Bool(params, "hold") ?? (v2Bool(params, "hold_flush") == nil)
+                guard fixture.surface.debugHoldRuntimeStart(hold) else {
+                    return .err(code: "invalid_state", message: String(
+                        localized: "socket.debug.runtime_hold_attached",
+                        defaultValue: "The terminal runtime is already attached."
+                    ), data: nil)
+                }
+                if let holdFlush = v2Bool(params, "hold_flush") {
+                    fixture.surface.debugHoldPendingFlush(holdFlush)
+                }
+                return .ok(["held": hold, "maximum_seconds": 10, "tab_id": fixture.id.uuidString])
+            })
         case "debug.app.activate":
             return v2Result(id: id, self.v2DebugActivateApp())
         case "debug.command_palette.toggle":

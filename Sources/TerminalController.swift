@@ -2090,19 +2090,21 @@ class TerminalController {
         respond: (String) -> String
     ) {
         var buffer = [UInt8](repeating: 0, count: 4096)
-        var pending = ""
+        var pending = Data()
 
         while shouldContinue() {
             let keepReading: Bool = autoreleasepool {
                 let bytesRead = read(socket, &buffer, buffer.count - 1)
                 guard bytesRead > 0 else { return false }
 
-                let chunk = String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? ""
-                pending.append(chunk)
+                // A read may end inside a UTF-8 character. Decode only after
+                // the complete newline-framed request has arrived.
+                pending.append(contentsOf: buffer[0..<bytesRead])
 
-                while let newlineIndex = pending.firstIndex(of: "\n") {
-                    let line = String(pending[..<newlineIndex])
-                    pending = String(pending[pending.index(after: newlineIndex)...])
+                while let newlineIndex = pending.firstIndex(of: 0x0A) {
+                    let line = String(data: pending[..<newlineIndex], encoding: .utf8)
+                    pending.removeSubrange(...newlineIndex)
+                    guard let line else { continue }
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
 
@@ -6989,7 +6991,8 @@ class TerminalController {
     /// press Enter", which is what a caller writing `send --no-submit 'cmd\n'`
     /// has always meant. It is stripped from the body on *both* paths and
     /// reissued as the single submit Return, so neither `submit` nor a trailing
-    /// newline can produce two.
+    /// newline can produce two. Raw/paste opts into preserveNewlines: its
+    /// newline bytes remain content and only explicit submit requests Return.
     ///
     /// Returns whether a submit Return was dispatched, so the caller can report
     /// what happened rather than what was asked for.
@@ -6998,11 +7001,13 @@ class TerminalController {
     func deliverSocketSendText(
         _ text: String,
         submit: Bool,
+        preserveNewlines: Bool = false,
         terminalSurface: TerminalSurface,
         surface: ghostty_surface_t
     ) -> Bool {
-        let body = Self.trimmingTrailingNewlines(text)
-        let wantsReturn = submit || body != text
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        let body = delivery.body
+        let wantsReturn = delivery.wantsReturn
 
         // One input transaction from the first byte to the submit Return, so
         // no other writer (the mailbox push, another send, the text box)

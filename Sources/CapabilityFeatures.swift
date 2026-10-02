@@ -33,7 +33,7 @@ struct CapabilityFeatures {
         Entry(id: .offlineEvents, version: 1, enabled: true),
         Entry(id: .canonicalRoutingKeys, version: 1, enabled: true),
         Entry(id: .initialInput, version: 1, enabled: true),
-        Entry(id: .rawSend, version: 1, enabled: false),
+        Entry(id: .rawSend, version: 1, enabled: true),
         Entry(id: .terminalSelection, version: 1, enabled: false),
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: false),
         Entry(id: .rpc, version: 1, enabled: true),

@@ -8,6 +8,7 @@ Never point this script at the operator's session. It only reads capabilities.
 import argparse
 import json
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -80,7 +81,14 @@ def main():
         human = run("--socket", dead_socket, "guide")
         assert human.startswith("c11 ") and human.endswith(guide["body"])
         assert guide["source"] == "bundle" and guide["skill_version"] is not None
-        assert guide["cli"]["short_version"] and guide["cli"]["build"] and guide["cli"]["commit"]
+        assert guide["cli"]["short_version"] and guide["cli"]["build"]
+        # Plain XCTest builds can be unstamped; guide must report the built
+        # artifact, including an unknown commit, rather than infer checkout HEAD.
+        bundle = next(parent for parent in Path(cli).resolve().parents if parent.suffix == ".app")
+        with (bundle / "Contents/Info.plist").open("rb") as info_file:
+            info = plistlib.load(info_file)
+        stamped_commit = info.get("C11Commit") or info.get("CMUXCommit")
+        assert guide["cli"]["commit"] == (stamped_commit.strip().lower() if stamped_commit else None)
         assert "rename-tab" in guide["body"] and "rename-tab" in run("--help")
         assert "There is no `c11 list`" in guide["body"]
         assert "Usage: c11 guide" in run("--socket", dead_socket, "guide", "--help")
@@ -90,8 +98,10 @@ def main():
 
     # Execute the real CLI's comparison against a synthetic peer, including
     # older servers without identity. This is fixture proof, not a live app run.
-    for server_sha, expected in [(guide["cli"]["commit"], True),
-                                 ("111111111" if not guide["cli"]["commit"].startswith("111111111") else "222222222", False),
+    cli_sha = guide["cli"]["commit"]
+    for server_sha, expected in [(cli_sha, True if cli_sha else None),
+                                 ("111111111" if not (cli_sha or "").startswith("111111111") else "222222222",
+                                  False if cli_sha else None),
                                  (None, None)]:
         with tempfile.TemporaryDirectory(prefix="c11-caps-", dir="/tmp") as directory:
             socket_path = str(Path(directory) / "peer.sock")

@@ -381,15 +381,7 @@ Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_g
 
 ## Tab initialization quirk
 
-Tabs are lazily initialized — no PTY until they have non-zero screen bounds. Tabs created in a non-visible workspace are inert until shown.
-
-Workaround: after creating in a hidden workspace, select it briefly so SwiftUI runs the layout pass:
-
-```bash
-c11 select-workspace --workspace workspace:N
-sleep 2
-# now the tab has real bounds and accepts input
-```
+Terminals start lazily. `send` and `read-screen` request a runtime even in a hidden workspace, so selecting the workspace is not a prerequisite. If a send's runtime still cannot attach, its text waits in the pending queue and the result reports `queued: true`, `delivered: false`. Showing the tab lets queued input flush when the runtime attaches.
 
 ## Reading & sending
 
@@ -413,6 +405,18 @@ c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one t
 **`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused area.
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
+
+**Raw text and stdin:** `c11 send --raw --tab <uuid|ref> '<text>'` skips escape rewriting and preserves leading, interior and trailing newline content. `c11 paste` is `send --raw`; when text is omitted it reads UTF-8 stdin. `c11 send -` explicitly reads stdin (add `--raw` for literal escape handling). A lone `-` takes no other text. Default `send` still decodes literal `\n` and `\r` to Return, `\t` to Tab, and treats trailing newlines as a request to submit. Raw/paste mode requires the connected server to advertise `send.raw`; older servers are rejected before sending text.
+
+```bash
+c11 send --tab tab:2 --raw --no-submit 'printf %s \n'
+printf 'line1\nline2\n' | c11 paste --tab tab:2 --no-submit
+c11 send --tab tab:2 --no-submit -- --literal-flag-text
+```
+
+`--no-submit` suppresses c11's additional Return in raw/paste mode, including input ending in a newline. It does not change how the recipient handles newline content: bracketed-paste-aware composers keep it as a draft, while an unbracketed shell or program can treat those newlines as input/commands. Arbitrary C0 control bytes still use the key path; raw is literal escape/newline handling, not a byte-exact control-byte transport. Unknown `--flags` before `--` are errors (including `--text`); flags after `--` are literal text. `send-tab` accepts the same modes with an explicit `--tab`.
+
+**Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
 
 **Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
 

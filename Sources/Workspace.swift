@@ -339,7 +339,7 @@ extension Workspace {
                 staleFromRestart: true
             )
         }
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries = snapshot.logEntries.map { entry in
             SidebarLogEntry(
                 message: entry.message,
@@ -5038,6 +5038,31 @@ final class Workspace: Identifiable, ObservableObject {
     /// PIDs associated with agent status entries (e.g. claude_code), keyed by status key.
     /// Used for stale-session detection: if the PID is dead, the status entry is cleared.
     var agentPIDs: [String: pid_t] = [:]
+    /// Runtime-only attribution for the currently registered PID. Unknown
+    /// attribution must never clear a sibling tab's attention.
+    private var agentPIDTabs: [String: (pid: pid_t, tabId: UUID)] = [:]
+
+    func registerAgentPID(_ pid: pid_t, key: String, tabId: UUID?) {
+        agentPIDs[key] = pid
+        if let tabId, panels[tabId] != nil {
+            agentPIDTabs[key] = (pid, tabId)
+        } else {
+            agentPIDTabs.removeValue(forKey: key)
+        }
+    }
+
+    @discardableResult
+    func removeAgentPID(key: String) -> UUID? {
+        let pid = agentPIDs.removeValue(forKey: key)
+        let association = agentPIDTabs.removeValue(forKey: key)
+        guard let association, association.pid == pid else { return nil }
+        return association.tabId
+    }
+
+    func clearAgentPIDs() {
+        agentPIDs.removeAll()
+        agentPIDTabs.removeAll()
+    }
     private var restoredTerminalScrollbackByTabId: [UUID: String] = [:]
 
     private static func isProxyOnlyRemoteError(_ detail: String) -> Bool {
@@ -7326,7 +7351,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func resetSidebarContext(reason: String = "unspecified") {
         statusEntries.removeAll()
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries.removeAll()
         progress = nil
         gitBranch = nil

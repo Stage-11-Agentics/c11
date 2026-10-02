@@ -63,10 +63,13 @@ final class JournalStoreTests: XCTestCase {
 
     // Protected baseline capacity fails transactionally without an orphan receipt.
     func testStateCapacityRollsBackEventAndKeepsAsk() throws {
-        var budget = JournalBudgets(); budget.currentBytes = 1200
-        let store = try JournalStore(layout: layout, budgets: budget, clock: { 1000 })
         let ask = JournalTestData.draft(.questionRequested)
-        _ = try store.append(draft: ask, context: JournalContext(eligible: true))
+        var initial: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })
+        _ = try initial!.append(draft: ask, context: JournalContext(eligible: true))
+        initial = nil
+        // Lower the injected budget below protected state, independently of encoding size.
+        var budget = JournalBudgets(); budget.currentBytes = 1
+        let store = try JournalStore(layout: layout, budgets: budget, clock: { 1000 })
         var other = ask; other.eventID = UUID(); other.tabID = UUID()
         XCTAssertThrowsError(try store.append(draft: other, context: JournalContext(eligible: true))) { XCTAssertEqual($0 as? JournalError, .full) }
         XCTAssertEqual(try store.readPage(after: 0).count, 1)
@@ -149,5 +152,27 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertNil(JournalReplayPolicy.attention(baseline, matching: draft.owner))
         XCTAssertTrue(JournalReplayPolicy.restored(baseline).isHistorical)
         XCTAssertNil(JournalReplayPolicy.attention(baseline, matching: nil))
+    }
+
+    // Audit unavailable-schema case: preserve evidence instead of silently recreating the file.
+    func testUnknownSchemaIsPreservedAndPrivateFilesStayPrivate() throws {
+        var store: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })
+        let draft = JournalTestData.draft(.questionRequested)
+        _ = try store!.append(draft: draft, context: JournalContext(eligible: true))
+        let attrs = try FileManager.default.attributesOfItem(atPath: layout.database.path)
+        XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        store = nil
+        var connection: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(layout.database.path, &connection), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(connection, "PRAGMA user_version=99", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(connection)
+        XCTAssertThrowsError(try JournalStore(layout: layout)) { XCTAssertEqual($0 as? JournalError, .unsupportedVersion) }
+        XCTAssertEqual(sqlite3_open(layout.database.path, &connection), SQLITE_OK)
+        defer { sqlite3_close(connection) }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(connection, "SELECT count(*) FROM journal_events", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
     }
 }

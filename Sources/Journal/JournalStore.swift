@@ -22,6 +22,7 @@ final class JournalStore {
     private var lastPrune: Int64 = 0
     private var sincePrune = 0
     private var healthCode: JournalError?
+    private var reclaiming = false
 
     init(layout: JournalStorageLayout, budgets: JournalBudgets = JournalBudgets(),
          instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
@@ -266,16 +267,18 @@ final class JournalStore {
 
     private func reserveSpace(now: Int64) throws {
         var physical = layout.physicalBytes()
-        if physical >= budgets.reclaimStart {
+        if physical >= budgets.reclaimStart { reclaiming = true }
+        if reclaiming {
             // One bounded batch per append. If receipts prevent recovery, reject admission.
             try pruneOnQueue(now: now, pressure: true)
         }
         let wal = JournalStorageLayout.physicalBytes(layout.database.path + "-wal")
-        if wal >= budgets.checkpointBytes || physical >= budgets.reclaimStart {
+        if wal >= budgets.checkpointBytes || reclaiming {
             let rc = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
             if rc != SQLITE_OK && wal >= budgets.walLimit { throw JournalError.full }
         }
         physical = layout.physicalBytes()
+        if physical <= budgets.reclaimTarget { reclaiming = false }
         guard physical + budgets.reserveBytes <= budgets.totalBytes,
               JournalStorageLayout.physicalBytes(layout.database.path + "-wal") < budgets.walLimit else { throw JournalError.full }
     }

@@ -1,5 +1,38 @@
 # Conversation primitives reference
 
+## Lifecycle journal
+
+The journal records structural observations for an exact `(tab UUID, agent kind,
+session ID)` owner. It does not store conversation content or make a session
+resumable. See [append API](api.md#structural-lifecycle-append).
+
+Processing follows the app-assigned sequence. Comparable native time can reject
+late evidence, and tool activity can only refresh a working turn. In particular,
+a late PreToolUse after Stop cannot restart working. A new native submission
+boundary can start the next turn. Missing or unsupported evidence remains
+unknown/advisory; pressing Esc alone does not prove interruption succeeded.
+
+An observed question, approval, or plan-review request is blocked independently
+of unread notifications. Seeing a tab can clear unread, but it does not answer
+the request. Existing flag and suppression policy still controls presentation.
+Journal-managed sessions receive derived `activity` from the committed fold;
+legacy shell/notification writes cannot override it.
+
+Restart projects old blocked/error evidence as **unconfirmed** and disconnected.
+Old working is not present liveness. Only matching exact restored ownership may
+reattach the evidence, and fresh supported events reconcile it. Offline spool
+drain cannot replace newer live evidence. No automatic reply, resume or focus
+change is implied.
+
+Storage is c11-owned SQLite WAL under
+`~/Library/Application Support/c11/journal/<bundle-id>/`. History retains 14 days
+within a 256 MiB physical budget for database, WAL, SHM and spool. Current state
+has a separate 16 MiB budget; an old open ask survives history pruning. If
+protected state or the 24-hour receipt floor prevents recovery, new admission
+fails with degraded health. Analytics must disclose retained coverage rather
+than reconstructing expired intervals. Spooling is bounded best effort, not a
+lossless delivery promise.
+
 This file expands [SKILL.md § Conversation primitives](../SKILL.md#conversation-primitives). Loaded on demand; the top-level skill carries the brief.
 
 ## What it is

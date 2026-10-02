@@ -957,7 +957,7 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
         XCTAssertFalse(snapshot.hasNotifications)
         XCTAssertTrue(snapshot.recentNotifications.isEmpty)
         XCTAssertEqual(snapshot.flags, [flag])
-        XCTAssertTrue(snapshot.stateHintTitle.contains("1 flagged tab"))
+        XCTAssertTrue(snapshot.stateHintTitle.contains("1 flag · 0 open asks"))
     }
 
     func testSuppressedUnflaggedNoticesAreQuietWithoutChangingRoutineHistory() {
@@ -1070,7 +1070,7 @@ final class MenuBarExtraAttentionTests: XCTestCase {
 
         publish("Choose schema")
         XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").count == 1 })
-        XCTAssertTrue(controller.statusItemTooltipForTesting?.contains("1 flagged tab") == true)
+        XCTAssertTrue(controller.statusItemTooltipForTesting?.contains("1 flag · 0 open asks") == true)
         XCTAssertTrue(controller.statusItemTooltipForTesting?.contains("Choose schema") == true)
         XCTAssertTrue(try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first).isEnabled)
         XCTAssertFalse(try XCTUnwrap(items(controller, action: "markAllReadAction").first).isEnabled)
@@ -1182,6 +1182,52 @@ final class MenuBarExtraAttentionTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(items(controller, action: "openFlagItemAction:").isEmpty)
         XCTAssertTrue(items(controller, action: "openNotificationItemAction:").isEmpty)
+    }
+
+    func testFeedAskRefreshAndShortcutPreservationWithoutRoutineNotice() throws {
+        store.replaceNotificationsForTesting([])
+        let index = TabAttentionIndex()
+        let feed = FeedProjectionBridge()
+        let suite = "c11-265-shortcut-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let custom = StoredShortcut(key: "j", command: true, shift: true, option: false, control: false)
+        let key = KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey
+        let encoded = try JSONEncoder().encode(custom)
+        defaults.set(encoded, forKey: key)
+        let controller = MenuBarExtraController(
+            notificationStore: store, onShowMainWindow: {}, onShowNotifications: {}, onOpenNotification: { _ in },
+            onOpenFlag: { _ in }, onJumpToLatestUnread: {}, onCheckForUpdates: {}, onOpenPreferences: {}, onQuitApp: {},
+            attentionIndex: index, feedProjection: feed, shortcutProvider: { action in
+                guard let data = defaults.data(forKey: action.defaultsKey),
+                      let stored = try? JSONDecoder().decode(StoredShortcut.self, from: data) else { return action.defaultShortcut }
+                return stored
+            }
+        )
+        defer { controller.removeFromMenuBar() }
+        let defaultJump = KeyboardShortcutSettings.Action.jumpToUnread.defaultShortcut
+        XCTAssertEqual(defaultJump.key, "\r")
+        XCTAssertEqual(defaultJump.modifierFlags, [.command, .control])
+        let ask = JournalSnapshot(owner: .init(tabID: UUID(), agentKind: "claude-code", sessionID: "synthetic-menu"),
+            workspaceID: UUID(), phase: .blocked, reason: .question, requestID: "synthetic-menu-ask",
+            source: .hook, adapter: .claudeHook, sinceMs: 10, appInstanceID: UUID(), confirmation: .confirmed)
+        let jump = try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first)
+        XCTAssertFalse(jump.isEnabled)
+        feed.noteJournal(tabID: ask.owner.tabID, snapshot: ask)
+        XCTAssertTrue(waitUntil { controller.menuForTesting.items.first?.title.contains("0 flags · 1 open ask") == true })
+        XCTAssertTrue(jump.isEnabled)
+        XCTAssertEqual(jump.keyEquivalent, "j")
+        XCTAssertEqual(jump.keyEquivalentModifierMask, [.command, .shift])
+        XCTAssertEqual(defaults.data(forKey: key), encoded)
+        XCTAssertTrue(store.notifications.isEmpty)
+        feed.removeTab(workspaceID: try XCTUnwrap(ask.workspaceID), tabID: ask.owner.tabID)
+        XCTAssertTrue(waitUntil { controller.menuForTesting.items.first?.title.contains("No flags · no open asks") == true })
+        XCTAssertFalse(jump.isEnabled)
+        XCTAssertEqual(jump.keyEquivalent, "j")
+        controller.removeFromMenuBar()
+        feed.noteJournal(tabID: ask.owner.tabID, snapshot: ask)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(jump.isEnabled)
     }
 }
 #endif

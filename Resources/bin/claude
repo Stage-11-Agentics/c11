@@ -49,17 +49,42 @@
 # first so no early exec passes a parent's marker on.
 unset C11_AGENT_INTERACTIVE_PID
 
+# Keep c11 membership available to both the early reentry and normal paths.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {
-    local self_dir
+    local self_dir d candidate
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     local IFS=:
     for d in $PATH; do
         [[ "$d" == "$self_dir" ]] && continue
-        [[ -x "$d/claude" ]] && printf '%s' "$d/claude" && return 0
+        candidate="$d/claude"
+        [[ -x "$candidate" ]] || continue
+        if LC_ALL=C head -c 512 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# c11 claude wrapper'; then
+            continue
+        fi
+        printf '%s' "$candidate"
+        return 0
     done
     return 1
 }
+
+# The real CLI inherits this marker. If it starts a child through PATH, bypass
+# c11 hooks and forward directly to a non-wrapper binary instead of nesting.
+if [[ -n "${C11_CLAUDE_WRAPPER_REENTRY:-}" ]]; then
+    # Match the normal in-c11 passthrough behavior before forwarding a
+    # descendant launch to the real binary.
+    if [[ "$IN_C11" == "1" ]]; then
+        unset CLAUDECODE
+    fi
+    REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
+    unset C11_CLAUDE_WRAPPER_REENTRY
+    exec "$REAL_CLAUDE" "$@"
+fi
 
 # Resolve the c11 binary the wrapper will use to talk to the running app.
 # Bundle-relative `c11` first (so dev-tagged builds always hit the binary
@@ -98,19 +123,13 @@ c11_socket_available() {
 
 # Pass through if not in a c11 terminal, hooks are disabled, or the c11
 # socket is unavailable (stale env / app not running).
-IN_C11=0
-if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
-    IN_C11=1
-fi
-
 if [[ "$IN_C11" == "0" || "${CMUX_CLAUDE_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
-    # In c11-launched shells, preserve old behavior and always clear nested
-    # Claude session markers, even when we must pass through due to stale socket.
+    # Preserve old behavior when passing through due to a stale socket.
     if [[ "$IN_C11" == "1" ]]; then
         unset CLAUDECODE
     fi
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
-    exec "$REAL_CLAUDE" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" "$@"
 fi
 
 # Find real claude.
@@ -136,7 +155,7 @@ unset CLAUDECODE
 # Docs: https://code.claude.com/docs/en/agent-view
 case "${1:-}" in
     mcp|config|api-key|rc|remote-control|agents|attach|logs|stop|kill|respawn|rm)
-        exec "$REAL_CLAUDE" "$@"
+        C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" "$@"
         ;;
 esac
 
@@ -268,8 +287,8 @@ else
 fi
 
 if [[ "$SKIP_SESSION_ID" == true ]]; then
-    exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
 else
     SESSION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
 fi

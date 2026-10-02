@@ -49,6 +49,12 @@
 # first so no early exec passes a parent's marker on.
 unset C11_AGENT_INTERACTIVE_PID
 
+# Keep c11 membership available to both the early reentry and normal paths.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {
     local self_dir d candidate
@@ -70,6 +76,11 @@ find_real_claude() {
 # The real CLI inherits this marker. If it starts a child through PATH, bypass
 # c11 hooks and forward directly to a non-wrapper binary instead of nesting.
 if [[ -n "${C11_CLAUDE_WRAPPER_REENTRY:-}" ]]; then
+    # Match the normal in-c11 passthrough behavior before forwarding a
+    # descendant launch to the real binary.
+    if [[ "$IN_C11" == "1" ]]; then
+        unset CLAUDECODE
+    fi
     REAL_CLAUDE="$(find_real_claude)" || { echo "Error: claude not found in PATH" >&2; exit 127; }
     unset C11_CLAUDE_WRAPPER_REENTRY
     exec "$REAL_CLAUDE" "$@"
@@ -112,14 +123,8 @@ c11_socket_available() {
 
 # Pass through if not in a c11 terminal, hooks are disabled, or the c11
 # socket is unavailable (stale env / app not running).
-IN_C11=0
-if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
-    IN_C11=1
-fi
-
 if [[ "$IN_C11" == "0" || "${CMUX_CLAUDE_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
-    # In c11-launched shells, preserve old behavior and always clear nested
-    # Claude session markers, even when we must pass through due to stale socket.
+    # Preserve old behavior when passing through due to a stale socket.
     if [[ "$IN_C11" == "1" ]]; then
         unset CLAUDECODE
     fi

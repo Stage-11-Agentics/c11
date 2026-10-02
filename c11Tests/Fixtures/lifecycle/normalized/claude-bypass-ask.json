@@ -1,0 +1,224 @@
+{
+  "id": "claude-bypass-ask",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:59:45.824Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "kind": "terminal",
+        "c11_seq": "4109",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:59:45.826Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]",
+        "c11_seq": "4110",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 2
+    },
+    {
+      "t": "2026-10-02T02:59:46.475Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "state": "idle",
+        "c11_seq": "4111",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 651
+    },
+    {
+      "t": "2026-10-02T02:59:46.498Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "state": "working",
+        "c11_seq": "4112",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 674
+    },
+    {
+      "t": "2026-10-02T02:59:47Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "session_id": "sess-1",
+      "tab": "tab-ask",
+      "attrs": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 1176
+    },
+    {
+      "t": "2026-10-02T02:59:47Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "session_id": "sess-1",
+      "tab": "tab-ask",
+      "attrs": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "oracle": null,
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 1176
+    },
+    {
+      "t": "2026-10-02T02:59:50Z",
+      "source": "claude-hook",
+      "name": "PermissionRequest",
+      "tool_name": "AskUserQuestion",
+      "session_id": "sess-1",
+      "tab": "tab-ask",
+      "attrs": {
+        "ask_shape.question_count": "1",
+        "ask_shape.option_count": "2",
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "AskUserQuestion"
+      },
+      "oracle": null,
+      "seq": 7,
+      "id": "ev-7",
+      "t_ms": 4176
+    },
+    {
+      "t": "2026-10-02T02:59:50Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "AskUserQuestion",
+      "session_id": "sess-1",
+      "tab": "tab-ask",
+      "attrs": {
+        "ask_shape.question_count": "1",
+        "ask_shape.option_count": "2",
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_use_id": "tool-1"
+      },
+      "oracle": null,
+      "seq": 8,
+      "id": "ev-8",
+      "t_ms": 4176
+    },
+    {
+      "t": "2026-10-02T02:59:56Z",
+      "source": "oracle",
+      "name": "ask-is-waiting",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled",
+        "time_order": "unknown"
+      },
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
+      },
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 10176
+    },
+    {
+      "t": "2026-10-02T02:59:56.807Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "state": "idle",
+        "c11_seq": "4114",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 10,
+      "id": "ev-10",
+      "t_ms": 10983
+    },
+    {
+      "t": "2026-10-02T02:59:56.807Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "tool_name": null,
+      "session_id": null,
+      "tab": null,
+      "attrs": {
+        "c11_seq": "4115",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 11,
+      "id": "ev-11",
+      "t_ms": 10983
+    }
+  ],
+  "current": {
+    "mark": "waiting",
+    "notes": "AskUserQuestion was followed by an oracle whose mark was waiting. The ask tab had one unread notification, and waiting.entered is in the same record."
+  },
+  "intended": {
+    "mark": "waiting",
+    "notes": "A bypass AskUserQuestion is a blocked ask. The originating unsuppressed tab enters waiting."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "app-restart-while-waiting",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "origin": "gap",
+  "events": [],
+  "recapture_required": "tagged-build"
+}

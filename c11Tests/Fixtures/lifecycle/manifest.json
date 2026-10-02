@@ -1,0 +1,230 @@
+{
+  "schema": "c11.lifecycle-fixtures.v1",
+  "provenance": {
+    "c11_version_line": "c11 0.67.0 (131)",
+    "c11_build_label": "c11 0.67.0 (131)",
+    "doctor_status": "mismatch",
+    "bundled_cli_version": "c11 0.67.0 (131)",
+    "path_cli_version": "c11 0.67.0 (131)",
+    "source_sha": "0ff8887e5e965400b01645ef40b85fd0b2605cf2",
+    "capture_host": "production-c11",
+    "amendment": "Repair cycle 1 recaptured the reachable incidents on production c11. The app was not restarted. Untriggered cases are gaps with recapture_required tagged-build.",
+    "providers": {
+      "claude-code": "2.1.287 (Claude Code)",
+      "codex": "codex-cli 0.159.3",
+      "grok": "grok 1.0.46 (2765805b9442)",
+      "opencode": "1.18.30"
+    },
+    "ui": "Socket reads only. No computer use and no app restart on this Mac."
+  },
+  "cases": [
+    {
+      "id": "claude-bypass-ask",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "bypass-ask-user-question",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "launch-agent claude-code haiku effort low, bypass command, per-process settings hook logger. Poll until the ask tab's mark is waiting, then record that oracle.",
+      "capture_file": "captures/claude-bypass-ask.json",
+      "normalized_file": "normalized/claude-bypass-ask.json",
+      "missing_native_signals": [],
+      "current_behavior": "AskUserQuestion was followed by an oracle whose mark was waiting. The ask tab had one unread notification, and waiting.entered is in the same record.",
+      "intended_projection": "A bypass AskUserQuestion is a blocked ask. The originating unsuppressed tab enters waiting."
+    },
+    {
+      "id": "claude-sibling-tool-while-waiting",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "sibling-tool-clears-waiting",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "Wait until tab A is waiting on an ask. Record that oracle. Then launch tab B and record its Bash PreToolUse, then oracle both tabs.",
+      "capture_file": "captures/claude-sibling-tool-while-waiting.json",
+      "normalized_file": "normalized/claude-sibling-tool-while-waiting.json",
+      "missing_native_signals": [],
+      "current_behavior": "Tab A was waiting before tab B's Bash tool started. After that tool, tab A's mark was still waiting and its unread notification remained.",
+      "intended_projection": "A tool starting on tab B clears only tab B. Tab A's waiting mark survives."
+    },
+    {
+      "id": "claude-bypass-exit-plan",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "bypass-exit-plan-mode",
+      "origin": "gap",
+      "derived_from": null,
+      "recapture_required": "tagged-build",
+      "gap": "ExitPlanMode did not fire on production c11.",
+      "replay_recipe": "launch-agent claude-code with the tool list limited to ExitPlanMode and bypass permissions. Record the tool hook.",
+      "capture_file": "captures/claude-bypass-exit-plan.json",
+      "normalized_file": "normalized/claude-bypass-exit-plan.json",
+      "missing_native_signals": [
+        "ExitPlanMode"
+      ],
+      "current_behavior": "ExitPlanMode did not fire. The bypass launch offered only that tool, then the session stopped. No plan-exit event was recorded.",
+      "intended_projection": "ExitPlanMode in bypass mode is a blocked ask. The tab enters waiting from the tool hook itself."
+    },
+    {
+      "id": "claude-esc-interrupt",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "esc-interrupt",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "launch-agent claude-code to run sleep 45. Send escape when Bash PreToolUse is present and PostToolUse and Stop are not.",
+      "capture_file": "captures/claude-esc-interrupt.json",
+      "normalized_file": "normalized/claude-esc-interrupt.json",
+      "missing_native_signals": [
+        "turn.interrupted"
+      ],
+      "current_behavior": "Escape was sent after Bash PreToolUse and before PostToolUse and Stop. The following oracle mark is the observed tab state.",
+      "intended_projection": "An Esc interruption during a tool ends the turn. The tab must not stay working. This build has no turn.interrupted hook."
+    },
+    {
+      "id": "claude-restart-while-waiting",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "restart-while-waiting",
+      "origin": "gap",
+      "derived_from": null,
+      "recapture_required": "tagged-build",
+      "gap": "Production c11 was not restarted.",
+      "replay_recipe": "Requires an app or agent restart while a tab is waiting. Not run against production c11.",
+      "capture_file": "captures/claude-restart-while-waiting.json",
+      "normalized_file": "normalized/claude-restart-while-waiting.json",
+      "missing_native_signals": [
+        "restart sequence"
+      ],
+      "current_behavior": "The production app was not restarted. This case is not the clean session end. No restart sequence was recorded.",
+      "intended_projection": "Ending one waiting agent clears only that tab. A sibling's waiting state survives."
+    },
+    {
+      "id": "claude-session-end",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "clean-session-end",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "After Stop, send /exit to that tab only. Keep the SessionEnd hook only if get-metadata still answers for the tab.",
+      "capture_file": "captures/claude-session-end.json",
+      "normalized_file": "normalized/claude-session-end.json",
+      "missing_native_signals": [],
+      "current_behavior": "SessionEnd arrived while get-metadata for that tab still succeeded. The oracle after SessionEnd is the observed mark.",
+      "intended_projection": "A clean session end clears that tab's running turn. The mark comes from the oracle taken while the tab still exists."
+    },
+    {
+      "id": "claude-normal-tool-stop",
+      "provider": "claude-code",
+      "mode": "normal",
+      "incident": "normal-tool-then-stop",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "Project command is claude without bypass. Haiku, effort low, Bash ls once. No permission key was required in the captured hooks.",
+      "capture_file": "captures/claude-normal-tool-stop.json",
+      "normalized_file": "normalized/claude-normal-tool-stop.json",
+      "missing_native_signals": [],
+      "current_behavior": "Observed mark working. Permission key sent: False. Hook names ['PostToolUse', 'PreToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].",
+      "intended_projection": "A finished normal turn is an unread completion, distinct from a blocked ask. Working applies only while the tool is in flight. A late async PreToolUse must not move the turn back to working."
+    },
+    {
+      "id": "codex-child-completion",
+      "provider": "codex",
+      "mode": "bypass",
+      "incident": "gaf-13-child-completion",
+      "origin": "gap",
+      "derived_from": null,
+      "recapture_required": "tagged-build",
+      "gap": "No Codex notify callback was observed.",
+      "replay_recipe": "launch-agent codex with the notify tee. A child notify with a distinct thread id is the event. None arrived.",
+      "capture_file": "captures/codex-child-completion.json",
+      "normalized_file": "normalized/codex-child-completion.json",
+      "missing_native_signals": [
+        "codex notify payload"
+      ],
+      "current_behavior": "No notify callback arrived. The retry recorded zero notify rows. No child-completion event was recorded.",
+      "intended_projection": "A child callback whose thread id is not the captured root must not be treated as the root finishing, and must not create the root's waiting notification."
+    },
+    {
+      "id": "grok-session",
+      "provider": "grok",
+      "mode": "default",
+      "incident": "provider-grok",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "launch-agent grok. The bundled wrapper has session identity only. Record the metadata oracle. Do not invent Claude hooks.",
+      "capture_file": "captures/grok-session.json",
+      "normalized_file": "normalized/grok-session.json",
+      "missing_native_signals": [
+        "SessionStart",
+        "Stop",
+        "PreToolUse",
+        "Notification",
+        "PermissionRequest"
+      ],
+      "current_behavior": "No hook file was expected. Visible state is c11 shell liveness and metadata only.",
+      "intended_projection": "Grok emits no SessionStart, Stop, PreToolUse, or Notification hook. Do not fabricate those events. Transcript signals are a later producer and are not this corpus."
+    },
+    {
+      "id": "opencode-session",
+      "provider": "opencode",
+      "mode": "default",
+      "incident": "provider-opencode",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "launch-agent opencode with a per-process capture plugin. Keep plugin events that were actually written. Do not invent session.idle.",
+      "capture_file": "captures/opencode-session.json",
+      "normalized_file": "normalized/opencode-session.json",
+      "missing_native_signals": [],
+      "current_behavior": "Plugin event names: ['catalog.updated', 'integration.updated', 'message.part.delta', 'message.part.updated', 'message.updated', 'plugin.added', 'reference.updated', 'session.created', 'session.diff', 'session.status', 'session.updated'].",
+      "intended_projection": "OpenCode's native signals are plugin events (session.idle, session.status, permission.asked, session.error), not Claude hook names. Child sessions must not retarget the root tab."
+    },
+    {
+      "id": "derived-late-pretool-after-stop",
+      "provider": "claude-code",
+      "mode": "normal",
+      "incident": "late-pretool-after-stop",
+      "origin": "derived-reorder",
+      "derived_from": "claude-normal-tool-stop",
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "Not a second live run. The PreToolUse record from claude-normal-tool-stop is moved to just after that capture's Stop. Each event points at the source event id.",
+      "capture_file": "captures/derived-late-pretool-after-stop.json",
+      "normalized_file": "normalized/derived-late-pretool-after-stop.json",
+      "missing_native_signals": [],
+      "current_behavior": "The live PreToolUse handler sets activity working and status Running with no sequence check, so this arrival would flip the tab back to working. Seq follows the derived order. Sorting these events by timestamp restores the live order.",
+      "intended_projection": "Stop is the later lifecycle edge in this labeled reorder. A late PreToolUse must not move the agent back to working. Event seq is the derived order; timestamps are the original capture times."
+    },
+    {
+      "id": "app-restart-while-waiting",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "app-restart-while-waiting",
+      "origin": "gap",
+      "derived_from": null,
+      "recapture_required": "tagged-build",
+      "gap": "Production c11 was not restarted.",
+      "replay_recipe": "Requires restarting c11. Not run. The production app hosts the live fleet.",
+      "capture_file": "captures/app-restart-while-waiting.json",
+      "normalized_file": "normalized/app-restart-while-waiting.json",
+      "missing_native_signals": [
+        "app restart event sequence"
+      ],
+      "current_behavior": "No app restart was performed. No restart event was recorded.",
+      "intended_projection": "After an app restart, a tab that was blocked stays blocked rather than being dropped or applied to a sibling."
+    }
+  ]
+}

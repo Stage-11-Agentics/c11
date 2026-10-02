@@ -3420,7 +3420,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
-        let snapshot = SessionPersistenceStore.load()
+        let snapshot = SessionPersistenceStore.load().map {
+            SessionRestoreNormalization.prepareStartupSnapshot($0)
+        }
         startupSessionSnapshot = snapshot
 
         // Resolve the one-shot policy before any slow work. Even if seed or

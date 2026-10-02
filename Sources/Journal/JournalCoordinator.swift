@@ -9,6 +9,9 @@ final class JournalCoordinator: @unchecked Sendable {
     private var owners: [UUID: JournalOwner] = [:]
     private var targets: [UUID: UUID] = [:]
     private var snapshots: [UUID: JournalSnapshot] = [:]
+    private var turnStartedMs: [UUID: Int64] = [:]
+    private var openAsks: [UUID: JournalOpenAsk] = [:]
+    private var responseGate = OperatorResponseGate()
     private var store: JournalStore?
     private var storageError: JournalError?
     private var started = false
@@ -29,6 +32,9 @@ final class JournalCoordinator: @unchecked Sendable {
         lock.lock()
         targets.removeValue(forKey: tabID)
         let hadProjection = snapshots.removeValue(forKey: tabID) != nil
+        turnStartedMs.removeValue(forKey: tabID)
+        openAsks.removeValue(forKey: tabID)
+        responseGate.clear(tab: tabID)
         let callback = sink
         lock.unlock()
         // A removed tab is a real close. The sink queues its own work and does not wait on UI.
@@ -41,6 +47,9 @@ final class JournalCoordinator: @unchecked Sendable {
         guard owners[tabID] != owner else { lock.unlock(); return }
         owners[tabID] = owner
         let hadProjection = snapshots.removeValue(forKey: tabID) != nil
+        turnStartedMs.removeValue(forKey: tabID)
+        openAsks.removeValue(forKey: tabID)
+        responseGate.clear(tab: tabID)
         let callback = sink
         lock.unlock()
         if hadProjection { callback?(tabID, nil, nil, nil) }
@@ -80,7 +89,9 @@ final class JournalCoordinator: @unchecked Sendable {
             guard let store = try? storage() else { return }
             for id in ids {
                 guard let owner = exactOwner(tabID: id), let baseline = try? store.current(owner: owner) else { continue }
-                publish(baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline))
+                let attached = baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline)
+                publish(attached)
+                try? hydrateCaches(store: store, snapshot: attached)
             }
         }
     }
@@ -151,6 +162,7 @@ final class JournalCoordinator: @unchecked Sendable {
                         publish(baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline))
                     }
                 }
+                try cacheClocks(store)
                 beginDrainIfReady()
             } catch { setError(error) }
         }
@@ -220,6 +232,7 @@ final class JournalCoordinator: @unchecked Sendable {
                 draft: draft,
                 context: context
             )
+            rememberApplied(draft: draft, result: result)
             if let changed = result.changedSnapshot {
                 let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
                 let opensAsk = [JournalKind.questionRequested, .planReviewRequested, .approvalRequested].contains(draft.kind)
@@ -229,6 +242,9 @@ final class JournalCoordinator: @unchecked Sendable {
                 // same caller, and a queued publish drops that note. The sink only enqueues its own
                 // work; this does not wait on the UI.
                 publish(changed, boundary: boundary, eventID: eventID)
+            }
+            if !historical, !result.receipt.replayed {
+                emitLifecycle(draft: draft, result: result)
             }
             lock.lock(); storageError = nil; lock.unlock()
             return result
@@ -257,6 +273,141 @@ final class JournalCoordinator: @unchecked Sendable {
             startupQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [self] in drain(store: store, first: false) }
         }
     }
+    func cachedTurnStartedMs(tabID: UUID) -> Int64? {
+        lock.lock(); defer { lock.unlock() }
+        return turnStartedMs[tabID]
+    }
+
+    func registeredTargets() -> [UUID: UUID] {
+        lock.lock(); defer { lock.unlock() }
+        return targets
+    }
+
+    /// One lock lookup. Draft building happens on the startup queue, never here.
+    func noteOperatorSubmit(tabID: UUID, keyCode: UInt16, modifierRaw: UInt, isRepeat: Bool, synthesizing: Bool, hasMarkedText: Bool) {
+        lock.lock()
+        guard let ask = openAsks[tabID] else { lock.unlock(); return }
+        let accepted = AgentRoster.isOperatorSubmit(
+            keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat,
+            synthesizing: synthesizing, hasMarkedText: hasMarkedText,
+            requiresPickerCommit: ask.requiresPickerCommit,
+            pickerKeyCode: ask.pickerKeyCode, pickerModifierRaw: ask.pickerModifierRaw)
+        guard accepted, responseGate.begin(tab: tabID, ask: ask.eventID) else { lock.unlock(); return }
+        let captured = ask
+        lock.unlock()
+        startupQueue.async { [self] in enqueueResponse(tabID: tabID, ask: captured) }
+    }
+
+    func noteTextBoxSubmit(tabID: UUID) {
+        lock.lock()
+        guard let ask = openAsks[tabID], responseGate.begin(tab: tabID, ask: ask.eventID) else { lock.unlock(); return }
+        let captured = ask
+        lock.unlock()
+        startupQueue.async { [self] in enqueueResponse(tabID: tabID, ask: captured) }
+    }
+
+    func rosterDocument(live: [AgentRoster.LiveTab], now: Int64) -> [String: Any] {
+        do {
+            let store = try storage()
+            let currents = try store.listCurrent().map { row in
+                row.appInstanceID == store.instanceID ? row : JournalReplayPolicy.restored(row)
+            }
+            let unattributed = try store.unattributedCount()
+            let coverage = try store.coverage()
+            var events: [String: [AgentRoster.RetainedEvent]] = [:]
+            var truncated: Set<String> = []
+            for row in currents where row.isHistorical {
+                let page = try store.retainedOwnerEvents(
+                    owner: row.owner, throughSequence: row.lastSequence, limit: AgentRoster.restoreLimit)
+                events[row.owner.key] = page.events
+                if page.truncated { truncated.insert(row.owner.key) }
+            }
+            return AgentRoster.document(
+                live: live, currents: currents, eventsByOwner: events, truncatedOwners: truncated,
+                unattributed: unattributed, storePruned: coverage.first > 1, storageAvailable: true,
+                healthDegraded: health() != nil, now: now, liveIdentity: "available")
+        } catch {
+            return AgentRoster.document(
+                live: live, currents: [], eventsByOwner: [:], truncatedOwners: [],
+                unattributed: 0, storePruned: false, storageAvailable: false,
+                healthDegraded: true, now: now, liveIdentity: "available")
+        }
+    }
+
+    private func enqueueResponse(tabID: UUID, ask: JournalOpenAsk) {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let draft = JournalDraft(
+            kind: .stateChanged, emittedAtMs: now, tabID: ask.owner.tabID, workspaceID: ask.workspaceID,
+            sessionID: ask.owner.sessionID, agentKind: ask.owner.agentKind, source: .c11, adapter: .c11,
+            nativeEvent: "operator_response", requestID: ask.requestID ?? ask.eventID.uuidString, signal: .operatorResponse)
+        do {
+            _ = try append(draft)
+            lock.lock(); responseGate.succeed(tab: tabID, ask: ask.eventID); lock.unlock()
+        } catch {
+            lock.lock(); responseGate.fail(tab: tabID, ask: ask.eventID); lock.unlock()
+        }
+    }
+
+    private func emitLifecycle(draft: JournalDraft, result: JournalAppendResult) {
+        guard let tab = draft.tabID, let workspace = draft.workspaceID,
+              let payload = AgentRoster.lifecyclePayload(
+                effect: result.receipt.projectionEffect, from: result.fromPhase, to: result.toPhase,
+                tab: tab, agent: draft.agentKind, reason: result.changedSnapshot?.reason) else { return }
+        EventEmitter.shared.emitLifecycleChanged(workspace: workspace, tab: tab, payload: payload)
+    }
+
+    private func rememberApplied(draft: JournalDraft, result: JournalAppendResult) {
+        guard result.receipt.projectionEffect == .applied, let tab = draft.tabID, let snap = result.changedSnapshot else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if draft.kind == .turnStarted, snap.turnID == nil || snap.turnID == draft.turnID {
+            let ms = draft.timeQuality == .nativeLocal ? (draft.occurredAtMs ?? result.receipt.committedAtMs) : result.receipt.committedAtMs
+            turnStartedMs[tab] = ms
+        }
+        if snap.phase == .blocked, AgentRoster.isAsk(draft.kind), let ask = JournalOpenAsk.make(draft: draft, snapshot: snap, committedAtMs: result.receipt.committedAtMs) {
+            responseGate.clear(tab: tab)
+            openAsks[tab] = ask
+        } else if snap.phase != .blocked {
+            openAsks.removeValue(forKey: tab)
+            responseGate.clear(tab: tab)
+        } else if let current = openAsks[tab], snap.requestID != nil, current.requestID != snap.requestID {
+            openAsks.removeValue(forKey: tab)
+        }
+    }
+
+    private func cacheClocks(_ store: JournalStore) throws {
+        lock.lock()
+        let rows = snapshots
+        lock.unlock()
+        for (tab, snap) in rows {
+            guard tab == snap.owner.tabID else { continue }
+            try hydrateCaches(store: store, snapshot: snap)
+        }
+    }
+
+    private func hydrateCaches(store: JournalStore, snapshot snap: JournalSnapshot) throws {
+        guard isEligible(snap.owner), target(tabID: snap.owner.tabID) == snap.workspaceID else { return }
+        let tab = snap.owner.tabID
+        let page = try store.retainedOwnerEvents(
+            owner: snap.owner, throughSequence: snap.lastSequence, limit: AgentRoster.restoreLimit)
+        let turn = AgentRoster.turnStartMs(turnID: snap.turnID, throughSequence: snap.lastSequence, eventsNewestFirst: page.events)
+        let restored = AgentRoster.restoredAsk(snapshot: snap, eventsNewestFirst: page.events)
+        lock.lock()
+        defer { lock.unlock() }
+        guard owners[tab] == snap.owner, targets[tab] == snap.workspaceID,
+              snapshots[tab]?.owner == snap.owner,
+              (snapshots[tab]?.lastSequence ?? Int64.max) <= snap.lastSequence else { return }
+        if turnStartedMs[tab] == nil, let turn { turnStartedMs[tab] = turn }
+        if openAsks[tab] == nil, let restored, let workspace = snap.workspaceID {
+            openAsks[tab] = JournalOpenAsk(
+                owner: snap.owner, workspaceID: workspace, requestID: restored.requestID,
+                eventID: restored.eventID, openedAtMs: restored.openedAtMs,
+                requiresPickerCommit: JournalOpenAsk.requiresPickerCommit(draft: restored.draft),
+                pickerKeyCode: JournalOpenAsk.pickerKeyCode(draft: restored.draft),
+                pickerModifierRaw: 0)
+        }
+    }
+
     private func setError(_ error: Error) {
         let code = (error as? JournalError) ?? .unavailable
         guard [.busy, .full, .unavailable, .unsupportedVersion].contains(code) else { return }
@@ -269,6 +420,42 @@ final class JournalCoordinator: @unchecked Sendable {
         let callback = sink
         lock.unlock()
         for value in degraded { callback?(value.owner.tabID, value, nil, nil) }
+    }
+}
+
+struct JournalOpenAsk: Sendable {
+    let owner: JournalOwner
+    let workspaceID: UUID
+    let requestID: String?
+    let eventID: UUID
+    let openedAtMs: Int64
+    /// Exact provider pickers require their own committed key; unknown keys stay unavailable.
+    let requiresPickerCommit: Bool
+    let pickerKeyCode: UInt16?
+    let pickerModifierRaw: UInt
+
+    static func make(draft: JournalDraft, snapshot: JournalSnapshot, committedAtMs: Int64) -> JournalOpenAsk? {
+        guard let owner = draft.owner, let workspace = draft.workspaceID ?? snapshot.workspaceID else { return nil }
+        let opened = draft.timeQuality == .nativeLocal ? (draft.occurredAtMs ?? committedAtMs) : committedAtMs
+        return JournalOpenAsk(owner: owner, workspaceID: workspace, requestID: draft.requestID, eventID: draft.eventID,
+                              openedAtMs: opened, requiresPickerCommit: requiresPickerCommit(draft: draft),
+                              pickerKeyCode: pickerKeyCode(draft: draft), pickerModifierRaw: 0)
+    }
+
+    static func requiresPickerCommit(draft: JournalDraft?) -> Bool {
+        guard let draft,
+              draft.kind == .questionRequested,
+              draft.nativeEvent == "PreToolUse",
+              draft.toolClass == .askUserQuestion,
+              draft.source == .hook,
+              draft.adapter == .claudeHook,
+              draft.agentKind == "claude-code" else { return false }
+        return true
+    }
+
+    static func pickerKeyCode(draft: JournalDraft?) -> UInt16? {
+        guard requiresPickerCommit(draft: draft) else { return nil }
+        return AgentRoster.pickerCommitKeyCode
     }
 }
 

@@ -2245,6 +2245,10 @@ struct CMUXCLI {
             if command == "mailbox", commandArgs.contains("--hook-format") {
                 return
             }
+            if command == "agents" {
+                try runAgentsOffline(commandArgs: commandArgs, jsonOutput: jsonOutput)
+                return
+            }
             throw error
         }
         defer { client.close() }
@@ -2270,6 +2274,10 @@ struct CMUXCLI {
         // window before listing, or override a navigation destination.
         if command == "history" {
             try runHistoryCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+            return
+        }
+        if command == "agents" {
+            try runAgentsLive(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
             return
         }
 
@@ -9312,6 +9320,116 @@ struct CMUXCLI {
         throw CLIError(message: "Unable to resolve tab ID")
     }
 
+    private struct AgentsArgs {
+        var bundleID: String?
+        var json: Bool
+    }
+
+    private func parseAgentsArgs(_ args: [String], jsonOutput: Bool) throws -> AgentsArgs {
+        var bundleID: String?
+        var json = jsonOutput
+        var index = 0
+        while index < args.count {
+            let arg = args[index]
+            switch arg {
+            case "--json":
+                json = true
+            case "--bundle-id":
+                guard bundleID == nil, index + 1 < args.count, !args[index + 1].hasPrefix("--") else {
+                    throw CLIError(message: "--bundle-id requires a value")
+                }
+                bundleID = args[index + 1]
+                index += 1
+            default:
+                throw CLIError(message: "Unknown agents argument '\(arg)'. Run 'c11 agents --help' for usage.")
+            }
+            index += 1
+        }
+        return AgentsArgs(bundleID: bundleID, json: json)
+    }
+
+    private func runAgentsLive(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let parsed = try parseAgentsArgs(commandArgs, jsonOutput: jsonOutput)
+        let brand = try client.sendV2(method: "system.brand")
+        let identifier = ((brand["bundle"] as? [String: Any])?["identifier"] as? String) ?? ""
+        if let requested = parsed.bundleID, requested != identifier {
+            throw CLIError(message: "bundle id does not match the running app")
+        }
+        let payload = try client.sendV2(method: "agents.list")
+        printAgents(payload, json: parsed.json)
+    }
+
+    private func runAgentsOffline(commandArgs: [String], jsonOutput: Bool) throws {
+        let parsed = try parseAgentsArgs(commandArgs, jsonOutput: jsonOutput)
+        guard let bundleID = parsed.bundleID else {
+            printAgents(AgentRoster.unavailableDocument(), json: parsed.json)
+            return
+        }
+        let layout: JournalStorageLayout
+        do {
+            layout = try JournalStorageLayout.resolve(bundleID: bundleID)
+        } catch {
+            throw CLIError(message: "invalid bundle id")
+        }
+        guard FileManager.default.fileExists(atPath: layout.database.path) else {
+            printAgents(AgentRoster.unavailableDocument(), json: parsed.json)
+            return
+        }
+        let document: [String: Any]
+        do {
+            let store = try JournalStore(layout: layout, readOnly: true)
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            let currents = try store.listCurrent().map(JournalReplayPolicy.restored)
+            let unattributed = try store.unattributedCount()
+            let coverage = try store.coverage()
+            var events: [String: [AgentRoster.RetainedEvent]] = [:]
+            var truncated = Set<String>()
+            for row in currents where row.isHistorical {
+                let page = try store.retainedOwnerEvents(
+                    owner: row.owner, throughSequence: row.lastSequence, limit: AgentRoster.restoreLimit)
+                events[row.owner.key] = page.events
+                if page.truncated { truncated.insert(row.owner.key) }
+            }
+            document = AgentRoster.document(
+                live: [], currents: currents, eventsByOwner: events, truncatedOwners: truncated,
+                unattributed: unattributed, storePruned: coverage.first > 1, storageAvailable: true,
+                healthDegraded: false, now: now, liveIdentity: "unavailable")
+        } catch {
+            document = AgentRoster.unavailableDocument()
+        }
+        printAgents(document, json: parsed.json)
+    }
+
+    private func printAgents(_ document: [String: Any], json: Bool) {
+        if json {
+            print(jsonString(document))
+            return
+        }
+        let coverage = document["coverage"] as? [String: Any] ?? [:]
+        let live = agentsCell(document["live_identity"])
+        let health = agentsCell(coverage["health"])
+        let storage = agentsCell(coverage["storage"])
+        let unattributed = agentsCell(coverage["unattributed"])
+        print("Agents  live=\(live)  health=\(health)  storage=\(storage)  unattributed=\(unattributed)")
+        let tabs = document["tabs"] as? [[String: Any]] ?? []
+        if tabs.isEmpty {
+            print("No live tabs.")
+        }
+        for tab in tabs {
+            print("\(agentsCell(tab["tab_id"]))  \(agentsCell(tab["kind"]))  \(agentsCell(tab["state"]))  \(agentsCell(tab["reason"]))  \(agentsCell(tab["since"]))  \(agentsCell(tab["freshness"]))  flag=\(agentsCell(tab["flag"]))  seen=\(agentsCell(tab["last_seen_at"]))")
+        }
+        let candidates = document["restore_candidates"] as? [[String: Any]] ?? []
+        print("Restore candidates  \(candidates.count)")
+        for row in candidates {
+            print("\(agentsCell(row["label"]))  \(agentsCell(row["tab_id"]))  \(agentsCell(row["connection"]))  \(agentsCell(row["coverage"]))")
+        }
+    }
+
+    private func agentsCell(_ value: Any?) -> String {
+        guard let value, !(value is NSNull) else { return "-" }
+        return String(describing: value)
+    }
+
     private func runHistoryCommand(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
         var verb: String? = nil
         var limit: Int? = nil
@@ -9380,6 +9498,23 @@ struct CMUXCLI {
     /// their own subcommand surface (e.g. `c11 workspace new --help`).
     private func subcommandUsage(_ command: String, commandArgs: [String] = []) -> String? {
         switch Self.canonicalCommandName(command) {
+        case "agents":
+            return """
+            Usage: c11 agents [--json] [--bundle-id <id>]
+
+            Print the journal-backed agent roster. The running app is read with
+            agents.list and is not focused, launched, or resumed. With the app
+            down, pass --bundle-id to read that bundle's journal read-only.
+            Omitting --bundle-id while the app is down returns an empty roster
+            and does not guess a bundle.
+
+            Flags:
+              --json             Print the roster JSON.
+              --bundle-id <id>   Require this bundle. A live app whose bundle
+                                 differs is rejected. Offline, an invalid id
+                                 errors; a missing journal returns empty
+                                 candidates and storage unavailable.
+            """
         case "history":
             return """
             Usage: c11 history [list] [--json] [--limit <1...200>]
@@ -19411,6 +19546,7 @@ struct CMUXCLI {
           history [list] [--json] [--limit <1...200>]
           history back [--json]
           history forward [--json]
+          agents [--json] [--bundle-id <id>]
           identify [--workspace <id|ref|index>] [--tab <id|ref|index>] [--no-caller]
           list-windows
           current-window

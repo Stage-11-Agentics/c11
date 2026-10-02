@@ -6570,6 +6570,23 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #endif
         }
 
+        // Record only after local consumers (copy mode and AppKit/IME routing)
+        // have declined the event and the terminal key path has completed.
+        // In particular, copy-mode Return must not consume the ask's one-submit gate.
+        if let terminalSurface,
+           AgentRoster.isPotentialSubmitKey(event.keyCode),
+           !markedTextBefore, markedText.length == 0 {
+            let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            JournalCoordinator.shared.noteOperatorSubmit(
+                tabID: terminalSurface.id,
+                keyCode: event.keyCode,
+                modifierRaw: submitFlags.rawValue,
+                isRepeat: event.isARepeat,
+                synthesizing: isSynthesizingKey,
+                hasMarkedText: false
+            )
+        }
+
         // Rendering is driven by Ghostty's wakeups/renderer.
     }
 

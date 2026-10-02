@@ -4,10 +4,11 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from test_workspace_groups_scale import assert_identity, assert_move, compare_sessions
+from test_workspace_groups_scale import assert_identity, assert_move, compare_sessions, shell_pids
 
 
 def snapshot():
@@ -18,6 +19,14 @@ def snapshot():
 
 
 class ScaleOracleTests(unittest.TestCase):
+    def test_tty_shell_roots_ignore_transient_descendant_shells(self):
+        initial = "101 1 -zsh\n202 1 /bin/bash\n"
+        transient = initial + "303 101 /bin/zsh\n404 303 /bin/sh\n505 202 helper\n606 505 /bin/bash\n"
+        with patch("test_workspace_groups_scale.subprocess.run", side_effect=[
+                SimpleNamespace(stdout=initial), SimpleNamespace(stdout=transient)]):
+            self.assertEqual(shell_pids("/dev/synthetic-tty"), [101, 202])
+            self.assertEqual(shell_pids("/dev/synthetic-tty"), [101, 202])
+
     def test_transfer_noop_is_rejected_at_intermediate_state(self):
         state = {"window_id": "window", "workspaces": {"source": {"id": "one"}}}
         with patch("test_workspace_groups_scale.workspace_snapshot", return_value=snapshot()), \

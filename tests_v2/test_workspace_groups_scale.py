@@ -136,30 +136,42 @@ def workspace_window_map(client: cmux) -> dict[str, str]:
 
 
 def shell_pids(tty: Any) -> list[int]:
-    """Record shell PIDs without treating a missing TTY as a test failure."""
+    """Record TTY shell roots, excluding transient shell children (prompt/hooks)."""
     if not tty or not isinstance(tty, str):
         return []
     tty_name = Path(tty).name
     try:
         proc = subprocess.run(
-            ["ps", "-t", tty_name, "-o", "pid=,comm="],
+            ["ps", "-t", tty_name, "-o", "pid=,ppid=,comm="],
             capture_output=True, text=True, check=False, timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
         return []
-    result: list[int] = []
+    processes: dict[int, tuple[int, str]] = {}
     for line in proc.stdout.splitlines():
-        parts = line.strip().split(None, 1)
-        if len(parts) != 2:
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
             continue
         try:
-            pid = int(parts[0])
+            pid, parent = int(parts[0]), int(parts[1])
         except ValueError:
             continue
-        command = Path(parts[1].strip()).name.lstrip("-").lower()
-        if command in SHELL_NAMES:
-            result.append(pid)
-    return sorted(set(result))
+        command = Path(parts[2].strip()).name.lstrip("-").lower()
+        processes[pid] = (parent, command)
+    roots: list[int] = []
+    for pid, (parent, command) in processes.items():
+        if command not in SHELL_NAMES:
+            continue
+        seen = {pid}
+        while parent in processes and parent not in seen:
+            seen.add(parent)
+            ancestor, ancestor_command = processes[parent]
+            if ancestor_command in SHELL_NAMES:
+                break
+            parent = ancestor
+        else:
+            roots.append(pid)
+    return sorted(roots)
 
 
 def tab_identity(client: cmux, workspace_id: str, tab: dict[str, Any]) -> dict[str, Any]:

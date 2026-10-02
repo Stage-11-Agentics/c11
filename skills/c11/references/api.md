@@ -705,6 +705,15 @@ storage. Tagged builds have separate namespaces. Only an explicit unsupported
 method response permits a producer's legacy activity fallback; a timeout does
 not.
 
+`tab.get_metadata` exposes a read-only `journal` object with phase, reason,
+confirmation, connection, health, freshness, sequence and coverage. Reading it
+never opens SQLite. Missing exact ownership returns unknown/unconfirmed.
+
+The socket envelope optionally accepts an integer `interactive_pid` beside
+`event`, for existing native interactive hooks. The PID is transport-only; it
+is absent from draft bytes, the journal and spool. Only a fresh committed native
+turn boundary may open the existing mailbox prompt gate.
+
 See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
 restart confirmation, and retention. Query/export and broader provider hooks
 are separate consumers of this append seam.

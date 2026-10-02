@@ -23,6 +23,47 @@ enum JournalTestData {
 }
 
 final class JournalReducerTests: XCTestCase {
+    // C11-263 seen/sibling repair: unread can disappear independently of a blocked ask.
+    func testJournalAttentionSurvivesSeenAndRespectsSuppressionAndFlag() {
+        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+            hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code"), .waiting)
+        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+            hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", suppressed: true), .idle)
+        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+            hasJournalAttention: true, derivedActivity: .idle, terminalType: "claude-code", flagged: true, suppressed: true), .waiting)
+        XCTAssertEqual(TabActivityResolver.resolve(hasExactSurfaceNotification: false,
+            hasJournalAttention: false, derivedActivity: .working, terminalType: "claude-code"), .running)
+    }
+
+    // Restart while waiting: no duration since last run and no claim of live confirmation.
+    func testRestoredAskHelpIsUnconfirmedWithoutDuration() throws {
+        let state = try XCTUnwrap(JournalTestData.fold(nil, JournalTestData.draft(.questionRequested), seq: 1).snapshot)
+        let restored = JournalReplayPolicy.restored(state)
+        let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil,
+            waitingStartedAt: nil, coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil,
+            suppressed: false, journal: restored)
+        XCTAssertNil(help.stateStartedAt)
+        XCTAssertTrue(help.text(at: Date()).contains("Unconfirmed"))
+        XCTAssertTrue(help.text(at: Date()).contains("Question"))
+    }
+
+    // C11-257 integration: only committed live native turn boundaries may authorize stdin.
+    func testMailboxDoesNotTreatBlockedReplayOrDuplicateAsPrompt() throws {
+        func result(_ draft: JournalDraft, replayed: Bool = false) -> JournalAppendResult {
+            let fold = JournalTestData.fold(nil, draft, seq: 1)
+            return JournalAppendResult(receipt: JournalReceipt(eventID: draft.eventID, sequence: 1,
+                committedAtMs: 10001, replayed: replayed, projectionEffect: fold.effect), changedSnapshot: fold.snapshot)
+        }
+        let stop = JournalTestData.draft(.turnCompleted)
+        XCTAssertNotNil(JournalMailboxBoundary.make(draft: stop, result: result(stop), historical: false, pid: 123))
+        XCTAssertNil(JournalMailboxBoundary.make(draft: stop, result: result(stop, replayed: true), historical: false, pid: 123))
+        XCTAssertNil(JournalMailboxBoundary.make(draft: stop, result: result(stop), historical: true, pid: 123))
+        let ask = JournalTestData.draft(.questionRequested)
+        XCTAssertNil(JournalMailboxBoundary.make(draft: ask, result: result(ask), historical: false, pid: 123))
+        var transcript = stop; transcript.source = .transcript; transcript.adapter = .codexTranscript
+        XCTAssertNil(JournalMailboxBoundary.make(draft: transcript, result: result(transcript), historical: false, pid: 123))
+    }
+
     // C11-271 derived-late-pretool-after-stop and the spec's missing/hook-start clock variants.
     func testLateToolCannotReopenCompletedTurnWithAnyClockQuality() throws {
         for quality in [JournalTimeQuality.nativeLocal, .observed, .missing] {

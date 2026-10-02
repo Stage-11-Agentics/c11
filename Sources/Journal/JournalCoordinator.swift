@@ -6,27 +6,39 @@ final class JournalCoordinator: @unchecked Sendable {
     static let shared = JournalCoordinator()
     private let lock = NSLock()
     private let startupQueue = DispatchQueue(label: "com.stage11.c11.journal-startup", qos: .utility)
+    private var owners: [UUID: JournalOwner] = [:]
     private var targets: [UUID: UUID] = [:]
     private var snapshots: [UUID: JournalSnapshot] = [:]
     private var store: JournalStore?
     private var storageError: JournalError?
     private var started = false
-    private var sink: (@Sendable (JournalSnapshot) -> Void)?
+    private var seedReady = false
+    private var tabsReady = false
+    private var drainStarted = false
+    private var sink: (@Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?) -> Void)?
 
     func register(tabID: UUID, workspaceID: UUID) {
-        lock.lock(); targets[tabID] = workspaceID; lock.unlock()
+        lock.lock(); let changed = targets[tabID] != workspaceID; targets[tabID] = workspaceID; lock.unlock()
+        if changed { refreshOwners([tabID]) }
     }
     func remove(tabID: UUID) {
         lock.lock(); targets.removeValue(forKey: tabID); snapshots.removeValue(forKey: tabID); lock.unlock()
     }
-    /// Conversation capture/claim/clear calls this after changing existing identity.
-    /// Invalidating the cached projection is cheap; resolving the replacement stays off main.
-    func ownershipChanged(tabID: UUID) {
-        lock.lock(); snapshots.removeValue(forKey: tabID); lock.unlock()
+    /// Called synchronously by the existing conversation actor after a real identity change.
+    /// Snapshot readers never wait on that actor, including the typing/notification paths.
+    func setOwner(tabID: UUID, owner: JournalOwner?) {
+        lock.lock()
+        guard owners[tabID] != owner else { lock.unlock(); return }
+        owners[tabID] = owner
+        let hadProjection = snapshots.removeValue(forKey: tabID) != nil
+        let callback = sink
+        lock.unlock()
+        if hadProjection { callback?(tabID, nil, nil) }
         refreshOwners([tabID])
     }
     func refreshOwners(_ tabIDs: [UUID]? = nil) {
-        lock.lock(); let ids = tabIDs ?? Array(targets.keys); lock.unlock()
+        lock.lock(); let ids = tabIDs ?? Array(targets.keys); let ready = started; lock.unlock()
+        guard ready, !ids.isEmpty else { return }
         startupQueue.async { [self] in
             guard let store = try? storage() else { return }
             for id in ids {
@@ -64,7 +76,7 @@ final class JournalCoordinator: @unchecked Sendable {
             "error_code": error?.rawValue as Any? ?? NSNull()
         ]
     }
-    func start(onProjection: @escaping @Sendable (JournalSnapshot) -> Void) {
+    func start(onProjection: @escaping @Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?) -> Void) {
         lock.lock()
         sink = onProjection
         guard !started else { lock.unlock(); return }
@@ -75,11 +87,23 @@ final class JournalCoordinator: @unchecked Sendable {
                 let store = try storage()
                 for baseline in try store.baselines() {
                     if isEligible(baseline.owner) {
-                        publish(JournalReplayPolicy.restored(baseline))
+                        publish(baseline.appInstanceID == store.instanceID ? baseline : JournalReplayPolicy.restored(baseline))
                     }
                 }
-                drain(store: store, first: true)
+                beginDrainIfReady()
             } catch { setError(error) }
+        }
+    }
+
+    func startupSeedReady() { lock.lock(); seedReady = true; lock.unlock(); beginDrainIfReady() }
+    func startupTabsReady() { lock.lock(); tabsReady = true; lock.unlock(); beginDrainIfReady() }
+    private func beginDrainIfReady() {
+        lock.lock()
+        guard started, seedReady, tabsReady, !drainStarted else { lock.unlock(); return }
+        drainStarted = true
+        lock.unlock()
+        startupQueue.async { [self] in
+            do { drain(store: try storage(), first: true) } catch { setError(error) }
         }
     }
 
@@ -95,51 +119,41 @@ final class JournalCoordinator: @unchecked Sendable {
         return created
     }
 
-    private final class OwnershipRead: @unchecked Sendable {
-        let lock = NSLock()
-        var owner: JournalOwner?
-        func set(_ value: JournalOwner?) { lock.lock(); owner = value; lock.unlock() }
-        func get() -> JournalOwner? { lock.lock(); defer { lock.unlock() }; return owner }
-    }
-    func isEligible(_ owner: JournalOwner) -> Bool {
-        exactOwner(tabID: owner.tabID) == owner
-    }
-    private func exactOwner(tabID: UUID) -> JournalOwner? {
-        guard !ConversationStorePolicy.isDisabled, target(tabID: tabID) != nil else { return nil }
-        let read = OwnershipRead()
-        let done = DispatchSemaphore(value: 0)
-        Task.detached {
-            let ref = await ConversationStore.shared.active(for: tabID.uuidString)
-            if let ref, ref.isEligibleCausalOwner {
-                read.set(JournalOwner(tabID: tabID, agentKind: ref.kind, sessionID: ref.id))
-            }
-            done.signal()
-        }
-        guard done.wait(timeout: .now() + .milliseconds(100)) == .success else { return nil }
-        return read.get()
+    func isEligible(_ owner: JournalOwner) -> Bool { exactOwner(tabID: owner.tabID) == owner }
+    func exactOwner(tabID: UUID) -> JournalOwner? {
+        lock.lock(); defer { lock.unlock() }
+        return targets[tabID] == nil ? nil : owners[tabID]
     }
 
-    func append(_ draft: JournalDraft, historical: Bool = false) throws -> JournalAppendResult {
+    func append(_ draft: JournalDraft, historical: Bool = false, interactivePID: Int32? = nil) throws -> JournalAppendResult {
         do {
-            let eligible = draft.owner.map(isEligible) ?? false
-            let result = try storage().append(draft: draft, context: JournalContext(eligible: eligible, historical: historical))
+            let eligible = draft.owner.map { isEligible($0) && target(tabID: $0.tabID) == draft.workspaceID } ?? false
+            let model = draft.tabID.flatMap { tabID in target(tabID: tabID).flatMap { workspaceID in
+                TabMetadataStore.shared.metadataValue(workspaceId: workspaceID, surfaceId: tabID, key: MetadataKey.model) as? String
+            } }.flatMap { value in
+                !value.isEmpty && value.utf8.count <= 128 && value.utf8.allSatisfy {
+                    (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 58, 95].contains($0)
+                } ? value : nil
+            }
+            let result = try storage().append(draft: draft, context: JournalContext(eligible: eligible, historical: historical, modelID: model))
             if let changed = result.changedSnapshot {
-                startupQueue.async { [self] in publish(changed) }
+                let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
+                startupQueue.async { [self] in publish(changed, boundary: boundary) }
             }
             lock.lock(); storageError = nil; lock.unlock()
             return result
         } catch { setError(error); throw error }
     }
 
-    private func publish(_ value: JournalSnapshot) {
-        guard isEligible(value.owner) else { return }
+    private func publish(_ value: JournalSnapshot, boundary: JournalMailboxBoundary? = nil) {
         lock.lock()
+        guard targets[value.owner.tabID] != nil, owners[value.owner.tabID] == value.owner else { lock.unlock(); return }
         let old = snapshots[value.owner.tabID]
         guard old?.owner != value.owner || (old?.lastSequence ?? -1) <= value.lastSequence else { lock.unlock(); return }
         snapshots[value.owner.tabID] = value
         let callback = sink
         lock.unlock()
-        callback?(value)
+        callback?(value.owner.tabID, value, boundary)
     }
 
     private func drain(store: JournalStore, first: Bool) {
@@ -156,6 +170,29 @@ final class JournalCoordinator: @unchecked Sendable {
     private func setError(_ error: Error) {
         let code = (error as? JournalError) ?? .unavailable
         guard [.busy, .full, .unavailable, .unsupportedVersion].contains(code) else { return }
-        lock.lock(); storageError = code; lock.unlock()
+        lock.lock()
+        storageError = code
+        let degraded = snapshots.values.map { value -> JournalSnapshot in
+            var copy = value; copy.health = .degraded; return copy
+        }
+        for value in degraded { snapshots[value.owner.tabID] = value }
+        let callback = sink
+        lock.unlock()
+        for value in degraded { callback?(value.owner.tabID, value, nil) }
+    }
+}
+
+struct JournalMailboxBoundary: Sendable {
+    let working: Bool
+    let pid: Int32?
+    let at: Date
+    static func make(draft: JournalDraft, result: JournalAppendResult, historical: Bool, pid: Int32?) -> Self? {
+        guard !historical, !result.receipt.replayed, result.receipt.projectionEffect == .applied,
+              !draft.isChild, [.hook, .plugin].contains(draft.source),
+              let state = result.changedSnapshot, state.confirmation == .confirmed,
+              (draft.kind == .turnStarted && state.phase == .working)
+                || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
+        return Self(working: state.phase == .working, pid: pid,
+                    at: Date(timeIntervalSince1970: Double(result.receipt.committedAtMs) / 1000))
     }
 }

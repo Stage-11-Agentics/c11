@@ -2059,6 +2059,7 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
+        "agent.event.append",
         // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
         "workspace.reorder_batch",
         "workspace.group.list",

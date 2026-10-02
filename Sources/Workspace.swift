@@ -4809,7 +4809,26 @@ final class Workspace: Identifiable, ObservableObject {
     let bonsplitController: BonsplitController
 
     /// Mapping from bonsplit TabID to our Panel instances
-    @Published private(set) var panels: [UUID: any TabContent] = [:]
+    @Published private(set) var panels: [UUID: any TabContent] = [:] {
+        didSet {
+            for tabID in panels.keys where oldValue[tabID] == nil {
+                JournalCoordinator.shared.register(tabID: tabID, workspaceID: id)
+            }
+            for tabID in oldValue.keys where panels[tabID] == nil {
+                // A tab move may already have installed its new workspace target.
+                if JournalCoordinator.shared.target(tabID: tabID) == id { JournalCoordinator.shared.remove(tabID: tabID) }
+                journalByTab.removeValue(forKey: tabID)
+            }
+        }
+    }
+    private(set) var journalByTab: [UUID: JournalSnapshot] = [:]
+
+    func setJournalSnapshot(_ value: JournalSnapshot?, forTab tabID: UUID) {
+        guard panels[tabID] != nil else { return }
+        journalByTab[tabID] = value
+        syncSurfaceTabActivityStateForTab(tabID)
+        objectWillChange.send()
+    }
 
     /// C11-163 events stream: single create/close chokepoint. Subscribing to
     /// `$panels` and diffing keys catches every surface lifecycle transition
@@ -6651,6 +6670,7 @@ final class Workspace: Identifiable, ObservableObject {
         let attention = attentionSnapshot(panelId: panelId)
         return TabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
+            hasJournalAttention: journalByTab[panelId]?.paintsAttention == true,
             derivedActivity: derivedActivityByTab[panelId],
             isCold: coldAgentSurfaceIds.contains(panelId),
             terminalType: terminalKind ?? surfaceActivityTerminalKind(panelId: panelId),
@@ -6714,7 +6734,8 @@ final class Workspace: Identifiable, ObservableObject {
             coldAfterSeconds: SidebarAgentColdSettings.thresholdSeconds(),
             flagReason: attention.flagReason,
             flagRaisedAt: attention.flagRaisedAt,
-            suppressed: attention.suppressed
+            suppressed: attention.suppressed,
+            journal: journalByTab[panelId]
         )
     }
 
@@ -7751,6 +7772,13 @@ final class Workspace: Identifiable, ObservableObject {
             values.removeValue(forKey: FlashState.metadataKey)
             sources.removeValue(forKey: FlashState.metadataKey)
             Self.migrateLaunchStampTiers(values: &values, sources: &sources)
+            // Persisted derived liveness is not evidence from this app instance.
+            // Exact journal replay will repaint an unresolved ask asynchronously.
+            if sources[MetadataKey.activity]?.source == .derived,
+               tabSnapshot.surfaceConversations?.active?.isEligibleCausalOwner == true {
+                values.removeValue(forKey: MetadataKey.activity)
+                sources.removeValue(forKey: MetadataKey.activity)
+            }
             TabMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 surfaceId: tabId,

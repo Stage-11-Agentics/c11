@@ -10,18 +10,26 @@ enum JournalCommand {
         SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(0.250))
         defer { SocketClient.processDeadline = previousDeadline }
         let client = SocketClient(path: socketPath)
+        client.usesSingleLineResponses = true
         defer { client.close() }
         do {
             try client.connect()
-            return .committed(try client.sendV2(method: "agent.event.append", params: ["event": params], deadline: .custom(0.250)))
+            var envelope: [String: Any] = ["event": params]
+            if let raw = ProcessInfo.processInfo.environment["C11_AGENT_INTERACTIVE_PID"], let pid = Int32(raw), pid > 1 {
+                envelope["interactive_pid"] = pid
+            }
+            return .committed(try client.sendV2(method: "agent.event.append", params: envelope, deadline: .custom(0.250)))
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
             return .unsupported
-        } catch {
-            let env = ProcessInfo.processInfo.environment
-            let bundleID = env["CMUX_BUNDLE_ID"] ?? enclosingBundleID()
-            guard let layout = try? JournalStorageLayout.resolve(bundleID: bundleID), JournalSpool(layout: layout).write(draft) else { return .lost }
-            return .spooled
-        }
+        } catch { return spool(draft) }
+    }
+
+    static func spool(_ draft: JournalDraft) -> Delivery {
+        let env = ProcessInfo.processInfo.environment
+        let bundleID = env["CMUX_BUNDLE_ID"] ?? enclosingBundleID()
+        guard let layout = try? JournalStorageLayout.resolve(bundleID: bundleID),
+              JournalSpool(layout: layout).write(draft) else { return .lost }
+        return .spooled
     }
 
     static func run(_ arguments: [String], socketPath: String) throws {

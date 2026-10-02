@@ -1070,7 +1070,7 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let firstChunk = Data(
             (
                 "GET /demo HTTP/1.1\r\n" +
-                "Host: cmux-loop"
+                "Host: c11-loop"
             ).utf8
         )
         let secondChunk = Data(
@@ -1104,7 +1104,7 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let firstChunk = Data(
             (
                 "GET /demo HTTP/1.1\r\n" +
-                "Host: cmux-loop"
+                "Host: c11-loop"
             ).utf8
         )
         let secondChunk = Data(
@@ -1214,7 +1214,7 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
             remoteWebsiteDataStoreIdentifier: remoteWorkspaceId
         )
 
-        XCTAssertTrue(localTab.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
+        XCTAssertTrue(localTab.webView.configuration.websiteDataStore === BrowserProfileStore.shared.websiteDataStore(for: localTab.profileID))
         XCTAssertFalse(firstRemoteTab.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
         XCTAssertTrue(
             firstRemoteTab.webView.configuration.websiteDataStore ===
@@ -1271,7 +1271,7 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
         let sourcePaneId = try XCTUnwrap(source.bonsplitController.allPaneIds.first)
         let sourceBrowser = try XCTUnwrap(source.newBrowserSurface(inPane: sourcePaneId, focus: false))
         let localStore = sourceBrowser.webView.configuration.websiteDataStore
-        XCTAssertTrue(localStore === WKWebsiteDataStore.default())
+        XCTAssertTrue(localStore === BrowserProfileStore.shared.websiteDataStore(for: sourceBrowser.profileID))
 
         let destination = Workspace()
         destination.configureRemoteConnection(
@@ -1335,7 +1335,7 @@ final class BrowserTabRemoteStoreTests: XCTestCase {
         )
         let attachedBrowser = try XCTUnwrap(destination.panels[attachedPanelId] as? BrowserTab)
 
-        XCTAssertTrue(attachedBrowser.webView.configuration.websiteDataStore === WKWebsiteDataStore.default())
+        XCTAssertTrue(attachedBrowser.webView.configuration.websiteDataStore === BrowserProfileStore.shared.websiteDataStore(for: attachedBrowser.profileID))
         XCTAssertTrue(remainingRemoteBrowser.webView.configuration.websiteDataStore === remoteStore)
         XCTAssertFalse(remainingRemoteBrowser.webView.configuration.websiteDataStore === attachedBrowser.webView.configuration.websiteDataStore)
     }

@@ -47,6 +47,24 @@ final class SocketStartupReadinessTests: XCTestCase {
         XCTAssertTrue(ping.contains("\"pong\":true"))
     }
 
+    func testPendingRestoreRetainsOnlyExplicitValidBundledReports() {
+        let controller = TerminalController.makeForTesting()
+        controller.setInitialSessionRestoreReady(false)
+        let panel = UUID().uuidString
+        let scope = "--tab=\(panel) --panel=\(panel)"
+        for command in ["report_tty ttys297 \(scope)", "report_shell_state prompt \(scope)",
+                        "report_shell_state running \(scope)", "report_tty ttys298 \(scope)"] {
+            XCTAssertEqual(controller.processCommandUsingSocketExecutionPolicy(command), "OK")
+        }
+        XCTAssertEqual(controller.debugDeferredStartupReportCount, 2, "Coalesce each report kind by tab")
+        for command in ["report_tty ttys297", "report_shell_state prompt --tab=tab:1",
+                        "report_shell_state invalid \(scope)", "report_tty --tab=\(panel) --panel=\(panel)"] {
+            XCTAssertTrue(controller.processCommandUsingSocketExecutionPolicy(command).hasPrefix("ERROR: not_ready:"))
+        }
+        controller.setInitialSessionRestoreReady(true)
+        XCTAssertEqual(controller.debugDeferredStartupReportCount, 0, "Unknown/closed targets must also drain")
+    }
+
     func testCompletedRestoreReleasesStartupRejectionWithoutAListenerSideEffect() {
         let controller = TerminalController.makeForTesting()
         controller.setInitialSessionRestoreReady(false)

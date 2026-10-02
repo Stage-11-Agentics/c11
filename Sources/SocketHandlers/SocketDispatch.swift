@@ -26,8 +26,9 @@ extension TerminalController {
         ["system.ping", "system.capabilities", "system.brand", "auth.login"].contains(method)
     }
 
-    /// Reject before worker routing or async telemetry acknowledgement: startup
-    /// callers must retry, not observe an empty tree or a falsely successful send.
+    /// Gate before worker routing or async acknowledgement. The bundled shells
+    /// do not retry their TTY/state reports, so retain those until the graph is
+    /// complete; all other graph-dependent callers must retry.
     nonisolated func startupNotReadyResponse(for command: String) -> String? {
         guard !isInitialSessionRestoreReady else { return nil }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -36,8 +37,15 @@ extension TerminalController {
             return v2Error(id: request.id, code: "not_ready", message: Self.sessionNotReadyMessage)
         }
         guard !trimmed.hasPrefix("{") else { return nil }
-        let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
+        let parts = trimmed.split(separator: " ", maxSplits: 1)
+        let head = parts.first.map(String.init)?.lowercased() ?? ""
         guard !["ping", "auth", "help"].contains(head) else { return nil }
+        if ["report_tty", "report_shell_state"].contains(head) {
+            let args = parts.count > 1 ? String(parts[1]) : ""
+            if deferStartupShellReport(command: head, args: args) { return "OK" }
+            // Readiness may have completed between the first check and enqueue.
+            if isInitialSessionRestoreReady { return nil }
+        }
         return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
     }
 

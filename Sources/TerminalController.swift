@@ -170,6 +170,42 @@ class TerminalController {
     private nonisolated let listenerStateLock = NSLock()
     private nonisolated let initialRestoreLock = NSLock()
     private nonisolated(unsafe) var initialRestoreReady = true
+    private struct StartupShellReports {
+        var preferredWorkspaceId: UUID
+        var ttyName: String?
+        var shellState: Workspace.TabShellActivityState?
+    }
+    private nonisolated(unsafe) var startupShellReports: [UUID: StartupShellReports] = [:]
+
+    /// Retain the bundled shells' one-shot reports without consulting the partial
+    /// graph. Repeated reports coalesce by tab; readiness and enqueue share a lock.
+    nonisolated func deferStartupShellReport(command: String, args: String) -> Bool {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let scope = Self.explicitSocketScope(options: parsed.options),
+              let value = parsed.positional.first, !value.isEmpty else { return false }
+        let state = command == "report_shell_state" ? Self.parseReportedShellActivityState(value) : nil
+        guard command == "report_tty" || state != nil else { return false }
+        initialRestoreLock.lock()
+        defer { initialRestoreLock.unlock() }
+        guard !initialRestoreReady else { return false }
+        var report = startupShellReports[scope.panelId]
+            ?? StartupShellReports(preferredWorkspaceId: scope.workspaceId)
+        report.preferredWorkspaceId = scope.workspaceId
+        if command == "report_tty" { report.ttyName = value }
+        else { report.shellState = state }
+        startupShellReports[scope.panelId] = report
+        return true
+    }
+
+    #if DEBUG
+    nonisolated var debugDeferredStartupReportCount: Int {
+        initialRestoreLock.lock()
+        defer { initialRestoreLock.unlock() }
+        return startupShellReports.values.reduce(0) {
+            $0 + ($1.ttyName == nil ? 0 : 1) + ($1.shellState == nil ? 0 : 1)
+        }
+    }
+    #endif
 
     /// Workers read only this synchronized bit, never the partially installed graph.
     nonisolated var isInitialSessionRestoreReady: Bool {
@@ -181,7 +217,27 @@ class TerminalController {
     func setInitialSessionRestoreReady(_ ready: Bool) {
         initialRestoreLock.lock()
         initialRestoreReady = ready
+        let reports = ready ? startupShellReports : [:]
+        if ready { startupShellReports.removeAll() }
         initialRestoreLock.unlock()
+
+        // Already on main with the complete graph. Apply before yielding to any
+        // newly accepted worker's main.async update, so older state cannot win.
+        // Do not seed the worker dedupe cache here: a newer report may already
+        // have reached that cache off-main while this batch is being drained.
+        for (panelId, report) in reports {
+            if let ttyName = report.ttyName {
+                applyReportedTTY(ttyName, panelId: panelId, preferredWorkspaceId: report.preferredWorkspaceId)
+            }
+            if let state = report.shellState,
+               let located = AppDelegate.shared?.workspaceContainingPanel(
+                   panelId: panelId, preferredWorkspaceId: report.preferredWorkspaceId
+               ) {
+                located.workspaceManager.updateSurfaceShellActivity(
+                    workspaceId: located.workspace.id, surfaceId: panelId, state: state
+                )
+            }
+        }
     }
 
     nonisolated var isListeningForStartupRestore: Bool {
@@ -8996,6 +9052,40 @@ class TerminalController {
         return result
     }
 
+    private func applyReportedTTY(_ ttyName: String, panelId: UUID, preferredWorkspaceId: UUID) {
+        // C11-171 (extended to report_tty): resolve the workspace from the
+        // PANEL, never from `--tab`. Shell integration sends the surface
+        // uuid in `--tab` (a legacy alias — see GhosttyTerminalView env
+        // injection), so trusting it makes `tabManagerFor` miss and this
+        // registration silently no-op while still returning "OK". That left
+        // every wrapper-less agent (grok/opencode/kimi/pi/omp) unclassified
+        // and port scanning unregistered for these surfaces. The
+        // shell-activity path already resolves panel→workspace this way.
+        guard let app = AppDelegate.shared,
+              let located = app.workspaceContainingPanel(
+                  panelId: panelId,
+                  preferredWorkspaceId: preferredWorkspaceId
+              ) else {
+            return
+        }
+        let workspace = located.workspace
+        let workspaceId = workspace.id
+        let validSurfaceIds = Set(workspace.panels.keys)
+        workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+        guard validSurfaceIds.contains(panelId) else { return }
+        workspace.tabTTYNames[panelId] = ttyName
+        PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: panelId, ttyName: ttyName)
+        AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: panelId, ttyName: ttyName)
+        // C11-25 fix DoD #5: install a Sendable PID provider so
+        // the per-surface CPU/MEM sampler can attribute usage to
+        // the foreground process running on this tty (typically
+        // the shell or its most-recently spawned child).
+        let capturedTTY = ttyName
+        TabMetricsSampler.shared.setPidProvider(surfaceId: panelId) {
+            TerminalPIDResolver.foregroundPID(forTTYName: capturedTTY)
+        }
+    }
+
     func reportTTY(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let ttyName = parsed.positional.first, !ttyName.isEmpty else {
@@ -9004,37 +9094,7 @@ class TerminalController {
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
-                // C11-171 (extended to report_tty): resolve the workspace from the
-                // PANEL, never from `--tab`. Shell integration sends the surface
-                // uuid in `--tab` (a legacy alias — see GhosttyTerminalView env
-                // injection), so trusting it makes `tabManagerFor` miss and this
-                // registration silently no-op while still returning "OK". That left
-                // every wrapper-less agent (grok/opencode/kimi/pi/omp) unclassified
-                // and port scanning unregistered for these surfaces. The
-                // shell-activity path already resolves panel→workspace this way.
-                guard let app = AppDelegate.shared,
-                      let located = app.workspaceContainingPanel(
-                          panelId: scope.panelId,
-                          preferredWorkspaceId: scope.workspaceId
-                      ) else {
-                    return
-                }
-                let workspace = located.workspace
-                let workspaceId = workspace.id
-                let validSurfaceIds = Set(workspace.panels.keys)
-                workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                workspace.tabTTYNames[scope.panelId] = ttyName
-                PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
-                AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
-                // C11-25 fix DoD #5: install a Sendable PID provider so
-                // the per-surface CPU/MEM sampler can attribute usage to
-                // the foreground process running on this tty (typically
-                // the shell or its most-recently spawned child).
-                let capturedTTY = ttyName
-                TabMetricsSampler.shared.setPidProvider(surfaceId: scope.panelId) {
-                    TerminalPIDResolver.foregroundPID(forTTYName: capturedTTY)
-                }
+                self.applyReportedTTY(ttyName, panelId: scope.panelId, preferredWorkspaceId: scope.workspaceId)
             }
             return "OK"
         }

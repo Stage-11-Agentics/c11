@@ -1348,3 +1348,138 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
         XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount)
     }
 }
+
+@MainActor
+final class StartupBundledReportsTests: XCTestCase {
+    func testBundledBashAndZshOneShotReportsSurvivePendingRestoreWithoutRetry() async throws {
+#if DEBUG
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let originalManager = app.workspaceManager
+        let manager = WorkspaceManager()
+        // Keep the fixture detached from any window, so no real terminal can
+        // mount and race these synthetic sender reports. Publish its graph
+        // only at the readiness transition, after the asynchronous senders.
+        defer {
+            app.workspaceManager = originalManager
+            manager.workspaces.forEach { $0.teardownAllPanels() }
+        }
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let bashTab = try XCTUnwrap(workspace.focusedPanelId)
+        let zshTab = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false)).id
+        let controller = TerminalController.makeForTesting()
+        let originalPortsCallback = PortScanner.shared.onPortsUpdated
+        let root = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("c11-startup-reports-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            controller.stop()
+            PortScanner.shared.onPortsUpdated = originalPortsCallback
+            try? FileManager.default.removeItem(at: root)
+        }
+        let socketPath = root.appendingPathComponent("control.sock").path
+        controller.setInitialSessionRestoreReady(false)
+        controller.start(workspaceManager: manager, socketPath: socketPath, accessMode: .allowAll)
+        XCTAssertTrue(controller.isListeningForStartupRestore)
+        XCTAssertEqual(controller.socketPathSnapshot, socketPath)
+
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let cases: [(shell: String, resource: String, panel: UUID, tty: String)] = [
+            ("/bin/bash", "cmux-bash-integration.bash", bashTab, "ttysC11297bash"),
+            ("/bin/zsh", "cmux-zsh-integration.zsh", zshTab, "ttysC11297zsh")
+        ]
+        for item in cases {
+            XCTAssertNil(workspace.tabTTYNames[item.panel])
+            XCTAssertFalse(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false))
+            let resource = repository.appendingPathComponent("Resources/shell-integration/\(item.resource)")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: resource.path), "Bundled source must be present")
+            let output = try await runBundledReports(
+                shell: item.shell, resource: resource, panel: item.panel,
+                tty: item.tty, socketPath: socketPath, root: root
+            )
+            XCTAssertTrue(output.contains("cached:1:running"),
+                          "The real sender must already have cached both reports and exited: \(output)")
+        }
+
+        // Each shipped sender launches disowned, one-way nc writes. Observe
+        // actual socket admission instead of assuming sender exit means receipt.
+        let deadline = Date().addingTimeInterval(5)
+        while controller.debugDeferredStartupReportCount < 4 && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(controller.debugDeferredStartupReportCount, 4,
+                       "Both real shells must deliver one TTY and one activity report before readiness")
+        for item in cases {
+            XCTAssertNil(workspace.tabTTYNames[item.panel], "Pending reports must not touch the partial graph")
+            XCTAssertFalse(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
+                           "Running activity must remain unapplied while restoration is pending")
+        }
+
+        // No sender remains to retry after this transition. Flush must apply
+        // both accepted one-shot reports synchronously to the installed graph.
+        // Host window callbacks can replace the active manager across awaits;
+        // install this detached fixture now, with no suspension before flush.
+        app.workspaceManager = manager
+        for item in cases {
+            let located = try XCTUnwrap(app.workspaceContainingPanel(
+                panelId: item.panel, preferredWorkspaceId: item.panel
+            ))
+            XCTAssertTrue(located.workspace === workspace)
+            XCTAssertTrue(located.workspaceManager === manager)
+        }
+        controller.setInitialSessionRestoreReady(true)
+        XCTAssertEqual(controller.debugDeferredStartupReportCount, 0)
+        for item in cases {
+            XCTAssertEqual(workspace.tabTTYNames[item.panel], item.tty)
+            XCTAssertTrue(workspace.tabNeedsConfirmClose(panelId: item.panel, fallbackNeedsConfirmClose: false),
+                          "The accepted running state must affect observable close policy without sender retry")
+        }
+#else
+        throw XCTSkip("Deferred startup report inspection is debug-only")
+#endif
+    }
+
+    private func runBundledReports(
+        shell: String, resource: URL, panel: UUID, tty: String, socketPath: String, root: URL
+    ) async throws -> String {
+        let outputURL = root.appendingPathComponent("\(URL(fileURLWithPath: shell).lastPathComponent).log")
+        FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: outputURL)
+        defer { try? output.close() }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        let script = """
+        source "$1" || exit 31
+        _CMUX_TTY_NAME="$2"
+        _cmux_report_tty_once
+        _cmux_report_shell_activity_state running
+        printf 'cached:%s:%s\\n' "$_CMUX_TTY_REPORTED" "$_CMUX_SHELL_ACTIVITY_LAST"
+        """
+        let options = shell == "/bin/bash" ? ["--noprofile", "--norc"] : ["-f"]
+        process.arguments = options + ["-c", script, "c11-startup-reports", resource.path, tty]
+        process.environment = [
+            "PATH": "/usr/bin:/bin", // Real bundled _cmux_send uses macOS nc, never a shim.
+            "HOME": root.path,
+            "CMUX_SOCKET_PATH": socketPath,
+            // These are intentionally the legacy values exported to real
+            // shells: --tab carries the panel ID, not the workspace UUID.
+            "CMUX_TAB_ID": panel.uuidString,
+            "CMUX_PANEL_ID": panel.uuidString
+        ]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        defer { if process.isRunning { process.terminate() } }
+        let deadline = Date().addingTimeInterval(5)
+        while process.isRunning && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard !process.isRunning else {
+            throw NSError(domain: "StartupBundledReportsTests", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Bundled \(shell) sender exceeded its deadline"])
+        }
+        let result = try String(contentsOf: outputURL, encoding: .utf8)
+        XCTAssertEqual(process.terminationStatus, 0, "\(shell): \(result)")
+        return result
+    }
+}

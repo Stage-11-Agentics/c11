@@ -73,6 +73,10 @@ wrapper connectivity checks, but a successful ping does not mean restoration
 has finished. `system.ping`, `system.capabilities`, `system.brand`, and
 `auth.login` also remain available. Once `tree --all` succeeds, the initial
 restored window graph is installed and UUID-targeted commands can proceed.
+The bundled shells' UUID-scoped `report_tty` and `report_shell_state` reports
+are accepted and coalesced during restoration, then applied to the completed
+graph. Their `OK` means the report was retained; it does not bypass readiness
+for commands that read or manipulate tabs.
 
 Refs are registered when windows, workspaces, areas, and tabs are created.
 Steady commands do not rebuild the global ref table. A closed ref is never

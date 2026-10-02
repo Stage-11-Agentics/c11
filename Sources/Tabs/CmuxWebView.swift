@@ -115,7 +115,10 @@ final class CmuxWebView: WKWebView {
 
     override func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
         markLoadIssued()
-        return super.loadHTMLString(string, baseURL: baseURL)
+        // WebKit routes this through load(_:mimeType:characterEncodingName:baseURL:).
+        // That Swift override has a nonoptional URL, so a nil HTML base traps
+        // while bridging WebKit's Objective-C call. Use its blank-document base.
+        return super.loadHTMLString(string, baseURL: baseURL ?? URL(string: "about:blank")!)
     }
 
     override func loadFileURL(_ URL: URL, allowingReadAccessTo readAccessURL: URL) -> WKNavigation? {

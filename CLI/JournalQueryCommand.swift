@@ -212,12 +212,14 @@ enum JournalQueryCommand {
             let writer = try JournalExport.StreamWriter(handle: destination.handle, coverage: coverage, filters: filters)
             var cursor = max(0, frozen.firstAvailable - 1)
             while cursor < frozen.highWater {
-                let page = try autoreleasepool {
-                    try store.readPage(after: cursor, through: frozen.highWater, limit: 500)
+                let nextCursor: Int64? = try autoreleasepool {
+                    let page = try store.readPage(after: cursor, through: frozen.highWater, limit: 500)
+                    guard let nextCursor = page.last?.sequence else { return nil }
+                    try writer.consume(page)
+                    return nextCursor
                 }
-                guard !page.isEmpty else { break }
-                try writer.consume(page)
-                cursor = page.last!.sequence
+                guard let nextCursor else { break }
+                cursor = nextCursor
             }
             try writer.finish(baselines: baselines)
             if let path = destination.path {

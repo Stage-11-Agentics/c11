@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Measure the bundled journal CLI at C11-270's registered 1,000-turn volume.
+"""Measure the bundled journal CLI at registered and 10x scaling volumes.
 
-The database is synthetic, namespaced to one disposable c11 bundle ID, and
-removed after both bounded-reader and streamed-export runs complete.
+The databases are synthetic and namespaced to disposable c11 bundle IDs. The
+registered 1,000-turn fixture is the C11-270 volume; the 10,000-turn fixture
+asserts that CLI RSS does not grow with the number of rows.
 """
 
 from __future__ import annotations
@@ -20,9 +21,12 @@ from time import perf_counter
 
 
 REGISTERED_TURNS = 1_000
+SCALING_TURNS = REGISTERED_TURNS * 10
 ROWS_PER_TURN = 4
 OWNERS = 40
 TEN_HOURS_MS = 10 * 60 * 60 * 1_000
+SEED_BATCH_ROWS = 1_000
+MAX_SCALING_RSS_GROWTH_BYTES = 32 * 1024 * 1024
 
 
 def event_record(sequence: int, owner: int, turn: int, ordinal: int, at_ms: int,
@@ -82,7 +86,7 @@ def event_record(sequence: int, owner: int, turn: int, ordinal: int, at_ms: int,
             json.dumps(event, separators=(",", ":")).encode())
 
 
-def seed(path: Path, base_ms: int) -> int:
+def seed(path: Path, base_ms: int, turns: int = REGISTERED_TURNS) -> int:
     import sqlite3
 
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -102,10 +106,15 @@ def seed(path: Path, base_ms: int) -> int:
     """)
     app_id = str(uuid.uuid4())
     owners = [(str(uuid.uuid4()), str(uuid.uuid4())) for _ in range(OWNERS)]
-    step_ms = TEN_HOURS_MS // REGISTERED_TURNS
+    step_ms = TEN_HOURS_MS // turns
     rows = []
     sequence = 0
-    for turn in range(REGISTERED_TURNS):
+    insert_sql = """
+        INSERT INTO journal_events(sequence,event_id,committed_at_ms,tab_id,session_id,
+          agent_kind,model_id,workspace_id,draft,event)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
+    """
+    for turn in range(turns):
         owner = turn % OWNERS
         tab_id, workspace_id = owners[owner]
         for ordinal in range(ROWS_PER_TURN):
@@ -113,11 +122,11 @@ def seed(path: Path, base_ms: int) -> int:
             at_ms = base_ms + turn * step_ms + ordinal * max(1, step_ms // ROWS_PER_TURN)
             rows.append(event_record(sequence, owner, turn, ordinal, at_ms,
                                      tab_id, workspace_id, app_id))
-    db.executemany("""
-        INSERT INTO journal_events(sequence,event_id,committed_at_ms,tab_id,session_id,
-          agent_kind,model_id,workspace_id,draft,event)
-        VALUES(?,?,?,?,?,?,?,?,?,?)
-    """, rows)
+            if len(rows) == SEED_BATCH_ROWS:
+                db.executemany(insert_sql, rows)
+                rows.clear()
+    if rows:
+        db.executemany(insert_sql, rows)
     db.execute("UPDATE journal_meta SET value=? WHERE key='last_writer_observation'",
                (base_ms + TEN_HOURS_MS,))
     db.commit()
@@ -142,6 +151,25 @@ def measured(command: list[str]) -> tuple[subprocess.CompletedProcess[str], str,
     return result, match.group(2), int(match.group(1)), elapsed_ms
 
 
+def count_export_events(path: Path) -> int:
+    count = 0
+    with path.open(encoding="utf-8") as exported:
+        for line in exported:
+            if json.loads(line).get("record_type") == "event":
+                count += 1
+    return count
+
+
+def require_bounded_growth(label: str, registered_bytes: int, scaling_bytes: int) -> None:
+    if scaling_bytes > registered_bytes + MAX_SCALING_RSS_GROWTH_BYTES:
+        growth = scaling_bytes - registered_bytes
+        raise AssertionError(
+            f"{label} RSS scaled with row count: registered={registered_bytes} bytes, "
+            f"10x_rows={scaling_bytes} bytes, growth={growth} bytes, "
+            f"limit={MAX_SCALING_RSS_GROWTH_BYTES} bytes"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", required=True, help="tagged Atlas bundle CLI executable")
@@ -163,13 +191,18 @@ def main() -> int:
         raise SystemExit("--preserve is limited to the c11-277 tagged app namespace")
     journal_root = args.support / "c11/journal"
     fixture_dir = journal_root / bundle_id
-    if fixture_dir.exists():
-        raise SystemExit(f"refusing to replace existing fixture: {fixture_dir}")
+    scale_bundle_id = f"com.stage11.c11.c11-277.scale.{uuid.uuid4().hex}"
+    scale_fixture_dir = journal_root / scale_bundle_id
+    for candidate in (fixture_dir, scale_fixture_dir):
+        if candidate.exists():
+            raise SystemExit(f"refusing to replace existing fixture: {candidate}")
     database = fixture_dir / "lifecycle.sqlite3"
+    scale_database = scale_fixture_dir / "lifecycle.sqlite3"
     base_ms = int(time.time() * 1_000) - TEN_HOURS_MS
 
     try:
         rows = seed(database, base_ms)
+        scaling_rows = seed(scale_database, base_ms, turns=SCALING_TURNS)
         socket_path = f"/tmp/c11-277-measure-{suffix}.sock"
         base = [cli, "--socket", socket_path]
         query, memory_metric, query_memory, query_ms = measured(
@@ -181,15 +214,38 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="c11-277-journal-measure-") as temporary:
             first = Path(temporary) / "first.ndjson"
             second = Path(temporary) / "second.ndjson"
+            scaled = Path(temporary) / "scaled.ndjson"
             _, export_metric, export_memory, export_ms = measured(
                 base + ["journal", "export", "--bundle-id", bundle_id, "--output", str(first)])
             _, repeat_metric, repeat_memory, repeat_ms = measured(
                 base + ["journal", "export", "--bundle-id", bundle_id, "--output", str(second)])
-            if {memory_metric, export_metric, repeat_metric} != {memory_metric}:
-                raise AssertionError("/usr/bin/time changed memory units during the run")
+            scale_query, scale_query_metric, scale_query_memory, scale_query_ms = measured(
+                base + ["journal", "query", "--json", "--bundle-id", scale_bundle_id])
+            scale_payload = json.loads(scale_query.stdout)
+            if (scale_payload["turns"]["started"] != SCALING_TURNS
+                    or scale_payload["turns"]["completed"] != SCALING_TURNS):
+                raise AssertionError(f"10x query totals mismatch: {scale_payload['turns']}")
+            _, scale_export_metric, scale_export_memory, scale_export_ms = measured(
+                base + ["journal", "export", "--bundle-id", scale_bundle_id,
+                        "--output", str(scaled)])
+            metrics = {memory_metric, export_metric, repeat_metric,
+                       scale_query_metric, scale_export_metric}
+            if len(metrics) != 1:
+                raise AssertionError(f"/usr/bin/time changed memory metrics during the run: {metrics}")
             if first.read_bytes() != second.read_bytes():
                 raise AssertionError("default exports differ for an unchanged frozen journal")
+            registered_export_events = count_export_events(first)
+            scaling_export_events = count_export_events(scaled)
+            if registered_export_events != rows or scaling_export_events != scaling_rows:
+                raise AssertionError(
+                    f"export row counts mismatch: registered={registered_export_events}/{rows}, "
+                    f"10x_rows={scaling_export_events}/{scaling_rows}"
+                )
             export_bytes = first.stat().st_size
+            scaling_export_bytes = scaled.stat().st_size
+
+        require_bounded_growth("query", query_memory, scale_query_memory)
+        require_bounded_growth("export", export_memory, scale_export_memory)
 
         print(json.dumps({
             "tag": "c11-277",
@@ -207,11 +263,30 @@ def main() -> int:
             "repeat_export_elapsed_ms": round(repeat_ms, 2),
             "export_bytes": export_bytes,
             "turns": payload["turns"],
+            "scaling_volume": {"fleet_hours": 10, "turns_per_fleet_hour": 1_000,
+                               "turns": SCALING_TURNS, "synthetic_rows_per_turn": ROWS_PER_TURN,
+                               "owners": OWNERS, "rows": scaling_rows},
+            "scaling_bundle_id": scale_bundle_id,
+            "scaling_query_peak_memory_bytes": scale_query_memory,
+            "scaling_query_elapsed_ms": round(scale_query_ms, 2),
+            "scaling_export_peak_memory_bytes": scale_export_memory,
+            "scaling_export_elapsed_ms": round(scale_export_ms, 2),
+            "scaling_export_bytes": scaling_export_bytes,
+            "scaling_export_event_rows": scaling_export_events,
+            "max_scaling_rss_growth_bytes": MAX_SCALING_RSS_GROWTH_BYTES,
+            "query_rss_growth_bytes": scale_query_memory - query_memory,
+            "export_rss_growth_bytes": scale_export_memory - export_memory,
+            "bounded_query_memory": True,
+            "bounded_export_memory": True,
             "stable_default_export": True,
         }, sort_keys=True))
     finally:
-        if not args.preserve and fixture_dir.exists() and fixture_dir.parent == journal_root and fixture_dir.name == bundle_id:
+        if (not args.preserve and fixture_dir.exists()
+                and fixture_dir.parent == journal_root and fixture_dir.name == bundle_id):
             shutil.rmtree(fixture_dir)
+        if (scale_fixture_dir.exists() and scale_fixture_dir.parent == journal_root
+                and scale_fixture_dir.name == scale_bundle_id):
+            shutil.rmtree(scale_fixture_dir)
     return 0
 
 

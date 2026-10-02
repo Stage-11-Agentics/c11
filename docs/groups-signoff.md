@@ -269,6 +269,13 @@ workspaces/session must be unchanged.
 
 ## Performance and handoff
 
+**Scope ruling (Atin, 2026-10-02): the performance top-up is deferred to the
+C11-270 soak at the end of the run.** No further performance measurement and no
+quiet-Atlas request is made under C11-261. The perf gate is therefore
+**INCOMPLETE by ruling**, not passed: the numbers below are disclosed partial
+evidence, and the final-cohort protocol described below is carried to C11-270,
+not run here. Paragraphs written before this ruling describe that carried plan.
+
 C11-270 ruling ev_01M3XD1J9QC40BV7NAR7C071PT removes the M1 dependency. Measure
 a frozen current-main control against the repaired candidate now. Build both via
 remote-build with the same tag `c11-261`, retaining each bundle in its role's

@@ -461,6 +461,9 @@
 		DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */; };
 		DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */; };
 		DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
+C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */; };
+		C1128102A1B2C3D4E5F60719 /* SendTextParse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */; };
+		C1128104A1B2C3D4E5F60718 /* SendTextParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */; };
 		C11285A00000000000000001 /* RpcCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11285A00000000000000003 /* RpcCommand.swift */; };
 		DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
 		C11285A00000000000000002 /* RpcCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11285A00000000000000003 /* RpcCommand.swift */; };
@@ -1024,6 +1027,8 @@
 		DH014BF1A1B2C3D4E5F60718 /* HealthFlagsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthFlagsTests.swift; sourceTree = "<group>"; };
 		DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIHealthRuntimeTests.swift; sourceTree = "<group>"; };
 		DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIResolutionSnapshot.swift; sourceTree = "<group>"; };
+C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendTextParse.swift; sourceTree = "<group>"; };
+		C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendTextParseTests.swift; sourceTree = "<group>"; };
 		C11285A00000000000000003 /* RpcCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RpcCommand.swift; sourceTree = "<group>"; };
 		C30800000000000000000001 /* SendKeyArgs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendKeyArgs.swift; sourceTree = "<group>"; };
 		DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctorCommand.swift; sourceTree = "<group>"; };
@@ -1333,6 +1338,7 @@
 				DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */,
 				C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */,
 				DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */,
+				C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */,
 				C11285A00000000000000003 /* RpcCommand.swift */,
 				C30800000000000000000001 /* SendKeyArgs.swift */,
 				A5001620 /* AppleScriptSupport.swift */,
@@ -1623,6 +1629,7 @@
 				DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */,
 				C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */,
 				DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */,
+				C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */,
 				C11285A00000000000000005 /* RpcCommandTests.swift */,
 				DH023BF1A1B2C3D4E5F60718 /* TerminalControllerTelemetryWorkerTests.swift */,
 				D800CBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCaptureTests.swift */,
@@ -1976,6 +1983,7 @@
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C1128000A1B2C3D4E5F60003 /* CreateInitialInputTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
+				C1128104A1B2C3D4E5F60718 /* SendTextParseTests.swift in Sources */,
 				C11285A00000000000000004 /* RpcCommandTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
 				B16AE553A156E736A1DE50DB /* DefaultGridSettingsTests.swift in Sources */,
@@ -2216,6 +2224,7 @@
 				DH001BF0A1B2C3D4E5F60718 /* HealthCommandCore.swift in Sources */,
 				C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */,
+				C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */,
 				C11285A00000000000000001 /* RpcCommand.swift in Sources */,
 				C30800000000000000000002 /* SendKeyArgs.swift in Sources */,
 				A5001621 /* AppleScriptSupport.swift in Sources */,
@@ -2373,6 +2382,7 @@
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,
 				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */,
+				C1128102A1B2C3D4E5F60719 /* SendTextParse.swift in Sources */,
 				C11285A00000000000000002 /* RpcCommand.swift in Sources */,
 				C30800000000000000000003 /* SendKeyArgs.swift in Sources */,
 				DH021BF0A1B2C3D4E5F60719 /* DoctorCommand.swift in Sources */,

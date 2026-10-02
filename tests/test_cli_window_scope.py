@@ -248,7 +248,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     "features_version": 1,
                     "features": [{"id": name, "version": 1} for name in
                                  ("vocabulary.workspace_area_tab", "send.explicit_tab",
-                                  "window.route_without_focus")],
+                                  "window.route_without_focus", "send.raw")],
                     "server": {"version": "synthetic", "commit": "synthetic"}}
         if method == "window.list":
             return {"windows": [{k: copy.deepcopy(v) for k, v in item.items() if k != "workspaces"}
@@ -595,6 +595,28 @@ def main() -> int:
                 out = run(command, "--tab", a_tab["ref"], content, success=False)
                 assert "not_found" in out.stderr, out.stderr
                 routed(method)
+                unchanged()
+
+            # Merged send parsing must preserve window admission for aliases
+            # and raw sends while retaining the new payload semantics.
+            for command, flags, content, expected in (
+                    ("send-tab", [], r"B-alias\n", "B-alias\r"),
+                    ("paste", ["--no-submit"], r"B-paste\n", r"B-paste\n"),
+                    ("send", ["--raw", "--no-submit"], r"B-raw\n", r"B-raw\n")):
+                run(command, *flags, "--tab", "1", content, env=caller)
+                params = routed("tab.send_text")
+                assert matches(b_ws["tabs"][1], params["tab_id"]), params
+                assert params["text"] == expected, params
+                if command == "paste" or "--raw" in flags:
+                    assert params["preserve_newlines"] and not params["submit"], params
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                assert server.windows[0]["key"] and not server.windows[1]["key"]
+                out = run(command, *flags, content, env=caller, success=False)
+                assert "requires --tab" in out.stderr, out.stderr
+                assert not any(name == "tab.send_text" for name, _ in server.calls), server.calls
+                unchanged()
+                out = run(command, *flags, "--tab", a_tab["ref"], content, env=caller, success=False)
+                assert "not_found" in out.stderr, out.stderr
                 unchanged()
 
             # Metadata helpers must carry scope through target resolution and dispatch.

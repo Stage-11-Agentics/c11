@@ -903,6 +903,21 @@ extension TerminalController {
         // attached) the trailing `\r` is appended to the queued payload so the
         // flush on attach submits the line.
         let submit = v2Bool(params, "submit") ?? true
+        let preserveNewlines = v2Bool(params, "preserve_newlines") ?? false
+        if preserveNewlines {
+            // Raw admission and capabilities discovery consume the same policy.
+            // Validate off-main before resolving a target or queueing any bytes.
+            guard CapabilityFeatures.current.supports(.rawSend) else {
+                return .err(code: "unsupported_feature", message: String(
+                    localized: "socket.send.raw_unavailable", defaultValue: "Raw/paste delivery is unavailable."
+                ), data: ["feature": CapabilityFeatures.ID.rawSend.rawValue])
+            }
+            guard !text.isEmpty else {
+                return .err(code: "invalid_params", message: String(
+                    localized: "cli.send.text_required", defaultValue: "send requires text"
+                ), data: nil)
+            }
+        }
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
@@ -933,11 +948,12 @@ extension TerminalController {
 
         // C11-173: what actually happened, for an honest response. `submitted`
         // is the effective submit (a trailing newline in the payload means Enter
-        // even when `submit` is false); `queued` means the surface had no PTY, so
+        // even when `submit` is false, unless preserve_newlines keeps it as
+        // content); `queued` means the surface had no PTY, so
         // nothing has reached the target yet and the payload flushes on attach.
         let queued: Bool
         nonisolated(unsafe) var submitted = false
-        let wantsReturn = submit || TerminalController.trimmingTrailingNewlines(text) != text
+        let wantsReturn = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines).wantsReturn
         let phaseBSema = DispatchSemaphore(value: 0)
         if resolvedSurface != nil {
             // C11-26 review B2: revalidate the live surface pointer inside the
@@ -955,6 +971,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -971,11 +988,9 @@ extension TerminalController {
                     // bracketed-paste envelope would swallow.
                     // Same newline rule as the live path (see deliverSocketSendText):
                     // a trailing newline means "and press Enter".
-                    if wantsReturn {
-                        resolved.terminalPanel.surface.sendSubmitFormText(text)
-                    } else {
-                        resolved.terminalPanel.sendText(text)
-                    }
+                    resolved.terminalPanel.surface.sendQueuedSocketText(
+                        text, submit: submit, preserveNewlines: preserveNewlines
+                    )
                     submitted = wantsReturn
                 }
             }
@@ -995,6 +1010,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -1002,11 +1018,9 @@ extension TerminalController {
                     attachedLate = true
                     return
                 }
-                if wantsReturn {
-                    resolved.terminalPanel.surface.sendSubmitFormText(text)
-                } else {
-                    resolved.terminalPanel.sendText(text)
-                }
+                resolved.terminalPanel.surface.sendQueuedSocketText(
+                    text, submit: submit, preserveNewlines: preserveNewlines
+                )
                 submitted = wantsReturn
             }
             phaseBSema.wait()

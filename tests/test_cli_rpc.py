@@ -45,7 +45,7 @@ def main():
                             requests.append(request)
                             method = request["method"]
                             if method == "system.capabilities":
-                                result = {"methods": ["fixture.echo", "no.such.method", "system.ping"]}
+                                result = {"methods": ["tab.list", "fixture.echo", "no.such.method", "system.ping"]}
                             elif method == "no.such.method":
                                 response = {"id": request["id"], "ok": False, "error": {"code": "method_not_found", "message": "Unknown fixture method"}}
                                 stream.write((json.dumps(response) + "\n").encode())

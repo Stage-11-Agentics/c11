@@ -5691,13 +5691,22 @@ extension WorkspaceManager {
     }
 
     func restoreSessionSnapshot(_ snapshot: SessionWorkspaceManagerSnapshot) {
-        for workspace in workspaces {
+        let displacedWorkspaces = workspaces
+        for workspace in displacedWorkspaces {
             unwireClosedBrowserTracking(for: workspace)
         }
         let existingProbeKeys = Set(workspaceGitProbeGenerationByKey.keys)
             .union(workspaceGitProbeTimersByKey.keys)
         for key in existingProbeKeys {
             clearWorkspaceGitProbe(key)
+        }
+
+        // B075: retained old graphs must lose their panels and callbacks too.
+        // Retire before registering replacements: workspace/tab UUIDs are
+        // stable, and ID-keyed cleanup after installation would erase new state.
+        // Keep the old array until the single publication below (#399).
+        for workspace in displacedWorkspaces {
+            workspace.retireForSessionRestore()
         }
 
         // Clear non-@Published state without touching tabs/selectedTabId yet.
@@ -5776,6 +5785,9 @@ extension WorkspaceManager {
         workspaceGroups = restoredGroups
         // Single workspace-array publication; folder records precede membership visibility.
         workspaces = newTabs
+        let installedIds = Set(newTabs.map(\.id))
+        pruneBackgroundWorkspaceLoads(existingIds: installedIds)
+        sidebarSelectedWorkspaceIds.formIntersection(installedIds)
         selectedWorkspaceId = newSelectedId
         for workspace in newTabs {
             let terminalTabs = workspace.panels.values.compactMap { $0 as? TerminalTab }

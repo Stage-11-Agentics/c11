@@ -35,6 +35,13 @@ class Handler(socketserver.StreamRequestHandler):
         with self.server.observations_lock:
             self.server.connections += 1
         while line := self.rfile.readline():
+            # The CLI may authenticate/probe through the legacy transport
+            # before JSON discovery. Like the other fake-server fixtures,
+            # acknowledge it without logging possible credential bytes.
+            if not line.startswith(b"{"):
+                self.wfile.write(b"OK\n")
+                self.wfile.flush()
+                continue
             request = json.loads(line)
             method = request["method"]
             params = request.get("params", {})

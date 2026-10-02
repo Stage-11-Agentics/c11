@@ -1,0 +1,138 @@
+name: Sign unpublished c11 artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Reviewed source branch or tag in this repository
+        required: true
+        type: string
+      expected_sha:
+        description: Expected full source commit SHA (40 hex characters)
+        required: true
+        type: string
+      purpose:
+        description: Isolated updater proof or approved-byte release candidate
+        required: true
+        type: choice
+        options: [proof, candidate]
+        default: proof
+      target_tag:
+        description: Candidate release tag matching the built version (e.g. v1.0.0)
+        type: string
+      proof_build:
+        description: Positive increasing build number for proof apps
+        type: string
+      proof_feed_base:
+        description: Isolated Atlas HTTP(S) directory URL, without trailing slash
+        type: string
+
+# Artifact upload uses the Actions runtime token. No repository write permission.
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    if: github.repository == 'Stage-11-Agentics/c11'
+    runs-on: macos-15-xlarge
+    timeout-minutes: 60
+    env:
+      SIGN_SOURCE_REF: ${{ inputs.source_ref }}
+      SIGN_EXPECTED_SHA: ${{ inputs.expected_sha }}
+      SIGN_PURPOSE: ${{ inputs.purpose }}
+      SIGN_TARGET_TAG: ${{ inputs.target_tag }}
+      SIGN_PROOF_BUILD: ${{ inputs.proof_build }}
+      SIGN_PROOF_FEED_BASE: ${{ inputs.proof_feed_base }}
+      SIGN_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      SIGN_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # Keep the producer tied to the dispatched workflow, independently of source_ref.
+      - name: Checkout producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: producer
+          persist-credentials: false
+
+      - name: Checkout named source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_ref }}
+          submodules: recursive
+          path: source
+          persist-credentials: false
+
+      - name: Validate request and source identity
+        run: python3 producer/scripts/sign_artifact.py preflight source
+
+      - name: Select compatible Xcode
+        run: |
+          set -euo pipefail
+          XCODE_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+          [ -d "$XCODE_DIR" ] || { echo 'Xcode 26.3 is required on this runner' >&2; exit 1; }
+          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$XCODE_DIR" xcodebuild -version
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          ZIG_VERSION=0.15.2
+          case "$(uname -m)" in
+            arm64) ZIG_ARCH=aarch64 ;;
+            x86_64) ZIG_ARCH=x86_64 ;;
+            *) exit 1 ;;
+          esac
+          curl -fSL "https://ziglang.org/download/$ZIG_VERSION/zig-$ZIG_ARCH-macos-$ZIG_VERSION.tar.xz" -o "$RUNNER_TEMP/zig.tar.xz"
+          tar xf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-$ZIG_ARCH-macos-$ZIG_VERSION" >> "$GITHUB_PATH"
+          npm install --global create-dmg@8.0.0
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: source/daemon/remote/go.mod
+          cache-dependency-path: source/daemon/remote/go.sum
+
+      - name: Build, sign, notarize and stage exact bytes
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash producer/scripts/sign-artifact.sh source
+
+      - name: Upload unpublished signed bytes
+        id: artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.SIGN_ARTIFACT_NAME }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            source/build/signed-artifact/c11-macos.dmg
+            source/build/signed-artifact/appcast.xml
+            source/build/signed-artifact/c11d-remote-darwin-arm64
+            source/build/signed-artifact/c11d-remote-darwin-amd64
+            source/build/signed-artifact/c11d-remote-linux-arm64
+            source/build/signed-artifact/c11d-remote-linux-amd64
+            source/build/signed-artifact/c11d-remote-checksums.txt
+            source/build/signed-artifact/c11d-remote-manifest.json
+            source/build/signed-artifact/SHA256SUMS
+            source/build/signed-artifact/signing-manifest.json
+
+      - name: Record download identity
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+        run: |
+          printf '\nArtifact archive: %s\nArchive SHA-256: `%s`\n' "$ARTIFACT_URL" "$ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup ephemeral signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/c11-signing.keychain-db" >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/c11-signing.p12" "$RUNNER_TEMP/c11-notary.zip"

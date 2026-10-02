@@ -45,6 +45,9 @@ jobs:
       - name: Validate release asset guard
         run: node scripts/release_asset_guard.test.js
 
+      - name: Validate unpublished signing producer with synthetic tools
+        run: python3 tests/test_sign_artifact.py
+
       - name: Validate the build lock serializes builds
         run: ./tests/test_with_build_lock.sh
 

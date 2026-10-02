@@ -2,6 +2,9 @@
 """Explicit tagged guest UI proof for C11-273, with an 80-second active limit.
 
 Run via sandbox-exec.sh with the same arguments as attention_menu_bar_probe.py.
+Before launch, bind Jump to Latest Unread to Option-V in this disposable tagged
+app's ordinary preferences. The shipped default is Control-Command-Return.
+Use one verified guest display and a main window entirely inside its bounds.
 Socket calls arrange synthetic state; real PID-targeted keys and AX menu clicks
 exercise attention navigation. Public output contains only cropped windows and
 check labels. Terminal prompts are neutralized before any screenshot.
@@ -40,6 +43,10 @@ EXTRA_JXA = r'''
         $.CGEventPostToPid(pid, down); $.CGEventPostToPid(pid, up);
         return '{}';
     }
+    if (operation === 'dismiss-notifications') {
+        process.menuBars()[0].menuBarItems.byName('Notifications').menus()[0].actions.byName('AXCancel').perform();
+        return '{}';
+    }
     if (operation === 'notifications-menu' || operation === 'jump-menu') {
         var item = process.menuBars()[0].menuBarItems.byName('Notifications');
         item.click();
@@ -58,11 +65,25 @@ base.JXA = base.JXA.replace('    var bars = process.menuBars()', EXTRA_JXA + '\n
 
 
 class JournalProbe(base.Probe):
+    def dismiss(self):
+        self.ui('dismiss')
+        time.sleep(.1)
+        if self.ui('popup-windows', str(self.window_id)):
+            self.ui('dismiss-notifications')
+        self.eventually(lambda: not self.ui('popup-windows', str(self.window_id)), 'Tagged menu dismissed by synthesized input')
+        self.check(True, 'Synthesized input dismissed the tagged menu')
+
     def screenshot(self, label):
         # Window-only capture is already a crop to the verified app, never the
         # desktop or another application's windows.
         path = self.output / (label + '.png')
-        self.run(['/usr/sbin/screencapture', '-x', '-o', '-l', str(self.window_id), str(path)])
+        if label.endswith('menu'):
+            window = next(w for w in self.ui('displays')['windows'] if w['kCGWindowNumber'] == self.window_id)
+            bounds = window['kCGWindowBounds']
+            region = ','.join(str(int(value)) for value in (bounds['X'], 0, bounds['Width'], bounds['Y'] + bounds['Height']))
+            self.run(['/usr/sbin/screencapture', '-x', '-R', region, str(path)])
+        else:
+            self.run(['/usr/sbin/screencapture', '-x', '-o', '-l', str(self.window_id), str(path)])
         self.check(path.is_file(), label + ' window crop captured')
         self.report['screenshots'].append(path.name)
 
@@ -71,6 +92,9 @@ class JournalProbe(base.Probe):
         self.workspace = self.rpc('workspace.create', {'working_directory': '/tmp',
             'initial_command': "/usr/bin/env PS1='$ ' /bin/zsh -f"})['workspace_id']
         self.rpc('workspace.rename', {'workspace_id': self.workspace, 'title': 'Journal proof'})
+        for workspace in self.rpc('workspace.list')['workspaces']:
+            if workspace['id'] != self.workspace:
+                self.rpc('workspace.close', {'workspace_id': workspace['id']})
         target = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
         sibling = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal'})['tab_id']
         self.rpc('workspace.select', {'workspace_id': self.workspace})

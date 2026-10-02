@@ -82,6 +82,16 @@ def main():
 
             hook('prompt-submit')
             phase('working')
+            capture = json.loads((Path(__file__).parent / 'fixtures' / 'c11-263-native-exit-plan-before.json').read_text())
+            native_plan = next(row for row in capture['hooks']
+                               if row.get('hook_event_name') == 'PreToolUse' and row.get('tool_name') == 'ExitPlanMode')
+            hook('pre-tool-use', {'tool_name': native_plan['tool_name'],
+                                 'permission_mode': native_plan['permission_mode']})
+            phase('blocked')
+            assert state()['reason'] == 'plan_review'
+            print('PASS recorded ExitPlanMode hook shape reaches plan-review journal projection')
+            hook('prompt-submit')
+            phase('working')
             event = draft('agent.plan_review.requested', tool_class='exit_plan_mode', request_id='synthetic-plan')
             # Lost reply after actual write: retry must return the original committed receipt.
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:

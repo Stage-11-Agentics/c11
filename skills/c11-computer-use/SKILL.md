@@ -61,13 +61,14 @@ A proof that needs real agents (a Claude Code, Codex, or Grok tab receiving mail
 ```
 scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok
 scripts/sandbox-agent.sh <run-id> launch <claude|codex|grok> <brief.md> --title lc-claude
-scripts/sandbox-agent.sh <run-id> c11 mailbox send --to lc-claude --body "reply PONG"   # any guest c11 command
+scripts/sandbox-agent.sh <run-id> c11 new-tab --workspace workspace:2 --no-focus  # any guest c11 command; this one makes a shell tab
+scripts/sandbox-agent.sh <run-id> c11 send --workspace workspace:2 --tab tab:12 "c11 mailbox send --to lc-claude --body 'reply PONG'"
 scripts/sandbox-agent.sh <run-id> screen tab:6 --workspace workspace:2 --lines 60
 scripts/sandbox-down.sh <run-id>
-scripts/sandbox-agent.sh <run-id> verify-clean
+scripts/sandbox-agent.sh <run-id> verify-clean            # after down; --control while up proves the scan sees guest files
 ```
 
-`--agents` copies the Tart host's installed agent CLIs into the clone and stages one access credential per kind from the Overwatch seat logins on that host (`seat.sh export-cred`). Credentials go host to guest on SSH stdin and live only in the clone; the golden image never holds one, and `verify-clean` searches its disk for them after `sandbox-down`. `launch` delivers the brief as a file pointer through the guest's `c11 launch-agent`, opts the tab into mailbox push, and waits for the composer. Mail from a guest shell tab matches what an agent sees; an operator draft is `c11 send --raw --no-submit`. A kind whose account is out of quota starts logged in and then shows the provider's limit screen: read the screen before calling a delivery failure. `C11_SANDBOX_CLAUDE_ACCOUNT` picks the Claude call-sign.
+`--agents` copies the Tart host's installed agent CLIs into the clone and stages one access credential per kind from the Overwatch seat logins on that host (`seat.sh export-cred`). Credentials go host to guest on SSH stdin and live only in the clone; the golden image never holds one, and `verify-clean` searches its disk for them after `sandbox-down`. `launch` delivers the brief as a file pointer through the guest's `c11 launch-agent`, opts the tab into mailbox push, and waits for the composer. `mailbox send` needs a sender tab, so send mail from a shell tab inside the guest workspace, as above; that is also what an agent sees. An operator draft is `c11 send --raw --no-submit`. A kind whose account is out of quota starts logged in and then shows the provider's limit screen: read the screen before calling a delivery failure. `C11_SANDBOX_CLAUDE_ACCOUNT` picks the Claude call-sign.
 
 ## Launch discipline
 

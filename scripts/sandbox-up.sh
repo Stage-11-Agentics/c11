@@ -348,10 +348,33 @@ printf 'clone_secs=%s\n' "\$clone_secs"
 printf 'boot_secs=%s\n' "\$boot_secs"
 EOF
 
-if [[ -n "$agents" ]]; then
-  if ! "$SCRIPT_DIR/sandbox-agent.sh" "$run_id" stage "$agents"; then
-    echo "sandbox: staging agents ($agents) failed; removing the clone" >&2
-    "$SCRIPT_DIR/sandbox-down.sh" "$run_id" >&2 || true
-    exit 1
+# From here the clone is up and staging may write credentials into it. Until staging
+# succeeds, any failure or signal tears the clone down, and a failed teardown says so.
+agents_teardown() {
+  trap - INT TERM HUP
+  echo "sandbox: $1; removing the clone" >&2
+  if ! "$SCRIPT_DIR/sandbox-down.sh" "$run_id" >&2; then
+    echo "sandbox: TEARDOWN FAILED for ${run_id}. The clone may still be running with staged credentials. Run scripts/sandbox-down.sh ${run_id} until it reports deleted=." >&2
+    exit 2
   fi
+  exit 1
+}
+stage_pid=""
+stop_stage() {
+  # The staging child and its direct children (the host ssh); the clone delete ends the rest.
+  [[ -n "$stage_pid" ]] || return 0
+  pkill -TERM -P "$stage_pid" 2>/dev/null || true
+  kill -TERM "$stage_pid" 2>/dev/null || true
+  wait "$stage_pid" 2>/dev/null || true
+}
+if [[ -n "$agents" ]]; then
+  # Armed before the child starts. The child runs in the background and is waited
+  # on, so a signal reaches the trap at once instead of after staging finishes.
+  trap 'stop_stage; agents_teardown "interrupted while staging agents"' INT TERM HUP
+  "$SCRIPT_DIR/sandbox-agent.sh" "$run_id" stage "$agents" &
+  stage_pid=$!
+  if ! wait "$stage_pid"; then
+    agents_teardown "staging agents ($agents) failed"
+  fi
+  trap - INT TERM HUP
 fi

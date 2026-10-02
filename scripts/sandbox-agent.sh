@@ -36,9 +36,11 @@ focus on, the machine where this script is invoked.
 
   c11 <c11 arguments...>
       Any guest c11 command against the guest socket, for example
-        c11 mailbox send --to lc-claude --body "reply PONG"
-        c11 send --workspace workspace:1 --tab tab:3 --raw --no-submit "hello wor"
         c11 tree --no-layout
+        c11 new-tab --workspace workspace:2 --no-focus
+        c11 send --workspace workspace:2 --tab tab:12 --raw --no-submit "hello wor"
+      Mailbox commands need a sender tab, so run them in a guest shell tab:
+        c11 send --workspace workspace:2 --tab tab:12 "c11 mailbox send --to lc-claude --body 'reply PONG'"
 
   wipe
       Delete the staged credentials inside the guest. sandbox-down.sh calls
@@ -98,16 +100,19 @@ export_cred() {
 
 # stdin: patterns, one per line. Searches each path (files, or directories walked
 # without following links) for any of them; reads only allocated extents of sparse
-# files, at nice 15. Prints "<path> found|absent bytes=<n>"; exit 1 when anything is found.
+# files, at nice 15. Prints "<path> found|absent|error bytes=<n> [reason]".
+# Exit 1 when anything is found, 2 when any part could not be read (an unread
+# byte is never reported as absent), 0 only when every byte was searched.
 secret_scan() {
   /usr/bin/python3 -c '
-import os, sys
+import errno, os, stat, sys
 os.nice(15)
 pats = [l.rstrip("\n").encode() for l in sys.stdin if l.strip()]
 if not pats:
     sys.exit("secret_scan: no patterns")
 keep = max(len(p) for p in pats) - 1
 CHUNK = 64 << 20
+NO_SEEK_DATA = (errno.EINVAL, errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP))
 def extents(fd, size):
     if not hasattr(os, "SEEK_DATA"):
         yield 0, size
@@ -116,12 +121,14 @@ def extents(fd, size):
     while pos < size:
         try:
             start = os.lseek(fd, pos, os.SEEK_DATA)
-        except OSError:
-            return
-        try:
-            end = os.lseek(fd, start, os.SEEK_HOLE)
-        except OSError:
-            end = size
+        except OSError as e:
+            if e.errno == errno.ENXIO:
+                return  # no data after pos
+            if pos == 0 and e.errno in NO_SEEK_DATA:
+                yield 0, size  # filesystem without hole reporting: read it all
+                return
+            raise
+        end = os.lseek(fd, start, os.SEEK_HOLE)  # an error here propagates
         yield start, end
         pos = end
 def scan(path):
@@ -134,7 +141,7 @@ def scan(path):
             while off < end:
                 data = os.pread(fd, min(CHUNK, end - off), off)
                 if not data:
-                    break
+                    raise OSError(errno.EIO, "short read at offset %d of %d" % (off, size))
                 buf = tail + data
                 if any(p in buf for p in pats):
                     return True, n + len(data)
@@ -142,24 +149,46 @@ def scan(path):
                 off += len(data)
                 tail = buf[-keep:] if keep else b""
     return False, n
-found = False
+def files_under(root, errors):
+    st = os.lstat(root)  # a missing root raises
+    if stat.S_ISREG(st.st_mode):
+        return [root]
+    if not stat.S_ISDIR(st.st_mode):
+        raise OSError(errno.EINVAL, "not a file or directory")
+    out = []
+    for d, _, xs in os.walk(root, onerror=errors.append):
+        out.extend(os.path.join(d, x) for x in xs)
+    return out
+found = failed = False
 for root in sys.argv[1:]:
-    files = [root] if os.path.isfile(root) else [os.path.join(d, x) for d, _, xs in os.walk(root) for x in xs]
-    hit, total = False, 0
+    hit, total, errors = False, 0, []
+    try:
+        files = files_under(root, errors)
+    except OSError as e:
+        files, errors = [], [e]
     for path in files:
-        if os.path.islink(path) or not os.path.isfile(path):
-            continue
         try:
+            st = os.lstat(path)
+            if not stat.S_ISREG(st.st_mode):
+                continue  # links are not followed; sockets and fifos hold no file content
             h, n = scan(path)
-        except OSError:
+        except OSError as e:
+            errors.append(e)
             continue
         total += n
         if h:
             hit = True
             break
-    found = found or hit
-    print("%s %s bytes=%d" % (root, "found" if hit else "absent", total))
-sys.exit(1 if found else 0)
+    if hit:
+        found = True
+        print("%s found bytes=%d" % (root, total))
+    elif errors:
+        failed = True
+        e = errors[0]
+        print("%s error bytes=%d %d unreadable: %s (%s)" % (root, total, len(errors), getattr(e, "filename", "") or root, e.strerror or e))
+    else:
+        print("%s absent bytes=%d" % (root, total))
+sys.exit(1 if found else 2 if failed else 0)
 ' "$@"
 }
 
@@ -390,7 +419,9 @@ ip="\$(guest_ip "\$VM")"
 # 1. Credentials, exported here and held only in this shell's memory.
 typeset -A cred
 for k in \$kinds; do
-  cred[\$k]="\$(export_cred "\$k")" || die "could not export the \$k credential on \$(hostname -s). The error above names the missing login; fix it there and rerun stage."
+  one="\$(export_cred "\$k")" || die "could not export the \$k credential on \$(hostname -s). The error above names the missing login; fix it there and rerun stage."
+  [[ -n "\$one" ]] || die "the \$k export returned nothing"
+  cred[\$k]="\$one"
 done
 # 2. Agent CLIs: the versions installed on this host, copied when the guest lacks them.
 typeset -A versions payload
@@ -418,7 +449,12 @@ for k in \$kinds; do
     # The Homebrew cask keeps resources beside bin/; ship the whole version directory.
     COPYFILE_DISABLE=1 /usr/bin/tar -C "\${b:h:h:h}" -s ",^\${b:h:h:t},codex," -cf - "\${b:h:h:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
   else
-    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${b:h}" -s ",^\${b:t}\\$,\$k/\$k," -cf - "\${b:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
+    # One binary. Its place in the guest matches the link the installer makes.
+    case "\$k" in
+      codex) dest="codex/bin/codex" ;;
+      *) dest="\$k/\$k" ;;
+    esac
+    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${b:h}" -s ",^\${b:t}\\$,\$dest," -cf - "\${b:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
   fi
   copied+=("\$k")
 done
@@ -443,9 +479,13 @@ KINDS="" CLAUDE_ACCOUNTS="" FINGERPRINTS="" GOLDEN_DISK_MTIME=""
 all_kinds=(\${(s:,:)KINDS} \$kinds)
 accounts=(\${(s:,:)CLAUDE_ACCOUNTS})
 if (( \${+cred[claude]} )); then
-  accounts+=("\$(print -r -- "\${cred[claude]}" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["account"])')")
+  acct="\$(print -r -- "\${cred[claude]}" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["account"])')"
+  [[ -n "\$acct" && "\$acct" != None ]] || die "the claude export names no account"
+  accounts+=("\$acct")
 fi
-fps="\$FINGERPRINTS \$(for k in \$kinds; do print -r -- "\${cred[\$k]}"; done | secret_tool fingerprints | tr '\n' ' ')"
+new_fps="\$(for k in \$kinds; do print -r -- "\${cred[\$k]}"; done | secret_tool fingerprints | tr '\n' ' ')"
+[[ -n "\${new_fps// /}" ]] || die "could not fingerprint the staged credentials"
+fps="\$FINGERPRINTS \$new_fps"
 {
   printf 'KINDS=%q\n' "\${(j:,:)\${(@u)all_kinds}}"
   printf 'CLAUDE_ACCOUNTS=%q\n' "\${(j:,:)\${(@u)accounts}}"
@@ -470,9 +510,13 @@ set -eu
 export SANDBOX_CLI SANDBOX_SOCKET
 export SANDBOX_ARGV_B64='${argv_b64}'
 exec /usr/bin/python3 - <<'PY'
-import base64, os
+import base64, os, sys
 raw = base64.b64decode(os.environ["SANDBOX_ARGV_B64"])
 args = [p.decode() for p in raw.split(b"\0")[:-1]]
+if args[:2] == ["mailbox", "send"]:
+    # mailbox send resolves its sender from the calling tab, and this call has none.
+    sys.exit("sandbox-agent: mailbox send needs a sender tab. Run it in a guest shell tab: "
+             "sandbox-agent.sh <run-id> c11 send --workspace <ws> --tab <shell-tab> \"c11 mailbox send --to <tab> --body <text>\"")
 env = {k: v for k, v in os.environ.items() if not k.startswith(("C11_", "CMUX_"))}
 env["LC_ALL"] = env["LANG"] = "en_US.UTF-8"
 cli, sock = os.environ["SANDBOX_CLI"], os.environ["SANDBOX_SOCKET"]
@@ -664,19 +708,25 @@ for k in \${(s:,:)KINDS}; do
   if [[ "\$k" == claude && -n "\${CLAUDE_ACCOUNTS:-}" ]]; then
     for a in \${(s:,:)CLAUDE_ACCOUNTS}; do
       claude_account="\${a:l}"
-      creds+=("\$(export_cred claude 2>/dev/null)") || die "could not re-export claude (\$a) to search for it"
+      one="\$(export_cred claude 2>/dev/null)" || die "could not re-export claude (\$a) to search for it"
+      creds+=("\$one")
     done
   else
-    creds+=("\$(export_cred "\$k" 2>/dev/null)") || die "could not re-export \$k to search for it"
+    one="\$(export_cred "\$k" 2>/dev/null)" || die "could not re-export \$k to search for it"
+    creds+=("\$one")
   fi
 done
-now_fp=(\$(for c in \$creds; do print -r -- "\$c"; done | secret_tool fingerprints))
+now_fp_text="\$(for c in \$creds; do print -r -- "\$c"; done | secret_tool fingerprints)" || die "could not fingerprint the re-exported credentials"
+now_fp=(\${(f)now_fp_text})
 staged_fp=(\${=FINGERPRINTS})
 missing=(\${staged_fp:|now_fp})
 if (( \${#missing} == 0 )); then
   print -r -- "credentials=unchanged since stage (searching for every staged value: \${#staged_fp})"
 else
-  print -r -- "credentials=\${#missing} of \${#staged_fp} staged values rotated since stage (searching for the current values; rotated: \${missing})"
+  # A rotated value cannot be re-exported, so nothing below searches for it. Fail
+  # closed: a scan of current values cannot certify that a staged one is gone.
+  print -r -- "credentials=ROTATED: \${#missing} of \${#staged_fp} staged values can no longer be exported and are not searched for (\${missing}). This run cannot be certified clean."
+  bad=1
 fi
 patterns() { for c in \$creds; do print -r -- "\$c"; done | secret_tool patterns }
 # The search is only as good as its patterns: each must find itself in a copy of the list.
@@ -690,7 +740,7 @@ search() { # label path
   case "\$rc" in
     0) print -r -- "\$label=absent (\${out##* })" ;;
     1) print -r -- "\$label=FOUND"; bad=1 ;;
-    *) print -r -- "\$label=error (scan exit \$rc)"; bad=1 ;;
+    *) print -r -- "\$label=ERROR (scan exit \$rc: \${out#* error })"; bad=1 ;;
   esac
 }
 if [[ "\$control" == 1 ]]; then

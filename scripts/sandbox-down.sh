@@ -26,7 +26,7 @@ sandbox_validate_run_id "$run_id"
 # Staged agent credentials go first. Deleting the clone is what removes them for
 # good; this keeps a stuck stop from leaving them readable in a live guest.
 if ! wiped="$("$SCRIPT_DIR/sandbox-agent.sh" "$run_id" wipe 2>/dev/null)"; then
-  wiped="wiped=unreachable (the clone delete below removes them)"
+  wiped="wiped=failed or guest unreachable (the clone delete below removes them)"
 fi
 printf '%s\n' "$wiped"
 

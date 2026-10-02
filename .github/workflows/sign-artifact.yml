@@ -38,7 +38,7 @@ permissions:
 jobs:
   sign:
     if: github.repository == 'Stage-11-Agentics/c11'
-    runs-on: macos-15-xlarge
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       SIGN_SOURCE_REF: ${{ inputs.source_ref || github.ref }}

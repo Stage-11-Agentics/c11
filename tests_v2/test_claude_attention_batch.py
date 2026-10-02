@@ -115,6 +115,20 @@ def main():
                 assert_isolation(sibling_id)
                 print(f"PASS: bypass {tool} enters waiting without a Notification hook")
 
+            hook("session-start", {"session_id": session})
+            sibling_id = seed()
+            legacy(socket_path, f"clear_notifications --tab={workspace} --panel={caller}")
+            eventually(lambda: not unread(caller), "prepare normal-mode ask")
+            hook("pre-tool-use", {"session_id": session, "permission_mode": "default",
+                                  "tool_name": "AskUserQuestion", "tool_input": {}})
+            client.list_surfaces(workspace)
+            assert not unread(caller), "normal mode must retain its Notification route"
+            for _ in range(2):
+                hook("notification", {"session_id": session, "notification_type": "permission_prompt"})
+                eventually(lambda: len(unread(caller)) == 1, "normal follow-up must have one item")
+            assert unread(sibling)[0]["id"] == sibling_id
+            print("PASS: normal-mode follow-up retains one attention item")
+
             # No session mapping and no explicit tab: never guess the focused tab.
             for bad_ref in (None, "", "not-a-tab", str(uuid.uuid4())):
                 seed()

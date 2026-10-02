@@ -17,6 +17,54 @@ let lastSurfaceCloseShortcutDefaultsKey = "closeWorkspaceOnLastSurfaceShortcut"
 
 @MainActor
 final class AgentPIDAttentionCleanupTests: XCTestCase {
+    func testScopedClearWorkerPreservesSiblingAndFocus() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        let sibling = UUID()
+        let controller = TerminalController.shared
+        let oldManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        let store = TerminalNotificationStore.shared
+        defer {
+            store.replaceNotificationsForTesting([])
+            controller.workspaceManager = oldManager
+        }
+        store.replaceNotificationsForTesting([notice(workspace.id, caller), notice(workspace.id, sibling)])
+        let command = "clear_notifications --tab=\(workspace.id) --panel=\(caller)"
+        XCTAssertEqual(controller.processCommandUsingSocketExecutionPolicy(command), "OK")
+        drainMainQueue()
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: caller))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: sibling))
+        XCTAssertEqual(workspace.focusedPanelId, caller)
+
+        XCTAssertTrue(controller.processCommandUsingSocketExecutionPolicy(
+            "clear_notifications --tab=\(workspace.id) --panel="
+        ).hasPrefix("ERROR:"))
+        XCTAssertEqual(controller.processCommandUsingSocketExecutionPolicy(
+            "clear_notifications --tab=\(workspace.id) --panel=\(UUID())"
+        ), "OK")
+        drainMainQueue()
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: sibling))
+    }
+
+    func testPIDCommandDoesNotAssociateFocusedTabWithoutExplicitSelector() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        let controller = TerminalController.shared
+        let oldManager = controller.workspaceManager
+        controller.workspaceManager = manager
+        defer { controller.workspaceManager = oldManager }
+        XCTAssertEqual(controller.setAgentPID("caller 101 --tab=\(workspace.id) --panel=\(caller)"), "OK")
+        drainMainQueue()
+        XCTAssertEqual(workspace.removeAgentPID(key: "caller"), caller)
+
+        XCTAssertEqual(controller.setAgentPID("caller 102 --tab=\(workspace.id)"), "OK")
+        drainMainQueue()
+        XCTAssertNil(workspace.removeAgentPID(key: "caller"))
+    }
+
     func testDeadAttributedPIDClearsOnlyItsTab() throws {
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)

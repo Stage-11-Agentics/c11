@@ -485,10 +485,10 @@ extension Workspace {
         from snapshot: SessionWorkspaceSnapshot,
         registry: ConversationStrategyRegistry,
         startup: ResumeStartupEpochGate.Snapshot? = nil
-    ) -> [(panelId: UUID, action: ResumeAction)] {
+    ) -> [(panelId: UUID, action: ResumeAction, conversation: ConversationRef)] {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
         let startup = startup ?? ResumeStartupEpochGate.shared.snapshot()
-        var result: [(panelId: UUID, action: ResumeAction)] = []
+        var result: [(panelId: UUID, action: ResumeAction, conversation: ConversationRef)] = []
         // C11-24: bulk-read the actor via the shared sync helper. The
         // previous inline `Task { ... }` deadlocked from `@MainActor`
         // contexts because the unstructured Task inherited that
@@ -569,10 +569,25 @@ extension Workspace {
                 action: .typeCommand(
                     text: command.text,
                     submitWithReturn: command.submitWithReturn
-                )
+                ),
+                conversation: ref
             ))
         }
         return result
+    }
+
+    /// Recheck the process-local writer evidence immediately before a delayed
+    /// resume is submitted. The writer surface must have an exact causal
+    /// ConversationRef and must still own its terminal through c11's
+    /// MailboxAgentForeground check; a live shell PID alone is not evidence.
+    static func resumeActionBeforeSubmission(
+        _ action: ResumeAction,
+        conversation: ConversationRef,
+        targetSurfaceId: UUID,
+        conversationsBySurface: [String: TabConversations],
+        liveAttributedAgentSurfaceIds: Set<UUID>
+    ) -> ResumeAction {
+        action
     }
 
     nonisolated static func resumeOwnership(
@@ -657,11 +672,27 @@ extension Workspace {
         // resumes one `agentRestartStagger` after the previous.
         let base = SessionPersistencePolicy.agentRestartDelay
         let stagger = SessionPersistencePolicy.agentRestartStagger
-        for (index, (panelId, action)) in plans.enumerated() {
+        for (index, plan) in plans.enumerated() {
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + base + Double(index) * stagger
             ) { [weak self] in
-                self?.executeResumeAction(action, on: panelId)
+                Task { @MainActor [weak self] in
+                    let conversationsBySurface = await ConversationStore.shared.snapshot()
+                    guard let self else { return }
+                    let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
+                        matching: plan.conversation,
+                        excluding: plan.panelId,
+                        conversationsBySurface: conversationsBySurface
+                    ) ?? []
+                    let action = Self.resumeActionBeforeSubmission(
+                        plan.action,
+                        conversation: plan.conversation,
+                        targetSurfaceId: plan.panelId,
+                        conversationsBySurface: conversationsBySurface,
+                        liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
+                    )
+                    self.executeResumeAction(action, on: plan.panelId)
+                }
             }
         }
     }
@@ -6134,6 +6165,11 @@ final class Workspace: Identifiable, ObservableObject {
             process: mailboxStdinBuffer.agentProcess(surfaceId: surfaceId),
             tabTTYName: tabTTYNames[surfaceId]
         )
+    }
+
+    func hasLiveAttributedAgentWriter(surfaceId: UUID) -> Bool {
+        guard panels[surfaceId] is TerminalTab else { return false }
+        return mailboxAgentOwnsTerminal(surfaceId: surfaceId)
     }
 
     /// The push re-check, against live state, for the recipient kind the

@@ -5350,6 +5350,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         })
     }
 
+    /// Return surfaces whose live, attributed agent still owns its terminal
+    /// and whose ConversationStore record is an exact causal match. This is
+    /// intentionally narrower than a process-table scan: a shell or a stale
+    /// PID cannot claim a conversation writer.
+    func liveAttributedAgentSurfaceIds(
+        matching conversation: ConversationRef,
+        excluding targetSurfaceId: UUID,
+        conversationsBySurface: [String: TabConversations]
+    ) -> Set<UUID> {
+        var result: Set<UUID> = []
+        var seenManagers: Set<ObjectIdentifier> = []
+        let managers = mainWindowContexts.values.map(\.workspaceManager)
+            + [workspaceManager].compactMap { $0 }
+
+        for manager in managers where seenManagers.insert(ObjectIdentifier(manager)).inserted {
+            for workspace in manager.workspaces {
+                for surfaceId in workspace.panels.keys where surfaceId != targetSurfaceId {
+                    guard let active = conversationsBySurface[surfaceId.uuidString]?.active,
+                          active.kind == conversation.kind,
+                          active.id == conversation.id,
+                          active.hasCausalExactEvidence,
+                          workspace.hasLiveAttributedAgentWriter(surfaceId: surfaceId) else {
+                        continue
+                    }
+                    result.insert(surfaceId)
+                }
+            }
+        }
+        return result
+    }
+
     func windowMoveTargets(referenceWindowId: UUID?) -> [WindowMoveTarget] {
         let orderedSummaries = orderedMainWindowSummaries(referenceWindowId: referenceWindowId)
         let labels = windowLabelsById(orderedSummaries: orderedSummaries, referenceWindowId: referenceWindowId)

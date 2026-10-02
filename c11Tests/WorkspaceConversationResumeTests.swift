@@ -122,6 +122,83 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(text.contains(claudeSessionId))
     }
 
+    func testDeferredResumeSubmissionSkipsOnlyForLiveAttributedSameConversationWriter() async throws {
+        let workspace = Workspace()
+        let targetSurfaceId = UUID()
+        let liveWriterSurfaceId = UUID()
+        let unrelatedSurfaceId = UUID()
+        let conversationId = "abcd1111-2222-4333-8444-555566667777"
+        await ConversationStore.shared.push(
+            surfaceId: targetSurfaceId.uuidString,
+            kind: "claude-code",
+            id: conversationId,
+            source: .hook,
+            state: .suspended
+        )
+        let plans = workspace.pendingRestartPlans(
+            from: makeSnapshot(panels: [
+                makePanelSnapshot(id: targetSurfaceId, type: .terminal)
+            ]),
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        )
+        let plan = try XCTUnwrap(plans.first)
+        XCTAssertEqual(plans.count, 1)
+
+        // A matching exact agent ref appears after planning, in the delay
+        // before submission. ConversationStore may quarantine the duplicate;
+        // the terminal-owner evidence still identifies the running writer.
+        await ConversationStore.shared.push(
+            surfaceId: liveWriterSurfaceId.uuidString,
+            kind: plan.conversation.kind,
+            id: plan.conversation.id,
+            source: .hook,
+            state: .alive
+        )
+        await ConversationStore.shared.push(
+            surfaceId: unrelatedSurfaceId.uuidString,
+            kind: "codex",
+            id: codexSessionId,
+            source: .hook,
+            state: .alive
+        )
+        let currentConversations = await ConversationStore.shared.snapshot()
+
+        let liveWriterAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: [liveWriterSurfaceId]
+        )
+        guard case .skip(let liveReason) = liveWriterAction else {
+            return XCTFail("a live c11 agent attributed to the same provider and session must block the queued resume")
+        }
+        XCTAssertTrue(liveReason.contains("live conversation writer"))
+
+        let deadWriterAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: []
+        )
+        guard case .typeCommand = deadWriterAction else {
+            return XCTFail("a dead or absent attributed agent must retain today's resume behavior")
+        }
+
+        let unrelatedShellAction = Workspace.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: targetSurfaceId,
+            conversationsBySurface: currentConversations,
+            liveAttributedAgentSurfaceIds: [unrelatedSurfaceId]
+        )
+        guard case .typeCommand = unrelatedShellAction else {
+            return XCTFail("an unrelated live shell must not claim this conversation")
+        }
+    }
+
     func testCodexAmbiguousRefSkipsViaPlans() async throws {
         let workspace = Workspace()
         let panelId = UUID()

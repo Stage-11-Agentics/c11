@@ -65,6 +65,12 @@ extension TerminalController {
         case result(V2CallResult)
     }
 
+    enum V2BrowserProfileResolution {
+        case none
+        case profile(BrowserProfileDefinition)
+        case error(V2CallResult)
+    }
+
     func v2DispatchBrowser(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
         case "browser.open_split":
@@ -235,8 +241,289 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserInputKeyboard(params: params))
         case "browser.input_touch":
             return v2Result(id: id, self.v2BrowserInputTouch(params: params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            // Profile verbs are registered in the browser domain for
+            // discovery, but their worker policy is mandatory: clear/delete
+            // wait off-main for WebKit completion and must never be routed
+            // through this main-actor switch.
+            return v2Error(
+                id: id,
+                code: "invalid_dispatch",
+                message: "\(method) must run on the socket worker"
+            )
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+    }
+
+    @MainActor
+    func v2ResolveBrowserProfileParam(_ raw: String?) -> V2BrowserProfileResolution {
+        guard let raw else { return .none }
+        switch BrowserProfileStore.shared.resolveProfile(raw) {
+        case .found(let profile):
+            return .profile(profile)
+        case .notFound:
+            return .error(.err(
+                code: "not_found",
+                message: String(localized: "browser.profile.error.notFound", defaultValue: "Browser profile not found"),
+                data: ["profile": raw]
+            ))
+        case .ambiguous:
+            return .error(.err(
+                code: "ambiguous",
+                message: String(localized: "browser.profile.error.ambiguous", defaultValue: "Browser profile name is ambiguous"),
+                data: ["profile": raw]
+            ))
+        }
+    }
+
+    @MainActor
+    func v2ResolveBrowserProfileParam(params: [String: Any]) -> V2BrowserProfileResolution {
+        guard let value = params["profile"] else { return .none }
+        guard let raw = value as? String else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        return v2ResolveBrowserProfileParam(normalized)
+    }
+
+    @MainActor
+    func v2BrowserProfilePayload(_ profile: BrowserProfileDefinition, inUse: Bool) -> [String: Any] {
+        [
+            "id": profile.id.uuidString,
+            "name": profile.displayName,
+            "built_in": profile.isBuiltInDefault,
+            "in_use": inUse
+        ]
+    }
+
+    nonisolated func v2BrowserProfileMainHop(
+        _ body: @escaping @MainActor () -> V2CallResult
+    ) -> V2CallResult {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { body() }
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: V2CallResult = .err(
+            code: "internal_error",
+            message: String(localized: "browser.profile.error.internal", defaultValue: "Failed to handle browser profile command"),
+            data: nil
+        )
+        Task { @MainActor in
+            result = body()
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 2.0) == .success else {
+            return .err(
+                code: "main_thread_timeout",
+                message: String(localized: "browser.profile.error.mainThreadTimeout", defaultValue: "Main thread did not respond within deadline"),
+                data: nil
+            )
+        }
+        return result
+    }
+
+    nonisolated func v2BrowserProfileError(_ error: BrowserProfileOperationError) -> V2CallResult {
+        switch error {
+        case .notFound:
+            return .err(
+                code: "not_found",
+                message: String(localized: "browser.profile.error.notFound", defaultValue: "Browser profile not found"),
+                data: nil
+            )
+        case .ambiguous:
+            return .err(
+                code: "ambiguous",
+                message: String(localized: "browser.profile.error.ambiguous", defaultValue: "Browser profile name is ambiguous"),
+                data: nil
+            )
+        case .invalidName:
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"),
+                data: nil
+            )
+        case .alreadyExists:
+            return .err(
+                code: "already_exists",
+                message: String(localized: "browser.profile.error.alreadyExists", defaultValue: "A browser profile with that name already exists"),
+                data: nil
+            )
+        case .builtIn:
+            return .err(
+                code: "built_in",
+                message: String(localized: "browser.profile.error.builtIn", defaultValue: "The built-in browser profile cannot be changed"),
+                data: nil
+            )
+        case .inUse:
+            return .err(
+                code: "in_use",
+                message: String(localized: "browser.profile.error.inUse", defaultValue: "The browser profile is in use"),
+                data: nil
+            )
+        case .busy:
+            return .err(
+                code: "busy",
+                message: String(localized: "browser.profile.error.busy", defaultValue: "The browser profile has an operation in progress"),
+                data: nil
+            )
+        case .operationFailed:
+            return .err(
+                code: "operation_failed",
+                message: String(localized: "browser.profile.error.operationFailed", defaultValue: "Browser profile cleanup failed"),
+                data: nil
+            )
+        }
+    }
+
+    nonisolated func v2BrowserProfileCommand(method: String, params: [String: Any]) -> V2CallResult {
+        switch method {
+        case "browser.profiles.list":
+            return v2BrowserProfileMainHop { @MainActor in
+                let inUse = AppDelegate.shared?.liveBrowserProfileIDs() ?? []
+                let profiles = BrowserProfileStore.shared.profiles.map {
+                    self.v2BrowserProfilePayload($0, inUse: inUse.contains($0.id))
+                }
+                return .ok(["profiles": profiles])
+            }
+
+        case "browser.profiles.add":
+            guard let rawName = v2String(params, "name") else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"),
+                    data: nil
+                )
+            }
+            return v2BrowserProfileMainHop { @MainActor in
+                let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"), data: nil) }
+                guard !BrowserProfileStore.shared.profiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) else {
+                    return .err(code: "already_exists", message: String(localized: "browser.profile.error.alreadyExists", defaultValue: "A browser profile with that name already exists"), data: nil)
+                }
+                guard let profile = BrowserProfileStore.shared.createProfile(named: name, recordsLastUsed: false) else {
+                    return .err(code: "operation_failed", message: String(localized: "browser.profile.error.operationFailed", defaultValue: "Browser profile cleanup failed"), data: nil)
+                }
+                return .ok(self.v2BrowserProfilePayload(profile, inUse: false))
+            }
+
+        case "browser.profiles.rename":
+            guard let rawProfile = v2String(params, "profile"),
+                  let rawName = v2String(params, "name") else {
+                return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile or name"), data: nil)
+            }
+            return v2BrowserProfileMainHop { @MainActor in
+                switch self.v2ResolveBrowserProfileParam(rawProfile) {
+                case .error(let error): return error
+                case .none: return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+                case .profile(let profile):
+                    let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"), data: nil) }
+                    guard !profile.isBuiltInDefault else { return self.v2BrowserProfileError(.builtIn) }
+                    guard !BrowserProfileStore.shared.isReserved(profile.id) else { return self.v2BrowserProfileError(.busy) }
+                    guard !BrowserProfileStore.shared.profiles.contains(where: { $0.id != profile.id && $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) else {
+                        return self.v2BrowserProfileError(.alreadyExists)
+                    }
+                    guard BrowserProfileStore.shared.renameProfile(id: profile.id, to: name),
+                          let renamed = BrowserProfileStore.shared.profileDefinition(id: profile.id) else {
+                        return self.v2BrowserProfileError(.operationFailed)
+                    }
+                    let inUse = AppDelegate.shared?.liveBrowserProfileIDs().contains(profile.id) ?? false
+                    return .ok(self.v2BrowserProfilePayload(renamed, inUse: inUse))
+                }
+            }
+
+        case "browser.profiles.clear", "browser.profiles.delete":
+            guard let rawProfile = v2String(params, "profile") else {
+                return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+            }
+            guard v2Bool(params, "confirm") == true else {
+                return .err(
+                    code: "confirmation_required",
+                    message: String(localized: "browser.profile.error.confirmationRequired", defaultValue: "Pass --yes to confirm this destructive browser profile operation"),
+                    data: nil
+                )
+            }
+
+            let deleting = method == "browser.profiles.delete"
+            let gate = V2BrowserAwaitGate()
+            let semaphore = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            nonisolated(unsafe) var response: V2CallResult = .err(
+                code: "operation_pending",
+                message: String(localized: "browser.profile.error.operationPending", defaultValue: "Browser profile cleanup is still in progress"),
+                data: ["profile": rawProfile]
+            )
+
+            Task { @MainActor in
+                guard gate.begin() else { return }
+
+                let resolution = self.v2ResolveBrowserProfileParam(rawProfile)
+                guard case .profile(let profile) = resolution else {
+                    let error: V2CallResult
+                    switch resolution {
+                    case .error(let result): error = result
+                    case .none: error = .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+                    case .profile: error = .err(code: "internal_error", message: String(localized: "browser.profile.error.internal", defaultValue: "Invalid profile resolution"), data: nil)
+                    }
+                    guard gate.complete() else { return }
+                    lock.lock(); response = error; lock.unlock()
+                    semaphore.signal()
+                    return
+                }
+
+                let inUse = AppDelegate.shared?.liveBrowserProfileIDs().contains(profile.id) ?? false
+                let completion: (Result<Void, BrowserProfileOperationError>) -> Void = { result in
+                    guard gate.complete() else { return }
+                    let next: V2CallResult
+                    switch result {
+                    case .success:
+                        next = .ok([
+                            "profile_id": profile.id.uuidString,
+                            deleting ? "deleted" : "cleared": true
+                        ])
+                    case .failure(let error):
+                        next = self.v2BrowserProfileError(error)
+                    }
+                    lock.lock(); response = next; lock.unlock()
+                    semaphore.signal()
+                }
+
+                let start = deleting
+                    ? BrowserProfileStore.shared.beginDelete(id: profile.id, inUse: inUse, completion: completion)
+                    : BrowserProfileStore.shared.beginClear(id: profile.id, inUse: inUse, completion: completion)
+                if case .failed(let error) = start {
+                    guard gate.complete() else { return }
+                    lock.lock(); response = self.v2BrowserProfileError(error); lock.unlock()
+                    semaphore.signal()
+                }
+            }
+
+            guard semaphore.wait(timeout: .now() + 8.0) == .success else {
+                gate.cancel()
+                lock.lock()
+                defer { lock.unlock() }
+                return response
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            return response
+
+        default:
+            return .err(code: "method_not_found", message: String(localized: "browser.profile.error.unknownMethod", defaultValue: "Unknown browser profile method"), data: nil)
         }
     }
 
@@ -1268,6 +1555,31 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
+
+            var preferredProfileID: UUID?
+            var sticksAsPreferred = true
+            switch v2ResolveBrowserProfileParam(params: params) {
+            case .none:
+                break
+            case .error(let error):
+                result = error
+                return
+            case .profile(let profile):
+                guard !ws.isRemoteWorkspace else {
+                    result = .err(
+                        code: "invalid_params",
+                        message: String(localized: "browser.profile.error.remoteUnsupported", defaultValue: "Browser profiles are not supported in remote workspaces"),
+                        data: nil
+                    )
+                    return
+                }
+                guard !BrowserProfileStore.shared.isReserved(profile.id) else {
+                    result = v2BrowserProfileError(.busy)
+                    return
+                }
+                preferredProfileID = profile.id
+                sticksAsPreferred = false
+            }
             if let url,
                respectExternalOpenRules,
                BrowserLinkOpenSettings.shouldOpenExternally(url) {
@@ -1315,12 +1627,14 @@ extension TerminalController {
             var placementStrategy = "split_right"
             let createdTab: BrowserTab?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                createdTab = ws.newBrowserSurface(
-                    inPane: targetPane,
-                    url: url,
-                    focus: true,
-                    bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
-                )
+                    createdTab = ws.newBrowserSurface(
+                        inPane: targetPane,
+                        url: url,
+                        focus: true,
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred,
+                        bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
+                    )
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
@@ -1328,6 +1642,8 @@ extension TerminalController {
                     from: sourceSurfaceId,
                     orientation: .horizontal,
                     url: url,
+                    preferredProfileID: preferredProfileID,
+                    sticksAsPreferred: sticksAsPreferred,
                     bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
                 )
             }
@@ -1354,6 +1670,7 @@ extension TerminalController {
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
                 "target_pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
+                "profile_id": createdTab?.profileID.uuidString ?? NSNull(),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
             ]

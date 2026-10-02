@@ -4092,6 +4092,7 @@ class WorkspaceManager: ObservableObject {
         insertFirst: Bool = false,
         url: URL? = nil,
         preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         focus: Bool = true
     ) -> UUID? {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
@@ -4101,6 +4102,7 @@ class WorkspaceManager: ObservableObject {
             insertFirst: insertFirst,
             url: url,
             preferredProfileID: preferredProfileID,
+            sticksAsPreferred: sticksAsPreferred,
             focus: focus
         )?.id
     }
@@ -4110,13 +4112,15 @@ class WorkspaceManager: ObservableObject {
         workspaceId: UUID,
         inPane paneId: PaneID,
         url: URL? = nil,
-        preferredProfileID: UUID? = nil
+        preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true
     ) -> UUID? {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
         return workspace.newBrowserSurface(
             inPane: paneId,
             url: url,
-            preferredProfileID: preferredProfileID
+            preferredProfileID: preferredProfileID,
+            sticksAsPreferred: sticksAsPreferred
         )?.id
     }
 

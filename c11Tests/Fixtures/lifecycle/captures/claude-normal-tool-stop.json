@@ -1,0 +1,96 @@
+{
+  "id": "claude-normal-tool-stop",
+  "provider": "claude-code",
+  "mode": "normal",
+  "hooks": [
+    {
+      "t": "2026-10-02T02:28:08Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "payload": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      }
+    },
+    {
+      "t": "2026-10-02T02:28:08Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "payload": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit"
+      }
+    },
+    {
+      "t": "2026-10-02T02:28:10Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "payload": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2"
+      }
+    },
+    {
+      "t": "2026-10-02T02:28:10Z",
+      "source": "claude-hook",
+      "name": "PostToolUse",
+      "tool_name": "Bash",
+      "payload": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2",
+        "duration_ms": 254
+      }
+    },
+    {
+      "t": "2026-10-02T02:28:13Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "payload": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": [],
+        "session_crons": []
+      }
+    }
+  ],
+  "oracles": [
+    {
+      "name": "after-normal",
+      "t": "2026-10-02T02:28:15Z",
+      "tabs": {
+        "tab-normal": {
+          "metadata": {
+            "activity": "working",
+            "terminal_type": "claude-code",
+            "model": "haiku",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    }
+  ],
+  "permission_key_sent": false
+}

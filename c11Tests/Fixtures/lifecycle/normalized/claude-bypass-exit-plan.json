@@ -1,0 +1,160 @@
+{
+  "id": "claude-bypass-exit-plan",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3731,
+        "surface": null,
+        "payload": {}
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:23.861Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3734,
+        "surface": "tab-plan",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:23.862Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3735,
+        "surface": "tab-plan",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:24.302Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3736,
+        "surface": "tab-plan",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:24.328Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3737,
+        "surface": "tab-plan",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:25Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "seq": 6,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:25Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-3",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "seq": 7,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:31Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-3",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": [],
+        "session_crons": []
+      },
+      "seq": 8,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:33Z",
+      "source": "oracle",
+      "name": "after-plan",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-plan": {
+            "metadata": {
+              "activity": "working",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 9,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "Observed mark working. Hook names ['SessionStart', 'Stop', 'UserPromptSubmit']."
+  },
+  "intended": {
+    "mark": "waiting",
+    "notes": "ExitPlanMode in bypass mode is a blocked ask. The tab enters waiting from the tool hook itself."
+  }
+}

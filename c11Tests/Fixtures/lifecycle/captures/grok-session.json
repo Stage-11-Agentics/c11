@@ -1,0 +1,25 @@
+{
+  "id": "grok-session",
+  "provider": "grok",
+  "mode": "default",
+  "hooks": [],
+  "oracles": [
+    {
+      "name": "after-grok-wait",
+      "t": "2026-10-02T02:30:56Z",
+      "tabs": {
+        "tab-grok": {
+          "metadata": {
+            "activity": "working",
+            "terminal_type": "grok",
+            "model_detected": "grok-4.7-build-fast",
+            "model_label": "grok-4.7-build-f",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    }
+  ]
+}

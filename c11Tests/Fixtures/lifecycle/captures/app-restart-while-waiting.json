@@ -1,0 +1,6 @@
+{
+  "id": "app-restart-while-waiting",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "hooks": []
+}

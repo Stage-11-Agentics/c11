@@ -1,0 +1,206 @@
+{
+  "id": "claude-sibling-tool-while-waiting",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:26:14.764Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3727,
+        "surface": "tab-sibling",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:14.764Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3728,
+        "surface": "tab-sibling",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:15.005Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3729,
+        "surface": "tab-sibling",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:15.021Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3730,
+        "surface": "tab-sibling",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:16Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:16Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "seq": 6,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3731,
+        "surface": null,
+        "payload": {}
+      },
+      "seq": 7,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:19Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-3"
+      },
+      "seq": 8,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:19Z",
+      "source": "claude-hook",
+      "name": "PostToolUse",
+      "tool_name": "Bash",
+      "attrs": {
+        "session_id": "sess-2",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-2",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-3",
+        "duration_ms": 271
+      },
+      "seq": 9,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:22Z",
+      "source": "oracle",
+      "name": "after-sibling-tool",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-ask": {
+            "metadata": {
+              "activity": "idle",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 1,
+            "notification_titles": [
+              "Claude Code"
+            ]
+          },
+          "tab-sibling": {
+            "metadata": {
+              "activity": "working",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 10,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:27:26.543Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3762,
+        "surface": "tab-sibling",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 11,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "waiting",
+    "sibling_waiting_survived": false,
+    "notes": "Tab ask was working before the sibling tool and waiting after. Unread on ask after sibling: 1. Sibling hooks: ['PostToolUse', 'PreToolUse', 'SessionStart', 'UserPromptSubmit']."
+  },
+  "intended": {
+    "mark": "waiting",
+    "sibling_waiting_survived": true,
+    "notes": "Tab B starting a tool or submitting a prompt clears only tab B. Tab A's unread waiting state survives."
+  }
+}

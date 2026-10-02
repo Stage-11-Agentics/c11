@@ -1,0 +1,1193 @@
+{
+  "id": "opencode-session",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:30:57.300Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3859,
+        "surface": "tab-opencode",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:57.302Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3860,
+        "surface": "tab-opencode",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:57.817Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3861,
+        "surface": "tab-opencode",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:57.842Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3862,
+        "surface": "tab-opencode",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:58.065Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3863,
+        "surface": "tab-opencode",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:59.946Z",
+      "source": "opencode",
+      "name": "session.created",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 6,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:59.994Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3864,
+        "surface": "tab-opencode",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 7,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.113Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 8,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 9,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 10,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 11,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 12,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 13,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 14,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 15,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 16,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 17,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 18,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 19,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 20,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 21,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 22,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 23,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 24,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 25,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 26,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 27,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 28,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 29,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 30,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 31,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.223Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 32,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.226Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 33,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.228Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 34,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 35,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 36,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.242Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 37,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 38,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 39,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 40,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 41,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 42,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 43,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 44,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 45,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 46,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 47,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.253Z",
+      "source": "opencode",
+      "name": "session.status",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 48,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.255Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 49,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 50,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 51,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 52,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 53,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 54,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 55,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 56,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 57,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 58,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.332Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 59,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 60,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.diff",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 61,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.337Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 62,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.417Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3865,
+        "surface": "tab-opencode",
+        "payload": {
+          "key": "status",
+          "scope": "surface",
+          "source": "explicit",
+          "value": "busy"
+        }
+      },
+      "seq": 63,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.518Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 64,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.569Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 65,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.721Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 66,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 67,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 68,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 69,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 70,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 71,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 72,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 73,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 74,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 75,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 76,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 77,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 78,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 79,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 80,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 81,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 82,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 83,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 84,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 85,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 86,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 87,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 88,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 89,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.727Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 90,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 91,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 92,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 93,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 94,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 95,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 96,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 97,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 98,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 99,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 100,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 101,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 102,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 103,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 104,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 105,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 106,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 107,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 108,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 109,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 110,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 111,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.775Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 112,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.873Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 113,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.922Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 114,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.923Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 115,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:00.974Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 116,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:01.264Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 117,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:01.315Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 118,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:01.483Z",
+      "source": "opencode",
+      "name": "session.status",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 119,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:09.589Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 120,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:09Z",
+      "source": "oracle",
+      "name": "after-opencode",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-opencode": {
+            "metadata": {
+              "activity": "working",
+              "status": "busy",
+              "terminal_type": "opencode",
+              "model_detected": "mimo-v2.6-flash-free",
+              "model_label": "opencode/mimo-v2",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 121,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:10.214Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 122,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 123,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.delta",
+      "tool_name": null,
+      "attrs": {},
+      "seq": 124,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "Plugin event names: ['catalog.updated', 'integration.updated', 'message.part.delta', 'message.part.updated', 'message.updated', 'plugin.added', 'reference.updated', 'session.created', 'session.diff', 'session.status', 'session.updated']."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "OpenCode's native signals are plugin events (session.idle, session.status, permission.asked, session.error), not Claude hook names. Child sessions must not retarget the root tab."
+  }
+}

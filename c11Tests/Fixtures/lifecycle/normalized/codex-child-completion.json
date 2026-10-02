@@ -1,0 +1,115 @@
+{
+  "id": "codex-child-completion",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:28:16.061Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3785,
+        "surface": "tab-codex",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:16.062Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3786,
+        "surface": "tab-codex",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:16.496Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3787,
+        "surface": "tab-codex",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:16.517Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3788,
+        "surface": "tab-codex",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:17.547Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3789,
+        "surface": "tab-codex",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:30:29Z",
+      "source": "oracle",
+      "name": "after-codex",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-codex": {
+            "metadata": {
+              "activity": "idle",
+              "terminal_type": "codex",
+              "model_label": "gpt-5.6-luna",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 6,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "idle",
+    "distinct_threads": 0,
+    "notes": "Notify records: 0. Distinct synthetic thread ids: 0. Mark idle."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "A child callback whose thread id is not the captured root must not be treated as the root finishing, and must not create the root's waiting notification. A missing thread id does not mutate attention."
+  }
+}

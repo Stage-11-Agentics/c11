@@ -86,6 +86,7 @@
 		C11191A0100000000000001 /* GhosttyDisplayIDGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11191F0100000000000001 /* GhosttyDisplayIDGateTests.swift */; };
 		592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */; };
 		C11840000000000000000005 /* AttentionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000006 /* AttentionModelTests.swift */; };
+		C11271000000000000000001 /* LifecycleFixtureCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11271000000000000000002 /* LifecycleFixtureCatalog.swift */; };
 		C1124300000000000000A004 /* TabSeenClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124300000000000000A003 /* TabSeenClockTests.swift */; };
 		C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B003 /* AgentModelDetectionTests.swift */; };
 		C1124400000000000000B014 /* TabActivitySignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B013 /* TabActivitySignalsTests.swift */; };
@@ -554,6 +555,7 @@
 /* Begin PBXFileReference section */
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		C11840000000000000000006 /* AttentionModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttentionModelTests.swift; sourceTree = "<group>"; };
+		C11271000000000000000002 /* LifecycleFixtureCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LifecycleFixtureCatalog.swift; sourceTree = "<group>"; };
 		C1124300000000000000A003 /* TabSeenClockTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabSeenClockTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B013 /* TabActivitySignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabActivitySignalsTests.swift; sourceTree = "<group>"; };
@@ -1567,6 +1569,7 @@
 				C11B0002A1B2C3D4E5F60712 /* TabLayoutSettingsTests.swift */,
 				0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */,
 				C11840000000000000000006 /* AttentionModelTests.swift */,
+				C11271000000000000000002 /* LifecycleFixtureCatalog.swift */,
 				C1124300000000000000A003 /* TabSeenClockTests.swift */,
 				C1124400000000000000B003 /* AgentModelDetectionTests.swift */,
 				C1124400000000000000B013 /* TabActivitySignalsTests.swift */,
@@ -1928,6 +1931,7 @@
 				C11B0001A1B2C3D4E5F60712 /* TabLayoutSettingsTests.swift in Sources */,
 				592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */,
 				C11840000000000000000005 /* AttentionModelTests.swift in Sources */,
+				C11271000000000000000001 /* LifecycleFixtureCatalog.swift in Sources */,
 				C1124300000000000000A004 /* TabSeenClockTests.swift in Sources */,
 				C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */,
 				C1124400000000000000B014 /* TabActivitySignalsTests.swift in Sources */,

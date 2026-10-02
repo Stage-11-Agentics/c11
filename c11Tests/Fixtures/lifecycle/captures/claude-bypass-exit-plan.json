@@ -1,0 +1,121 @@
+{
+  "id": "claude-bypass-exit-plan",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "hooks": [
+    {
+      "t": "2026-10-02T02:26:25Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "payload": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:25Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "payload": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-3",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:31Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "payload": {
+        "session_id": "sess-3",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-3",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": [],
+        "session_crons": []
+      }
+    }
+  ],
+  "c11_events": [
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "c11_seq": 3731,
+      "payload": {},
+      "workspace": "ws-bypass"
+    },
+    {
+      "t": "2026-10-02T02:26:23.861Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "c11_seq": 3734,
+      "payload": {
+        "kind": "terminal"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-plan"
+    },
+    {
+      "t": "2026-10-02T02:26:23.862Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "c11_seq": 3735,
+      "payload": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-plan"
+    },
+    {
+      "t": "2026-10-02T02:26:24.302Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3736,
+      "payload": {
+        "state": "idle"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-plan"
+    },
+    {
+      "t": "2026-10-02T02:26:24.328Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3737,
+      "payload": {
+        "state": "working"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-plan"
+    }
+  ],
+  "oracles": [
+    {
+      "name": "after-plan",
+      "t": "2026-10-02T02:26:33Z",
+      "tabs": {
+        "tab-plan": {
+          "metadata": {
+            "activity": "working",
+            "terminal_type": "claude-code",
+            "model": "haiku",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    }
+  ]
+}

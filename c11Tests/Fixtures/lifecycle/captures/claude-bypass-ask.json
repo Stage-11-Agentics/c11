@@ -1,0 +1,182 @@
+{
+  "id": "claude-bypass-ask",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "hooks": [
+    {
+      "t": "2026-10-02T02:26:03Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "payload": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:03Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "payload": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:11Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "AskUserQuestion",
+      "payload": {
+        "ask_shape": {
+          "question_count": 1,
+          "option_count": 2
+        },
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_use_id": "tool-1"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:11Z",
+      "source": "claude-hook",
+      "name": "PermissionRequest",
+      "tool_name": "AskUserQuestion",
+      "payload": {
+        "ask_shape": {
+          "question_count": 1,
+          "option_count": 2
+        },
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "AskUserQuestion"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:17Z",
+      "source": "claude-hook",
+      "name": "Notification",
+      "payload": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "hook_event_name": "Notification",
+        "notification_type": "permission_prompt"
+      }
+    }
+  ],
+  "c11_events": [
+    {
+      "t": "2026-10-02T02:26:01.090Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "c11_seq": 3720,
+      "payload": {
+        "kind": "terminal"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-ask"
+    },
+    {
+      "t": "2026-10-02T02:26:01.091Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "c11_seq": 3721,
+      "payload": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-ask"
+    },
+    {
+      "t": "2026-10-02T02:26:01.548Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3722,
+      "payload": {
+        "state": "idle"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-ask"
+    },
+    {
+      "t": "2026-10-02T02:26:01.566Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3723,
+      "payload": {
+        "state": "working"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-ask"
+    },
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "c11_seq": 3731,
+      "payload": {},
+      "workspace": "ws-bypass"
+    },
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3732,
+      "payload": {
+        "state": "idle"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-ask"
+    }
+  ],
+  "oracles": [
+    {
+      "name": "after-launch",
+      "t": "2026-10-02T02:26:01Z",
+      "tabs": {
+        "tab-ask": {
+          "metadata": {
+            "activity": "working",
+            "terminal_type": "claude-code",
+            "model": "haiku",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    },
+    {
+      "name": "after-ask",
+      "t": "2026-10-02T02:26:14Z",
+      "tabs": {
+        "tab-ask": {
+          "metadata": {
+            "activity": "working",
+            "terminal_type": "claude-code",
+            "model": "haiku",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    }
+  ]
+}

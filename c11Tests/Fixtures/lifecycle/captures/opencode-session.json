@@ -1,0 +1,839 @@
+{
+  "id": "opencode-session",
+  "provider": "opencode",
+  "mode": "default",
+  "hooks": [
+    {
+      "t": "2026-10-02T02:30:59.946Z",
+      "source": "opencode",
+      "name": "session.created",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.113Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.114Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.115Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.116Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.218Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.219Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.220Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.223Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.226Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.228Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.240Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.242Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.243Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.244Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.245Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.253Z",
+      "source": "opencode",
+      "name": "session.status",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.255Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "child": true,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.329Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.330Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.331Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.332Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.335Z",
+      "source": "opencode",
+      "name": "session.diff",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.337Z",
+      "source": "opencode",
+      "name": "message.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:00.518Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.569Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.721Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.722Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.723Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.724Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.725Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.727Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.728Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.729Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.773Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.774Z",
+      "source": "opencode",
+      "name": "plugin.added",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.775Z",
+      "source": "opencode",
+      "name": "reference.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.873Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.922Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.923Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:00.974Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:01.264Z",
+      "source": "opencode",
+      "name": "integration.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:01.315Z",
+      "source": "opencode",
+      "name": "catalog.updated",
+      "child": false,
+      "has_session": false
+    },
+    {
+      "t": "2026-10-02T02:31:01.483Z",
+      "source": "opencode",
+      "name": "session.status",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:09.589Z",
+      "source": "opencode",
+      "name": "session.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:10.214Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.updated",
+      "child": false,
+      "has_session": true
+    },
+    {
+      "t": "2026-10-02T02:31:10.219Z",
+      "source": "opencode",
+      "name": "message.part.delta",
+      "child": false,
+      "has_session": true
+    }
+  ],
+  "oracles": [
+    {
+      "name": "after-opencode",
+      "t": "2026-10-02T02:31:09Z",
+      "tabs": {
+        "tab-opencode": {
+          "metadata": {
+            "activity": "working",
+            "status": "busy",
+            "terminal_type": "opencode",
+            "model_detected": "mimo-v2.6-flash-free",
+            "model_label": "opencode/mimo-v2",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 0,
+          "notification_titles": []
+        }
+      }
+    }
+  ]
+}

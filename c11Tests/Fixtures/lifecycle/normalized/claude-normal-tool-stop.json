@@ -1,0 +1,182 @@
+{
+  "id": "claude-normal-tool-stop",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:28:06.470Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3780,
+        "surface": "tab-normal",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:06.472Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3781,
+        "surface": "tab-normal",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:07.037Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3782,
+        "surface": "tab-normal",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:07.063Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3783,
+        "surface": "tab-normal",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:08Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:08Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "seq": 6,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:10Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2"
+      },
+      "seq": 7,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:10Z",
+      "source": "claude-hook",
+      "name": "PostToolUse",
+      "tool_name": "Bash",
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2",
+        "duration_ms": 254
+      },
+      "seq": 8,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:13Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": [],
+        "session_crons": []
+      },
+      "seq": 9,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:15Z",
+      "source": "oracle",
+      "name": "after-normal",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-normal": {
+            "metadata": {
+              "activity": "working",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 10,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "Observed mark working. Permission key sent: False. Hook names ['PostToolUse', 'PreToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit']."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "A finished normal turn is an unread completion, distinct from a blocked ask. Working applies only while the tool is in flight. A late async PreToolUse must not move the turn back to working."
+  }
+}

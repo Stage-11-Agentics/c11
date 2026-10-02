@@ -1,0 +1,165 @@
+{
+  "id": "claude-esc-interrupt",
+  "provider": "claude-code",
+  "mode": "bypass",
+  "hooks": [
+    {
+      "t": "2026-10-02T02:26:35Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "payload": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:35Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "payload": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-4",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:42Z",
+      "source": "claude-hook",
+      "name": "Stop",
+      "payload": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-4",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "t": "2026-10-02T02:26:48Z",
+      "source": "claude-hook",
+      "name": "SubagentStop",
+      "payload": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-4",
+        "permission_mode": "bypassPermissions",
+        "agent_id": "sess-7",
+        "agent_type": "",
+        "hook_event_name": "SubagentStop",
+        "stop_hook_active": false,
+        "agent_transcript_path": "[redacted]",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "t": "2026-10-02T02:27:42Z",
+      "source": "claude-hook",
+      "name": "Notification",
+      "payload": {
+        "session_id": "sess-6",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-4",
+        "hook_event_name": "Notification",
+        "notification_type": "idle_prompt"
+      }
+    }
+  ],
+  "c11_events": [
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "c11_seq": 3731,
+      "payload": {},
+      "workspace": "ws-bypass"
+    },
+    {
+      "t": "2026-10-02T02:26:33.758Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "c11_seq": 3745,
+      "payload": {
+        "kind": "terminal"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-esc"
+    },
+    {
+      "t": "2026-10-02T02:26:33.759Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "c11_seq": 3746,
+      "payload": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-esc"
+    },
+    {
+      "t": "2026-10-02T02:26:34.000Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3748,
+      "payload": {
+        "state": "idle"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-esc"
+    },
+    {
+      "t": "2026-10-02T02:26:34.026Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3749,
+      "payload": {
+        "state": "working"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-esc"
+    },
+    {
+      "t": "2026-10-02T02:27:42.004Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "c11_seq": 3770,
+      "payload": {
+        "state": "idle"
+      },
+      "workspace": "ws-bypass",
+      "surface": "tab-esc"
+    }
+  ],
+  "oracles": [
+    {
+      "name": "after-escape",
+      "t": "2026-10-02T02:27:58Z",
+      "tabs": {
+        "tab-esc": {
+          "metadata": {
+            "activity": "idle",
+            "terminal_type": "claude-code",
+            "model": "haiku",
+            "lifecycle_state": "throttled"
+          },
+          "unread_notifications": 1,
+          "notification_titles": [
+            "Claude Code"
+          ]
+        }
+      }
+    }
+  ],
+  "key": "escape"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "app-restart-while-waiting",
+  "origin": "gap",
+  "events": [],
+  "current": {
+    "mark": "not-observed",
+    "notes": "No app restart was performed. The agent-process ctrl+c case is the observed neighbor."
+  },
+  "intended": {
+    "mark": "waiting",
+    "notes": "After an app restart, a tab that was blocked stays blocked and unconfirmed rather than being dropped or applied to a sibling."
+  }
+}

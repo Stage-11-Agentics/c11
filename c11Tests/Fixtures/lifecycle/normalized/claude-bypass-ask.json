@@ -1,0 +1,235 @@
+{
+  "id": "claude-bypass-ask",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T02:26:01.090Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3720,
+        "surface": "tab-ask",
+        "payload": {
+          "kind": "terminal"
+        }
+      },
+      "seq": 1,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:01.091Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3721,
+        "surface": "tab-ask",
+        "payload": {
+          "key": "title",
+          "scope": "surface",
+          "source": "declare",
+          "value": "[redacted]"
+        }
+      },
+      "seq": 2,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:01.548Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3722,
+        "surface": "tab-ask",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 3,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:01.566Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3723,
+        "surface": "tab-ask",
+        "payload": {
+          "state": "working"
+        }
+      },
+      "seq": 4,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:01Z",
+      "source": "oracle",
+      "name": "after-launch",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-ask": {
+            "metadata": {
+              "activity": "working",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 5,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:03Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "seq": 6,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:03Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "seq": 7,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:11Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "AskUserQuestion",
+      "attrs": {
+        "ask_shape": {
+          "question_count": 1,
+          "option_count": 2
+        },
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_use_id": "tool-1"
+      },
+      "seq": 8,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:11Z",
+      "source": "claude-hook",
+      "name": "PermissionRequest",
+      "tool_name": "AskUserQuestion",
+      "attrs": {
+        "ask_shape": {
+          "question_count": 1,
+          "option_count": 2
+        },
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "AskUserQuestion"
+      },
+      "seq": 9,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:14Z",
+      "source": "oracle",
+      "name": "after-ask",
+      "tool_name": null,
+      "attrs": {
+        "tabs": {
+          "tab-ask": {
+            "metadata": {
+              "activity": "working",
+              "terminal_type": "claude-code",
+              "model": "haiku",
+              "lifecycle_state": "throttled"
+            },
+            "unread_notifications": 0,
+            "notification_titles": []
+          }
+        }
+      },
+      "seq": 10,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "waiting.entered",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3731,
+        "surface": null,
+        "payload": {}
+      },
+      "seq": 11,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:17.036Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "attrs": {
+        "c11_seq": 3732,
+        "surface": "tab-ask",
+        "payload": {
+          "state": "idle"
+        }
+      },
+      "seq": 12,
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:26:17Z",
+      "source": "claude-hook",
+      "name": "Notification",
+      "tool_name": null,
+      "attrs": {
+        "session_id": "sess-1",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-1",
+        "hook_event_name": "Notification",
+        "notification_type": "permission_prompt"
+      },
+      "seq": 13,
+      "t_ms": 0
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "The after-ask oracle, two seconds after AskUserQuestion, was working with 0 unread. waiting.entered and the Notification hook are later in this same record. Hook names: Notification, PermissionRequest, PreToolUse, SessionStart, UserPromptSubmit. Tool name on PreToolUse and PermissionRequest was AskUserQuestion. Notification type was permission_prompt."
+  },
+  "intended": {
+    "mark": "see-notes",
+    "notes": "A bypass AskUserQuestion is a blocked ask. The originating unsuppressed tab enters waiting without depending on a later Notification, and that waiting state is the ask rather than an unread completion."
+  }
+}

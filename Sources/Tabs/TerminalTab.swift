@@ -97,6 +97,35 @@ final class TerminalTab: TabContent, ObservableObject {
         surface.requestedWorkingDirectory
     }
 
+    /// Post-boot prompts wait for a real launcher Return. Reuse the existing
+    /// nonqueued completion primitive without changing send/mailbox behavior.
+    func submitLaunchPlan(_ plan: LaunchPromptDelivery.Plan,
+                          isLive: @escaping @MainActor () -> Bool,
+                          requestBackgroundStart: Bool = true) {
+        guard let prompt = plan.delayedPrompt else {
+            if isLive() { surface.sendSubmitFormText(plan.launchLine) }
+            return
+        }
+        if requestBackgroundStart, surface.surface == nil {
+            surface.requestBackgroundSurfaceStartIfNeeded()
+        }
+        let sequence = LaunchPostBootSequence(
+            launcher: plan.launchLine, prompt: prompt, isLive: isLive,
+            isReady: { [weak self] in
+                guard let self else { return false }
+                return self.surface.surface != nil && !self.surface.isInputTransactionActive
+            },
+            submit: { [weak self] text, completion in
+                guard let self else { completion(false); return }
+                self.surface.sendSubmitFormText(text, shouldSubmit: { [weak self] in
+                    guard let self else { return false }
+                    return isLive() && self.surface.surface != nil
+                }, completion: completion)
+            }
+        )
+        sequence.start()
+    }
+
     /// The Settings and New Workspace rails share asynchronous staging and
     /// revalidate their actual target before binding ownership and submitting.
     func submitConfiguredAgentLaunch(agent: AgentType, launch: ResolvedAgentLaunch,

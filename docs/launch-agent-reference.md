@@ -190,8 +190,10 @@ shell receives only `Read the file at <owned path> and follow it exactly.`:
   pi, omp).
 - `flag <name>` appends the quoted instruction through the template's flag
   (opencode `--prompt`).
-- `post-boot` submits the instruction after the existing fixed 2.5-second delay
-  (kimi, github-copilot). This remains best effort; it does not detect readiness.
+- `post-boot` waits until the launcher has actually received its Return, then
+  waits 2.5 seconds before submitting the instruction (kimi, github-copilot).
+  An unattached terminal never queues both submissions into one buffer. The TUI
+  delay remains best effort; it does not detect readiness.
 
 `--prompt-file` reads the caller's file and stages an independent copy. c11
 never deletes or rewrites the caller's file. Owned directories are mode 0700 and

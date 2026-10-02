@@ -1421,7 +1421,13 @@ extension TerminalController {
                         // Attention is committed before the launch line can
                         // run, so even a fast completion cannot escape
                         // dispatch-time suppression.
-                        panel.surface.sendSubmitFormText(plan.launchLine)
+                        panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
+                            launchLine: plan.launchLine, delayedPrompt: plan.delayedPrompt
+                        )) { [weak workspaceManager, weak panel] in
+                            guard let workspaceManager, let panel,
+                                  let live = workspaceManager.workspaces.first(where: { $0.id == ws.id }) else { return false }
+                            return live.terminalPanel(for: panel.id) === panel
+                        }
                     }
                 )
             } catch let error as TabMetadataStore.WriteError {
@@ -1430,20 +1436,6 @@ extension TerminalController {
             } catch {
                 result = .err(code: "internal_error", message: "\(error)", data: nil)
                 return result
-            }
-
-            if let delayedPrompt = plan.delayedPrompt {
-                // Post-boot delivery for TUIs with no argv prompt. Same fixed
-                // delay rail as `default-agent launch` (readiness detection is
-                // a follow-up there too).
-                let panelId = panel.id
-                let wsId = ws.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak workspaceManager, weak panel] in
-                    guard let workspaceManager,
-                          let liveWs = workspaceManager.workspaces.first(where: { $0.id == wsId }),
-                          let livePanel = liveWs.terminalPanel(for: panelId), livePanel === panel else { return }
-                    livePanel.surface.sendSubmitFormText(delayedPrompt)
-                }
             }
 
             // Make the just-minted refs resolvable by the caller's next command.

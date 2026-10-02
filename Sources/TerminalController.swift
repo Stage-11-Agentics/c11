@@ -9730,16 +9730,9 @@ class TerminalController {
             // sequence — required for shell line discipline and TUI raw-mode
             // handlers to execute. Falls back to a flush-time submit if the
             // surface is not yet attached to a window.
-            panel.surface.sendSubmitFormText(composed.launchLine)
-            if let delayedPrompt = composed.delayedPrompt {
-                // Post-ready delivery. Fixed 2500ms delay: long enough for
-                // codex/opencode/kimi to boot to a prompt on a typical machine,
-                // short enough not to feel sluggish. Readiness detection (poll
-                // for prompt-string-visible) is a v2 follow-up.
-                let delay: DispatchTimeInterval = .milliseconds(2500)
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
-                    panel?.surface.sendSubmitFormText(delayedPrompt)
-                }
+            panel.submitLaunchPlan(composed) { [weak workspaceManager, weak panel] in
+                guard let workspaceManager, let panel else { return false }
+                return workspaceManager.workspaces.contains { $0.terminalPanel(for: panel.id) === panel }
             }
             result = "OK"
         }

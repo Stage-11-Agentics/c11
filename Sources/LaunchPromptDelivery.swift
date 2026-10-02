@@ -86,3 +86,59 @@ final class AgentLaunchDeadlineGate<Value>: @unchecked Sendable {
         return cancelled && !running
     }
 }
+
+/// Launch-only sequencing: an unattached terminal never receives two submit
+/// requests in its single pending-submit buffer. The best-effort TUI delay
+/// begins at the existing helper's actual Return completion, not at dispatch.
+@MainActor
+final class LaunchPostBootSequence {
+    typealias Submit = (String, @escaping (Bool) -> Void) -> Void
+    typealias Schedule = (TimeInterval, @escaping @MainActor () -> Void) -> Void
+    private let launcher: String
+    private let prompt: String
+    private let isLive: () -> Bool
+    private let isReady: () -> Bool
+    private let submit: Submit
+    private let schedule: Schedule
+    private var completed = false
+
+    init(launcher: String, prompt: String, isLive: @escaping () -> Bool,
+         isReady: @escaping () -> Bool, submit: @escaping Submit,
+         schedule: @escaping Schedule = { delay, work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { work() }
+         }) {
+        self.launcher = launcher
+        self.prompt = prompt
+        self.isLive = isLive
+        self.isReady = isReady
+        self.submit = submit
+        self.schedule = schedule
+    }
+
+    func start() { attempt(launcher, isLauncher: true) }
+
+    private func attempt(_ text: String, isLauncher: Bool) {
+        guard !completed else { return }
+        guard isLive() else { completed = true; return }
+        guard isReady() else {
+            // Only a pending launch retries; no ongoing work after delivery
+            // or tab close, and no filesystem or process scan on this path.
+            schedule(0.25) { self.attempt(text, isLauncher: isLauncher) }
+            return
+        }
+        submit(text) { submitted in
+            guard !self.completed else { return }
+            guard submitted, self.isLive() else {
+                // A teardown after paste may leave a draft; never retry it or
+                // assume it was submitted, and never send the second prompt.
+                self.completed = true
+                return
+            }
+            if isLauncher {
+                self.schedule(2.5) { self.attempt(self.prompt, isLauncher: false) }
+            } else {
+                self.completed = true
+            }
+        }
+    }
+}

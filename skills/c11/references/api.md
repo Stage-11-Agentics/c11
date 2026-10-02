@@ -159,7 +159,9 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # instruction reaches the shell. The owned copy lives until tab close.
     # --json returns refs, prompt_file, startup and startup_process. started means
     # an identified foreground process, not readiness or a prompt-read receipt.
-    # pending means startup was not proven. Canonical reference: docs/launch-agent-reference.md.
+    # pending means startup was not proven. Post-boot kinds start their 2.5-second
+    # prompt delay after the launcher Return, including late terminal attachment.
+    # Canonical reference: docs/launch-agent-reference.md.
     # --system-prompt-mode append|replace injects the kind's system-prompt flag
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.

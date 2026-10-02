@@ -89,6 +89,57 @@ pathlib.Path(os.environ['C11_LAUNCH_AGENT_RECEIPT']).write_text(json.dumps({
         XCTAssertEqual(existing.delayedPrompt, LaunchPromptDelivery.instruction(path: path))
     }
 
+    @MainActor
+    func testPostBootDelayStartsAtActualLauncherSubmissionAfterLateAttachment() {
+        var now: TimeInterval = 0
+        var live = true
+        var attached = false
+        var jobs: [(TimeInterval, @MainActor () -> Void)] = []
+        var writes: [(String, TimeInterval)] = []
+        var launcherCompletion: ((Bool) -> Void)?
+        let sequence = LaunchPostBootSequence(
+            launcher: "kimi --auto", prompt: "Read the file at /fixture and follow it exactly.",
+            isLive: { live }, isReady: { attached },
+            submit: { text, completion in
+                writes.append((text, now))
+                if writes.count == 1 { launcherCompletion = completion } else { completion(true) }
+            }, schedule: { delay, work in jobs.append((now + delay, work)) })
+        func advance(to deadline: TimeInterval) {
+            while let index = jobs.indices.min(by: { jobs[$0].0 < jobs[$1].0 }), jobs[index].0 <= deadline {
+                let next = jobs.remove(at: index)
+                now = next.0
+                next.1()
+            }
+            now = deadline
+        }
+        sequence.start()
+        advance(to: 3)
+        XCTAssertTrue(writes.isEmpty, "no launcher/prompt enters an unattached submit buffer")
+        attached = true
+        advance(to: 3.25)
+        XCTAssertEqual(writes.map { $0.0 }, ["kimi --auto"])
+        advance(to: 7)
+        XCTAssertEqual(writes.count, 1, "paste alone must not start the delay")
+        launcherCompletion?(true)
+        advance(to: 9.49)
+        XCTAssertEqual(writes.count, 1)
+        advance(to: 9.5)
+        XCTAssertEqual(writes.map { $0.0 }, ["kimi --auto", "Read the file at /fixture and follow it exactly."])
+        XCTAssertEqual(writes.last?.1, 9.5)
+        live = false
+    }
+
+    @MainActor
+    func testPostBootNeverSendsPromptAfterFailedLauncherSubmission() {
+        var writes: [String] = []
+        let sequence = LaunchPostBootSequence(
+            launcher: "copilot", prompt: "file instruction", isLive: { true }, isReady: { true },
+            submit: { text, completion in writes.append(text); completion(false) },
+            schedule: { _, _ in XCTFail("failed submission must not schedule a prompt") })
+        sequence.start()
+        XCTAssertEqual(writes, ["copilot"])
+    }
+
     func testSettingsResolverPreservesBodyWithoutInliningIt() {
         let body = "  synthetic\n literal ' $() 🦉  "
         var config = DefaultAgentConfig.factory

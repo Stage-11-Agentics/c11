@@ -420,6 +420,14 @@ final class AgentModelDetectionTests: XCTestCase {
                                nativeEvent: "question.requested", turnID: nil, isChild: false),
             target: target, ref: r, emittedAt: t("09:05:08")
         ))
+        let grokTarget = AgentModelDetector.Target(
+            workspaceId: target.workspaceId, surfaceId: target.surfaceId, kind: "grok"
+        )
+        XCTAssertNil(JournalTranscriptProducer.makeDraft(
+            observation: .init(kind: .turnInterrupted, occurredAt: t("09:05:07"),
+                               nativeEvent: "turn.interrupted", turnID: "7", isChild: false),
+            target: grokTarget, ref: ref("grok", id: "grok-session-276"), emittedAt: t("09:05:08")
+        ))
 
         let gap = try XCTUnwrap(JournalTranscriptProducer.makeGapDraft(target: target, ref: r, emittedAt: t("09:05:08")))
         XCTAssertEqual(gap.source, .c11)

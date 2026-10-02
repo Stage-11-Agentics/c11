@@ -66,6 +66,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
     ) -> JournalDraft? {
         guard ["codex", "grok"].contains(target.kind), !ref.placeholder, !ref.id.isEmpty,
               [.turnStarted, .turnCompleted, .turnInterrupted].contains(observation.kind),
+              target.kind != "grok" || observation.kind != .turnInterrupted,
               !observation.isChild,
               let adapter = adapter(for: target.kind) else { return nil }
         var draft = JournalDraft(

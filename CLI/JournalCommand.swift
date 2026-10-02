@@ -92,45 +92,13 @@ enum JournalCommand {
         return nil
     }
 
-    /// Extract only the known fields from existing hook input. Never store a copied payload.
+    /// Extract only the known fields from hook input. Never store a copied payload.
     static func claudeDraft(subcommand: String, input: [String: Any], tabID: UUID?, workspaceID: UUID?) -> JournalDraft? {
-        let kind: JournalKind
-        let tool = input["tool_name"] as? String
-        switch subcommand {
-        case "session-start", "active": kind = .sessionStarted
-        case "session-end": kind = .sessionEnded
-        case "prompt-submit": kind = .turnStarted
-        case "stop", "idle": kind = .turnCompleted
-        case "pre-tool-use": kind = tool == "AskUserQuestion" ? .questionRequested : (tool == "ExitPlanMode" ? .planReviewRequested : .stateChanged)
-        case "post-tool-use":
-            guard tool == "AskUserQuestion" || tool == "ExitPlanMode" else { return nil }
-            kind = .attentionResolved
-        case "notification", "notify":
-            kind = (input["notification_type"] as? String) == "permission_prompt" ? .approvalRequested : .stateChanged
-        default: return nil
+        guard var draft = ClaudeHookMapping.map(subcommand: subcommand, object: input) else { return nil }
+        if let tabID, let workspaceID {
+            draft.tabID = tabID
+            draft.workspaceID = workspaceID
         }
-        let native: String
-        switch subcommand {
-        case "session-start", "active": native = "SessionStart"
-        case "session-end": native = "SessionEnd"
-        case "prompt-submit": native = "UserPromptSubmit"
-        case "stop", "idle": native = "Stop"
-        case "pre-tool-use": native = "PreToolUse"
-        case "post-tool-use": native = "PostToolUse"
-        default: native = "Notification"
-        }
-        var draft = JournalDraft(kind: kind, emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
-            tabID: tabID != nil && workspaceID != nil ? tabID : nil,
-            workspaceID: tabID != nil && workspaceID != nil ? workspaceID : nil,
-            sessionID: input["session_id"] as? String, agentKind: "claude-code", source: .hook,
-            adapter: .claudeHook, nativeEvent: native)
-        draft.turnID = input["prompt_id"] as? String
-        draft.requestID = input["tool_use_id"] as? String
-        if subcommand == "pre-tool-use" || subcommand == "post-tool-use" {
-            draft.toolClass = tool == "AskUserQuestion" ? .askUserQuestion : (tool == "ExitPlanMode" ? .exitPlanMode : .other)
-        }
-        if kind == .attentionResolved { draft.resolution = .resumed }
-        if kind == .stateChanged { draft.signal = subcommand == "pre-tool-use" ? .toolActivity : .observation }
         return (try? draft.validate()) != nil ? draft : nil
     }
 }

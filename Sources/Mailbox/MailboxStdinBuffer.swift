@@ -96,6 +96,9 @@ struct MailboxStdinBuffer {
     private var turns: [UUID: AgentTurn] = [:]
     private var lastSubmitAt: [UUID: Date] = [:]
     private var lastPushAt: [UUID: Date] = [:]
+    /// Tabs with a push between its claim and its submit Return. Nothing else
+    /// is typed into them until it finishes.
+    private var pushesInFlight: Set<UUID> = []
 
     /// Inject-now vs buffer for a plain shell, purely from its activity state.
     static func decide(state: Workspace.TabShellActivityState) -> Decision {
@@ -132,8 +135,10 @@ struct MailboxStdinBuffer {
         surfaceId: UUID,
         shell: Workspace.TabShellActivityState,
         isAgentKind: Bool,
-        lastOperatorKeyAt: Date?
+        lastOperatorKeyAt: Date?,
+        ignoringInFlight: Bool = false
     ) -> Decision {
+        if !ignoringInFlight, pushesInFlight.contains(surfaceId) { return .buffer }
         if shell == .promptIdle { return .injectNow }
         guard isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
             return Self.decide(state: shell)
@@ -160,16 +165,51 @@ struct MailboxStdinBuffer {
     }
 
     /// A submit Return reached the tab (operator, text box, `c11 send`, or a
-    /// push). Clears any draft and, for a known agent, starts a turn.
-    mutating func noteSubmit(surfaceId: UUID, at now: Date) {
-        lastSubmitAt[surfaceId] = now
-        if turns[surfaceId] != nil {
-            noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: now)
+    /// push). `at` is the Return's own event time, captured where the key was
+    /// handled: the edge reaches this buffer after an off-main hop, and a
+    /// keystroke typed in between must still read as a draft. Clears any
+    /// draft and, for a known agent, starts a turn.
+    mutating func noteSubmit(surfaceId: UUID, at eventAt: Date) {
+        lastSubmitAt[surfaceId] = max(lastSubmitAt[surfaceId] ?? .distantPast, eventAt)
+        if let turn = turns[surfaceId], eventAt >= turn.since {
+            noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
         }
     }
 
     mutating func notePush(surfaceId: UUID, at now: Date) {
         lastPushAt[surfaceId] = now
+    }
+
+    // MARK: - Push in flight
+
+    func isPushInFlight(surfaceId: UUID) -> Bool {
+        pushesInFlight.contains(surfaceId)
+    }
+
+    mutating func beginPush(surfaceId: UUID) {
+        pushesInFlight.insert(surfaceId)
+    }
+
+    /// `typedAt` is when the paste went in, when its submit Return was
+    /// dispatched; `nil` when nothing reached the tab.
+    mutating func endPush(surfaceId: UUID, typedAt: Date?) {
+        pushesInFlight.remove(surfaceId)
+        if let typedAt { lastPushAt[surfaceId] = typedAt }
+    }
+
+    /// Put entries a push claimed but could not type back at the head of
+    /// the queue, ahead of anything that arrived meanwhile. Returns the
+    /// oldest entries evicted past the cap.
+    @discardableResult
+    mutating func requeueFront(surfaceId: UUID, entries: [Entry]) -> [Entry] {
+        guard !entries.isEmpty else { return [] }
+        var queue = entries + (queues[surfaceId] ?? [])
+        var evicted: [Entry] = []
+        while queue.count > Self.perSurfaceCap {
+            evicted.append(queue.removeFirst())
+        }
+        queues[surfaceId] = queue
+        return evicted
     }
 
     /// The tab's shell is back at its prompt: whatever agent ran there has
@@ -241,6 +281,7 @@ struct MailboxStdinBuffer {
         turns.removeValue(forKey: surfaceId)
         lastSubmitAt.removeValue(forKey: surfaceId)
         lastPushAt.removeValue(forKey: surfaceId)
+        pushesInFlight.remove(surfaceId)
         return queues.removeValue(forKey: surfaceId) ?? []
     }
 

@@ -16892,7 +16892,8 @@ struct CMUXCLI {
                 client: client,
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
-                activity: "idle"
+                activity: "idle",
+                fromNotification: true
             )
 
             let title = "Claude Code"
@@ -17035,7 +17036,8 @@ struct CMUXCLI {
                         client: client,
                         workspaceId: workspaceId,
                         surfaceId: resolvedSurface,
-                        activity: "idle"
+                        activity: "idle",
+                        fromNotification: true
                     )
                 }
                 // Don't clear notifications or set status here.
@@ -17103,14 +17105,20 @@ struct CMUXCLI {
         _ = try client.send(command: cmd)
     }
 
+    /// `fromNotification: true` marks an idle that only means "the agent is
+    /// waiting on the operator" (a Notification or AskUserQuestion hook):
+    /// the sidebar shows it as idle, but the mailbox push must not treat it as
+    /// a turn end, because a paste there would answer the prompt.
     private func reportAgentActivity(
         client: SocketClient,
         workspaceId: String,
         surfaceId: String,
-        activity: String
+        activity: String,
+        fromNotification: Bool = false
     ) throws {
+        let source = fromNotification ? " --source=notification" : ""
         _ = try sendV1Command(
-            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)\(source)",
             client: client
         )
     }

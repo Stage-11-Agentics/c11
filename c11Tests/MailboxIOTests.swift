@@ -142,4 +142,35 @@ final class MailboxIOTests: XCTestCase {
         ))
         XCTAssertNotNil(try MailboxIO.claim(id: id, inbox: inbox))
     }
+
+    /// A claim that cannot rename reports the errno and leaves the envelope in
+    /// the inbox root (never typed, still drainable).
+    func testClaimFailureReportsErrnoAndKeepsEnvelope() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456N"
+        let inbox = try seedInbox(id: id)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: inbox.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inbox.path) }
+        guard case .failed(let code) = MailboxIO.claimResult(id: id, inbox: inbox) else {
+            return XCTFail("expected a failed claim")
+        }
+        XCTAssertEqual(code, EACCES)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)).path
+        ))
+        XCTAssertThrowsError(try MailboxIO.claim(id: id, inbox: inbox)) { error in
+            XCTAssertEqual(error as? MailboxIO.Error, .claimFailed(errno: EACCES))
+        }
+    }
+
+    func testClaimResultGoneAndClaimed() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456P"
+        let inbox = try seedInbox(id: id)
+        guard case .claimed(let url) = MailboxIO.claimResult(id: id, inbox: inbox) else {
+            return XCTFail("expected a claim")
+        }
+        XCTAssertEqual(url.lastPathComponent, MailboxLayout.envelopeFilename(id: id))
+        XCTAssertEqual(MailboxIO.claimResult(id: id, inbox: inbox), .gone)
+        XCTAssertTrue(MailboxIO.unclaim(id: id, inbox: inbox))
+        XCTAssertFalse(MailboxIO.unclaim(id: id, inbox: inbox))
+    }
 }

@@ -169,7 +169,8 @@ enum TabLivenessDeriver {
         surfaceId: UUID,
         workspaceId: UUID,
         activity: SidebarActivityState,
-        source: AgentLifecycleSource = .inferred
+        source: AgentLifecycleSource = .inferred,
+        at eventAt: Date = Date()
     ) {
         TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
@@ -200,7 +201,8 @@ enum TabLivenessDeriver {
                     workspace.noteMailboxAgentLifecycle(
                         surfaceId: surfaceId,
                         source: source,
-                        activity: activity
+                        activity: activity,
+                        at: eventAt
                     )
                 }
             }

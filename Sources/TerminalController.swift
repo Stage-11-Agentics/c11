@@ -822,6 +822,16 @@ class TerminalController {
         }
     }
 
+    /// `report_agent_activity --source=notification` is an idle that only
+    /// means the agent is waiting on the operator (a permission or question
+    /// prompt). It drives the sidebar like any report but is never a mailbox
+    /// turn edge. Every other report (no `--source`) is an explicit turn edge.
+    nonisolated static func reportedAgentLifecycleSource(
+        _ options: [String: String]
+    ) -> AgentLifecycleSource {
+        options["source"]?.lowercased() == "notification" ? .inferred : .reported
+    }
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveWorkspaceManager(_ workspaceManager: WorkspaceManager?) {
@@ -8728,7 +8738,7 @@ class TerminalController {
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity,
-                    source: .reported
+                    source: Self.reportedAgentLifecycleSource(parsed.options)
                 )
             }
             return "OK"
@@ -8760,7 +8770,7 @@ class TerminalController {
                 surfaceId: surfaceId,
                 workspaceId: workspace.id,
                 activity: activity,
-                source: .reported
+                source: Self.reportedAgentLifecycleSource(parsed.options)
             )
         }
         return result

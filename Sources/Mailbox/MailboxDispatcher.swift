@@ -172,6 +172,11 @@ final class MailboxDispatcher {
         )
     }
 
+    /// The stdin push could not claim an envelope; it stays in the inbox.
+    func logStdinClaimFailed(id: String, recipient: String, errno code: Int32) {
+        log.append(.claimFailed(id: id, recipient: recipient, errno: code))
+    }
+
     // MARK: - Stale-tmp GC
 
     /// Deletes dot-prefixed `.tmp` files in `_outbox/` older than

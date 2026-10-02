@@ -262,7 +262,7 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 | the operator typed into its composer since the last submit | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
 | no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
 
-A permission prompt or other notification never opens the gate; only the lifecycle edges above do. A turn that is interrupted (Esc) sends no turn-end signal, so buffered mail waits for the next completed turn. Grok launched with `--continue` has no session id for c11 to follow, so it reports no turn edges.
+A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.) A turn that is interrupted (Esc) sends no turn-end signal, so buffered mail waits for the next completed turn. Grok launched with `--continue` has no session id for c11 to follow, so it reports no turn edges.
 
 **Plain shells** keep the shell-state gate:
 
@@ -274,7 +274,14 @@ A permission prompt or other notification never opens the gate; only the lifecyc
 
 An agent that exits returns its tab to the shell prompt; mail buffered for it is dropped from the buffer (logged `expired`) rather than pasted onto the bare shell, and stays in the inbox.
 
-**Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. If the file is already gone, a `recv --drain` took it first, and the push types nothing for it (logged `skipped`). If the tab closed in between, the claim is undone. Every pushed envelope emits a `mailbox.delivered` event with `via: "push"`. `_read/` is history, never re-delivered.
+**Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. Claims run off the main thread; only the paste and its submit run on it.
+
+- If the file is already gone, a `recv --drain` took it first, and the push types nothing for it (logged `skipped`).
+- If the rename fails, the envelope stays in the inbox root and nothing is typed (logged `claim_failed` with its `errno`).
+- If the gate closed while the claim ran (an operator draft, a new turn), the claims are undone and the mail waits for the next edge.
+- `mailbox.delivered` with `via: "push"` fires only once the submit Return has been dispatched. If the tab closes or detaches before that, the claims are undone so a drain still finds the mail (logged `closed`).
+
+`_read/` is history, never re-delivered.
 
 Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path.
 
@@ -408,7 +415,7 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted`, `skipped` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted`, `skipped`, `claim_failed` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
 
 | stdin outcome | Meaning |
 |---------------|---------|
@@ -417,6 +424,8 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safe
 | `expired`     | a buffered shell block aged past the freshness window, or its agent exited; dropped (inbox floor holds it) |
 | `evicted`     | a buffered block dropped because the per-tab cap was exceeded (inbox floor holds it) |
 | `skipped`     | the push found the envelope already claimed by a drain; nothing typed |
+| `claim_failed` | the push could not claim the envelope (`errno` on the line); it stays in the inbox, nothing typed |
+| `closed`      | after `ok`/`buffered`: the tab closed or detached before the submit Return; the claim was undone |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows

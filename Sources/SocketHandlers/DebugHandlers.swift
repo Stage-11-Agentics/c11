@@ -25,6 +25,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugShortcutSimulate(params: params))
         case "debug.type":
             return v2Result(id: id, self.v2DebugType(params: params))
+        case "debug.terminal.operator_keys":
+            return v2Result(id: id, self.v2DebugTerminalOperatorKeys(params: params))
         case "debug.app.activate":
             return v2Result(id: id, self.v2DebugActivateApp())
         case "debug.command_palette.toggle":
@@ -437,6 +439,30 @@ extension TerminalController {
             result = .ok([:])
         }
         return result
+    }
+
+    /// Drives a terminal tab's real keyDown path as operator input without
+    /// activating c11 (`TerminalSurface.debugSimulateOperatorKeys`).
+    private func v2DebugTerminalOperatorKeys(params: [String: Any]) -> V2CallResult {
+        guard let text = params["text"] as? String else {
+            return .err(code: "invalid_params", message: "Missing text", data: nil)
+        }
+        guard let tabId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid tab_id", data: nil)
+        }
+        return v2MainSync {
+            guard let located = AppDelegate.shared?.workspaceContainingPanel(
+                panelId: tabId,
+                preferredWorkspaceId: nil
+            ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+            }
+            let delivered = terminal.surface.debugSimulateOperatorKeys(text)
+            guard delivered > 0 else {
+                return .err(code: "unavailable", message: "Tab has no window to deliver keys to", data: nil)
+            }
+            return .ok(["delivered": delivered])
+        }
     }
 
     private func v2DebugActivateApp() -> V2CallResult {

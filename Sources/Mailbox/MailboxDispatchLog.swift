@@ -55,6 +55,10 @@ final class MailboxDispatchLog {
         case cleaned(id: String)
         case replayed(id: String)
         case gc(tempFilesRemoved: Int)
+        /// The stdin push could not claim an envelope from the inbox; it
+        /// stays in the inbox root and nothing was typed. Logged as a
+        /// `handler` event (outcome `claim_failed`) carrying the errno.
+        case claimFailed(id: String, recipient: String, errno: Int32)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -83,6 +87,10 @@ final class MailboxDispatchLog {
     ///   a buffered agent block whose agent exited to the shell; dropped from
     ///   the buffer (the filesystem inbox + `recv --drain` floor still holds it).
     /// - `skipped`: the push found the envelope already claimed by a drain.
+    /// - `claim_failed`: the push could not claim the envelope (with `errno`);
+    ///   it stays in the inbox root and nothing was typed.
+    /// - `closed` (after `ok`/`buffered`): the tab closed or detached before
+    ///   the submit Return was dispatched; the claim was undone.
     /// - `evicted`: a buffered block was dropped because the per-surface buffer
     ///   cap was exceeded (oldest-first; inbox floor still holds it).
     ///
@@ -94,6 +102,8 @@ final class MailboxDispatchLog {
         /// The stdin push found the envelope already claimed (a `recv
         /// --drain` took it first), so nothing was typed.
         case skipped
+        /// The push could not claim the envelope (see `Event.claimFailed`).
+        case claimFailed = "claim_failed"
     }
 
     // MARK: - File I/O
@@ -169,6 +179,13 @@ final class MailboxDispatchLog {
         case .gc(let removed):
             payload["event"] = "gc"
             payload["temp_files_removed"] = removed
+        case .claimFailed(let id, let recipient, let code):
+            payload["event"] = "handler"
+            payload["id"] = id
+            payload["recipient"] = recipient
+            payload["handler"] = "stdin"
+            payload["outcome"] = HandlerOutcome.claimFailed.rawValue
+            payload["errno"] = Int(code)
         }
 
         guard

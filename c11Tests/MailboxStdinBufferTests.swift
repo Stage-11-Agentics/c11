@@ -372,4 +372,117 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.removeSurface(tab)
         XCTAssertNil(buffer.agentTurn(surfaceId: tab))
     }
+
+    // MARK: - review r1
+
+    /// Return at t1, the operator starts a new draft at t2, and only then does
+    /// the Return's submit edge arrive (it hops off-main and back). The edge
+    /// carries the Return's own time, so the new draft still reads as one.
+    func testLateSubmitEdgeKeepsPostSubmitDraft() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        let returnAt = t(1)
+        let draftKeyAt = t(1.05)
+        buffer.noteSubmit(surfaceId: tab, at: returnAt)  // delivered late, stamped at the event
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(4))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: draftKeyAt),
+            .buffer
+        )
+    }
+
+    /// An out-of-order (older) submit edge never moves the submit clock back.
+    func testOlderSubmitEdgeDoesNotRewindClock() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteSubmit(surfaceId: tab, at: t(10))
+        buffer.noteSubmit(surfaceId: tab, at: t(5))
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(20))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: t(8)),
+            .injectNow
+        )
+    }
+
+    /// A submit edge older than the current prompt edge does not reopen a
+    /// turn that already ended.
+    func testStaleSubmitEdgeDoesNotStartTurn() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(10))
+        buffer.noteSubmit(surfaceId: tab, at: t(9))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: tab)?.atPrompt, true)
+    }
+
+    /// While one push is between claim and Return, nothing else is typed into
+    /// the tab, on either gate; a push that typed nothing does not hold the
+    /// agent gate closed afterwards.
+    func testPushInFlightBlocksBothGates() {
+        var buffer = MailboxStdinBuffer()
+        let agent = UUID()
+        let shell = UUID()
+        buffer.noteAgentTurn(surfaceId: agent, atPrompt: true, at: t(0))
+        buffer.beginPush(surfaceId: agent)
+        buffer.beginPush(surfaceId: shell)
+        XCTAssertEqual(
+            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        XCTAssertEqual(
+            buffer.decide(surfaceId: shell, shell: .promptIdle, isAgentKind: false, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        XCTAssertEqual(
+            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true,
+                          lastOperatorKeyAt: nil, ignoringInFlight: true),
+            .injectNow
+        )
+        buffer.endPush(surfaceId: agent, typedAt: nil)
+        XCTAssertEqual(
+            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            .injectNow
+        )
+        buffer.endPush(surfaceId: shell, typedAt: t(1))
+        XCTAssertFalse(buffer.isPushInFlight(surfaceId: shell))
+    }
+
+    /// A push that typed waits for the agent's next prompt edge.
+    func testTypedPushWaitsForNextEdge() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        buffer.beginPush(surfaceId: tab)
+        buffer.endPush(surfaceId: tab, typedAt: t(1))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            .buffer
+        )
+    }
+
+    func testRequeueFrontRestoresOrderAndEvictsOldest() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.enqueue(surfaceId: tab, entry: entry(id: "later"))
+        buffer.requeueFront(surfaceId: tab, entries: [entry(id: "a"), entry(id: "b")])
+        XCTAssertEqual(
+            buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .agentPrompt).fresh.map(\.id),
+            ["a", "b", "later"]
+        )
+        for i in 0..<MailboxStdinBuffer.perSurfaceCap {
+            buffer.enqueue(surfaceId: tab, entry: entry(id: "q\(i)"))
+        }
+        let evicted = buffer.requeueFront(surfaceId: tab, entries: [entry(id: "x")])
+        XCTAssertEqual(evicted.map(\.id), ["x"])
+        XCTAssertEqual(buffer.pendingCount(surfaceId: tab), MailboxStdinBuffer.perSurfaceCap)
+    }
+
+    /// Claude's Notification and AskUserQuestion hooks report idle with
+    /// `--source=notification`: that drives the sidebar but is never a turn
+    /// edge for the mailbox gate.
+    func testNotificationSourcedReportIsNotATurnEdge() {
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "notification"]), .inferred)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource([:]), .reported)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["tab": "x", "panel": "y"]), .reported)
+    }
 }

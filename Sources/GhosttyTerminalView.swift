@@ -4011,6 +4011,29 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
+    /// Mailbox push: the same paste + delayed Return as `sendSubmitFormText`,
+    /// but it never queues for a later attach and it reports whether the
+    /// Return was dispatched. `false` means nothing was submitted: the
+    /// surface was not attached at paste time, or it was torn down before the
+    /// Return. The caller undoes its claim on `false`.
+    func sendSubmitFormText(_ text: String, completion: @escaping (Bool) -> Void) {
+        let trimmed = text.trimmingCharacters(in: .newlines)
+        guard !trimmed.isEmpty, surface != nil else {
+            completion(false)
+            return
+        }
+        sendText(trimmed)
+        let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.surface != nil else {
+                completion(false)
+                return
+            }
+            self.sendKey(.returnKey)
+            completion(true)
+        }
+    }
+
     /// Dispatch a synthetic Return as a distinct key event after the
     /// paste-settle delay. Used by the interactive text box submit and by the
     /// socket `send` submit path, both of which type text first and must let a
@@ -4048,6 +4071,45 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     /// Build a synthetic `NSEvent` for a named key and deliver it to the
     /// terminal surface the same way AppKit would route a real keystroke.
+#if DEBUG
+    /// Test seam (`debug.terminal.operator_keys`): feed `text` through the real
+    /// `keyDown` handling as if the operator typed it: the touched/key clocks,
+    /// Return classification and the lifecycle edge all run exactly as for a
+    /// physical key. Unlike `debug.type` it does not activate the app or move
+    /// focus. Covers lowercase US letters, space and `\r` (Return). Returns
+    /// the number of keys delivered; 0 when the view has no window.
+    func debugSimulateOperatorKeys(_ text: String) -> Int {
+        let keyCodes: [Character: UInt16] = [
+            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
+            "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
+            "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45,
+            "m": 46, " ": 49, "\r": 36,
+        ]
+        let view = surfaceView
+        guard let window = view.window else { return 0 }
+        var delivered = 0
+        for ch in text {
+            guard let keyCode = keyCodes[ch] else { continue }
+            let characters = String(ch)
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            ) else { continue }
+            view.keyDown(with: event)
+            delivered += 1
+        }
+        return delivered
+    }
+#endif
+
     func sendSyntheticKey(
         characters: String,
         keyCode: UInt16,
@@ -5647,10 +5709,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if let terminalSurface {
             // Tab sheet "touched" clock: a plain Date store (~20 ns), nothing
             // published. Synthesized keys (socket `send`) are not the operator.
+            // One timestamp for the whole event: the mailbox draft guard
+            // compares this key's time against the submit edge it may start.
+            let keyAt = Date()
             if !isSynthesizingKey {
-                let now = Date()
-                terminalSurface.lastOperatorInputAt = now
-                terminalSurface.lastOperatorKeyAt = now
+                terminalSurface.lastOperatorInputAt = keyAt
+                terminalSurface.lastOperatorKeyAt = keyAt
             }
 #if DEBUG
             let dismissNotificationStart = ProcessInfo.processInfo.systemUptime
@@ -5675,7 +5739,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     surfaceId: terminalSurface.id,
                     workspaceId: terminalSurface.workspaceId,
                     activity: .working,
-                    source: .submit
+                    source: .submit,
+                    at: keyAt
                 )
             }
 #if DEBUG

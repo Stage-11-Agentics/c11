@@ -5766,12 +5766,18 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDispatcher = dispatcher
     }
 
-    /// Decide whether to inject a framed `<c11-msg>` block into the recipient
+    /// Decide whether to push a framed `<c11-msg>` block into the recipient
     /// PTY now or buffer it (gate rules: `MailboxStdinBuffer`). Runs on the
-    /// main actor (the handler's writer hop). The dispatcher has already
-    /// copied the envelope into the recipient's filesystem inbox, so a
-    /// buffered (or even dropped) block is still reachable via
+    /// main actor (the handler's writer hop) and does no file I/O: a push
+    /// claims its envelopes off-main (`startMailboxPush`). The dispatcher has
+    /// already copied the envelope into the recipient's filesystem inbox, so
+    /// a buffered (or even dropped) block is still reachable via
     /// `c11 mailbox recv --drain`.
+    ///
+    /// `.ok` means the push has started; if it cannot finish, a later
+    /// `skipped`, `claim_failed` or `closed` line in the dispatch log says
+    /// why, and `mailbox.delivered` `via: "push"` fires only once the submit
+    /// Return is dispatched.
     func deliverOrBufferMailboxStdin(
         surfaceId: UUID,
         envelopeId: String,
@@ -5797,10 +5803,8 @@ final class Workspace: Identifiable, ObservableObject {
             isAgentKind: isAgentKind,
             lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
         )
-        if decision == .injectNow, mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) == 0 {
-            let pushed = pushMailboxStdin([entry], into: terminalTab, surfaceId: surfaceId)
-            return pushed.isEmpty ? .skipped : .ok(bytes: block.utf8.count)
-        }
+        let immediate = decision == .injectNow
+            && mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) == 0
         if let evicted = mailboxStdinBuffer.enqueue(surfaceId: surfaceId, entry: entry) {
             mailboxDispatcher?.logStdinLifecycle(
                 id: evicted.id,
@@ -5809,138 +5813,205 @@ final class Workspace: Identifiable, ObservableObject {
             )
         }
         if decision == .injectNow {
-            // Older blocks are still queued behind an open gate: send them
-            // first, in order, with this one.
-            flushBufferedMailboxStdin(
+            startMailboxPush(
                 surfaceId: surfaceId,
-                trigger: entry.forAgent ? .agentPrompt : .shellPrompt
+                trigger: entry.forAgent ? .agentPrompt : .shellPrompt,
+                immediateId: immediate ? envelopeId : nil
             )
         }
-        return .buffered(bytes: block.utf8.count)
+        return immediate ? .ok(bytes: block.utf8.count) : .buffered(bytes: block.utf8.count)
     }
 
     /// Flush buffered `<c11-msg>` blocks for a tab that just reached a safe
     /// moment: an agent's prompt edge or a shell's return to `.promptIdle`.
-    /// An agent flush re-checks the gate (an operator draft still defers it)
-    /// and types everything queued as one paste and one submit. Each step is
-    /// logged to the dispatch log so the message's lifecycle stays visible in
-    /// `c11 mailbox trace`.
     private func flushBufferedMailboxStdin(
         surfaceId: UUID,
         trigger: MailboxStdinBuffer.FlushTrigger
     ) {
-        guard mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) > 0 else { return }
+        startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
+    }
+
+    /// Serial queue for the push's inbox claims and claim rollbacks. Serial,
+    /// so a rollback always lands before the next push's claim of the same
+    /// envelope.
+    private static let mailboxPushIOQueue = DispatchQueue(
+        label: "com.stage11.c11.mailbox.push-io",
+        qos: .utility
+    )
+
+    /// One push, in C3 order: (main) re-check the gate and take the queued
+    /// entries → (off-main) claim each envelope from the inbox → (main) paste
+    /// the claimed blocks as one paste and one submit → (after the Return is
+    /// dispatched) emit `mailbox.delivered`; if it never is, undo the claims.
+    /// Only one push per tab is in flight; anything arriving meanwhile
+    /// buffers behind it.
+    private func startMailboxPush(
+        surfaceId: UUID,
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        immediateId: String?
+    ) {
+        guard mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) > 0,
+              !mailboxStdinBuffer.isPushInFlight(surfaceId: surfaceId),
+              let terminalTab = panels[surfaceId] as? TerminalTab else { return }
         if trigger == .agentPrompt {
-            guard let terminalTab = panels[surfaceId] as? TerminalTab,
-                  mailboxStdinBuffer.decide(
-                      surfaceId: surfaceId,
-                      shell: tabShellActivityStates[surfaceId] ?? .unknown,
-                      isAgentKind: true,
-                      lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
-                  ) == .injectNow else { return }
+            guard mailboxStdinBuffer.decide(
+                surfaceId: surfaceId,
+                shell: tabShellActivityStates[surfaceId] ?? .unknown,
+                isAgentKind: true,
+                lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
+            ) == .injectNow else { return }
         }
+        guard let dispatcher = mailboxDispatcher else { return }
 
         let flush = mailboxStdinBuffer.drainForFlush(surfaceId: surfaceId, now: Date(), trigger: trigger)
         for entry in flush.expired {
-            mailboxDispatcher?.logStdinLifecycle(
-                id: entry.id,
-                recipient: entry.recipientName,
-                outcome: .expired
-            )
+            dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .expired)
         }
-        guard !flush.fresh.isEmpty else { return }
-        // The tab could have closed or changed type since buffering; the
-        // entries are drained and the inbox floor still holds them.
-        guard let terminalTab = panels[surfaceId] as? TerminalTab else { return }
-        let pushed = pushMailboxStdin(flush.fresh, into: terminalTab, surfaceId: surfaceId)
-        for entry in pushed {
-            mailboxDispatcher?.logStdinLifecycle(
-                id: entry.id,
-                recipient: entry.recipientName,
-                outcome: .flushed,
-                bytes: entry.block.utf8.count
-            )
-        }
-        for entry in flush.fresh where !pushed.contains(entry) {
-            mailboxDispatcher?.logStdinLifecycle(
-                id: entry.id,
-                recipient: entry.recipientName,
-                outcome: .skipped
-            )
+        let entries = flush.fresh
+        guard !entries.isEmpty else { return }
+
+        mailboxStdinBuffer.beginPush(surfaceId: surfaceId)
+        let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, tabId: surfaceId)
+        Self.mailboxPushIOQueue.async { [weak self] in
+            var claimed: [MailboxStdinBuffer.Entry] = []
+            for entry in entries {
+                switch MailboxIO.claimResult(id: entry.id, inbox: inbox) {
+                case .claimed:
+                    claimed.append(entry)
+                case .gone:
+                    // A drain took it first: nothing to type for it.
+                    dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .skipped)
+                case .failed(let code):
+                    // The envelope stays in the inbox root for the drain floor.
+                    dispatcher.logStdinClaimFailed(id: entry.id, recipient: entry.recipientName, errno: code)
+                }
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else {
+                        Self.undoMailboxClaims(claimed, inbox: inbox)
+                        return
+                    }
+                    self.finishMailboxPush(
+                        surfaceId: surfaceId,
+                        claimed: claimed,
+                        trigger: trigger,
+                        immediateId: immediateId,
+                        inbox: inbox,
+                        dispatcher: dispatcher
+                    )
+                }
+            }
         }
     }
 
-    /// Claim each envelope from the recipient's inbox (C3: rename into
-    /// `_read/` before typing), type the claimed blocks as one paste and one
-    /// submit, and emit `mailbox.delivered` `via: "push"` for each. An
-    /// envelope already claimed by a drain is skipped silently. Returns the
-    /// entries actually typed.
-    private func pushMailboxStdin(
-        _ entries: [MailboxStdinBuffer.Entry],
-        into terminalTab: TerminalTab,
-        surfaceId: UUID
-    ) -> [MailboxStdinBuffer.Entry] {
-        let inbox = mailboxDispatcher.map {
-            MailboxLayout.inboxURL(state: $0.stateURL, workspaceId: id, tabId: surfaceId)
+    private func finishMailboxPush(
+        surfaceId: UUID,
+        claimed: [MailboxStdinBuffer.Entry],
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        immediateId: String?,
+        inbox: URL,
+        dispatcher: MailboxDispatcher
+    ) {
+        guard !claimed.isEmpty else {
+            mailboxStdinBuffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
+            return
         }
-        var claimed: [MailboxStdinBuffer.Entry] = []
-        for entry in entries {
-            guard let inbox else {
-                claimed.append(entry)
-                continue
+        guard let terminalTab = panels[surfaceId] as? TerminalTab else {
+            // The tab closed during the claim: put the mail back for a drain.
+            Self.undoMailboxClaims(claimed, inbox: inbox)
+            for entry in claimed {
+                dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .closed)
             }
-            do {
-                if try MailboxIO.claim(id: entry.id, inbox: inbox) != nil {
-                    claimed.append(entry)
-                }
-            } catch {
-                // The claim itself failed (permissions, a vanished inbox
-                // directory): type it anyway rather than lose the doorbell.
-                claimed.append(entry)
-            }
+            mailboxStdinBuffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return
         }
-        guard !claimed.isEmpty else { return [] }
-        guard panels[surfaceId] is TerminalTab else {
-            if let inbox {
-                for entry in claimed { MailboxIO.unclaim(id: entry.id, inbox: inbox) }
+        // The gate can close during the claim hop (the operator started a
+        // draft, the agent started a turn). Wait for the next edge instead.
+        let stillOpen = trigger == .shellPrompt || mailboxStdinBuffer.decide(
+            surfaceId: surfaceId,
+            shell: tabShellActivityStates[surfaceId] ?? .unknown,
+            isAgentKind: true,
+            lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt,
+            ignoringInFlight: true
+        ) == .injectNow
+        guard stillOpen, terminalTab.surface.surface != nil else {
+            Self.undoMailboxClaims(claimed, inbox: inbox)
+            for evicted in mailboxStdinBuffer.requeueFront(surfaceId: surfaceId, entries: claimed) {
+                dispatcher.logStdinLifecycle(id: evicted.id, recipient: evicted.recipientName, outcome: .evicted)
             }
-            return []
+            mailboxStdinBuffer.endPush(surfaceId: surfaceId, typedAt: nil)
+            return
         }
+
+        let pastedAt = Date()
         // The same paste + delayed Return `c11 send` uses; safe for a
-        // background tab with no window.
-        terminalTab.surface.sendSubmitFormText(MailboxStdinBuffer.joinedBlock(claimed))
-        mailboxStdinBuffer.notePush(surfaceId: surfaceId, at: Date())
-        for entry in claimed {
-            EventEmitter.shared.emitMailboxDelivered(
-                workspace: id,
-                id: entry.id,
-                recipient: entry.recipientName,
-                surface: surfaceId,
-                via: "push"
-            )
+        // background tab with no window. Reports whether the Return went out.
+        terminalTab.surface.sendSubmitFormText(MailboxStdinBuffer.joinedBlock(claimed)) { [weak self] dispatched in
+            if dispatched {
+                for entry in claimed {
+                    EventEmitter.shared.emitMailboxDelivered(
+                        workspace: self?.id ?? dispatcher.workspaceId,
+                        id: entry.id,
+                        recipient: entry.recipientName,
+                        surface: surfaceId,
+                        via: "push"
+                    )
+                    if entry.id != immediateId {
+                        dispatcher.logStdinLifecycle(
+                            id: entry.id,
+                            recipient: entry.recipientName,
+                            outcome: .flushed,
+                            bytes: entry.block.utf8.count
+                        )
+                    }
+                }
+            } else {
+                // No submit reached the agent: the mail is not delivered.
+                Self.undoMailboxClaims(claimed, inbox: inbox)
+                for entry in claimed {
+                    dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .closed)
+                }
+            }
+            guard let self else { return }
+            self.mailboxStdinBuffer.endPush(surfaceId: surfaceId, typedAt: dispatched ? pastedAt : nil)
+            if !dispatched {
+                self.startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
+            }
         }
-        return claimed
+    }
+
+    private static func undoMailboxClaims(_ entries: [MailboxStdinBuffer.Entry], inbox: URL) {
+        guard !entries.isEmpty else { return }
+        mailboxPushIOQueue.async {
+            for entry in entries {
+                MailboxIO.unclaim(id: entry.id, inbox: inbox)
+            }
+        }
     }
 
     /// An agent lifecycle edge for the mailbox gate. `reported` edges come
-    /// from explicit lifecycle reports (`report_agent_activity`, the Codex
-    /// turn-complete notify); `submit` is a Return typed into the tab.
-    /// Notification-inferred idleness is deliberately not an input here.
+    /// from explicit turn-end and turn-start reports (`report_agent_activity`
+    /// without `--source=notification`, the Codex turn-complete notify);
+    /// `submit` is a Return typed into the tab. Notification-inferred
+    /// idleness is deliberately not an input here. `at` is the edge's own
+    /// event time, captured before any thread hop.
     func noteMailboxAgentLifecycle(
         surfaceId: UUID,
         source: AgentLifecycleSource,
-        activity: SidebarActivityState
+        activity: SidebarActivityState,
+        at eventAt: Date = Date()
     ) {
         guard panels[surfaceId] != nil else { return }
-        let now = Date()
         switch source {
         case .reported:
-            mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: activity == .idle, at: now)
+            mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: activity == .idle, at: eventAt)
             if activity == .idle {
                 flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
             }
         case .submit:
-            mailboxStdinBuffer.noteSubmit(surfaceId: surfaceId, at: now)
+            mailboxStdinBuffer.noteSubmit(surfaceId: surfaceId, at: eventAt)
         case .inferred:
             return
         }

@@ -450,7 +450,7 @@ extension TerminalController {
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity,
-                    source: .reported
+                    source: Self.reportedAgentLifecycleSource(parsed.options)
                 )
             }
         }

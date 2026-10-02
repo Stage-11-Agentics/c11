@@ -325,6 +325,8 @@ extension TerminalController {
     }
 
     func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
+        v2RefreshKnownRefs()
+        if let error = v2RejectUnresolvedTargetRefs(params) { return error }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1197,94 +1199,118 @@ extension TerminalController {
         return result
     }
 
-    // C11-296: resolve on main, demand-start and wait on the socket worker,
-    // then revalidate and read on main. Reuse the send path's bounded wait;
-    // never wait for a cold terminal while holding the main queue.
-    nonisolated func v2SurfaceReadText(params: [String: Any]) -> V2CallResult {
-        var includeScrollback = v2Bool(params, "scrollback") ?? false
+    // C11-295: one five-second caller deadline covers both main hops and
+    // C11-296's existing off-main startup wait. Native formatting after a
+    // successful try-lock is still on main and cannot be preempted by timeout.
+    nonisolated func v2SurfaceReadText(params: [String: Any], timeout: TimeInterval = 5.0) -> V2CallResult {
+        let deadline = DispatchTime.now() + timeout
         let lineLimit = v2Int(params, "lines")
         if let lineLimit, lineLimit <= 0 {
             return .err(code: "invalid_params", message: "lines must be greater than 0", data: nil)
         }
-        if lineLimit != nil {
-            includeScrollback = true
-        }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Failed to read terminal text", data: nil)
-        nonisolated(unsafe) var target: (WorkspaceManager, Workspace, TerminalTab)?
+        let includeScrollback = lineLimit != nil || (v2Bool(params, "scrollback") ?? false)
+        typealias Target = (WorkspaceManager, Workspace, TerminalTab)
+        let resolution = TerminalReadCompletion<Result<Target, V2CallResult>>(deadline: deadline)
         Task { @MainActor in
-            defer { semaphore.signal() }
-            // C11-26: refresh ref handles before resolution; see
-            // resolveSurfaceSendTargets for the full rationale.
+            guard !resolution.isAbandoned else { return }
             v2RefreshKnownRefs()
-
-            guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
-                result = .err(code: "unavailable", message: "TabManager not available", data: nil)
+            if let error = v2RejectUnresolvedTargetRefs(params) {
+                resolution.complete(.failure(error))
                 return
             }
-            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
-                result = .err(code: "not_found", message: "Workspace not found", data: nil)
+            guard let manager = v2ResolveWorkspaceManager(params: params) else {
+                resolution.complete(.failure(.err(code: "unavailable", message: "TabManager not available", data: nil)))
                 return
             }
-            let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused tab", data: nil)
+            guard let workspace = v2ResolveWorkspace(params: params, workspaceManager: manager) else {
+                resolution.complete(.failure(.err(code: "not_found", message: "Workspace not found", data: nil)))
                 return
             }
-            guard let terminalPanel = ws.terminalPanel(for: surfaceId) else {
-                result = .err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": surfaceId.uuidString])
+            guard let id = v2UUID(params, "surface_id") ?? workspace.focusedPanelId else {
+                resolution.complete(.failure(.err(code: "not_found", message: "No focused tab", data: nil)))
                 return
             }
-
-            target = (workspaceManager, ws, terminalPanel)
+            guard let terminal = workspace.terminalPanel(for: id) else {
+                resolution.complete(.failure(.err(code: "invalid_params", message: "Tab is not a terminal", data: ["surface_id": id.uuidString])))
+                return
+            }
+            resolution.complete(.success((manager, workspace, terminal)))
         }
-        semaphore.wait()
-        guard let (workspaceManager, ws, terminalPanel) = target else { return result }
+        guard let resolved = resolution.wait() else { return Self.terminalReadTimeout() }
+        let target: Target
+        switch resolved {
+        case .failure(let error): return error
+        case .success(let value): target = value
+        }
+        let (manager, workspace, terminal) = target
+        let now = DispatchTime.now()
+        guard now < deadline else { return Self.terminalReadTimeout() }
+        let remaining = Double(deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000_000
+        // The pointer is a readiness indication only; re-read on main below.
+        _ = waitForTerminalSurfaceOffMain(terminal, waitUpTo: min(2.0, remaining))
 
-        // This pointer is only a readiness signal. The read below fetches the
-        // live runtime again on main, where teardown is serialized with it.
-        _ = waitForTerminalSurfaceOffMain(terminalPanel, waitUpTo: 2.0)
-
+        typealias Capture = (TerminalReadBytes, [String: Any])
+        let capture = TerminalReadCompletion<Result<Capture, V2CallResult>>(deadline: deadline)
         Task { @MainActor in
-            defer { semaphore.signal() }
-            let surfaceId = terminalPanel.id
-            guard workspaceManager.workspaces.contains(where: { $0 === ws }),
-                  ws.terminalPanel(for: surfaceId) === terminalPanel else {
-                result = .err(code: "not_found", message: "Terminal surface not found", data: ["surface_id": surfaceId.uuidString])
+            guard !capture.isAbandoned else { return }
+            let id = terminal.id
+            guard manager.workspaces.contains(where: { $0 === workspace }),
+                  workspace.terminalPanel(for: id) === terminal,
+                  terminal.surface.canAcceptPortalBinding(expectedSurfaceId: id, expectedGeneration: nil) else {
+                capture.complete(.failure(.err(code: "not_found", message: "Terminal surface not found", data: ["surface_id": id.uuidString])))
                 return
             }
-
-            let response = readTerminalTextBase64(
-                terminalPanel: terminalPanel,
-                includeScrollback: includeScrollback,
-                lineLimit: lineLimit
+            guard let surface = terminal.surface.surface else {
+                capture.complete(.failure(.err(code: "internal_error", message: "ERROR: Terminal surface not found", data: nil)))
+                return
+            }
+            let native = captureTerminalReadBytes(
+                surface: surface, includeScrollback: includeScrollback,
+                isAbandoned: { capture.isAbandoned }
             )
-            guard response.hasPrefix("OK ") else {
-                result = .err(code: "internal_error", message: response, data: nil)
-                return
+            switch native {
+            case .failure(let error): capture.complete(.failure(error))
+            case .success(let bytes):
+                let windowId = v2ResolveWindowId(workspaceManager: manager)
+                capture.complete(.success((bytes, [
+                    "workspace_id": workspace.id.uuidString,
+                    "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
+                    "surface_id": id.uuidString,
+                    "surface_ref": v2Ref(kind: .surface, uuid: id),
+                    "window_id": v2OrNull(windowId?.uuidString),
+                    "window_ref": v2Ref(kind: .window, uuid: windowId)
+                ])))
             }
-            let base64 = String(response.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-            let decoded = Data(base64Encoded: base64).flatMap { String(data: $0, encoding: .utf8) }
-            guard let text = decoded ?? (base64.isEmpty ? "" : nil) else {
-                result = .err(code: "internal_error", message: "Failed to decode terminal text", data: nil)
-                return
-            }
-
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-            result = .ok([
-                "text": text,
-                "base64": base64,
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
-                "window_id": v2OrNull(windowId?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
         }
-        semaphore.wait()
-        return result
+        guard let captured = capture.wait() else { return Self.terminalReadTimeout() }
+        switch captured {
+        case .failure(let error): return error
+        case .success(let (bytes, envelope)):
+            // Formatting owns only Swift bytes. Keep the socket caller on the
+            // same deadline even if a large conversion continues after timeout.
+            let formatted = TerminalReadCompletion<V2CallResult>(deadline: deadline)
+            DispatchQueue.global(qos: .userInitiated).async {
+                autoreleasepool {
+                    guard !formatted.isAbandoned else { return }
+#if DEBUG
+                    let workerStart = ProcessInfo.processInfo.systemUptime
+#endif
+                    guard let text = bytes.formatted(includeScrollback: includeScrollback, lineLimit: lineLimit) else {
+                        formatted.complete(.err(code: "internal_error", message: "ERROR: Failed to read terminal text", data: nil))
+                        return
+                    }
+                    guard !formatted.isAbandoned else { return }
+                    var response = envelope
+                    response["text"] = text
+                    response["base64"] = Data(text.utf8).base64EncodedString()
+#if DEBUG
+                    dlog("terminal.read.worker bytes=\(text.utf8.count) ms=\((ProcessInfo.processInfo.systemUptime - workerStart) * 1000)")
+#endif
+                    formatted.complete(.ok(response))
+                }
+            }
+            return formatted.wait() ?? Self.terminalReadTimeout()
+        }
     }
 
     /// Resolve `(Workspace, surfaceId)` for M7 title bar handlers from the generic

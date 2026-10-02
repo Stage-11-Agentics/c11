@@ -388,6 +388,14 @@ typedef struct {
 } ghostty_text_s;
 
 typedef enum {
+  GHOSTTY_TEXT_READ_OK = 0,
+  GHOSTTY_TEXT_READ_BUSY = 1,
+  GHOSTTY_TEXT_READ_INVALID_SELECTION = 2,
+  GHOSTTY_TEXT_READ_FAILED = 3,
+  GHOSTTY_TEXT_READ_NO_SELECTION = 4,
+} ghostty_text_read_status_e;
+
+typedef enum {
   GHOSTTY_POINT_ACTIVE,
   GHOSTTY_POINT_VIEWPORT,
   GHOSTTY_POINT_SCREEN,
@@ -1130,6 +1138,17 @@ bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_s*);
 bool ghostty_surface_read_text(ghostty_surface_t,
                                ghostty_selection_s,
                                ghostty_text_s*);
+// Call on the app thread with a live surface and a non-null result. These
+// attempt the renderer lock once; BUSY returns immediately. Formatting after
+// acquisition is synchronous and has no wall-time bound. Result is zeroed on
+// entry. Only OK transfers text ownership; free it once with free_text below.
+ghostty_text_read_status_e ghostty_surface_try_read_text(ghostty_surface_t,
+                                                       ghostty_selection_s,
+                                                       ghostty_text_s*);
+// NO_SELECTION means the active screen has no selection after acquiring the
+// lock; BUSY does not inspect the active selection.
+ghostty_text_read_status_e ghostty_surface_try_read_selection(ghostty_surface_t,
+                                                            ghostty_text_s*);
 void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

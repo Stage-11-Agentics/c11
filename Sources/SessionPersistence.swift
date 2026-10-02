@@ -6,6 +6,46 @@ enum SessionSnapshotSchema {
     static let currentVersion = 1
 }
 
+enum WindowGeometryPersistenceStore {
+    struct Geometry: Codable, Sendable {
+        let frame: SessionRectSnapshot
+        let display: SessionDisplaySnapshot?
+    }
+
+    static let defaultsKey = "cmux.session.lastWindowGeometry.v1"
+
+    static func load(defaults: UserDefaults = .standard) -> Geometry? {
+        guard let data = defaults.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(Geometry.self, from: data)
+    }
+
+    static func encodedData(frame: SessionRectSnapshot?, display: SessionDisplaySnapshot?) -> Data? {
+        guard let frame else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(Geometry(frame: frame, display: display))
+    }
+
+    /// Compare with persisted bytes rather than a process-local cache so both
+    /// window-close saves and background autosaves skip unchanged mutations.
+    /// Older JSON key ordering can normalize once, without changing the schema.
+    static func persist(_ data: Data?, defaults: UserDefaults = .standard) {
+        if let data {
+            guard defaults.data(forKey: defaultsKey) != data else { return }
+            defaults.set(data, forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.write bytes=\(data.count)")
+#endif
+        } else {
+            guard defaults.object(forKey: defaultsKey) != nil else { return }
+            defaults.removeObject(forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.remove")
+#endif
+        }
+    }
+}
+
 enum SessionPersistencePolicy {
     static let defaultSidebarWidth: Double = 200
     static let minimumSidebarWidth: Double = 180

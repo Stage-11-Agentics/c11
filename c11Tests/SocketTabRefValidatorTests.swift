@@ -146,3 +146,55 @@ final class SocketTabRefValidatorTests: XCTestCase {
         )
     }
 }
+
+final class TerminalReadCompletionTests: XCTestCase {
+    func testFirstCompletionWins() {
+        let completion = TerminalReadCompletion<String>(deadline: .now() + 1)
+        XCTAssertTrue(completion.complete("first"))
+        XCTAssertFalse(completion.complete("second"))
+        XCTAssertEqual(completion.wait(), "first")
+    }
+
+    func testCallerReturnsAndLateProducerCannotPublish() {
+        let completion = TerminalReadCompletion<String>(deadline: .now() + 0.03)
+        let started = ProcessInfo.processInfo.systemUptime
+        XCTAssertNil(completion.wait())
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.5)
+        XCTAssertTrue(completion.isAbandoned)
+        XCTAssertFalse(completion.complete("late result"))
+    }
+
+    func testSecondHopSharesOriginalDeadline() {
+        let deadline = DispatchTime.now() + 0.03
+        let first = TerminalReadCompletion<Int>(deadline: deadline)
+        XCTAssertTrue(first.complete(1))
+        XCTAssertEqual(first.wait(), 1)
+        Thread.sleep(forTimeInterval: 0.04)
+        let second = TerminalReadCompletion<Int>(deadline: deadline)
+        XCTAssertTrue(second.isAbandoned)
+        XCTAssertFalse(second.complete(2))
+        XCTAssertNil(second.wait())
+    }
+}
+
+final class TerminalReadBytesTests: XCTestCase {
+    func testViewportUnicodeAndLineTailParity() {
+        var bytes = TerminalReadBytes()
+        bytes.viewport = Data("one\nλ雪\nthree\n".utf8)
+        XCTAssertEqual(bytes.formatted(includeScrollback: false, lineLimit: nil), "one\nλ雪\nthree\n")
+        XCTAssertEqual(bytes.formatted(includeScrollback: false, lineLimit: 2), "three\n")
+    }
+
+    func testScrollbackUsesMostCompleteCandidateAndPreservesEmptyRegion() {
+        var bytes = TerminalReadBytes()
+        bytes.screen = Data("screen\n".utf8)
+        bytes.history = Data("history1\nhistory2".utf8)
+        bytes.active = Data("active".utf8)
+        XCTAssertEqual(bytes.formatted(includeScrollback: true, lineLimit: nil), "history1\nhistory2\nactive")
+        XCTAssertEqual(bytes.formatted(includeScrollback: true, lineLimit: 2), "history2\nactive")
+        bytes = TerminalReadBytes()
+        XCTAssertNil(bytes.formatted(includeScrollback: true, lineLimit: nil))
+        bytes.screen = Data()
+        XCTAssertEqual(bytes.formatted(includeScrollback: true, lineLimit: nil), "")
+    }
+}

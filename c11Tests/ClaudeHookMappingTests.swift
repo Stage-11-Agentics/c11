@@ -209,11 +209,22 @@ final class ClaudeHookMappingTests: XCTestCase {
 
         for (number, name) in validatorCases.enumerated() {
             let label = "Validator case \(number + 1): \(name)"
-            let descriptor = try XCTUnwrap(manifestByID[name], label)
-            XCTAssertEqual(descriptor["provider"] as? String, "claude-code", label)
             let object = try XCTUnwrap(JSONSerialization.jsonObject(
                 with: Data(contentsOf: normalizedRoot.appendingPathComponent(name + ".json"))) as? [String: Any], label)
             let events = try XCTUnwrap(object["events"] as? [[String: Any]], label)
+            let descriptor: [String: Any]
+            if let manifestDescriptor = manifestByID[name] {
+                descriptor = manifestDescriptor
+            } else {
+                // The answer continuation is a derived extension of the observed
+                // bypass-ask capture, so it is intentionally absent from the
+                // capture manifest's provider-run case list.
+                XCTAssertEqual(name, "claude-bypass-ask-answered", label)
+                let provenance = try XCTUnwrap(object["provenance"] as? [String: Any], label)
+                XCTAssertEqual(provenance["base_fixture"] as? String, "claude-bypass-ask", label)
+                descriptor = ["provider": "claude-code", "origin": "derived"]
+            }
+            XCTAssertEqual(descriptor["provider"] as? String, "claude-code", label)
             XCTAssertEqual(object["origin"] as? String, descriptor["origin"] as? String, label)
 
             if descriptor["origin"] as? String == "gap" {

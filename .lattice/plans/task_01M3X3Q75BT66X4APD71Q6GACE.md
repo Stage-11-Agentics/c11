@@ -1,5 +1,34 @@
 # C11-261 plan: 60-workspace group validation and Atin's sign-off script
 
+## Round 1 binding amendment (2026-10-02)
+
+The REPAIR brief and rulings ev_01M3XD1J9QC40BV7NAR7C071PT and
+ev_01M3Y3JEXRER7K3ZXZSD02Q169 supersede the older M1 dependency/cut below.
+Measure the repaired tagged Atlas candidate against frozen current main now,
+using existing g60-w2-v1 targeted helpers and all 18 p95/p99 budgets (1.20/+5ms,
+1.25/+15ms), three 60s phases and the 10Hz mutation mix. One tag c11-261; retain
+role bundles, request quiet Atlas only after both builds exist; keep load, raw
+samples, noise, hangs and memory. Do not wait for the soak.
+
+Authorized product changes: WorkspaceGroupSidebarProjection uses eligible
+unreadCount, with the real adapter regression in WorkspaceManagerSessionSnapshotTests;
+ContentView hoists header palette reads and removes dead SidebarDropPlanner
+indicator/targetIndex and their tests, retaining live pointer-edge calculation.
+Global notification attention refresh remains a measured watch point; dirty-set
+work follows only if an attributable regression is observed.
+
+Harness repairs: each intermediate mutation asserts membership/order and surviving
+tab/TTY/PID identity, each close exact removed sets, ownership remains immutable;
+compatibility comparators compare supplied fixtures; unavailable process proof
+is unverified. A8 uses existing real exact-tab notification plus declared synthetic
+terminal_type seam, with no agent subprocess/config changes. C2 checks rendering.
+Add repeatable attention/geometry setup commands and complete C1-C6/H1-H3 runbook,
+explicitly routing prime-cap/real resume-picker checks to Atlas Validator.
+Record graceful versus forced termination; A11 is unverified after TERM/KILL.
+Bind running server/bundle commit and GUI/dylib/CLI hashes to remote build identity.
+
+One repair series, one push at handoff; Astra review; no merge/release.
+
 Planning only. No product code. Implement later on `c11-1.0/C11-261-groups-validation` from the origin/main that contains merged C11-259 and C11-260. Do not implement on `c11-1.0/C11-262-focus-history`. If either groups PR is absent from that main, send BLOCKED and stop.
 
 ## What this ticket is
@@ -137,3 +166,5 @@ Open human decisions: none.
 ## Codex takeover verification
 
 Audit findings 4/11 verified against the amended groups/soak plans and clean base `0ff8887e5e965400b01645ef40b85fd0b2605cf2`. Independent chapter restore/re-raise repairs were already present; corrected the remaining two-flag assertion, actual group selectors/list contract, unread/waiting oracle, destructive-step ordering and 99+ fixture population. M1 gates comparative proof; locale chapter finishes after C11-291 on the integrated candidate. No new human decision; no builds/tests/product edits.
+
+## Reset 2026-10-02 by agent:luna-261

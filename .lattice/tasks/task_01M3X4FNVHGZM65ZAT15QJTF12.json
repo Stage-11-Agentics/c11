@@ -71,10 +71,25 @@
       "id": "art_01M3YW66RCQ0NNDQRVHJA71V3S",
       "role": "validation",
       "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2P8WK7AD2A6DN5561BVN5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2P90BECYKR979F54BPJJ3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2TFDF6NEEPJJE2H1CYYDK",
+      "role": "validation",
+      "source_type": "artifact"
     }
   ],
   "id": "task_01M3X4FNVHGZM65ZAT15QJTF12",
-  "last_event_id": "ev_01M3YW66RFBYB3AXAGX77EVCJY",
+  "last_event_id": "ev_01M3Z3K0AS180C5CTGA7YBFMGA",
   "last_status_changed_at": "2026-10-02T07:47:30Z",
   "linked_files": [],
   "priority": "high",
@@ -90,6 +105,6 @@
   ],
   "title": "Smoke Chrome, Arc, and Safari import on a tagged build",
   "type": "task",
-  "updated_at": "2026-10-02T17:56:57Z",
+  "updated_at": "2026-10-02T20:06:16Z",
   "urgency": null
 }

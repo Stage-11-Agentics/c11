@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:39:59Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z22VZ86YE1KW0MD7FJXMAZ",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z22VZ86YE1KW0MD7FJXMAZ.json",
+    "size_bytes": 6453
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Round 1 frozen artifact and helper identity",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,38 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sol-323",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-323-no-agent-switch",
+      "linked_at": "2026-10-02T20:19:34Z",
+      "linked_by": "agent:sol-323",
+      "repo": null
+    }
+  ],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-10-02T20:18:24Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "## Why\nAgents keep switching Atin's visible workspace while he works. On 2026-10-02, between 19:52 and 19:56 UTC, he was pulled to \"LAT-365 Runtime Proof\" four times and went back after 7 to 14 seconds each time. The cause was the Lattice \"Inbox Builder\" Codex agent (tab 313, LAT-365). It ran `c11 select-workspace` to put its proof browser (tab 349) on screen, because a browser in a background workspace is hidden and its poller and video pause. He had no way to tell who did it.\n\nOperator rule (Atin, 2026-10-02): **c11 never changes the operator's visible workspace unless the operator asked for it directly** (sidebar, keyboard shortcut, command palette, notification click, jump-to-unread, menu). Agents keep full power over background work. Creating, sending, browser eval/click/snapshot, metadata, and focus changes inside a background workspace all keep working. Only the visible switch is blocked.\n\n## Evidence\nSurvey of origin/main, 2026-10-02:\n- Every switch goes through `TabManager.selectedTabId` `didSet` (`Sources/TabManager.swift:917-1060`).\n- The socket gate is `focusIntentV1Commands` / `focusIntentV2Methods` plus `withSocketCommandPolicy` (`Sources/TerminalController.swift:241-267, 480-520`). Any process in a c11 terminal passes it.\n- Agent-reachable switches:\n  - `workspace.select` (`SH/WorkspaceHandlers.swift:258-296`), which also activates the app. v1 `select_workspace` (`TC:6469-6488`).\n  - `workspace.next/previous/last` (`SH/WorkspaceHandlers.swift:631-705`).\n  - `surface.focus` (`SH/SurfaceHandlers.swift:253-275`) and `pane.focus` (`SH/PaneHandlers.swift:99-119`), when the target is in another workspace.\n  - `browser.focus_webview` (`SH/BrowserQueryHandlers.swift:121-160`).\n- CLI side effects:\n  - `c11 ssh` always selects (`CLI/c11.swift:5946`); so does `find-window --select` (`:15982`).\n  - The tmux shim maps `select-window` / `select-pane` to selection (`:15485-15499`).\n  - The tmux target resolver calls `workspace.last` just to resolve `-t !`, `^` or `-` (`:14828-14829`).\n  - The global `--window` flag is fixed by C11-283.\n- Close fallback: when the visible workspace closes, selection moves to the next workspace by index, not the last one seen (`TM:2651-2657, 2680-2683`).\n- Attribution: the `workspace.selected` payload is only `{previous}`. There is no cause and no caller (`Sources/Events/EventEmitter.swift:106-110`). Debug-only trigger labels already exist at `TM:3746-3754`. `flag.raised` already carries a caller surface id.\n- Docs drive the behavior:\n  - `skills/c11/references/api.md:252` and `:425` tell agents to run `select-workspace \u2026 && sleep 2` to start a hidden surface. That advice is stale since C11-114.\n  - `events.md:50` calls the event a \"sidebar switch\".\n  - The documented `--no-focus` does nothing anywhere.\n- Possible race (unconfirmed, C11-140 \u00a7A): the focus-allowance stack is shared across connection threads (`TC:175-176, 470-520`). Worker-thread methods could read \"allowed\" while another connection's focus command is on the stack.\n\n## Scope\nIn:\n1. **One gate in the selection setter.** A socket-originated change to the selected workspace of any window is refused. Error code `workspace_switch_blocked`; the message tells the agent to raise a flag if it needs the operator. Operator paths are unaffected (sidebar, shortcuts, palette, notification click, jump-to-unread, menu bar, launch restore).\n   - `select-workspace`, `next/previous/last-window` and `focus-webview` across workspaces return the error.\n   - `focus-area` / `focus-tab` (below) on a target in a background workspace still update that workspace's focused area and tab, and do not select the workspace. Within the visible workspace they work as today. That is allowed and wanted.\n   - No setting and no agent override flag. Hard block (Atin's choice).\n2. **Remove side-effect switches.** `c11 ssh` stops selecting. The tmux shim's `select-window` stops selecting, and its `select-pane` focuses within its own workspace only. The tmux `-t` resolver resolves without navigating. `find-window --select` follows the gate. App activation is removed from `workspace.select`.\n3. **Rename cleanup** (the area/tab rename missed these): `focus-pane` \u2192 `focus-area`, `focus-panel` \u2192 `focus-tab`. Keep the old names as hidden aliases. Update help, skill and api.md.\n4. **Attribution.** `workspace.selected` gains `cause` (`sidebar|shortcut|palette|notification|jump|menu|socket|close_fallback|restore|create`), plus `method` and `caller_tab_id` when the cause is socket. Add `workspace.switch_blocked` `{target, method, caller_tab_id}` for refused attempts. Then `c11 events tail` answers \"who did that\". Update `events.md`.\n5. **Close fallback** selects the most recently seen workspace (focus history), falling back to the index neighbour.\n6. **Race.** Confirm or rule out the shared focus-allowance stack race. If it is real, make it per-thread or per-request.\n7. **Docs and skill.**\n   - Remove the `select-workspace` init advice from api.md. Add a hard rule to SKILL.md: agents never change the operator's workspace; background tabs are fully drivable.\n   - Make `--no-focus` real for in-workspace focus, or remove it from the docs.\n   - Fix the \"Socket focus policy\" section of `CLAUDE.md`.\n   - Run `scripts/sync-installed-skills.sh c11`.\n\nOut: keeping a background browser running while hidden (separate backlog ticket). The `--window` focus fix (C11-283). The `settings.open` default activation (C11-140).\n\n## Acceptance\n- With the operator on workspace A, an agent in workspace B runs, through the CLI and raw socket v1/v2:\n  - `select-workspace A2`, `next-window`, `last-window`, `focus-tab`/`focus-area` on a tab in workspace C, `browser <s> focus-webview` in C, `c11 ssh`, and tmux `select-window`.\n  - Workspace A stays selected and the app is not activated.\n  - The two focus commands update C's focused tab and area.\n  - Each refused call returns `workspace_switch_blocked` and logs `workspace.switch_blocked` naming B's calling tab.\n- Background work is unchanged: `send`, `browser eval/click/snapshot`, `new-surface`, `launch-agent`, and `set-metadata` against a background workspace all succeed without a switch.\n- Sidebar click, Cmd+number, palette and notification click still switch, and their `workspace.selected` events carry the right `cause`.\n- Closing the visible workspace lands on the last-seen workspace.\n- Runtime proof on a tagged build through the real UI (c11-computer-use): screenshots before and after an agent's blocked `select-workspace`.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3Z496T53SCCEKS9J07GSVSR",
+  "last_event_id": "ev_01M3Z4BB728QC8Y9001Q8XNRWR",
+  "last_status_changed_at": "2026-10-02T20:19:34Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-323",
+  "status": "in_planning",
+  "tags": [
+    "c11-1.0",
+    "focus"
+  ],
+  "title": "Agents never change the operator's visible workspace",
+  "type": "bug",
+  "updated_at": "2026-10-02T20:19:34Z",
+  "urgency": "immediate"
+}

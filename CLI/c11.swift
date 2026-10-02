@@ -17440,10 +17440,14 @@ struct CMUXCLI {
         workspaceId: String,
         client: SocketClient
     ) throws -> String {
-        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let raw else {
             throw CLIError(message: "claude-hook requires an originating tab")
         }
-        return try resolveSurfaceId(raw, workspaceId: workspaceId, client: client)
+        let ref = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ref.isEmpty, isUUID(ref) || isHandleRef(ref) || Int(ref) != nil else {
+            throw CLIError(message: "claude-hook requires a valid originating tab")
+        }
+        return try resolveSurfaceId(ref, workspaceId: workspaceId, client: client)
     }
 
     /// The claude-hook subcommand names the event; stdin supplies the

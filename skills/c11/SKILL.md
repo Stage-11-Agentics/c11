@@ -139,6 +139,29 @@ c11 get-metadata --tab tab:12    # flag + flag_caller_tab_id / suppressed, when 
 `flag` and its caller UUID are absent rather than empty when unset. Parent-side monitoring patterns:
 [references/orchestration.md](references/orchestration.md).
 
+## Workspace folders
+
+Folders are window-local records, not terminals. Start with
+`c11 workspace-group list --json`; create an empty folder with
+`c11 workspace-group create --name "Backend" --json`, then add ungrouped workspaces
+with `c11 workspace-group add --group workspace_group:1 --workspaces workspace:2,workspace:3`.
+Use UUIDs for durable references; `workspace_group:N` is an ephemeral handle, never
+an ordinal to persist. Names can repeat and are not selectors.
+
+All verbs accept `--window <ref|uuid>` and `--json`; omitted window means the caller's
+window. `move --workspace <w> --to-group <g|none>` transfers a member. `delete` and
+`ungroup` detach members without closing tabs or processes; empty folders persist.
+Group pin and workspace pin are independent. Only `focus` changes selection, and it
+never activates the app; focusing an empty folder returns `empty_group`.
+
+`c11 reorder-workspaces --order workspace:3,workspace:1 --dry-run --json` predicts a
+partial priority order within the pinned and unpinned segments. Remove `--dry-run`
+to apply against current state. Membership and folder order stay unchanged.
+`tree --all` shows folders and each member once, even when collapsed; its JSON keeps
+flat `windows[].workspaces`, adds `workspace_groups`, and adds workspace `group_id`.
+Use `c11 --id-format both … --json` when you need UUIDs and refs together.
+Full verbs, errors and ordering: [API reference](references/api.md#workspace-groups-and-batch-order).
+
 ## SSH workspaces
 
 `c11 ssh <host>` opens a remote shell in a workspace. Remote-to-local c11 commands
@@ -156,6 +179,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | tab-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
+| workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, the conversation store & resume | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |
 | drive the embedded browser (validate UI without leaving c11) | [c11-browser skill](../c11-browser/SKILL.md) |

@@ -1,0 +1,127 @@
+{
+  "provenance": {
+    "type": "observed-native-provider-capture",
+    "source_head": "75bea7705649c478649033335d789a0bcceab558",
+    "app_version": "c11 0.67.0 (131)",
+    "provider_version": "2.1.287 (Claude Code)",
+    "scenario": "Bypass-started session enters plan mode, waits for manual approval, then replies APPROVED",
+    "fixture_scope": "Sanitized structural hooks; no tool bodies or real identifiers"
+  },
+  "hooks": [
+    {
+      "t_ns": 1790919932063112000,
+      "source": "claude-hook",
+      "hook_event_name": "SessionStart",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919932584024000,
+      "source": "claude-hook",
+      "hook_event_name": "UserPromptSubmit",
+      "permission_mode": "bypassPermissions",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919935316351000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "bypassPermissions",
+      "tool_name": "EnterPlanMode",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919935355321000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "plan",
+      "tool_name": "EnterPlanMode",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919937428142000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "plan",
+      "tool_name": "Write",
+      "session_id": "sess-1",
+      "approved_reply": false,
+      "write_inside_temporary_runtime": true
+    },
+    {
+      "t_ns": 1790919937483536000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "plan",
+      "tool_name": "Write",
+      "session_id": "sess-1",
+      "approved_reply": false,
+      "write_inside_temporary_runtime": true
+    },
+    {
+      "t_ns": 1790919938524513000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "plan",
+      "tool_name": "ExitPlanMode",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919938562346000,
+      "source": "claude-hook",
+      "hook_event_name": "PermissionRequest",
+      "permission_mode": "plan",
+      "tool_name": "ExitPlanMode",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919941903911000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "bypassPermissions",
+      "tool_name": "ExitPlanMode",
+      "session_id": "sess-1",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790919942963666000,
+      "source": "claude-hook",
+      "hook_event_name": "Stop",
+      "permission_mode": "bypassPermissions",
+      "session_id": "sess-1",
+      "stop_hook_active": false,
+      "approved_reply": true
+    }
+  ],
+  "before_approval": {
+    "label": "before-plan-approval",
+    "t_ns": 1790919938584432000,
+    "unread": 0,
+    "activity": "working",
+    "lifecycle_state": "throttled",
+    "derived_mark": "working"
+  },
+  "after_approval": {
+    "label": "after-approved-stop",
+    "t_ns": 1790919943173564000,
+    "unread": 0,
+    "activity": "idle",
+    "lifecycle_state": "throttled",
+    "derived_mark": "idle"
+  },
+  "observed": {
+    "notification_hook_emitted": false,
+    "waiting_oracle_observed": false,
+    "approval_sent": true,
+    "approved_reply": true
+  },
+  "intended": {
+    "before_approval_unread": 1,
+    "before_approval_mark": "waiting"
+  }
+}

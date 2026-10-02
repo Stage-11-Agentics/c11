@@ -380,7 +380,7 @@ final class AgentLaunchOverlayCompositionTests: XCTestCase {
         XCTAssertTrue(fullRecipe.contains("--model sonnet"))
         XCTAssertTrue(fullRecipe.contains("--effort high"))
         XCTAssertTrue(fullRecipe.contains("--append-system-prompt 'be terse'"))
-        XCTAssertTrue(fullRecipe.hasSuffix("'go'"), "claude initial prompt rides as a trailing positional")
+        XCTAssertFalse(fullRecipe.hasSuffix("'go'"), "initial bodies are staged by the launch caller")
         // blank-slate emits the empty replace flag.
         XCTAssertTrue(blankSlate.contains("--system-prompt ''"))
         // sanity: the base isn't accidentally mutated by any render.

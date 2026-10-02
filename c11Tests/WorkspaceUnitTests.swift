@@ -2417,6 +2417,105 @@ final class WorkspaceTabGitBranchTests: XCTestCase {
 
 
 final class WorkspaceMountPolicyTests: XCTestCase {
+    // B012: exercise the production admission calculation, not a caller-supplied cap.
+    func testTwentyPendingLoadsGetOneBackgroundSlot() {
+        let ids = (0..<21).map { _ in UUID() }
+        let pending = Set(ids.dropFirst())
+        let next = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: ids, selected: ids[0], retiring: nil,
+            pendingBackgroundIds: pending, debugPinnedIds: [],
+            orderedWorkspaceIds: ids, isCycleHot: false
+        )
+        XCTAssertEqual(next, [ids[0], ids[1]])
+        XCTAssertEqual(pending.count, 20, "Admission must not drop queued creation requests")
+    }
+
+    func testBackgroundSlotSurvivesReorderingAndRealHandoff() {
+        let ids = (0..<22).map { _ in UUID() }
+        let next = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: [ids[1], ids[20]], selected: ids[0], retiring: ids[1],
+            pendingBackgroundIds: Set(ids), debugPinnedIds: [],
+            orderedWorkspaceIds: ids, isCycleHot: true
+        )
+        XCTAssertEqual(next, [ids[0], ids[1], ids[20]])
+    }
+
+    func testSelectedRetiringAndDeletedPendingIDsDoNotConsumeBackgroundSlot() {
+        let ids = (0..<3).map { _ in UUID() }
+        let deleted = UUID()
+        let next = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: [deleted, ids[0]], selected: ids[0], retiring: ids[0],
+            pendingBackgroundIds: Set(ids + [deleted]), debugPinnedIds: [],
+            orderedWorkspaceIds: ids, isCycleHot: false
+        )
+        XCTAssertEqual(next, [ids[0], ids[1]])
+    }
+
+    func testDeletedSelectionCannotDisplacePendingAdmission() {
+        let old = UUID()
+        let pending = UUID()
+        let next = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: [old], selected: UUID(), retiring: nil,
+            pendingBackgroundIds: [pending], debugPinnedIds: [],
+            orderedWorkspaceIds: [old, pending], isCycleHot: false
+        )
+        XCTAssertEqual(next, [pending])
+    }
+
+    func testSixtyPendingLoadsPromoteAfterCompletionOrTimeoutThenSettle() {
+        let ids = (0..<61).map { _ in UUID() }
+        var pending = Set(ids.dropFirst())
+        var current = [ids[0]]
+        var admitted: [UUID] = []
+        // Both ready and timeout completion remove the ID from the same queue.
+        while !pending.isEmpty {
+            current = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+                current: current, selected: ids[0], retiring: nil,
+                pendingBackgroundIds: pending, debugPinnedIds: [],
+                orderedWorkspaceIds: ids, isCycleHot: false
+            )
+            XCTAssertEqual(current.count, 2)
+            guard current.count == 2, pending.remove(current[1]) != nil else {
+                return XCTFail("Completed body prevented queue promotion")
+            }
+            admitted.append(current[1])
+        }
+        XCTAssertEqual(admitted, Array(ids.dropFirst()))
+        let settled = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: current, selected: ids[0], retiring: nil,
+            pendingBackgroundIds: pending, debugPinnedIds: [],
+            orderedWorkspaceIds: ids, isCycleHot: false
+        )
+        XCTAssertEqual(settled, [ids[0]])
+    }
+
+    func testSwitchingThroughSixtyRestoredWorkspacesAlwaysRetainsSelectedAndHandoff() {
+        let ids = (0..<60).map { _ in UUID() }
+        var current: [UUID] = [] // Cold restore has no mounted cache.
+        var retiring: UUID?
+        for selected in ids {
+            current = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+                current: current, selected: selected, retiring: retiring,
+                pendingBackgroundIds: Set(ids), debugPinnedIds: [],
+                orderedWorkspaceIds: ids, isCycleHot: true
+            )
+            XCTAssertEqual(current.first, selected)
+            XCTAssertLessThanOrEqual(current.count, retiring == nil ? 2 : 3)
+            if let retiring { XCTAssertTrue(current.contains(retiring)) }
+            retiring = selected
+        }
+    }
+
+    func testDebugRetentionStaysOutsideProductionBackgroundAllowance() {
+        let ids = (0..<6).map { _ in UUID() }
+        let next = WorkspaceMountPolicy.nextMountedWorkspaceIds(
+            current: [ids[0]], selected: ids[0], retiring: nil,
+            pendingBackgroundIds: Set(ids), debugPinnedIds: [ids[1], ids[2], UUID()],
+            orderedWorkspaceIds: ids, isCycleHot: false
+        )
+        XCTAssertEqual(next, Array(ids.prefix(4)))
+    }
+
     func testDefaultPolicyMountsOnlySelectedWorkspace() {
         let a = UUID()
         let b = UUID()

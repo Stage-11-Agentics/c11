@@ -8,6 +8,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Environment variables](#environment-variables)
 - [Discovery & state](#discovery--state)
 - [Workspaces, areas, tabs](#workspaces-areas-tabs)
+- [Workspace groups and batch order](#workspace-groups-and-batch-order)
 - [Tab initialization quirk](#tab-initialization-quirk)
 - [Reading & sending](#reading--sending)
 - [Live messages page](#live-messages-page)
@@ -155,7 +156,13 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new tab or a
     # fresh workspace. One command owns the per-agent invocation quirks, model/effort
     # flag syntax, identity-at-birth (env + metadata + title), and prompt delivery;
-    # --json returns the new refs. Canonical reference: docs/launch-agent-reference.md.
+    # Both prompt flags stage a private byte-exact file; only a short file-reading
+    # instruction reaches the shell. The owned copy lives until tab close.
+    # --json returns refs, prompt_file, startup and startup_process. started means
+    # an identified foreground process, not readiness or a prompt-read receipt.
+    # pending means startup was not proven. Post-boot kinds start their 2.5-second
+    # prompt delay after the launcher Return, including late terminal attachment.
+    # Canonical reference: docs/launch-agent-reference.md.
     # --system-prompt-mode append|replace injects the kind's system-prompt flag
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
@@ -267,6 +274,89 @@ This removes the orchestrator habit of prefixing every spawned command with `cd 
 CALLER_AREA=$(c11 identify --tab "$C11_TAB_ID" | grep -o '"area_ref" : "area:[0-9]*"' | head -1 | cut -d'"' -f4)
 c11 new-tab --type terminal --area "$CALLER_AREA"
 ```
+
+## Workspace groups and batch order
+
+All commands below accept `--window <window-ref|uuid>` and `--json`. Omitted window
+uses the caller's window, or the current window outside a c11 terminal. Group
+selectors are UUIDs or ephemeral `workspace_group:N` refs, never names or indexes.
+UUIDs survive restore; ref ordinals carry no persistence promise. Use
+`c11 --id-format both workspace-group list --json` to retain both IDs and refs.
+
+```bash
+c11 workspace-group list --json
+c11 workspace-group create --name "Backend" --json
+c11 workspace-group rename --group workspace_group:1 --name "Services"
+c11 workspace-group add --group workspace_group:1 --workspaces workspace:2,workspace:3
+c11 workspace-group remove --group workspace_group:1 --workspaces workspace:3
+c11 workspace-group move --workspace workspace:2 --to-group workspace_group:2
+c11 workspace-group move --workspace workspace:2 --to-group none
+c11 workspace-group move --workspace workspace:3 --to-group workspace_group:2 --before workspace:2
+c11 workspace-group move --group workspace_group:2 --before workspace_group:1
+c11 workspace-group move --group workspace_group:2 --after workspace_group:1
+c11 workspace-group move --group workspace_group:2 --index 0
+c11 workspace-group set-color --group workspace_group:1 --color '#7C3AED'
+c11 workspace-group set-color --group workspace_group:1 --clear
+c11 workspace-group set-icon --group workspace_group:1 --icon server.rack
+c11 workspace-group set-icon --group workspace_group:1 --clear
+c11 workspace-group collapse --group workspace_group:1
+c11 workspace-group expand --group workspace_group:1
+c11 workspace-group pin --group workspace_group:1
+c11 workspace-group unpin --group workspace_group:1
+c11 workspace-group focus --group workspace_group:1
+c11 workspace-group delete --group workspace_group:1
+c11 workspace-group ungroup --group workspace_group:2
+c11 reorder-workspaces --order workspace:3,workspace:1 --dry-run --json
+c11 reorder-workspaces --order workspace:3,workspace:1 --json
+```
+
+Examples illustrate individual verbs against an existing fixture; substitute live
+handles from `list-workspaces` and `workspace-group list`.
+
+- Creating a group creates no workspace or terminal. Empty groups survive last-member
+  removal and close. New workspaces start ungrouped; folders never nest.
+- `add` accepts only ungrouped workspaces. Entire input arrays validate before mutation:
+  duplicates, unknown IDs, already-grouped workspaces and wrong-window IDs fail without
+  a partial change. `remove` requires membership in the named group. Use `move` for a
+  transfer; a relative workspace must belong to the destination. Without `--before`
+  or `--after`, member moves append within the destination's member pin segment.
+- `delete` and `ungroup` both remove the folder record and detach its members, preserving
+  canonical workspace order, pins, tabs and live processes. They never close members.
+- Group pin controls its root position; member pin controls its position inside the
+  group. Neither toggles the other. Group moves clamp within the group's pin segment.
+  Root display order is pinned groups, pinned ungrouped workspaces, unpinned groups,
+  unpinned ungrouped workspaces. Members follow the canonical flat workspace order.
+- Only group `focus` may change selection: keep the selected member, otherwise select
+  the first member and expand the group. Empty groups return `empty_group`. No group
+  command activates or raises a macOS window; other verbs preserve selection and focus.
+- Cross-window group operations fail with `wrong_window`. Moving a workspace to another
+  window with `move-workspace-to-window` clears membership and keeps the source folder.
+- `--order` is a nonempty partial priority list. The result is requested pinned,
+  remaining pinned, requested unpinned, remaining unpinned, preserving untouched relative
+  order. Group membership/order and selection are unchanged. Apply publishes one final
+  order. Dry-run is advisory against the current snapshot, not a stale-plan token.
+
+Socket methods are `workspace.group.<verb>` with underscores (`set_color`, `set_icon`),
+and `workspace.reorder_batch`. Parameters: `window_id`; `group_id`; `workspace_ids`
+for add/remove; `workspace_id` and `to_group_id` (null clears) for member move;
+`before_id`/`after_id`/`index` for placement; `name`, `color`, `icon` (null clears a
+property); and `ordered_workspace_ids`, `dry_run` for batch reorder. Text/property
+input is validated; names are trimmed and nonempty, colors normalized hex, icons
+renderable SF Symbols (display fallback `folder.fill`).
+
+Group list returns `workspace_groups` records with `id`, `ref`, `name`, `color`,
+`icon`, `is_collapsed`, `is_pinned`, `member_workspace_ids`, and `member_count`.
+Tree JSON keeps `windows[].workspaces` flat and complete even for collapsed folders,
+adds window `workspace_groups`, and workspace `group_id` (null when ungrouped).
+Text trees show each workspace once under its folder or the window, retain empty
+headers, and mark collapsed groups while still showing members for inspection.
+Older apps keep a flat tree; unsupported group commands fail clearly.
+
+Batch responses contain `window_id`, `dry_run`, `changed`, `final_workspace_ids` and
+per-request from/to indexes. A changed apply emits one `workspace.reordered` event
+with the window and final workspace UUID order; errors, dry-runs and no-ops emit none.
+Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_grouped`,
+`not_member`, `group_not_found`, `workspace_not_found`, `wrong_window`, and `empty_group`.
 
 ## Tab initialization quirk
 
@@ -438,6 +528,20 @@ c11 trigger-flash [--tab <id|ref>]     # Visual flash on a tab
 ```
 
 Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
+
+Claude lifecycle hooks clear only their originating tab's notices. Unknown tab
+attribution preserves existing notices. Bypass AskUserQuestion and ExitPlanMode
+enter waiting from PreToolUse. ExitPlanMode also enters waiting in plan mode,
+which Claude reports after a bypass-started session enters plan mode. A follow-up
+Notification replaces that tab's item.
+Flags appear separately in the enabled menu-bar extra, including suppressed
+flags; routine clear/read controls do not lower them.
+
+The configured Notification Command receives `C11_NOTIFICATION_WORKSPACE_ID`,
+`C11_NOTIFICATION_TAB_ID`, and `C11_NOTIFICATION_KIND` (`routine` or `flag`),
+plus identical `CMUX_NOTIFICATION_*` aliases. Workspace-only notices export an
+empty tab ID. Existing CMUX title/subtitle/body fields remain available. Delivery
+requires authorization and successful macOS banner scheduling.
 
 ## Skill Installation (`c11 skill install`)
 

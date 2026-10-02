@@ -186,6 +186,7 @@ fi
 # authoritative. This preserves causal ordering without turning a stale socket
 # into launch latency.
 codex_notify_config=""
+codex_hook_args=()
 if [[ -n "$c11_bin" ]]; then
     boundary_surface="${CMUX_SURFACE_ID:-}"
     if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
@@ -242,9 +243,44 @@ if [[ -n "$c11_bin" ]]; then
     notify_handler="${notify_handler//\\/\\\\}"
     notify_handler="${notify_handler//\"/\\\"}"
     codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
+
+    # Turn-boundary mailbox drain (C11-257). Codex takes hooks from any config
+    # layer, including these `-c` session flags, but runs a non-managed hook
+    # only when `hooks.state."<key>".trusted_hash` matches the hook's hash, and
+    # it reads that trust state from the session-flags layer too. So both the
+    # hooks and their trust ride in on argv for this process only; nothing is
+    # written under ~/.codex. Key: `/<session-flags>/config.toml:<event>:0:0`.
+    # Hash: sha256 of the compact, key-sorted JSON identity Codex builds in
+    # codex-rs/hooks/src/engine/discovery.rs (`hook_hash`). If a Codex release
+    # changes that identity the hooks show as untrusted and simply do not run.
+    # The dotted `hooks.state."<key>".trusted_hash=` form is mis-split on the
+    # key's `config.toml`, so the state goes in as one inline table.
+    hook_command="'${c11_bin}' mailbox recv --drain --hook-format codex"
+    hook_command="${hook_command//\\/\\\\}"
+    hook_command="${hook_command//\"/\\\"}"
+    codex_hook_hash() {
+        printf '{"event_name":"%s","hooks":[{"async":false,"command":"%s","timeout":10,"type":"command"}]}' \
+            "$1" "$hook_command" | /usr/bin/shasum -a 256 | /usr/bin/cut -d' ' -f1
+    }
+    prompt_hash="$(codex_hook_hash user_prompt_submit)"
+    stop_hash="$(codex_hook_hash stop)"
+    # A `'` in the bundle path would break the shell quoting; skip the hooks.
+    if [[ "$c11_bin" != *"'"* && -n "$prompt_hash" && -n "$stop_hash" ]]; then
+        hook_entry="[{hooks=[{type=\"command\",command=\"${hook_command}\",timeout=10}]}]"
+        codex_hook_args=(
+            -c "hooks.UserPromptSubmit=${hook_entry}"
+            -c "hooks.Stop=${hook_entry}"
+            -c "hooks.state={\"/<session-flags>/config.toml:user_prompt_submit:0:0\"={trusted_hash=\"sha256:${prompt_hash}\"},\"/<session-flags>/config.toml:stop:0:0\"={trusted_hash=\"sha256:${stop_hash}\"}}"
+        )
+    fi
 fi
 
+codex_args=()
 if [[ -n "$codex_notify_config" ]]; then
-    exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+    codex_args+=(-c "$codex_notify_config")
 fi
-exec "$REAL_CODEX" "$@"
+if [[ "${C11_MAILBOX_HOOK_DRAIN:-1}" != "0" && ${#codex_hook_args[@]} -gt 0 ]]; then
+    codex_args+=("${codex_hook_args[@]}")
+fi
+# `${a[@]+...}`: bash 3.2 under `set -u` rejects expanding an empty array.
+exec "$REAL_CODEX" ${codex_args[@]+"${codex_args[@]}"} "$@"

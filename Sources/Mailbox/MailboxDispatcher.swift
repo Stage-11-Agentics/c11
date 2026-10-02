@@ -127,6 +127,13 @@ final class MailboxDispatcher {
         watcher.triggerImmediateScan()
         self.watcher = watcher
 
+        // C11-257: record the deliveries CLI drains leave in `_receipts/`.
+        MailboxReceiptRecorder.shared.watch(
+            workspaceId: workspaceId,
+            mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId),
+            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        )
+
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(
             deadline: .now() + Self.gcSweepInterval,
@@ -141,6 +148,9 @@ final class MailboxDispatcher {
     }
 
     func stop() {
+        if watcher != nil {
+            MailboxReceiptRecorder.shared.unwatch(workspaceId: workspaceId)
+        }
         watcher?.stop()
         watcher = nil
         gcTimer?.cancel()

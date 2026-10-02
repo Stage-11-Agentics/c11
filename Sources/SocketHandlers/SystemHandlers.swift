@@ -260,6 +260,9 @@ extension TerminalController {
             "browser.input_keyboard",
             "browser.input_touch",
         ]
+        if CapabilityFeatures.current.supports(.windowResize) {
+            methods.append("window.resize")
+        }
 #if DEBUG
         methods.append(contentsOf: [
             "debug.shortcut.set",

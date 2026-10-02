@@ -516,10 +516,12 @@
 		C1130600A1B2C3D4E5F60702 /* ClaudeStopTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */; };
 		C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */; };
 		C11284000000000000000002 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
+		C11286000000000000000002 /* WindowResizePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11286000000000000000001 /* WindowResizePlan.swift */; };
 		C11284000000000000000003 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
 		C11284000000000000000012 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
 		C11284000000000000000013 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
 		C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000021 /* CapabilityFeaturesTests.swift */; };
+		C11286000000000000000102 /* WindowResizePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11286000000000000000101 /* WindowResizePlanTests.swift */; };
 		C11284000000000000000032 /* BundledSkillTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000031 /* BundledSkillTests.swift */; };
 		C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */; };
 		C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */; };
@@ -1080,8 +1082,10 @@
 		C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscript.swift; sourceTree = "<group>"; };
 		C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscriptTests.swift; sourceTree = "<group>"; };
 		C11284000000000000000001 /* CapabilityFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeatures.swift; sourceTree = "<group>"; };
+		C11286000000000000000001 /* WindowResizePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowResizePlan.swift; sourceTree = "<group>"; };
 		C11284000000000000000011 /* BundledSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkill.swift; sourceTree = "<group>"; };
 		C11284000000000000000021 /* CapabilityFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeaturesTests.swift; sourceTree = "<group>"; };
+		C11286000000000000000101 /* WindowResizePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowResizePlanTests.swift; sourceTree = "<group>"; };
 		C11284000000000000000031 /* BundledSkillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillTests.swift; sourceTree = "<group>"; };
 		C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInitialInput.swift; sourceTree = "<group>"; };
 		C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInitialInputTests.swift; sourceTree = "<group>"; };
@@ -1256,6 +1260,7 @@
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
 				C11284000000000000000011 /* BundledSkill.swift */,
 				C11284000000000000000001 /* CapabilityFeatures.swift */,
+				C11286000000000000000001 /* WindowResizePlan.swift */,
 				C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */,
 				C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */,
 				C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */,
@@ -1627,6 +1632,7 @@
 				C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */,
 				C11284000000000000000031 /* BundledSkillTests.swift */,
 				C11284000000000000000021 /* CapabilityFeaturesTests.swift */,
+				C11286000000000000000101 /* WindowResizePlanTests.swift */,
 				C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */,
 				C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */,
 				C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */,
@@ -1942,6 +1948,7 @@
 				C11259000000000000000302 /* WorkspaceGroupTests.swift in Sources */,
 				C11284000000000000000032 /* BundledSkillTests.swift in Sources */,
 				C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */,
+				C11286000000000000000102 /* WindowResizePlanTests.swift in Sources */,
 				2BA0A65D723C9E1F886F326D /* AgentRestartRegistryTests.swift in Sources */,
 				A11C0DE0000000000040051F /* UpdateInstallerFailureMappingTests.swift in Sources */,
 				8B6BA07B09D5E9E01F141A44 /* BrowserChromeSnapshotTests.swift in Sources */,
@@ -2097,6 +2104,7 @@
 				C11259000000000000000002 /* WorkspaceGroup.swift in Sources */,
 				C11284000000000000000012 /* BundledSkill.swift in Sources */,
 				C11284000000000000000002 /* CapabilityFeatures.swift in Sources */,
+				C11286000000000000000002 /* WindowResizePlan.swift in Sources */,
 				A5001001 /* c11App.swift in Sources */,
 				A5001002 /* ContentView.swift in Sources */,
 				E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,

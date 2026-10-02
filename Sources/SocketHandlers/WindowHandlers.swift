@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CryptoKit
 import Foundation
+import CoreFoundation
 import Bonsplit
 import WebKit
 
@@ -24,6 +25,11 @@ extension TerminalController {
             return v2Result(id: id, self.v2WindowCreate(params: params))
         case "window.close":
             return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WindowClose(params: params))
+        case "window.resize":
+            guard CapabilityFeatures.current.supports(.windowResize) else {
+                return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+            }
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2WindowResize(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
@@ -92,6 +98,45 @@ extension TerminalController {
             "window_id": windowId.uuidString,
             "window_ref": v2Ref(kind: .window, uuid: windowId)
         ])
+    }
+
+    private func v2WindowResize(params: [String: Any]) -> V2CallResult {
+        guard let windowId = v2UUID(params, "window_id") else {
+            return .err(code: "invalid_params", message: String(localized: "socket.error.window_id", defaultValue: "Missing or invalid window_id"), data: nil)
+        }
+        func dimension(_ key: String) throws -> CGFloat? {
+            guard let raw = params[key] else { return nil }
+            guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite else {
+                throw NSError(domain: "window.resize", code: 1)
+            }
+            return CGFloat(number.doubleValue)
+        }
+        let width: CGFloat?
+        let height: CGFloat?
+        do {
+            width = try dimension("width")
+            height = try dimension("height")
+        } catch {
+            return .err(code: "invalid_params", message: String(localized: "socket.error.window_resize_params", defaultValue: "Width and height must be finite numbers."), data: nil)
+        }
+        let result = v2MainSync { AppDelegate.shared?.resizeMainWindow(windowId: windowId, width: width, height: height) }
+        switch result {
+        case .success(let applied):
+            return .ok([
+                "window_id": windowId.uuidString,
+                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "requested": ["width": width.map { $0 as Any } ?? NSNull(), "height": height.map { $0 as Any } ?? NSNull()],
+                "applied": ["width": applied.frame.width, "height": applied.frame.height],
+                "origin": ["x": applied.frame.origin.x, "y": applied.frame.origin.y],
+                "top_left": ["x": applied.frame.origin.x, "y": applied.frame.maxY],
+                "clamped": applied.clamped,
+                "changed": applied.changed
+            ])
+        case .failure(.fullscreen):
+            return .err(code: "invalid_state", message: String(localized: "socket.error.window_fullscreen", defaultValue: "That window is fullscreen. resize-window does not enter or leave fullscreen."), data: nil)
+        case .failure(.notFound), nil:
+            return .err(code: "not_found", message: String(localized: "socket.error.window_not_found", defaultValue: "Window not found"), data: ["window_id": windowId.uuidString])
+        }
     }
 
     private func v2WindowClose(params: [String: Any]) -> V2CallResult {

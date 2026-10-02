@@ -393,6 +393,17 @@ final class AreaInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
     }
 
+    func testConfirmCardDisplayFallbackMatchesCancelKeyRoutingFallback() {
+        let runtime = AreaInteractionRuntime()
+        let panelId = UUID()
+
+        XCTAssertEqual(
+            runtime.confirmSelectionForDisplay(panelId: panelId),
+            .cancel,
+            "A temporarily missing selection must not highlight confirm while Return defaults to cancel"
+        )
+    }
+
     func testStandardConfirmStartsOnItsConfirmButton() {
         let runtime = AreaInteractionRuntime()
         let panelId = UUID()

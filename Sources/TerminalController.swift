@@ -5905,8 +5905,15 @@ class TerminalController {
     func closeWindow(_ arg: String) -> String {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let windowId = UUID(uuidString: trimmed) else { return "ERROR: Invalid window id" }
-        let ok = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? false }
-        return ok ? "OK" : "ERROR: Window not found"
+        let result = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? .notFound }
+        switch result {
+        case .closed:
+            return "OK"
+        case .invalidState:
+            return "ERROR: invalid_state: Window has an attached sheet"
+        case .notFound:
+            return "ERROR: Window not found"
+        }
     }
 
     func moveWorkspaceToWindow(_ args: String) -> String {

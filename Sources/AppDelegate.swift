@@ -6350,11 +6350,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    enum MainWindowCloseResult {
+        case closed
+        case notFound
+        case invalidState
+    }
+
     /// Socket `window.close`: an agent asked for this exact window, so no prompt.
-    func closeMainWindow(windowId: UUID) -> Bool {
-        guard let window = windowForMainWindowId(windowId) else { return false }
+    func closeMainWindow(windowId: UUID) -> MainWindowCloseResult {
+        guard let window = windowForMainWindowId(windowId) else { return .notFound }
+        guard window.attachedSheet == nil else { return .invalidState }
         closeMainWindowWithoutPrompt(window)
-        return true
+        return .closed
     }
 
     // MARK: - Main window close guard
@@ -13531,7 +13538,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
-        mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
         if !isTerminatingApp,
            !closesUnansweredResumePicker,
            mainWindowContexts.count == 1,

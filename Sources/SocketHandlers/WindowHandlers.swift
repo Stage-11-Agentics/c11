@@ -98,16 +98,24 @@ extension TerminalController {
         guard let windowId = v2UUID(params, "window_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid window_id", data: nil)
         }
-        let ok = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? false }
-        return ok
-            ? .ok([
+        let result = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? .notFound }
+        switch result {
+        case .closed:
+            return .ok([
                 "window_id": windowId.uuidString,
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ])
-            : .err(code: "not_found", message: "Window not found", data: [
+        case .invalidState:
+            return .err(code: "invalid_state", message: "Window has an attached sheet", data: [
                 "window_id": windowId.uuidString,
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
             ])
+        case .notFound:
+            return .err(code: "not_found", message: "Window not found", data: [
+                "window_id": windowId.uuidString,
+                "window_ref": v2Ref(kind: .window, uuid: windowId)
+            ])
+        }
     }
 
 }

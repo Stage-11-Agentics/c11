@@ -916,7 +916,246 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
         XCTAssertEqual(NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: 1), "1 unread notification")
         XCTAssertEqual(NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: 2), "2 unread notifications")
     }
+
+    func testFlagWithNoRoutineUnreadHasSeparateExactTarget() {
+        let flag = TabAttentionSnapshot(
+            workspaceId: UUID(), surfaceId: UUID(), flagReason: "Choose the migration",
+            flagRaisedAt: Date(), suppressed: true
+        )
+        let snapshot = NotificationMenuSnapshotBuilder.make(notifications: [], flags: [flag])
+
+        XCTAssertEqual(snapshot.unreadCount, 0)
+        XCTAssertFalse(snapshot.hasNotifications)
+        XCTAssertTrue(snapshot.recentNotifications.isEmpty)
+        XCTAssertEqual(snapshot.flags, [flag])
+        XCTAssertTrue(snapshot.stateHintTitle.contains("1 flagged tab"))
+    }
+
+    func testSuppressedUnflaggedNoticesAreQuietWithoutChangingRoutineHistory() {
+        let workspaceId = UUID()
+        let suppressedTab = UUID()
+        let flaggedTab = UUID()
+        let suppressed = TabAttentionSnapshot(
+            workspaceId: workspaceId, surfaceId: suppressedTab, flagReason: nil,
+            flagRaisedAt: nil, suppressed: true
+        )
+        let flagged = TabAttentionSnapshot(
+            workspaceId: workspaceId, surfaceId: flaggedTab, flagReason: "Human action needed",
+            flagRaisedAt: Date(), suppressed: true
+        )
+        let notificationTabs: [UUID?] = [suppressedTab, flaggedTab, nil]
+        let notifications = notificationTabs.map { surfaceId in
+            TerminalNotification(
+                id: UUID(), workspaceId: workspaceId, surfaceId: surfaceId,
+                title: "Completed", subtitle: "", body: "", createdAt: Date(), isRead: false
+            )
+        }
+        let snapshot = NotificationMenuSnapshotBuilder.make(
+            notifications: notifications, flags: [flagged],
+            attentionSnapshots: [suppressed.id: suppressed, flagged.id: flagged]
+        )
+
+        XCTAssertEqual(snapshot.unreadCount, 2)
+        XCTAssertEqual(snapshot.recentNotifications.map(\.id), notifications.dropFirst().map(\.id))
+        XCTAssertEqual(snapshot.flags, [flagged])
+        // The main app menu's default input still shows the complete routine history.
+        let routineSnapshot = NotificationMenuSnapshotBuilder.make(notifications: notifications)
+        XCTAssertEqual(routineSnapshot.unreadCount, 3)
+        XCTAssertEqual(routineSnapshot.recentNotifications.map(\.id), notifications.map(\.id))
+        XCTAssertTrue(routineSnapshot.flags.isEmpty)
+    }
+
+    func testSuppressionIsScopedToExactWorkspaceAndTab() {
+        let surfaceId = UUID()
+        let suppressed = TabAttentionSnapshot(
+            workspaceId: UUID(), surfaceId: surfaceId, flagReason: nil,
+            flagRaisedAt: nil, suppressed: true
+        )
+        let otherWorkspaceNotice = TerminalNotification(
+            id: UUID(), workspaceId: UUID(), surfaceId: surfaceId,
+            title: "Completed", subtitle: "", body: "", createdAt: Date(), isRead: false
+        )
+        let snapshot = NotificationMenuSnapshotBuilder.make(
+            notifications: [otherWorkspaceNotice], attentionSnapshots: [suppressed.id: suppressed]
+        )
+        XCTAssertEqual(snapshot.unreadCount, 1)
+        XCTAssertEqual(snapshot.recentNotifications.map(\.id), [otherWorkspaceNotice.id])
+    }
 }
+
+#if DEBUG
+@MainActor
+final class MenuBarExtraAttentionTests: XCTestCase {
+    private let store = TerminalNotificationStore.shared
+
+    override func tearDown() {
+        store.replaceNotificationsForTesting([])
+        super.tearDown()
+    }
+
+    private func makeController(
+        index: TabAttentionIndex,
+        onOpenFlag: @escaping (TabAttentionSnapshot) -> Void = { _ in },
+        onJump: @escaping () -> Void = {}
+    ) -> MenuBarExtraController {
+        MenuBarExtraController(
+            notificationStore: store,
+            onShowMainWindow: {}, onShowNotifications: {}, onOpenNotification: { _ in },
+            onOpenFlag: onOpenFlag, onJumpToLatestUnread: onJump,
+            onCheckForUpdates: {}, onOpenPreferences: {}, onQuitApp: {}, attentionIndex: index
+        )
+    }
+
+    private func items(_ controller: MenuBarExtraController, action: String) -> [NSMenuItem] {
+        controller.menuForTesting.items.filter { $0.action == NSSelectorFromString(action) }
+    }
+
+    private func waitUntil(_ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return condition()
+    }
+
+    private func invoke(_ controller: MenuBarExtraController, action: String) throws {
+        let item = try XCTUnwrap(items(controller, action: action).first)
+        controller.menuForTesting.performActionForItem(at: controller.menuForTesting.index(of: item))
+    }
+
+    func testLiveIndexRefreshesRaiseReasonChangeLowerAndCloseWithoutRoutineNotice() throws {
+        store.replaceNotificationsForTesting([])
+        let index = TabAttentionIndex()
+        let controller = makeController(index: index)
+        defer { controller.removeFromMenuBar() }
+        let workspaceId = UUID()
+        let surfaceId = UUID()
+        let raisedAt = Date()
+        func publish(_ reason: String?) {
+            index.publish(TabAttentionSnapshot(
+                workspaceId: workspaceId, surfaceId: surfaceId, flagReason: reason,
+                flagRaisedAt: reason == nil ? nil : raisedAt, suppressed: true
+            ))
+        }
+
+        publish("Choose schema")
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").count == 1 })
+        XCTAssertTrue(controller.statusItemTooltipForTesting?.contains("1 flagged tab") == true)
+        XCTAssertTrue(controller.statusItemTooltipForTesting?.contains("Choose schema") == true)
+        XCTAssertTrue(try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first).isEnabled)
+        XCTAssertFalse(try XCTUnwrap(items(controller, action: "markAllReadAction").first).isEnabled)
+        XCTAssertFalse(try XCTUnwrap(items(controller, action: "clearAllAction").first).isEnabled)
+        XCTAssertEqual(try XCTUnwrap(controller.statusItemImageForTesting).size.width, 18)
+        XCTAssertTrue(store.notifications.isEmpty)
+
+        publish("Choose migration")
+        XCTAssertTrue(waitUntil { controller.statusItemTooltipForTesting?.contains("Choose migration") == true })
+        XCTAssertTrue(items(controller, action: "openFlagItemAction:").first?.title.contains("Choose migration") == true)
+        publish(nil)
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").isEmpty })
+        XCTAssertFalse(try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first).isEnabled)
+        publish("Check rollback")
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").count == 1 })
+        index.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").isEmpty })
+        XCTAssertTrue(store.notifications.isEmpty)
+    }
+
+    func testFlagRowsUseExistingOrderAndExactTargetsAndRoutineActionsDoNotLowerFlags() throws {
+        let index = TabAttentionIndex()
+        let newer = TabAttentionSnapshot(
+            workspaceId: UUID(), surfaceId: UUID(), flagReason: "Newer flag",
+            flagRaisedAt: Date(timeIntervalSince1970: 20), suppressed: false
+        )
+        let older = TabAttentionSnapshot(
+            workspaceId: UUID(), surfaceId: UUID(), flagReason: "Older flag",
+            flagRaisedAt: Date(timeIntervalSince1970: 10), suppressed: true
+        )
+        index.publish(newer)
+        index.publish(older)
+        let routine = TerminalNotification(
+            id: UUID(), workspaceId: UUID(), surfaceId: UUID(), title: "Routine completion",
+            subtitle: "", body: "", createdAt: Date(), isRead: false
+        )
+        store.replaceNotificationsForTesting([routine])
+        var opened: TabAttentionSnapshot?
+        var jumpCount = 0
+        let controller = makeController(index: index, onOpenFlag: { opened = $0 }, onJump: { jumpCount += 1 })
+        defer { controller.removeFromMenuBar() }
+
+        let flagRows = items(controller, action: "openFlagItemAction:")
+        XCTAssertEqual(flagRows.count, 2)
+        guard flagRows.count == 2 else { return }
+        XCTAssertTrue(try XCTUnwrap(flagRows.first).title.contains("Older flag"))
+        controller.menuForTesting.performActionForItem(at: controller.menuForTesting.index(of: flagRows[0]))
+        XCTAssertEqual(opened?.workspaceId, older.workspaceId)
+        XCTAssertEqual(opened?.surfaceId, older.surfaceId)
+        controller.menuForTesting.performActionForItem(at: controller.menuForTesting.index(of: flagRows[1]))
+        XCTAssertEqual(opened?.workspaceId, newer.workspaceId)
+        XCTAssertEqual(opened?.surfaceId, newer.surfaceId)
+        XCTAssertEqual(store.notifications.map(\.id), [routine.id])
+        XCTAssertEqual(items(controller, action: "openNotificationItemAction:").count, 1)
+
+        try invoke(controller, action: "markAllReadAction")
+        XCTAssertEqual(store.unreadCount, 0)
+        XCTAssertEqual(index.oldestFlags, [older, newer])
+        try invoke(controller, action: "clearAllAction")
+        XCTAssertTrue(store.notifications.isEmpty)
+        XCTAssertEqual(index.oldestFlags, [older, newer])
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openNotificationItemAction:").isEmpty })
+        XCTAssertTrue(try XCTUnwrap(items(controller, action: "jumpToUnreadAction").first).isEnabled)
+        try invoke(controller, action: "jumpToUnreadAction")
+        XCTAssertEqual(jumpCount, 1)
+    }
+
+    func testLiveSuppressionHidesUnflaggedCompletionAndFlagOverridesIt() {
+        let index = TabAttentionIndex()
+        let workspaceId = UUID()
+        let surfaceId = UUID()
+        let routine = TerminalNotification(
+            id: UUID(), workspaceId: workspaceId, surfaceId: surfaceId,
+            title: "Routine completion", subtitle: "", body: "", createdAt: Date(), isRead: false
+        )
+        store.replaceNotificationsForTesting([routine])
+        let controller = makeController(index: index)
+        defer { controller.removeFromMenuBar() }
+        XCTAssertEqual(items(controller, action: "openNotificationItemAction:").count, 1)
+        index.publish(TabAttentionSnapshot(
+            workspaceId: workspaceId, surfaceId: surfaceId, flagReason: nil,
+            flagRaisedAt: nil, suppressed: true
+        ))
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openNotificationItemAction:").isEmpty })
+        XCTAssertEqual(store.unreadCount, 1)
+        XCTAssertEqual(store.notifications.map(\.id), [routine.id])
+        index.publish(TabAttentionSnapshot(
+            workspaceId: workspaceId, surfaceId: surfaceId, flagReason: "Approve action",
+            flagRaisedAt: Date(), suppressed: true
+        ))
+        XCTAssertTrue(waitUntil { self.items(controller, action: "openFlagItemAction:").count == 1 })
+        XCTAssertEqual(items(controller, action: "openNotificationItemAction:").count, 1)
+        XCTAssertEqual(store.notifications.map(\.id), [routine.id])
+    }
+
+    func testRemovalCancelsAttentionAndNotificationRefreshes() {
+        store.replaceNotificationsForTesting([])
+        let index = TabAttentionIndex()
+        let controller = makeController(index: index)
+        controller.removeFromMenuBar()
+        index.publish(TabAttentionSnapshot(
+            workspaceId: UUID(), surfaceId: UUID(), flagReason: "After removal",
+            flagRaisedAt: Date(), suppressed: false
+        ))
+        store.replaceNotificationsForTesting([TerminalNotification(
+            id: UUID(), workspaceId: UUID(), surfaceId: UUID(), title: "After removal",
+            subtitle: "", body: "", createdAt: Date(), isRead: false
+        )])
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(items(controller, action: "openFlagItemAction:").isEmpty)
+        XCTAssertTrue(items(controller, action: "openNotificationItemAction:").isEmpty)
+    }
+}
+#endif
 
 
 final class MenuBarBuildHintFormatterTests: XCTestCase {
@@ -1083,5 +1322,15 @@ final class MenuBarIconRendererTests: XCTestCase {
 
         XCTAssertEqual(noBadge.size.width, 18, accuracy: 0.001)
         XCTAssertEqual(withBadge.size.width, 18, accuracy: 0.001)
+    }
+
+    func testFlagIndicatorIsVisibleAtZeroUnreadWithoutChangingIconSize() throws {
+        let plain = MenuBarIconRenderer.makeImage(unreadCount: 0)
+        let flag = MenuBarIconRenderer.makeImage(unreadCount: 0, flagCount: 1)
+        let multipleFlagsAndUnread = MenuBarIconRenderer.makeImage(unreadCount: 8, flagCount: 2)
+        XCTAssertEqual(flag.size, NSSize(width: 18, height: 18))
+        XCTAssertEqual(multipleFlagsAndUnread.size, flag.size)
+        XCTAssertNotEqual(try XCTUnwrap(plain.tiffRepresentation), try XCTUnwrap(flag.tiffRepresentation))
+        XCTAssertNotEqual(try XCTUnwrap(flag.tiffRepresentation), try XCTUnwrap(multipleFlagsAndUnread.tiffRepresentation))
     }
 }

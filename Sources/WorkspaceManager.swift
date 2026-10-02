@@ -1197,30 +1197,31 @@ class WorkspaceManager: ObservableObject {
         agentPIDSweepTimer = timer
     }
 
-    private func sweepStaleAgentPIDs() {
+    /// The liveness closure lets the incident test execute the real cleanup
+    /// without a timer or relying on the host's process table.
+    func sweepStaleAgentPIDs(
+        isRunning: (pid_t) -> Bool = { pid in
+            guard pid > 0 else { return false }
+            errno = 0
+            return kill(pid, 0) != -1 || POSIXErrorCode(rawValue: errno) != .ESRCH
+        },
+        notificationStore: TerminalNotificationStore? = nil
+    ) {
+        let store = notificationStore ?? AppDelegate.shared?.notificationStore
         for workspace in workspaces {
             var keysToRemove: [String] = []
             for (key, pid) in workspace.agentPIDs {
-                guard pid > 0 else {
-                    keysToRemove.append(key)
-                    continue
-                }
-                // kill(pid, 0) probes process liveness without sending a signal.
-                // ESRCH = process doesn't exist (stale). EPERM = process exists
-                // but we lack permission (not stale, keep tracking).
-                errno = 0
-                if kill(pid, 0) == -1, POSIXErrorCode(rawValue: errno) == .ESRCH {
+                if !isRunning(pid) {
                     keysToRemove.append(key)
                 }
             }
             if !keysToRemove.isEmpty {
                 for key in keysToRemove {
                     workspace.statusEntries.removeValue(forKey: key)
-                    workspace.agentPIDs.removeValue(forKey: key)
+                    if let tabId = workspace.removeAgentPID(key: key) {
+                        store?.clearNotifications(forWorkspaceId: workspace.id, surfaceId: tabId)
+                    }
                 }
-                // Also clear stale notifications (e.g. "Doing well, thanks!")
-                // left behind when Claude was killed without SessionEnd firing.
-                AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspace.id)
             }
         }
     }

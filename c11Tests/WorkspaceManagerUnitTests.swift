@@ -15,6 +15,79 @@ import UserNotifications
 
 let lastSurfaceCloseShortcutDefaultsKey = "closeWorkspaceOnLastSurfaceShortcut"
 
+@MainActor
+final class AgentPIDAttentionCleanupTests: XCTestCase {
+    func testDeadAttributedPIDClearsOnlyItsTab() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        let sibling = UUID()
+        let store = TerminalNotificationStore.shared
+        defer { store.replaceNotificationsForTesting([]) }
+        store.replaceNotificationsForTesting([notice(workspace.id, caller), notice(workspace.id, sibling)])
+        workspace.registerAgentPID(101, key: "caller", tabId: caller)
+        workspace.statusEntries["caller"] = SidebarStatusEntry(key: "caller", value: "Needs input")
+
+        manager.sweepStaleAgentPIDs(isRunning: { _ in false }, notificationStore: store)
+
+        XCTAssertNil(workspace.agentPIDs["caller"])
+        XCTAssertNil(workspace.statusEntries["caller"])
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: caller))
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: sibling))
+        XCTAssertEqual(store.unreadCount(forWorkspaceId: workspace.id), 1)
+    }
+
+    func testReplacementWithoutAttributionPreservesEveryNotice() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        let store = TerminalNotificationStore.shared
+        defer { store.replaceNotificationsForTesting([]) }
+        store.replaceNotificationsForTesting([notice(workspace.id, caller)])
+        workspace.registerAgentPID(101, key: "caller", tabId: caller)
+        workspace.registerAgentPID(102, key: "caller", tabId: nil)
+
+        manager.sweepStaleAgentPIDs(isRunning: { _ in false }, notificationStore: store)
+
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: caller))
+        XCTAssertNil(workspace.agentPIDs["caller"])
+    }
+
+    func testLivePIDAndUnknownTabPreserveAttention() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        let store = TerminalNotificationStore.shared
+        defer { store.replaceNotificationsForTesting([]) }
+        store.replaceNotificationsForTesting([notice(workspace.id, caller)])
+        workspace.registerAgentPID(101, key: "live", tabId: caller)
+        workspace.registerAgentPID(102, key: "unknown", tabId: UUID())
+
+        manager.sweepStaleAgentPIDs(isRunning: { $0 == 101 }, notificationStore: store)
+
+        XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: caller))
+        XCTAssertEqual(workspace.agentPIDs["live"], 101)
+        XCTAssertNil(workspace.agentPIDs["unknown"])
+    }
+
+    func testResetRemovesPriorPIDAttribution() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let caller = try XCTUnwrap(workspace.focusedPanelId)
+        workspace.registerAgentPID(101, key: "caller", tabId: caller)
+        workspace.clearAgentPIDs()
+        // A legacy writer must not inherit the prior process's tab association.
+        workspace.agentPIDs["caller"] = 101
+        XCTAssertNil(workspace.removeAgentPID(key: "caller"))
+    }
+
+    private func notice(_ workspace: UUID, _ tab: UUID) -> TerminalNotification {
+        TerminalNotification(id: UUID(), workspaceId: workspace, surfaceId: tab,
+                             title: "Synthetic attention", subtitle: "Waiting", body: "",
+                             createdAt: Date(), isRead: false)
+    }
+}
+
 func drainMainQueue() {
     let expectation = XCTestExpectation(description: "drain main queue")
     DispatchQueue.main.async {

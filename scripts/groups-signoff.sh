@@ -5,6 +5,7 @@ set -euo pipefail
 # writer: H1-H3 remain null until Atin records them outside the harness.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+PYTHON="${PYTHON:-python3}"
 TAG=""
 RESULTS_DIR=""
 BASELINE_ARTIFACT=""

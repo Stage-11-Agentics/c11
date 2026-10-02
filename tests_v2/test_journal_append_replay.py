@@ -33,7 +33,7 @@ def main():
         bundle = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleIdentifier']
         env['CMUX_BUNDLE_ID'] = bundle
         journal_dir = Path.home() / 'Library/Application Support/c11/journal' / bundle
-        session = 'synthetic-journal-' + uuid.uuid4().hex
+        session = str(uuid.uuid4())
 
         def hook(event, fields=None):
             payload = {'session_id': session, **(fields or {})}

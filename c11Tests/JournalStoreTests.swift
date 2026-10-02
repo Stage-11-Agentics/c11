@@ -61,7 +61,7 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try store.current(owner: ask.owner!)?.phase, .blocked)
     }
 
-    // Protected baseline capacity fails transactionally without an orphan receipt.
+    // Restart replay: multiple offline records are historical until this run admits live evidence.
     func testRestartDrainsMultipleHistoricalChangesWithoutInheritingLivePriority() throws {
         let start = JournalTestData.draft(.turnStarted)
         var store: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })

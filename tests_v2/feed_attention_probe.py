@@ -98,6 +98,16 @@ class FeedProbe(Probe):
         jump(flagged, 'Configured shortcut chooses flag before older ask')
         self.rpc('flag.lower', {'tab_id': flagged, 'by': 'operator'})
         self.eventually(lambda: '0 flags · 2 open asks' in str(self.status()['help']), 'Suppressed lowered ask stayed eligible')
+        closed = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal', 'focus': False})['tab_id']
+        self.rpc('flag.raise', {'tab_id': closed, 'reason': 'Synthetic closed target', 'by': 'operator'})
+        self.rpc('tab.close', {'workspace_id': self.workspace, 'tab_id': closed})
+        before_failed_open = self.rpc('system.identify')['focused']
+        try:
+            self.rpc('feed.open', {'workspace_id': self.workspace, 'tab_id': closed})
+            raise AssertionError('Closed Feed target unexpectedly opened')
+        except RuntimeError as error:
+            self.check('unavailable' in str(error), 'Closed Feed target returns unavailable')
+        self.check(self.rpc('system.identify')['focused'] == before_failed_open, 'Closed Feed target never redirects selection')
         jump(older, 'Configured shortcut chooses oldest eligible ask')
 
         def resolve(tab):
@@ -121,7 +131,15 @@ class FeedProbe(Probe):
         self.check(self.ui('foreground') == finder, 'Feed/flag/notification updates never activate c11')
         self.check(self.rpc('system.identify')['focused'] == selection, 'Updates preserve in-app selection')
         self.rpc('flag.lower', {'tab_id': flagged, 'by': 'operator'})
+        completion_session = str(uuid.uuid4())
+        self.rpc('conversation.push', {'tab_id': completion, 'kind': 'claude-code', 'id': completion_session, 'source': 'hook', 'state': 'alive'})
+        self.rpc('agent.event.append', {'event': dict(schema_version=1, event_id=str(uuid.uuid4()),
+            kind='agent.turn.completed', emitted_at_ms=int(time.time() * 1000), tab_id=completion,
+            workspace_id=self.workspace, session_id=completion_session, agent_kind='claude-code', source='hook',
+            adapter='claude_hook', native_event='Stop')})
         self.eventually(lambda: not self.rpc('feed.list')['rows'], 'Suppressed ask remained in jump prefix')
+        self.check(any(r['tab_id'] == completion and r['kind'] == 'turn_end' and r['blocking'] is False
+                       for r in self.rpc('feed.list', {'scope': 'all'})['rows']), 'Finished turn is not a blocking ask')
         jump(completion, 'Completion-only unread tail remains reachable oldest first')
         self.eventually(lambda: all(n['is_read'] for n in self.rpc('notification.list')['notifications'] if n.get('tab_id') == completion),
                         'Successful unread-tail jump did not mark exact notification read')

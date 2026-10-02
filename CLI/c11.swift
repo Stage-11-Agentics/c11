@@ -18211,7 +18211,6 @@ struct CMUXCLI {
           display-message [-p|--print] <text>
 
           markdown [open] <path>             (open markdown file in formatted viewer tab with live reload)
-          mailbox <send|recv|trace|tail|...>  durable agent-to-agent messaging
 
           messages view                         (open the live local agent-messages page)
           mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)

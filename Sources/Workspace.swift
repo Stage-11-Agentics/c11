@@ -249,6 +249,7 @@ extension Workspace {
             stableDefaultTitle: stableDefaultTitle,
             customColor: customColor,
             isPinned: isPinned,
+            groupId: groupId,
             currentDirectory: currentDirectory,
             rootDirectory: rootDirectory,
             rootAdoptionArmed: rootAdoptionArmed,
@@ -318,6 +319,7 @@ extension Workspace {
         setCustomTitle(snapshot.customTitle)
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
+        groupId = snapshot.groupId
         metadata = snapshot.metadata ?? [:]
 
         // Tier 1 Phase 3: restore `statusEntries` from the snapshot, stamping
@@ -4754,6 +4756,7 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var title: String
     @Published var customTitle: String?
     @Published var isPinned: Bool = false
+    @Published var groupId: UUID? = nil
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
     /// Stable project-level cwd. Every new terminal surface in the workspace

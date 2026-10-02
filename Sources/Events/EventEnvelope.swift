@@ -46,6 +46,7 @@ struct EventEnvelope {
         case surfaceCreated = "surface.created"
         case surfaceClosed = "surface.closed"
         case workspaceSelected = "workspace.selected"
+        case workspaceReordered = "workspace.reordered"
         case metadataChanged = "metadata.changed"
         case livenessDerived = "liveness.derived"
         case waitingEntered = "waiting.entered"

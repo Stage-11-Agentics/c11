@@ -213,11 +213,12 @@ def _wait_for_inbox(
     *,
     state_root: Path,
     workspace_id: str,
-    receiver: str,
+    receiver_tab_id: str,
     envelope_id: str,
     timeout_s: float = 5.0,
 ) -> Path:
-    inbox = state_root / "workspaces" / workspace_id / "mailboxes" / receiver
+    # Inboxes are keyed on the recipient tab's lowercased UUID, not its title.
+    inbox = state_root / "workspaces" / workspace_id / "mailboxes" / receiver_tab_id.lower()
     target = inbox / f"{envelope_id}.msg"
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -232,10 +233,10 @@ def _create_workspace_with_surfaces(
     *,
     sender_name: str,
     receiver_name: str,
-) -> str:
+) -> tuple[str, str]:
     """Create an isolated workspace, name the current surface as sender, and
     add a receiver surface with `mailbox.delivery: silent`. Returns the
-    workspace id.
+    workspace id and the receiver tab id.
 
     The parity test uses two workspaces so both sender paths can pin the
     same envelope id without colliding in a shared outbox or triggering
@@ -279,7 +280,7 @@ def _create_workspace_with_surfaces(
             "source": "explicit",
         },
     )
-    return workspace_id
+    return workspace_id, receiver_id
 
 
 def main() -> int:
@@ -293,10 +294,10 @@ def main() -> int:
         # path writes into workspace_raw. This lets us pin the same envelope
         # id + ts on both paths and assert cli_inbox_bytes == raw_inbox_bytes
         # directly — the drift-enforcement lock per design doc §3 rule #6.
-        workspace_cli = _create_workspace_with_surfaces(
+        workspace_cli, receiver_cli = _create_workspace_with_surfaces(
             c, sender_name=sender_name, receiver_name=receiver_name
         )
-        workspace_raw = _create_workspace_with_surfaces(
+        workspace_raw, receiver_raw = _create_workspace_with_surfaces(
             c, sender_name=sender_name, receiver_name=receiver_name
         )
 
@@ -349,7 +350,7 @@ def main() -> int:
             cli_inbox_path = _wait_for_inbox(
                 state_root=STATE_ROOT,
                 workspace_id=workspace_cli,
-                receiver=receiver_name,
+                receiver_tab_id=receiver_cli,
                 envelope_id=pinned_id,
             )
             cli_inbox_bytes = cli_inbox_path.read_bytes()
@@ -371,7 +372,7 @@ def main() -> int:
             raw_inbox_path = _wait_for_inbox(
                 state_root=STATE_ROOT,
                 workspace_id=workspace_raw,
-                receiver=receiver_name,
+                receiver_tab_id=receiver_raw,
                 envelope_id=pinned_id,
             )
             raw_inbox_bytes = raw_inbox_path.read_bytes()

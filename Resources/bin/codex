@@ -71,6 +71,13 @@ if [[ "${1:-}" == "__c11-notify" ]]; then
     exit 0
 fi
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# before any exec so a parent's marker is never passed on. The `__c11-notify`
+# callback above runs before this on purpose: it is a child of the
+# interactive Codex and must report that Codex's own marker.
+unset C11_AGENT_INTERACTIVE_PID
+
 # Find the real codex binary, skipping our own directory.
 find_real_codex() {
     local self_dir
@@ -122,10 +129,18 @@ REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; 
 # terminal_type to "codex" (would lie — the surface isn't an interactive
 # codex session).
 case "${1:-}" in
-    exec|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
+    exec|e|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
         exec "$REAL_CODEX" "$@"
         ;;
 esac
+
+# Mark this launch as an interactive agent only when it reads and writes
+# its terminal. c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it), and only while that PID's
+# process group owns the terminal.
+if [[ -t 0 && -t 1 ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
 
 # Resolve the c11 binary (bundle-relative first, fall back to PATH so a
 # misconfigured bundle still works in dev builds).

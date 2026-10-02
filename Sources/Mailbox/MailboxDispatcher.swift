@@ -172,6 +172,11 @@ final class MailboxDispatcher {
         )
     }
 
+    /// The stdin push could not claim an envelope; it stays in the inbox.
+    func logStdinClaimFailed(id: String, recipient: String, errno code: Int32) {
+        log.append(.claimFailed(id: id, recipient: recipient, errno: code))
+    }
+
     // MARK: - Stale-tmp GC
 
     /// Deletes dot-prefixed `.tmp` files in `_outbox/` older than
@@ -368,10 +373,10 @@ final class MailboxDispatcher {
         envelopeBytes: Data
     ) {
         do {
-            let inbox = try MailboxLayout.inboxURL(
+            let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
                 workspaceId: workspaceId,
-                tabName: recipient.name
+                tabId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
                 at: inbox,

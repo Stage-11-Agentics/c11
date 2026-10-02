@@ -55,6 +55,10 @@ final class MailboxDispatchLog {
         case cleaned(id: String)
         case replayed(id: String)
         case gc(tempFilesRemoved: Int)
+        /// The stdin push could not claim an envelope from the inbox; it
+        /// stays in the inbox root and nothing was typed. Logged as a
+        /// `handler` event (outcome `claim_failed`) carrying the errno.
+        case claimFailed(id: String, recipient: String, errno: Int32)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -74,13 +78,15 @@ final class MailboxDispatchLog {
     /// C11-144 delivery-safety lifecycle (all emitted as `handler` events with
     /// handler="stdin" so a buffered message's full path is visible in
     /// `c11 mailbox trace <id>` — never a silent drop):
-    /// - `buffered`: recipient shell was busy (`commandRunning`/`unknown`);
-    ///   the framed block was queued to flush at the next prompt.
-    /// - `flushed`: a previously-buffered block was injected once the shell
-    ///   returned to `promptIdle`.
-    /// - `expired`: a buffered block aged past the freshness window before the
-    ///   shell went idle; dropped from the buffer (the filesystem inbox +
-    ///   `recv --drain` floor still holds it).
+    /// - `buffered`: the recipient was not ready (an agent mid-turn, an
+    ///   operator draft, or no interactive agent reading the terminal); the
+    ///   framed block was queued for the agent's next prompt edge.
+    /// - `flushed`: a previously-buffered block was injected at the agent's
+    ///   next prompt edge.
+    /// - `expired`: a buffered block dropped because no agent was left to
+    ///   read it (the tab returned to a shell prompt, or the agent exited or
+    ///   lost the terminal); the filesystem inbox + `recv --drain` floor
+    ///   still holds it.
     /// - `evicted`: a buffered block was dropped because the per-surface buffer
     ///   cap was exceeded (oldest-first; inbox floor still holds it).
     ///
@@ -89,6 +95,11 @@ final class MailboxDispatchLog {
     enum HandlerOutcome: String {
         case ok, timeout, eio, closed
         case buffered, flushed, expired, evicted
+        /// The stdin push found the envelope already claimed (a `recv
+        /// --drain` took it first), so nothing was typed.
+        case skipped
+        /// The push could not claim the envelope (see `Event.claimFailed`).
+        case claimFailed = "claim_failed"
     }
 
     // MARK: - File I/O
@@ -164,6 +175,13 @@ final class MailboxDispatchLog {
         case .gc(let removed):
             payload["event"] = "gc"
             payload["temp_files_removed"] = removed
+        case .claimFailed(let id, let recipient, let code):
+            payload["event"] = "handler"
+            payload["id"] = id
+            payload["recipient"] = recipient
+            payload["handler"] = "stdin"
+            payload["outcome"] = HandlerOutcome.claimFailed.rawValue
+            payload["errno"] = Int(code)
         }
 
         guard

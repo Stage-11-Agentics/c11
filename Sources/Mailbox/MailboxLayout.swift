@@ -12,8 +12,15 @@ import Foundation
 ///         _rejected/             (malformed envelopes + sibling .err files)
 ///         blobs/                 (body_ref payloads, v1.1 writers)
 ///         _dispatch.log          (append-only NDJSON, one line per event)
-///         <surface-name>/        (per-recipient inbox)
+///         <tab-uuid>/            (per-recipient inbox, lowercased tab UUID)
 ///             01K3A2B7X8...msg   (pending message)
+///             _read/             (consumed by push or drain; history only)
+///
+/// Inboxes are keyed on the recipient tab's UUID, never its title: a title
+/// can carry `/`, run past a filename's length, or change under a rename.
+/// Titles and `mailbox.address` stay lookups that resolve to tab UUIDs.
+/// Inboxes from older builds were keyed on the raw title; `recvInboxURLs`
+/// still reads such a directory so its unread mail is not stranded.
 ///
 /// See `docs/c11-messaging-primitive-design.md` §3 and
 /// `spec/mailbox-envelope.v1.schema.json` for the envelope format.
@@ -35,6 +42,10 @@ enum MailboxLayout {
     static let rejectedDirectoryName = "_rejected"
     static let blobsDirectoryName = "blobs"
     static let dispatchLogFileName = "_dispatch.log"
+    /// Inside an inbox: envelopes a consumer (stdin push or `recv --drain`)
+    /// has claimed. Renaming into it is the claim; whoever renames first owns
+    /// the message.
+    static let readDirectoryName = "_read"
 
     /// Extension for a fully-written envelope visible to the dispatcher.
     static let envelopeExtension = "msg"
@@ -112,12 +123,56 @@ enum MailboxLayout {
             .appendingPathComponent(dispatchLogFileName, isDirectory: false)
     }
 
-    /// Returns the inbox directory for a given surface name. Rejects names that
-    /// would escape the mailbox tree or produce hidden/unsafe directory entries.
-    static func inboxURL(state: URL, workspaceId: UUID, tabName: String) throws -> URL {
-        try validateSurfaceName(tabName)
+    /// The recipient tab's inbox: `<mailboxes>/<tab-uuid-lowercased>/`.
+    static func inboxURL(state: URL, workspaceId: UUID, tabId: UUID) -> URL {
+        mailboxesRoot(state: state, workspaceId: workspaceId)
+            .appendingPathComponent(inboxDirectoryName(tabId: tabId), isDirectory: true)
+    }
+
+    static func inboxDirectoryName(tabId: UUID) -> String {
+        tabId.uuidString.lowercased()
+    }
+
+    /// The title-keyed inbox older builds wrote. `nil` when the title could
+    /// never have been a directory (it fails `validateSurfaceName`) or names
+    /// one of the tree's own directories (`_outbox`, `blobs`, ...), which
+    /// `recv --drain` must never read as an inbox.
+    static func legacyInboxURL(state: URL, workspaceId: UUID, tabName: String) -> URL? {
+        guard (try? validateSurfaceName(tabName)) != nil,
+              !tabName.hasPrefix("_"),
+              tabName != blobsDirectoryName else { return nil }
         return mailboxesRoot(state: state, workspaceId: workspaceId)
             .appendingPathComponent(tabName, isDirectory: true)
+    }
+
+    /// Inboxes `recv` reads, in order: the canonical UUID inbox (when the
+    /// tab id is known), then the legacy title-keyed inbox when it exists on
+    /// disk and is a different directory.
+    static func recvInboxURLs(
+        state: URL,
+        workspaceId: UUID,
+        tabId: UUID?,
+        tabName: String?,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        var urls: [URL] = []
+        if let tabId {
+            urls.append(inboxURL(state: state, workspaceId: workspaceId, tabId: tabId))
+        }
+        if let tabName,
+           let legacy = legacyInboxURL(state: state, workspaceId: workspaceId, tabName: tabName),
+           !urls.contains(where: { $0.standardizedFileURL == legacy.standardizedFileURL }) {
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: legacy.path, isDirectory: &isDir), isDir.boolValue {
+                urls.append(legacy)
+            }
+        }
+        return urls
+    }
+
+    /// `<inbox>/_read/`: where a consumed envelope lives after its claim.
+    static func readURL(inbox: URL) -> URL {
+        inbox.appendingPathComponent(readDirectoryName, isDirectory: true)
     }
 
     // MARK: - Filenames
@@ -136,10 +191,9 @@ enum MailboxLayout {
 
     // MARK: - Surface-name validation
 
-    /// Early bail-out used by the CLI and the dispatcher. The schema's
-    /// `from` / `to` / `reply_to` fields are plain strings; the mailbox tree
-    /// uses them as directory components, so the same name must also be safe
-    /// on a POSIX filesystem.
+    /// Whether a name is safe as a single POSIX directory component. Inboxes
+    /// are UUID-keyed now, so this only decides whether a title could have
+    /// been a legacy inbox directory.
     static func validateSurfaceName(_ name: String) throws {
         if name.isEmpty {
             throw Error.invalidSurfaceName(name: name, reason: .empty)

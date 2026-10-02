@@ -710,21 +710,28 @@ enum TextBoxEscapeBehavior: String, CaseIterable, Identifiable {
 /// silently ignored. 50ms and 100ms were tested and are insufficient.
 /// 200ms is the minimum reliable value.
 enum TextBoxSubmit {
+    /// One input transaction (see `TerminalSurface.performInputTransaction`)
+    /// from the paste to its Return, so no other writer lands in between.
     static func send(_ text: String, via surface: TerminalSurface) {
         let trimmed = text.trimmingCharacters(in: .newlines)
         let delayMs = TextBoxBehavior.returnKeyDelayMs
-        if !trimmed.isEmpty {
-            surface.sendText(trimmed)
-        }
-        let effectiveDelayMs = trimmed.isEmpty
-            ? TextBoxBehavior.emptyReturnKeyDelayMs
-            : delayMs
-        if effectiveDelayMs <= 0 {
-            surface.sendKey(.returnKey)
-        } else {
-            let delay = TimeInterval(effectiveDelayMs) / 1000.0
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
-                surface?.sendKey(.returnKey)
+        surface.performInputTransaction { [weak surface] finish in
+            guard let surface else { return finish() }
+            if !trimmed.isEmpty {
+                surface.writeProgrammaticText(trimmed)
+            }
+            let effectiveDelayMs = trimmed.isEmpty
+                ? TextBoxBehavior.emptyReturnKeyDelayMs
+                : delayMs
+            if effectiveDelayMs <= 0 {
+                surface.sendKeyNow(.returnKey)
+                finish()
+            } else {
+                let delay = TimeInterval(effectiveDelayMs) / 1000.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak surface] in
+                    surface?.sendKeyNow(.returnKey)
+                    finish()
+                }
             }
         }
     }

@@ -3269,9 +3269,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sentryBreadcrumb("app.willResignActive", category: "lifecycle", data: [
             "tabCount": workspaceManager?.workspaces.count ?? 0
         ])
-        if Self.shouldSaveSessionSnapshotOnResign() {
-            _ = saveSessionSnapshot(includeScrollback: false)
+        let savedSnapshot = Self.saveSessionSnapshotOnResign {
+            _ = self.saveSessionSnapshot(includeScrollback: false)
         }
+#if DEBUG
+        if !savedSnapshot {
+            dlog("session.persistence.resign.snapshot.skipped")
+        }
+#endif
     }
 
     func persistSessionForUpdateRelaunch() {
@@ -4759,6 +4764,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     nonisolated static func shouldSaveSessionSnapshotOnResign() -> Bool {
         true
+    }
+
+    /// Runtime seam used by the AppKit resign callback. Tests exercise this
+    /// callback boundary so they prove whether resign actually invokes the
+    /// snapshot writer, not only what a policy constant returns.
+    static func saveSessionSnapshotOnResign(save: () -> Void) -> Bool {
+        guard shouldSaveSessionSnapshotOnResign() else { return false }
+        save()
+        return true
     }
 
     private func remainingSessionAutosaveTypingQuietPeriod(

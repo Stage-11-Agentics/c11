@@ -195,6 +195,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | tab-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
+| read typed asks (`c11 feed list\|open\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |

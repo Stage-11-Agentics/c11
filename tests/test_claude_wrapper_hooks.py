@@ -38,9 +38,11 @@ def parse_settings_arg(argv: list[str]) -> dict:
     return json.loads(argv[index + 1])
 
 
-def run_wrapper(*, socket_state: str, argv: list[str]) -> tuple[int, list[str], list[str], str, str]:
+def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-test-") as td:
         tmp = Path(td)
+        home = tmp / "home"
+        home.mkdir()
         wrapper_dir = tmp / "wrapper-bin"
         real_dir = tmp / "real-bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -91,9 +93,17 @@ exit 0
             test_socket.bind(socket_path)
 
         env = os.environ.copy()
-        env["TMPDIR"] = str(tmp)
+        if writable_tmpdir:
+            env["TMPDIR"] = str(tmp)
+        else:
+            blocked = tmp / "not-a-directory"
+            blocked.write_text("blocked", encoding="utf-8")
+            env["TMPDIR"] = str(blocked)
+        env["HOME"] = str(home)
         env["PATH"] = f"{wrapper_dir}:{real_dir}:/usr/bin:/bin"
-        env["CMUX_SURFACE_ID"] = "surface:test"
+        env.pop("CMUX_SURFACE_ID", None)
+        if in_c11:
+            env["CMUX_SURFACE_ID"] = "surface:test"
         env["CMUX_SOCKET_PATH"] = socket_path
         env["FAKE_REAL_ARGS_LOG"] = str(real_args_log)
         env["FAKE_REAL_CLAUDECODE_LOG"] = str(real_claudecode_log)
@@ -117,6 +127,8 @@ exit 0
         claudecode_lines = read_lines(real_claudecode_log)
         claudecode_value = claudecode_lines[0] if claudecode_lines else ""
         real_argv = read_lines(real_args_log)
+        if (home / ".claude" / "settings.json").exists():
+            raise AssertionError("wrapper wrote ~/.claude/settings.json")
         # Capture the actual per-launch settings payload before the isolated
         # temporary directory is removed. The wrapper now passes a file path.
         if "--settings" in real_argv:
@@ -148,20 +160,48 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
 
     settings = parse_settings_arg(real_argv)
     hooks = settings.get("hooks", {})
-    expected_hooks = {"SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
-    expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {hooks.keys()}, expected {expected_hooks}", failures)
-    # PreToolUse should be async to avoid blocking tool execution
+    expected_hooks = {
+        "SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+        "StopFailure", "PermissionRequest", "SubagentStart", "SubagentStop", "PreCompact",
+    }
+    expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {sorted(hooks.keys())}, expected {sorted(expected_hooks)}", failures)
+    # PreToolUse should be async to avoid blocking tool execution.
     pre_tool_use_hooks = hooks.get("PreToolUse", [{}])[0].get("hooks", [{}])
     expect(
         any(h.get("async") is True for h in pre_tool_use_hooks),
         f"PreToolUse hook should have async:true, got {pre_tool_use_hooks}",
         failures,
     )
-    post = hooks.get("PostToolUse", [{}])[0]
-    expect(post.get("matcher") == "AskUserQuestion|ExitPlanMode",
-           "PostToolUse must subscribe only to the two blocking tools", failures)
-    expect(post.get("hooks", [{}])[0].get("command") == "c11 claude-hook post-tool-use",
-           "PostToolUse must deliver the resolution callback", failures)
+    post = hooks.get("PostToolUse", [])
+    expect(len(post) == 2, f"PostToolUse must have blocking and ordinary matchers, got {post}", failures)
+    blocking = next((entry for entry in post if entry.get("matcher") == "AskUserQuestion|ExitPlanMode"), {})
+    ordinary = next((entry for entry in post if entry.get("matcher") != "AskUserQuestion|ExitPlanMode"), {})
+    blocking_hook = blocking.get("hooks", [{}])[0]
+    ordinary_hook = ordinary.get("hooks", [{}])[0]
+    expect(blocking_hook.get("command") == "c11 claude-hook post-tool-use",
+           "blocking PostToolUse must deliver the tool callback", failures)
+    expect("async" not in blocking_hook, f"Ask/plan PostToolUse must be synchronous, got {blocking_hook}", failures)
+    expect(blocking_hook.get("timeout") == 5, f"blocking PostToolUse timeout must be 5, got {blocking_hook}", failures)
+    expect(ordinary.get("matcher") == "^(?!(AskUserQuestion|ExitPlanMode)$).*",
+           f"ordinary PostToolUse matcher must exclude blocking tools, got {ordinary}", failures)
+    expect(ordinary_hook.get("command") == "c11 claude-hook post-tool-use",
+           "ordinary PostToolUse must deliver the tool callback", failures)
+    expect(ordinary_hook.get("async") is True, f"ordinary PostToolUse must be async, got {ordinary_hook}", failures)
+    expect(ordinary_hook.get("timeout") == 5, f"ordinary PostToolUse timeout must be 5, got {ordinary_hook}", failures)
+    permission = hooks.get("PermissionRequest", [{}])[0].get("hooks", [{}])[0]
+    expect(permission.get("command") == "c11 claude-hook permission-request",
+           f"PermissionRequest command mismatch: {permission}", failures)
+    expect(permission.get("timeout", 999) <= 1, f"PermissionRequest timeout must be <= 1, got {permission}", failures)
+    expect(permission.get("async") is not True, f"PermissionRequest must not be async, got {permission}", failures)
+    for forbidden in ("decision", "behavior", "allow", "deny"):
+        expect(forbidden not in permission, f"PermissionRequest settings contain {forbidden}", failures)
+    stop_failure = hooks.get("StopFailure", [{}])[0].get("hooks", [{}])[0]
+    expect(stop_failure.get("command") == "c11 claude-hook stop-failure", f"StopFailure command mismatch: {stop_failure}", failures)
+    expect(stop_failure.get("timeout") == 10, f"StopFailure timeout must be 10, got {stop_failure}", failures)
+    expect("async" not in stop_failure, f"StopFailure must stay synchronous, got {stop_failure}", failures)
+    for event in ("SubagentStart", "SubagentStop", "PreCompact"):
+        hook = hooks.get(event, [{}])[0].get("hooks", [{}])[0]
+        expect(hook.get("async") is True and hook.get("timeout") == 5, f"{event} must be async timeout 5, got {hook}", failures)
     # SessionEnd should have a short timeout (session is exiting)
     session_end_hooks = hooks.get("SessionEnd", [{}])[0].get("hooks", [{}])
     expect(
@@ -192,11 +232,32 @@ def test_stale_socket_skips_hook_injection(failures: list[str]) -> None:
     expect(claudecode == "__UNSET__", f"stale socket: expected CLAUDECODE unset, got {claudecode!r}", failures)
 
 
+def test_outside_c11_passes_argv_through(failures: list[str]) -> None:
+    code, real_argv, cmux_log, stderr, _claudecode = run_wrapper(socket_state="live", argv=["hello"], in_c11=False)
+    expect(code == 0, f"outside c11: wrapper exited {code}: {stderr}", failures)
+    expect(real_argv == ["hello"], f"outside c11: expected passthrough args, got {real_argv}", failures)
+    expect(cmux_log == [], f"outside c11: expected no cmux calls, got {cmux_log}", failures)
+
+
+def test_unwritable_tmpdir_falls_back_to_inline_json(failures: list[str]) -> None:
+    code, real_argv, _cmux_log, stderr, _claudecode = run_wrapper(
+        socket_state="live", argv=["hello"], writable_tmpdir=False
+    )
+    expect(code == 0, f"inline fallback: wrapper exited {code}: {stderr}", failures)
+    expect("--settings" in real_argv, f"inline fallback: missing --settings in args: {real_argv}", failures)
+    settings_arg = real_argv[real_argv.index("--settings") + 1]
+    expect(settings_arg.startswith("{"), f"inline fallback: expected inline JSON, got {settings_arg[:80]}", failures)
+    hooks = parse_settings_arg(real_argv).get("hooks", {})
+    expect("PermissionRequest" in hooks, f"inline fallback: missing PermissionRequest in {sorted(hooks)}", failures)
+
+
 def main() -> int:
     failures: list[str] = []
     test_live_socket_injects_supported_hooks(failures)
     test_missing_socket_skips_hook_injection(failures)
     test_stale_socket_skips_hook_injection(failures)
+    test_outside_c11_passes_argv_through(failures)
+    test_unwritable_tmpdir_falls_back_to_inline_json(failures)
 
     if failures:
         print("FAIL: claude wrapper regression checks failed")

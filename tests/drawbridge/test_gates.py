@@ -387,13 +387,12 @@ class TestCodexFindings(unittest.TestCase):
         self.assertFalse(result["gates"]["judged_head_current"]["pass"])
 
     def test_required_check_skipped_is_not_green(self):
-        """Fork-guard-skipped app build must fail the CI gate for code paths."""
+        """A skipped required PR check must fail the CI gate for code paths."""
         checks = {
             "check_runs": [
-                {"name": "workflow-guard-tests", "status": "completed", "conclusion": "success"},
+                {"name": "workflow-guard-tests", "status": "completed", "conclusion": "skipped"},
                 {"name": "remote-daemon-tests", "status": "completed", "conclusion": "success"},
                 {"name": "web-typecheck", "status": "completed", "conclusion": "success"},
-                {"name": "build", "status": "completed", "conclusion": "skipped"},
             ]
         }
         verdict = dict(GOOD_VERDICT, category="bugfix")
@@ -404,7 +403,7 @@ class TestCodexFindings(unittest.TestCase):
             checks=checks,
         )
         self.assertFalse(result["gates"]["ci_green"]["pass"])
-        self.assertIn("build", result["gates"]["ci_green"]["detail"])
+        self.assertIn("workflow-guard-tests", result["gates"]["ci_green"]["detail"])
 
     def test_required_check_missing_is_not_green(self):
         checks = {
@@ -440,10 +439,10 @@ class TestCodexFindings(unittest.TestCase):
     def test_matrix_required_check_matches_by_prefix(self):
         checks = dict(GREEN_CHECKS)
         checks = {"check_runs": list(GREEN_CHECKS["check_runs"])}
-        # replace plain "build" with a matrix-suffixed name
+        # replace plain "remote-daemon-tests" with a matrix-suffixed name
         checks["check_runs"] = [
-            r for r in checks["check_runs"] if r["name"] != "build"
-        ] + [{"name": "build (macos-15-xlarge)", "status": "completed", "conclusion": "success"}]
+            r for r in checks["check_runs"] if r["name"] != "remote-daemon-tests"
+        ] + [{"name": "remote-daemon-tests (ubuntu)", "status": "completed", "conclusion": "success"}]
         verdict = dict(GOOD_VERDICT, category="bugfix")
         result = run_gates(
             "pr", verdict,

@@ -4410,6 +4410,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 self.backgroundSurfaceStartQueued = false
                 guard self.surface == nil else { return }
                 #if DEBUG
+                if let expiry = self.debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
                 let startedAt = ProcessInfo.processInfo.systemUptime
                 #endif
                 if let view = self.attachedView, view.window != nil {

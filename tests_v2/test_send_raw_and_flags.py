@@ -227,9 +227,14 @@ def queued(cli, socket_path, event_log):
     with cmux(socket_path) as client:
         workspace = client._call("workspace.create")["workspace_id"]
         try:
-            tab = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            # Normal create calls eagerly start terminals. The fixture creates
+            # and holds one new tab atomically, before those callbacks run.
+            anchor = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            created = client._call("debug.terminal.runtime_start_hold", {
+                "workspace_id": workspace, "tab_id": anchor, "create": True, "hold": True
+            })
+            tab = created["tab_id"]
             target = {"workspace_id": workspace, "tab_id": tab}
-            client._call("debug.terminal.runtime_start_hold", {**target, "hold": True})
             last_seq = max(json.loads(line)["seq"] for line in Path(event_log).read_text().splitlines())
             body = r"C11_281_QUEUED\n_LITERAL"
             proc = cli_run(cli, socket_path, "--json", "send", "--workspace", workspace,

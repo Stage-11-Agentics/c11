@@ -66,6 +66,7 @@ def offline(cli):
         (["send", "--raw", "--no-submit", "queued-body"], None, "queued-body", True, False, True, True),
         (["send", "--raw", "body"], None, "body", True, True, False, True),
         (["paste", "--no-submit", "body"], None, None, True, False, False, False),
+        (["paste", "--no-submit", "body"], None, None, True, False, False, None),
     ]
     for arguments, stdin, expected, raw, submit, queued, supported in cases:
         with tempfile.TemporaryDirectory(prefix="c11-281-peer-", dir="/tmp") as directory:
@@ -94,8 +95,11 @@ def offline(cli):
                                     assert request["method"] == "tab.send_text", request
                                     result = {"workspace_id": workspace, "tab_id": tab,
                                               "queued": queued, "delivered": not queued, "submitted": submit}
-                                stream.write((json.dumps({"id": request["id"], "ok": True,
-                                                          "result": result}) + "\n").encode())
+                                response = {"id": request["id"], "ok": True, "result": result}
+                                if request["method"] == "system.capabilities" and supported is None:
+                                    response = {"id": request["id"], "ok": False,
+                                                "error": {"code": "method_not_found", "message": "Fixture legacy server"}}
+                                stream.write((json.dumps(response) + "\n").encode())
                                 stream.flush()
                     except Exception as error:
                         errors.append(error)
@@ -105,7 +109,7 @@ def offline(cli):
                 # Insert targeting before any literal -- terminator.
                 targeted = [arguments[0], "--workspace", workspace, "--tab", tab, *arguments[1:]]
                 try:
-                    proc = cli_run(cli, path, *targeted, stdin=stdin, ok=supported)
+                    proc = cli_run(cli, path, *targeted, stdin=stdin, ok=bool(supported))
                 finally:
                     peer.join(timeout=25)
                 assert not peer.is_alive() and not errors, errors

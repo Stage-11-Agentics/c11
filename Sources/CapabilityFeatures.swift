@@ -12,6 +12,7 @@ struct CapabilityFeatures {
         case rawSend = "send.raw"
         case terminalSelection = "read_selection.terminal"
         case windowRouteWithoutFocus = "window.route_without_focus"
+        case windowResize = "window.resize"
         case rpc = "cli.rpc"
         case journalAnalytics = "journal.analytics"
         case browserProfiles = "browser.profiles"
@@ -39,6 +40,7 @@ struct CapabilityFeatures {
         Entry(id: .rawSend, version: 1, enabled: true),
         Entry(id: .terminalSelection, version: 1, enabled: true),
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
+        Entry(id: .windowResize, version: 1, enabled: true),
         Entry(id: .rpc, version: 1, enabled: true),
         Entry(id: .journalAnalytics, version: 1, enabled: true),
         Entry(id: .browserProfiles, version: 1, enabled: true),

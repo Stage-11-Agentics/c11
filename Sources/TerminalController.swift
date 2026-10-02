@@ -2305,6 +2305,9 @@ class TerminalController {
         "workspace.group.set_icon",
         "workspace.group.focus",
         "history.list",
+        // Resize dimensions are validated on the worker; live window resolution
+        // and the bounded AppKit frame operation share one main-actor hop.
+        "window.resize",
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",

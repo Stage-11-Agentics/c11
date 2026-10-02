@@ -1,6 +1,10 @@
 name: Sign unpublished c11 artifact
 
 on:
+  # Temporary C11-312 bootstrap proof; removed before review.
+  push:
+    branches: [c11-1.0/C11-312-artifact-signing]
+    paths: [.github/workflows/sign-artifact.yml]
   workflow_dispatch:
     inputs:
       source_ref:
@@ -37,12 +41,12 @@ jobs:
     runs-on: macos-15-xlarge
     timeout-minutes: 60
     env:
-      SIGN_SOURCE_REF: ${{ inputs.source_ref }}
-      SIGN_EXPECTED_SHA: ${{ inputs.expected_sha }}
-      SIGN_PURPOSE: ${{ inputs.purpose }}
+      SIGN_SOURCE_REF: ${{ inputs.source_ref || github.ref }}
+      SIGN_EXPECTED_SHA: ${{ inputs.expected_sha || github.sha }}
+      SIGN_PURPOSE: ${{ inputs.purpose || 'proof' }}
       SIGN_TARGET_TAG: ${{ inputs.target_tag }}
-      SIGN_PROOF_BUILD: ${{ inputs.proof_build }}
-      SIGN_PROOF_FEED_BASE: ${{ inputs.proof_feed_base }}
+      SIGN_PROOF_BUILD: ${{ inputs.proof_build || github.run_number }}
+      SIGN_PROOF_FEED_BASE: ${{ inputs.proof_feed_base || 'http://127.0.0.1:18731/proof' }}
       SIGN_WORKFLOW_SHA: ${{ github.workflow_sha }}
       SIGN_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -57,7 +61,7 @@ jobs:
       - name: Checkout named source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || github.ref }}
           submodules: recursive
           path: source
           persist-credentials: false

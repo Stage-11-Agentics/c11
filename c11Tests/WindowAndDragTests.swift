@@ -133,6 +133,57 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         XCTAssertTrue(app.workspaceManager === manager)
     }
 
+    func testGhosttyPWDUpdatesWorkspaceOwningBackgroundWindow() throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+
+        let windowAId = UUID()
+        let windowBId = UUID()
+        let windowA = makeMainWindow(id: windowAId)
+        let windowB = makeMainWindow(id: windowBId)
+        defer {
+            windowA.orderOut(nil)
+            windowB.orderOut(nil)
+        }
+
+        let managerA = WorkspaceManager()
+        let managerB = WorkspaceManager()
+        app.registerMainWindow(
+            windowA,
+            windowId: windowAId,
+            workspaceManager: managerA,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        app.registerMainWindow(
+            windowB,
+            windowId: windowBId,
+            workspaceManager: managerB,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+
+        windowA.makeKeyAndOrderFront(nil)
+        _ = app.synchronizeActiveMainWindowContext(preferredWindow: windowA)
+        XCTAssertTrue(app.workspaceManager === managerA)
+
+        let workspaceA = try XCTUnwrap(managerA.workspaces.first)
+        let initialDirectoryA = workspaceA.currentDirectory
+        let workspaceB = try XCTUnwrap(managerB.workspaces.first)
+        let surfaceB = try XCTUnwrap(workspaceB.focusedPanelId)
+        let reportedDirectory = FileManager.default.temporaryDirectory.standardizedFileURL.path
+
+        app.updateSurfaceDirectoryFromGhosttyAction(
+            workspaceId: workspaceB.id,
+            surfaceId: surfaceB,
+            directory: reportedDirectory
+        )
+
+        XCTAssertEqual(workspaceB.tabDirectories[surfaceB], reportedDirectory)
+        XCTAssertEqual(workspaceA.currentDirectory, initialDirectoryA)
+        XCTAssertTrue(app.workspaceManager === managerA, "PWD routing must preserve the active window manager")
+    }
+
     func testAddWorkspaceWithoutBringToFrontPreservesActiveWindowAndSelection() {
         _ = NSApplication.shared
         let app = AppDelegate()

@@ -90,6 +90,36 @@ final class FeedProjectionBridge: @unchecked Sendable {
         }
     }
 
+    // Authoritative tab removal is distinct from journal owner changes: only
+    // the former removes flags and suppression along with the ask.
+    func removeTab(workspaceID: UUID, tabID: UUID) {
+        queue.async { [self] in
+            if attention[tabID]?.workspaceID == workspaceID { attention.removeValue(forKey: tabID) }
+            if journal[tabID]?.workspaceID == workspaceID { retireTab(tabID) }
+        }
+    }
+
+    func pruneWorkspace(workspaceID: UUID, validTabIDs: Set<UUID>) {
+        queue.async { [self] in
+            let removed = Set(attention.values.filter { $0.workspaceID == workspaceID }.map(\.tabID))
+                .union(journal.values.filter { $0.workspaceID == workspaceID }.map { $0.owner.tabID })
+                .subtracting(validTabIDs)
+            for tabID in removed {
+                attention.removeValue(forKey: tabID)
+                retireTab(tabID)
+            }
+        }
+    }
+
+    private func retireTab(_ tabID: UUID) {
+        journal.removeValue(forKey: tabID)
+        currentAskEventIDs.removeValue(forKey: tabID)
+        cache.drop(tabID: tabID)
+        for event in tracker.consume(tabID: tabID, snapshot: nil) {
+            EventEmitter.shared.emitAskClosed(workspace: event.workspaceID, surface: event.tabID, payload: event.jsonObject())
+        }
+    }
+
     /// Returns a fixed error code, or nil when the note is cached.
     func acceptNote(
         tabID: UUID,

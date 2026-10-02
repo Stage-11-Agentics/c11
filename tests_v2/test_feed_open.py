@@ -32,14 +32,27 @@ def main():
     path, cli = require_guest()
     with cmux(path) as client:
         window = client.new_window()
+        other_window = client.new_window()
         try:
             ask_workspace = client.new_workspace(window)
-            other_workspace = client.new_workspace(window)
+            other_workspace = client.new_workspace(other_window)
             ask_tab = client.list_surfaces(ask_workspace)[0][1]
             other_tab = client.list_surfaces(other_workspace)[0][1]
             client.focus_surface(other_tab)
             client.select_workspace(other_workspace)
             assert focused_tab(client) == (other_workspace, other_tab)
+
+            # Leave a partial terminal command on the target. Opening Feed must
+            # not type an answer, submit it, or activate c11 over Finder.
+            client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})
+            client.send_surface(ask_tab, "SYNTHETIC_UNSUBMITTED_264")
+            import time
+            time.sleep(0.5)
+            before_text = client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"]
+            subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate'], check=True)
+            def frontmost():
+                return subprocess.check_output(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'], text=True).strip()
+            assert frontmost() == "Finder"
 
             opened = subprocess.run(
                 [cli, "--socket", path, "feed", "open", ask_tab, "--workspace", ask_workspace, "--json"],
@@ -48,8 +61,13 @@ def main():
             assert opened.returncode == 0, opened.stderr
             payload = json.loads(opened.stdout)
             assert payload["workspace_id"] == ask_workspace and payload["tab_id"] == ask_tab
-            assert focused_tab(client) == (ask_workspace, ask_tab)
-            assert focused_tab(client)[0] != other_workspace
+            target_tabs = client._call("tab.list", {"workspace_id": ask_workspace, "window_id": window})["tabs"]
+            assert any(row["id"] == ask_tab and row["focused"] for row in target_tabs), target_tabs
+            target_workspaces = client.list_workspaces(window)
+            assert any(row[1] == ask_workspace and row[3] for row in target_workspaces)
+            assert frontmost() == "Finder", "feed open activated or raised c11"
+            assert client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"] == before_text, "feed open sent terminal input"
+            unchanged_focus = focused_tab(client)
 
             unknown = str(uuid.uuid4())
             missed = subprocess.run(
@@ -58,7 +76,7 @@ def main():
             )
             assert missed.returncode != 0
             assert "unavailable" in (missed.stdout + missed.stderr)
-            assert focused_tab(client) == (ask_workspace, ask_tab)
+            assert focused_tab(client) == unchanged_focus
 
             missing_workspace = subprocess.run(
                 [cli, "--socket", path, "feed", "open", ask_tab, "--workspace", unknown],
@@ -66,10 +84,12 @@ def main():
             )
             assert missing_workspace.returncode != 0
             assert "unavailable" in (missing_workspace.stdout + missing_workspace.stderr)
-            assert focused_tab(client) == (ask_workspace, ask_tab)
-            print("PASS feed open focuses the named tab and leaves an unknown target unchanged")
+            assert focused_tab(client) == unchanged_focus
+            assert frontmost() == "Finder"
+            print("PASS cross-window feed open selects the exact target, preserves Finder frontmost and terminal input, and leaves unknown targets unchanged")
         finally:
             client.close_window(window)
+            client.close_window(other_window)
     return 0
 
 

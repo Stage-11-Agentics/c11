@@ -35,6 +35,113 @@ final class FeedProjectorTests: XCTestCase {
         FeedAttentionFact(workspaceID: workspace, tabID: tab, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerTabID: otherTab, suppressed: suppressed)
     }
 
+    @MainActor
+    func testAttentionServiceRemovalAndPruningRetireClosedTargets() throws {
+        let bridge = FeedProjectionBridge()
+        let service = TabAttentionService(feedProjection: bridge)
+        let workspace = UUID()
+        let flagOnly = UUID(), askTab = UUID(), survivor = UUID()
+        for tab in [flagOnly, askTab, survivor] {
+            try service.raise(workspaceId: workspace, surfaceId: tab, reason: "synthetic-flag", by: .operator, title: nil)
+        }
+        let ask = try blocked(.questionRequested, request: "closure", tab: askTab, workspace: workspace)
+        bridge.noteJournal(tabID: askTab, snapshot: ask)
+        func rows() -> [[String: Any]] { bridge.list(scope: .attention)["rows"] as? [[String: Any]] ?? [] }
+        XCTAssertEqual(rows().count, 3)
+        // A journal owner disappearing alone must preserve the independent flag.
+        bridge.noteJournal(tabID: askTab, snapshot: nil)
+        XCTAssertEqual(rows().count, 3)
+        bridge.noteJournal(tabID: askTab, snapshot: ask)
+        service.remove(workspaceId: workspace, surfaceId: flagOnly)
+        XCTAssertEqual(rows().count, 2)
+        XCTAssertFalse(rows().contains { $0["tab_id"] as? String == flagOnly.uuidString })
+        service.prune(workspaceId: workspace, validSurfaceIds: [survivor])
+        XCTAssertEqual(rows().map { $0["tab_id"] as? String }, [survivor.uuidString])
+        // Workspace closure prunes all remaining targets, including flag-only rows.
+        service.prune(workspaceId: workspace, validSurfaceIds: [])
+        XCTAssertTrue(rows().isEmpty)
+    }
+
+    func testCapturedBypassAndAnsweredAsksThroughFeedRowsAndEvents() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("feed-corpus-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let logURL = directory.appendingPathComponent("events.ndjson")
+        let log = EventLog(url: logURL, instance: "synthetic-feed-corpus")
+        EventEmitter.shared.startForTesting(log: log, instance: "synthetic-feed-corpus")
+        defer {
+            EventEmitter.shared.resetForTesting()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        for name in ["claude-bypass-ask", "claude-bypass-ask-answered"] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(name + ".json"))) as? [String: Any])
+            let events = try XCTUnwrap(object["events"] as? [[String: Any]])
+            var state: JournalSnapshot?
+            var tracker = FeedAskTracker()
+            let bridge = FeedProjectionBridge()
+            var transitions: [FeedAskEvent] = []
+            var sawResolution = false
+            for (index, event) in events.enumerated() where event["source"] as? String == "claude-hook" {
+                let native = event["name"] as? String ?? ""
+                let tool = event["tool_name"] as? String
+                let kind: JournalKind
+                switch native {
+                case "SessionStart": kind = .sessionStarted
+                case "UserPromptSubmit": kind = .turnStarted
+                case "Stop": kind = .turnCompleted
+                case "PreToolUse", "PermissionRequest":
+                    kind = tool == "AskUserQuestion" ? .questionRequested : (tool == "ExitPlanMode" ? .planReviewRequested : .stateChanged)
+                case "PostToolUse": kind = tool == "AskUserQuestion" || tool == "ExitPlanMode" ? .attentionResolved : .stateChanged
+                default: continue
+                }
+                var draft = JournalTestData.draft(kind)
+                let attrs = event["attrs"] as? [String: Any] ?? [:]
+                draft.nativeEvent = native
+                draft.turnID = attrs["prompt_id"] as? String
+                draft.requestID = attrs["tool_use_id"] as? String
+                draft.timeQuality = .observed
+                draft.occurredAtMs = (event["t_ms"] as? NSNumber)?.int64Value ?? 0
+                if kind == .attentionResolved { draft.resolution = .resumed }
+                if kind == .stateChanged { draft.signal = .toolActivity }
+                state = JournalTestData.fold(state, draft, seq: Int64(index + 1)).snapshot
+                bridge.noteJournal(tabID: JournalTestData.tab, snapshot: state)
+                let bridgeRows = bridge.list(scope: .attention)["rows"] as? [[String: Any]] ?? []
+                XCTAssertEqual(bridgeRows.count, state.flatMap(FeedProjector.blockingKind) == nil ? 0 : 1, name)
+                transitions += tracker.consume(tabID: JournalTestData.tab, snapshot: state)
+                if let snapshot = state, FeedProjector.blockingKind(snapshot) != nil {
+                    XCTAssertEqual(project([snapshot], scope: .attention).first?.kind, .question, name)
+                    var unrelated = JournalTestData.draft(.stateChanged)
+                    unrelated.signal = .toolActivity
+                    let unchanged = JournalTestData.fold(snapshot, unrelated, seq: snapshot.lastSequence + 1).snapshot
+                    XCTAssertEqual(project([unchanged!], scope: .attention).first?.state, "open")
+                    XCTAssertTrue(tracker.consume(tabID: JournalTestData.tab, snapshot: unchanged).isEmpty)
+                    var sibling = JournalTestData.draft(.turnStarted)
+                    sibling.tabID = otherTab
+                    let siblingState = JournalTestData.fold(nil, sibling, seq: 1).snapshot
+                    XCTAssertTrue(tracker.consume(tabID: otherTab, snapshot: siblingState).isEmpty)
+                }
+                if kind == .attentionResolved {
+                    sawResolution = true
+                    XCTAssertTrue(project([state!], scope: .attention).isEmpty, name)
+                }
+            }
+            XCTAssertTrue(transitions.contains { $0.action == .opened }, name)
+            if name.hasSuffix("answered") {
+                XCTAssertTrue(sawResolution)
+                XCTAssertTrue(transitions.contains { $0.action == .closed && $0.resolution == "resumed" })
+                XCTAssertTrue(project([state!], scope: .attention).isEmpty)
+            } else {
+                XCTAssertEqual(project([state!], scope: .attention).first?.state, "open")
+            }
+        }
+        log.flush()
+        let recorded = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+        }
+        XCTAssertTrue(recorded.contains { $0["type"] as? String == "ask.opened" })
+        XCTAssertTrue(recorded.contains { $0["type"] as? String == "ask.closed" && ($0["payload"] as? [String: Any])?["resolution"] as? String == "resumed" })
+    }
+
     // claude-bypass-ask: question, plan, and permission are typed rows; other blocked reasons are not.
     func testTypedAsksUseJournalFactsAndLeaveUnknownOptionsNull() throws {
         let question = try blocked(.questionRequested, request: "ask-1")

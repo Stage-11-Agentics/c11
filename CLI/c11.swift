@@ -1096,6 +1096,7 @@ final class SocketClient {
     }
 
     func close() {
+        serverIsLegacy = nil
         if socketFD >= 0 {
             Darwin.close(socketFD)
             socketFD = -1
@@ -3364,6 +3365,11 @@ struct CMUXCLI {
                 arguments: commandArgs,
                 jsonOutput: jsonOutput,
                 client: client,
+                reconnect: {
+                    client.close()
+                    try client.connect()
+                    try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: resolvedSocketPath)
+                },
                 defaultWorkspace: { workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId) },
                 resolveWorkspace: { raw in try normalizeWorkspaceHandle(raw, client: client) },
                 resolveTab: { raw, ws in try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) }
@@ -17643,8 +17649,10 @@ struct CMUXCLI {
         var journalDelivery: JournalCommand.Delivery?
         func managedJournalDelivery(_ delivery: JournalCommand.Delivery) -> Bool {
             switch delivery {
-            case .committed, .spooled: return true
-            case .unsupported, .lost, .rejected: return false
+            // Only a confirmed absent method permits the body-bearing legacy route.
+            // Failed delivery to a journal-capable app must remain structural.
+            case .committed, .spooled, .lost, .rejected: return true
+            case .unsupported: return false
             }
         }
         func appendJournal(workspaceId: String, surfaceId: String) -> Bool {

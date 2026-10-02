@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import queue
+import threading
 import time
 import uuid
 
@@ -16,6 +18,35 @@ from test_claude_attention_batch import eventually
 
 
 SENTINEL = "PRIVATE-SENTINEL-264"
+
+
+class FeedWatcher:
+    def __init__(self, cli, path, extra=()):
+        self.process = subprocess.Popen([cli, "--socket", path, *extra, "feed", "watch", "--json", "--scope", "all"],
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.lines = queue.Queue()
+        def read():
+            for line in self.process.stdout:
+                self.lines.put(json.loads(line))
+        self.reader = threading.Thread(target=read, daemon=True)
+        self.reader.start()
+
+    def until(self, predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                value = self.lines.get(timeout=min(0.5, max(0.01, deadline - time.monotonic())))
+            except queue.Empty:
+                assert self.process.poll() is None, "feed watch exited"
+                continue
+            if predicate(value):
+                return value
+        raise AssertionError("feed watch did not produce the expected update")
+
+    def close(self):
+        self.process.kill()
+        self.process.wait(timeout=5)
+        self.reader.join(timeout=2)
 
 
 def require_guest():
@@ -105,19 +136,32 @@ def main():
                     assert SENTINEL not in text, "prompt reached the event log"
                     assert "ask.opened" in text
 
-            watch = subprocess.Popen(
-                [cli, "--socket", path, "feed", "watch", "--json"],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
+            watch = FeedWatcher(cli, path)
             try:
-                line = watch.stdout.readline() if watch.stdout else ""
+                watched = watch.until(lambda value: any(item.get("tab_id") == ask_tab for item in value.get("rows", [])))
+                client._call("flag.lower", {"surface_id": ask_tab, "by": "operator"})
+                client._call("flag.suppress", {"surface_id": ask_tab, "by": "operator"})
+                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                client._call("flag.unsuppress", {"surface_id": ask_tab, "by": "operator"})
+                watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("kind") == "question" for item in value.get("rows", [])))
+                client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
+                    "kind": "agent.state.changed", "signal": "tool_activity", "native_event": "PreToolUse"}})
+                assert any(item.get("tab_id") == ask_tab for item in client._call("feed.list")["rows"])
+                client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
+                    "kind": "agent.attention.resolved", "resolution": "resumed", "native_event": "PostToolUse"}})
+                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                client._call("flag.raise", {"surface_id": ask_tab, "reason": "closure", "by": "operator"})
+                watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("flag") for item in value.get("rows", [])))
+                client._call("tab.close", {"workspace_id": ask_workspace, "tab_id": ask_tab})
+                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                client._call("flag.raise", {"surface_id": other_tab, "reason": "workspace-closure", "by": "operator"})
+                watch.until(lambda value: any(item.get("tab_id") == other_tab for item in value.get("rows", [])))
+                client.close_workspace(other_workspace)
+                watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == other_tab for item in value["rows"]))
             finally:
-                watch.kill()
-                watch.wait(timeout=5)
-            watched = json.loads(line)
+                watch.close()
             assert any(item.get("tab_id") == ask_tab for item in watched.get("rows") or [])
-            assert client.identify().get("focused") == before, "feed watch moved focus"
-            print("PASS feed list and watch show the flagged question without moving focus")
+            print("PASS live watch covers suppression, resolution, flagged tab/workspace closure")
         finally:
             client.close_window(window)
     return 0

@@ -17,6 +17,7 @@ enum FeedCommand {
         arguments: [String],
         jsonOutput: Bool,
         client: SocketClient,
+        reconnect: () throws -> Void,
         defaultWorkspace: () -> String?,
         resolveWorkspace: (String) throws -> String?,
         resolveTab: (_ tab: String, _ workspace: String?) throws -> String?
@@ -82,7 +83,7 @@ enum FeedCommand {
             guard args.isEmpty, tabFlag == nil, workspaceFlag == nil else {
                 throw CLIError(message: "usage: c11 feed watch [--json] [--scope attention|all]")
             }
-            try watch(client: client, scope: feedScope, json: json)
+            try watch(client: client, scope: feedScope, json: json, reconnect: reconnect)
         default:
             throw CLIError(message: "feed: unknown command '\(subcommand)'")
         }
@@ -143,7 +144,7 @@ enum FeedCommand {
         fflush(stdout)
     }
 
-    private static func watch(client: SocketClient, scope: FeedScope, json: Bool) throws {
+    private static func watch(client: SocketClient, scope: FeedScope, json: Bool, reconnect: () throws -> Void) throws {
         var parser = FeedWatchParser()
         var listed = try client.sendV2(method: "feed.list", params: ["scope": scope.rawValue])
         var instance = listed["instance"] as? String
@@ -163,65 +164,75 @@ enum FeedCommand {
         var lastPoll = Date()
         var socketDown = false
         while true {
-            if let url = logURL {
-                let size = fileSize(url)
-                if size == nil {
-                    if !missingAnnounced {
-                        printContinuity()
-                        missingAnnounced = true
-                    }
-                } else if let size, size < offset {
-                    printContinuity()
-                    offset = 0
-                    parser = FeedWatchParser()
-                    missingAnnounced = false
-                } else if let size, size > offset, let data = read(url, from: offset),
-                          let chunk = String(data: data, encoding: .utf8) {
-                    offset += UInt64(data.count)
-                    missingAnnounced = false
-                    for signal in parser.consume(chunk) {
-                        switch signal {
-                        case .continuityUnavailable:
+            autoreleasepool {
+                if let url = logURL {
+                    let size = fileSize(url)
+                    if size == nil {
+                        if !missingAnnounced {
                             printContinuity()
-                            if let next = try? client.sendV2(method: "feed.list", params: ["scope": scope.rawValue]) {
-                                if next["instance"] as? String != instance {
-                                    rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
-                                }
-                                printList(next, json: json)
-                                listed = next
-                            }
-                        case .followedEvent:
-                            if let next = try? client.sendV2(method: "feed.list", params: ["scope": scope.rawValue]) {
-                                if next["instance"] as? String != instance {
-                                    printContinuity()
-                                    rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
+                            missingAnnounced = true
+                        }
+                    } else if let size, size < offset {
+                        printContinuity()
+                        offset = 0
+                        parser = FeedWatchParser()
+                        missingAnnounced = false
+                    } else if let size, size > offset, let data = read(url, from: offset),
+                              let chunk = String(data: data, encoding: .utf8) {
+                        offset += UInt64(data.count)
+                        missingAnnounced = false
+                        for signal in parser.consume(chunk) {
+                            switch signal {
+                            case .continuityUnavailable:
+                                printContinuity()
+                                if let next = try? client.sendV2(method: "feed.list", params: ["scope": scope.rawValue]) {
+                                    if next["instance"] as? String != instance {
+                                        rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
+                                    }
                                     printList(next, json: json)
-                                } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
-                                    printList(next, json: json)
+                                    listed = next
                                 }
-                                listed = next
+                            case .followedEvent:
+                                if let next = try? client.sendV2(method: "feed.list", params: ["scope": scope.rawValue]) {
+                                    if next["instance"] as? String != instance {
+                                        printContinuity()
+                                        rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
+                                        printList(next, json: json)
+                                    } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
+                                        printList(next, json: json)
+                                    }
+                                    listed = next
+                                }
                             }
                         }
                     }
                 }
-            }
-            if Date().timeIntervalSince(lastPoll) >= 1 {
-                lastPoll = Date()
-                do {
-                    let next = try client.sendV2(method: "feed.list", params: ["scope": scope.rawValue])
-                    socketDown = false
-                    if next["instance"] as? String != instance {
-                        printContinuity()
-                        rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
-                        printList(next, json: json)
-                    } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
-                        printList(next, json: json)
-                    }
-                    listed = next
-                } catch {
-                    if !socketDown {
-                        printContinuity()
-                        socketDown = true
+                if Date().timeIntervalSince(lastPoll) >= 1 {
+                    lastPoll = Date()
+                    do {
+                        if socketDown {
+                            try reconnect()
+                            let next = try client.sendV2(method: "feed.list", params: ["scope": scope.rawValue])
+                            rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
+                            printList(next, json: json)
+                            listed = next
+                            socketDown = false
+                        }
+                        let next = try client.sendV2(method: "feed.list", params: ["scope": scope.rawValue])
+                        socketDown = false
+                        if next["instance"] as? String != instance {
+                            printContinuity()
+                            rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
+                            printList(next, json: json)
+                        } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
+                            printList(next, json: json)
+                        }
+                        listed = next
+                    } catch {
+                        if !socketDown {
+                            printContinuity()
+                            socketDown = true
+                        }
                     }
                 }
             }

@@ -196,4 +196,51 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
         XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
     }
+
+    func testReadOnlyOpenLeavesAMissingFileAbsent() {
+        let outsideProduction = directory.path.contains("com.stage11.c11")
+        XCTAssertFalse(outsideProduction)
+        let missing = JournalStorageLayout(directory: directory.appendingPathComponent("absent"))
+        XCTAssertThrowsError(try JournalStore(layout: missing, readOnly: true)) {
+            XCTAssertEqual($0 as? JournalError, .unavailable)
+        }
+        let created = FileManager.default.fileExists(atPath: missing.database.path)
+        XCTAssertFalse(created)
+    }
+
+    func testReadOnlyTimelineIsNewestFirstAndCountsUnattributedRows() throws {
+        let outsideProduction = directory.path.contains("com.stage11.c11")
+        XCTAssertFalse(outsideProduction)
+        let clock: Int64 = 5_000
+        var writer: JournalStore? = try JournalStore(layout: layout, clock: { clock })
+        var started = JournalTestData.draft(.sessionStarted, at: clock)
+        started.nativeEvent = "SessionStart"
+        _ = try writer!.append(draft: started, context: JournalContext(eligible: true))
+        var ended = JournalTestData.draft(.sessionEnded, at: clock)
+        ended.nativeEvent = "SessionEnd"
+        ended.eventID = UUID()
+        _ = try writer!.append(draft: ended, context: JournalContext(eligible: true))
+        var loose = JournalTestData.draft(.stateChanged, at: clock)
+        loose.eventID = UUID()
+        loose.tabID = nil
+        loose.workspaceID = nil
+        loose.sessionID = nil
+        loose.signal = .observation
+        loose.nativeEvent = "other"
+        _ = try writer!.append(draft: loose, context: JournalContext(eligible: false))
+        let owner = try XCTUnwrap(started.owner)
+        writer = nil
+        let reader = try JournalStore(layout: layout, readOnly: true)
+        XCTAssertEqual(try reader.listCurrent().count, 1)
+        let page = try reader.retainedOwnerEvents(owner: owner)
+        XCTAssertEqual(page.events.map(\.draft.kind), [.sessionEnded, .sessionStarted])
+        XCTAssertFalse(page.truncated)
+        let capped = try reader.retainedOwnerEvents(owner: owner, limit: 1)
+        XCTAssertTrue(capped.truncated)
+        XCTAssertEqual(capped.events.map(\.draft.kind), [.sessionEnded])
+        XCTAssertEqual(try reader.unattributedCount(), 1)
+        XCTAssertThrowsError(try reader.append(draft: JournalTestData.draft(.turnStarted, at: clock), context: JournalContext(eligible: true))) {
+            XCTAssertEqual($0 as? JournalError, .unavailable)
+        }
+    }
 }

@@ -6,6 +6,8 @@ import Darwin
 struct JournalAppendResult {
     let receipt: JournalReceipt
     let changedSnapshot: JournalSnapshot?
+    var fromPhase: JournalPhase? = nil
+    var toPhase: JournalPhase? = nil
 }
 
 /// All disk work, folding and maintenance run on this utility queue. Receipts never wait for UI.
@@ -23,12 +25,15 @@ final class JournalStore {
     private var sincePrune = 0
     private var healthCode: JournalError?
     private var reclaiming = false
+    private let readOnly: Bool
 
     init(layout: JournalStorageLayout, budgets: JournalBudgets = JournalBudgets(),
-         instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+         instanceID: UUID = UUID(), readOnly: Bool = false,
+         clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
         self.layout = layout
         self.budgets = budgets
         self.instanceID = instanceID
+        self.readOnly = readOnly
         self.clock = clock
         try queue.sync {
             do { try open() } catch {
@@ -82,6 +87,15 @@ final class JournalStore {
     }
 
     private func open() throws {
+        if readOnly {
+            var st = stat()
+            guard lstat(layout.database.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { throw JournalError.unavailable }
+            guard sqlite3_open_v2(layout.database.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else { throw failure() }
+            sqlite3_busy_timeout(db, 100)
+            try execute("PRAGMA query_only=ON")
+            guard try scalar("PRAGMA user_version") == 1 else { throw JournalError.unsupportedVersion }
+            return
+        }
         try layout.prepare()
         // Create privately before SQLite can apply the process umask to a new database.
         let fd = Darwin.open(layout.database.path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
@@ -118,6 +132,7 @@ final class JournalStore {
     }
 
     func append(draft: JournalDraft, context: JournalContext) throws -> JournalAppendResult {
+        if readOnly { throw JournalError.unavailable }
         try draft.validate()
         if let model = context.modelID {
             guard model.utf8.count <= 128, !model.isEmpty,
@@ -193,9 +208,12 @@ final class JournalStore {
             try execute("COMMIT")
             // No mutable in-memory baseline: an ambiguous COMMIT is resolved by reading SQLite next time.
             sincePrune += 1
+            let applied = folded.effect == .applied
             return JournalAppendResult(receipt: JournalReceipt(eventID: d.eventID, sequence: sequence,
                 committedAtMs: now, replayed: false, projectionEffect: folded.effect),
-                changedSnapshot: folded.snapshot == prior ? nil : folded.snapshot)
+                changedSnapshot: folded.snapshot == prior ? nil : folded.snapshot,
+                fromPhase: applied ? folded.fromPhase : nil,
+                toPhase: applied ? folded.snapshot?.phase : nil)
         } catch { try? execute("ROLLBACK"); throw error }
     }
 
@@ -207,6 +225,32 @@ final class JournalStore {
         if result == SQLITE_DONE { return nil }
         guard result == SQLITE_ROW else { throw failure() }
         return try JSONDecoder().decode(JournalSnapshot.self, from: blob(stmt, 0))
+    }
+
+    func listCurrent() throws -> [JournalSnapshot] { try baselines() }
+
+    func retainedOwnerEvents(owner: JournalOwner, limit: Int = AgentRoster.restoreLimit) throws -> (events: [AgentRoster.RetainedEvent], truncated: Bool) {
+        try queue.sync {
+            let cap = max(1, min(200, limit))
+            let stmt = try statement("SELECT sequence,committed_at_ms,draft FROM journal_events WHERE tab_id=? AND session_id=? AND agent_kind=? ORDER BY sequence DESC LIMIT ?", [
+                .text(owner.tabID.uuidString), .text(owner.sessionID), .text(owner.agentKind), .integer(Int64(cap + 1))])
+            defer { sqlite3_finalize(stmt) }
+            var rows: [AgentRoster.RetainedEvent] = []
+            var code = sqlite3_step(stmt)
+            while code == SQLITE_ROW {
+                let draft = try JournalDraft.decode(blob(stmt, 2))
+                rows.append(AgentRoster.RetainedEvent(sequence: sqlite3_column_int64(stmt, 0), committedAtMs: sqlite3_column_int64(stmt, 1), draft: draft))
+                code = sqlite3_step(stmt)
+            }
+            guard code == SQLITE_DONE else { throw failure() }
+            let truncated = rows.count > cap
+            if truncated { rows.removeLast() }
+            return (rows, truncated)
+        }
+    }
+
+    func unattributedCount() throws -> Int {
+        try queue.sync { Int(try scalar("SELECT COUNT(*) FROM journal_events WHERE tab_id IS NULL OR session_id IS NULL")) }
     }
 
     func baselines() throws -> [JournalSnapshot] {

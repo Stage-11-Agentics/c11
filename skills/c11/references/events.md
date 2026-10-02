@@ -41,7 +41,7 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 
 ## v1 taxonomy
 
-The seventeen taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
+The taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
@@ -52,7 +52,8 @@ The seventeen taxonomy types below are the closed v1 enum. The envelope fields `
 | `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane` (the tab and area scopes); `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
 | `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace + surface? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
-| `waiting.left` | workspace + surface? | — | Paired exit edge for `waiting.entered`. |
+| `waiting.left` | workspace + surface? | — | Paired exit edge for `waiting.entered`. This name stays; it is never `waiting.exited`. |
+| `lifecycle.changed` | workspace + surface | `{tab, agent, from, to, reason}` | One applied journal phase change. `from` is null on the first event. `reason` is `approval`, `question`, `plan_review`, or null. A repeat observation emits nothing. |
 | `flag.raised` | workspace + surface | `{reason, caller_tab_id, by}` | A sticky flag went up. `caller_tab_id` is the UUID of the tab that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
 | `flag.lowered` | workspace + surface | `{by}` | Flag cleared. `by` ∈ `operator`\|`agent`; operator dismissal without an answer means *seen and deferred*. |
 | `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this tab. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
@@ -63,6 +64,8 @@ The seventeen taxonomy types below are the closed v1 enum. The envelope fields `
 | `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
 | `conversation.resume.decision` | workspace + surface | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
 | `hang.precursor` | — | `{cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint}` | The main-thread watchdog saw `count` stalls sharing one fingerprint inside `window_ms` — the leading edge of a wedge, emitted before the long stall lands. `durations_ms` are the counted episodes oldest-first; `span_ms` is the wall time the run covered. At most one per fingerprint per window. `runloop-idle` never produces one. |
+
+`waiting.entered` and `waiting.left` stay the unread 0↔1 edges. A blocked ask is `lifecycle.changed` with `to` or `from` of `blocked` and the journal waiting reason. `waiting.left` is never renamed. Startup baseline publish, a reason-only change that stays blocked, and `duplicate_evidence` do not emit `lifecycle.changed`. The event log can drop a line; `c11 agents` is the recovery read. Do not rebuild a snapshot by tailing the log.
 
 ## Stream-control markers
 

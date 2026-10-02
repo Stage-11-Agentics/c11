@@ -14,6 +14,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Live messages page](#live-messages-page)
 - [Per-tab metadata](#per-tab-metadata)
 - [Agent declaration](#agent-declaration)
+- [Agent roster](#agent-roster)
 - [Title & description](#title--description)
 - [Sidebar reporting](#sidebar-reporting)
 - [Spatial layout (`c11 tree`)](#spatial-layout-c11-tree)
@@ -808,3 +809,33 @@ turn boundary may open the existing mailbox prompt gate.
 See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
 restart confirmation, and retention. Query/export and broader provider hooks
 are separate consumers of this append seam.
+
+## Agent roster
+
+`c11 agents [--json] [--bundle-id <id>]` reads the journal-backed roster.
+Socket method: `agents.list`. It does not focus, launch, or resume anything.
+
+The JSON document is schema 1. `live_identity` is `available` or `unavailable`.
+`coverage` carries `health` (`ok` or `degraded`), `storage` (`ok` or
+`unavailable`), and `unattributed` (events with no tab or session). `tabs`
+lists live tabs. `restore_candidates` lists unconfirmed current rows.
+Timestamps are ISO-8601 UTC at whole seconds. Nulls are explicit.
+
+A live tab reports `flag`, `suppressed`, and `last_seen_at` even when it has
+no journal row. Journal fields are then null. `kind` comes from the journal
+owner. `model` is the model on the journal snapshot. Waiting `reason` is
+`approval`, `question`, `plan_review`, or null.
+
+With the app down, `tabs` is empty and `live_identity` is `unavailable`.
+Pass `--bundle-id` to open that bundle's journal read-only. The command does
+not guess a bundle from a missing socket. A live bundle that disagrees with
+`--bundle-id` is rejected. An invalid id errors. A missing journal file
+returns storage unavailable and no candidates.
+
+`restore_candidates[].label` is `historical_candidate`, `ended`, or `unknown`.
+Candidate `confirmation` is `unconfirmed`. Candidate `connection` is
+`disconnected` or `unknown`. `coverage` on a candidate is `retained` or
+`event_pruned`. The command never starts a process.
+
+`lifecycle.changed` is the phase edge. `waiting.left` remains the unread exit
+and is never renamed. See [events.md](events.md).

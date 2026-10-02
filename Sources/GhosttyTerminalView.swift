@@ -6180,6 +6180,22 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                     at: keyAt
                 )
             }
+            if AgentRoster.isTerminalSubmit(
+                keyCode: event.keyCode,
+                modifierRaw: submitFlags.rawValue,
+                isRepeat: event.isARepeat,
+                synthesizing: isSynthesizingKey,
+                hasMarkedText: hasMarkedText()
+            ) {
+                JournalCoordinator.shared.noteOperatorSubmit(
+                    tabID: terminalSurface.id,
+                    keyCode: event.keyCode,
+                    modifierRaw: submitFlags.rawValue,
+                    isRepeat: event.isARepeat,
+                    synthesizing: isSynthesizingKey,
+                    hasMarkedText: hasMarkedText()
+                )
+            }
 #if DEBUG
             dismissNotificationMs = (ProcessInfo.processInfo.systemUptime - dismissNotificationStart) * 1000.0
 #endif

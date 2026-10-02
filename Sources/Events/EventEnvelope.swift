@@ -51,6 +51,7 @@ struct EventEnvelope {
         case livenessDerived = "liveness.derived"
         case waitingEntered = "waiting.entered"
         case waitingLeft = "waiting.left"
+        case lifecycleChanged = "lifecycle.changed"
         case flagRaised = "flag.raised"
         case flagLowered = "flag.lowered"
         case flagSuppressed = "flag.suppressed"

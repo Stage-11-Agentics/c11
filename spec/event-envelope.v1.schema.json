@@ -27,6 +27,7 @@
         "liveness.derived",
         "waiting.entered",
         "waiting.left",
+        "lifecycle.changed",
         "flag.raised",
         "flag.lowered",
         "flag.suppressed",
@@ -41,7 +42,7 @@
         "log.rotated",
         "log.dropped"
       ],
-      "description": "Dotted event type. The v1 taxonomy (EVT-2): surface.created, surface.closed, workspace.selected, workspace.reordered, metadata.changed, liveness.derived, waiting.entered, waiting.left, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, tab.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. The taxonomy is extensible in future schema versions; v1 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
+      "description": "Dotted event type. The v1 taxonomy (EVT-2): surface.created, surface.closed, workspace.selected, workspace.reordered, metadata.changed, liveness.derived, waiting.entered, waiting.left, lifecycle.changed, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, tab.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. The taxonomy is extensible in future schema versions; v1 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
     },
     "instance": {
       "type": "string",

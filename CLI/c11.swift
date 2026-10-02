@@ -1103,15 +1103,24 @@ final class SocketClient {
         try send(command: command, responseTimeout: Self.configuredDefaultDeadlineSeconds)
     }
 
-    // responseTimeout: nil = no SO_RCVTIMEO (unbounded); >0 = initial-read deadline in seconds.
+    // responseTimeout: nil = no SO_RCVTIMEO / SO_SNDTIMEO (unbounded); >0 = the
+    // deadline in seconds for writing the request (a peer that stops reading
+    // cannot hold the CLI) and for the initial read of the response.
     func send(command: String, responseTimeout: TimeInterval?) throws -> String {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
-        let payload = command + "\n"
-        try payload.withCString { ptr in
-            let sent = Darwin.write(socketFD, ptr, strlen(ptr))
+        let payload = Array((command + "\n").utf8)
+        try configureTimeout(SO_SNDTIMEO, responseTimeout)
+        var offset = 0
+        while offset < payload.count {
+            let sent = payload[offset...].withUnsafeBytes { Darwin.write(socketFD, $0.baseAddress, $0.count) }
             if sent < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: SocketClient.commandTimedOutMessage)
+                }
                 throw CLIError(message: "Failed to write to socket")
             }
+            offset += sent
         }
 
         var data = Data()
@@ -1201,6 +1210,10 @@ final class SocketClient {
 
     // timeout == nil clears SO_RCVTIMEO (no deadline). timeout > 0 sets the deadline.
     private func configureReceiveTimeout(_ timeout: TimeInterval?) throws {
+        try configureTimeout(SO_RCVTIMEO, timeout)
+    }
+
+    private func configureTimeout(_ option: Int32, _ timeout: TimeInterval?) throws {
         var interval: timeval
         if let t = timeout, t > 0 {
             interval = timeval(
@@ -1214,13 +1227,13 @@ final class SocketClient {
             setsockopt(
                 socketFD,
                 SOL_SOCKET,
-                SO_RCVTIMEO,
+                option,
                 ptr,
                 socklen_t(MemoryLayout<timeval>.size)
             )
         }
         guard result == 0 else {
-            throw CLIError(message: "Failed to configure socket receive timeout")
+            throw CLIError(message: "Failed to configure socket timeout")
         }
     }
 
@@ -1895,6 +1908,14 @@ struct CMUXCLI {
         // socket.
         if command == "model-costs" {
             try runModelCostsCommand(commandArgs: commandArgs)
+            return
+        }
+
+        // C11-257: the detached delivery reporter a hook drain spawns after it
+        // has written its output. Runs before the shared connect so its own
+        // hard bound (alarm) covers the connect too.
+        if command == "mailbox", commandArgs.first == Self.mailboxReportSubcommand {
+            runDetachedMailboxReport(json: commandArgs.dropFirst().first ?? "", socketPath: resolvedSocketPath)
             return
         }
 
@@ -19151,7 +19172,8 @@ extension CMUXCLI {
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
     /// go back to the inbox (C3-order), otherwise each one is recorded as
     /// `mailbox.delivered` with `via: "drain"`, under the workspace whose inbox
-    /// held it. Returns whether it delivered (the write, not the report).
+    /// held it, by a detached reporter. Returns whether it delivered (the
+    /// write, not the report).
     @discardableResult
     private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
         signal(SIGPIPE, SIG_IGN)
@@ -19159,38 +19181,30 @@ extension CMUXCLI {
             drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return false
         }
-        // Everything after the claim shares one absolute deadline tied to the
-        // process's age, so the hook has exited well before a harness kill
-        // however many workspaces the mail came from.
-        guard let budget = MailboxHookOutput.reportBudget(
-            processElapsedSeconds: Self.processElapsedSeconds()
-        ) else { return true }
-        reportMailboxDrained(
-            client: client,
-            recipientTabId: drain.tabId,
-            deliveries: drain.claimed.compactMap { message in
-                MailboxDrain.workspaceId(ofInbox: message.inbox).map {
-                    (message.id, message.recipient ?? drain.tabId.uuidString.lowercased(), $0)
+        // No socket I/O after the claim: a c11 that stops reading must never
+        // hold this process toward the harness's kill. The delivery events are
+        // sent by a detached child that does not hold this process's stdout.
+        spawnDetachedMailboxReport(
+            socketPath: client.socketPath,
+            params: mailboxReportParams(
+                recipientTabId: drain.tabId,
+                deliveries: drain.claimed.compactMap { message in
+                    MailboxDrain.workspaceId(ofInbox: message.inbox).map {
+                        (message.id, message.recipient ?? drain.tabId.uuidString.lowercased(), $0)
+                    }
                 }
-            },
-            budget: budget
+            )
         )
         return true
     }
 
-    /// Records claimed envelopes as `mailbox.delivered` in ONE socket call,
-    /// whatever the number of workspaces involved, inside `budget` seconds
-    /// in total (the capability probe and the report share it). Best effort:
-    /// an unreachable or stalled socket only costs the events, never the
-    /// delivery. `recipientTabId` nil omits `tab_id`, so an unknown recipient
-    /// is never attributed to the caller.
-    private func reportMailboxDrained(
-        client: SocketClient,
+    /// `mailbox.report_delivered` params: every delivery with its own
+    /// workspace, in one call. `recipientTabId` nil omits `tab_id`, so an
+    /// unknown recipient is never attributed to the caller.
+    private func mailboxReportParams(
         recipientTabId: UUID?,
-        deliveries: [(id: String, recipient: String, workspaceId: UUID)],
-        budget: TimeInterval
-    ) {
-        guard !deliveries.isEmpty, budget > 0 else { return }
+        deliveries: [(id: String, recipient: String, workspaceId: UUID)]
+    ) -> [String: Any] {
         var params: [String: Any] = [
             "deliveries": deliveries.map {
                 ["id": $0.id, "recipient": $0.recipient, "workspace_id": $0.workspaceId.uuidString]
@@ -19200,12 +19214,82 @@ extension CMUXCLI {
         if let recipientTabId {
             params["tab_id"] = recipientTabId.uuidString
         }
+        return params
+    }
+
+    /// Records claimed envelopes as `mailbox.delivered` in one socket call
+    /// inside `budget` seconds (the capability probe and the report share it;
+    /// writes and reads are both bounded). Best effort: an unreachable or
+    /// stalled socket only costs the events, never the delivery. Used by the
+    /// plain `recv --drain`, which no harness kills.
+    private func reportMailboxDrained(
+        client: SocketClient,
+        recipientTabId: UUID?,
+        deliveries: [(id: String, recipient: String, workspaceId: UUID)],
+        budget: TimeInterval
+    ) {
+        guard !deliveries.isEmpty, budget > 0 else { return }
         // `sendV2` may probe capabilities first with the same per-call
         // deadline, so each of the two round-trips gets half the budget.
         _ = try? client.sendV2(
             method: "mailbox.report_delivered",
-            params: params,
+            params: mailboxReportParams(recipientTabId: recipientTabId, deliveries: deliveries),
             deadline: .custom(budget / 2)
+        )
+    }
+
+    /// Hidden `c11 mailbox __report-delivered <params-json>`: the detached
+    /// reporter.
+    static let mailboxReportSubcommand = "__report-delivered"
+
+    /// Hard bound on the detached reporter's whole life, connect included.
+    static let mailboxReportLifetimeSeconds: UInt32 = 3
+
+    /// Starts the detached reporter and returns at once. The child gets its
+    /// own session (no terminal signals, outside the harness's process group),
+    /// `/dev/null` on fds 0-2 and no other inherited descriptor, so it never
+    /// holds the hook's stdout or the hook's socket connection. Failure to
+    /// spawn only costs the events.
+    private func spawnDetachedMailboxReport(socketPath: String, params: [String: Any]) {
+        guard (params["deliveries"] as? [Any])?.isEmpty == false,
+              let data = try? JSONSerialization.data(withJSONObject: params),
+              let json = String(data: data, encoding: .utf8) else { return }
+        var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        var pathSize = UInt32(pathBuffer.count)
+        guard _NSGetExecutablePath(&pathBuffer, &pathSize) == 0 else { return }
+        let executable = String(cString: pathBuffer)
+
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        var fileActions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&fileActions)
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+        posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+        posix_spawn_file_actions_addopen(&fileActions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
+        posix_spawn_file_actions_addopen(&fileActions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
+
+        let arguments = [executable, "--socket", socketPath, "mailbox", Self.mailboxReportSubcommand, json]
+        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        var pid: pid_t = 0
+        _ = posix_spawn(&pid, executable, &fileActions, &attributes, &argv, environ)
+    }
+
+    /// The detached reporter's body: one bounded `mailbox.report_delivered`
+    /// call, the whole process killed by `alarm` if anything stalls.
+    private func runDetachedMailboxReport(json: String, socketPath: String) {
+        alarm(Self.mailboxReportLifetimeSeconds)
+        guard let data = json.data(using: .utf8),
+              let params = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        let client = SocketClient(path: socketPath)
+        guard (try? client.connect()) != nil else { return }
+        defer { client.close() }
+        _ = try? client.sendV2(
+            method: "mailbox.report_delivered",
+            params: params,
+            deadline: .custom(Double(Self.mailboxReportLifetimeSeconds) / 3)
         )
     }
 

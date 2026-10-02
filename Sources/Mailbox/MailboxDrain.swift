@@ -306,29 +306,18 @@ enum MailboxHookOutput {
     /// No claim starts after this many seconds of the hook process's life.
     /// Claude and Codex kill a hook at 10 s and then discard its stdout; mail
     /// claimed that late could land in `_read/` without reaching the agent.
-    /// What follows a claim (one JSON write and one report inside
-    /// `reportBudget`) ends by `postClaimDeadlineSeconds`.
+    /// What follows a claim is one stdout write and spawning the detached
+    /// reporter: no socket I/O, so it cannot run into the kill.
     static let claimDeadlineSeconds: TimeInterval = 6
 
     static func mayClaim(processElapsedSeconds: TimeInterval?) -> Bool {
         (processElapsedSeconds ?? 0) < claimDeadlineSeconds
     }
 
-    /// The hook process is done by this age: claimed mail written, the
-    /// delivery report sent or abandoned. Comfortably inside the 10 s kill.
-    static let postClaimDeadlineSeconds: TimeInterval = 8
-
-    /// Ceiling on the whole delivery report (capability probe included).
+    /// Ceiling on the plain `recv --drain` delivery report (capability probe
+    /// included). The hook drain does not report inline: it hands the report
+    /// to a detached process.
     static let reportBudgetSeconds: TimeInterval = 1
-
-    /// Seconds the post-claim report may take, or nil to skip it: the lesser
-    /// of `reportBudgetSeconds` and what is left before
-    /// `postClaimDeadlineSeconds`.
-    static func reportBudget(processElapsedSeconds: TimeInterval?) -> TimeInterval? {
-        let remaining = postClaimDeadlineSeconds - (processElapsedSeconds ?? 0)
-        let budget = min(reportBudgetSeconds, remaining)
-        return budget >= 0.05 ? budget : nil
-    }
 
     /// Whether this hook invocation may consume mail at all.
     ///

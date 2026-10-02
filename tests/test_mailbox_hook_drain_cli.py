@@ -17,8 +17,10 @@ c11 socket, so the stall and broken-pipe paths can be forced.
   6. A hook process that spent more than ~6 s on socket calls before the
      claim leaves the mail in the inbox instead of claiming it into a
      result the harness would discard at its 10 s timeout.
-  7. Mail claimed from many workspace inboxes is reported in one bounded
-     call: with a stalled socket the hook still exits fast, output intact.
+  7. After the claim the hook does no socket I/O at all: with a socket that
+     reads one line and then stops reading, the hook exits at once with its
+     output intact, the detached reporter is gone within its 3 s bound, and
+     a large plain-drain report is cut off by the send deadline.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -58,12 +60,14 @@ def resolve_cli() -> str:
 
 class FakeC11:
     """Line-delimited c11 socket. v2 JSON requests get `ok`, v1 text commands
-    get `OK`. `stall=True` reads requests and never answers; `delay` holds
-    every answer that many seconds."""
+    get `OK`. `stall=True` reads requests and never answers; `one_line=True`
+    reads one line per connection and then stops reading; `delay` holds every
+    answer that many seconds."""
 
-    def __init__(self, path: str, stall: bool, delay: float = 0.0):
+    def __init__(self, path: str, stall: bool, delay: float = 0.0, one_line: bool = False):
         self.path = path
-        self.stall = stall
+        self.stall = stall or one_line
+        self.one_line = one_line
         self.delay = delay
         self.requests: list[dict] = []
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -100,6 +104,9 @@ class FakeC11:
                         conn.sendall(b"OK\n")
                     continue
                 self.requests.append(req)
+                if self.one_line:
+                    time.sleep(30)   # stop reading: the peer's next write fills the buffer
+                    return
                 if self.stall:
                     continue
                 time.sleep(self.delay)
@@ -108,8 +115,15 @@ class FakeC11:
                     result = {"methods": ["tab.list", "mailbox.report_delivered"]}
                 conn.sendall(json.dumps({"id": req.get("id"), "ok": True, "result": result}).encode() + b"\n")
 
-    def reports(self) -> list[dict]:
-        return [r["params"] for r in self.requests if r.get("method") == "mailbox.report_delivered"]
+    def reports(self, wait: float = 3.0) -> list[dict]:
+        # The hook's report comes from a detached child, so it may land a
+        # moment after the hook exits.
+        deadline = time.monotonic() + wait
+        while True:
+            found = [r["params"] for r in self.requests if r.get("method") == "mailbox.report_delivered"]
+            if found or time.monotonic() > deadline:
+                return found
+            time.sleep(0.05)
 
     def close(self) -> None:
         self.sock.close()
@@ -125,8 +139,7 @@ class Fixture:
 
     def deliver(self, inbox_key: str, body: str = "hello", to: str = "watcher", workspace: str = WORKSPACE) -> str:
         self.counter += 1
-        ulid = "01K" + "0" * 22 + "ABCDEFGHJK"[self.counter % 10]
-        ulid = ulid[:-2] + f"{self.counter:02d}"
+        ulid = "01K" + f"{self.counter:023d}"
         inbox = os.path.join(self.mailboxes.replace(WORKSPACE, workspace), inbox_key)
         os.makedirs(inbox, exist_ok=True)
         envelope = {"version": 1, "id": ulid, "from": "builder", "to": to,
@@ -170,9 +183,14 @@ def check(cond: bool, label: str, detail: str = "") -> None:
 
 
 def run(cli: str, args: list[str], env: dict, stdin: str = "", stdout=subprocess.PIPE, timeout: float = 15):
+    """A hung CLI is a failed check, not a crashed test: it comes back with
+    exit code -9 and whatever it printed before the timeout."""
     start = time.monotonic()
-    proc = subprocess.run([cli, *args], input=stdin.encode(), stdout=stdout, stderr=subprocess.PIPE,
-                          env=env, timeout=timeout, check=False)
+    try:
+        proc = subprocess.run([cli, *args], input=stdin.encode(), stdout=stdout, stderr=subprocess.PIPE,
+                              env=env, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        proc = subprocess.CompletedProcess(exc.cmd, -9, exc.stdout or b"", exc.stderr or b"")
     return proc, (time.monotonic() - start) * 1000
 
 
@@ -194,8 +212,10 @@ def main() -> int:
     check(fx.listing(TAB.lower()) == ([], [ulid + ".msg"]), "stalled socket: envelope claimed into _read/")
 
     # 2. Empty recipient, sibling holds mail: no socket call before answering.
+    #    A fresh socket, so check 1's detached reporter cannot land in its log.
+    stalled.close()
+    stalled = FakeC11(os.path.join(tmp, "stall-empty.sock"), stall=True)
     fx.deliver(SIBLING.lower())
-    stalled.requests.clear()
     timings = []
     for _ in range(10):
         proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "claude"],
@@ -265,23 +285,41 @@ def main() -> int:
     rec.close()
     fx.cleanup()
 
-    # 7. Many workspace groups, stalled socket: one report call, fast exit, output intact.
+    # 7. Many workspace groups, socket that reads one line and stops: the hook
+    #    exits at once with every message, the reporter dies within its bound.
     fx = Fixture()
-    stalled = FakeC11(os.path.join(tmp, "stall3.sock"), stall=True)
-    groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 16)]
+    stuck = FakeC11(os.path.join(tmp, "oneline.sock"), stall=False, one_line=True)
+    # 70 inboxes: the hook claims what fits its budget (~60), whose report is
+    # over 8 KB, past what the socket buffers when the peer stops reading.
+    groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 71)]
     ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
-    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
-                   fx.env(stalled.path), stop_input)
+    proc, ms = run(cli, ["--socket", stuck.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+                   fx.env(stuck.path), stop_input, timeout=12)
     out = proc.stdout.decode()
-    claimed = all(fx.listing(TAB.lower(), w) == ([], [u + ".msg"]) for w, u in zip(groups, ulids))
-    check(proc.returncode == 0 and '"decision":"block"' in out and all(u in out for u in ulids) and claimed,
-          f"{len(groups)} workspace groups, stalled socket: every message printed and claimed", out[:160])
-    check(ms < 2500, f"{len(groups)} workspace groups, stalled socket: exits in {ms:.0f} ms (one bounded report)")
-    report_calls = [r for r in stalled.requests if r.get("method") == "mailbox.report_delivered"]
-    check(len(report_calls) == 1 and len(report_calls[0]["params"]["deliveries"]) == len(groups)
-          and {d["workspace_id"] for d in report_calls[0]["params"]["deliveries"]} == set(groups),
-          "one report call carries every delivery with its own workspace", str(len(report_calls)))
-    stalled.close()
+    taken = [(w, u) for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
+    claimed = len(taken) >= 50 and all(u in out for _, u in taken)
+    check(proc.returncode == 0 and '"decision":"block"' in out and claimed,
+          f"{len(groups)} workspace inboxes, socket stops reading: hook exits 0 and prints every message it claimed "
+          f"({len(taken)})", f"exit {proc.returncode} {out[:120]}")
+    check(ms < 500, f"{len(groups)} workspace inboxes, socket stops reading: hook exits in {ms:.0f} ms (no socket I/O after the claim)")
+    time.sleep(3.5)
+    lingering = subprocess.run(["pgrep", "-f", f"{stuck.path} mailbox __report-delivered"], capture_output=True).stdout
+    check(lingering.strip() == b"", "detached reporter is gone within its 3 s bound", lingering.decode())
+    stuck.close()
+    fx.cleanup()
+
+    # Same kind of socket, plain drain with a report far over the socket send buffer:
+    # the send deadline ends it.
+    fx = Fixture()
+    stuck = FakeC11(os.path.join(tmp, "oneline2.sock"), stall=False, one_line=True)
+    many = [fx.deliver("watcher") for _ in range(300)]
+    proc, ms = run(cli, ["--socket", stuck.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(stuck.path),
+                   timeout=30)
+    root, read = fx.listing("watcher")
+    check(proc.returncode == 0 and len(read) == 300 and all(u in proc.stdout.decode() for u in many),
+          "plain drain, 300 messages (report far over the socket buffer), socket stops reading: all printed and claimed")
+    check(ms < 3000, f"plain drain report bounded by the send deadline ({ms:.0f} ms)")
+    stuck.close()
     fx.cleanup()
 
     # 6. Claim deadline: prompt-submit's status calls take ~2.5 s each before the claim.

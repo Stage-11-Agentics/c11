@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:23:55Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKDZRC5Z4G9RJ9J5AQYDGK",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKDZRC5Z4G9RJ9J5AQYDGK.png",
+    "size_bytes": 116783
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Packaged Release wizard discovers Safari, Arc and Google Chrome from real guest home",
+  "token_usage": null,
+  "type": "file"
+}

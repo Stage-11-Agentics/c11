@@ -1,0 +1,199 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-261",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-261-groups-validation",
+      "linked_at": "2026-10-02T14:49:42Z",
+      "linked_by": "agent:luna-261",
+      "repo": null
+    }
+  ],
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:30:05Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nGroups are core 1.0 by Atin's ruling, but the operator must be able to trust the real sidebar under a large fleet, including drag, pins and restart. Backlog item: W3; this is the dedicated careful-testing and sign-off deliverable for W1/W2.\n\n## Evidence\n- c11: `Sources/ContentView.swift:8392-8408,8535-8536,8572-8638` on origin/main (0ff8887e5e) renders the SwiftUI workspace list and projects live attention. `Sources/WorkspaceManager.swift:2386-2409` clamps current moves; `Sources/SessionPersistence.swift:490-522` is the persistence extension point. These are the scale, ordering and restoration boundaries W1/W2 change.\n- Existing executable-test seams: `c11Tests/SidebarOrderingTests.swift`, `c11Tests/SessionPersistenceTests.swift`, `c11Tests/WorkspaceManagerSessionSnapshotTests.swift`; tests_v2 can use the tagged instance as oracle. Existing tests are foundations, not proof of groups.\n- Upstream: cmux group features #4815/#5018 and anchor follow-ups #5253/#8925/#9176/#13688/#15892. At upstream/main (920ff39ff7), see `cmuxTests/WorkspaceGroupTests.swift` and `Packages/macOS/CmuxWorkspaces/Tests/CmuxWorkspacesTests/WorkspaceReorderAtomicityTests.swift` plus `WorkspaceReorderPinnedGroupAnchorTests.swift`. Translate useful failure scenarios into folder behavior rather than importing anchor assumptions.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a73 risks; Fable row 4.12 and Astra row 4.12 on sidebar redraw/hidden flags. BACKLOG.md D17/W3 explicitly requires 50+ workspaces and careful testing. F2 owns the preregistered fleet baseline and performance budgets. The older HTML timing advice does not defer this gate.\n\n## Scope\nIn: repeatable group fixtures/harness scenarios, measured 50+ workspace comparison, real sidebar computer-use evidence, restore round-trips and a numbered script for Atin's integrated sign-off pass. Cover W1/W2 behavior and report exact candidate/base revisions.\nOut: a second general fleet-soak system, sidebar rewrite, speculative GPU reclaim, implementation of unrelated hang fixes, automatic grouping, account restore, stable tab numbering, W4 history and release publication. Discovered implementation defects go back to W1/W2 or the existing relevant bug ticket; this ticket does not silently widen their scope.\n\n## Approach\nExtend F2's workload with a reproducible fixture of at least 50 workspaces: grouped/ungrouped, empty/collapsed folders, pinned/unpinned members, terminal/browser/markdown tabs and synthetic attention. Run the same workload, host and measurement protocol on the recorded baseline and candidate; the baseline has equivalent workspaces without the new group UI. Pre-register sample duration, repetitions and pass budgets from F2 before measuring the candidate. CLI/socket creates fixtures and reads state; synthesized pointer/keyboard input proves the visible interactions. Make the written script independently repeatable and distinguish automated results from Atin's pending approval.\n\n## Acceptance criteria\n1. A reviewer can provision and clean up the named 50+ workspace fixture on an isolated tagged app without touching the operator's production workspaces. The artifact records host, app tag/SHA, baseline SHA, fixture version and exact commands.\n2. Numbered scenarios cover joins/leaves, intra/inter-group moves, empty/collapsed targets, pinned boundaries, cancelled drops, moving/closing the first or last member, and group deletion/ungrouping. Before/after UUID/order assertions and screenshots show no dropped or duplicated members and no implicit terminal closure.\n3. In a collapsed folder, a hidden flag remains visibly violet, suppressed waiting tabs are excluded from the waiting count, and a flagged-and-suppressed member still escalates. Counts match the socket oracle throughout the scripted transitions.\n4. Save, quit and restore the fixture on the tagged app; compare group identity, ordering, membership, color/icon and collapse/pin state. Also restore a pre-group snapshot and an empty-group snapshot. Label clean-restart versus any separately tested crash behavior; do not imply crash proof from a clean restart.\n5. Typing and interaction measurements during group/attention churn meet F2's preregistered non-regression budgets against its baseline. Publish raw samples and summary latency, hangs/main-thread stalls and relevant memory observations. Missing baseline, budget or failed measurement leaves this criterion unverified, not passed.\n6. A fresh-context computer-use reviewer drives the real sidebar and reports each numbered step with evidence. The final operator script includes expected visible outcomes, exact build identity and dismissal/cleanup instructions; Atin's sign-off is recorded separately and is not inferred from automation.\n\n## Validation\nThis ticket's deliverable is executed evidence plus a repeatable script, not a prose test plan alone. Behavioral fixture tests, tests_v2 on `/tmp/c11-debug-<tag>.sock`, real sidebar pointer/keyboard actions and the F2 group-churn soak are complementary. Builds and soaks run on Atlas after C11-216; E2E/UI automated suites use the approved remote/CI lane, not a Hyperion test swarm. For a visible tagged QA run, enumerate the target display, set a hard termination timer and prove dismissal by synthesized input; verify readable areas with `c11 tree --no-layout`. Use build-lock entry points and QA launch suppression.\n\n## Dependencies\nW1 (C11-259) and W2 (C11-260) are both required. F1 (C11-216) supplies Atlas execution; F2 supplies baseline, workload/measurement infrastructure and preregistered budgets. X2 consumes this numbered script in the integrated 1.0 sign-off. The lead links F1/F2 across workstreams; no independent release approval is implied.\n\n## Risks\nA non-equivalent fixture or moving baseline makes performance claims meaningless. Tests can themselves monopolize the main thread or overwhelm the host. Keep synthetic/public evidence separate from private fleet data and redact captures. No tenant config writes. Exercise W2's six locales, narrow sidebar and fixed geometry; report localization failures to its owner. Respect the three-cycle escalation lesson in `docs/aar-c11-188-attention-loop.md` instead of growing an unbounded proof checklist.\n\nSize: M. Tier: P1. Doctrine check: measure the shipped primitives and observed workflows without interpreting or reconfiguring agents.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YZQ7BSXPV3QNARZGH4SWQ7",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZRKA6BGKJCQTSB8PA41PC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z03KRET6018E02AQQ79GDX",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z22VWTRD591RD2J1SYDM8A",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z22VZ86YE1KW0MD7FJXMAZ",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2A3R7HRPZQT639SA33JVP",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2A3TNCMMY6MQ5B3XF8RBE",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2H7ZD18F3XBPX0Y1JSA27",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2HD5533Z0GZDNWJNDZQP0",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2QXMKPD36VRE8R5VYKBJ4",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2QXQ3H6N10X43WE11G1N6",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2TJJJAH3XE8KCRTHY4V81",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2TWAEJ80C2RRCGVCDHXWT",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2WGXA2Y50VR7RGMGYBDDP",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2WV6ZVBTZRRH42A7XSKEC",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2YH96XKBD7N6GK3SF3N2C",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2YVGR3JBV6WYC847XHKR4",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z31R6XKWYHSS17103PVAP8",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z31R9ENJZF7EXGDDFRN8AV",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3B27T5TSHZ3PW8Y2WQ7WJ",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3FX2Q4G52QK9ZY2SZW8XC",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3FX58YHCH37YSF9EK89ER",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3V21289JQ8ERZ5G2X5QPD",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3V23J7628H6F3YHP9F7V7",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3YTGA24NX3GX1W2JMSFRB",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z3YTJQ600KSGT3AHHHR4X6",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3Q75BT66X4APD71Q6GACE",
+  "last_event_id": "ev_01M3Z3YTJV6JDCWKJDRF97YKB1",
+  "last_status_changed_at": "2026-10-02T19:06:41Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:30:43Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3Q706AHNBFJT4AW4F07NE",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:30:43Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3Q72SRQC6X52RE70A9ZFK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:32Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:49Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-261",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:workspaces",
+    "tier:p1"
+  ],
+  "title": "Workspace groups: 50-workspace validation and numbered sign-off script",
+  "type": "task",
+  "updated_at": "2026-10-02T20:12:43Z",
+  "urgency": null
+}

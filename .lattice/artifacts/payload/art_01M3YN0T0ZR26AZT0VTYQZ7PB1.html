@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>C11-279 batch 4 validation</title><style>body{font:17px system-ui;max-width:1000px;margin:32px auto;padding:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}</style><h1>C11-279 PASS</h1><h2>Scope and result</h2><pre>Needs you: nothing. PASS for the owner runtime scope.
+
+1. Exact packaged Debug source/CLI provenance matched; routing.canonical_keys version 1 exposed.
+2. Live stock fixture passed worker tab.send_text and main system.identify rejection with invalid_params/canonical hints, with no rejected input.
+3. Nested metadata and ordinary nonselectors/character typo remained accepted; this is a bounded routing-selector guard.
+4. Listed surface_id alias delivered into the intended tab. Five additional case/underscore/camel variants were rejected even alongside valid tab_id, with no rejected marker.
+5. Both disposable workspaces cleaned up. Initial ignored socket-name guard setup failure retained, then adapted to the explicitly owned sandbox socket and passed. No production, auth or native UI proof required for this contract. Shared app cleanup limitation is recorded separately.
+
+Provenance: source `12d4f21a8822a3a7763d3a26b5295d8f6213c60a`; packaged CLI SHA-256 `4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e`.
+</pre><h2>Structured result</h2><pre>{
+  &quot;source_head&quot;: &quot;12d4f21a8822a3a7763d3a26b5295d8f6213c60a&quot;,
+  &quot;debug_artifact_manifest&quot;: &quot;dc3b9a7120b34a03a050f42551f5809c&quot;,
+  &quot;built_cli_sha256&quot;: &quot;4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e&quot;,
+  &quot;verdict&quot;: &quot;PASS_RUNTIME_SCOPE&quot;,
+  &quot;stock_live_fixture_pass&quot;: true,
+  &quot;worker_and_main_rejections_pass&quot;: true,
+  &quot;nested_nonselectors_typo_acceptance_pass&quot;: true,
+  &quot;listed_alias_delivery_pass&quot;: true,
+  &quot;extra_bad_selector_variants&quot;: 5,
+  &quot;valid_target_alongside_bad_selector_rejected&quot;: true,
+  &quot;no_rejected_input&quot;: true,
+  &quot;setup_failure&quot;: &quot;Ignored fixture originally required debug socket naming; sandbox guard adaptation retained, then passed.&quot;
+}</pre><h2>Reproducible invocation templates and actual receipts</h2><pre>python3 &quot;$HOME/c11-sandbox/batch-4/build-remote/batch-4/prep/run-fixture.py&quot; 279 --app &quot;$HOME/c11-sandbox/apps/val-4-core/c11 DEV val-4.app&quot; --socket /tmp/c11-sandbox-val-4-core.sock --output /tmp/c11-sandbox-batch4-279
+python3 &quot;$HOME/c11-sandbox/batch-4/build-remote/batch-4/prep/run-fixture.py&quot; 279-variants --app &quot;$HOME/c11-sandbox/apps/val-4-core/c11 DEV val-4.app&quot; --socket /tmp/c11-sandbox-val-4-core.sock --output /tmp/c11-sandbox-batch4-279-variants
+
+PASS C11-279 worker/main rejection, no rejected input, and listed alias delivery
+PASS C11-279 case/underscore variants reject alongside valid canonical targeting
+</pre><h2>Common batch gate and smoke</h2><pre>Batch 4 common validation at clean detached main 12d4f21a8822a3a7763d3a26b5295d8f6213c60a.
+
+Debug build dc3b9a7120b34a03a050f42551f5809c and Release build 3f7e03add1da4c958ec3ae5bdca69934 passed through the remote build rail, Xcode 26.3 and Zig 0.15.2, no source overlay. Retrieved Debug executable SHA256 f16ca05acb803971b35545045c6255e6154a473889a37e2f530be8aa30aeaf39; bundled CLI SHA256 4c8ad8118392b0b9b6e7e0048406b7358acb27bdaf79f158351021f6c0cc241e. The disposable guest copy matches both.
+
+Logic invocation 76054f1068e64e41810bafdf4aca3a29 passed 2,375 tests, three existing skips, zero failures. Explicit approved SSH exclusions: SocketControlPasswordStoreTests (login Keychain) and WorkspaceRemoteConnectionTests (known main flake). This pin predates C11-314; later gates including 9f2173320a omit the remote-connection exclusion. Separate invocation dcbf149d79a0479997358feb3b7ae755 ran the retained remote-command-refusal-after-handshake test: one test, zero failures, 0.073 seconds.
+
+Common smoke PASS, using a tagged QA fresh launch followed by synthesized App menu Quit and tagged QA resume:
+1. Tagged process launches and identify answers on its explicit socket.
+2. Synthetic workspace splits right and down into three readable areas.
+3. New terminal executes the synthetic output command and displays its receipt.
+4. Browser opens an actual local HTML fixture; markdown opens a local document.
+5. Resume preserves workspace and tab UUIDs, selected tabs and split topology; browser DOM retains C11_BATCH_4_RESTORE. Window/area handles are ephemeral and compared through topology.
+6. Tree and own-PID/window-bounds screenshot confirm readable restored content. Screens were enumerated; the confined window was inside the verified 1800 by 1169 display, with no title-based lookup.
+
+Both common-smoke processes exited after synthesized native Quit; PID disappearance and UI lease release were recorded. Raw screenshots contain private file URLs and are retained only locally; public evidence omits them. No product or installed-skill mutation.
+
+The selected host gate passed StartupBundledReportsTests and four TerminalControllerRefLifecycleTests, but the CreateInitialInputRuntimeTests reconstruction fixture failed. C11-280 remains open pending the Orchestrator-selected owner repair with a fresh terminal object. This is not a green full host-gate claim.
+</pre>

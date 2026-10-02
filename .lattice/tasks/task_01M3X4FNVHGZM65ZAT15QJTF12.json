@@ -1,0 +1,110 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-browser",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-288-browser-import",
+      "linked_at": "2026-10-02T07:47:30Z",
+      "linked_by": "agent:codex-browser",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nc11 advertises browser import from Chrome, Arc, and Safari. Nothing in this release has shown that the wizard still works against today's versions of those browsers. An agent that follows the docs into a broken import wastes a login. Backlog item: B2.\n\n## Evidence\n- c11: `InstalledBrowserDetector.allBrowserDescriptors` on origin/main (0ff8887e5e) includes Safari (`Sources/Tabs/BrowserTab.swift:7011-7023`), Google Chrome (`:7025-7034`), and Arc (`:7047-7056`), plus Firefox, Brave, Edge, and others.\n- c11: `BrowserImportService.importData` (`:8653-8695`) imports cookies and history for a realized plan. The scope `.everything` adds a warning that bookmarks, settings, and extensions are not imported (`:8678-8685`). Safari cookies return the localized warning at `:8768` that `Cookies.binarycookies` are not supported. Chromium cookies go through `importChromiumCookies` (`:8885`), which uses the Keychain \"Safe Storage\" key.\n- c11: the operator path is `presentImportDialog` (`:9457`) and `ImportWizardWindowController` (`:9661`). There is no `c11 browser import` subcommand. `c11 browser --help` (`CLI/c11.swift:10181-10239`) has no import line.\n- Upstream: cmux imports cookies and history for a long browser list. Later descriptors are a follow-on. Report 06 \u00a75.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a75 Import row. Fable marked the smoke if-time. Astra row 4.16 and `c11-1.0.html` revised it to core. The non-interactive agent path (`c11 browser import --from chrome`) is 4.16b and stays 1.x. Open question 10 in the report names Chrome and Arc as the likely real sources. The backlog names Chrome, Arc, and Safari.\n\n## Scope\nIn: a smoke of the existing wizard on a tagged build, against Chrome, Arc, and Safari, into a c11 profile that is not the operator's daily profile. Record what imported, what warned, and what failed. Fix a regression in the existing importer when the smoke shows one. Keep the Keychain prompt for Chromium cookie decryption.\nOut: a non-interactive import command. New browser descriptors. Bookmarks, extensions, and passwords. The URL allowlist. Passkeys. Decrypting cookies without the operator's Keychain prompt. Importing into the profile the operator is using for real browsing, unless they explicitly pick it.\n\n## Approach\nWrite a numbered smoke note in the PR: which browser, which scope (cookies, history, or both), destination profile, counts, warnings, and a screenshot of the wizard result. Safari cookies are expected to warn, not to succeed. Treat a crash, a hang, or a silent \"imported 0\" with no warning as a failure to fix in this ticket. Treat the Safari cookie warning as the documented limit. Do not add `runModal` on a socket path. The wizard is operator-driven. If a fix needs a code change, keep it inside `importCookies` / `importHistory` and the wizard. Update the c11-browser skill only where it currently claims a behavior the smoke disproved.\n\n## Acceptance criteria\n1. On a tagged build, the wizard imports Chrome history into a fresh c11 profile, and a page visited in Chrome appears in that profile's history. The Keychain prompt appears before Chrome cookies are read. Canceling the prompt imports no cookies and still reports the cancel.\n2. The same history check for Arc, or a written blocker if Arc is not installed on the machine, with the profile path the detector would have used (`Library/Application Support/Arc`).\n3. Safari history imports, or the result page shows a specific warning. Safari cookies show the existing `Cookies.binarycookies` warning and do not crash.\n4. The destination profile's cookies are not visible in a different c11 profile. Open one URL that required the imported cookie in the destination profile, and the same URL signed-out in another profile.\n5. The PR attaches the smoke note. A failure that was fixed names the browser version and the function that changed.\n\n## Validation\nComputer-use pass on a tagged build. This is the whole ticket. No unit test that only reads the descriptor list. A fixture test is appropriate only for a parser bug the smoke actually hits. No soak. Builds run on Atlas once C11-216 (F1) lands. Until then, one tagged build needs a granted build slot.\n\n## Dependencies\nNone. B3 (profile CLI) is not required. The wizard already picks a destination profile. Do not block this on B3. H-E automation bugs are out of scope. If import and an H-E PR touch `BrowserTab.swift` at the same time, coordinate.\n\n## Risks\nTyping latency: none. Main thread: the wizard is an operator window. Do not move import onto a socket command in this ticket. Doctrine: reading another browser's cookie store happens only from this wizard, with the Keychain prompt. No writes to Chrome, Arc, or Safari profiles. No tenant config. Localization: keep existing strings. New warning text uses `String(localized:)`. Six-locale fill is X1. Public repo: the smoke note must not include cookie values, tokens, or Keychain secrets. Counts and hostnames of test sites are enough.\n\nSize: S. Tier: P1. Doctrine check: import is an operator action into a c11 profile. It is not an agent-run copy of a login.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XZX1Q03HNN16CCKMBMEQRG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YKB72VDW19XYFVF78FSQJA",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKB75EKY9R7KNWJETAVCYH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKB77YGBR8W9A5FHP59N1R",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKB7ACD89KTH6WVBRKG8G5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKDZRC5Z4G9RJ9J5AQYDGK",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKDZTW8BEG59RPRK57J6YH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKDZXBN3E7J5ENDE680MK3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YKDZZVCDJ7ZCHK0RJAHP8S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YM74EBBWJMFQYYX8F98D6T",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3YW66RCQ0NNDQRVHJA71V3S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2P8WK7AD2A6DN5561BVN5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2P90BECYKR979F54BPJJ3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2TFDF6NEEPJJE2H1CYYDK",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X4FNVHGZM65ZAT15QJTF12",
+  "last_event_id": "ev_01M3Z3K0AS180C5CTGA7YBFMGA",
+  "last_status_changed_at": "2026-10-02T07:47:30Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-288",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Smoke Chrome, Arc, and Safari import on a tagged build",
+  "type": "task",
+  "updated_at": "2026-10-02T20:06:16Z",
+  "urgency": null
+}

@@ -3521,7 +3521,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
         defer {
-            if !isRunningUnderXCTestCached { JournalCoordinator.shared.start(onProjection: TabLivenessDeriver.onJournalProjection) }
+            if !isRunningUnderXCTestCached {
+                JournalCoordinator.shared.start { tab, snap, boundary, eventID in
+                    TabLivenessDeriver.onJournalProjection(tabID: tab, snapshot: snap, boundary: boundary)
+                    FeedProjectionBridge.shared.noteJournal(tabID: tab, snapshot: snap, eventID: eventID)
+                }
+                // This startup path runs on main. Seed flags that already exist; later publishes hop off main.
+                MainActor.assumeIsolated {
+                    FeedProjectionBridge.shared.replaceAttention(Array(TabAttentionIndex.shared.snapshots.values))
+                }
+            }
         }
         // C11-131: this can run before `applicationDidFinishLaunching` under
         // the SwiftUI lifecycle (configure → prepare is view-driven). Arm the
@@ -5330,6 +5339,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Snapshot every browser profile currently attached to a live tab across
+    /// all windows. Profile clear/delete uses this on the main actor so a
+    /// destructive request cannot race a tab in another workspace.
+    func liveBrowserProfileIDs() -> Set<UUID> {
+        Set(mainWindowContexts.values.flatMap { context in
+            context.workspaceManager.workspaces.flatMap { workspace in
+                workspace.panels.values.compactMap { ($0 as? BrowserTab)?.profileID }
+            }
+        })
+    }
+
     func windowMoveTargets(referenceWindowId: UUID?) -> [WindowMoveTarget] {
         let orderedSummaries = orderedMainWindowSummaries(referenceWindowId: referenceWindowId)
         let labels = windowLabelsById(orderedSummaries: orderedSummaries, referenceWindowId: referenceWindowId)
@@ -6328,6 +6348,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         bringToFront(window)
         return true
+    }
+
+    /// Explicit socket frame mutation requires AppKit's main thread, but no focus change.
+    func resizeMainWindow(windowId: UUID, width: CGFloat?, height: CGFloat?) -> Result<(frame: CGRect, screenDisplayID: UInt32?, screenFrame: CGRect?, screenVisibleFrame: CGRect?, clamped: Bool, changed: Bool), WindowResizePlan.Failure> {
+        guard let window = windowForMainWindowId(windowId) else { return .failure(.notFound) }
+        guard !window.styleMask.contains(.fullScreen) else { return .failure(.fullscreen) }
+        let oldFrame = window.frame
+        // Use and report the same actual owning screen for this request, even
+        // if the resulting frame later spans a neighboring display.
+        let owningScreen = window.screen
+        let plan = WindowResizePlan.decide(frame: oldFrame, width: width, height: height,
+                                           minSize: window.minSize, visibleFrame: owningScreen?.visibleFrame)
+        if plan.write {
+            window.setFrame(plan.frame, display: true, animate: false)
+        }
+        // Report the actual AppKit result, including any native constraints.
+        let applied = window.frame
+        let clamped = plan.clamped || (width.map { $0 != applied.width } ?? false)
+            || (height.map { $0 != applied.height } ?? false)
+        let screenDisplayID: UInt32?
+        if let screenNumber = owningScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+            screenDisplayID = screenNumber.uint32Value
+        } else {
+            screenDisplayID = nil
+        }
+        return .success((frame: applied, screenDisplayID: screenDisplayID,
+                         screenFrame: owningScreen?.frame,
+                         screenVisibleFrame: owningScreen?.visibleFrame,
+                         clamped: clamped, changed: applied != oldFrame))
     }
 
     /// Socket `window.close`: an agent asked for this exact window, so no prompt.
@@ -8295,11 +8344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 )
             },
             onOpenFlag: { [weak self] flag in
-                _ = self?.openNotification(
-                    workspaceId: flag.workspaceId,
-                    surfaceId: flag.surfaceId,
-                    notificationId: nil
-                )
+                _ = self?.openAttentionTarget(.init(workspaceID: flag.workspaceId, tabID: flag.surfaceId), notificationID: nil)
             },
             onJumpToLatestUnread: { [weak self] in
                 self?.jumpToLatestUnread()
@@ -10996,13 +11041,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Menu/shortcut admission reads only the resident immutable projections.
     var hasJournalAttention: Bool {
-        mainWindowContexts.values.contains { context in
-            context.workspaceManager.workspaces.contains { workspace in
-                workspace.journalByTab.values.contains {
-                    $0.paintsAttention && workspace.attentionSnapshot(panelId: $0.owner.tabID).isSignalEligible
-                }
-            }
-        }
+        FeedProjectionBridge.shared.snapshot().openAskCount > 0
     }
 
     func jumpToLatestUnread() {
@@ -11015,31 +11054,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ])
         }
 #endif
-        for flag in TabAttentionIndex.shared.oldestFlags {
-            if openNotification(
-                workspaceId: flag.workspaceId,
-                surfaceId: flag.surfaceId,
-                notificationId: nil
-            ) {
-                return
+        let candidates = AttentionOrder.candidates(
+            rows: FeedProjectionBridge.shared.snapshot().attentionRows,
+            unreadTail: notificationStore.attentionUnreadTail
+        )
+        AttentionOrder.openFirst(candidates) { candidate in
+            if let id = candidate.notificationID {
+                guard let notification = notificationStore.notifications.first(where: { $0.id == id }),
+                      !notification.isRead, notificationStore.isSignalEligible(notification) else { return false }
             }
-        }
-        let journalWorkspaces = mainWindowContexts.values.flatMap { $0.workspaceManager.workspaces }
-        let journalAttention = journalWorkspaces.flatMap { workspace in
-            workspace.journalByTab.values.filter { $0.paintsAttention && !workspace.attentionSnapshot(panelId: $0.owner.tabID).suppressed }
-                .map { (workspace.id, $0) }
-        }.sorted { $0.1.sinceMs < $1.1.sinceMs }
-        for (workspaceID, state) in journalAttention {
-            if openNotification(workspaceId: workspaceID, surfaceId: state.owner.tabID, notificationId: nil) { return }
-        }
-        // Prefer the latest unread that we can actually open. In early startup (especially on the VM),
-        // the window-context registry can lag behind model initialization, so fall back to whatever
-        // tab manager currently owns the tab.
-        for notification in notificationStore.notifications
-        where !notification.isRead && notificationStore.isSignalEligible(notification) {
-            if openNotification(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId, notificationId: notification.id) {
-                return
-            }
+            return openAttentionTarget(candidate.target, notificationID: candidate.notificationID)
         }
     }
 
@@ -13602,6 +13626,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         contextContainingWorkspaceId(workspaceId)?.workspaceManager
     }
 
+    /// Shared exact-target resolver for Feed UI and socket focus intent. No active-tab fallback.
+    func resolveFeedTarget(_ target: AttentionOrder.Target) -> (WorkspaceManager, Workspace)? {
+        guard let manager = workspaceManagerFor(workspaceId: target.workspaceID),
+              let workspace = manager.workspaces.first(where: { $0.id == target.workspaceID }),
+              workspace.panels[target.tabID] != nil else { return nil }
+        return (manager, workspace)
+    }
+
+    @discardableResult
+    func selectFeedTarget(_ target: AttentionOrder.Target) -> Bool {
+        guard let (manager, workspace) = resolveFeedTarget(target) else { return false }
+        manager.selectWorkspace(workspace)
+        workspace.focusPanel(target.tabID)
+        return true
+    }
+
+    private func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?) -> Bool {
+        guard let context = contextContainingWorkspaceId(target.workspaceID),
+              let window = context.window ?? NSApp.windows.first(where: {
+                  $0.identifier?.rawValue == "cmux.main.\(context.windowId.uuidString)"
+              }),
+              let (manager, workspace) = resolveFeedTarget(target) else { return false }
+        workspace.clearSplitZoom()
+        guard selectFeedTarget(target) else { return false }
+        context.sidebarSelectionState.selection = .tabs
+        // Only the explicit user jump raises the owning window, after validating both IDs.
+        bringToFront(window)
+        if let notificationID, let notificationStore {
+            markReadIfFocused(notificationId: notificationID, workspaceId: target.workspaceID,
+                              surfaceId: target.tabID, workspaceManager: manager, notificationStore: notificationStore)
+        }
+#if DEBUG
+        recordJumpUnreadFocusFromModelIfNeeded(workspaceManager: manager, workspaceId: target.workspaceID,
+                                              expectedSurfaceId: target.tabID)
+#endif
+        return true
+    }
+
+    func updateSurfaceDirectoryFromGhosttyAction(workspaceId: UUID, surfaceId: UUID, directory: String) {
+        let owningManager = workspaceManagerFor(workspaceId: workspaceId) ?? workspaceManager
+        owningManager?.updateSurfaceDirectory(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            directory: directory
+        )
+    }
+
     func closeMainWindowContainingWorkspaceId(_ workspaceId: UUID) {
         guard let context = contextContainingWorkspaceId(workspaceId) else { return }
         let expectedIdentifier = "cmux.main.\(context.windowId.uuidString)"
@@ -13931,8 +14002,11 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let onCheckForUpdates: () -> Void
     private let onOpenPreferences: () -> Void
     private let onQuitApp: () -> Void
+    private let shortcutProvider: (KeyboardShortcutSettings.Action) -> StoredShortcut
     private var notificationsCancellable: AnyCancellable?
     private var attentionCancellable: AnyCancellable?
+    private var feedCancellable: AnyCancellable?
+    private var feedSnapshot: FeedProjectionSnapshot
     private var refreshScheduled = false
     private var removedFromMenuBar = false
     private let buildHintTitle: String?
@@ -13966,10 +14040,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onCheckForUpdates: @escaping () -> Void,
         onOpenPreferences: @escaping () -> Void,
         onQuitApp: @escaping () -> Void,
-        attentionIndex: TabAttentionIndex = .shared
+        attentionIndex: TabAttentionIndex = .shared,
+        feedProjection: FeedProjectionBridge = .shared,
+        shortcutProvider: @escaping (KeyboardShortcutSettings.Action) -> StoredShortcut = KeyboardShortcutSettings.shortcut
     ) {
         self.notificationStore = notificationStore
         self.attentionIndex = attentionIndex
+        self.feedSnapshot = feedProjection.snapshot()
         self.onShowMainWindow = onShowMainWindow
         self.onShowNotifications = onShowNotifications
         self.onOpenNotification = onOpenNotification
@@ -13978,6 +14055,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenPreferences = onOpenPreferences
         self.onQuitApp = onQuitApp
+        self.shortcutProvider = shortcutProvider
         self.buildHintTitle = MenuBarBuildHintFormatter.menuTitle()
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
@@ -14000,6 +14078,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         attentionCancellable = attentionIndex.$snapshots
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.scheduleRefreshUI()
+            }
+
+        feedCancellable = feedProjection.snapshots
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                self?.feedSnapshot = snapshot
                 self?.scheduleRefreshUI()
             }
 
@@ -14073,11 +14158,14 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     }
 
     func removeFromMenuBar() {
+        guard !removedFromMenuBar else { return }
         removedFromMenuBar = true
         notificationsCancellable?.cancel()
         notificationsCancellable = nil
         attentionCancellable?.cancel()
         attentionCancellable = nil
+        feedCancellable?.cancel()
+        feedCancellable = nil
         statusItem.menu = nil
         NSStatusBar.system.removeStatusItem(statusItem)
     }
@@ -14104,6 +14192,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             notifications: notificationStore.notifications,
             flags: attentionIndex.oldestFlags,
             attentionSnapshots: attentionIndex.snapshots,
+            openAskCount: feedSnapshot.openAskCount,
             maxInlineNotificationItems: maxInlineNotificationItems
         )
         let actualUnreadCount = snapshot.unreadCount
@@ -14115,12 +14204,12 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         displayedUnreadCount = actualUnreadCount
 #endif
 
-        stateHintItem.title = snapshot.stateHintTitle
+        stateHintItem.title = snapshot.attentionStateHintTitle
 
-        applyShortcut(KeyboardShortcutSettings.shortcut(for: .showNotifications), to: showNotificationsItem)
-        applyShortcut(KeyboardShortcutSettings.shortcut(for: .jumpToUnread), to: jumpToUnreadItem)
+        applyShortcut(shortcutProvider(.showNotifications), to: showNotificationsItem)
+        applyShortcut(shortcutProvider(.jumpToUnread), to: jumpToUnreadItem)
 
-        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty || AppDelegate.shared?.hasJournalAttention == true
+        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || snapshot.flagCount > 0 || snapshot.openAskCount > 0
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
 
@@ -14133,13 +14222,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     }
 
     private func makeStatusItemTooltip(displayedUnreadCount: Int, snapshot: NotificationMenuSnapshot) -> String {
-        if displayedUnreadCount == 0 && snapshot.flags.isEmpty {
+        if displayedUnreadCount == 0 && snapshot.flagCount == 0 && snapshot.openAskCount == 0 {
             return "c11"
         }
 
         var lines: [String] = []
+        lines.append(NotificationMenuSnapshotBuilder.attentionCountTitle(flags: snapshot.flagCount, asks: snapshot.openAskCount))
         if !snapshot.flags.isEmpty {
-            lines.append(NotificationMenuSnapshotBuilder.flagCountTitle(snapshot.flags.count))
             lines.append(contentsOf: snapshot.flags.prefix(maxInlineNotificationItems).compactMap(\.flagReason))
         }
         if displayedUnreadCount > 0 {
@@ -14293,10 +14382,12 @@ private final class FlagMenuItemPayload: NSObject {
 
 struct NotificationMenuSnapshot {
     let unreadCount: Int
+    let openAskCount: Int
     let hasNotifications: Bool
     let recentNotifications: [TerminalNotification]
     let signalNotifications: [TerminalNotification]
     let flags: [TabAttentionSnapshot]
+    var flagCount: Int { flags.count }
 
     var hasUnreadNotifications: Bool {
         unreadCount > 0
@@ -14304,7 +14395,13 @@ struct NotificationMenuSnapshot {
 
     var stateHintTitle: String {
         let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
-        return flags.isEmpty ? routineTitle : NotificationMenuSnapshotBuilder.flagCountTitle(flags.count) + " · " + routineTitle
+        return flags.isEmpty ? routineTitle : NotificationMenuSnapshotBuilder.flagCountTitle(flagCount) + " · " + routineTitle
+    }
+
+    /// Only Feed-aware consumers advertise an ask count; the legacy Notifications menu does not subscribe to Feed.
+    var attentionStateHintTitle: String {
+        let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        return NotificationMenuSnapshotBuilder.attentionCountTitle(flags: flagCount, asks: openAskCount) + " · " + routineTitle
     }
 }
 
@@ -14315,6 +14412,7 @@ enum NotificationMenuSnapshotBuilder {
         notifications: [TerminalNotification],
         flags: [TabAttentionSnapshot] = [],
         attentionSnapshots: [String: TabAttentionSnapshot] = [:],
+        openAskCount: Int = 0,
         maxInlineNotificationItems: Int = defaultInlineNotificationLimit
     ) -> NotificationMenuSnapshot {
         let signalNotifications = notifications.filter { notification in
@@ -14331,6 +14429,7 @@ enum NotificationMenuSnapshotBuilder {
         let inlineLimit = max(0, maxInlineNotificationItems)
         return NotificationMenuSnapshot(
             unreadCount: unreadCount,
+            openAskCount: openAskCount,
             hasNotifications: !signalNotifications.isEmpty,
             recentNotifications: Array(signalNotifications.prefix(inlineLimit)),
             signalNotifications: signalNotifications,
@@ -14340,8 +14439,18 @@ enum NotificationMenuSnapshotBuilder {
 
     static func flagCountTitle(_ count: Int) -> String {
         count == 1
-            ? String(localized: "statusMenu.flagCount.one", defaultValue: "1 flagged tab")
-            : String(localized: "statusMenu.flagCount.other", defaultValue: "\(count) flagged tabs")
+            ? String(localized: "statusMenu.attention.flags.one", defaultValue: "1 flag")
+            : String(localized: "statusMenu.attention.flags.other", defaultValue: "\(count) flags")
+    }
+
+    static func attentionCountTitle(flags: Int, asks: Int) -> String {
+        if flags == 0 && asks == 0 {
+            return String(localized: "statusMenu.attention.none", defaultValue: "No flags · no open asks")
+        }
+        let askTitle = asks == 1
+            ? String(localized: "statusMenu.attention.asks.one", defaultValue: "1 open ask")
+            : String(localized: "statusMenu.attention.asks.other", defaultValue: "\(asks) open asks")
+        return flagCountTitle(flags) + " · " + askTitle
     }
 
     static func stateHintTitle(unreadCount: Int) -> String {

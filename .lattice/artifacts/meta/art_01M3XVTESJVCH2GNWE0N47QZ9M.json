@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:31:17Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XVTESJVCH2GNWE0N47QZ9M",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XVTESJVCH2GNWE0N47QZ9M.json",
+    "size_bytes": 17832
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 exact-head Atlas create-input evidence",
+  "token_usage": null,
+  "type": "file"
+}

@@ -71,6 +71,8 @@ priority; suppression reroutes routine attention, it never blocks escalation.
 | Flagged | Operator-designated priority mission, or a running agent now needs human action. Marks render violet; the flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
 | Flagged + suppressed | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
 
+Feed and the configured attention jump use oldest flags first, then oldest eligible open asks (tab UUID, then workspace UUID for ties). The jump continues through oldest eligible unread completions/legacy notices with exact tab targets.
+
 ### Flag
 
 ```bash
@@ -195,6 +197,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | tab-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
+| read typed asks (`c11 feed list\|open\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |

@@ -2,7 +2,7 @@
   "agent_type": "orchestrate",
   "base_name": "Cairn",
   "framework": "claude-code",
-  "last_active": "2026-09-26T23:01:40Z",
+  "last_active": "2026-09-30T22:58:31Z",
   "model": "claude-fable-5-1",
   "name": "Cairn-1",
   "parent": "human:atin",

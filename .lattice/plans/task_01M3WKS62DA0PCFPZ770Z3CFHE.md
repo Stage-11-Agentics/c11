@@ -1,0 +1,11 @@
+# C11-253 / C11-256 implementation plan
+
+Verified base c3dc4a8bc2; the host gate now lives in ci-hourly.yml after C11-315. Latest hourly 37044770017 is the recorded baseline: 43 failures in its final runner plus earlier scraper crashes. Inventory every distinct method from assertions/final failure list in notes/c11-253-host-test-triage.md.
+
+Repair stale synthetic conversation fixtures, wrapper checks, profile-store expectations, brand/sidebar expectations, and close-confirm legacy fixtures. Delete obsolete direct-hit tests that have no current pointer event and recorded timing-dependent fixtures per Atin's standing rule. Retain named method-level environment quarantines for live Ghostty responder/GPU assumptions, tty kernel access, alongside the historical C11-109 class exclusions; each comment names the behavior absent from this gate.
+
+Two small real defects are fixed in scope: Workspace.newBrowserSurface uses Bonsplit's pre-removal insertion index to append; the theme parser/evaluator preserve eight-digit literal alpha (observed #00000000 becoming opaque black). Existing append-order and golden snapshot tests exercise these incidents; add a parsed RGBA literal regression table. No typing-path work, localization, persistence, schema or skill change. The golden dark color expectations follow the existing workspace color brightening rule.
+
+Run retained c11Tests on Atlas using remote-build.sh --tag c11-253 --mode test, and targeted repairs as needed. Provision pinned submodules and GhosttyKit. Lightweight Python wrapper checks run locally and in fork-safe Ubuntu PR CI. Set hourly host step gating with a named commented skip list, no continue-on-error. Record exact-head tests/source identity and cheap GitHub checks; one draft PR covers both tickets, push only at handoff. Never release or merge.
+
+Validator scenario: run CI hourly on merged main; retained host suite succeeds and xcodebuild failures propagate. In a tagged Atlas guest, create two tabs then append browser via the real CLI/UI path and confirm it is last; resolve a transparent overlay theme and confirm alpha zero. Runtime packaged-app batch proof belongs to Atlas Validator; these repairs change insertion ordering and initial theme parsing, not terminal input/focus code. Independent review/landing belongs to Orchestrator/Merge Captain. No operator decisions required.

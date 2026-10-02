@@ -1,0 +1,169 @@
+{
+  "ticket": "C11-283",
+  "head": "15df94ffc95a324e49ad424d4c0bbe2c400031a9",
+  "tag": "c11-283-window-scope",
+  "executable_sha256": "c6b5d0f4b14a979d0d66c5f40a0fdc10dd0a4f1f6409ee3102d7f02b7a512ca2",
+  "checks": [
+    {
+      "name": "native feature advertised at version 1",
+      "passed": true
+    },
+    {
+      "name": "owned executable matches exact-head build digest",
+      "passed": true
+    },
+    {
+      "name": "setup window A is key",
+      "passed": true
+    },
+    {
+      "name": "scoped read sees B",
+      "passed": true
+    },
+    {
+      "name": "scoped read preserves key A",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected not-a-window",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected window:999999",
+      "passed": true
+    },
+    {
+      "name": "unknown token rejected empty",
+      "passed": true
+    },
+    {
+      "name": "foreign tab send rejected",
+      "passed": true
+    },
+    {
+      "name": "foreign text not delivered to A or B",
+      "passed": true
+    },
+    {
+      "name": "send rejects ambient caller tab",
+      "passed": true
+    },
+    {
+      "name": "send-key rejects ambient caller tab",
+      "passed": true
+    },
+    {
+      "name": "new tab routes to B without key change",
+      "passed": true
+    },
+    {
+      "name": "set-title accepts explicit B from caller A",
+      "passed": true
+    },
+    {
+      "name": "set-description accepts explicit B from caller A",
+      "passed": true
+    },
+    {
+      "name": "legacy drag mutates only B and preserves key A",
+      "passed": true
+    },
+    {
+      "name": "legacy refresh enumerates B terminals and preserves key A",
+      "passed": true
+    },
+    {
+      "name": "legacy default agent creates only B tab and preserves key A",
+      "passed": true
+    },
+    {
+      "name": "unscoped legacy default launch retains active A",
+      "passed": true
+    },
+    {
+      "name": "unscoped legacy refresh retains active A",
+      "passed": true
+    },
+    {
+      "name": "unscoped legacy drag changes only A",
+      "passed": true
+    },
+    {
+      "name": "config default placement routes to B",
+      "passed": true
+    },
+    {
+      "name": "config new-workspace routes to B",
+      "passed": true
+    },
+    {
+      "name": "config unknown --workspace rejected",
+      "passed": true
+    },
+    {
+      "name": "config unknown --area rejected",
+      "passed": true
+    },
+    {
+      "name": "move without destination preserves source workspace",
+      "passed": true
+    },
+    {
+      "name": "move honors explicit destination window",
+      "passed": true
+    },
+    {
+      "name": "native tree scope []",
+      "passed": true
+    },
+    {
+      "name": "native tree scope ['--window']",
+      "passed": true
+    },
+    {
+      "name": "native tree scope ['--all']",
+      "passed": true
+    },
+    {
+      "name": "native tree rejects foreign workspace UUID",
+      "passed": true
+    },
+    {
+      "name": "native tree rejects foreign workspace ref",
+      "passed": true
+    },
+    {
+      "name": "native explicit nonselected tree workspace UUID",
+      "passed": true
+    },
+    {
+      "name": "native explicit nonselected tree workspace ref",
+      "passed": true
+    },
+    {
+      "name": "explicit focus-window selects B manager",
+      "passed": true
+    }
+  ],
+  "display_geometry": [
+    {
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "server_commit": "15df94ffc",
+  "reported_sha_match": true,
+  "cli_sha256": "7cd2627a29fe6af2eb46a6e9d3d4ec63fd4ba7fd1f6b01d9720904007e3baeba",
+  "key_after_explicit_focus": "A",
+  "result": "PASS",
+  "checks_passed": 35,
+  "quit_menu_rc": 0,
+  "quit_confirmation_rc": 1,
+  "owned_app_gone": true,
+  "cli_fixture_cases_passed": 119,
+  "build_head": "15df94ffc95a324e49ad424d4c0bbe2c400031a9",
+  "build_overlay": [],
+  "build_dirty": false,
+  "build_compile": "ok",
+  "owner_native_xctest": "not run"
+}

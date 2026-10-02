@@ -1,0 +1,75 @@
+C11-297 targeted [REDACTED_IDENTITY] test evidence
+
+{
+  "invocation": "e7571e2ee3b14b979c5ffe4896feec03",
+  "head": "ac1f8260eb4f36bda585c01b357779c0adcf65f0",
+  "branch": "c11-1.0/C11-297-startup-readiness",
+  "submodules": {
+    "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-297-startup",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11LogicTests/SocketStartupReadinessTests",
+    "-only-testing:c11LogicTests/SessionPersistenceTests/testLoadRejectsSnapshotContainingOnlyEmptyWindows",
+    "-only-testing:c11LogicTests/SessionPersistenceTests/testLoadDropsEmptyWindowsAndPreservesValidWindowsInOrder",
+    "-only-testing:c11LogicTests/SessionPersistenceTests/testSaveAndLoadRoundTripWithCustomSnapshotPath",
+    "-only-testing:c11LogicTests/SessionPersistenceTests/testLoadRejectsSchemaVersionMismatch",
+    "-only-testing:c11LogicTests/SessionPersistenceTests/testRepairedDuplicateRecordsStayUniqueAfterSaveAndLoad",
+    "-only-testing:c11Tests/TerminalControllerRefLifecycleTests",
+    "-only-testing:c11Tests/FinderServicePathResolverTests"
+  ],
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}
+
+Test Suite 'Selected tests' started at 2026-10-02 03:11:31.125.
+Test Suite 'c11Tests.xctest' started at 2026-10-02 03:11:31.126.
+Test Suite 'FinderServicePathResolverTests' started at 2026-10-02 03:11:31.126.
+Test Case '-[c11Tests.FinderServicePathResolverTests testInvalidServicesPasteboardDoesNotResolveAnOpenDirectory]' passed (0.001 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testOrderedUniqueDirectoriesPreservesFirstSeenOrder]' passed (0.001 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testOrderedUniqueDirectoriesUsesParentForFilesAndDedupes]' passed (0.001 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testSelfBundleAndDescendantsAreExcludedBeforeFileParentResolution]' passed (0.002 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testSelfBundleSymlinksAreExcludedAndSiblingDirectoriesKeepTheirOrder]' passed (0.003 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testSelfOpenAndInvalidServicesLeaveStartupRestorePending]' passed (0.002 seconds).
+Test Case '-[c11Tests.FinderServicePathResolverTests testServicesPasteboardMixedPathsKeepsOnlyExternalDirectory]' passed (0.001 seconds).
+Test Suite 'FinderServicePathResolverTests' passed at 2026-10-02 03:11:31.142.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.010 (0.016) seconds
+Test Suite 'TerminalControllerRefLifecycleTests' started at 2026-10-02 03:11:31.143.
+Test Case '-[c11Tests.TerminalControllerRefLifecycleTests testKnownRefsSeedOnlyOnceAndOnlyAfterInitialRestoreIsReady]' passed (0.068 seconds).
+Test Case '-[c11Tests.TerminalControllerRefLifecycleTests testPublishedAdditionsRegisterSuppliedNewIDsBeforeCreationReturns]' passed (0.105 seconds).
+Test Case '-[c11Tests.TerminalControllerRefLifecycleTests testSnapshotRestoreRegistersNewAreasAndRetainsRestoredTabRefs]' passed (0.078 seconds).
+Test Case '-[c11Tests.TerminalControllerRefLifecycleTests testSplitMoveAndClosePreserveRefsWithoutReseeding]' passed (0.071 seconds).
+Test Suite 'TerminalControllerRefLifecycleTests' passed at 2026-10-02 03:11:31.466.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.322 (0.323) seconds
+Test Suite 'c11Tests.xctest' passed at 2026-10-02 03:11:31.466.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.332 (0.340) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 03:11:31.466.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.332 (0.341) seconds
+Test Suite 'Selected tests' started at 2026-10-02 03:11:34.070.
+Test Suite 'c11LogicTests.xctest' started at 2026-10-02 03:11:34.071.
+Test Suite 'SessionPersistenceTests' started at 2026-10-02 03:11:34.071.
+Test Case '-[c11LogicTests.SessionPersistenceTests testLoadDropsEmptyWindowsAndPreservesValidWindowsInOrder]' passed (0.004 seconds).
+Test Case '-[c11LogicTests.SessionPersistenceTests testLoadRejectsSchemaVersionMismatch]' passed (0.002 seconds).
+Test Case '-[c11LogicTests.SessionPersistenceTests testLoadRejectsSnapshotContainingOnlyEmptyWindows]' passed (0.002 seconds).
+Test Case '-[c11LogicTests.SessionPersistenceTests testRepairedDuplicateRecordsStayUniqueAfterSaveAndLoad]' passed (0.003 seconds).
+Test Case '-[c11LogicTests.SessionPersistenceTests testSaveAndLoadRoundTripWithCustomSnapshotPath]' passed (0.003 seconds).
+Test Suite 'SessionPersistenceTests' passed at 2026-10-02 03:11:34.087.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.015 (0.016) seconds
+Test Suite 'SocketStartupReadinessTests' started at 2026-10-02 03:11:34.087.
+Test Case '-[c11LogicTests.SocketStartupReadinessTests testCompletedRestoreReleasesStartupRejectionWithoutAListenerSideEffect]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.SocketStartupReadinessTests testPendingRestoreRejectsGraphAndWorkerCommandsBeforeTargetResolution]' passed (0.001 seconds).
+Test Case '-[c11LogicTests.SocketStartupReadinessTests testPingStaysAvailableAndV1MutationIsNotAcknowledgedDuringRestore]' passed (0.001 seconds).
+Test Suite 'SocketStartupReadinessTests' passed at 2026-10-02 03:11:34.091.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+Test Suite 'c11LogicTests.xctest' passed at 2026-10-02 03:11:34.091.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.018 (0.021) seconds
+Test Suite 'Selected tests' passed at 2026-10-02 03:11:34.092.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.018 (0.022) seconds
+** TEST SUCCEEDED **

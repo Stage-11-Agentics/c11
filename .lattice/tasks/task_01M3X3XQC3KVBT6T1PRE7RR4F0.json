@@ -1,0 +1,68 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-277",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-277-journal-analytics",
+      "linked_at": "2026-10-02T14:50:03Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    }
+  ],
+  "comment_count": 5,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:39Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator explicitly wants to know where agent time goes, which waits cost attention and which sessions stall. Durable history earns its place by answering those questions for dashboards and humans. Backlog item: J7.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Sources/AgentLaunchStats.swift:5` records launches and `:130` aggregates harness/model/provider counts; that is not lifecycle dwell, blocked time or response latency. `Sources/Events/EventLog.swift:51` and `:70` bound/drop the current telemetry history.\n- Upstream: #10490 journal query substrate, `Packages/macOS/CmuxAgentJournal/Sources/CmuxAgentJournal/AgentJournalStore.swift:78`. Do not import unrelated upstream messaging/auto-resume policy.\n- Research: BACKLOG.md J7 and explicit D1 analytics ruling; report 01 What the journal unlocks; Astra \u00a74 query/dedupe/retention and \u00a77 privacy budgets. The 2026-10-01 BACKLOG.md rulings D1/D3 override the older audit and c11-1.0.html deferral: the journal is core 1.0, uses SQLite WAL, and has analytics as its named consumer.\n\n## Scope\nIn: c11 stats or c11 journal query (choose a documented nonconflicting CLI shape), filters by agent/model/workspace/time, JSON and readable reports, six named metrics and NDJSON export. Out: a hosted dashboard, provider billing/token pricing, replacing C11-178 launch-count stats, autonomous stall intervention, automatic flag raising and focus-history tracking.\n\n## Approach\nQuery J2\u2019s SQLite off main using bounded windows/indexes and the J1 interval/coverage contract. Keep closed intervals separate from ongoing waits, report left/right-censored or missing intervals, and do not count restored unconfirmed time as verified agent work. Define operator-response latency from supported response/resolution evidence, not merely viewing a tab. Use structural/model/workspace attribution captured at the event time; distinguish unknown values. Export ordered stable IDs and source/coverage metadata without bodies.\n\n## Acceptance criteria\n1. For a deterministic multi-agent/model/workspace timeline, JSON and readable output answer time in each state, wait-to-operator-response, blocked minutes, turns per hour, errors/interrupts and stall outliers, with explicitly documented units and denominators.\n2. Filter each dimension and a clipped time window against known interval totals. A wait begun before the window contributes only its overlap; a still-open wait is labeled ongoing rather than a completed response.\n3. The F3 seen-but-not-answered and late-hook cases do not undercount blocked minutes or manufacture a response. Hook-plus-transcript duplicates do not inflate turns; disconnected/gap/unconfirmed ranges expose incomplete coverage.\n4. NDJSON export is parseable, ordered and repeatable for a fixed journal snapshot, includes event IDs/provenance, and contains no prompt/tool bodies. A small dashboard-reader example can consume JSON without scraping human text.\n5. At the registered F2 event volume, queries and export stay within the J1 time/memory bounds without stalling append or UI typing; retention-limited results disclose the retained coverage window.\n\n## Validation\nUse SQLite fixture timelines with independently calculated totals, including open waits, interrupted turns, duplicate delivery, source changes and retention boundaries. Exercise the actual CLI against a tagged socket/store and parse JSON/NDJSON with a sample consumer. No dashboard UI is required; observe typing during analytics/export in the Atlas fleet soak. Native builds/full tests/soaks run on Atlas after C11-216.\n\n## Dependencies\nDepends on J2 and the J1 data/interval contract. Coordinate snapshot reason/source fields with J6, but J6 is not a hard dependency on the query engine. C11-178 remains launch statistics; do not duplicate or overwrite it. J8 documents the chosen verbs.\nWithin-workstream prerequisites: J2 (C11-273).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YPXDF70HAFNN9YARK9E1PX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YQB60FEEK91XB7TFRT314Y",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1D5E98KVNK5V3FDPRHC9R",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1VFZMZQWZ230KSJGA12DC",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3XQC3KVBT6T1PRE7RR4F0",
+  "last_event_id": "ev_01M3Z22W26VWTNVNPYXNDMEPRJ",
+  "last_status_changed_at": "2026-10-02T19:39:59Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-277",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Query lifecycle analytics and export the journal as NDJSON",
+  "type": "task",
+  "updated_at": "2026-10-02T19:39:59Z",
+  "urgency": null
+}

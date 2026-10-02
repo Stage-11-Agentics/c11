@@ -1,0 +1,58 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sol-253",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-253-ci-host-gate",
+      "linked_at": "2026-10-02T18:30:24Z",
+      "linked_by": "agent:sol-253",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "low",
+  "created_at": "2026-10-01T20:51:33Z",
+  "created_by": "agent:claude-opus-5.5",
+  "custom_fields": {},
+  "description": "Drawbridge finding on PR #480: the Codex wrapper lifecycle test runs in no CI job, which is how its argv check rotted on main after the -c notify= prepend landed. Wire it (and peer wrapper tests in tests/test_*_wrapper*.py, if any) into ci.yml.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3Z1J0PHJECAC7G7XS7ZVZWP",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1QWDAWY4TMT2HHPX4A1TX",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3WKS62DA0PCFPZ770Z3CFHE",
+  "last_event_id": "ev_01M3Z1QWDAWY4TMT2HHPX4A1TX",
+  "last_status_changed_at": "2026-10-02T19:31:25Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-01T20:51:33Z",
+      "created_by": "agent:claude-opus-5.5",
+      "note": null,
+      "target_task_id": "task_01M3WKS5VE0P5ZN8A6DTB7BPBA",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-256",
+  "status": "review",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "Run tests/test_codex_wrapper_resume.py in CI",
+  "type": "chore",
+  "updated_at": "2026-10-02T19:33:59Z",
+  "urgency": null
+}

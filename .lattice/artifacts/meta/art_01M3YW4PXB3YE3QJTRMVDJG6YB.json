@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:56:08Z",
+  "created_by": "agent:luna-303",
+  "custom_fields": {},
+  "id": "art_01M3YW4PXB3YE3QJTRMVDJG6YB",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3YW4PXB3YE3QJTRMVDJG6YB.zip",
+    "size_bytes": 31905451
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Round 1 exact-head Atlas paired UI proof and full flush oracle",
+  "token_usage": null,
+  "type": "file"
+}

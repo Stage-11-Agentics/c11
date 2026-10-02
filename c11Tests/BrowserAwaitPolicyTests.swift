@@ -65,8 +65,177 @@ final class BrowserAwaitPolicyTests: XCTestCase {
         )
         XCTAssertEqual(
             TerminalController.executionPolicy(forV2Method: "browser.snapshot"),
-            .mainActor
+            .socketWorker
         )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.cookies.clear"),
+            .socketWorker
+        )
+        XCTAssertEqual(
+            TerminalController.executionPolicy(forV2Method: "browser.state.load"),
+            .socketWorker
+        )
+    }
+
+    // B006: these remaining cookie/state calls wait for WebKit callbacks too.
+    // Exercise the same policy decision used before socket dispatch.
+    func testCookieAndStateSaveWaitsUseSocketWorkerPolicy() {
+        for method in ["browser.cookies.get", "browser.cookies.set", "browser.state.save"] {
+            XCTAssertEqual(TerminalController.executionPolicy(forV2Method: method), .socketWorker, method)
+        }
+    }
+
+    // B006 round 1: every socket method with a direct or transitive browser
+    // await must use the worker. Includes navigation's optional post-snapshot,
+    // retries/diagnostics, telemetry bootstrap and screenshot completion.
+    func testEveryBrowserAwaitRouteUsesSocketWorkerPolicy() {
+        let methods = [
+            "browser.eval",
+            "browser.wait",
+            "browser.download.wait",
+            "browser.profiles.list",
+            "browser.profiles.add",
+            "browser.profiles.rename",
+            "browser.profiles.clear",
+            "browser.profiles.delete",
+            "browser.cookies.get",
+            "browser.cookies.set",
+            "browser.cookies.clear",
+            "browser.state.save",
+            "browser.state.load",
+            "browser.snapshot",
+            "browser.click",
+            "browser.dblclick",
+            "browser.hover",
+            "browser.focus",
+            "browser.type",
+            "browser.fill",
+            "browser.press",
+            "browser.keydown",
+            "browser.keyup",
+            "browser.check",
+            "browser.uncheck",
+            "browser.select",
+            "browser.scroll",
+            "browser.scroll_into_view",
+            "browser.screenshot",
+            "browser.get.text",
+            "browser.get.html",
+            "browser.get.value",
+            "browser.get.attr",
+            "browser.get.count",
+            "browser.get.box",
+            "browser.get.styles",
+            "browser.is.visible",
+            "browser.is.enabled",
+            "browser.is.checked",
+            "browser.find.role",
+            "browser.find.text",
+            "browser.find.label",
+            "browser.find.placeholder",
+            "browser.find.alt",
+            "browser.find.title",
+            "browser.find.testid",
+            "browser.find.first",
+            "browser.find.last",
+            "browser.find.nth",
+            "browser.frame.select",
+            "browser.dialog.accept",
+            "browser.dialog.dismiss",
+            "browser.storage.get",
+            "browser.storage.set",
+            "browser.storage.clear",
+            "browser.console.list",
+            "browser.console.clear",
+            "browser.errors.list",
+            "browser.highlight",
+            "browser.addinitscript",
+            "browser.addscript",
+            "browser.addstyle",
+            "browser.open_split",
+            "browser.navigate",
+            "browser.back",
+            "browser.forward",
+            "browser.reload",
+        ]
+        for method in methods {
+            XCTAssertEqual(TerminalController.executionPolicy(forV2Method: method), .socketWorker, method)
+        }
+    }
+
+    @MainActor
+    func testWorkerAwaitAllowsMainQueueCallbackDelivery() {
+        let controller = TerminalController.shared
+        let done = expectation(description: "worker received callback")
+        let heartbeat = expectation(description: "main queue remains available")
+        DispatchQueue.global().async {
+            let result: String? = controller.v2AwaitCallback(timeout: 2.0) { finish in
+                DispatchQueue.main.async {
+                    // Model a pending WebKit callback while unrelated main work runs.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        finish("cookie result")
+                    }
+                    DispatchQueue.main.async { heartbeat.fulfill() }
+                }
+            }
+            XCTAssertEqual(result, "cookie result")
+            done.fulfill()
+        }
+        wait(for: [heartbeat, done], timeout: 5.0)
+    }
+
+    // C11-311 B078: a clear request without a scope must not silently become
+    // a profile-wide delete, and explicit `all` cannot be mixed with filters.
+    func testCookieClearFilterRequiresAnUnambiguousScope() {
+        XCTAssertNil(BrowserCookieClearFilter(params: [:]))
+        XCTAssertNil(BrowserCookieClearFilter(params: ["all": false]))
+        XCTAssertNil(BrowserCookieClearFilter(params: ["all": true, "name": "sid"]))
+        XCTAssertNotNil(BrowserCookieClearFilter(params: ["all": true]))
+        XCTAssertNotNil(BrowserCookieClearFilter(params: ["name": "sid"]))
+    }
+
+    // C11-311 B078: URL matching follows cookie domain/path/secure scope, not
+    // substring matching that would include an unrelated host or path.
+    func testCookieClearURLFilterMatchesCookieScope() {
+        let filter = BrowserCookieClearFilter(params: [
+            "url": "https://app.example.com/account/settings"
+        ])!
+
+        // A host-only parent cookie does not apply to its subdomains.
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
+        // Host-only cookies match their exact host.
+        XCTAssertTrue(filter.matches(makeCookie(domain: "app.example.com", path: "/account", secure: true)))
+        // A leading dot marks a domain cookie, which applies to subdomains.
+        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        let parentHostFilter = BrowserCookieClearFilter(params: [
+            "url": "https://example.com/account/settings"
+        ])!
+        XCTAssertTrue(parentHostFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "deep.app.example.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "notexample.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/accounts", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: false)))
+
+        let httpFilter = BrowserCookieClearFilter(params: [
+            "url": "http://app.example.com/account/settings"
+        ])!
+        XCTAssertFalse(httpFilter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        XCTAssertFalse(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertTrue(httpFilter.matches(makeCookie(domain: ".example.com", path: "/account", secure: false)))
+    }
+
+    private func makeCookie(domain: String, path: String, secure: Bool) -> HTTPCookie {
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .name: "session",
+            .value: "value",
+            .domain: domain,
+            .path: path
+        ]
+        if secure {
+            properties[.secure] = "TRUE"
+        }
+        return HTTPCookie(properties: properties)!
     }
 
     // MARK: - hasIssuedLoad

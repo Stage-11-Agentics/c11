@@ -1,0 +1,19 @@
+{
+  "seq": 42,
+  "ts": "2026-10-02T03:00:00.000Z",
+  "type": "ask.opened",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "workspace": "11111111-1111-4111-8111-111111111111",
+  "surface": "22222222-2222-4222-8222-222222222222",
+  "payload": {
+    "kind": "question",
+    "source": "hook",
+    "source_rank": 60,
+    "opened_at_ms": 10001,
+    "state": "open",
+    "request_id": "synthetic-ask",
+    "confirmation": "confirmed",
+    "blocking": true
+  }
+}

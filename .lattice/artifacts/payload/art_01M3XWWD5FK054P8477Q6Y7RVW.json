@@ -1,0 +1,96 @@
+{
+  "ticket": "C11-290",
+  "head": "688016659e5eb9ce436c473f2ddb23369921d11a",
+  "tag": "c11-290-ssh-smoke",
+  "app_machine": "local-client",
+  "remote_machine": "remote-server",
+  "display": {
+    "name": "Built-in Retina Display",
+    "x": 0,
+    "y": 0,
+    "width": 1800,
+    "height": 1169
+  },
+  "window": {
+    "x": 340,
+    "y": 148,
+    "width": 1120,
+    "height": 840,
+    "frontmost_verified": true
+  },
+  "remote_shell": "C11_290_REMOTE_HOME=yes\nc11 commands are not available over c11 ssh in this version\nC11_290_REFUSAL_RC=1\n",
+  "direct_request": {
+    "machine": "local-client",
+    "url": "http://127.0.0.1:57473/c11-290-proxy-synthetic.html",
+    "returncode": 7,
+    "stdout": "",
+    "stderr": "curl: (7) Failed to connect to 127.0.0.1 port 57473 after 0 ms: Couldn't connect to server\n"
+  },
+  "browser_body": "C11-290 remote proxy verified\n\nremote-loopback-688016659e-synthetic",
+  "remote_status": {
+    "connected": true,
+    "state": "connected",
+    "active_terminal_sessions": 1,
+    "daemon_state": "ready",
+    "daemon_version": "0.67.0-dev-1316167107f1",
+    "proxy": {
+      "port": 62558,
+      "host": "127.0.0.1",
+      "state": "ready",
+      "url": "socks5://127.0.0.1:62558",
+      "schemes": [
+        "socks5",
+        "http_connect"
+      ]
+    }
+  },
+  "listener": {
+    "pid": 76177,
+    "bound_host": "127.0.0.1",
+    "port": 57473,
+    "path": "/c11-290-proxy-synthetic.html",
+    "body_token": "remote-loopback-688016659e-synthetic"
+  },
+  "listener_requests": [
+    {
+      "method": "GET",
+      "path": "/c11-290-proxy-synthetic.html",
+      "request_line": "GET /c11-290-proxy-synthetic.html HTTP/1.1",
+      "peer": "127.0.0.1",
+      "body_token": "remote-loopback-688016659e-synthetic"
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico",
+      "request_line": "GET /favicon.ico HTTP/1.1",
+      "peer": "127.0.0.1",
+      "body_token": null
+    }
+  ],
+  "listener_cleanup": {
+    "listener_state_gone": true,
+    "listener_marker_gone": true,
+    "stopped_port_connect_rc": 61
+  },
+  "ui_cleanup": {
+    "pid_scoped_quit_click_rc": 0,
+    "pid_scoped_quit_confirmation_rc": 0,
+    "app_gone": true,
+    "ui_slot_released": true
+  },
+  "native_test_action": "not performed; doc-only change",
+  "bootstrap_harness": {
+    "machine": "remote-server",
+    "same_head": true,
+    "passed": [
+      "bash initial",
+      "bash split",
+      "zsh initial",
+      "zsh split"
+    ],
+    "fish": "skipped: unavailable",
+    "exit_code": 0
+  },
+  "docker_ssh_tests": "not performed: host Docker unavailable",
+  "disclosure_sanitization": "Machine labels and run identifiers are omitted. The synthetic request path and body marker are consistently normalized in the recorded observations. The screenshot is cropped from the original pixels to retain only the neutral rendered title."
+}

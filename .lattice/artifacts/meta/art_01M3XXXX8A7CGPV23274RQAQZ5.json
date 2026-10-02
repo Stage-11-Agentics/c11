@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:08:08Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XXXX8A7CGPV23274RQAQZ5",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XXXX8A7CGPV23274RQAQZ5.json",
+    "size_bytes": 6171
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-298 admitted signed pair provenance and independent verification",
+  "token_usage": null,
+  "type": "file"
+}

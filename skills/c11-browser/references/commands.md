@@ -34,6 +34,25 @@ c11 browser <tab> goto <url> --allow-insecure-http
 
 > **Workspace context:** `browser open` targets the workspace of the terminal where the command is run (via `C11_WORKSPACE_ID`), even if a different workspace is currently focused. Use `--workspace` to override.
 
+### Browser profiles
+
+```bash
+c11 browser profiles list [--json]
+c11 browser profiles add <name> [--json]
+c11 browser profiles rename <name|id> <new-name> [--json]
+c11 browser profiles clear <name|id> --yes [--json]
+c11 browser profiles delete <name|id> --yes [--json]
+
+c11 browser open <url> --profile <name|id> [--json]
+c11 new-tab --type browser --profile <name|id> --url <url> [--json]
+c11 new-area --type browser --profile <name|id> --url <url> [--json]
+```
+
+Profile selection is one-shot and does not update the later unscoped browser
+preference. `list` returns `id`, `name`, `built_in`, and `in_use`. Names
+are case-insensitive when unique; UUIDs are accepted. `clear` and `delete`
+require `--yes`, never prompt, and refuse the built-in or an in-use profile.
+
 ### Snapshot and Inspection
 
 ```bash
@@ -79,6 +98,21 @@ c11 browser <tab> storage local|session get|set|clear ...
 c11 browser <tab> tab list|new|switch|close ...
 c11 browser <tab> state save|load <path>
 ```
+
+`cookies clear` requires a scope unless `--all` is explicit. Use `--name`,
+`--domain`, `--url`, or `--path`; URL scopes respect cookie domain, path, and
+secure-cookie rules, so a host substring does not clear an unrelated origin.
+`state load` waits for the saved URL's navigation to finish on the expected
+origin before applying localStorage/sessionStorage. A failed or wrong-origin
+navigation returns an error without writing storage.
+Snapshot, DOM actions/queries, screenshot, telemetry/dialog, storage,
+script/style, cookie and state waits run on socket workers. Navigation and
+optional post-action snapshots keep pending WebKit callbacks off the main
+queue, so unrelated workspace and tab commands remain available.
+A fresh browser refuses document-dependent operations with `no_document`;
+init scripts/styles can still be registered before its first navigation.
+Timeouts return finite errors; later commands can use the same tab.
+`state save` reports a cookie-read timeout instead of saving an empty cookie jar.
 
 ### Diagnostics
 

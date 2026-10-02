@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:23:55Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKDZTW8BEG59RPRK57J6YH",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YKDZTW8BEG59RPRK57J6YH.png",
+    "size_bytes": 102857
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Real Keychain request before Cancel; synthetic keychain only",
+  "token_usage": null,
+  "type": "file"
+}

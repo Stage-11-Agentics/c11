@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:48:14Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3XWSFD794CGX8747ATEX03M",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XWSFD794CGX8747ATEX03M.zip",
+    "size_bytes": 608454
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Supersedes art_01M3XJZDS8YEQ2ZT6XQJ15FX0T and art_01M3XM29FXCMEK9WTTVFYV22R1. Home paths and personal machine names sanitized; six text members updated, five screenshots retained unchanged after visual and metadata inspection. Historical metrics unchanged.",
+  "tags": [],
+  "title": "C11-294 historical evidence with disclosure cleanup",
+  "token_usage": null,
+  "type": "file"
+}

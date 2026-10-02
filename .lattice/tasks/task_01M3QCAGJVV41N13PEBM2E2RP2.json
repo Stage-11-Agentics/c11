@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-09-29T20:05:00Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Cairn",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Cairn-1",
+    "serial": 1,
+    "session": "sess_01M3FQPZ1JQZJFBCFW5J3B3K26"
+  },
+  "custom_fields": {},
+  "description": "Follow-up to C11-240; start after it merges (it owns the recents and pins model).\n\nMake the recents and pins agent-drivable over the socket and CLI, using the same model and fuzzy ranking as the sheet:\n- c11 workspace recents list [--json] [--pinned]: path, lastOpenedAt, openCount, pinned, pin index, open-in-c11 and exists flags.\n- c11 workspace recents pin|unpin|remove <path>; pin --at <n> sets the pin order.\n- c11 workspace new --dir <path-or-fuzzy-query> [--layout <blueprint id>] [--name <n>]: resolves a fuzzy query with the sheet's ranking (fails loudly and lists candidates when the top two tie), records the open in recents like the sheet does.\n- An open sheet updates live when an agent changes pins.\nDocument it in skills/c11/references/api.md. Atin: nice to have, not critical.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3QCAGJVV41N13PEBM2E2RP2",
+  "last_event_id": "ev_01M3QCK43TKVMEZSJN1BFD7QJ5",
+  "last_status_changed_at": "2026-09-29T20:09:42Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-241",
+  "status": "cancelled",
+  "tags": [
+    "cli",
+    "new-workspace"
+  ],
+  "title": "c11: CLI for New Workspace recents and pins (list, pin, unpin, remove, open by fuzzy name)",
+  "type": "task",
+  "updated_at": "2026-09-29T20:09:42Z",
+  "urgency": null
+}

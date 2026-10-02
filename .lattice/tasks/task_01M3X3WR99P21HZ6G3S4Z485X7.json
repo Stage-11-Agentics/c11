@@ -1,0 +1,105 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sol-feed",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-266-quick-view",
+      "linked_at": "2026-10-02T19:01:14Z",
+      "linked_by": "agent:sol-feed",
+      "repo": null
+    }
+  ],
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:33:07Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator needs to inspect and open asks from the keyboard without hunting through every workspace; completed turns should not crowd out actual asks. Backlog item: A4.\n\n## Evidence\n- c11 on origin/main (`0ff8887e5e`): `Sources/Update/UpdateTitlebarAccessory.swift:925-979` presents the existing notifications popover; `:1006-1080` renders the notification list and variable empty/list frames; `:1100-1118` supplies jump/open actions. `Sources/KeyboardShortcutSettings.swift:150-151` binds this surface to \u2318I.\n- Upstream: cmux #15888 Agent Inbox quick view and #3057 Feed; `Sources/Feed/FeedPanelView.swift` is comparative UI context. Do not port its approval controls or beta service dependencies.\n- Research: report 03 \u201cUI sketch\u201d; Fable Feed F2b; Astra Feed F2; HTML D7/D8 and revised Feed rows. BACKLOG A4 makes the quick view core despite Fable\u2019s earlier if-time recommendation.\n\n## Scope\nIn: rebuild \u2318I\u2019s popover around A2/A3\u2019s read-only Feed, keyboard navigation/open/dismiss, stable selected row identity and fixed geometry. Finished turns appear only under a secondary filter.\nOut: text replies (A6 owns CLI replies), permission/plan/menu-key actions, banner actions, right-sidebar rewrite, Feed TUI, phone UI and automatic classification.\n\n## Approach\nReuse the existing presentation/dismissal seam and one shared projection. Keep selection keyed by row identity, not a moving index. Reserve space for age, source, prompt summary, empty values and keyboard hints; use fixed filter widths and tabular clocks. Clamp or reveal long text without changing interactive row heights. Keyboard actions navigate or open only; Enter must never approve a tool. Preserve existing shortcut customization, accessibility labels, theme slots and Reduce Motion behavior.\n\n## Acceptance criteria\n1. \u2318I opens the quick view; keyboard navigation selects rows, Enter opens the exact selected tab, and Esc dismisses back to the originating focus context. No approval or reply is sent.\n2. The default filter contains asks and flags, excluding turn_end rows; the secondary filter exposes finished turns explicitly. Switching filters does not resize controls or unexpectedly invoke a row.\n3. While a selected ask remains present, new flags/asks and clock changes preserve its selected identity. When it disappears, a defined neighboring selection is shown without activating it.\n4. With short, multiline and missing prompts, long names, increasing counts and six-locale strings, row heights, filters, hint bar and interaction targets remain fixed. Empty/loading states do not cause controls to jump.\n5. Visible order and counts match A3\u2019s projection, including suppressed flags and a flag plus ask on one tab. The view handles a closed target with an understandable unavailable state.\n\n## Validation\nUse projection/selection tests for insertion/removal and filters; test actual executable view behavior rather than source structure. A fresh-context computer-use reviewer drives the tagged artifact with keyboard and pointer, records screenshots of empty/populated/changing lists and proves dismissal. Enumerate the review display, set a hard timeout and verify usable pane sizes. Run UI automation on Atlas/CI, not a local e2e swarm; compare a fleet update soak with F2.\n\nBuilds and soaks run on Atlas once F1 / C11-216 lands, through the build lock. Use a tagged artifact and its socket, launched with C11_QA_LAUNCH=fresh (or the tagged automation launcher); never an untagged DEV app. Record exact artifact/head and distinguish fixture assertions from the real product pass. Update affected CLI/event skill contracts, run scripts/sync-installed-skills.sh for edited installable skills and verify the installed copy.\n\n## Dependencies\nDepends on A2 and A3. X1 supplies the integrated locale pass but this ticket must include its own localized strings. F1 / C11-216 supplies tagged builds and F2 the latency baseline.\n\n## Risks\nChanging rows beneath keyboard selection is an operator-error risk. SwiftUI observation fan-out must not pull the whole notification store into typing-sensitive views. Keep telemetry parsing, I/O, deduplication and sorting off main; apply only the minimal UI mutation asynchronously. Preserve the hitTest pointer guard, TabItemView equality boundary and allocation-free forceRefresh path. No tenant config writes or trust broadening. Localize new product strings in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; validate interpolation tokens. Sanitize fixtures, screenshots and logs before inclusion in this public repository.\n\nSize: M. Tier: P1. Doctrine check: optional per-process observation and explicit operator actions only; no blocking bridge, automatic approval or persistent tenant configuration.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3Z0P8J38W2CNBDVJJ61CT6N",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Z2FCEJHYGYWQFR6YGC8XTW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FNPPPSBS9XE65E7KSS6S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FNTAJEPBX04W5GDASWC8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FNY07S4EV4485X5G8HYA",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FP20G32YBD6EAZ45FEB5",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FP5QV0CXGGKKYGAT0SA9",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FP99N8X45H65VE8PBZA0",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z2FPCSBJTADBCS1Q1T3BMJ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Z4C15ZCK9JXAMB3KQ06D5J",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3WR99P21HZ6G3S4Z485X7",
+  "last_event_id": "ev_01M3Z4C1625C07N99ERVMG78TE",
+  "last_status_changed_at": "2026-10-02T19:01:14Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:33:08Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3WR6Q7MVRNE3TVGEZJQWW",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-266",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:attention",
+    "tier:p1"
+  ],
+  "title": "Feed: keyboard-first Command-I quick view with stable rows and turn-end filter",
+  "type": "task",
+  "updated_at": "2026-10-02T20:19:56Z",
+  "urgency": null
+}

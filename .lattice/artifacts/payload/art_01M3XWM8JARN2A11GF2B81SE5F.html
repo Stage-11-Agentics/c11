@@ -1,0 +1,1295 @@
+<!doctype html><meta charset="utf-8"><title>C11-299 batch 1</title><style>body{max-width:1100px;margin:40px auto;font:17px system-ui;padding:0 20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f3f4;padding:16px;font:14px monospace}img{width:100%;height:auto}summary{cursor:pointer;font-weight:600;margin:16px 0}</style><h1>C11-299 — Batch 1 validation</h1><pre>C11-299 — BATCH 1 FAIL (numbered control step 5; cleanup step 6 not PASS).
+
+Batch 1; exact detached main 7bb785741750ddeb8ab12b4cf6472593fb8c3550; actor agent:codex-validator.
+Xcode 26.3 (17C529); Zig 0.15.2; source and submodules clean.
+Debug build/launch invocation b89fc276776b4119a587af2903b7d395 PASS, built on build host, retrieved to interactive host.
+Prestage invocation 737cb60abc264b0dad0cc4ba24d27070 PASS (no launch).
+Logic invocation 3246bfddd6be4741b549a2786f6fc4b5 PASS: 2,137 tests, 3 skipped, 0 failures.
+Command: ./scripts/remote-build.sh --tag val-1-t --mode test -- -only-testing:c11LogicTests -skip-testing:c11LogicTests/SocketControlPasswordStoreTests
+Initial unexcluded invocation 0383c050b1a24bc2999841aba355111a exited 65 with 12 assertions in 3 Keychain test cases (2,145 tests, 3 skipped). Orchestrator classified these as build host SSH/login-Keychain environment failures and explicitly authorized this rerun/exclusion. No raw assertion values are published.
+Batch smoke steps 1–6 PASS: identify, workspace/right/down splits, new terminal echo ok, about:blank + local markdown, synthesized Quit and QA resume restoring workspace UUIDs/three-area topology/ordered tab UUIDs and types, readable tree/screenshot. Window and area handles can be regenerated on restore; tab/workspace identities and topology were compared. interactive host display 1 verified as (0,0,1800,1169); display 3 as (1800,0,2560,1440). All own windows confined to display 1. UI leases acquired atomically and released; final tagged processes absent.
+
+1. PASS. Disposable build host guest c11-sb-val-1-299, isolated app $HOME/c11-sandbox/apps/val-1-299/c11 DEV val-1.app; bundle com.stage11.c11.debug.val.1; socket /tmp/c11-sandbox-val-1-299.sock; session $HOME/Library/Application Support/c11/session-com.stage11.c11.debug.val.1.json. Verified guest display 1: 1024×768. Stopped app before seeding the checked-in [A(first),A(conflicting),B,C] fixture. Ten-minute guest guard installed.
+2. PASS. Resume launched directly with the supported automation environment, capturing stderr/NSLog. Read-only test_duplicate_session_restore.py --socket &lt;guest&gt; --phase first --diagnostics &lt;captured-log&gt; exited 0. Exactly A/B/C, [A,B]/[C], selected B/C, focus C, A.fixture=first. Both duplicate_record and duplicate_layout_reference diagnostics observed.
+3. PASS. Two readable areas captured in an exact PID/window screenshot and tree. Selected C accepted the synthetic C11-299 restore ready marker. No duplicate tab.
+4. PASS. Synthesized App-menu Quit plus confirmation; fixture app exited, snapshot saved. QA resume and --phase second --saved-snapshot &lt;saved-copy&gt; oracle exited 0, with unique records/layout and metadata/selections preserved. Second fixture app also exited after synthesized Quit; the helper initially waited on an unreaped child zombie, then a fresh process query confirmed no tagged PID.
+5. FAIL. Separate clean control bundle/domain com.stage11.c11.debug.val.1.control, copied from the same build host artifact and ad hoc re-signed after changing only bundle identity. Created terminal/local markdown/about:blank browser across two areas with control_fixture=normal299. After clean Quit/resume, same tab UUIDs/types/order, selected tabs/focus and split layout returned. Harmless metadata and terminal input were checked. Browser UUID 86FABB29-246D-47E0-8272-C58534CAA4E7 reported about:blank before Quit, but empty URL after resume; browser eval location.href returned no_document. The recorded expectation explicitly says browser remains about:blank, so no waiver or PASS is inferred. Before/after trees retained. A post-resume markdown screenshot was not completed; no after-resume markdown readability claim.
+6. FAIL for the control. Malformed-fixture apps had clean synthesized Quit. The control reached the ten-minute guard during failure diagnosis and was terminated; timeout cleanup is not counted as PASS. All guest app processes absent and our clone deleted with sandbox-down.sh val-1-299. The guest Setup Assistant also prevented reliable foreground activation; screenshots were scoped to the owned window, not the production app. No live application left running.
+
+No product edits, commit, push, bisect or ticket completion. C11-299 remains open pending Orchestrator/owner fix-forward. The exact URL persistence cause has not been independently isolated against pre-299 main. Partial duplicate proof is not whole-ticket acceptance.
+</pre>
+<details><summary>299-first-oracle.json</summary><pre>{
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;phase&quot;: &quot;first&quot;,
+  &quot;evidence&quot;: {
+    &quot;tabs&quot;: [
+      {
+        &quot;metrics&quot;: {
+          &quot;cpu_pct&quot;: 0,
+          &quot;rss_mb&quot;: 1.203125,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:07:59Z&quot;
+        },
+        &quot;being_seen&quot;: false,
+        &quot;tty&quot;: &quot;ttys000&quot;,
+        &quot;selected_in_area&quot;: false,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;custom_color&quot;: null,
+        &quot;index_in_pane&quot;: 0,
+        &quot;last_seen_at&quot;: null,
+        &quot;pane_ref&quot;: &quot;pane:1&quot;,
+        &quot;index&quot;: 0,
+        &quot;selected_in_pane&quot;: false,
+        &quot;ref&quot;: &quot;tab:5&quot;,
+        &quot;area_id&quot;: &quot;682C822E-B41D-4E78-B926-D40DBCDBE236&quot;,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000A&quot;,
+        &quot;focused&quot;: false,
+        &quot;pane_id&quot;: &quot;682C822E-B41D-4E78-B926-D40DBCDBE236&quot;,
+        &quot;area_ref&quot;: &quot;area:1&quot;,
+        &quot;index_in_area&quot;: 0,
+        &quot;type&quot;: &quot;terminal&quot;
+      },
+      {
+        &quot;area_ref&quot;: &quot;area:1&quot;,
+        &quot;type&quot;: &quot;terminal&quot;,
+        &quot;index_in_pane&quot;: 1,
+        &quot;pane_ref&quot;: &quot;pane:1&quot;,
+        &quot;ref&quot;: &quot;tab:6&quot;,
+        &quot;index_in_area&quot;: 1,
+        &quot;focused&quot;: false,
+        &quot;index&quot;: 1,
+        &quot;being_seen&quot;: false,
+        &quot;custom_color&quot;: null,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;selected_in_area&quot;: true,
+        &quot;area_id&quot;: &quot;682C822E-B41D-4E78-B926-D40DBCDBE236&quot;,
+        &quot;metrics&quot;: {
+          &quot;cpu_pct&quot;: 0,
+          &quot;rss_mb&quot;: 1.203125,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:07:59Z&quot;
+        },
+        &quot;tty&quot;: &quot;ttys001&quot;,
+        &quot;selected_in_pane&quot;: true,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;last_seen_at&quot;: null,
+        &quot;pane_id&quot;: &quot;682C822E-B41D-4E78-B926-D40DBCDBE236&quot;
+      },
+      {
+        &quot;selected_in_area&quot;: true,
+        &quot;tty&quot;: &quot;ttys002&quot;,
+        &quot;last_seen_at&quot;: null,
+        &quot;selected_in_pane&quot;: true,
+        &quot;ref&quot;: &quot;tab:7&quot;,
+        &quot;focused&quot;: true,
+        &quot;pane_ref&quot;: &quot;pane:2&quot;,
+        &quot;index_in_area&quot;: 0,
+        &quot;being_seen&quot;: false,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;index&quot;: 2,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;,
+        &quot;metrics&quot;: {
+          &quot;rss_mb&quot;: 1.203125,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:07:59Z&quot;,
+          &quot;cpu_pct&quot;: 0
+        },
+        &quot;index_in_pane&quot;: 0,
+        &quot;type&quot;: &quot;terminal&quot;,
+        &quot;area_id&quot;: &quot;5DAB7ECA-EC35-4399-B634-0F94F69C41B6&quot;,
+        &quot;pane_id&quot;: &quot;5DAB7ECA-EC35-4399-B634-0F94F69C41B6&quot;,
+        &quot;area_ref&quot;: &quot;area:2&quot;,
+        &quot;custom_color&quot;: null
+      }
+    ],
+    &quot;areas&quot;: [
+      {
+        &quot;selected_surface_ref&quot;: &quot;surface:6&quot;,
+        &quot;tab_count&quot;: 2,
+        &quot;surface_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000A&quot;,
+          &quot;00000000-0000-0000-0000-00000000000B&quot;
+        ],
+        &quot;focused&quot;: false,
+        &quot;surface_count&quot;: 2,
+        &quot;selected_tab_ref&quot;: &quot;tab:6&quot;,
+        &quot;id&quot;: &quot;682C822E-B41D-4E78-B926-D40DBCDBE236&quot;,
+        &quot;ref&quot;: &quot;area:1&quot;,
+        &quot;selected_surface_id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;selected_tab_id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;tab_refs&quot;: [
+          &quot;tab:5&quot;,
+          &quot;tab:6&quot;
+        ],
+        &quot;index&quot;: 0,
+        &quot;surface_refs&quot;: [
+          &quot;surface:5&quot;,
+          &quot;surface:6&quot;
+        ],
+        &quot;tab_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000A&quot;,
+          &quot;00000000-0000-0000-0000-00000000000B&quot;
+        ]
+      },
+      {
+        &quot;tab_refs&quot;: [
+          &quot;tab:7&quot;
+        ],
+        &quot;tab_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000C&quot;
+        ],
+        &quot;surface_count&quot;: 1,
+        &quot;selected_surface_id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;,
+        &quot;ref&quot;: &quot;area:2&quot;,
+        &quot;selected_tab_id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;,
+        &quot;index&quot;: 1,
+        &quot;focused&quot;: true,
+        &quot;tab_count&quot;: 1,
+        &quot;id&quot;: &quot;5DAB7ECA-EC35-4399-B634-0F94F69C41B6&quot;,
+        &quot;surface_refs&quot;: [
+          &quot;surface:7&quot;
+        ],
+        &quot;surface_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000C&quot;
+        ],
+        &quot;selected_surface_ref&quot;: &quot;surface:7&quot;,
+        &quot;selected_tab_ref&quot;: &quot;tab:7&quot;
+      }
+    ],
+    &quot;metadata&quot;: {
+      &quot;terminal_type&quot;: &quot;shell&quot;,
+      &quot;activity&quot;: &quot;idle&quot;,
+      &quot;fixture&quot;: &quot;first&quot;,
+      &quot;branch&quot;: &quot;&quot;,
+      &quot;title&quot;: &quot;/tmp&quot;,
+      &quot;worktree&quot;: &quot;&quot;
+    }
+  }
+}
+</pre></details>
+<details><summary>299-second-oracle.json</summary><pre>{
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;phase&quot;: &quot;second&quot;,
+  &quot;evidence&quot;: {
+    &quot;tabs&quot;: [
+      {
+        &quot;pane_id&quot;: &quot;222C42BF-A99E-4E26-904E-D7036FD99D27&quot;,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000A&quot;,
+        &quot;index&quot;: 0,
+        &quot;ref&quot;: &quot;tab:5&quot;,
+        &quot;last_seen_at&quot;: null,
+        &quot;index_in_area&quot;: 0,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;metrics&quot;: {
+          &quot;rss_mb&quot;: 1.203125,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:08:37Z&quot;,
+          &quot;cpu_pct&quot;: 0
+        },
+        &quot;area_id&quot;: &quot;222C42BF-A99E-4E26-904E-D7036FD99D27&quot;,
+        &quot;area_ref&quot;: &quot;area:1&quot;,
+        &quot;type&quot;: &quot;terminal&quot;,
+        &quot;custom_color&quot;: null,
+        &quot;selected_in_pane&quot;: false,
+        &quot;focused&quot;: false,
+        &quot;selected_in_area&quot;: false,
+        &quot;being_seen&quot;: false,
+        &quot;pane_ref&quot;: &quot;pane:1&quot;,
+        &quot;index_in_pane&quot;: 0,
+        &quot;tty&quot;: &quot;ttys000&quot;
+      },
+      {
+        &quot;index_in_area&quot;: 1,
+        &quot;selected_in_area&quot;: true,
+        &quot;last_seen_at&quot;: null,
+        &quot;being_seen&quot;: false,
+        &quot;ref&quot;: &quot;tab:6&quot;,
+        &quot;selected_in_pane&quot;: true,
+        &quot;area_id&quot;: &quot;222C42BF-A99E-4E26-904E-D7036FD99D27&quot;,
+        &quot;focused&quot;: false,
+        &quot;index&quot;: 1,
+        &quot;pane_ref&quot;: &quot;pane:1&quot;,
+        &quot;type&quot;: &quot;terminal&quot;,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;index_in_pane&quot;: 1,
+        &quot;pane_id&quot;: &quot;222C42BF-A99E-4E26-904E-D7036FD99D27&quot;,
+        &quot;tty&quot;: &quot;ttys001&quot;,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;custom_color&quot;: null,
+        &quot;metrics&quot;: {
+          &quot;cpu_pct&quot;: 0,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:08:37Z&quot;,
+          &quot;rss_mb&quot;: 1.203125
+        },
+        &quot;area_ref&quot;: &quot;area:1&quot;
+      },
+      {
+        &quot;index_in_pane&quot;: 0,
+        &quot;tty&quot;: &quot;ttys002&quot;,
+        &quot;ref&quot;: &quot;tab:7&quot;,
+        &quot;being_seen&quot;: false,
+        &quot;index&quot;: 2,
+        &quot;pane_ref&quot;: &quot;pane:2&quot;,
+        &quot;selected_in_pane&quot;: true,
+        &quot;custom_color&quot;: null,
+        &quot;focused&quot;: true,
+        &quot;type&quot;: &quot;terminal&quot;,
+        &quot;title&quot;: &quot;/tmp&quot;,
+        &quot;area_id&quot;: &quot;F459739D-71C3-45D9-975D-72068378C86F&quot;,
+        &quot;area_ref&quot;: &quot;area:2&quot;,
+        &quot;metrics&quot;: {
+          &quot;rss_mb&quot;: 1.203125,
+          &quot;cpu_pct&quot;: 0,
+          &quot;sampled_at&quot;: &quot;2026-10-02T06:08:37Z&quot;
+        },
+        &quot;pane_id&quot;: &quot;F459739D-71C3-45D9-975D-72068378C86F&quot;,
+        &quot;id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;,
+        &quot;selected_in_area&quot;: true,
+        &quot;last_seen_at&quot;: null,
+        &quot;index_in_area&quot;: 0
+      }
+    ],
+    &quot;areas&quot;: [
+      {
+        &quot;selected_tab_ref&quot;: &quot;tab:6&quot;,
+        &quot;tab_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000A&quot;,
+          &quot;00000000-0000-0000-0000-00000000000B&quot;
+        ],
+        &quot;selected_surface_ref&quot;: &quot;surface:6&quot;,
+        &quot;tab_count&quot;: 2,
+        &quot;surface_count&quot;: 2,
+        &quot;surface_refs&quot;: [
+          &quot;surface:5&quot;,
+          &quot;surface:6&quot;
+        ],
+        &quot;tab_refs&quot;: [
+          &quot;tab:5&quot;,
+          &quot;tab:6&quot;
+        ],
+        &quot;selected_surface_id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;selected_tab_id&quot;: &quot;00000000-0000-0000-0000-00000000000B&quot;,
+        &quot;focused&quot;: false,
+        &quot;id&quot;: &quot;222C42BF-A99E-4E26-904E-D7036FD99D27&quot;,
+        &quot;surface_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000A&quot;,
+          &quot;00000000-0000-0000-0000-00000000000B&quot;
+        ],
+        &quot;index&quot;: 0,
+        &quot;ref&quot;: &quot;area:1&quot;
+      },
+      {
+        &quot;id&quot;: &quot;F459739D-71C3-45D9-975D-72068378C86F&quot;,
+        &quot;ref&quot;: &quot;area:2&quot;,
+        &quot;selected_surface_ref&quot;: &quot;surface:7&quot;,
+        &quot;surface_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000C&quot;
+        ],
+        &quot;surface_count&quot;: 1,
+        &quot;tab_ids&quot;: [
+          &quot;00000000-0000-0000-0000-00000000000C&quot;
+        ],
+        &quot;selected_tab_ref&quot;: &quot;tab:7&quot;,
+        &quot;surface_refs&quot;: [
+          &quot;surface:7&quot;
+        ],
+        &quot;tab_count&quot;: 1,
+        &quot;focused&quot;: true,
+        &quot;selected_surface_id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;,
+        &quot;tab_refs&quot;: [
+          &quot;tab:7&quot;
+        ],
+        &quot;index&quot;: 1,
+        &quot;selected_tab_id&quot;: &quot;00000000-0000-0000-0000-00000000000C&quot;
+      }
+    ],
+    &quot;metadata&quot;: {
+      &quot;terminal_type&quot;: &quot;shell&quot;,
+      &quot;fixture&quot;: &quot;first&quot;,
+      &quot;title&quot;: &quot;/tmp&quot;,
+      &quot;worktree&quot;: &quot;&quot;,
+      &quot;branch&quot;: &quot;&quot;,
+      &quot;activity&quot;: &quot;idle&quot;
+    }
+  }
+}
+</pre></details>
+<details><summary>299-first-tree.txt</summary><pre>window window:1 [current] ◀ active
+└── workspace workspace:1 &quot;Duplicate restore fixture&quot; root=/tmp [selected] ◀ active
+    ├── area area:1 size=50%×100% px=412×649 split=H:left
+    │   ├── tab tab:5 [terminal] &quot;/tmp&quot;
+    │   └── tab tab:6 [terminal] &quot;/tmp&quot; [selected]
+    └── area area:2 size=50%×100% px=412×649 split=H:right [focused] ◀ active
+        └── tab tab:7 [terminal] &quot;/tmp&quot; [selected] ◀ active</pre></details>
+<details><summary>299-second-tree.txt</summary><pre>window window:1 [current] ◀ active
+└── workspace workspace:1 &quot;Duplicate restore fixture&quot; root=/tmp [selected] ◀ active
+    ├── area area:1 size=50%×100% px=412×649 split=H:left
+    │   ├── tab tab:5 [terminal] &quot;/tmp&quot;
+    │   └── tab tab:6 [terminal] &quot;/tmp&quot; [selected]
+    └── area area:2 size=50%×100% px=412×649 split=H:right [focused] ◀ active
+        └── tab tab:7 [terminal] &quot;/tmp&quot; [selected] ◀ active</pre></details>
+<details><summary>299-control-before-tree.json</summary><pre>{
+  &quot;scope&quot;: &quot;all&quot;,
+  &quot;windows&quot;: [
+    {
+      &quot;visible&quot;: true,
+      &quot;workspaces&quot;: [
+        {
+          &quot;index&quot;: 0,
+          &quot;panes&quot;: [
+            {
+              &quot;active&quot;: false,
+              &quot;selected_surface_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;focused&quot;: false,
+              &quot;surface_count&quot;: 2,
+              &quot;tabs&quot;: [
+                {
+                  &quot;index&quot;: 0,
+                  &quot;focused&quot;: false,
+                  &quot;active&quot;: false,
+                  &quot;being_seen&quot;: false,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;url&quot;: null,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;selected&quot;: false,
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;last_seen_at&quot;: null
+                },
+                {
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;url&quot;: null,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;tty&quot;: null,
+                  &quot;here&quot;: false,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;being_seen&quot;: false,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;focused&quot;: false,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;index&quot;: 1,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;active&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;selected&quot;: true
+                }
+              ],
+              &quot;tab_count&quot;: 2,
+              &quot;surfaces&quot;: [
+                {
+                  &quot;index_in_area&quot;: 0,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;url&quot;: null,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;here&quot;: false,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;selected&quot;: false,
+                  &quot;index&quot;: 0,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;focused&quot;: false,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;being_seen&quot;: false,
+                  &quot;active&quot;: false,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;selected_in_pane&quot;: false
+                },
+                {
+                  &quot;selected_in_area&quot;: true,
+                  &quot;index&quot;: 1,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;active&quot;: false,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;selected&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;url&quot;: null,
+                  &quot;being_seen&quot;: false,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;tty&quot;: null,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;selected_in_pane&quot;: true
+                }
+              ],
+              &quot;layout&quot;: {
+                &quot;split_path&quot;: [
+                  &quot;H:left&quot;
+                ],
+                &quot;pixels&quot;: {
+                  &quot;H&quot;: [
+                    0,
+                    412
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ]
+                },
+                &quot;percent&quot;: {
+                  &quot;H&quot;: [
+                    0,
+                    0.5
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ]
+                }
+              },
+              &quot;tab_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+              &quot;selected_tab_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;index&quot;: 0,
+              &quot;surface_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ]
+            },
+            {
+              &quot;selected_surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;index&quot;: 1,
+              &quot;tab_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;layout&quot;: {
+                &quot;split_path&quot;: [
+                  &quot;H:right&quot;
+                ],
+                &quot;percent&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ],
+                  &quot;H&quot;: [
+                    0.5,
+                    1
+                  ]
+                },
+                &quot;pixels&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ],
+                  &quot;H&quot;: [
+                    412,
+                    824
+                  ]
+                }
+              },
+              &quot;surfaces&quot;: [
+                {
+                  &quot;selected_in_area&quot;: true,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;title&quot;: &quot;about:blank&quot;,
+                  &quot;type&quot;: &quot;browser&quot;,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;url&quot;: &quot;about:blank&quot;,
+                  &quot;active&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;tty&quot;: null,
+                  &quot;area_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;selected&quot;: true,
+                  &quot;focused&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;pane_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;index&quot;: 2,
+                  &quot;index_in_pane&quot;: 0
+                }
+              ],
+              &quot;tab_count&quot;: 1,
+              &quot;surface_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;focused&quot;: true,
+              &quot;surface_count&quot;: 1,
+              &quot;id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+              &quot;tabs&quot;: [
+                {
+                  &quot;index&quot;: 2,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;selected&quot;: true,
+                  &quot;type&quot;: &quot;browser&quot;,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;area_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;url&quot;: &quot;about:blank&quot;,
+                  &quot;focused&quot;: true,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;here&quot;: false,
+                  &quot;title&quot;: &quot;about:blank&quot;,
+                  &quot;pane_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;active&quot;: true,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;tty&quot;: null,
+                  &quot;being_seen&quot;: false
+                }
+              ],
+              &quot;selected_tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;active&quot;: true
+            }
+          ],
+          &quot;pinned&quot;: false,
+          &quot;active&quot;: true,
+          &quot;id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+          &quot;selected&quot;: true,
+          &quot;areas&quot;: [
+            {
+              &quot;tab_count&quot;: 2,
+              &quot;selected_tab_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;active&quot;: false,
+              &quot;tabs&quot;: [
+                {
+                  &quot;active&quot;: false,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;selected&quot;: false,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;being_seen&quot;: false,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;index&quot;: 0,
+                  &quot;url&quot;: null,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;focused&quot;: false
+                },
+                {
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;index&quot;: 1,
+                  &quot;being_seen&quot;: false,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;url&quot;: null,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;active&quot;: false,
+                  &quot;tty&quot;: null,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;selected&quot;: true
+                }
+              ],
+              &quot;surface_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;surfaces&quot;: [
+                {
+                  &quot;being_seen&quot;: false,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;here&quot;: false,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;url&quot;: null,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;selected&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;active&quot;: false,
+                  &quot;focused&quot;: false,
+                  &quot;index&quot;: 0,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;selected_in_pane&quot;: false
+                },
+                {
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;tty&quot;: null,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;area_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;pane_id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;url&quot;: null,
+                  &quot;active&quot;: false,
+                  &quot;index&quot;: 1,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;selected&quot;: true,
+                  &quot;last_seen_at&quot;: null
+                }
+              ],
+              &quot;index&quot;: 0,
+              &quot;focused&quot;: false,
+              &quot;tab_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;id&quot;: &quot;0D376B0E-D808-4522-B84F-C5368CC742CD&quot;,
+              &quot;surface_count&quot;: 2,
+              &quot;layout&quot;: {
+                &quot;split_path&quot;: [
+                  &quot;H:left&quot;
+                ],
+                &quot;pixels&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ],
+                  &quot;H&quot;: [
+                    0,
+                    412
+                  ]
+                },
+                &quot;percent&quot;: {
+                  &quot;H&quot;: [
+                    0,
+                    0.5
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ]
+                }
+              },
+              &quot;selected_surface_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+            },
+            {
+              &quot;active&quot;: true,
+              &quot;index&quot;: 1,
+              &quot;id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+              &quot;layout&quot;: {
+                &quot;percent&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ],
+                  &quot;H&quot;: [
+                    0.5,
+                    1
+                  ]
+                },
+                &quot;pixels&quot;: {
+                  &quot;H&quot;: [
+                    412,
+                    824
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ]
+                },
+                &quot;split_path&quot;: [
+                  &quot;H:right&quot;
+                ]
+              },
+              &quot;tab_count&quot;: 1,
+              &quot;surfaces&quot;: [
+                {
+                  &quot;area_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;index&quot;: 2,
+                  &quot;title&quot;: &quot;about:blank&quot;,
+                  &quot;tty&quot;: null,
+                  &quot;active&quot;: true,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;being_seen&quot;: false,
+                  &quot;selected&quot;: true,
+                  &quot;focused&quot;: true,
+                  &quot;type&quot;: &quot;browser&quot;,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;pane_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;url&quot;: &quot;about:blank&quot;,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+                }
+              ],
+              &quot;selected_surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;focused&quot;: true,
+              &quot;selected_tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;tabs&quot;: [
+                {
+                  &quot;selected&quot;: true,
+                  &quot;tty&quot;: null,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;pane_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;url&quot;: &quot;about:blank&quot;,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;index&quot;: 2,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;active&quot;: true,
+                  &quot;area_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+                  &quot;here&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;focused&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;title&quot;: &quot;about:blank&quot;,
+                  &quot;type&quot;: &quot;browser&quot;
+                }
+              ],
+              &quot;surface_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;tab_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;surface_count&quot;: 1
+            }
+          ],
+          &quot;root_directory&quot;: null,
+          &quot;content_area&quot;: {
+            &quot;pixels&quot;: {
+              &quot;width&quot;: 824,
+              &quot;height&quot;: 649
+            }
+          },
+          &quot;title&quot;: &quot;C11-299 normal control&quot;
+        }
+      ],
+      &quot;index&quot;: 0,
+      &quot;active&quot;: true,
+      &quot;workspace_count&quot;: 1,
+      &quot;key&quot;: false,
+      &quot;id&quot;: &quot;88836EC9-7D77-476F-871A-6C9AB00C4538&quot;,
+      &quot;selected_workspace_id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+      &quot;current&quot;: true
+    }
+  ],
+  &quot;active&quot;: {
+    &quot;workspace_id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+    &quot;root_directory&quot;: null,
+    &quot;area_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+    &quot;tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+    &quot;window_id&quot;: &quot;88836EC9-7D77-476F-871A-6C9AB00C4538&quot;,
+    &quot;surface_type&quot;: &quot;browser&quot;,
+    &quot;is_browser_tab&quot;: true,
+    &quot;tab_type&quot;: &quot;browser&quot;,
+    &quot;surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+    &quot;pane_id&quot;: &quot;BEE2468A-16C9-4091-A5DC-FC26971EAEA5&quot;,
+    &quot;is_browser_surface&quot;: true
+  },
+  &quot;caller&quot;: null
+}</pre></details>
+<details><summary>299-control-after-tree.json</summary><pre>{
+  &quot;scope&quot;: &quot;all&quot;,
+  &quot;active&quot;: {
+    &quot;tab_type&quot;: &quot;browser&quot;,
+    &quot;window_id&quot;: &quot;5657B7A3-F501-43A3-8267-97E32F7686CB&quot;,
+    &quot;workspace_id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+    &quot;root_directory&quot;: null,
+    &quot;is_browser_surface&quot;: true,
+    &quot;surface_type&quot;: &quot;browser&quot;,
+    &quot;is_browser_tab&quot;: true,
+    &quot;tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+    &quot;area_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+    &quot;surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+    &quot;pane_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;
+  },
+  &quot;caller&quot;: null,
+  &quot;windows&quot;: [
+    {
+      &quot;workspaces&quot;: [
+        {
+          &quot;pinned&quot;: false,
+          &quot;id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+          &quot;content_area&quot;: {
+            &quot;pixels&quot;: {
+              &quot;height&quot;: 649,
+              &quot;width&quot;: 824
+            }
+          },
+          &quot;areas&quot;: [
+            {
+              &quot;tab_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;tab_count&quot;: 2,
+              &quot;surfaces&quot;: [
+                {
+                  &quot;focused&quot;: false,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;active&quot;: false,
+                  &quot;url&quot;: null,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;selected&quot;: false,
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;here&quot;: false,
+                  &quot;index&quot;: 0,
+                  &quot;being_seen&quot;: false,
+                  &quot;type&quot;: &quot;terminal&quot;
+                },
+                {
+                  &quot;index_in_area&quot;: 1,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;url&quot;: null,
+                  &quot;tty&quot;: null,
+                  &quot;active&quot;: false,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;selected&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;index&quot;: 1,
+                  &quot;last_seen_at&quot;: null
+                }
+              ],
+              &quot;selected_tab_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;focused&quot;: false,
+              &quot;tabs&quot;: [
+                {
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;selected&quot;: false,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;active&quot;: false,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;url&quot;: null,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;being_seen&quot;: false,
+                  &quot;index&quot;: 0,
+                  &quot;focused&quot;: false
+                },
+                {
+                  &quot;selected&quot;: true,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;tty&quot;: null,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;here&quot;: false,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;index&quot;: 1,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;url&quot;: null,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;being_seen&quot;: false,
+                  &quot;active&quot;: false,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;focused&quot;: false
+                }
+              ],
+              &quot;index&quot;: 0,
+              &quot;surface_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;layout&quot;: {
+                &quot;pixels&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ],
+                  &quot;H&quot;: [
+                    0,
+                    412
+                  ]
+                },
+                &quot;split_path&quot;: [
+                  &quot;H:left&quot;
+                ],
+                &quot;percent&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ],
+                  &quot;H&quot;: [
+                    0,
+                    0.5
+                  ]
+                }
+              },
+              &quot;surface_count&quot;: 2,
+              &quot;id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+              &quot;active&quot;: false,
+              &quot;selected_surface_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+            },
+            {
+              &quot;index&quot;: 1,
+              &quot;active&quot;: true,
+              &quot;tab_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;surface_count&quot;: 1,
+              &quot;tab_count&quot;: 1,
+              &quot;selected_tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;surface_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;surfaces&quot;: [
+                {
+                  &quot;pane_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;active&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;index&quot;: 2,
+                  &quot;type&quot;: &quot;browser&quot;,
+                  &quot;title&quot;: &quot;New tab&quot;,
+                  &quot;here&quot;: false,
+                  &quot;url&quot;: &quot;&quot;,
+                  &quot;tty&quot;: null,
+                  &quot;focused&quot;: true,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;selected&quot;: true,
+                  &quot;area_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;
+                }
+              ],
+              &quot;layout&quot;: {
+                &quot;split_path&quot;: [
+                  &quot;H:right&quot;
+                ],
+                &quot;percent&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ],
+                  &quot;H&quot;: [
+                    0.5,
+                    1
+                  ]
+                },
+                &quot;pixels&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ],
+                  &quot;H&quot;: [
+                    412,
+                    824
+                  ]
+                }
+              },
+              &quot;tabs&quot;: [
+                {
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;active&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;tty&quot;: null,
+                  &quot;focused&quot;: true,
+                  &quot;url&quot;: &quot;&quot;,
+                  &quot;area_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;selected&quot;: true,
+                  &quot;title&quot;: &quot;New tab&quot;,
+                  &quot;pane_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;type&quot;: &quot;browser&quot;,
+                  &quot;index&quot;: 2,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;here&quot;: false
+                }
+              ],
+              &quot;id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+              &quot;selected_surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;focused&quot;: true
+            }
+          ],
+          &quot;root_directory&quot;: null,
+          &quot;index&quot;: 0,
+          &quot;selected&quot;: true,
+          &quot;panes&quot;: [
+            {
+              &quot;selected_surface_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;surface_count&quot;: 2,
+              &quot;surface_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;index&quot;: 0,
+              &quot;selected_tab_id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+              &quot;tabs&quot;: [
+                {
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;selected&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;active&quot;: false,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;here&quot;: false,
+                  &quot;url&quot;: null,
+                  &quot;index&quot;: 0,
+                  &quot;being_seen&quot;: false
+                },
+                {
+                  &quot;tty&quot;: null,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;url&quot;: null,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;active&quot;: false,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;focused&quot;: false,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;index&quot;: 1,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;index_in_pane&quot;: 1,
+                  &quot;being_seen&quot;: false,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;selected&quot;: true
+                }
+              ],
+              &quot;active&quot;: false,
+              &quot;tab_count&quot;: 2,
+              &quot;surfaces&quot;: [
+                {
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;type&quot;: &quot;terminal&quot;,
+                  &quot;title&quot;: &quot;~&quot;,
+                  &quot;selected_in_pane&quot;: false,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;here&quot;: false,
+                  &quot;tty&quot;: &quot;ttys000&quot;,
+                  &quot;id&quot;: &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                  &quot;focused&quot;: false,
+                  &quot;active&quot;: false,
+                  &quot;selected_in_area&quot;: false,
+                  &quot;being_seen&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;index&quot;: 0,
+                  &quot;url&quot;: null,
+                  &quot;selected&quot;: false
+                },
+                {
+                  &quot;url&quot;: null,
+                  &quot;type&quot;: &quot;markdown&quot;,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;selected&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;tty&quot;: null,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;being_seen&quot;: false,
+                  &quot;title&quot;: &quot;299-control.md&quot;,
+                  &quot;area_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;index&quot;: 1,
+                  &quot;focused&quot;: false,
+                  &quot;index_in_area&quot;: 1,
+                  &quot;file_path&quot;: &quot;/Volumes/My Shared Files/out/299-control.md&quot;,
+                  &quot;id&quot;: &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;,
+                  &quot;pane_id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;,
+                  &quot;active&quot;: false,
+                  &quot;index_in_pane&quot;: 1
+                }
+              ],
+              &quot;layout&quot;: {
+                &quot;percent&quot;: {
+                  &quot;H&quot;: [
+                    0,
+                    0.5
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ]
+                },
+                &quot;pixels&quot;: {
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ],
+                  &quot;H&quot;: [
+                    0,
+                    412
+                  ]
+                },
+                &quot;split_path&quot;: [
+                  &quot;H:left&quot;
+                ]
+              },
+              &quot;focused&quot;: false,
+              &quot;tab_ids&quot;: [
+                &quot;62C91ABE-F449-4D24-9902-CEF22304F58A&quot;,
+                &quot;8A2E412E-22E8-4A8D-A0DE-2DF29EEB0DA9&quot;
+              ],
+              &quot;id&quot;: &quot;5FCF7D81-4A13-463D-BBCE-A764252AAC95&quot;
+            },
+            {
+              &quot;surfaces&quot;: [
+                {
+                  &quot;active&quot;: true,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;title&quot;: &quot;New tab&quot;,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;pane_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;being_seen&quot;: false,
+                  &quot;index&quot;: 2,
+                  &quot;area_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;focused&quot;: true,
+                  &quot;selected&quot;: true,
+                  &quot;here&quot;: false,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;url&quot;: &quot;&quot;,
+                  &quot;tty&quot;: null,
+                  &quot;type&quot;: &quot;browser&quot;
+                }
+              ],
+              &quot;tabs&quot;: [
+                {
+                  &quot;index_in_pane&quot;: 0,
+                  &quot;focused&quot;: true,
+                  &quot;selected_in_area&quot;: true,
+                  &quot;index&quot;: 2,
+                  &quot;url&quot;: &quot;&quot;,
+                  &quot;selected_in_pane&quot;: true,
+                  &quot;tty&quot;: null,
+                  &quot;area_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;active&quot;: true,
+                  &quot;index_in_area&quot;: 0,
+                  &quot;title&quot;: &quot;New tab&quot;,
+                  &quot;id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+                  &quot;being_seen&quot;: false,
+                  &quot;last_seen_at&quot;: null,
+                  &quot;here&quot;: false,
+                  &quot;pane_id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+                  &quot;selected&quot;: true,
+                  &quot;type&quot;: &quot;browser&quot;
+                }
+              ],
+              &quot;selected_tab_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;selected_surface_id&quot;: &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;,
+              &quot;surface_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;index&quot;: 1,
+              &quot;surface_count&quot;: 1,
+              &quot;id&quot;: &quot;5CA75754-05AD-4804-8644-52C27B0225BA&quot;,
+              &quot;tab_ids&quot;: [
+                &quot;86FABB29-246D-47E0-8272-C58534CAA4E7&quot;
+              ],
+              &quot;active&quot;: true,
+              &quot;focused&quot;: true,
+              &quot;tab_count&quot;: 1,
+              &quot;layout&quot;: {
+                &quot;percent&quot;: {
+                  &quot;H&quot;: [
+                    0.5,
+                    1
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    1
+                  ]
+                },
+                &quot;split_path&quot;: [
+                  &quot;H:right&quot;
+                ],
+                &quot;pixels&quot;: {
+                  &quot;H&quot;: [
+                    412,
+                    824
+                  ],
+                  &quot;V&quot;: [
+                    0,
+                    649
+                  ]
+                }
+              }
+            }
+          ],
+          &quot;title&quot;: &quot;C11-299 normal control&quot;,
+          &quot;active&quot;: true
+        }
+      ],
+      &quot;current&quot;: true,
+      &quot;workspace_count&quot;: 1,
+      &quot;selected_workspace_id&quot;: &quot;B71C4BA9-6223-4096-89C0-0DB0ADE718F8&quot;,
+      &quot;active&quot;: true,
+      &quot;index&quot;: 0,
+      &quot;key&quot;: false,
+      &quot;id&quot;: &quot;5657B7A3-F501-43A3-8267-97E32F7686CB&quot;,
+      &quot;visible&quot;: true
+    }
+  ]
+}</pre></details>
+<details><summary>299-terminal.txt</summary><pre>Last login: Fri Oct  2 06:07:50 on ttys001
+[account omitted] /tmp % printf &#x27;C11-299 restore ready
+&#x27;
+C11-299 restore ready
+[account omitted] /tmp %</pre></details>
+<details><summary>guard-299-timeout</summary><pre>FAIL ten minute scenario deadline</pre></details>
+<h2>Fixture diagnostics</h2><pre>2026-10-02 06:07:49.914 c11[1526:13055] session.restore.drop workspace=00000000-0000-0000-0000-000000000299 tab=00000000-0000-0000-0000-00000000000A reason=duplicate_record
+2026-10-02 06:07:49.915 c11[1526:13055] session.restore.drop workspace=00000000-0000-0000-0000-000000000299 tab=00000000-0000-0000-0000-00000000000A reason=duplicate_layout_reference
+2026-10-02 06:07:49.915 c11[1526:13055] session.restore.drop workspace=00000000-0000-0000-0000-000000000299 tab=00000000-0000-0000-0000-00000000000A reason=duplicate_layout_reference</pre>
+<h2>299-first.png</h2>
+<h2>299-terminal-ready.png</h2>
+<h2>299-second.png</h2>
+<h2>299-control-before.png</h2>

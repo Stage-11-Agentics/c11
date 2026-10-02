@@ -1,0 +1,63 @@
+{
+  "ticket": "C11-285",
+  "head": "02b1fc3ff3479887f5113740205385d2c0599f90",
+  "base": "1334615d98b1a58a0bc93862a6e7b7b03ac12cbc",
+  "atlas_test_identity": {
+    "invocation": "b37a81244db447f3bc8a54037aa2670e",
+    "head": "02b1fc3ff3479887f5113740205385d2c0599f90",
+    "parent_head": "93374bc8c7e68c52cbc6b68ea13158b7832d7ba0",
+    "branch": "c11-1.0/C11-285-rpc",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-285-rpc",
+    "slug": "c11-285-rpc",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/RpcCommandTests",
+      "-only-testing:c11LogicTests/CapabilityFeaturesTests",
+      "-only-testing:c11LogicTests/CreateInitialInputTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "test_receipts": [
+    "Executed 2 tests, with 0 failures (0 unexpected) in 0.002 (0.004) seconds",
+    "Executed 10 tests, with 0 failures (0 unexpected) in 0.011 (0.018) seconds",
+    "Executed 5 tests, with 0 failures (0 unexpected) in 0.004 (0.005) seconds",
+    "Executed 17 tests, with 0 failures (0 unexpected) in 0.018 (0.031) seconds",
+    "Executed 17 tests, with 0 failures (0 unexpected) in 0.018 (0.032) seconds",
+    "** TEST SUCCEEDED **"
+  ],
+  "merge_resolution": {
+    "files": [
+      "CLI/c11.swift"
+    ],
+    "behavior": "Kept both pre-discovery RPC validation and literal create-input validation; additive resolution, no behavior removed."
+  },
+  "runtime_scope": "Pure logic and executable CLI fake-socket checks. Packaged tagged runtime/SSH acceptance remains the batch Validator scenario. No app-driving or Docker SSH execution performed.",
+  "localized_keys": [
+    "cli.rpc.usage",
+    "cli.rpc.payload"
+  ],
+  "installed_skills_sync": "Reserved for Merge Captain; not performed.",
+  "bundled_cli_sha256": "483001d1c0197d68eb63191548c577fe9c8a598b8e560bd2893afbf1807baaed",
+  "executable_fixture_receipts": [
+    "PASS: rpc sends one named v2 request; literal JSON/results preserved; server error passed through",
+    "PASS: ten malformed calls and help make zero connections; valid missing-app call fails",
+    "PASS: new-workspace sends exact input once and renders queued/absent receipts",
+    "PASS: new-split sends exact input once and renders queued/absent receipts",
+    "PASS: new-area sends exact input once and renders queued/absent receipts",
+    "PASS: new-tab sends exact input once and renders queued/absent receipts",
+    "PASS: nonterminal/layout/missing-value errors precede every connection and mutation"
+  ]
+}

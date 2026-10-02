@@ -1,0 +1,61 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-atlas",
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-10-02T01:43:27Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\n1.0.0 is the release that carries #490 and the rest of this train to people who are not on a dev build. It goes out only when Atin names the approval. Backlog item: X3.\n\n## Evidence\n- c11: origin/main is `0ff8887e5e`, commit message \"ssh: stop serving the remote command relay (#490)\". `Sources/Workspace.swift:3118-3129` is that fix. `c11-1.0.html` says it goes out with the next release. It is already on main. This ticket ships a build that contains it. It does not re-implement it.\n- c11: `skills/release/SKILL.md` is the procedure: pre-flight, version from `MARKETING_VERSION`, changelog from `CHANGELOG.md`, `scripts/bump-version.sh`, release PR, tag, and the published artifacts. The site changelog renders from `CHANGELOG.md`.\n- c11: `scripts/sync-installed-skills.sh` refreshes installed skills from `skills/`. `CLAUDE.md` says a skill change is not live until that runs on a machine that has the skill installed. The release notes should tell operators to update skills, and the release PR runs the script check for the skills this train changed (c11, and c11-browser if B3 landed).\n- c11: Sparkle's feed is `https://github.com/Stage-11-Agentics/c11/releases/latest/download/appcast.xml`. A release that is not the real version must not take the `latest` slot. `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` should stay a `v*` tag. `GHOSTTY_RELEASE_TOKEN` is not configured on this fork. Artifact release workflows use `GITHUB_TOKEN` and `--prerelease --latest=false`.\n- Research: backlog X3. D25 and Astra's week 6: if a core gate fails, cut scope or move the date. Fable says the release still holds if the if-time lane is empty. D27: workers are Codex and Grok. That does not change the release skill.\n\n## Scope\nIn: the 1.0.0 release engineering after X2. Changelog entries for user-visible changes, including a Fixed line that remote `c11` commands over `c11 ssh` are refused. Version bump to 1.0.0 via `scripts/bump-version.sh`. Skill sync for the skills whose source changed. A release PR. The tag and the signed upload happen only after Atin approves the exact build from X2 in a Lattice comment or a reply that names the tag. Threat-model recheck from the release skill, because #490 touched the ssh relay and browser work touches `BrowserWindowPortal.swift`.\nOut: starting the release before X2's rehearsal has a recorded pass. Admitting new features during the release PR. Rebuilding the remote command channel. Publishing a Ghostty xcframework or any non-app artifact as GitHub `latest`. Editing tenant config on operator machines. Translating strings (X1). The sign-off script (X2).\n\n## Approach\nFollow `skills/release/SKILL.md`. Pre-flight includes the X2 tag and Atin's approval text. Changelog categories stay Added, Changed, Fixed, Removed. The ssh line goes under Fixed and says commands from a `c11 ssh` shell do not run on the Mac. It does not describe the old forwarder. Credit contributors the way the skill says. Run the threat-model grep in the skill against the release range, and read `docs/security-threat-model.md` because the ssh and browser files are in that list. Update the browser paths in that grep if they still say `Sources/Panels/BrowserPanel.swift`. On this SHA the file is `Sources/Tabs/BrowserTab.swift`. After approval, the existing build-sign-upload path runs on Atlas (F1, C11-216), not as a second full build on the laptop. Confirm `releases/latest` is the version just published, and that it has `appcast.xml`.\n\n## Acceptance criteria\n1. The release PR's changelog contains the #490 behavior in one Fixed bullet, and `git merge-base --is-ancestor 0ff8887e5e <release-sha>` is true.\n2. `MARKETING_VERSION` is `1.0.0`. The release is not tagged until a Lattice comment or operator message names the X2 build and approves it.\n3. `scripts/sync-installed-skills.sh` has been run for every skill whose source differs from the previous tag, and the PR says which names. A reviewer can diff `skills/c11/SKILL.md` against the installed copy's expected content from that script.\n4. After publish, `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints the `v1.0.0` tag, and that release's assets include `appcast.xml`.\n5. No workflow in the release pushed an xcframework or nightly as `latest`. If a ghostty checksum workflow is in `action_required` because a bot commit is waiting, approve it the way `CLAUDE.md` describes, and do not retarget the app feed.\n\n## Validation\nThe release skill's own checks, plus criterion 4 against the GitHub API after publish. X2 is the product validation. This ticket does not replace it. The signed app is produced by the release script. Do not call the release done from a local unsigned build.\n\n## Dependencies\nDepends on X2. Depends on F1 (C11-216) for the Atlas build and sign path. X1's translations are in the build X2 already rehearsed. If X1 landed after that rehearsal, X2 runs again on the new tag before this ticket tags. R1's doc fix ships in this release. #490 is already on main.\n\n## Risks\nTyping latency: none in this ticket. Main thread: none. Doctrine: the release does not write tenant config. Skill sync writes `~/.claude/skills` on the maintainer machine because that is the documented install refresh, not a new channel. Do not add a hook installer. Localization: changelog is English. The app strings are X1's. Public repo: the ssh bullet states the refusal. It does not include a relay transcript. Sparkle: losing the `latest` slot 404s the feed for every shipped c11. Check it before and after publish.\n\nSize: M. Tier: P1. Doctrine check: 1.0.0 ships when Atin names the build. The relay stays refused.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3X4FPBHTCYHV37C3JK770M2",
+  "last_event_id": "ev_01M3XAYN4XR7H4MYE3VMNFBG6F",
+  "last_status_changed_at": "2026-10-02T03:06:41Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:43:59Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FP87W6EPESWSJ521YM79",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:35Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T02:27:29Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M3X6K2V81RAAX9WWJCSVSDJ0",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:32:23Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3XAPVSTQ5H68S9K7J8N6NMY",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-293",
+  "status": "planned",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Release 1.0.0 only after Atin names the sign-off build",
+  "type": "chore",
+  "updated_at": "2026-10-02T03:36:29Z",
+  "urgency": null
+}

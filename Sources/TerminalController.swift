@@ -400,7 +400,8 @@ class TerminalController {
         "browser.tab.switch",
         "debug.command_palette.toggle",
         "debug.notification.focus",
-        "debug.app.activate"
+        "debug.app.activate",
+        "feed.open"
     ]
 
     // C11-159: widened private->internal so per-domain socket handler
@@ -2281,6 +2282,11 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        "journal.clear",
+        "journal.status",
+        // Feed list and display notes parse off main and do not move focus.
+        "feed.list",
+        "feed.note_display",
         // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
         "workspace.reorder_batch",
         "workspace.group.list",
@@ -2299,6 +2305,9 @@ class TerminalController {
         "workspace.group.set_icon",
         "workspace.group.focus",
         "history.list",
+        // Resize dimensions are validated on the worker; live window resolution
+        // and the bounded AppKit frame operation share one main-actor hop.
+        "window.resize",
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",
@@ -2338,6 +2347,72 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.profiles.list",
+        "browser.profiles.add",
+        "browser.profiles.rename",
+        "browser.profiles.clear",
+        "browser.profiles.delete",
+        "browser.cookies.clear",
+        // B006: reading/setting cookies and saving storage also await WebKit.
+        // Keep those waits and state-file writes off the main actor.
+        "browser.cookies.get",
+        "browser.cookies.set",
+        "browser.state.save",
+        "browser.state.load",
+        "browser.open_split",
+        "browser.navigate",
+        "browser.back",
+        "browser.forward",
+        "browser.reload",
+        "browser.snapshot",
+        "browser.click",
+        "browser.dblclick",
+        "browser.hover",
+        "browser.focus",
+        "browser.type",
+        "browser.fill",
+        "browser.press",
+        "browser.keydown",
+        "browser.keyup",
+        "browser.check",
+        "browser.uncheck",
+        "browser.select",
+        "browser.scroll",
+        "browser.scroll_into_view",
+        "browser.screenshot",
+        "browser.get.text",
+        "browser.get.html",
+        "browser.get.value",
+        "browser.get.attr",
+        "browser.get.count",
+        "browser.get.box",
+        "browser.get.styles",
+        "browser.is.visible",
+        "browser.is.enabled",
+        "browser.is.checked",
+        "browser.find.role",
+        "browser.find.text",
+        "browser.find.label",
+        "browser.find.placeholder",
+        "browser.find.alt",
+        "browser.find.title",
+        "browser.find.testid",
+        "browser.find.first",
+        "browser.find.last",
+        "browser.find.nth",
+        "browser.frame.select",
+        "browser.dialog.accept",
+        "browser.dialog.dismiss",
+        "browser.storage.get",
+        "browser.storage.set",
+        "browser.storage.clear",
+        "browser.console.list",
+        "browser.console.clear",
+        "browser.errors.list",
+        "browser.highlight",
+        "browser.addinitscript",
+        "browser.addscript",
+        "browser.addstyle",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
@@ -4483,7 +4558,7 @@ class TerminalController {
         return rep.representation(using: .png, properties: [:])
     }
 
-    func bestEffortPruneTemporaryFiles(
+    nonisolated func bestEffortPruneTemporaryFiles(
         in directoryURL: URL,
         keepingMostRecent maxCount: Int = 50,
         maxAge: TimeInterval = 24 * 60 * 60

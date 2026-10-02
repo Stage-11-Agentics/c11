@@ -1,0 +1,15 @@
+{
+  "ticket": "C11-283",
+  "head": "6bc28658e554acd9cbf597f9fc032bf4b6b093be",
+  "merged_main": "85f33041c525156ad31b651f45e425ea0e24a7ae",
+  "build_overlay": [],
+  "compile": "ok",
+  "app_executable_sha256": "436dd72f4bcbecad4354de8655e886493bbd607daca3d9f6134b60c71e850d9c",
+  "packaged_cli_sha256": "85c8e639fd3ea70865aa5cb1daf9b6f25e79dbc0c0f62085e3fb264bf8f946c6",
+  "window_scope_cli_cases_passed": 128,
+  "window_scope_cli_result": "PASS",
+  "native_xctest": "not run",
+  "app_launch": "not performed",
+  "ui_work": "not performed",
+  "resolution_logic": "Shared send/send-tab/paste admission checks effective target after caller environment suppression; send-tab additionally requires explicit tab. Raw/stdin/no-submit parsing retained. Both skill texts retained."
+}

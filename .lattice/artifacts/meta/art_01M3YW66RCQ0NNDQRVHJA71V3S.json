@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T17:56:57Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YW66RCQ0NNDQRVHJA71V3S",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3YW66RCQ0NNDQRVHJA71V3S.json",
+    "size_bytes": 617
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Current canonical Release build: clean source and matching executable hashes; no test assertions",
+  "token_usage": null,
+  "type": "file"
+}

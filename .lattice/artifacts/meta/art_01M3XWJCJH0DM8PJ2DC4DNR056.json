@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:44:21Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3XWJCJH0DM8PJ2DC4DNR056",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": "art_01M3XWJCJH0DM8PJ2DC4DNR056.log",
+    "size_bytes": 2169
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Fresh signed B current and idle callbacks (home paths redacted)",
+  "token_usage": null,
+  "type": "file"
+}

@@ -51,9 +51,15 @@ extension TerminalController {
     struct V2BrowserOffMainTarget {
         let workspaceId: UUID
         let surfaceId: UUID
+        let browserTab: BrowserTab
         let webView: WKWebView
+        let cookieStore: WKHTTPCookieStore
+        let currentURL: URL?
         let frameSelector: String?
         let resolvedSelector: String?
+        let telemetryBootstrap: String
+        let dialogBootstrap: String
+        let hasIssuedLoad: Bool
         let responseEnvelope: [String: Any]
     }
 
@@ -62,124 +68,28 @@ extension TerminalController {
         case result(V2CallResult)
     }
 
+    enum V2BrowserProfileResolution {
+        case none
+        case profile(BrowserProfileDefinition)
+        case error(V2CallResult)
+    }
+
     func v2DispatchBrowser(_ method: String, id: Any?, params: [String: Any]) -> String {
+        // B006: callback waits must never enter the main-route dispatcher.
+        if Self.executionPolicy(forV2Method: method) == .socketWorker {
+            return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker")
+        }
         switch method {
-        case "browser.open_split":
-            return v2Result(id: id, self.v2BrowserOpenSplit(params: params))
-        case "browser.navigate":
-            return v2Result(id: id, self.v2BrowserNavigate(params: params))
-        case "browser.back":
-            return v2Result(id: id, self.v2BrowserBack(params: params))
-        case "browser.forward":
-            return v2Result(id: id, self.v2BrowserForward(params: params))
-        case "browser.reload":
-            return v2Result(id: id, self.v2BrowserReload(params: params))
         case "browser.url.get":
             return v2Result(id: id, self.v2BrowserGetURL(params: params))
         case "browser.focus_webview":
             return v2Result(id: id, self.v2BrowserFocusWebView(params: params))
         case "browser.is_webview_focused":
             return v2Result(id: id, self.v2BrowserIsWebViewFocused(params: params))
-        case "browser.snapshot":
-            return v2Result(id: id, self.v2BrowserSnapshot(params: params))
-        case "browser.eval":
-            return v2Result(id: id, self.v2BrowserEval(params: params))
-        case "browser.wait":
-            return v2Result(id: id, self.v2BrowserWait(params: params))
-        case "browser.click":
-            return v2Result(id: id, self.v2BrowserClick(params: params))
-        case "browser.dblclick":
-            return v2Result(id: id, self.v2BrowserDblClick(params: params))
-        case "browser.hover":
-            return v2Result(id: id, self.v2BrowserHover(params: params))
-        case "browser.focus":
-            return v2Result(id: id, self.v2BrowserFocusElement(params: params))
-        case "browser.type":
-            return v2Result(id: id, self.v2BrowserType(params: params))
-        case "browser.fill":
-            return v2Result(id: id, self.v2BrowserFill(params: params))
-        case "browser.press":
-            return v2Result(id: id, self.v2BrowserPress(params: params))
-        case "browser.keydown":
-            return v2Result(id: id, self.v2BrowserKeyDown(params: params))
-        case "browser.keyup":
-            return v2Result(id: id, self.v2BrowserKeyUp(params: params))
-        case "browser.check":
-            return v2Result(id: id, self.v2BrowserCheck(params: params, checked: true))
-        case "browser.uncheck":
-            return v2Result(id: id, self.v2BrowserCheck(params: params, checked: false))
-        case "browser.select":
-            return v2Result(id: id, self.v2BrowserSelect(params: params))
-        case "browser.scroll":
-            return v2Result(id: id, self.v2BrowserScroll(params: params))
-        case "browser.scroll_into_view":
-            return v2Result(id: id, self.v2BrowserScrollIntoView(params: params))
-        case "browser.screenshot":
-            return v2Result(id: id, self.v2BrowserScreenshot(params: params))
-        case "browser.get.text":
-            return v2Result(id: id, self.v2BrowserGetText(params: params))
-        case "browser.get.html":
-            return v2Result(id: id, self.v2BrowserGetHTML(params: params))
-        case "browser.get.value":
-            return v2Result(id: id, self.v2BrowserGetValue(params: params))
-        case "browser.get.attr":
-            return v2Result(id: id, self.v2BrowserGetAttr(params: params))
         case "browser.get.title":
             return v2Result(id: id, self.v2BrowserGetTitle(params: params))
-        case "browser.get.count":
-            return v2Result(id: id, self.v2BrowserGetCount(params: params))
-        case "browser.get.box":
-            return v2Result(id: id, self.v2BrowserGetBox(params: params))
-        case "browser.get.styles":
-            return v2Result(id: id, self.v2BrowserGetStyles(params: params))
-        case "browser.is.visible":
-            return v2Result(id: id, self.v2BrowserIsVisible(params: params))
-        case "browser.is.enabled":
-            return v2Result(id: id, self.v2BrowserIsEnabled(params: params))
-        case "browser.is.checked":
-            return v2Result(id: id, self.v2BrowserIsChecked(params: params))
-        case "browser.find.role":
-            return v2Result(id: id, self.v2BrowserFindRole(params: params))
-        case "browser.find.text":
-            return v2Result(id: id, self.v2BrowserFindText(params: params))
-        case "browser.find.label":
-            return v2Result(id: id, self.v2BrowserFindLabel(params: params))
-        case "browser.find.placeholder":
-            return v2Result(id: id, self.v2BrowserFindPlaceholder(params: params))
-        case "browser.find.alt":
-            return v2Result(id: id, self.v2BrowserFindAlt(params: params))
-        case "browser.find.title":
-            return v2Result(id: id, self.v2BrowserFindTitle(params: params))
-        case "browser.find.testid":
-            return v2Result(id: id, self.v2BrowserFindTestId(params: params))
-        case "browser.find.first":
-            return v2Result(id: id, self.v2BrowserFindFirst(params: params))
-        case "browser.find.last":
-            return v2Result(id: id, self.v2BrowserFindLast(params: params))
-        case "browser.find.nth":
-            return v2Result(id: id, self.v2BrowserFindNth(params: params))
-        case "browser.frame.select":
-            return v2Result(id: id, self.v2BrowserFrameSelect(params: params))
         case "browser.frame.main":
             return v2Result(id: id, self.v2BrowserFrameMain(params: params))
-        case "browser.dialog.accept":
-            return v2Result(id: id, self.v2BrowserDialogRespond(params: params, accept: true))
-        case "browser.dialog.dismiss":
-            return v2Result(id: id, self.v2BrowserDialogRespond(params: params, accept: false))
-        case "browser.download.wait":
-            return v2Result(id: id, self.v2BrowserDownloadWait(params: params))
-        case "browser.cookies.get":
-            return v2Result(id: id, self.v2BrowserCookiesGet(params: params))
-        case "browser.cookies.set":
-            return v2Result(id: id, self.v2BrowserCookiesSet(params: params))
-        case "browser.cookies.clear":
-            return v2Result(id: id, self.v2BrowserCookiesClear(params: params))
-        case "browser.storage.get":
-            return v2Result(id: id, self.v2BrowserStorageGet(params: params))
-        case "browser.storage.set":
-            return v2Result(id: id, self.v2BrowserStorageSet(params: params))
-        case "browser.storage.clear":
-            return v2Result(id: id, self.v2BrowserStorageClear(params: params))
         case "browser.tab.new":
             return v2Result(id: id, self.v2BrowserTabNew(params: params))
         case "browser.tab.list":
@@ -188,24 +98,6 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserTabSwitch(params: params))
         case "browser.tab.close":
             return v2Result(id: id, self.v2BrowserTabClose(params: params))
-        case "browser.console.list":
-            return v2Result(id: id, self.v2BrowserConsoleList(params: params))
-        case "browser.console.clear":
-            return v2Result(id: id, self.v2BrowserConsoleClear(params: params))
-        case "browser.errors.list":
-            return v2Result(id: id, self.v2BrowserErrorsList(params: params))
-        case "browser.highlight":
-            return v2Result(id: id, self.v2BrowserHighlight(params: params))
-        case "browser.state.save":
-            return v2Result(id: id, self.v2BrowserStateSave(params: params))
-        case "browser.state.load":
-            return v2Result(id: id, self.v2BrowserStateLoad(params: params))
-        case "browser.addinitscript":
-            return v2Result(id: id, self.v2BrowserAddInitScript(params: params))
-        case "browser.addscript":
-            return v2Result(id: id, self.v2BrowserAddScript(params: params))
-        case "browser.addstyle":
-            return v2Result(id: id, self.v2BrowserAddStyle(params: params))
         case "browser.viewport.set":
             return v2Result(id: id, self.v2BrowserViewportSet(params: params))
         case "browser.geolocation.set":
@@ -232,8 +124,404 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserInputKeyboard(params: params))
         case "browser.input_touch":
             return v2Result(id: id, self.v2BrowserInputTouch(params: params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            // Profile verbs are registered in the browser domain for
+            // discovery, but their worker policy is mandatory: clear/delete
+            // wait off-main for WebKit completion and must never be routed
+            // through this main-actor switch.
+            return v2Error(
+                id: id,
+                code: "invalid_dispatch",
+                message: "\(method) must run on the socket worker"
+            )
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+    }
+
+    nonisolated func v2DispatchBrowserAwaitWorker(_ method: String, id: Any?, params: [String: Any]) -> String {
+        switch method {
+        case "browser.open_split":
+            return v2Result(id: id, v2BrowserOpenSplit(params: params))
+        case "browser.navigate":
+            return v2Result(id: id, v2BrowserNavigate(params: params))
+        case "browser.back":
+            return v2Result(id: id, v2BrowserBack(params: params))
+        case "browser.forward":
+            return v2Result(id: id, v2BrowserForward(params: params))
+        case "browser.reload":
+            return v2Result(id: id, v2BrowserReload(params: params))
+        case "browser.snapshot":
+            return v2Result(id: id, v2BrowserSnapshot(params: params))
+        case "browser.click":
+            return v2Result(id: id, v2BrowserClick(params: params))
+        case "browser.dblclick":
+            return v2Result(id: id, v2BrowserDblClick(params: params))
+        case "browser.hover":
+            return v2Result(id: id, v2BrowserHover(params: params))
+        case "browser.focus":
+            return v2Result(id: id, v2BrowserFocusElement(params: params))
+        case "browser.type":
+            return v2Result(id: id, v2BrowserType(params: params))
+        case "browser.fill":
+            return v2Result(id: id, v2BrowserFill(params: params))
+        case "browser.press":
+            return v2Result(id: id, v2BrowserPress(params: params))
+        case "browser.keydown":
+            return v2Result(id: id, v2BrowserKeyDown(params: params))
+        case "browser.keyup":
+            return v2Result(id: id, v2BrowserKeyUp(params: params))
+        case "browser.check":
+            return v2Result(id: id, v2BrowserCheck(params: params, checked: true))
+        case "browser.uncheck":
+            return v2Result(id: id, v2BrowserCheck(params: params, checked: false))
+        case "browser.select":
+            return v2Result(id: id, v2BrowserSelect(params: params))
+        case "browser.scroll":
+            return v2Result(id: id, v2BrowserScroll(params: params))
+        case "browser.scroll_into_view":
+            return v2Result(id: id, v2BrowserScrollIntoView(params: params))
+        case "browser.screenshot":
+            return v2Result(id: id, v2BrowserScreenshot(params: params))
+        case "browser.get.text":
+            return v2Result(id: id, v2BrowserGetText(params: params))
+        case "browser.get.html":
+            return v2Result(id: id, v2BrowserGetHTML(params: params))
+        case "browser.get.value":
+            return v2Result(id: id, v2BrowserGetValue(params: params))
+        case "browser.get.attr":
+            return v2Result(id: id, v2BrowserGetAttr(params: params))
+        case "browser.get.count":
+            return v2Result(id: id, v2BrowserGetCount(params: params))
+        case "browser.get.box":
+            return v2Result(id: id, v2BrowserGetBox(params: params))
+        case "browser.get.styles":
+            return v2Result(id: id, v2BrowserGetStyles(params: params))
+        case "browser.is.visible":
+            return v2Result(id: id, v2BrowserIsVisible(params: params))
+        case "browser.is.enabled":
+            return v2Result(id: id, v2BrowserIsEnabled(params: params))
+        case "browser.is.checked":
+            return v2Result(id: id, v2BrowserIsChecked(params: params))
+        case "browser.find.role":
+            return v2Result(id: id, v2BrowserFindRole(params: params))
+        case "browser.find.text":
+            return v2Result(id: id, v2BrowserFindText(params: params))
+        case "browser.find.label":
+            return v2Result(id: id, v2BrowserFindLabel(params: params))
+        case "browser.find.placeholder":
+            return v2Result(id: id, v2BrowserFindPlaceholder(params: params))
+        case "browser.find.alt":
+            return v2Result(id: id, v2BrowserFindAlt(params: params))
+        case "browser.find.title":
+            return v2Result(id: id, v2BrowserFindTitle(params: params))
+        case "browser.find.testid":
+            return v2Result(id: id, v2BrowserFindTestId(params: params))
+        case "browser.find.first":
+            return v2Result(id: id, v2BrowserFindFirst(params: params))
+        case "browser.find.last":
+            return v2Result(id: id, v2BrowserFindLast(params: params))
+        case "browser.find.nth":
+            return v2Result(id: id, v2BrowserFindNth(params: params))
+        case "browser.frame.select":
+            return v2Result(id: id, v2BrowserFrameSelect(params: params))
+        case "browser.dialog.accept":
+            return v2Result(id: id, v2BrowserDialogRespond(params: params, accept: true))
+        case "browser.dialog.dismiss":
+            return v2Result(id: id, v2BrowserDialogRespond(params: params, accept: false))
+        case "browser.storage.get":
+            return v2Result(id: id, v2BrowserStorageGet(params: params))
+        case "browser.storage.set":
+            return v2Result(id: id, v2BrowserStorageSet(params: params))
+        case "browser.storage.clear":
+            return v2Result(id: id, v2BrowserStorageClear(params: params))
+        case "browser.console.list":
+            return v2Result(id: id, v2BrowserConsoleList(params: params))
+        case "browser.console.clear":
+            return v2Result(id: id, v2BrowserConsoleClear(params: params))
+        case "browser.errors.list":
+            return v2Result(id: id, v2BrowserErrorsList(params: params))
+        case "browser.highlight":
+            return v2Result(id: id, v2BrowserHighlight(params: params))
+        case "browser.addinitscript":
+            return v2Result(id: id, v2BrowserAddInitScript(params: params))
+        case "browser.addscript":
+            return v2Result(id: id, v2BrowserAddScript(params: params))
+        case "browser.addstyle":
+            return v2Result(id: id, v2BrowserAddStyle(params: params))
+        default:
+            return v2Error(id: id, code: "method_not_found", message: "Unknown browser worker method")
+        }
+    }
+
+    @MainActor
+    func v2ResolveBrowserProfileParam(_ raw: String?) -> V2BrowserProfileResolution {
+        guard let raw else { return .none }
+        switch BrowserProfileStore.shared.resolveProfile(raw) {
+        case .found(let profile):
+            return .profile(profile)
+        case .notFound:
+            return .error(.err(
+                code: "not_found",
+                message: String(localized: "browser.profile.error.notFound", defaultValue: "Browser profile not found"),
+                data: ["profile": raw]
+            ))
+        case .ambiguous:
+            return .error(.err(
+                code: "ambiguous",
+                message: String(localized: "browser.profile.error.ambiguous", defaultValue: "Browser profile name is ambiguous"),
+                data: ["profile": raw]
+            ))
+        }
+    }
+
+    @MainActor
+    func v2ResolveBrowserProfileParam(params: [String: Any]) -> V2BrowserProfileResolution {
+        guard let value = params["profile"] else { return .none }
+        guard let raw = value as? String else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        return v2ResolveBrowserProfileParam(normalized)
+    }
+
+    @MainActor
+    func v2BrowserProfilePayload(_ profile: BrowserProfileDefinition, inUse: Bool) -> [String: Any] {
+        [
+            "id": profile.id.uuidString,
+            "name": profile.displayName,
+            "built_in": profile.isBuiltInDefault,
+            "in_use": inUse
+        ]
+    }
+
+    nonisolated func v2BrowserProfileMainHop(
+        _ body: @escaping @MainActor () -> V2CallResult
+    ) -> V2CallResult {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { body() }
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: V2CallResult = .err(
+            code: "internal_error",
+            message: String(localized: "browser.profile.error.internal", defaultValue: "Failed to handle browser profile command"),
+            data: nil
+        )
+        Task { @MainActor in
+            result = body()
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 2.0) == .success else {
+            return .err(
+                code: "main_thread_timeout",
+                message: String(localized: "browser.profile.error.mainThreadTimeout", defaultValue: "Main thread did not respond within deadline"),
+                data: nil
+            )
+        }
+        return result
+    }
+
+    nonisolated func v2BrowserProfileError(_ error: BrowserProfileOperationError) -> V2CallResult {
+        switch error {
+        case .notFound:
+            return .err(
+                code: "not_found",
+                message: String(localized: "browser.profile.error.notFound", defaultValue: "Browser profile not found"),
+                data: nil
+            )
+        case .ambiguous:
+            return .err(
+                code: "ambiguous",
+                message: String(localized: "browser.profile.error.ambiguous", defaultValue: "Browser profile name is ambiguous"),
+                data: nil
+            )
+        case .invalidName:
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"),
+                data: nil
+            )
+        case .alreadyExists:
+            return .err(
+                code: "already_exists",
+                message: String(localized: "browser.profile.error.alreadyExists", defaultValue: "A browser profile with that name already exists"),
+                data: nil
+            )
+        case .builtIn:
+            return .err(
+                code: "built_in",
+                message: String(localized: "browser.profile.error.builtIn", defaultValue: "The built-in browser profile cannot be changed"),
+                data: nil
+            )
+        case .inUse:
+            return .err(
+                code: "in_use",
+                message: String(localized: "browser.profile.error.inUse", defaultValue: "The browser profile is in use"),
+                data: nil
+            )
+        case .busy:
+            return .err(
+                code: "busy",
+                message: String(localized: "browser.profile.error.busy", defaultValue: "The browser profile has an operation in progress"),
+                data: nil
+            )
+        case .operationFailed:
+            return .err(
+                code: "operation_failed",
+                message: String(localized: "browser.profile.error.operationFailed", defaultValue: "Browser profile cleanup failed"),
+                data: nil
+            )
+        }
+    }
+
+    nonisolated func v2BrowserProfileCommand(method: String, params: [String: Any]) -> V2CallResult {
+        switch method {
+        case "browser.profiles.list":
+            return v2BrowserProfileMainHop { @MainActor in
+                let inUse = AppDelegate.shared?.liveBrowserProfileIDs() ?? []
+                let profiles = BrowserProfileStore.shared.profiles.map {
+                    self.v2BrowserProfilePayload($0, inUse: inUse.contains($0.id))
+                }
+                return .ok(["profiles": profiles])
+            }
+
+        case "browser.profiles.add":
+            guard let rawName = v2String(params, "name") else {
+                return .err(
+                    code: "invalid_params",
+                    message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"),
+                    data: nil
+                )
+            }
+            return v2BrowserProfileMainHop { @MainActor in
+                let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"), data: nil) }
+                guard !BrowserProfileStore.shared.profiles.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) else {
+                    return .err(code: "already_exists", message: String(localized: "browser.profile.error.alreadyExists", defaultValue: "A browser profile with that name already exists"), data: nil)
+                }
+                guard let profile = BrowserProfileStore.shared.createProfile(named: name, recordsLastUsed: false) else {
+                    return .err(code: "operation_failed", message: String(localized: "browser.profile.error.operationFailed", defaultValue: "Browser profile cleanup failed"), data: nil)
+                }
+                return .ok(self.v2BrowserProfilePayload(profile, inUse: false))
+            }
+
+        case "browser.profiles.rename":
+            guard let rawProfile = v2String(params, "profile"),
+                  let rawName = v2String(params, "name") else {
+                return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile or name"), data: nil)
+            }
+            return v2BrowserProfileMainHop { @MainActor in
+                switch self.v2ResolveBrowserProfileParam(rawProfile) {
+                case .error(let error): return error
+                case .none: return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+                case .profile(let profile):
+                    let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidName", defaultValue: "Browser profile name cannot be empty"), data: nil) }
+                    guard !profile.isBuiltInDefault else { return self.v2BrowserProfileError(.builtIn) }
+                    guard !BrowserProfileStore.shared.isReserved(profile.id) else { return self.v2BrowserProfileError(.busy) }
+                    guard !BrowserProfileStore.shared.profiles.contains(where: { $0.id != profile.id && $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) else {
+                        return self.v2BrowserProfileError(.alreadyExists)
+                    }
+                    guard BrowserProfileStore.shared.renameProfile(id: profile.id, to: name),
+                          let renamed = BrowserProfileStore.shared.profileDefinition(id: profile.id) else {
+                        return self.v2BrowserProfileError(.operationFailed)
+                    }
+                    let inUse = AppDelegate.shared?.liveBrowserProfileIDs().contains(profile.id) ?? false
+                    return .ok(self.v2BrowserProfilePayload(renamed, inUse: inUse))
+                }
+            }
+
+        case "browser.profiles.clear", "browser.profiles.delete":
+            guard let rawProfile = v2String(params, "profile") else {
+                return .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+            }
+            guard v2Bool(params, "confirm") == true else {
+                return .err(
+                    code: "confirmation_required",
+                    message: String(localized: "browser.profile.error.confirmationRequired", defaultValue: "Pass --yes to confirm this destructive browser profile operation"),
+                    data: nil
+                )
+            }
+
+            let deleting = method == "browser.profiles.delete"
+            let gate = V2BrowserAwaitGate()
+            let semaphore = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            nonisolated(unsafe) var response: V2CallResult = .err(
+                code: "operation_pending",
+                message: String(localized: "browser.profile.error.operationPending", defaultValue: "Browser profile cleanup is still in progress"),
+                data: ["profile": rawProfile]
+            )
+
+            Task { @MainActor in
+                guard gate.begin() else { return }
+
+                let resolution = self.v2ResolveBrowserProfileParam(rawProfile)
+                guard case .profile(let profile) = resolution else {
+                    let error: V2CallResult
+                    switch resolution {
+                    case .error(let result): error = result
+                    case .none: error = .err(code: "invalid_params", message: String(localized: "browser.profile.error.invalidParams", defaultValue: "Missing profile"), data: nil)
+                    case .profile: error = .err(code: "internal_error", message: String(localized: "browser.profile.error.internal", defaultValue: "Invalid profile resolution"), data: nil)
+                    }
+                    guard gate.complete() else { return }
+                    lock.lock(); response = error; lock.unlock()
+                    semaphore.signal()
+                    return
+                }
+
+                let inUse = AppDelegate.shared?.liveBrowserProfileIDs().contains(profile.id) ?? false
+                let completion: (Result<Void, BrowserProfileOperationError>) -> Void = { result in
+                    guard gate.complete() else { return }
+                    let next: V2CallResult
+                    switch result {
+                    case .success:
+                        next = .ok([
+                            "profile_id": profile.id.uuidString,
+                            deleting ? "deleted" : "cleared": true
+                        ])
+                    case .failure(let error):
+                        next = self.v2BrowserProfileError(error)
+                    }
+                    lock.lock(); response = next; lock.unlock()
+                    semaphore.signal()
+                }
+
+                let start = deleting
+                    ? BrowserProfileStore.shared.beginDelete(id: profile.id, inUse: inUse, completion: completion)
+                    : BrowserProfileStore.shared.beginClear(id: profile.id, inUse: inUse, completion: completion)
+                if case .failed(let error) = start {
+                    guard gate.complete() else { return }
+                    lock.lock(); response = self.v2BrowserProfileError(error); lock.unlock()
+                    semaphore.signal()
+                }
+            }
+
+            guard semaphore.wait(timeout: .now() + 8.0) == .success else {
+                gate.cancel()
+                lock.lock()
+                defer { lock.unlock() }
+                return response
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            return response
+
+        default:
+            return .err(code: "method_not_found", message: String(localized: "browser.profile.error.unknownMethod", defaultValue: "Unknown browser profile method"), data: nil)
         }
     }
 
@@ -320,9 +608,15 @@ extension TerminalController {
         return .ready(V2BrowserOffMainTarget(
             workspaceId: ws.id,
             surfaceId: surfaceId,
+            browserTab: browserPanel,
             webView: browserPanel.webView,
+            cookieStore: browserPanel.webView.configuration.websiteDataStore.httpCookieStore,
+            currentURL: browserPanel.currentURL,
             frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
             resolvedSelector: resolvedSelector,
+            telemetryBootstrap: BrowserTab.telemetryHookBootstrapScriptSource,
+            dialogBootstrap: BrowserTab.dialogTelemetryHookBootstrapScriptSource,
+            hasIssuedLoad: Self.v2BrowserWebViewHasIssuedLoad(browserPanel.webView),
             responseEnvelope: [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -351,20 +645,54 @@ extension TerminalController {
             }
         }
 
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var outcome: V2BrowserOffMainTargetOutcome = .result(
-            .err(code: "internal_error", message: "Failed to resolve browser tab", data: nil)
-        )
-        Task { @MainActor in
-            defer { semaphore.signal() }
-            outcome = v2ResolveBrowserOffMainTargetOnMain(
+        return v2BrowserMainHop {
+            self.v2ResolveBrowserOffMainTargetOnMain(
                 params: params,
                 requireDocument: requireDocument,
                 selectorRaw: selectorRaw
             )
+        } ?? .result(v2BrowserMainHopTimeoutResult())
+    }
+
+    nonisolated func v2BrowserMainHopTimeoutResult() -> V2CallResult {
+        .err(code: "main_thread_timeout",
+             message: String(localized: "browser.profile.error.mainThreadTimeout",
+                             defaultValue: "Main thread did not respond within deadline"),
+             data: nil)
+    }
+
+    /// Routing and model mutations only. Never put a callback wait in this
+    /// closure: the worker owns every WebKit completion wait (C11-209/B006).
+    nonisolated func v2BrowserMainHop<T>(
+        timeout: TimeInterval = 10.0,
+        _ body: @escaping @MainActor () -> T
+    ) -> T? {
+        if Thread.isMainThread { return MainActor.assumeIsolated { body() } }
+        let gate = V2BrowserAwaitGate()
+        let value: T? = v2AwaitCallback(timeout: timeout) { finish in
+            Task { @MainActor in
+                guard gate.begin() else { return }
+                let result = body()
+                guard gate.complete() else { return }
+                finish(result)
+            }
         }
-        semaphore.wait()
-        return outcome
+        if case .none = value { gate.cancel() }
+        return value
+    }
+
+    nonisolated func v2BrowserWithWorkerPanel(
+        params: [String: Any],
+        requireDocument: Bool,
+        selectorRaw: String? = nil,
+        _ body: (V2BrowserOffMainTarget) -> V2CallResult
+    ) -> V2CallResult {
+        assert(!Thread.isMainThread, "Browser callback commands require a socket worker")
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: requireDocument,
+                                            selectorRaw: selectorRaw) {
+        case .result(let result): return result
+        case .ready(let target): return body(target)
+        }
     }
 
     @MainActor
@@ -387,20 +715,7 @@ extension TerminalController {
     /// browser wait through `v2MainSync`. The queue remains main-actor-owned;
     /// this bridge is only the short read/pop phase after the wait completes.
     nonisolated func v2PopBrowserDownloadEventOffMain(surfaceId: UUID) -> [String: Any]? {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated {
-                v2PopBrowserDownloadEventOnMain(surfaceId: surfaceId)
-            }
-        }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var event: [String: Any]?
-        Task { @MainActor in
-            defer { semaphore.signal() }
-            event = v2PopBrowserDownloadEventOnMain(surfaceId: surfaceId)
-        }
-        semaphore.wait()
-        return event
+        v2BrowserMainHop { self.v2PopBrowserDownloadEventOnMain(surfaceId: surfaceId) } ?? nil
     }
 
     nonisolated func v2JSONLiteral(_ value: Any) -> String {
@@ -440,74 +755,6 @@ extension TerminalController {
         return String(describing: value)
     }
 
-    func v2RunJavaScript(
-        _ webView: WKWebView,
-        script: String,
-        timeout: TimeInterval = 5.0,
-        preferAsync: Bool = false,
-        contentWorld: WKContentWorld
-    ) -> V2JavaScriptResult {
-        // C11-209: a WKWebView that has never been asked to load anything has no
-        // web process, so `evaluateJavaScript` never invokes its completion
-        // handler — not late, never. On the main-thread branch below that means
-        // burning the whole timeout inside a main-queue drain, freezing every
-        // other socket command and the UI with it. There is nothing to wait for,
-        // so do not wait. This single guard covers every browser JS call site;
-        // the handlers that own the production stack (`v2BrowserEval`,
-        // `v2BrowserWait`) additionally pre-check so the caller gets a
-        // `no_document` code rather than `js_error`/`timeout`.
-        guard Self.v2BrowserWebViewHasIssuedLoad(webView) else {
-            return .failure(Self.v2BrowserNoDocumentMessage)
-        }
-
-        let timeoutSeconds = max(0.01, timeout)
-        let evaluator: (@escaping (Any?, String?) -> Void) -> Void = { finish in
-            if preferAsync, #available(macOS 11.0, *) {
-                webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: contentWorld) { result in
-                    switch result {
-                    case .success(let value):
-                        finish(value, nil)
-                    case .failure(let error):
-                        finish(nil, error.localizedDescription)
-                    }
-                }
-            } else {
-                webView.evaluateJavaScript(script) { value, error in
-                    if let error {
-                        finish(nil, error.localizedDescription)
-                    } else {
-                        finish(value, nil)
-                    }
-                }
-            }
-        }
-
-        let outcome: (Any?, String?)?
-        if Thread.isMainThread {
-            outcome = v2AwaitCallback(timeout: timeoutSeconds) { finish in
-                evaluator { value, error in
-                    finish((value, error))
-                }
-            }
-        } else {
-            outcome = v2AwaitCallback(timeout: timeoutSeconds) { finish in
-                DispatchQueue.main.async {
-                    evaluator { value, error in
-                        finish((value, error))
-                    }
-                }
-            }
-        }
-
-        guard let outcome else {
-            return .failure("Timed out waiting for JavaScript result")
-        }
-        if let resultError = outcome.1 {
-            return .failure(resultError)
-        }
-        return .success(outcome.0)
-    }
-
     /// Run one WebKit evaluation from a socket worker. The invocation itself
     /// is submitted to main because WebKit is main-thread-bound, but the
     /// worker owns the wait and can therefore leave the main queue available
@@ -523,17 +770,8 @@ extension TerminalController {
             return .failure(Self.v2BrowserNoDocumentMessage)
         }
 
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated {
-                v2RunJavaScript(
-                    webView,
-                    script: script,
-                    timeout: timeout,
-                    preferAsync: preferAsync,
-                    contentWorld: contentWorld
-                )
-            }
-        }
+        // This API is worker-only; WebKit starts and guards hop to main below.
+        assert(!Thread.isMainThread, "Browser callback waits require a socket worker")
 
         let timeoutSeconds = max(0.01, timeout)
         let gate = V2BrowserAwaitGate()
@@ -577,11 +815,104 @@ extension TerminalController {
         return .success(outcome.0)
     }
 
+    /// WKHTTPCookieStore callbacks are asynchronous, but WebKit still expects
+    /// the store operation itself to be submitted from the main actor. The
+    /// socket worker owns the wait so a slow store cannot hold main.
+    nonisolated func v2BrowserCookieStoreAllOffMain(
+        _ store: WKHTTPCookieStore,
+        timeout: TimeInterval = 3.0
+    ) -> [HTTPCookie]? {
+        // This API is worker-only; WebKit starts and guards hop to main below.
+        assert(!Thread.isMainThread, "Browser callback waits require a socket worker")
+
+        let gate = V2BrowserAwaitGate()
+        let result = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.getAllCookies { cookies in
+                    guard gate.complete() else { return }
+                    finish(cookies)
+                }
+            }
+        }
+        gate.cancel()
+        return result
+    }
+
+    nonisolated func v2BrowserCookieStoreSetOffMain(
+        _ store: WKHTTPCookieStore,
+        cookie: HTTPCookie,
+        timeout: TimeInterval = 3.0
+    ) -> Bool {
+        // This API is worker-only; WebKit starts and guards hop to main below.
+        assert(!Thread.isMainThread, "Browser callback waits require a socket worker")
+
+        let gate = V2BrowserAwaitGate()
+        let result: Bool? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.setCookie(cookie) {
+                    guard gate.complete() else { return }
+                    finish(true)
+                }
+            }
+        }
+        gate.cancel()
+        return result == true
+    }
+
+    nonisolated func v2BrowserCookieStoreDeleteOffMain(
+        _ store: WKHTTPCookieStore,
+        cookie: HTTPCookie,
+        timeout: TimeInterval = 3.0
+    ) -> Bool {
+        // This API is worker-only; WebKit starts and guards hop to main below.
+        assert(!Thread.isMainThread, "Browser callback waits require a socket worker")
+
+        let gate = V2BrowserAwaitGate()
+        let result: Bool? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.delete(cookie) {
+                    guard gate.complete() else { return }
+                    finish(true)
+                }
+            }
+        }
+        gate.cancel()
+        return result == true
+    }
+
+    nonisolated func v2BrowserNavigateForStateLoadOffMain(
+        _ browserTab: BrowserTab,
+        url: URL,
+        timeout: TimeInterval
+    ) -> BrowserStateLoadNavigationResult {
+        if Thread.isMainThread {
+            return .failure("State-load navigation must run on a socket worker")
+        }
+
+        let gate = V2BrowserAwaitGate()
+        let result: BrowserStateLoadNavigationResult? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                browserTab.navigateForStateLoad(to: url) { navigationResult in
+                    guard gate.complete() else { return }
+                    finish(navigationResult)
+                }
+            }
+        }
+        gate.cancel()
+        return result ?? .failure("Timed out waiting for navigation to commit")
+    }
+
     nonisolated func v2AwaitCallback<T>(
         timeout: TimeInterval,
         start: (@escaping (T) -> Void) -> Void
     ) -> T? {
         if Thread.isMainThread {
+            // Non-browser terminal readiness retains this historical branch.
+            // Browser callback APIs are worker-only and cannot dispatch here.
             return Self.v2AwaitCallbackPumpingMainRunLoop(timeout: timeout, start: start)
         }
 
@@ -602,8 +933,7 @@ extension TerminalController {
         return result
     }
 
-    /// Build the JavaScript envelope used by both main-bound and worker-bound
-    /// browser calls. The frame selector is passed in rather than read here so
+    /// Build the JavaScript envelope used by browser worker calls. The frame selector is passed in rather than read here so
     /// the worker never touches the main-actor frame map.
     nonisolated func v2BrowserJavaScriptEnvelopeScript(
         script: String,
@@ -917,28 +1247,6 @@ extension TerminalController {
         }
     }
 
-    func v2WaitForBrowserCondition(
-        _ webView: WKWebView,
-        surfaceId: UUID,
-        conditionScript: String,
-        timeoutMs: Int
-    ) -> Bool {
-        let timeout = Double(timeoutMs) / 1000.0
-
-        switch v2RunBrowserJavaScript(
-            webView,
-            surfaceId: surfaceId,
-            script: v2BrowserWaitScript(conditionScript: conditionScript, timeoutMs: timeoutMs),
-            timeout: timeout + 1.0,
-            useEval: false
-        ) {
-        case .success(let value):
-            return (value as? Bool) == true
-        case .failure:
-            return false
-        }
-    }
-
     /// C11-209: structured refusal for a JS command against a surface whose web
     /// view has never issued a load. Returns nil when the surface is fine.
     ///
@@ -1005,56 +1313,15 @@ extension TerminalController {
         v2BrowserFrameSelectorBySurface[surfaceId]
     }
 
-    func v2RunBrowserJavaScript(
-        _ webView: WKWebView,
-        surfaceId: UUID,
-        script: String,
-        timeout: TimeInterval = 5.0,
-        useEval: Bool = true
-    ) -> V2JavaScriptResult {
-        let asyncFunctionBody = v2BrowserJavaScriptEnvelopeScript(
-            script: script,
-            frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
-            useEval: useEval
-        )
-
-        var rawResult: V2JavaScriptResult
-        if #available(macOS 11.0, *) {
-            rawResult = v2RunJavaScript(
-                webView,
-                script: asyncFunctionBody,
-                timeout: timeout,
-                preferAsync: true,
-                contentWorld: .page
-            )
-        } else {
-            let evaluateFallback = """
-            (async () => {
-              \(asyncFunctionBody)
-            })()
-            """
-            rawResult = v2RunJavaScript(webView, script: evaluateFallback, timeout: timeout, contentWorld: .page)
-        }
-
-        if !useEval, case .failure(let pageMessage) = rawResult, #available(macOS 11.0, *) {
-            let isolatedResult = v2RunJavaScript(
-                webView,
-                script: asyncFunctionBody,
-                timeout: timeout,
-                preferAsync: true,
-                contentWorld: .defaultClient
-            )
-            switch isolatedResult {
-            case .success:
-                rawResult = isolatedResult
-            case .failure(let isolatedMessage):
-                if isolatedMessage != pageMessage {
-                    rawResult = .failure("\(pageMessage) (isolated-world retry: \(isolatedMessage))")
-                }
+    nonisolated func v2SetBrowserFrameSelectorOffMain(surfaceId: UUID, selector: String?) -> Bool {
+        v2BrowserMainHop {
+            if let selector {
+                self.v2BrowserFrameSelectorBySurface[surfaceId] = selector
+            } else {
+                self.v2BrowserFrameSelectorBySurface.removeValue(forKey: surfaceId)
             }
-        }
-
-        return v2DecodeBrowserJavaScriptResult(rawResult)
+            return true
+        } ?? false
     }
 
     func v2BrowserRecordUnsupportedRequest(surfaceId: UUID, request: [String: Any]) {
@@ -1086,40 +1353,19 @@ extension TerminalController {
         return first
     }
 
-    func v2BrowserEnsureInitScriptsApplied(surfaceId: UUID, browserPanel browserTab: BrowserTab) {
-        let scripts = v2BrowserInitScriptsBySurface[surfaceId] ?? []
-        let styles = v2BrowserInitStylesBySurface[surfaceId] ?? []
-        guard !scripts.isEmpty || !styles.isEmpty else { return }
-
-        let injector = """
-        (() => {
-          window.__cmuxInitScriptsApplied = window.__cmuxInitScriptsApplied || { scripts: [], styles: [] };
-          return true;
-        })()
-        """
-        _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: injector)
-
-        for script in scripts {
-            _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: script)
+    nonisolated func v2BrowserOpenSplit(params: [String: Any]) -> V2CallResult {
+        guard let result = v2BrowserMainHop({
+            self.withSocketCommandPolicy(commandKey: "browser.open_split", isV2: true) {
+                self.v2RefreshKnownRefs()
+                return self.v2BrowserOpenSplitOnMain(params: params)
+            }
+        }) else {
+            return v2BrowserMainHopTimeoutResult()
         }
-        for css in styles {
-            let cssLiteral = v2JSONLiteral(css)
-            let styleScript = """
-            (() => {
-              const id = 'cmux-init-style-' + btoa(unescape(encodeURIComponent(\(cssLiteral)))).replace(/=+$/g, '');
-              if (document.getElementById(id)) return true;
-              const el = document.createElement('style');
-              el.id = id;
-              el.textContent = String(\(cssLiteral));
-              (document.head || document.documentElement || document.body).appendChild(el);
-              return true;
-            })()
-            """
-            _ = v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: styleScript)
-        }
+        return result
     }
 
-    func v2BrowserOpenSplit(params: [String: Any]) -> V2CallResult {
+    func v2BrowserOpenSplitOnMain(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1137,6 +1383,31 @@ extension TerminalController {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
+            }
+
+            var preferredProfileID: UUID?
+            var sticksAsPreferred = true
+            switch v2ResolveBrowserProfileParam(params: params) {
+            case .none:
+                break
+            case .error(let error):
+                result = error
+                return
+            case .profile(let profile):
+                guard !ws.isRemoteWorkspace else {
+                    result = .err(
+                        code: "invalid_params",
+                        message: String(localized: "browser.profile.error.remoteUnsupported", defaultValue: "Browser profiles are not supported in remote workspaces"),
+                        data: nil
+                    )
+                    return
+                }
+                guard !BrowserProfileStore.shared.isReserved(profile.id) else {
+                    result = v2BrowserProfileError(.busy)
+                    return
+                }
+                preferredProfileID = profile.id
+                sticksAsPreferred = false
             }
             if let url,
                respectExternalOpenRules,
@@ -1185,12 +1456,14 @@ extension TerminalController {
             var placementStrategy = "split_right"
             let createdTab: BrowserTab?
             if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                createdTab = ws.newBrowserSurface(
-                    inPane: targetPane,
-                    url: url,
-                    focus: true,
-                    bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
-                )
+                    createdTab = ws.newBrowserSurface(
+                        inPane: targetPane,
+                        url: url,
+                        focus: true,
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred,
+                        bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
+                    )
                 createdSplit = false
                 placementStrategy = "reuse_right_sibling"
             } else {
@@ -1198,6 +1471,8 @@ extension TerminalController {
                     from: sourceSurfaceId,
                     orientation: .horizontal,
                     url: url,
+                    preferredProfileID: preferredProfileID,
+                    sticksAsPreferred: sticksAsPreferred,
                     bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
                 )
             }
@@ -1224,6 +1499,7 @@ extension TerminalController {
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
                 "target_pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
+                "profile_id": createdTab?.profileID.uuidString ?? NSNull(),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
             ]
@@ -1240,7 +1516,22 @@ extension TerminalController {
         return result
     }
 
-    func v2BrowserNavigate(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserNavigate(params: [String: Any]) -> V2CallResult {
+        guard let result = v2BrowserMainHop({
+            self.withSocketCommandPolicy(commandKey: "browser.navigate", isV2: true) {
+                self.v2RefreshKnownRefs()
+                return self.v2BrowserNavigateOnMain(params: params)
+            }
+        }) else {
+            return v2BrowserMainHopTimeoutResult()
+        }
+        guard case .ok(let value) = result, var payload = value as? [String: Any],
+              let rawId = payload["surface_id"] as? String, let surfaceId = UUID(uuidString: rawId) else { return result }
+        v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
+        return .ok(payload)
+    }
+
+    func v2BrowserNavigateOnMain(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1281,27 +1572,25 @@ extension TerminalController {
             if let insecureHTTP = browserInsecureHTTPPayload(for: disposition) {
                 payload["insecure_http"] = insecureHTTP
             }
-            v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
             result = .ok(payload)
         }
         return result
     }
 
-    func v2BrowserBack(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserBack(params: [String: Any]) -> V2CallResult {
         return v2BrowserNavSimple(params: params, action: "back")
     }
 
-    func v2BrowserForward(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserForward(params: [String: Any]) -> V2CallResult {
         return v2BrowserNavSimple(params: params, action: "forward")
     }
 
-    func v2BrowserReload(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserReload(params: [String: Any]) -> V2CallResult {
         return v2BrowserNavSimple(params: params, action: "reload")
     }
 
-    func v2BrowserNotFoundDiagnostics(
-        surfaceId: UUID,
-        browserPanel browserTab: BrowserTab,
+    nonisolated func v2BrowserNotFoundDiagnostics(
+        target: V2BrowserOffMainTarget,
         selector: String
     ) -> [String: Any] {
         let selectorLiteral = v2JSONLiteral(selector)
@@ -1368,7 +1657,7 @@ extension TerminalController {
         })()
         """
 
-        switch v2RunBrowserJavaScript(browserTab.webView, surfaceId: surfaceId, script: script, timeout: 4.0) {
+        switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script, timeout: 4.0) {
         case .failure(let message):
             return [
                 "selector": selector,
@@ -1392,14 +1681,13 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserElementNotFoundResult(
+    nonisolated func v2BrowserElementNotFoundResult(
         actionName: String,
         selector: String,
         attempts: Int,
-        surfaceId: UUID,
-        browserPanel browserTab: BrowserTab
+        target: V2BrowserOffMainTarget
     ) -> V2CallResult {
-        var data = v2BrowserNotFoundDiagnostics(surfaceId: surfaceId, browserPanel: browserTab, selector: selector)
+        var data = v2BrowserNotFoundDiagnostics(target: target, selector: selector)
         data["action"] = actionName
         data["retry_attempts"] = attempts
         data["hint"] = "Run 'browser snapshot' to refresh refs, then retry with a more specific selector."
@@ -1419,20 +1707,26 @@ extension TerminalController {
         return .err(code: "not_found", message: message, data: data)
     }
 
-    func v2BrowserAppendPostSnapshot(
+    nonisolated func v2BrowserAppendPostSnapshot(
         params: [String: Any],
         surfaceId: UUID,
         payload: inout [String: Any]
     ) {
         guard v2Bool(params, "snapshot_after") ?? false else { return }
 
-        var snapshotParams: [String: Any] = [
+        var snapshotParams: [String: Any] = [:]
+        for key in ["window_id", "window_ref", "workspace_id", "workspace_ref"] {
+            snapshotParams[key] = params[key]
+        }
+        snapshotParams["workspace_id"] = payload["workspace_id"]
+        snapshotParams.merge([
             "surface_id": surfaceId.uuidString,
+            "tab_id": surfaceId.uuidString,
             "interactive": v2Bool(params, "snapshot_interactive") ?? true,
             "cursor": v2Bool(params, "snapshot_cursor") ?? false,
             "compact": v2Bool(params, "snapshot_compact") ?? true,
             "max_depth": max(0, v2Int(params, "snapshot_max_depth") ?? 10)
-        ]
+        ]) { _, newValue in newValue }
         if let selector = v2String(params, "snapshot_selector"),
            !selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             snapshotParams["selector"] = selector
@@ -1469,7 +1763,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserSelectorAction(
+    nonisolated func v2BrowserSelectorAction(
         params: [String: Any],
         actionName: String,
         scriptBuilder: (_ selectorLiteral: String) -> String
@@ -1478,14 +1772,9 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing selector", data: nil)
         }
 
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            // C11-209: refuse a JS command against a surface whose web view has
-            // never issued a load, so the caller gets `no_document` rather than a
-            // generic js_error from the choke-point guard in v2RunJavaScript.
-            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
-                return refusal
-            }
-            guard let selector = v2BrowserResolveSelector(selectorRaw, surfaceId: surfaceId) else {
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, selectorRaw: selectorRaw) { target in
+            let surfaceId = target.surfaceId
+            guard let selector = target.resolvedSelector else {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
             let script = scriptBuilder(v2JSONLiteral(selector))
@@ -1493,7 +1782,7 @@ extension TerminalController {
             let selectorCondition = "document.querySelector(\(v2JSONLiteral(selector))) !== null"
 
             for attempt in 1...retryAttempts {
-                switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script, useEval: false) {
+                switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script, useEval: false) {
                 case .failure(let message):
                     return .err(code: "js_error", message: message, data: ["action": actionName, "selector": selector])
                 case .success(let value):
@@ -1501,13 +1790,13 @@ extension TerminalController {
                        let ok = dict["ok"] as? Bool,
                        ok {
                         var payload: [String: Any] = [
-                            "workspace_id": ws.id.uuidString,
+                            "workspace_id": target.workspaceId.uuidString,
                             "surface_id": surfaceId.uuidString,
                             "action": actionName,
                             "attempts": attempt
                         ]
-                        payload["workspace_ref"] = v2Ref(kind: .workspace, uuid: ws.id)
-                        payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
+                        payload["workspace_ref"] = target.responseEnvelope["workspace_ref"] ?? NSNull()
+                        payload["surface_ref"] = target.responseEnvelope["surface_ref"] ?? NSNull()
                         if let resultValue = dict["value"] {
                             payload["value"] = v2NormalizeJSValue(resultValue)
                         }
@@ -1518,9 +1807,9 @@ extension TerminalController {
                     let errorText = (value as? [String: Any])?["error"] as? String
                     if errorText == "not_found", attempt < retryAttempts {
                         let waitTimeoutMs = max(80, (retryAttempts - attempt) * 80)
-                        guard v2WaitForBrowserCondition(
-                            browserPanel.webView,
-                            surfaceId: surfaceId,
+                        guard v2WaitForBrowserConditionOffMain(
+                            target.webView,
+                            frameSelector: target.frameSelector,
                             conditionScript: selectorCondition,
                             timeoutMs: waitTimeoutMs
                         ) else {
@@ -1528,8 +1817,7 @@ extension TerminalController {
                                 actionName: actionName,
                                 selector: selector,
                                 attempts: attempt,
-                                surfaceId: surfaceId,
-                                browserPanel: browserPanel
+                                target: target
                             )
                         }
                         continue
@@ -1539,8 +1827,7 @@ extension TerminalController {
                             actionName: actionName,
                             selector: selector,
                             attempts: retryAttempts,
-                            surfaceId: surfaceId,
-                            browserPanel: browserPanel
+                            target: target
                         )
                     }
 
@@ -1552,8 +1839,7 @@ extension TerminalController {
                 actionName: actionName,
                 selector: selector,
                 attempts: retryAttempts,
-                surfaceId: surfaceId,
-                browserPanel: browserPanel
+                target: target
             )
         }
     }
@@ -1583,20 +1869,15 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserSnapshot(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserSnapshot(params: [String: Any]) -> V2CallResult {
         let interactiveOnly = v2Bool(params, "interactive") ?? false
         let includeCursor = v2Bool(params, "cursor") ?? false
         let compact = v2Bool(params, "compact") ?? false
         let maxDepth = max(0, v2Int(params, "max_depth") ?? v2Int(params, "maxDepth") ?? 12)
         let scopeSelector = v2String(params, "selector")
 
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            // C11-209: refuse a JS command against a surface whose web view has
-            // never issued a load, so the caller gets `no_document` rather than a
-            // generic js_error from the choke-point guard in v2RunJavaScript.
-            if let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
-                return refusal
-            }
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+            let surfaceId = target.surfaceId
             let interactiveLiteral = interactiveOnly ? "true" : "false"
             let cursorLiteral = includeCursor ? "true" : "false"
             let compactLiteral = compact ? "true" : "false"
@@ -1776,7 +2057,7 @@ extension TerminalController {
             })()
             """
 
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script, timeout: 10.0, useEval: false) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script, timeout: 10.0, useEval: false) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -1808,7 +2089,11 @@ extension TerminalController {
                     let name = ((entry["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let depth = max(0, (entry["depth"] as? Int) ?? ((entry["depth"] as? NSNumber)?.intValue ?? 0))
 
-                    let refToken = v2BrowserAllocateElementRef(surfaceId: surfaceId, selector: selector)
+                    guard let refToken = v2BrowserMainHop({ self.v2BrowserAllocateElementRef(surfaceId: surfaceId, selector: selector) }) else {
+
+                        return v2BrowserMainHopTimeoutResult()
+
+                    }
                     let shortRef = refToken.hasPrefix("@") ? String(refToken.dropFirst()) : refToken
 
                     var refInfo: [String: Any] = ["role": role]
@@ -1846,10 +2131,10 @@ extension TerminalController {
                 let snapshotText = snapshotLines.joined(separator: "\n")
 
                 var payload: [String: Any] = [
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "snapshot": snapshotText,
                     "title": title,
                     "url": url,
@@ -1940,7 +2225,7 @@ extension TerminalController {
         return .err(code: "timeout", message: "Condition not met before timeout", data: timeoutData)
     }
 
-    func v2BrowserClick(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserClick(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "click") { selectorLiteral in
             """
             (() => {
@@ -1958,7 +2243,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserDblClick(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserDblClick(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "dblclick") { selectorLiteral in
             """
             (() => {
@@ -1972,7 +2257,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserHover(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserHover(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "hover") { selectorLiteral in
             """
             (() => {
@@ -1987,7 +2272,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserFocusElement(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserFocusElement(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "focus") { selectorLiteral in
             """
             (() => {
@@ -2000,7 +2285,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserType(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserType(params: [String: Any]) -> V2CallResult {
         guard let text = v2String(params, "text") else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
@@ -2025,7 +2310,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserFill(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserFill(params: [String: Any]) -> V2CallResult {
         // `fill` must allow empty strings so callers can clear existing input values.
         guard let text = v2RawString(params, "text") ?? v2RawString(params, "value") else {
             return .err(code: "invalid_params", message: "Missing text/value", data: nil)
@@ -2051,12 +2336,13 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserPress(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserPress(params: [String: Any]) -> V2CallResult {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
 
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+            let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
             (() => {
@@ -2069,15 +2355,15 @@ extension TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
                 var payload: [String: Any] = [
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2085,11 +2371,12 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserKeyDown(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserKeyDown(params: [String: Any]) -> V2CallResult {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+            let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
             (() => {
@@ -2100,15 +2387,15 @@ extension TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
                 var payload: [String: Any] = [
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2116,11 +2403,12 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserKeyUp(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserKeyUp(params: [String: Any]) -> V2CallResult {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+            let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
             (() => {
@@ -2131,15 +2419,15 @@ extension TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
                 var payload: [String: Any] = [
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2147,7 +2435,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserCheck(params: [String: Any], checked: Bool) -> V2CallResult {
+    nonisolated func v2BrowserCheck(params: [String: Any], checked: Bool) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: checked ? "check" : "uncheck") { selectorLiteral in
             """
             (() => {
@@ -2163,7 +2451,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserSelect(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserSelect(params: [String: Any]) -> V2CallResult {
         let selectedValue = v2String(params, "value") ?? v2String(params, "text")
         guard let selectedValue else {
             return .err(code: "invalid_params", message: "Missing value", data: nil)
@@ -2184,13 +2472,14 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserScroll(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserScroll(params: [String: Any]) -> V2CallResult {
         let dx = v2Int(params, "dx") ?? 0
         let dy = v2Int(params, "dy") ?? 0
         let selectorRaw = v2BrowserSelector(params)
 
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            let selector = selectorRaw.flatMap { v2BrowserResolveSelector($0, surfaceId: surfaceId) }
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, selectorRaw: selectorRaw) { target in
+            let surfaceId = target.surfaceId
+            let selector = target.resolvedSelector
             if selectorRaw != nil && selector == nil {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw ?? ""])
             }
@@ -2215,7 +2504,7 @@ extension TerminalController {
                 script = "window.scrollBy({ left: \(dx), top: \(dy), behavior: 'instant' }); ({ ok: true })"
             }
 
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -2229,17 +2518,16 @@ extension TerminalController {
                             actionName: "scroll",
                             selector: selector,
                             attempts: 1,
-                            surfaceId: surfaceId,
-                            browserPanel: browserPanel
+                            target: target
                         )
                     }
                     return .err(code: "not_found", message: "Element not found", data: ["selector": selector ?? ""])
                 }
                 var payload: [String: Any] = [
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId)
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull()
                 ]
                 v2BrowserAppendPostSnapshot(params: params, surfaceId: surfaceId, payload: &payload)
                 return .ok(payload)
@@ -2247,7 +2535,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserScrollIntoView(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserScrollIntoView(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "scroll_into_view") { selectorLiteral in
             """
             (() => {
@@ -2260,15 +2548,22 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserScreenshot(params: [String: Any]) -> V2CallResult {
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
+    nonisolated func v2BrowserScreenshot(params: [String: Any]) -> V2CallResult {
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: false) { target in
+            let surfaceId = target.surfaceId
+            let gate = V2BrowserAwaitGate()
             let snapshotResult: Data?? = v2AwaitCallback(timeout: 5.0) { finish in
-                browserPanel.takeSnapshot { image in
-                    finish(image.flatMap { self.v2PNGData(from: $0) })
+                Task { @MainActor in
+                    guard gate.begin() else { return }
+                    target.browserTab.takeSnapshot { image in
+                        guard gate.complete() else { return }
+                        finish(image.flatMap { self.v2PNGData(from: $0) })
+                    }
                 }
             }
 
             guard let snapshotResult else {
+                gate.cancel()
                 return .err(code: "timeout", message: "Timed out waiting for snapshot", data: nil)
             }
             guard let imageData = snapshotResult else {
@@ -2276,16 +2571,16 @@ extension TerminalController {
             }
 
             var result: [String: Any] = [
-                "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "workspace_id": target.workspaceId.uuidString,
+                "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                 "surface_id": surfaceId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                 "png_base64": imageData.base64EncodedString()
             ]
 
             // Best effort: keep screenshot data available even when temp-file writes fail.
             let screenshotsDirectory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("cmux-browser-screenshots", isDirectory: true)
+                .appendingPathComponent("c11-browser-screenshots", isDirectory: true)
             if (try? FileManager.default.createDirectory(at: screenshotsDirectory, withIntermediateDirectories: true)) != nil {
                 bestEffortPruneTemporaryFiles(in: screenshotsDirectory)
                 let timestampMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -2303,7 +2598,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetText(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetText(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "get.text") { selectorLiteral in
             """
             (() => {
@@ -2315,7 +2610,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetHTML(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetHTML(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "get.html") { selectorLiteral in
             """
             (() => {
@@ -2327,7 +2622,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetValue(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetValue(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "get.value") { selectorLiteral in
             """
             (() => {
@@ -2340,7 +2635,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetAttr(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetAttr(params: [String: Any]) -> V2CallResult {
         guard let attr = v2String(params, "attr") ?? v2String(params, "name") else {
             return .err(code: "invalid_params", message: "Missing attr/name", data: nil)
         }
@@ -2368,33 +2663,34 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetCount(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetCount(params: [String: Any]) -> V2CallResult {
         guard let selectorRaw = v2BrowserSelector(params) else {
             return .err(code: "invalid_params", message: "Missing selector", data: nil)
         }
-        return v2BrowserWithPanel(params: params) { _, ws, surfaceId, browserPanel in
-            guard let selector = v2BrowserResolveSelector(selectorRaw, surfaceId: surfaceId) else {
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, selectorRaw: selectorRaw) { target in
+            let surfaceId = target.surfaceId
+            guard let selector = target.resolvedSelector else {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
             let selectorLiteral = v2JSONLiteral(selector)
             let script = "document.querySelectorAll(\(selectorLiteral)).length"
-            switch v2RunBrowserJavaScript(browserPanel.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
                 let count = (value as? NSNumber)?.intValue ?? 0
                 return .ok([
-                    "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "workspace_id": target.workspaceId.uuidString,
+                    "workspace_ref": target.responseEnvelope["workspace_ref"] ?? NSNull(),
                     "surface_id": surfaceId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                    "surface_ref": target.responseEnvelope["surface_ref"] ?? NSNull(),
                     "count": count
                 ])
             }
         }
     }
 
-    func v2BrowserGetBox(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetBox(params: [String: Any]) -> V2CallResult {
         v2BrowserSelectorAction(params: params, actionName: "get.box") { selectorLiteral in
             """
             (() => {
@@ -2407,7 +2703,7 @@ extension TerminalController {
         }
     }
 
-    func v2BrowserGetStyles(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserGetStyles(params: [String: Any]) -> V2CallResult {
         let property = v2String(params, "property")
         return v2BrowserSelectorAction(params: params, actionName: "get.styles") { selectorLiteral in
             if let property {

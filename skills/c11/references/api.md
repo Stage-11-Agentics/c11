@@ -21,6 +21,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Installation (`c11 install`)](#installation-c11-install)
 - [Troubleshooting](#troubleshooting)
 - [New Workspace recents and pins](#new-workspace-recents-and-pins)
+- [Feed](#feed)
 
 ## Addressing & targeting
 
@@ -127,7 +128,7 @@ with `id` and `version`, plus `server` and `cli` identities (`short_version`,
 true for matching short/full hashes, false for different commits, null if
 either stamp is unavailable. It never substitutes checkout or environment
 identity. Existing ids: `vocabulary.workspace_area_tab`, `send.explicit_tab`,
-`events.offline`. Later commands advertise `routing.canonical_keys`,
+`events.offline`, `feed.asks`. Later commands advertise `routing.canonical_keys`,
 `create.initial_input`, `send.raw`, `read_selection.terminal`, and
 `window.route_without_focus` only when implemented. Adding an id preserves
 `features_version`; changing an existing id's meaning increments it.
@@ -808,3 +809,88 @@ turn boundary may open the existing mailbox prompt gate.
 See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
 restart confirmation, and retention. Query/export and broader provider hooks
 are separate consumers of this append seam.
+
+## Journal analytics and export
+
+`c11 journal query --json` reads the lifecycle journal through a separate
+read-only SQLite connection. It never focuses a window or waits on the journal
+writer. Use `--agent`, `--model`, `--workspace`, `--from`, `--to`, and
+`--stall-ms` to bound the report. Times accept epoch milliseconds or ISO 8601;
+the window is `[from,to)`. When the app is down, pass `--bundle-id` to select
+the tagged c11 namespace explicitly. The CLI command is admitted by the
+versioned `journal.analytics` v1 capability feature, discoverable through
+`c11 capabilities`; the read-only `journal.status` method reports the live
+writer identity used to distinguish current from restored state.
+
+The JSON object has `schema_version`, `units`, `window`, `coverage`,
+`time_in_state_ms`, `operator_response`, `blocked_ms`, `turns`, `errors`,
+`stalls`, and the same metric object under `by_agent`, `by_model`, and
+`by_workspace`. Durations are milliseconds; rates are per covered hour. The
+operator-response wait is only a same-owner `operator_response` event joined to
+the open request; resume latency is reported separately. Missing evidence is
+`status: "unavailable"`, with null latency values. `coverage.incomplete`,
+`uncertain_count`, and `censored_count` are part of the result and must not be
+treated as zero evidence.
+
+`c11 journal export` emits body-free NDJSON. Its first row is a manifest, then
+sequence-ordered `event` rows, optional `current_state` rows, explicit `gap`
+rows when retention or concurrent pruning/clear prevents a complete view, and
+a final `coverage_summary` that reflects gaps discovered during the paged read.
+Pages are written directly to the output handle; unchanged snapshots produce
+byte-identical default exports. No prompt, command, argument, cwd, output, or
+generated timestamp is exported. Use `--output <local-path>` for a local file;
+URLs are rejected.
+
+`c11 journal clear --yes` is the only mutating verb. With c11 running it uses
+the `journal.clear` socket method; with c11 stopped it clears only the selected
+bundle namespace's lifecycle database and spool while preserving the sequence
+and coverage reset boundary. It does not delete
+conversations, snapshots, launch statistics, or tenant configuration.
+
+## Feed
+
+```bash
+c11 feed list [--json] [--scope attention|all]
+c11 feed open <tab> [--workspace <id|ref>] [--json]
+c11 feed watch [--json] [--scope attention|all]
+```
+
+`feed list` defaults to scope `attention`: open blocking asks and flag rows.
+`--scope all` adds non-suppressed `turn_end` rows. Both scopes use one projector.
+Rows sort flags first by raised time, then eligible open asks by opened time,
+oldest first with missing times last. Ties use tab UUID, then workspace UUID.
+The configured attention jump uses the same prefix, then oldest eligible unread
+completions/legacy notices with exact tab targets; `all` appends turns oldest first.
+Generic `input` is unsupported.
+
+`feed open` selects that workspace and focuses that tab inside c11. It does not
+activate the macOS app, mark anything read, or send an answer. A missing
+workspace or tab returns `unavailable` and changes nothing. `list` and `watch`
+never move focus.
+
+`feed watch` prints one list snapshot, then follows `ask.opened`, `ask.closed`,
+`flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, and the
+log markers. It binds `events-<instance>.ndjson` for the `instance` returned by
+`feed list`. It does not follow the newest-mtime log. A new instance, a sequence
+gap, or `log.dropped` prints `{"continuity":"unavailable"}` and a fresh snapshot.
+
+JSON rows use `workspace_id`, `tab_id`, `kind` (`question`, `plan`, `permission`,
+`turn_end`, or null for a flag-only row), `state` (`open` for a blocking ask,
+otherwise null), `source`, `source_rank`, `opened_at_ms`, `request_id`,
+`confirmation`, `blocking`, and `flag` when one is set. `prompt` and `options`
+appear only in this process's live list/watch JSON. They are not written to the
+journal, the event log, or `ask.opened` / `ask.closed`. After restart,
+`prompt` is null and `prompt_available` is false. Null means unknown. An empty
+`options` array means the hook extracted zero labels.
+
+Socket methods: `feed.list` (`scope`), `feed.open` (`workspace_id`, `tab_id`),
+`feed.note_display` (hook/plugin display text; not a command agents call), and
+feature id `feed.asks` version 1. Discover it before depending on the methods.
+
+A managed Claude or OpenCode ask keeps prompt text in that live cache. An
+unmanaged legacy hook, where the journal method is unsupported or no draft was
+built, still stores `lastBody` and may notify with that body. This command does
+not erase those older records.
+
+Live answer and resume traces that need later producer work stay out of this
+command. `feed open` is focus only.

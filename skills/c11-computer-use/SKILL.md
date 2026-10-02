@@ -38,6 +38,8 @@ Do this inside the sandbox guest (via `scripts/sandbox-exec.sh`), where the clic
 
 Use the tagged build's socket (`C11_SOCKET=/tmp/c11-debug-<tag>.sock`) to build the scene (workspaces, splits, seed terminals with size-revealing content) and to read state (`tree`, `read-screen`). The socket **cannot** drive AppKit menus, keys, the text box, settings, or the sidebar — that is exactly why the PID-scoped GUI-scripting path above exists for the actual UI trigger. `send` reaches PTYs only.
 
+For comparable runs, set a tagged window's frame with `c11 resize-window --window <id> <width> <height>`. `-` keeps an edge; `- -` reads the frame. The top-left stays fixed, sizes clamp to the window minimum and screen, and the command does not focus. The response's `screen.display_id`, `screen.frame`, and `screen.visible_frame` identify the target's actual owning display used for that request and its clamp bounds. Restore the size or close the extra window before the run ends.
+
 ## Clicks, drags, and live tests run in a sandbox
 
 Any click, drag, or app activation runs in a sandboxed c11, not in the operator's session. The operator's session is only for socket and CLI oracles, and for `screencapture -l` of a window that is already on screen.

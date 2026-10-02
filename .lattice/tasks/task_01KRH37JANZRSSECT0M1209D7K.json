@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -16,15 +17,15 @@
     }
   ],
   "id": "task_01KRH37JANZRSSECT0M1209D7K",
-  "last_event_id": "ev_01KRH37JXSZB259DJEVQ1WMH30",
-  "last_status_changed_at": "2026-05-13T16:37:59Z",
+  "last_event_id": "ev_01M3YXXYPS1QR9SXT3692RV194",
+  "last_status_changed_at": "2026-10-02T18:27:23Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-36",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "infrastructure",
     "remote-agents",
@@ -32,6 +33,6 @@
   ],
   "title": "Autonomous Connections \u2014 remote agents over c11",
   "type": "task",
-  "updated_at": "2026-05-13T16:38:00Z",
+  "updated_at": "2026-10-02T18:27:23Z",
   "urgency": null
 }

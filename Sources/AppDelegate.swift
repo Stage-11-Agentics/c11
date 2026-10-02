@@ -10853,6 +10853,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.isNotificationsPopoverShown()
     }
 
+    /// Menu/shortcut admission reads only the resident immutable projections.
+    var hasJournalAttention: Bool {
+        mainWindowContexts.values.contains { context in
+            context.workspaceManager.workspaces.contains { workspace in
+                workspace.journalByTab.values.contains {
+                    $0.paintsAttention && workspace.attentionSnapshot(panelId: $0.owner.tabID).isSignalEligible
+                }
+            }
+        }
+    }
+
     func jumpToLatestUnread() {
         guard let notificationStore else { return }
 #if DEBUG
@@ -13973,7 +13984,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .showNotifications), to: showNotificationsItem)
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .jumpToUnread), to: jumpToUnreadItem)
 
-        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty
+        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty || AppDelegate.shared?.hasJournalAttention == true
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
 

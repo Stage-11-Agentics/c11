@@ -1828,7 +1828,7 @@ struct CMUXCLI {
         )
 
         if command == "agent-event" {
-            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath)
+            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath, explicitPassword: socketPasswordArg)
             return
         }
 
@@ -17260,7 +17260,7 @@ struct CMUXCLI {
                 emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000), tabID: UUID(uuidString: surfaceId),
                 workspaceID: UUID(uuidString: workspaceId), sessionID: sessionID, agentKind: "pi",
                 source: .plugin, adapter: .piPlugin, nativeEvent: native)
-            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
             if case .unsupported = delivery { /* Explicit older-app compatibility. */ }
             else if sessionID != nil { print("OK"); return }
         }
@@ -17312,7 +17312,7 @@ struct CMUXCLI {
             guard var draft = journalDraft else { return true }
             draft.tabID = UUID(uuidString: surfaceId)
             draft.workspaceID = UUID(uuidString: workspaceId)
-            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
             journalDelivery = delivery
             if case .unsupported = delivery { return false }
             return true

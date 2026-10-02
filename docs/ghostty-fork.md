@@ -204,7 +204,7 @@ If you resolve a conflict, update this doc with what changed.
 
 ### 11) C11-294 terminal patch set
 
-The engine tip is `cbacb6b6f` on the Stage 11 fork's `main`. The parent
+The engine tip is `37348b05c` on the Stage 11 fork's `main`. The parent
 gitlink refers to that published commit. Product validation and parent PR state
 are tracked on C11-294; this section records the engine integration.
 
@@ -260,6 +260,7 @@ ordinary and synthetic-race probes preserve all bytes with the patched archive.
 
 Rebase conflicts to preserve: cancellation must precede the first join; cancelled
 owned messages must be disposed; final search resets follow already-queued
-results; renderer resources are released before pending font-key ownership.
+results; renderer resources are released before pending font-key ownership;
+IO config handling appends its color report without waiting on its own queue.
 This changes no Swift callback executor and does not close B033. The original
 teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.

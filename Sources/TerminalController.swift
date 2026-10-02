@@ -2344,6 +2344,8 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.cookies.clear",
+        "browser.state.load",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

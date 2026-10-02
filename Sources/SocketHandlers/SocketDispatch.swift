@@ -148,6 +148,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case "browser.cookies.clear":
+            return v2Result(id: request.id, v2BrowserCookiesClearOffMain(params: request.params))
+        case "browser.state.load":
+            return v2Result(id: request.id, v2BrowserStateLoadOffMain(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

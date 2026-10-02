@@ -179,7 +179,7 @@ final class JournalStore {
                 attribution: context.eligible && d.owner != nil ? "exact" : "unattributed", confidenceRank: d.source.rank,
                 capabilities: d.adapter.capabilities, modelID: context.modelID, foldVersion: 1,
                 effect: folded.effect, effectReason: folded.reason, fromPhase: folded.fromPhase,
-                toPhase: folded.fromPhase == nil ? nil : folded.snapshot?.phase, fromSinceMs: folded.fromSinceMs)
+                toPhase: folded.effect == .applied ? folded.snapshot?.phase : nil, fromSinceMs: folded.fromSinceMs)
             try execute("UPDATE journal_events SET event=? WHERE sequence=?", [.data(try JSONEncoder().encode(event)), .integer(sequence)])
             if let next = folded.snapshot, next != prior {
                 let data = try JSONEncoder().encode(next)

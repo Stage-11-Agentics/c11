@@ -46,7 +46,7 @@ struct JournalStorageLayout {
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try Self.privateDirectory(directory)
-        try FileManager.default.createDirectory(at: spool, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        guard mkdir(spool.path, 0o700) == 0 || errno == EEXIST else { throw JournalError.unavailable }
         try Self.privateDirectory(spool)
         for suffix in ["", "-wal", "-shm"] {
             let path = database.path + suffix

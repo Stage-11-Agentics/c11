@@ -44,6 +44,26 @@ final class JournalCoordinator: @unchecked Sendable {
     func health() -> JournalError? {
         lock.lock(); defer { lock.unlock() }; return storageError
     }
+    /// Existing metadata readback can expose this value without consulting SQLite.
+    func readback(tabID: UUID, now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [String: Any] {
+        lock.lock(); let state = snapshots[tabID]; let error = storageError; lock.unlock()
+        guard let state else {
+            return ["phase": "unknown", "health": error == nil ? "ok" : "degraded",
+                    "connection": "unknown", "confirmation": "unconfirmed", "coverage": "unavailable",
+                    "error_code": error?.rawValue as Any? ?? NSNull()]
+        }
+        return [
+            "phase": state.phase.rawValue, "reason": state.reason?.rawValue as Any? ?? NSNull(),
+            "turn_outcome": state.turnOutcome as Any? ?? NSNull(),
+            "source": state.source.rawValue, "confidence_rank": state.rank,
+            "since_ms": state.sinceMs, "observed_at_ms": state.observedAtMs, "sequence": state.lastSequence,
+            "confirmation": state.confirmation.rawValue, "connection": state.connection.rawValue,
+            "health": error == nil ? state.health.rawValue : "degraded",
+            "freshness": state.isFresh(at: now) ? "fresh" : "stale",
+            "coverage": state.isHistorical ? "historical" : (state.timingUncertain ? "timing_uncertain" : "observed"),
+            "error_code": error?.rawValue as Any? ?? NSNull()
+        ]
+    }
     func start(onProjection: @escaping @Sendable (JournalSnapshot) -> Void) {
         lock.lock()
         sink = onProjection
@@ -134,7 +154,8 @@ final class JournalCoordinator: @unchecked Sendable {
         }
     }
     private func setError(_ error: Error) {
-        guard let code = error as? JournalError, [.busy, .full, .unavailable, .unsupportedVersion].contains(code) else { return }
+        let code = (error as? JournalError) ?? .unavailable
+        guard [.busy, .full, .unavailable, .unsupportedVersion].contains(code) else { return }
         lock.lock(); storageError = code; lock.unlock()
     }
 }

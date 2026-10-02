@@ -220,6 +220,13 @@ struct JournalEvent: Codable {
     let fromPhase: JournalPhase?
     let toPhase: JournalPhase?
     let fromSinceMs: Int64?
+    enum CodingKeys: String, CodingKey {
+        case sequence, committedAtMs = "committed_at_ms", observedTickNs = "observed_tick_ns"
+        case appInstanceID = "app_instance_id", draft, draftHash = "draft_hash", attribution
+        case confidenceRank = "confidence_rank", capabilities, modelID = "model_id", foldVersion = "fold_version"
+        case effect = "projection_effect", effectReason = "effect_reason"
+        case fromPhase = "from_phase", toPhase = "to_phase", fromSinceMs = "from_since_ms"
+    }
 }
 
 struct JournalReceipt: Codable, Equatable {

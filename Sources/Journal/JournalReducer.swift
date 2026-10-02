@@ -211,6 +211,6 @@ enum JournalReducer {
         s.modelID = context.modelID
         if !context.historical { s.lastLiveSequence = sequence; s.lastLiveEmittedAtMs = d.emittedAtMs }
         return JournalFoldResult(snapshot: s, effect: .applied, reason: reason,
-                                 fromPhase: fromPhase, fromSinceMs: fromSince)
+                                 fromPhase: previous == nil ? nil : fromPhase, fromSinceMs: previous == nil ? nil : fromSince)
     }
 }

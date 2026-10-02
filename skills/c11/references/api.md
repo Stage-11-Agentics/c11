@@ -48,6 +48,8 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
+Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.
@@ -593,6 +595,8 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 > **Historical note:** `c11 install <tui>` (without the `skill` subcommand) is not a real command — it was aspirational in earlier docs. The actual install path is `c11 skill install --tool <tui>`.
 
 ## Troubleshooting
+
+**Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
 
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.

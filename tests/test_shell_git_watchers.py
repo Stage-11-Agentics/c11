@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_ROOT = Path(os.environ.get(
@@ -126,25 +127,33 @@ wait_git_job() {
     def close(self):
         # Cleanup only the process group and recorded PIDs created by this fixture.
         try:
-            os.killpg(self.driver.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        for name in ("watch.pid", "probe.pid", "leaf.pid", "reporter.pid"):
-            if self.read(name).strip().isdigit():
-                pid = int(self.read(name).strip())
+            try:
+                os.killpg(self.driver.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                # macOS can report EPERM after the group leader was reaped.
+                # The recorded helpers still need individual cleanup and proof.
+                pass
+            pids = [int(self.read(name).strip())
+                    for name in ("watch.pid", "probe.pid", "leaf.pid", "reporter.pid")
+                    if self.read(name).strip().isdigit()]
+            for pid in pids:
                 if alive(pid):
                     try:
                         os.kill(pid, signal.SIGKILL)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, PermissionError):
                         pass
-        try:
-            self.driver.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            self.driver.kill()
-            self.driver.wait(timeout=3)
-        self.output.close()
-        self.socket.close()
-        self.temp.cleanup()
+            try:
+                self.driver.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.driver.kill()
+                self.driver.wait(timeout=3)
+            if not eventually(lambda: not any(alive(pid) for pid in pids)):
+                remaining = [pid for pid in pids if alive(pid)]
+                raise AssertionError(f"{self.shell}: helpers survived fixture cleanup: {remaining}")
+        finally:
+            self.output.close()
+            self.socket.close()
+            self.temp.cleanup()
 
 
 class ShellGitWatcherTests(unittest.TestCase):
@@ -152,6 +161,54 @@ class ShellGitWatcherTests(unittest.TestCase):
         item = ShellFixture(shell, body)
         self.addCleanup(item.close)
         return item
+
+    def test_fixture_cleanup_handles_reaped_group_and_stops_recorded_helper(self):
+        for shell in SHELLS:
+            for error in (ProcessLookupError, PermissionError):
+                with self.subTest(shell=shell, error=error.__name__):
+                    item = ShellFixture(shell, r'''
+sleep 60 &
+printf '%s\n' "$!" > "$case_dir/watch.pid"
+wait_release
+''')
+                    helper = None
+                    try:
+                        helper = int(item.await_file("watch.pid"))
+                        item.finish()  # Reap the group leader while its helper is live.
+                        self.assertTrue(alive(helper))
+                        with mock.patch.object(os, "killpg", side_effect=error):
+                            item.close()
+                        self.assertFalse(alive(helper))
+                        self.assertIsNotNone(item.driver.poll())
+                    finally:
+                        if helper is not None and alive(helper):
+                            os.kill(helper, signal.SIGKILL)
+                        if not item.output.closed:
+                            item.close()
+
+    def test_fixture_cleanup_does_not_hide_a_surviving_helper(self):
+        item = ShellFixture("bash", r'''
+sleep 60 &
+printf '%s\n' "$!" > "$case_dir/watch.pid"
+wait_release
+''')
+        helper = None
+        try:
+            helper = int(item.await_file("watch.pid"))
+            item.finish()
+            self.assertTrue(alive(helper))
+            with mock.patch.object(os, "killpg", side_effect=PermissionError), \
+                    mock.patch.object(os, "kill", side_effect=PermissionError):
+                with self.assertRaisesRegex(AssertionError, "helpers survived fixture cleanup"):
+                    item.close()
+            self.assertTrue(alive(helper))
+            self.assertTrue(item.output.closed)
+            self.assertEqual(item.socket.fileno(), -1)
+        finally:
+            if helper is not None and alive(helper):
+                os.kill(helper, signal.SIGKILL)
+            if not item.output.closed:
+                item.close()
 
     def test_parent_identity_is_trimmed_and_rejects_death_reuse_and_empty_capture(self):
         for shell in SHELLS:
@@ -327,12 +384,18 @@ printf '%s\n' "$?" > "$case_dir/result"
         for shell in SHELLS:
             with self.subTest(shell=shell):
                 item = self.fixture(shell, r'''
-_cmux_report_pr_for_path() { printf 'successful-probe\n'; return 0; }
+_cmux_report_pr_for_path() {
+    /bin/sh -c 'printf "%s\n" "$PPID"' > "$case_dir/probe.pid"
+    printf 'successful-probe\n'
+    return 0
+}
 parent_start="$(_cmux_parent_shell_lstart "$$")"
 _cmux_run_pr_probe_with_timeout "$PWD" "$$" "$parent_start" || exit 10
 ''')
                 item.wait_exit()
                 self.assertIn("successful-probe", item.read("output"))
+                probe = int(item.await_file("probe.pid"))
+                self.assertFalse(alive(probe), "successful probe must be gone before fixture cleanup")
 
     def test_probe_exit_two_is_transient_and_watcher_recovers(self):
         for shell in SHELLS:

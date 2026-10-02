@@ -64,7 +64,9 @@ def main():
 
         # An unrelated explicit --window must be ignored by the app-wide read.
         other_window = client.new_window()
+        focus(d, 0.1)
         before = client._call('system.identify')
+        require(before['focused']['window_id'] != other_window, 'Focus must start in the original window')
         seen_before = client._call('tab.list', {'workspace_id': workspace})['tabs']
         result = subprocess.run([cli, '--socket', socket, '--window', other_window,
                                  'history', '--json', '--limit', '2'], capture_output=True, text=True)
@@ -95,7 +97,12 @@ def main():
         # Background navigation changes in-app selection but must leave Finder frontmost.
         subprocess.run(['osascript', '-e', 'tell application "Finder" to activate'], check=True)
         time.sleep(0.2)
-        require(client._call('history.back')['tab_id'] != b, 'Navigated to closed tab')
+        selection_before = client._call('system.identify')['focused']['tab_id']
+        destination = client._call('history.back')['tab_id']
+        require(destination != b, 'Navigated to closed tab')
+        require(destination != selection_before, 'Background scenario requires a different destination')
+        require(client._call('system.identify')['focused']['tab_id'] == destination,
+                'Navigation returned a destination without selecting it')
         time.sleep(0.2)
         front = subprocess.check_output(['osascript', '-e',
             'tell application "System Events" to get name of first process whose frontmost is true'], text=True).strip()

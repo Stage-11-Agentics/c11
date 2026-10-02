@@ -47,9 +47,9 @@ final class GhosttyConfigTests: XCTestCase {
         let blue: Int
     }
 
-    func testDarkenConvertsCatalogAndGrayscaleColorsBeforeReadingHue() {
+    func testDarkenConvertsNamedSystemAndGrayscaleColorsBeforeReadingHue() {
         let colors = [
-            ("catalog", NSColor.red),
+            ("named system", NSColor.controlAccentColor),
             ("grayscale", NSColor(calibratedWhite: 0.55, alpha: 0.7)),
         ]
 

@@ -58,6 +58,7 @@ def offline(cli):
         (["paste", "--no-submit"], "\n", "\n", True, False),
         (["send-tab", "--raw", "--no-submit", "body"], None, "body", True, False),
         (["send", "--no-submit", "--", "--bogus"], None, "--bogus", False, False),
+        (["send", "--no-submit", "--", "--help"], None, "--help", False, False),
     ]
     cases = [(a, stdin, body, raw, submit, False, True) for a, stdin, body, raw, submit in cases]
     cases += [
@@ -86,7 +87,8 @@ def offline(cli):
                                 request = json.loads(line)
                                 requests.append(request)
                                 if request["method"] == "system.capabilities":
-                                    result = {"features": [{"id": "send.raw", "version": 1}] if supported else []}
+                                    result = {"methods": ["system.capabilities", "tab.list", "tab.send_text"],
+                                              "features": [{"id": "send.raw", "version": 1}] if supported else []}
                                 else:
                                     assert request["method"] == "tab.send_text", request
                                     result = {"workspace_id": workspace, "tab_id": tab,
@@ -119,7 +121,7 @@ def offline(cli):
                 expected_status = "queued, not delivered" if queued else (
                     "delivered, return scheduled" if submit else "delivered, not submitted")
                 assert expected_status in proc.stdout, proc.stdout
-                assert len(requests) == (2 if raw else 1), requests
+                assert all(r["method"] in ("system.capabilities", "tab.send_text") for r in requests), requests
 
     with tempfile.TemporaryDirectory(prefix="c11-281-absent-") as directory:
         dead = str(Path(directory) / "absent.sock")

@@ -6837,7 +6837,8 @@ class TerminalController {
     /// press Enter", which is what a caller writing `send --no-submit 'cmd\n'`
     /// has always meant. It is stripped from the body on *both* paths and
     /// reissued as the single submit Return, so neither `submit` nor a trailing
-    /// newline can produce two.
+    /// newline can produce two. Raw/paste opts into preserveNewlines: its
+    /// newline bytes remain content and only explicit submit requests Return.
     ///
     /// Returns whether a submit Return was dispatched, so the caller can report
     /// what happened rather than what was asked for.

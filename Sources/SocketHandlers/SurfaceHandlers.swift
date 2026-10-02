@@ -887,7 +887,8 @@ extension TerminalController {
 
         // C11-173: what actually happened, for an honest response. `submitted`
         // is the effective submit (a trailing newline in the payload means Enter
-        // even when `submit` is false); `queued` means the surface had no PTY, so
+        // even when `submit` is false, unless preserve_newlines keeps it as
+        // content); `queued` means the surface had no PTY, so
         // nothing has reached the target yet and the payload flushes on attach.
         let queued: Bool
         nonisolated(unsafe) var submitted = false
@@ -926,11 +927,9 @@ extension TerminalController {
                     // bracketed-paste envelope would swallow.
                     // Same newline rule as the live path (see deliverSocketSendText):
                     // a trailing newline means "and press Enter".
-                    if wantsReturn {
-                        resolved.terminalPanel.surface.sendSubmitFormText(text, preserveNewlines: preserveNewlines)
-                    } else {
-                        resolved.terminalPanel.sendText(text)
-                    }
+                    resolved.terminalPanel.surface.sendQueuedSocketText(
+                        text, submit: submit, preserveNewlines: preserveNewlines
+                    )
                     submitted = wantsReturn
                 }
             }
@@ -958,11 +957,9 @@ extension TerminalController {
                     attachedLate = true
                     return
                 }
-                if wantsReturn {
-                    resolved.terminalPanel.surface.sendSubmitFormText(text, preserveNewlines: preserveNewlines)
-                } else {
-                    resolved.terminalPanel.sendText(text)
-                }
+                resolved.terminalPanel.surface.sendQueuedSocketText(
+                    text, submit: submit, preserveNewlines: preserveNewlines
+                )
                 submitted = wantsReturn
             }
             phaseBSema.wait()

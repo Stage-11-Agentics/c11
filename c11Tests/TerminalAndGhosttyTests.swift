@@ -3096,7 +3096,7 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
                 workingDirectory: nil
             )
             XCTAssertNil(surface.surface)
-            surface.sendSubmitFormText(text, preserveNewlines: true)
+            surface.sendQueuedSocketText(text, submit: true, preserveNewlines: true)
             XCTAssertEqual(surface.pendingInitialInputForTests, text)
             XCTAssertTrue(surface.pendingSubmitOnFlushForTests)
         }
@@ -3109,9 +3109,10 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
             configTemplate: nil,
             workingDirectory: nil
         )
-        surface.sendText("\n\r\n")
+        surface.sendQueuedSocketText("\n\r\n", submit: false, preserveNewlines: true)
         XCTAssertEqual(surface.pendingInitialInputForTests, "\n\r\n")
         XCTAssertFalse(surface.pendingSubmitOnFlushForTests)
+        XCTAssertNotNil(surface.lastOperatorKeyAt, "newline content is an unsubmitted draft")
     }
 
     func testSubmitReportsFalseForUnattachedSurfaceWithoutQueueing() {

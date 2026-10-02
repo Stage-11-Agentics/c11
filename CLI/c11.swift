@@ -1788,9 +1788,11 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        let isSendText = ["send", "send-tab", "paste"].contains(command)
+        let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
+            .contains(where: { $0 == "--help" || $0 == "-h" })
         let sendInput: SendTextParse?
-        if ["send", "send-tab", "paste"].contains(command),
-           !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+        if isSendText && !sendWantsHelp {
             sendInput = try SendTextParse.parse(commandArgs, paste: command == "paste")
             jsonOutput = jsonOutput || sendInput?.json == true
         } else {
@@ -1832,6 +1834,7 @@ struct CMUXCLI {
         // so help text is available even when cmux is not running.
         if command != "__tmux-compat",
            command != "claude-teams",
+           (!isSendText || sendWantsHelp),
            (commandArgs.contains("--help") || commandArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return

@@ -3984,6 +3984,24 @@ final class TerminalSurface: Identifiable, ObservableObject {
         writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
     }
 
+    /// Queue fallback for socket sends, using the same newline policy as the
+    /// attached path. A raw draft ending in a newline is still a draft for
+    /// mailbox admission; it must not look like a submitted line on attach.
+    func sendQueuedSocketText(_ text: String, submit: Bool, preserveNewlines: Bool) {
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        if delivery.wantsReturn {
+            sendSubmitFormText(text, preserveNewlines: preserveNewlines)
+        } else if preserveNewlines {
+            guard !text.isEmpty else { return }
+            writeOrDefer { [weak self] in
+                self?.writeProgrammaticText(text)
+                self?.lastOperatorKeyAt = Date()
+            }
+        } else {
+            sendText(text)
+        }
+    }
+
     /// Run an instantaneous write now, unless another writer's transaction
     /// is in flight and this is not that transaction's own work; then run it
     /// as the next transaction, in order.

@@ -267,6 +267,8 @@ c11 mailbox recv --tab watcher --drain   # drain on someone else's behalf
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender.
 
+`recv --drain` writes each message before it claims the next; if stdout fails (a closed pipe), that message goes back to the inbox and nothing after it is taken. Draining another tab with `--tab <name>` records the delivery without a tab id rather than under the caller's.
+
 **Consuming is a claim, not a delete.** Every consumer (`recv --drain`, a turn-boundary hook, the stdin push) renames `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* it prints or types the message. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope reaches the agent once. A consumer whose injection fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery. Each claimed envelope is recorded as a `mailbox.delivered` event with `via: "drain"`.
 
 ### Turn-boundary drain (harness hooks)
@@ -292,9 +294,10 @@ It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claud
 {"decision":"block","reason":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}
 ```
 
-- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness.
+- **Which inbox.** The hook reads the caller's own inbox, `mailboxes/<tab-uuid>/` (the lowercased `C11_TAB_ID`), straight from the environment: no socket call happens before it claims, so an empty inbox answers in a few milliseconds however much mail sits in other tabs' inboxes. A title-keyed inbox left by an older build is not read by the hook; drain it once with `c11 mailbox recv --drain`.
+- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness. Recording `mailbox.delivered` after the hook JSON is printed is bounded to well under a second, so a stalled c11 cannot push the hook past the harness's timeout.
 - **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and blocks only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
-- **Budget.** One hook delivers at most about 8,000 characters of framed messages (every message whole; the oldest is always taken). The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
+- **Budget and order.** One hook delivers at most about 8,000 characters of framed messages, always whole and always oldest first: it stops at the first message that does not fit (the oldest is always taken), so newer mail never overtakes older mail. The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
 - **Opt out:** `C11_MAILBOX_HOOK_DRAIN=0` in the environment disables the hook drain for that process; plain `recv` is unaffected.
 
 ### Exact PTY frame shape

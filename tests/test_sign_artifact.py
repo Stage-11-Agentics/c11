@@ -22,12 +22,14 @@ name=Path(sys.argv[0]).name
 args=sys.argv[1:]
 with open(os.environ['CALL_LOG'],'a') as f: f.write(name+' '+(args[0] if args else '')+'\n')
 if os.environ.get('FAIL_TOOL') == name: sys.exit(1)
+if name == 'xcrun' and args[0] == os.environ.get('FAIL_XCRUN_STEP'): sys.exit(1)
 if name == 'xcodebuild':
     if '-version' in args: print('Xcode 26.3\nBuild version fixture')
     else:
         app=Path('build/Build/Products/Release/c11.app/Contents');app.mkdir(parents=True)
         (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.stage11.c11',
-            'CFBundleShortVersionString':os.environ.get('FIXTURE_VERSION','0.67.0'),'CFBundleVersion':'131'}))
+            'CFBundleShortVersionString':os.environ.get('FIXTURE_VERSION','0.67.0'),'CFBundleVersion':'131',
+            'NSAppTransportSecurity':{'NSAllowsArbitraryLoadsInWebContent':True}}))
         for n in ('c11','ghostty'):
             p=app/'Resources/bin'/n;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('fixture');p.chmod(0o755)
 elif name == 'swift': print('synthetic-public-key')
@@ -59,8 +61,9 @@ import os,plistlib,sys
 from pathlib import Path
 p=plistlib.loads(Path('build/Build/Products/Release/c11.app/Contents/Info.plist').read_bytes())
 Path(sys.argv[3]).write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>'
+    '<sparkle:version>'+p['CFBundleVersion']+'</sparkle:version>'
     '<enclosure url="'+os.environ['DOWNLOAD_URL_PREFIX']+'c11-macos.dmg" length="'+str(Path(sys.argv[1]).stat().st_size)+
-    '" sparkle:edSignature="synthetic-signature" sparkle:version="'+p['CFBundleVersion']+'"/></item></channel></rss>')
+    '" sparkle:edSignature="synthetic-signature"/></item></channel></rss>')
 '''
 
 
@@ -117,6 +120,8 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(m["build"], "313")
         self.assertEqual(m["feedURL"], self.env["SIGN_PROOF_FEED_BASE"] + "/appcast.xml")
         self.assertEqual(m["sourceSHA"], self.sha)
+        plist = plistlib.loads((self.root / "build/Build/Products/Release/c11.app/Contents/Info.plist").read_bytes())
+        self.assertEqual(plist["NSAppTransportSecurity"], {"NSAllowsArbitraryLoads": True})
         self.assertEqual(len(m["assets"]), 8)
         self.assertEqual(len(list(d.iterdir())), 10)
         for p in d.iterdir():
@@ -138,6 +143,8 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(m["targetTag"], "v1.0.0")
         self.assertEqual(m["downloadURLPrefix"], "https://github.com/Stage-11-Agentics/c11/releases/download/v1.0.0/")
         self.assertIn("/releases/latest/", m["feedURL"])
+        plist = plistlib.loads((self.root / "build/Build/Products/Release/c11.app/Contents/Info.plist").read_bytes())
+        self.assertEqual(plist["NSAppTransportSecurity"], {"NSAllowsArbitraryLoadsInWebContent": True})
 
     def test_sha_mismatch_fails_before_tools_or_secrets(self):
         self.env["SIGN_EXPECTED_SHA"] = "b" * 40
@@ -167,6 +174,18 @@ class SigningTests(unittest.TestCase):
         self.env["NOTARY_STATUS"] = "Invalid"
         self.run_signer(False)
         self.assertIn("security delete-keychain", (self.runner / "calls").read_text())
+
+    def test_stapler_failure_cleans_up_without_artifact(self):
+        self.env["FAIL_XCRUN_STEP"] = "stapler"
+        self.run_signer(False)
+        self.assertIn("security delete-keychain", (self.runner / "calls").read_text())
+
+    def test_extra_file_is_rejected_by_artifact_verifier(self):
+        self.run_signer()
+        d = self.root / "build/signed-artifact"
+        (d / "unexpected.p12").write_text(CANARY)
+        result = subprocess.run(["python3", str(HELPER), "verify", str(d)], capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

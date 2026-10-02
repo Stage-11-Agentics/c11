@@ -19,7 +19,9 @@ For C11-307/C11-298, create two proof builds with increasing `proof_build` value
 Use an isolated Atlas HTTP directory reachable by the running proof app, for
 example `http://127.0.0.1:18731/proof` when the server and app both run on Atlas.
 The proof app is signed with bundle id `com.stage11.c11.sparkle307` and its feed,
-appcast and daemon URLs point to that directory. Do not modify a signed plist.
+appcast and daemon URLs point to that directory. The proof-only built plist allows
+HTTP updater traffic through ATS; candidate ATS settings stay as built from source.
+Do not modify a signed plist.
 No production GitHub feed or authenticated Actions archive URL is a proof feed.
 
 ```sh

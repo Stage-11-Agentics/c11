@@ -80,6 +80,9 @@ def configure(root):
     else:
         plist["CFBundleIdentifier"] = PROOF_BUNDLE
         plist["CFBundleVersion"] = identity["proofBuild"]
+        # Local HTTP updater fixtures need URLSession access, beyond the normal
+        # WebKit-only ATS exception. This override exists only in the proof app.
+        plist["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
         feed = identity["proofFeedBase"] + "/appcast.xml"
         download = identity["proofFeedBase"]
         notes = download + "/notes.html"
@@ -137,7 +140,7 @@ def package(root):
     require(enc.get("url") == identity["downloadURLPrefix"] + "c11-macos.dmg", "appcast download URL mismatch")
     require(enc.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"), "missing Sparkle signature")
     require(enc.get("length") == str((directory / "c11-macos.dmg").stat().st_size), "appcast length mismatch")
-    require(enc.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}version") == identity["build"],
+    require(xml.findtext("./channel/item/{http://www.andymatuschak.org/xml-namespaces/sparkle}version") == identity["build"],
             "appcast build number mismatch")
     daemon = json.loads((directory / "c11d-remote-manifest.json").read_text())
     require(len(daemon["entries"]) == 4, "daemon manifest requires four binaries")

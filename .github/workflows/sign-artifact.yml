@@ -1,7 +1,7 @@
 name: Sign unpublished c11 artifact
 
 on:
-  # Temporary C11-312 bootstrap proof; removed before review.
+  # Temporary C11-312 bootstrap proof with current Sparkle XML; removed before review.
   push:
     branches: [c11-1.0/C11-312-artifact-signing]
     paths: [.github/workflows/sign-artifact.yml]

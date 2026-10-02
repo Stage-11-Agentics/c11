@@ -297,6 +297,14 @@ For most TUIs, the skill-driven self-reporting path above is how status gets pop
 
 Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other prompt or banner string. They drift across releases and produce silent stalls. Use one-shot argv delivery, or poll a status row when it is safe to do so.
 
+## Choosing a message channel
+
+There are two deliberate paths between agent tabs:
+
+- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn. This is the right tool for a nudge, a short brief, or an instruction that should appear in the recipient's working tab. A PTY poke is transient, so do not make it the only completion or blocker record.
+- **Use `c11 mailbox send` for durable coordination.** The envelope and body are recorded and remain inspectable. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent receives a mailbox delivery as a turn; a busy agent receives it at its next turn boundary. Each recipient should declare a stable `mailbox.address` during orientation before peers address it.
+- **Use `c11 messages view` for the recorded timeline.** `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a tab.
+
 ## Agent-to-agent communication
 
 Sub-agents can `c11 send` directly into each other's terminals — no orchestrator relay required.

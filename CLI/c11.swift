@@ -1774,6 +1774,10 @@ struct CMUXCLI {
                 print(versionSummary())
                 return
             }
+            if arg == "--skill" {
+                try runGuide(commandArgs: Array(args.dropFirst(index + 1)), jsonOutput: jsonOutput)
+                return
+            }
             if arg == "-h" || arg == "--help" {
                 print(usage())
                 return
@@ -1788,6 +1792,12 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        // Guide (including its help) is bundled, offline content. Socket
+        // discovery probes listeners, so return before resolving any path.
+        if command == "guide" {
+            try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -1905,7 +1915,9 @@ struct CMUXCLI {
         // file is the contract, so it must work with no running app. Handle it
         // before the socket connect, like `state verify`.
         if command == "events" {
-            try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            try CapabilityFeatures.current.dispatch(.offlineEvents) {
+                try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            }
             return
         }
 
@@ -1927,6 +1939,11 @@ struct CMUXCLI {
             return
         }
 
+        // Admission and advertised support share the feature registry. The
+        // send handlers below still enforce the explicit-tab contract.
+        if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
+            try CapabilityFeatures.current.dispatch(.explicitTab) {}
+        }
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -1988,6 +2005,13 @@ struct CMUXCLI {
 
         let idFormat = try resolvedIDFormat(jsonOutput: jsonOutput, raw: idFormatArg)
 
+        // History is app-wide: even an explicit --window must not select a
+        // window before listing, or override a navigation destination.
+        if command == "history" {
+            try runHistoryCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+            return
+        }
+
         // If the user explicitly targets a window, focus it first so commands route correctly.
         if let windowId {
             let normalizedWindow = try normalizeWindowHandle(windowId, client: client) ?? windowId
@@ -2000,7 +2024,11 @@ struct CMUXCLI {
             print(response)
 
         case "capabilities":
-            let response = try client.sendV2(method: "system.capabilities")
+            var response = try client.sendV2(method: "system.capabilities")
+            let identity = bundledCLIIdentity()
+            response["cli"] = identity.payload
+            let server = response["server"] as? [String: Any]
+            response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
 
         case "brand":
@@ -8556,12 +8584,92 @@ struct CMUXCLI {
         throw CLIError(message: "Unable to resolve tab ID")
     }
 
+    private func runHistoryCommand(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        var verb: String? = nil
+        var limit: Int? = nil
+        var wantsJSON = jsonOutput
+        var index = 0
+        while index < commandArgs.count {
+            let arg = commandArgs[index]
+            switch arg {
+            case "--json":
+                wantsJSON = true
+            case "--limit":
+                guard limit == nil, index + 1 < commandArgs.count,
+                      let value = Int(commandArgs[index + 1]), (1...200).contains(value) else {
+                    throw CLIError(message: "limit must be an integer from 1 to 200")
+                }
+                limit = value
+                index += 1
+            case "list", "back", "forward":
+                guard verb == nil else {
+                    throw CLIError(message: "history accepts one verb: list, back, or forward")
+                }
+                verb = arg
+            default:
+                throw CLIError(message: "Unknown history argument '\(arg)'. Run 'c11 history --help' for usage.")
+            }
+            index += 1
+        }
+        let action = verb ?? "list"
+        if action != "list", limit != nil {
+            throw CLIError(message: "limit applies to history listing")
+        }
+        var params: [String: Any] = [:]
+        if let limit { params["limit"] = limit }
+        let payload = try client.sendV2(method: "history.\(action)", params: params)
+        if wantsJSON {
+            // Both durable UUIDs and live refs are part of the history contract.
+            print(jsonString(payload))
+            return
+        }
+        if action != "list" {
+            print("\(payload["tab_ref"] as? String ?? payload["tab_id"] as? String ?? "")  \(payload["title"] as? String ?? "")")
+            return
+        }
+        let entries = payload["entries"] as? [[String: Any]] ?? []
+        guard !entries.isEmpty else {
+            print("No focus history.")
+            return
+        }
+        let total = payload["total"] as? Int ?? entries.count
+        let position = (payload["position"] as? Int).map(String.init) ?? "none"
+        print("\(total) entries, showing \(entries.count), position \(position)")
+        for entry in entries {
+            let tab = entry["tab_ref"] as? String ?? entry["tab_id"] as? String ?? ""
+            let title = entry["title"] as? String ?? ""
+            let dwell = entry["dwell_seconds"] as? Double ?? 0
+            let seconds = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), dwell)
+            let seenAt = entry["seen_at"] as? String ?? ""
+            let marker = entry["current"] as? Bool == true ? "  ←" : ""
+            print("\(tab)  \(title)  \(seconds)s  \(seenAt)\(marker)")
+        }
+    }
+
     /// Return the help/usage text for a subcommand, or nil if the command is
     /// unknown. `commandArgs` is the slice after the top-level command token,
     /// allowing two-level dispatch for commands like `workspace` that have
     /// their own subcommand surface (e.g. `c11 workspace new --help`).
     private func subcommandUsage(_ command: String, commandArgs: [String] = []) -> String? {
         switch Self.canonicalCommandName(command) {
+        case "history":
+            return """
+            Usage: c11 history [list] [--json] [--limit <1...200>]
+                   c11 history back [--json]
+                   c11 history forward [--json]
+
+            List completed focus visits that met the dwell threshold, or navigate
+            to an earlier/later live tab. History spans all windows; --window does
+            not change selection before this command.
+
+            Flags:
+              --limit <n>  Show the newest n entries, oldest first (default: 50, max: 200).
+                           Applies only to listing.
+              --json       Return the history JSON, including durable UUIDs and live refs.
+
+            Titles are resolved live. Saved history contains only workspace/tab
+            UUIDs, visit start time, and dwell; closed tabs are pruned.
+            """
         case "ping":
             return """
             Usage: c11 ping
@@ -8572,7 +8680,16 @@ struct CMUXCLI {
             return """
             Usage: c11 capabilities
 
-            Print server capabilities as JSON.
+            Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
+            sha_match is null when either build has no commit stamp.
+            """
+        case "guide":
+            return """
+            Usage: c11 guide [page] [--json]
+                   c11 --skill [page] [--json]
+
+            Print the skill shipped in this CLI's app bundle without connecting to a socket.
+            Optional page names select bundled markdown pages (for example: api).
             """
         case "brand":
             return """
@@ -11941,7 +12058,8 @@ struct CMUXCLI {
     }
 
     static func canonicalCommandName(_ command: String) -> String {
-        legacyCommandAliases[command] ?? command
+        guard CapabilityFeatures.current.supports(.workspaceAreaTab) else { return command }
+        return legacyCommandAliases[command] ?? command
     }
 
     /// Flag spellings that mean the same thing. The option helpers (`parseOption`,
@@ -17644,6 +17762,42 @@ struct CMUXCLI {
             .replacingOccurrences(of: "|", with: "¦")
     }
 
+    private func bundledCLIIdentity() -> C11BuildIdentity {
+        C11BuildIdentity(bundleURL: resolvedExecutableURL().flatMap { BundledSkill.containingBundle(executableURL: $0) })
+    }
+
+    private func runGuide(commandArgs: [String], jsonOutput: Bool) throws {
+        if commandArgs.contains("--help") || commandArgs.contains("-h") {
+            print(subcommandUsage("guide") ?? "Usage: c11 guide [page] [--json]")
+            return
+        }
+        let (asJSON, remaining) = parseBoolFlag(commandArgs, name: "--json")
+        guard remaining.count <= 1 else {
+            throw CLIError(message: "Usage: c11 guide [page] [--json]")
+        }
+        guard let executable = resolvedExecutableURL(),
+              let bundle = BundledSkill.containingBundle(executableURL: executable) else {
+            throw CLIError(message: String(localized: "cli.guide.missing", defaultValue: "This build has no bundled c11 skill."))
+        }
+        let page: BundledSkill.Page
+        do {
+            page = try BundledSkill(root: bundle.appendingPathComponent("Contents/Resources/skills/c11")).load(page: remaining.first)
+        } catch BundledSkill.LoadError.unknownPage(let name) {
+            throw CLIError(message: String(localized: "cli.guide.unknown_page", defaultValue: "No bundled skill page '\(name)'."))
+        } catch {
+            throw CLIError(message: String(localized: "cli.guide.missing", defaultValue: "This build has no bundled c11 skill."))
+        }
+        let identity = C11BuildIdentity(bundleURL: bundle)
+        if jsonOutput || asJSON {
+            print(jsonString([
+                "cli": identity.payload, "skill": "c11", "skill_version": page.version as Any? ?? NSNull(),
+                "source": "bundle", "page": page.name, "body": page.body
+            ]))
+        } else {
+            print(identity.summary + "\nskill: c11\nskill_version: \(page.version ?? "unknown")\nsource: bundle\n\n" + page.body, terminator: "")
+        }
+    }
+
     private func versionSummary() -> String {
         let info = resolvedVersionInfo()
         let commit = info["CMUXCommit"].flatMap { normalizedCommitHash($0) }
@@ -18036,8 +18190,12 @@ struct CMUXCLI {
           claude-teams [claude-args...]
           ping
           version
+          guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
           brand [--json]
+          history [list] [--json] [--limit <1...200>]
+          history back [--json]
+          history forward [--json]
           identify [--workspace <id|ref|index>] [--tab <id|ref|index>] [--no-caller]
           list-windows
           current-window

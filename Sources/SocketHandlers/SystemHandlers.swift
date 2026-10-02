@@ -57,6 +57,9 @@ extension TerminalController {
             "system.identify",
             "system.brand",
             "system.tree",
+            "history.list",
+            "history.back",
+            "history.forward",
             "auth.login",
             "window.list",
             "window.current",
@@ -291,7 +294,10 @@ extension TerminalController {
             "version": 2,
             "socket_path": socketPath,
             "access_mode": accessMode.rawValue,
-            "methods": methods.sorted()
+            "methods": methods.sorted(),
+            "features_version": CapabilityFeatures.schemaVersion,
+            "features": CapabilityFeatures.current.payload,
+            "server": C11BuildIdentity(info: Bundle.main.infoDictionary ?? [:]).payload
         ]
     }
 

@@ -3757,6 +3757,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func completeStartupSessionRestore() {
+        FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
         _ = saveSessionSnapshot(includeScrollback: false)
@@ -4861,7 +4862,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return AppSessionSnapshot(
             version: SessionSnapshotSchema.currentVersion,
             createdAt: Date().timeIntervalSince1970,
-            windows: windows
+            windows: windows,
+            focusHistory: FocusHistoryStore.shared.snapshot()
         )
     }
 

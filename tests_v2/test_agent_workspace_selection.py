@@ -63,6 +63,8 @@ def agent_probe(scene):
         blocked("v1:" + method, method)
     blocked_v2("workspace.last")
     blocked("v1:last_window", "last_window")
+    blocked("v1:simulate_shortcut", "simulate_shortcut cmd+2")
+    blocked_v2("debug.shortcut.simulate", {"combo": "cmd+2"})
     cli(["last-window"], refused=True)
     blocked_v2("browser.focus_webview", {"workspace_id": scene["c"], "tab_id": scene["browser"]})
     blocked("v1:focus_webview", "focus_webview " + scene["browser"])

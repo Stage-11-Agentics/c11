@@ -11129,7 +11129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let shortcutTimingStart = CmuxTypingTiming.start()
 #endif
                 let shortcutStart = ProcessInfo.processInfo.systemUptime
-                let handledByShortcut = self.handleCustomShortcut(event: event)
+                let handledByShortcut = self.handleCustomShortcut(event: event, operatorIntent: true)
 #if DEBUG
                 shortcutMs = (ProcessInfo.processInfo.systemUptime - shortcutStart) * 1000.0
                 CmuxTypingTiming.logDuration(
@@ -11434,7 +11434,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    private func handleCustomShortcut(event: NSEvent) -> Bool {
+    private func withOperatorShortcutIntent<T>(_ operatorIntent: Bool, _ body: () -> T) -> T {
+        operatorIntent ? SocketCommandContext.withContext(nil, body) : body()
+    }
+
+    private func handleCustomShortcut(event: NSEvent, operatorIntent: Bool = false) -> Bool {
         // The New Workspace picker is a window, not a sheet, so the modal
         // guards below never see it. Its chords (⌘1–⌘9 open a pin, ⌘F focuses
         // search, ⌘W closes it) are the picker's own; ⌘W would otherwise close
@@ -11906,7 +11910,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 writeJumpUnreadTestData(["jumpUnreadShortcutHandled": "1"])
             }
 #endif
-            operatorJumpToLatestUnread()
+            if operatorIntent { operatorJumpToLatestUnread() }
+            else { jumpToLatestUnread() }
             return true
         }
 
@@ -11947,7 +11952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=next repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            SocketCommandContext.withContext(nil) { workspaceManager?.selectNextWorkspace() }
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectNextWorkspace() }
             return true
         }
 
@@ -11958,7 +11963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "ws.shortcut dir=prev repeat=\(event.isARepeat ? 1 : 0) keyCode=\(event.keyCode) selected=\(selected)"
             )
 #endif
-            SocketCommandContext.withContext(nil) { workspaceManager?.selectPreviousWorkspace() }
+            withOperatorShortcutIntent(operatorIntent) { workspaceManager?.selectPreviousWorkspace() }
             return true
         }
 
@@ -12077,7 +12082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 "shortcut.action name=workspaceDigit digit=\(num) targetIndex=\(targetIndex) manager=\(debugManagerToken(manager)) \(debugShortcutRouteSnapshot(event: event))"
             )
 #endif
-            SocketCommandContext.withContext(nil) { manager.selectWorkspace(at: targetIndex) }
+            withOperatorShortcutIntent(operatorIntent) { manager.selectWorkspace(at: targetIndex) }
             return true
         }
 
@@ -12951,7 +12956,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// through the same app-level shortcut handler used by the local key monitor.
     @discardableResult
     func handleBrowserSurfaceKeyEquivalent(_ event: NSEvent) -> Bool {
-        handleCustomShortcut(event: event)
+        handleCustomShortcut(event: event, operatorIntent: true)
     }
 
     @discardableResult

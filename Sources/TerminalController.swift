@@ -5063,6 +5063,7 @@ class TerminalController {
     }
 
     private func prepareWindowForSyntheticInput(_ window: NSWindow?) {
+        guard !Self.shouldSuppressSocketCommandActivation() else { return }
         guard let window else { return }
         // Keep socket-driven input simulation focused on the intended window without
         // paying repeated activation/order-front costs for every synthetic key event.

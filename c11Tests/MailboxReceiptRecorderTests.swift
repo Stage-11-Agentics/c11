@@ -74,7 +74,7 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         MailboxDeliveryReceipt(
             tabId: tabId ?? tab,
             deliveries: ids.map { .init(id: $0, recipient: "watcher") }
-        ).write(mailboxesRoot: mailboxesRoot(ws ?? workspace))
+        ).writeAll(mailboxesRoot: mailboxesRoot(ws ?? workspace)).first
     }
 
     private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
@@ -97,25 +97,95 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         XCTAssertEqual(url.pathExtension, "receipt")
         XCTAssertEqual(names(spool(workspace), ext: "tmp"), [])
         let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(contentsOf: url)))
-        XCTAssertEqual(decoded.tabId, tab)
-        XCTAssertEqual(decoded.via, "drain")
-        XCTAssertEqual(decoded.deliveries.map(\.id), [idA, idB])
+        XCTAssertEqual(decoded.receipt.tabId, tab)
+        XCTAssertEqual(decoded.receipt.via, "drain")
+        XCTAssertEqual(decoded.receipt.deliveries.map(\.id), [idA, idB])
+        XCTAssertTrue(decoded.dropped.isEmpty)
     }
 
-    func testReceiptValidationRejectsMalformedContent() {
-        func decode(_ json: String) -> MailboxDeliveryReceipt? { MailboxDeliveryReceipt.decode(Data(json.utf8)) }
+    func testAFileThatIsNotAReceiptIsRejectedWhole() {
+        func decode(_ json: String) -> MailboxDeliveryReceipt.Decoded? { MailboxDeliveryReceipt.decode(Data(json.utf8)) }
         let ok = #"{"version":1,"via":"drain","ts":"2026-10-01T12:00:00Z","deliveries":[{"id":"01K0000000000000000000000A","recipient":"w"}]}"#
         XCTAssertNotNil(decode(ok))
+        XCTAssertNil(decode("not json"))
         XCTAssertNil(decode(ok.replacingOccurrences(of: #""version":1"#, with: #""version":2"#)))
         XCTAssertNil(decode(ok.replacingOccurrences(of: #""drain""#, with: #""push""#)))
-        XCTAssertNil(decode(ok.replacingOccurrences(of: "01K0000000000000000000000A", with: "not-a-ulid")))
-        XCTAssertNil(decode(ok.replacingOccurrences(of: #""recipient":"w""#, with: #""recipient":"""#)))
-        XCTAssertNil(decode(ok.replacingOccurrences(of: #""via""#, with: #""tab_id":"nope","via""#)))
-        XCTAssertNil(decode(ok.replacingOccurrences(of: #""via""#, with: #""extra":1,"via""#)))
-        XCTAssertNil(decode(#"{"version":1,"via":"drain","ts":"t","deliveries":[]}"#))
-        let many = (0..<513).map { _ in #"{"id":"01K0000000000000000000000A","recipient":"w"}"# }.joined(separator: ",")
-        XCTAssertNil(decode(#"{"version":1,"via":"drain","ts":"t","deliveries":[\#(many)]}"#))
+        XCTAssertNil(decode(#"{"version":1,"via":"drain","ts":"t"}"#))
         XCTAssertNil(MailboxDeliveryReceipt.decode(Data(repeating: 0x20, count: MailboxDeliveryReceipt.maxBytes + 1)))
+    }
+
+    func testInvalidDeliveriesAreDroppedAndTheValidOnesKept() throws {
+        let json = #"""
+        {"version":1,"via":"drain","ts":"t","tab_id":"not-a-uuid","extra":true,"deliveries":[
+          {"id":"01K0000000000000000000000A","recipient":"w"},
+          {"id":"0note","recipient":"w"},
+          {"id":"","recipient":"w"},
+          {"id":"bad\u0007id","recipient":"w"},
+          {"id":"a/b","recipient":"w"},
+          {"id":"01K0000000000000000000000B","recipient":""},
+          {"id":"01K0000000000000000000000C","recipient":"\#(String(repeating: "r", count: 257))"},
+          "not an object",
+          {"id":"01K0000000000000000000000D","recipient":"w","extra":1}
+        ]}
+        """#
+        let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(Data(json.utf8)))
+        XCTAssertEqual(decoded.receipt.deliveries.map(\.id), [idA, "01K0000000000000000000000D"])
+        XCTAssertNil(decoded.receipt.tabId)
+        XCTAssertEqual(decoded.dropped.count, 8)   // the tab_id, six bad entries (0note is not a ULID), the non-object
+    }
+
+    func testSixHundredDeliveriesSplitIntoReceiptsThatFit() throws {
+        let ids = (0..<600).map { String(format: "01K%023d", $0) }
+        let urls = MailboxDeliveryReceipt(
+            tabId: tab,
+            deliveries: ids.map { .init(id: $0, recipient: "watcher") }
+        ).writeAll(mailboxesRoot: mailboxesRoot(workspace))
+        XCTAssertEqual(urls.count, 2)
+        var seen: [String] = []
+        for url in urls {
+            let data = try Data(contentsOf: url)
+            XCTAssertLessThanOrEqual(data.count, MailboxDeliveryReceipt.maxBytes)
+            let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(data))
+            XCTAssertLessThanOrEqual(decoded.receipt.deliveries.count, MailboxDeliveryReceipt.maxDeliveries)
+            XCTAssertTrue(decoded.dropped.isEmpty)
+            seen += decoded.receipt.deliveries.map(\.id)
+        }
+        XCTAssertEqual(seen, ids)
+    }
+
+    func testLongRecipientsSplitByBytesAndAreClamped() throws {
+        let long = String(repeating: "é", count: 200)   // 400 bytes, clamped to 256
+        let ids = (0..<400).map { String(format: "01K%023d", $0) }
+        let urls = MailboxDeliveryReceipt(
+            tabId: tab,
+            deliveries: ids.map { .init(id: $0, recipient: long) }
+        ).writeAll(mailboxesRoot: mailboxesRoot(workspace))
+        XCTAssertGreaterThan(urls.count, 1, "400 entries of ~300 bytes cannot fit one 64 KB receipt")
+        var seen: [String] = []
+        for url in urls {
+            let data = try Data(contentsOf: url)
+            XCTAssertLessThanOrEqual(data.count, MailboxDeliveryReceipt.maxBytes)
+            let decoded = try XCTUnwrap(MailboxDeliveryReceipt.decode(data))
+            XCTAssertTrue(decoded.dropped.isEmpty)
+            XCTAssertTrue(decoded.receipt.deliveries.allSatisfy { $0.recipient.utf8.count <= 256 && $0.recipient.hasPrefix("é") })
+            seen += decoded.receipt.deliveries.map(\.id)
+        }
+        XCTAssertEqual(seen, ids)
+    }
+
+    func testAReceiptWithBadEntriesRecordsTheGoodOnesAndListsTheRest() throws {
+        try FileManager.default.createDirectory(at: spool(workspace), withIntermediateDirectories: true)
+        let name = "\(idC).receipt"
+        let json = #"{"version":1,"via":"drain","ts":"t","tab_id":"\#(tab.uuidString)","deliveries":[{"id":"\#(idA)","recipient":"w"},{"id":"","recipient":"w"},{"id":"0note","recipient":"w"}]}"#
+        try Data(json.utf8).write(to: spool(workspace).appendingPathComponent(name))
+        let sink = Sink()
+        let recorder = makeRecorder(sink)
+        sweep(recorder)
+        XCTAssertEqual(sink.snapshot.map(\.id), [idA])
+        XCTAssertEqual(names(spool(workspace)), [])
+        let sidecar = spool(workspace).appendingPathComponent("_rejected/\(name).dropped")
+        let logged = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: sidecar)) as? [String: Any])
+        XCTAssertEqual((logged["dropped"] as? [Any])?.count, 2)
     }
 
     // MARK: - Recording

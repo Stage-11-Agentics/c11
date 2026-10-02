@@ -125,9 +125,24 @@ enum MailboxDrain {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        let target = readDir.appendingPathComponent(entry.lastPathComponent)
+        let target = readDir.appendingPathComponent(claimedName(for: entry))
         guard rename(entry.path, target.path) == 0 else { return nil }
         return target
+    }
+
+    /// The name an entry gets under `_read/`. Envelopes the dispatcher wrote
+    /// are named by their ULID and keep it. A file dropped into an inbox by
+    /// hand (`0note.msg`) gets a freshly minted ULID, so every delivered
+    /// message has a globally unique id: the id it is recorded under, and the
+    /// name its body keeps under `_read/`.
+    static func claimedName(for entry: URL) -> String {
+        let stem = idFromFilename(entry)
+        if isULID(stem) { return entry.lastPathComponent }
+        return MailboxLayout.envelopeFilename(id: MailboxULID.make())
+    }
+
+    static func isULID(_ value: String) -> Bool {
+        value.range(of: MailboxEnvelope.ulidPattern, options: .regularExpression) != nil
     }
 
     /// Returns a claimed entry to the inbox root, for a consumer whose
@@ -197,10 +212,11 @@ enum MailboxDrain {
             }
             guard let readURL = claim(entry, fileManager: fileManager) else { continue }
             let data = (try? Data(contentsOf: readURL)) ?? peeked
+            let id = idFromFilename(readURL)
             let message = ClaimedMessage(
-                id: idFromFilename(entry),
+                id: id,
                 text: String(data: data, encoding: .utf8) ?? "",
-                framed: framedBlock(data: data, fallbackId: idFromFilename(entry)),
+                framed: framedBlock(data: data, fallbackId: id),
                 readURL: readURL,
                 recipient: (try? MailboxEnvelope.validate(data: data))?.to
             )
@@ -379,16 +395,30 @@ enum MailboxHookOutput {
 // MARK: - Delivery receipts
 
 /// A drain's record of what it delivered, handed to the app through the
-/// filesystem: `<mailboxes>/_receipts/<ULID>.receipt`. The CLI writes one per
-/// drained batch right after the claim (temp file + rename, no socket), and
-/// the app turns each delivery into a `mailbox.delivered` event with
-/// `via: "drain"` and deletes the receipt (`MailboxReceiptRecorder`). No
-/// connection means nothing to authorize or authenticate, and a paused, quit
-/// or crashed app records the delivery when it next runs.
+/// filesystem: `<mailboxes>/_receipts/<ULID>.receipt`. The CLI writes them
+/// right after the claim (temp file + rename, no socket), and the app turns
+/// each delivery into a `mailbox.delivered` event with `via: "drain"` and
+/// deletes the receipt (`MailboxReceiptRecorder`). No connection means nothing
+/// to authorize or authenticate, and a paused, quit or crashed app records the
+/// delivery when it next runs.
 ///
-/// Same trust level as `_outbox/`: any local process of the user can write
-/// one, so content is validated and size-limited, and anything malformed is
-/// moved to `_receipts/_rejected/`.
+/// **Ids.** A delivery's id is always a ULID, globally unique: the
+/// envelope's for anything the dispatcher wrote, and for a file someone
+/// dropped into an inbox by hand (`0note.msg`) the ULID it was claimed under
+/// (`MailboxDrain.claimedName`), which is also its name under `_read/`. A
+/// non-ULID name would only be unique within one inbox, and the recorder's
+/// exactly-once checks key on the id.
+///
+/// **Limits.** A receipt holds at most `maxDeliveries` entries and
+/// `maxBytes` bytes; `writeAll` splits a batch into as many receipts as that
+/// takes, so no drain is ever too big to record.
+///
+/// **Validation.** Same trust level as `_outbox/`: any local process of the
+/// user can write one. A file that is not a receipt at all (unreadable, over
+/// `maxBytes`, not JSON, wrong version or `via`) is moved to
+/// `_receipts/_rejected/`. Inside a valid receipt each delivery is checked on
+/// its own: valid ones are recorded and invalid ones are dropped and listed in
+/// `_rejected/<receipt>.dropped`, so one bad entry never loses the batch.
 struct MailboxDeliveryReceipt: Equatable {
 
     struct Delivery: Equatable {
@@ -400,9 +430,10 @@ struct MailboxDeliveryReceipt: Equatable {
     static let directoryName = "_receipts"
     static let rejectedDirectoryName = "_rejected"
     static let fileExtension = "receipt"
+    static let droppedExtension = "dropped"
     static let maxBytes = 64 * 1024
     static let maxDeliveries = 512
-    static let allowedKeys: Set<String> = ["version", "via", "tab_id", "deliveries", "ts"]
+    static let maxRecipientBytes = MailboxEnvelope.maxStringFieldBytes
 
     /// The recipient tab, when the drain knows it (a hook always does; `recv
     /// --tab <name>` may not). Never the caller's tab by default.
@@ -422,7 +453,31 @@ struct MailboxDeliveryReceipt: Equatable {
         mailboxesRoot.appendingPathComponent(directoryName, isDirectory: true)
     }
 
+    static func isValidId(_ id: String) -> Bool {
+        MailboxDrain.isULID(id)
+    }
+
+    static func isValidRecipient(_ recipient: String) -> Bool {
+        !recipient.isEmpty && recipient.utf8.count <= maxRecipientBytes
+    }
+
+    /// A recipient cut to `maxRecipientBytes` on a character boundary, so a
+    /// long tab title still records.
+    static func clampedRecipient(_ recipient: String) -> String {
+        guard recipient.utf8.count > maxRecipientBytes else { return recipient }
+        var result = ""
+        for character in recipient {
+            if result.utf8.count + String(character).utf8.count > maxRecipientBytes { break }
+            result.append(character)
+        }
+        return result
+    }
+
     func encode() -> Data? {
+        try? JSONSerialization.data(withJSONObject: jsonObject(deliveries), options: [.sortedKeys])
+    }
+
+    private func jsonObject(_ deliveries: [Delivery]) -> [String: Any] {
         var object: [String: Any] = [
             "version": Self.version,
             "via": via,
@@ -430,44 +485,95 @@ struct MailboxDeliveryReceipt: Equatable {
             "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] }
         ]
         if let tabId { object["tab_id"] = tabId.uuidString }
-        return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return object
     }
 
-    /// Strict parse: known keys only, version 1, `via` "drain", 1...512
-    /// deliveries with ULID ids and non-empty recipients of at most 256 bytes.
-    static func decode(_ data: Data) -> MailboxDeliveryReceipt? {
+    // MARK: Decode
+
+    /// A parsed receipt plus the raw entries it had to drop.
+    struct Decoded {
+        let receipt: MailboxDeliveryReceipt
+        let dropped: [Any]
+    }
+
+    /// Nil only when the file is not a receipt at all; otherwise every valid
+    /// delivery is kept and every invalid one returned in `dropped`. Unknown
+    /// keys are ignored. An invalid `tab_id` leaves the deliveries without a
+    /// surface (and is listed in `dropped`) rather than losing them.
+    static func decode(_ data: Data) -> Decoded? {
         guard data.count <= maxBytes,
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              Set(object.keys).isSubset(of: allowedKeys),
               (object["version"] as? NSNumber)?.intValue == version,
               let via = object["via"] as? String, via == "drain",
-              let ts = object["ts"] as? String, !ts.isEmpty, ts.utf8.count <= 64,
-              let rawDeliveries = object["deliveries"] as? [Any],
-              (1...maxDeliveries).contains(rawDeliveries.count) else { return nil }
+              let rawDeliveries = object["deliveries"] as? [Any] else { return nil }
+        var dropped: [Any] = []
         var tabId: UUID?
         if let rawTab = object["tab_id"] {
-            guard let string = rawTab as? String, let uuid = UUID(uuidString: string) else { return nil }
-            tabId = uuid
+            if let string = rawTab as? String, let uuid = UUID(uuidString: string) {
+                tabId = uuid
+            } else {
+                dropped.append(["tab_id": rawTab])
+            }
         }
         var deliveries: [Delivery] = []
         for raw in rawDeliveries {
             guard let entry = raw as? [String: Any],
-                  Set(entry.keys).isSubset(of: ["id", "recipient"]),
-                  let id = entry["id"] as? String,
-                  id.range(of: MailboxEnvelope.ulidPattern, options: .regularExpression) != nil,
-                  let recipient = entry["recipient"] as? String,
-                  !recipient.isEmpty, recipient.utf8.count <= MailboxEnvelope.maxStringFieldBytes else { return nil }
+                  let id = entry["id"] as? String, isValidId(id),
+                  let recipient = entry["recipient"] as? String, isValidRecipient(recipient) else {
+                dropped.append(raw)
+                continue
+            }
             deliveries.append(Delivery(id: id, recipient: recipient))
         }
-        return MailboxDeliveryReceipt(tabId: tabId, deliveries: deliveries, via: via, ts: ts)
+        let ts = (object["ts"] as? String).flatMap { $0.isEmpty || $0.utf8.count > 64 ? nil : $0 }
+            ?? MailboxEnvelope.currentRFC3339()
+        return Decoded(receipt: MailboxDeliveryReceipt(tabId: tabId, deliveries: deliveries, via: via, ts: ts), dropped: dropped)
     }
 
-    /// Writes the receipt atomically into the workspace's spool and returns
-    /// its URL, or nil on failure (the mail was already delivered; only the
-    /// event is lost).
+    // MARK: Write
+
+    /// Splits this receipt's deliveries into receipts that each fit
+    /// `maxDeliveries` and `maxBytes`, recipients clamped to
+    /// `maxRecipientBytes`. Nothing is filtered here: an entry the recorder
+    /// cannot accept is dropped there and listed in the `.dropped` sidecar,
+    /// where it can be seen.
+    func chunked() -> [MailboxDeliveryReceipt] {
+        let entries = deliveries
+            .map { Delivery(id: $0.id, recipient: Self.clampedRecipient($0.recipient)) }
+        guard !entries.isEmpty,
+              let empty = try? JSONSerialization.data(withJSONObject: jsonObject([]), options: [.sortedKeys]) else { return [] }
+        // Exact sizes: an entry's encoded form is the same inside the array.
+        let overhead = empty.count
+        var chunks: [[Delivery]] = [[]]
+        var bytes = overhead
+        for entry in entries {
+            let size = (try? JSONSerialization.data(
+                withJSONObject: ["id": entry.id, "recipient": entry.recipient],
+                options: [.sortedKeys]
+            ).count) ?? Self.maxBytes
+            let separator = chunks[chunks.count - 1].isEmpty ? 0 : 1
+            if chunks[chunks.count - 1].count >= Self.maxDeliveries || bytes + separator + size > Self.maxBytes {
+                chunks.append([])
+                bytes = overhead
+            }
+            bytes += (chunks[chunks.count - 1].isEmpty ? 0 : 1) + size
+            chunks[chunks.count - 1].append(entry)
+        }
+        return chunks.filter { !$0.isEmpty }.map { MailboxDeliveryReceipt(tabId: tabId, deliveries: $0, via: via, ts: ts) }
+    }
+
+    /// Writes the deliveries as one or more receipts (see `chunked`) and
+    /// returns their URLs. A failed write only loses that receipt's events;
+    /// the mail was already delivered.
     @discardableResult
-    func write(mailboxesRoot: URL, fileManager: FileManager = .default) -> URL? {
-        guard !deliveries.isEmpty, let data = encode() else { return nil }
+    func writeAll(mailboxesRoot: URL, fileManager: FileManager = .default) -> [URL] {
+        chunked().compactMap { $0.writeOne(mailboxesRoot: mailboxesRoot, fileManager: fileManager) }
+    }
+
+    /// Writes this receipt as one file, atomically. Callers go through
+    /// `writeAll`, which guarantees it fits.
+    private func writeOne(mailboxesRoot: URL, fileManager: FileManager) -> URL? {
+        guard !deliveries.isEmpty, let data = encode(), data.count <= Self.maxBytes else { return nil }
         let spool = Self.spoolURL(mailboxesRoot: mailboxesRoot)
         try? fileManager.createDirectory(at: spool, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let name = MailboxULID.make()

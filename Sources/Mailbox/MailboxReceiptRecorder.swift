@@ -19,6 +19,8 @@ import Foundation
 ///   been recorded by the previous one right before it died (emit happened,
 ///   delete did not), so its ids are first looked up in the event logs
 ///   written since the receipt and skipped when found.
+/// - **Bad entries:** a receipt's invalid deliveries are dropped (listed in
+///   `_rejected/<receipt>.dropped`) and its valid ones recorded.
 /// - **Never lost:** nothing is deleted unless the event log is recording and
 ///   has been flushed; otherwise the receipt stays and is retried. Spools of
 ///   workspaces that are not open are swept again every
@@ -203,9 +205,13 @@ final class MailboxReceiptRecorder {
         guard rename(url.path, claimed.path) == 0 else { return }
         guard (values?.fileSize ?? 0) <= MailboxDeliveryReceipt.maxBytes,
               let data = try? Data(contentsOf: claimed),
-              let receipt = MailboxDeliveryReceipt.decode(data) else {
+              let decoded = MailboxDeliveryReceipt.decode(data) else {
             reject(claimed, as: url.lastPathComponent, spool: spool)
             return
+        }
+        let receipt = decoded.receipt
+        if !decoded.dropped.isEmpty {
+            logDropped(decoded.dropped, from: url.lastPathComponent, spool: spool)
         }
         var pending = receipt.deliveries.filter { !recorded.contains($0.id) }
         let modified = values?.contentModificationDate ?? .distantPast
@@ -237,6 +243,19 @@ final class MailboxReceiptRecorder {
             let overflow = recordedOrder.count - recordedCap
             recordedOrder.prefix(overflow).forEach { recorded.remove($0) }
             recordedOrder.removeFirst(overflow)
+        }
+    }
+
+    /// Invalid entries of an otherwise valid receipt: the valid ones are
+    /// recorded, these are kept for inspection beside the rejected receipts.
+    private func logDropped(_ dropped: [Any], from name: String, spool: URL) {
+        let rejected = spool.appendingPathComponent(MailboxDeliveryReceipt.rejectedDirectoryName, isDirectory: true)
+        try? fileManager.createDirectory(at: rejected, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let target = rejected.appendingPathComponent("\(name).\(MailboxDeliveryReceipt.droppedExtension)")
+        let record: [String: Any] = ["receipt": name, "dropped": dropped]
+        if JSONSerialization.isValidJSONObject(record),
+           let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) {
+            try? data.write(to: target, options: .atomic)
         }
     }
 

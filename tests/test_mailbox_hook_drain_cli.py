@@ -13,6 +13,9 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      spool (how `mailbox.delivered via:"drain"` reaches the app, no socket):
      it names the recipient tab, or none for `recv --tab <name>`, never the
      caller, and it lands in the workspace whose inbox held the mail.
+     Receipts always fit their limits: a 600-message drain is split across
+     receipts, and a hand-written inbox file (`0note.msg`) is claimed and
+     recorded under a fresh ULID without costing the rest of the batch.
   5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
      its inbox there, with no socket call.
   6. A hook whose pre-claim socket calls are slow stops them at the 6 s claim
@@ -282,6 +285,38 @@ def main() -> int:
     check(len(receipts) == 1 and "tab_id" not in receipts[0] and sorted(fx.receipt_ids()) == sorted(ids),
           "recv --tab <name>: receipt carries no tab_id rather than the caller's", json.dumps(receipts))
     check(rec.requests == [], "plain drain: no socket request", str(rec.requests[:2]))
+    rec.close()
+    fx.cleanup()
+
+    # Receipt limits: 600 messages in one plain drain.
+    fx = Fixture()
+    rec = FakeC11(os.path.join(tmp, "rec600.sock"), stall=False)
+    many = [fx.deliver("watcher") for _ in range(600)]
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path), timeout=60)
+    spool = os.path.join(fx.mailboxes, "_receipts")
+    sizes = [os.path.getsize(os.path.join(spool, n)) for n in os.listdir(spool) if n.endswith(".receipt")]
+    counts = [len(r["deliveries"]) for r in fx.receipts()]
+    check(proc.returncode == 0 and sorted(fx.receipt_ids()) == sorted(many),
+          f"600-message drain: every delivery is in a receipt ({len(counts)} receipts: {counts})")
+    check(all(c <= 512 for c in counts) and all(b <= 64 * 1024 for b in sizes),
+          f"600-message drain: each receipt within 512 deliveries and 64 KB (sizes {sizes})")
+    rec.close()
+    fx.cleanup()
+
+    # A mixed batch: ULID envelopes plus a hand-written non-envelope file.
+    fx = Fixture()
+    rec = FakeC11(os.path.join(tmp, "recmix.sock"), stall=False)
+    good = [fx.deliver("watcher") for _ in range(3)]
+    with open(os.path.join(fx.mailboxes, "watcher", "0note.msg"), "w") as f:
+        f.write("hand-written note, not an envelope")
+    proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path))
+    root, read = fx.listing("watcher")
+    minted = [n[:-4] for n in read if n[:-4] not in good]
+    note_ok = len(minted) == 1 and "hand-written note" in open(os.path.join(fx.mailboxes, "watcher", "_read", minted[0] + ".msg")).read()
+    check("hand-written note" in proc.stdout.decode() and root == [] and len(read) == 4 and note_ok,
+          "mixed batch: the hand-written file is drained and claimed under a fresh ULID (_read/<ULID>.msg)", str(read))
+    check(note_ok and sorted(fx.receipt_ids()) == sorted(good + minted),
+          "mixed batch: one receipt records the envelopes and the hand-written file under its ULID", str(fx.receipt_ids()))
     rec.close()
     fx.cleanup()
 

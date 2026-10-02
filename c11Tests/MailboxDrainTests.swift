@@ -233,6 +233,20 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertFalse(MailboxHookOutput.mayClaim(processElapsedSeconds: 9.5))
     }
 
+    func testHandWrittenFileIsClaimedUnderAFreshULID() throws {
+        try deliver(id: idA)
+        try Data("hand-written note".utf8).write(to: inbox.appendingPathComponent("0note.msg"))
+        let claimed = MailboxDrain.claimPending(inbox: inbox).claimed
+        XCTAssertEqual(claimed.count, 2)
+        let note = try XCTUnwrap(claimed.first { $0.text == "hand-written note" })
+        XCTAssertTrue(MailboxDrain.isULID(note.id), "recorded under a minted ULID, not 0note")
+        XCTAssertEqual(note.readURL.lastPathComponent, "\(note.id).msg")
+        XCTAssertTrue(note.framed.contains("id=\"\(note.id)\""))
+        XCTAssertEqual(names(in: inbox), [])
+        XCTAssertFalse(names(in: MailboxDrain.readURL(inbox: inbox)).contains("0note.msg"))
+        XCTAssertTrue(claimed.contains { $0.id == idA && $0.readURL.lastPathComponent == "\(idA).msg" })
+    }
+
     // MARK: - Framing
 
     func testFramingMatchesStdinPushForInlineBodies() throws {

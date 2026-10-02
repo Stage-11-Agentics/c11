@@ -19219,8 +19219,9 @@ extension CMUXCLI {
     }
 
     /// Hands claimed envelopes to the app as `mailbox.delivered via:"drain"`:
-    /// one receipt per workspace whose inbox they came from, written atomically
-    /// into that workspace's `_receipts/` spool. Filesystem only, so nothing a
+    /// receipts per workspace whose inbox they came from (split to fit the
+    /// receipt limits), written atomically into that workspace's `_receipts/`
+    /// spool. Filesystem only, so nothing a
     /// stalled, paused or quit c11 does can delay the caller, and no
     /// connection has to be authorized. `recipientTabId` nil leaves the
     /// event without a surface rather than attributing it to the caller.
@@ -19234,7 +19235,7 @@ extension CMUXCLI {
             MailboxDeliveryReceipt(
                 tabId: recipientTabId,
                 deliveries: messages.map { .init(id: $0.id, recipient: recipient($0)) }
-            ).write(mailboxesRoot: URL(fileURLWithPath: root, isDirectory: true))
+            ).writeAll(mailboxesRoot: URL(fileURLWithPath: root, isDirectory: true))
         }
     }
 

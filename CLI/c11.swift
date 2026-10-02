@@ -16771,6 +16771,20 @@ struct CMUXCLI {
 
         case "stop", "idle":
             telemetry.breadcrumb("claude-hook.stop")
+            // C11-257: mail that arrived during the turn is delivered first, with
+            // no socket call inside this case before the claim. Blocking the stop
+            // hands Claude the messages and it takes one more turn, so the tab
+            // stays working and no completion is announced. Never on a stop that
+            // is already a Stop-hook continuation.
+            if subcommand == "stop",
+               let drain = prepareMailboxHookDrain(
+                   format: .claude,
+                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput)
+               ),
+               deliverMailboxHookDrain(drain, client: client) {
+                telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
+                return
+            }
             // Turn ended. Don't consume session or clear PID — Claude is still alive.
             // Notification hook handles user-facing notifications; SessionEnd handles cleanup.
             var workspaceId = fallbackWorkspaceId
@@ -16787,19 +16801,6 @@ struct CMUXCLI {
                 client: client
             )
 
-            // C11-257: mail that arrived during the turn is delivered here, before
-            // the tab goes idle. Blocking the stop hands Claude the messages and it
-            // takes one more turn, so the tab stays working and no completion is
-            // announced. Never on a stop that is already a Stop-hook continuation.
-            if subcommand == "stop",
-               let drain = prepareMailboxHookDrain(
-                   format: .claude,
-                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput)
-               ),
-               deliverMailboxHookDrain(drain, client: client) {
-                telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
-                return
-            }
 
             if let resolvedLifecycleSurface {
                 _ = try? reportAgentActivity(
@@ -16879,7 +16880,9 @@ struct CMUXCLI {
                 color: "#4C8DFF"
             )
             // Claude adds UserPromptSubmit stdout to the turn's context, so this
-            // prints only the mailbox JSON, and only when mail is waiting.
+            // prints only the mailbox JSON, and only when mail is waiting. It runs
+            // after the status calls above, so it claims only while the process
+            // is young enough to finish before Claude's hook timeout.
             if let drain = prepareMailboxHookDrain(
                 format: .claude,
                 input: claudeMailboxHookInput(event: .promptSubmit, parsedInput: parsedInput)
@@ -19060,7 +19063,6 @@ extension CMUXCLI {
     private struct MailboxHookDrain {
         let json: String
         let claimed: [MailboxDrain.ClaimedMessage]
-        let workspaceId: UUID
         let tabId: UUID
     }
 
@@ -19086,14 +19088,16 @@ extension CMUXCLI {
     }
 
     /// Claims the caller's pending mail for a hook, within the context budget.
-    /// Returns nil (and claims nothing) when this event may not drain or the
-    /// inbox is empty.
+    /// Returns nil (and claims nothing) when this event may not drain, the
+    /// inbox is empty, or the hook process is too old to finish in time.
     ///
     /// The inbox is the caller's C5 directory, `<mailboxes>/<C11_TAB_ID>/`,
-    /// computed from the environment alone: no socket call happens before the
-    /// claim, so an empty inbox answers in a few milliseconds however much
-    /// mail sits in sibling inboxes. Title-keyed inboxes from older builds are
-    /// left to an explicit `c11 mailbox recv --drain`.
+    /// found from the environment and the filesystem alone: no socket call
+    /// happens before the claim, so an empty inbox answers in a few
+    /// milliseconds however much mail sits in sibling inboxes. A tab moved to
+    /// another workspace still finds its inbox there (`tabInboxURLs`).
+    /// Title-keyed inboxes from older builds are left to an explicit
+    /// `c11 mailbox recv --drain`.
     private func prepareMailboxHookDrain(
         format: MailboxHookFormat,
         input: MailboxHookInput
@@ -19102,17 +19106,24 @@ extension CMUXCLI {
         guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
               let event = input.event,
               MailboxHookOutput.shouldDrain(format: format, input: input),
-              let workspaceId = (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
               let tabId = Self.callerTabEnv(env).flatMap(UUID.init(uuidString:)),
               let stateURL = try? MailboxLayout.defaultStateURL() else {
             return nil
         }
-        let inboxURL = MailboxDrain.tabInboxURL(
-            mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId),
-            tabId: tabId
+        let inboxes = MailboxDrain.tabInboxURLs(
+            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
+            preferredWorkspaceId: (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+            tabId: tabId,
+            scanCache: stateURL
+                .appendingPathComponent("mailbox-tab-scan", isDirectory: true)
+                .appendingPathComponent(tabId.uuidString.lowercased())
         )
+        guard !inboxes.isEmpty,
+              MailboxHookOutput.mayClaim(processElapsedSeconds: Self.processElapsedSeconds()) else {
+            return nil
+        }
         let (claimed, remaining) = MailboxDrain.claimPending(
-            inbox: inboxURL,
+            inboxes: inboxes,
             budget: MailboxHookOutput.contextBudget
         )
         guard !claimed.isEmpty else { return nil }
@@ -19122,12 +19133,25 @@ extension CMUXCLI {
             claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return nil
         }
-        return MailboxHookDrain(json: json, claimed: claimed, workspaceId: workspaceId, tabId: tabId)
+        return MailboxHookDrain(json: json, claimed: claimed, tabId: tabId)
+    }
+
+    /// Seconds since this process started, from the kernel's record of its
+    /// start time (so it includes everything before `main`); nil if unknown.
+    private static func processElapsedSeconds() -> TimeInterval? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0 else { return nil }
+        let start = info.kp_proc.p_un.__p_starttime
+        let started = TimeInterval(start.tv_sec) + TimeInterval(start.tv_usec) / 1_000_000
+        return Date().timeIntervalSince1970 - started
     }
 
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
     /// go back to the inbox (C3-order), otherwise each one is recorded as
-    /// `mailbox.delivered` with `via: "drain"`. Returns whether it delivered.
+    /// `mailbox.delivered` with `via: "drain"`, under the workspace whose inbox
+    /// held it. Returns whether it delivered.
     @discardableResult
     private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
         signal(SIGPIPE, SIG_IGN)
@@ -19135,12 +19159,16 @@ extension CMUXCLI {
             drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return false
         }
-        reportMailboxDrained(
-            client: client,
-            workspaceId: drain.workspaceId,
-            recipientTabId: drain.tabId,
-            deliveries: drain.claimed.map { ($0.id, $0.recipient ?? drain.tabId.uuidString.lowercased()) }
-        )
+        let byWorkspace = Dictionary(grouping: drain.claimed) { MailboxDrain.workspaceId(ofInbox: $0.inbox) }
+        for (workspaceId, messages) in byWorkspace {
+            guard let workspaceId else { continue }
+            reportMailboxDrained(
+                client: client,
+                workspaceId: workspaceId,
+                recipientTabId: drain.tabId,
+                deliveries: messages.map { ($0.id, $0.recipient ?? drain.tabId.uuidString.lowercased()) }
+            )
+        }
         return true
     }
 

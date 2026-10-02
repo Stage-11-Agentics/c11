@@ -41,6 +41,76 @@ enum MailboxDrain {
         mailboxesRoot.appendingPathComponent(tabId.uuidString.lowercased(), isDirectory: true)
     }
 
+    /// Every existing inbox of one tab, from the filesystem alone.
+    ///
+    /// The process's `C11_WORKSPACE_ID` goes stale when the tab is moved to
+    /// another workspace, while the dispatcher keeps delivering into the tab's
+    /// *current* workspace. Tab UUIDs are unique, so any
+    /// `workspaces/*/mailboxes/<tab-uuid>/` is this tab's. The preferred
+    /// (environment) workspace comes first; the others come from a scan of
+    /// every workspace directory. A machine can hold thousands of those (11k
+    /// measured: ~40 ms warm, ~450 ms cold), so with a `scanCache` file the
+    /// scan runs at most once per `scanInterval` and its result is reused in
+    /// between. A moved tab's turn-boundary drain therefore finds its new
+    /// inbox within one interval; the stdin push reaches it meanwhile, since
+    /// the app knows where the tab lives.
+    static func tabInboxURLs(
+        workspacesRoot: URL,
+        preferredWorkspaceId: UUID?,
+        tabId: UUID,
+        scanCache: URL?,
+        scanInterval: TimeInterval = 300,
+        now: Date = Date(),
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        func isDirectory(_ url: URL) -> Bool {
+            var isDir: ObjCBool = false
+            return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+        }
+        func inbox(workspace: String) -> URL {
+            workspacesRoot
+                .appendingPathComponent(workspace, isDirectory: true)
+                .appendingPathComponent(MailboxLayout.mailboxesDirectoryName, isDirectory: true)
+                .appendingPathComponent(tabId.uuidString.lowercased(), isDirectory: true)
+        }
+
+        var result: [URL] = []
+        if let preferredWorkspaceId {
+            let preferred = inbox(workspace: preferredWorkspaceId.uuidString)
+            if isDirectory(preferred) { result.append(preferred) }
+        }
+
+        var found: [URL]
+        if let scanCache,
+           let modified = (try? fileManager.attributesOfItem(atPath: scanCache.path))?[.modificationDate] as? Date,
+           now.timeIntervalSince(modified) < scanInterval,
+           let text = try? String(contentsOf: scanCache, encoding: .utf8) {
+            found = text.split(separator: "\n").map { URL(fileURLWithPath: String($0), isDirectory: true) }
+        } else {
+            let workspaces = (try? fileManager.contentsOfDirectory(atPath: workspacesRoot.path)) ?? []
+            found = workspaces.map { inbox(workspace: $0) }.filter(isDirectory)
+            if let scanCache {
+                try? fileManager.createDirectory(
+                    at: scanCache.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                try? found.map(\.path).joined(separator: "\n")
+                    .write(to: scanCache, atomically: true, encoding: .utf8)
+            }
+        }
+        for url in found where isDirectory(url) && !result.contains(where: { $0.path == url.path }) {
+            result.append(url)
+        }
+        return result
+    }
+
+    /// The workspace UUID an inbox directory lives under
+    /// (`workspaces/<uuid>/mailboxes/<inbox>/`).
+    static func workspaceId(ofInbox inbox: URL) -> UUID? {
+        UUID(uuidString: inbox.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent)
+    }
+
     /// Claims one inbox entry by renaming it into `_read/`. Returns the claimed
     /// file's new URL, or nil when another consumer already took it (or it
     /// could not be moved). `rename(2)` is atomic within the inbox's volume,
@@ -74,6 +144,8 @@ enum MailboxDrain {
         let text: String
         let framed: String
         let readURL: URL
+        /// The inbox the envelope was claimed from.
+        var inbox: URL { readURL.deletingLastPathComponent().deletingLastPathComponent() }
         /// The envelope's `to`: the address the sender used, which the
         /// dispatcher resolved to this inbox. Nil for a malformed file.
         let recipient: String?
@@ -98,7 +170,20 @@ enum MailboxDrain {
         fileManager: FileManager = .default,
         accept: (ClaimedMessage) -> Bool = { _ in true }
     ) -> (claimed: [ClaimedMessage], remaining: Int) {
-        let entries = pendingEntries(inbox: inbox, fileManager: fileManager)
+        claimPending(inboxes: [inbox], budget: budget, fileManager: fileManager, accept: accept)
+    }
+
+    /// `claimPending` across several inboxes of the same tab, merged into one
+    /// ULID order.
+    static func claimPending(
+        inboxes: [URL],
+        budget: Int = Int.max,
+        fileManager: FileManager = .default,
+        accept: (ClaimedMessage) -> Bool = { _ in true }
+    ) -> (claimed: [ClaimedMessage], remaining: Int) {
+        let entries = inboxes
+            .flatMap { pendingEntries(inbox: $0, fileManager: fileManager) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
         var claimed: [ClaimedMessage] = []
         var used = 0
         for (index, entry) in entries.enumerated() {
@@ -217,6 +302,17 @@ enum MailboxHookOutput {
     /// staying under that keeps every delivered message whole. Anything left
     /// over waits for the next boundary and is announced in the header.
     static let contextBudget = 8_000
+
+    /// No claim starts after this many seconds of the hook process's life.
+    /// Claude and Codex kill a hook at 10 s and then discard its stdout; mail
+    /// claimed that late could land in `_read/` without reaching the agent.
+    /// What follows a claim (one JSON write and a report bounded at ~1 s)
+    /// fits in the remainder.
+    static let claimDeadlineSeconds: TimeInterval = 6
+
+    static func mayClaim(processElapsedSeconds: TimeInterval?) -> Bool {
+        (processElapsedSeconds ?? 0) < claimDeadlineSeconds
+    }
 
     /// Whether this hook invocation may consume mail at all.
     ///

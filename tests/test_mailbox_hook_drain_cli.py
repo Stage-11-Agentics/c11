@@ -11,6 +11,12 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      mail reaches `_read/` without reaching stdout.
   4. `mailbox.delivered` reports name the recipient tab, never the caller:
      a hook drain reports its own tab, `recv --tab <name>` reports no tab.
+  5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
+     its inbox there, with no socket call, and the report names that
+     workspace.
+  6. A hook process that spent more than ~6 s on socket calls before the
+     claim leaves the mail in the inbox instead of claiming it into a
+     result the harness would discard at its 10 s timeout.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -31,6 +37,7 @@ import time
 WORKSPACE = "56CB5ABD-E57D-4800-9EFD-C4267A0FE6A7"
 TAB = "B3A3DFEF-0A83-4887-BBE9-FDE27516A3B5"
 SIBLING = "45DE0126-1661-4511-BD57-99C26976AB31"
+MOVED_TO = "0D1F2E3C-4B5A-4978-8695-A4B3C2D1E0F9"
 
 
 def resolve_cli() -> str:
@@ -48,11 +55,14 @@ def resolve_cli() -> str:
 
 
 class FakeC11:
-    """Line-delimited JSON v2 server. `stall=True` reads requests and never answers."""
+    """Line-delimited c11 socket. v2 JSON requests get `ok`, v1 text commands
+    get `OK`. `stall=True` reads requests and never answers; `delay` holds
+    every answer that many seconds."""
 
-    def __init__(self, path: str, stall: bool):
+    def __init__(self, path: str, stall: bool, delay: float = 0.0):
         self.path = path
         self.stall = stall
+        self.delay = delay
         self.requests: list[dict] = []
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.bind(path)
@@ -82,10 +92,15 @@ class FakeC11:
                 try:
                     req = json.loads(line)
                 except ValueError:
+                    self.requests.append({"v1": line.decode(errors="replace")})
+                    if not self.stall:
+                        time.sleep(self.delay)
+                        conn.sendall(b"OK\n")
                     continue
                 self.requests.append(req)
                 if self.stall:
                     continue
+                time.sleep(self.delay)
                 result: dict = {}
                 if req.get("method") == "system.capabilities":
                     result = {"methods": ["tab.list", "mailbox.report_delivered"]}
@@ -106,11 +121,11 @@ class Fixture:
         )
         self.counter = 0
 
-    def deliver(self, inbox_key: str, body: str = "hello", to: str = "watcher") -> str:
+    def deliver(self, inbox_key: str, body: str = "hello", to: str = "watcher", workspace: str = WORKSPACE) -> str:
         self.counter += 1
         ulid = "01K" + "0" * 22 + "ABCDEFGHJK"[self.counter % 10]
         ulid = ulid[:-2] + f"{self.counter:02d}"
-        inbox = os.path.join(self.mailboxes, inbox_key)
+        inbox = os.path.join(self.mailboxes.replace(WORKSPACE, workspace), inbox_key)
         os.makedirs(inbox, exist_ok=True)
         envelope = {"version": 1, "id": ulid, "from": "builder", "to": to,
                     "ts": "2026-10-01T12:00:00Z", "body": body}
@@ -118,8 +133,8 @@ class Fixture:
             json.dump(envelope, f)
         return ulid
 
-    def listing(self, inbox_key: str) -> tuple[list[str], list[str]]:
-        inbox = os.path.join(self.mailboxes, inbox_key)
+    def listing(self, inbox_key: str, workspace: str = WORKSPACE) -> tuple[list[str], list[str]]:
+        inbox = os.path.join(self.mailboxes.replace(WORKSPACE, workspace), inbox_key)
         root = sorted(n for n in os.listdir(inbox) if n.endswith(".msg")) if os.path.isdir(inbox) else []
         read_dir = os.path.join(inbox, "_read")
         read = sorted(n for n in os.listdir(read_dir) if n.endswith(".msg")) if os.path.isdir(read_dir) else []
@@ -135,6 +150,7 @@ class Fixture:
             "CMUX_WORKSPACE_ID": WORKSPACE,
             "C11_TAB_ID": TAB,
             "CMUX_CLI_SENTRY_DISABLED": "1",
+            "CMUX_CLAUDE_HOOK_SENTRY_DISABLED": "1",
         })
         return env
 
@@ -224,6 +240,45 @@ def main() -> int:
     check(len(reports) == 1 and "tab_id" not in reports[0] and len(reports[0].get("deliveries", [])) == 3,
           "recv --tab <name>: report carries no tab_id rather than the caller's", json.dumps(reports))
     rec.close()
+    fx.cleanup()
+
+    # 5. Moved tab: the environment still names WORKSPACE, the inbox is in MOVED_TO.
+    fx = Fixture()
+    stalled = FakeC11(os.path.join(tmp, "stall2.sock"), stall=True)
+    ulid = fx.deliver(TAB.lower(), workspace=MOVED_TO)
+    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+                   fx.env(stalled.path), stop_input)
+    check(ulid in proc.stdout.decode() and fx.listing(TAB.lower(), MOVED_TO) == ([], [ulid + ".msg"]),
+          "moved tab: mail in the other workspace's inbox is delivered and claimed", proc.stdout.decode()[:120])
+    pre_claim = [r for r in stalled.requests if r.get("method") != "mailbox.report_delivered"
+                 and r.get("method") != "system.capabilities"]
+    check(pre_claim == [], "moved tab: no socket call before the claim", str(pre_claim[:2]))
+    stalled.close()
+    rec = FakeC11(os.path.join(tmp, "rec2.sock"), stall=False)
+    ulid = fx.deliver(TAB.lower(), workspace=MOVED_TO)
+    run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"], fx.env(rec.path), stop_input)
+    reports = rec.reports()
+    check(len(reports) == 1 and reports[0].get("workspace_id", "").upper() == MOVED_TO,
+          "moved tab: report names the workspace that held the inbox", json.dumps(reports))
+    rec.close()
+    fx.cleanup()
+
+    # 6. Claim deadline: prompt-submit's status calls take ~2.5 s each before the claim.
+    fx = Fixture()
+    slow = FakeC11(os.path.join(tmp, "slow.sock"), stall=False, delay=2.5)
+    ulid = fx.deliver(TAB.lower())
+    prompt_input = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s"})
+    proc, ms = run(cli, ["--socket", slow.path, "claude-hook", "prompt-submit"], fx.env(slow.path), prompt_input,
+                   timeout=60)
+    check(ms > 6000 and proc.stdout.decode().strip() == "" and fx.listing(TAB.lower()) == ([ulid + ".msg"], []),
+          f"claim deadline: after {ms / 1000:.1f} s of pre-claim calls the mail stays in the inbox",
+          f"stdout={proc.stdout.decode()[:120]!r} listing={fx.listing(TAB.lower())}")
+    slow.close()
+    fast = FakeC11(os.path.join(tmp, "fast.sock"), stall=False)
+    proc, ms = run(cli, ["--socket", fast.path, "claude-hook", "prompt-submit"], fx.env(fast.path), prompt_input)
+    check(ulid in proc.stdout.decode() and fx.listing(TAB.lower()) == ([], [ulid + ".msg"]),
+          f"claim deadline: a prompt-submit with time left delivers it ({ms:.0f} ms)")
+    fast.close()
     fx.cleanup()
     shutil.rmtree(tmp, ignore_errors=True)
 

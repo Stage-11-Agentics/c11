@@ -172,6 +172,67 @@ final class MailboxDrainTests: XCTestCase {
         )
     }
 
+    func testClaimPendingMergesSeveralInboxesInULIDOrder() throws {
+        let other = inbox.deletingLastPathComponent().appendingPathComponent("other", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try deliver(id: idB)
+        let envelope = try MailboxEnvelope.build(from: "builder", to: "watcher", body: "first", id: idA, ts: "2026-10-01T12:00:00Z")
+        try envelope.encode().write(to: other.appendingPathComponent("\(idA).msg"))
+        let result = MailboxDrain.claimPending(inboxes: [inbox, other])
+        XCTAssertEqual(result.claimed.map(\.id), [idA, idB])
+        XCTAssertEqual(result.claimed.map { $0.inbox.lastPathComponent }, ["other", "watcher"])
+    }
+
+    // MARK: - Moved tab
+
+    private func workspaceInbox(_ root: URL, _ workspace: UUID, _ tab: UUID) -> URL {
+        root.appendingPathComponent(workspace.uuidString, isDirectory: true)
+            .appendingPathComponent("mailboxes", isDirectory: true)
+            .appendingPathComponent(tab.uuidString.lowercased(), isDirectory: true)
+    }
+
+    func testTabInboxURLsFindsAMovedTabsInboxInAnotherWorkspace() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let tab = UUID(), stale = UUID(), current = UUID(), unrelated = UUID()
+        try FileManager.default.createDirectory(at: workspaceInbox(root, current, tab), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspaceInbox(root, unrelated, UUID()), withIntermediateDirectories: true)
+
+        let found = MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, tabId: tab, scanCache: nil)
+        XCTAssertEqual(found.map(\.path), [workspaceInbox(root, current, tab).path])
+        XCTAssertEqual(MailboxDrain.workspaceId(ofInbox: found[0]), current)
+
+        // The environment's workspace, when it holds an inbox, comes first.
+        try FileManager.default.createDirectory(at: workspaceInbox(root, stale, tab), withIntermediateDirectories: true)
+        let both = MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, tabId: tab, scanCache: nil)
+        XCTAssertEqual(both.map(\.path), [workspaceInbox(root, stale, tab).path, workspaceInbox(root, current, tab).path])
+    }
+
+    func testTabInboxScanIsReusedWithinItsInterval() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let cache = inbox.deletingLastPathComponent().appendingPathComponent("scan-cache")
+        let tab = UUID(), first = UUID(), later = UUID()
+        try FileManager.default.createDirectory(at: workspaceInbox(root, first, tab), withIntermediateDirectories: true)
+        let now = Date()
+        XCTAssertEqual(
+            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now).count, 1
+        )
+        // A move after the scan is not seen until the interval has passed.
+        try FileManager.default.createDirectory(at: workspaceInbox(root, later, tab), withIntermediateDirectories: true)
+        XCTAssertEqual(
+            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now.addingTimeInterval(5)).count, 1
+        )
+        XCTAssertEqual(
+            MailboxDrain.tabInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, tabId: tab, scanCache: cache, now: now.addingTimeInterval(301)).count, 2
+        )
+    }
+
+    func testClaimDeadline() {
+        XCTAssertTrue(MailboxHookOutput.mayClaim(processElapsedSeconds: 0.2))
+        XCTAssertTrue(MailboxHookOutput.mayClaim(processElapsedSeconds: nil))
+        XCTAssertFalse(MailboxHookOutput.mayClaim(processElapsedSeconds: 6))
+        XCTAssertFalse(MailboxHookOutput.mayClaim(processElapsedSeconds: 9.5))
+    }
+
     // MARK: - Framing
 
     func testFramingMatchesStdinPushForInlineBodies() throws {

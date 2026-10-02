@@ -35,7 +35,7 @@ import SQLite3
 //   opencode     ~/.local/share/opencode/opencode.db            `session.model` (JSON `{id}`)
 //   kimi, github-copilot: no model in the files c11 can locate.
 
-enum AgentModelDetection: Equatable {
+enum AgentModelDetection: Equatable, Sendable {
     /// The latest model id found in the harness's own files.
     case model(String)
     /// Nothing found yet (session file missing or no model line so far).
@@ -92,8 +92,46 @@ enum TranscriptEvent: Equatable, Sendable {
 }
 
 struct ParsedTranscriptLine: Equatable, Sendable {
-    var model: String?
-    var event: TranscriptEvent?
+    var model: String? = nil
+    var event: TranscriptEvent? = nil
+    var lifecycle: ParsedTranscriptLifecycle? = nil
+    var sessionID: String? = nil
+}
+
+/// A structural lifecycle record found in a harness transcript. This type is
+/// deliberately not a journal draft: the producer below is the only place
+/// that supplies c11 ownership and provenance fields.
+enum ParsedTranscriptLifecycle: Equatable, Sendable {
+    case codex(kind: JournalKind, at: Date?, turnID: String?, rootTurnID: String?)
+    case grokStart(at: Date?, turnID: String?, sessionID: String?, primary: Bool)
+    case grokEnd(at: Date?, outcome: String?)
+    case grokMalformed
+}
+
+struct TranscriptLifecycleObservation: Equatable, Sendable {
+    let kind: JournalKind
+    let occurredAt: Date?
+    let nativeEvent: String
+    let turnID: String?
+    let isChild: Bool
+}
+
+enum TranscriptCoverage: Equatable, Sendable {
+    case none
+    /// Bytes before the retained window, including a leading partial line that
+    /// was discarded rather than parsed.
+    case gap(skippedBytes: UInt64)
+}
+
+struct AgentModelDetectionResult: Equatable, Sendable {
+    let detection: AgentModelDetection
+    let lifecycle: [TranscriptLifecycleObservation]
+    let coverage: TranscriptCoverage
+}
+
+private struct GrokPendingTurn: Equatable {
+    let turnID: String
+    let occurredAt: Date?
 }
 
 /// Incremental tail position for one surface's transcript.
@@ -108,6 +146,18 @@ struct ModelTailState: Equatable {
     var conversationId: String?
     /// After a failed locate, do not search the disk again before this time.
     var nextLocateAt: Date?
+    /// A skipped span permanently lowers transcript coverage for this session.
+    var coverageDegraded = false
+    /// Codex child/root classification is bounded to the current tail.
+    var codexRootTurnID: String?
+    var codexChildTurnIDs: [String] = []
+    /// Grok's end record has no identity; pair it only with this verified start.
+    var grokPendingStart: GrokPendingTurn?
+    /// A rollout whose session_meta disagrees with the exact ref is unusable.
+    var transcriptIdentityInvalid = false
+    /// Codex lifecycle edges require an exact session_meta match before they
+    /// can be trusted. Model/clock parsing remains useful before that proof.
+    var transcriptIdentityVerified = false
 }
 
 struct AgentModelProbe: Sendable {
@@ -145,18 +195,29 @@ struct AgentModelProbe: Sendable {
         state: inout ModelTailState,
         now: Date = Date()
     ) -> AgentModelDetection {
+        detectWithObservations(kind: kind, ref: ref, state: &state, now: now).detection
+    }
+
+    func detectWithObservations(
+        kind: String,
+        ref: ConversationRef?,
+        state: inout ModelTailState,
+        now: Date = Date()
+    ) -> AgentModelDetectionResult {
         if let reason = Self.unsupportedReason(kind: kind) {
-            return .unsupported(reason)
+            return AgentModelDetectionResult(detection: .unsupported(reason), lifecycle: [], coverage: .none)
         }
         guard let ref, !ref.placeholder else {
             // No real session (yet): drop what the previous session left behind.
             state = ModelTailState()
-            return .none
+            return AgentModelDetectionResult(detection: .none, lifecycle: [], coverage: .none)
         }
         if state.conversationId != ref.id {
             state = ModelTailState(conversationId: ref.id)
         }
 
+        var lifecycle: [TranscriptLifecycleObservation] = []
+        var coverage = TranscriptCoverage.none
         switch kind {
         case "opencode":
             if let row = readOpencodeRow(sessionId: ref.id) {
@@ -170,17 +231,33 @@ struct AgentModelProbe: Sendable {
                 if let model = summary.model { state.model = model }
                 state.signals.lastEventAt = summary.lastActiveAt
             }
+            tail(kind: kind, ref: ref, state: &state, now: now,
+                 lifecycle: &lifecycle, coverage: &coverage)
         case "claude-code", "codex", "pi", "omp":
-            tail(kind: kind, ref: ref, state: &state, now: now)
+            tail(kind: kind, ref: ref, state: &state, now: now,
+                 lifecycle: &lifecycle, coverage: &coverage)
         default:
-            return .unsupported("no model detection for \(kind)")
+            return AgentModelDetectionResult(
+                detection: .unsupported("no model detection for \(kind)"), lifecycle: [], coverage: .none
+            )
         }
-        return state.model.map(AgentModelDetection.model) ?? .none
+        return AgentModelDetectionResult(
+            detection: state.model.map(AgentModelDetection.model) ?? .none,
+            lifecycle: lifecycle,
+            coverage: coverage
+        )
     }
 
     // MARK: - JSONL harnesses
 
-    private func tail(kind: String, ref: ConversationRef, state: inout ModelTailState, now: Date) {
+    private func tail(
+        kind: String,
+        ref: ConversationRef,
+        state: inout ModelTailState,
+        now: Date,
+        lifecycle: inout [TranscriptLifecycleObservation],
+        coverage: inout TranscriptCoverage
+    ) {
         if state.path == nil || !FileManager.default.fileExists(atPath: state.path!) {
             state.path = nil
             if let retry = state.nextLocateAt, now < retry { return }
@@ -205,13 +282,16 @@ struct AgentModelProbe: Sendable {
         if state.inode != 0, (state.inode != inode || size < state.offset) {
             state.offset = 0
             state.model = nil
+            resetLifecycleState(&state)
         }
         state.inode = inode
 
         if state.offset == 0 {
-            initialScan(kind: kind, handle: handle, size: size, state: &state)
+            initialScan(kind: kind, expectedSessionID: ref.id, handle: handle, size: size,
+                        state: &state, lifecycle: &lifecycle, coverage: &coverage)
         } else if size > state.offset {
-            incrementalScan(kind: kind, handle: handle, size: size, state: &state)
+            incrementalScan(kind: kind, expectedSessionID: ref.id, handle: handle, size: size,
+                            state: &state, lifecycle: &lifecycle, coverage: &coverage)
         }
     }
 
@@ -220,15 +300,30 @@ struct AgentModelProbe: Sendable {
     /// window grows (to `maxInitialWindow`) until it holds a model and, unless it
     /// already reaches the file start, the start of the current turn. The offset
     /// is left at the end of the last complete line.
-    private func initialScan(kind: String, handle: FileHandle, size: UInt64, state: inout ModelTailState) {
+    private func initialScan(
+        kind: String,
+        expectedSessionID: String,
+        handle: FileHandle,
+        size: UInt64,
+        state: inout ModelTailState,
+        lifecycle: inout [TranscriptLifecycleObservation],
+        coverage: inout TranscriptCoverage
+    ) {
         var window = UInt64(Self.initialWindow)
         while true {
             let start = size > window ? size - window : 0
             guard let data = readRange(handle, from: start, to: size) else { return }
-            let (lines, consumed) = Self.completeLines(in: data, droppingLeadingPartial: start > 0)
+            let (lines, consumed, leadingSkipped) = Self.completeLines(in: data, droppingLeadingPartial: start > 0)
             state.model = nil
             state.signals = TranscriptSignals()
-            for line in lines { Self.fold(kind: kind, line: line, into: &state) }
+            resetLifecycleState(&state, preserveCoverage: true)
+            var candidateLifecycle: [TranscriptLifecycleObservation] = []
+            state.transcriptIdentityInvalid = false
+            state.transcriptIdentityVerified = false
+            for line in lines {
+                Self.fold(kind: kind, expectedSessionID: expectedSessionID, line: line,
+                          into: &state, lifecycle: &candidateLifecycle, coverage: &coverage)
+            }
             state.offset = start + UInt64(consumed)
             let complete = state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
             if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) {
@@ -236,6 +331,14 @@ struct AgentModelProbe: Sendable {
                 // window; look further back for just that line.
                 if state.model == nil, start > 0, kind == "codex" {
                     state.model = findEarlierTurnContextModel(handle: handle, before: start)
+                }
+                lifecycle.append(contentsOf: candidateLifecycle)
+                if start > 0 {
+                    markCoverageGap(
+                        skippedBytes: start + UInt64(leadingSkipped),
+                        state: &state,
+                        coverage: &coverage
+                    )
                 }
                 return
             }
@@ -267,7 +370,15 @@ struct AgentModelProbe: Sendable {
         return nil
     }
 
-    private func incrementalScan(kind: String, handle: FileHandle, size: UInt64, state: inout ModelTailState) {
+    private func incrementalScan(
+        kind: String,
+        expectedSessionID: String,
+        handle: FileHandle,
+        size: UInt64,
+        state: inout ModelTailState,
+        lifecycle: inout [TranscriptLifecycleObservation],
+        coverage: inout TranscriptCoverage
+    ) {
         var start = state.offset
         var dropLeading = false
         if size - start > UInt64(Self.maxPollBytes) {
@@ -275,15 +386,146 @@ struct AgentModelProbe: Sendable {
             dropLeading = true
         }
         guard let data = readRange(handle, from: start, to: size) else { return }
-        let (lines, consumed) = Self.completeLines(in: data, droppingLeadingPartial: dropLeading)
-        for line in lines { Self.fold(kind: kind, line: line, into: &state) }
+        let (lines, consumed, leadingSkipped) = Self.completeLines(in: data, droppingLeadingPartial: dropLeading)
+        if dropLeading {
+            markCoverageGap(
+                skippedBytes: (start - state.offset) + UInt64(leadingSkipped),
+                state: &state,
+                coverage: &coverage
+            )
+        }
+        for line in lines {
+            Self.fold(kind: kind, expectedSessionID: expectedSessionID, line: line,
+                      into: &state, lifecycle: &lifecycle, coverage: &coverage)
+        }
         state.offset = start + UInt64(consumed)
     }
 
-    private static func fold(kind: String, line: Data, into state: inout ModelTailState) {
+    private static func fold(
+        kind: String,
+        expectedSessionID: String,
+        line: Data,
+        into state: inout ModelTailState,
+        lifecycle: inout [TranscriptLifecycleObservation],
+        coverage: inout TranscriptCoverage
+    ) {
         let parsed = parseLine(kind: kind, line: line)
-        if let model = parsed.model { state.model = model }
-        if let event = parsed.event { state.signals.apply(event) }
+        if case .grokMalformed? = parsed.lifecycle {
+            markCoverageGap(skippedBytes: UInt64(max(1, line.count)), state: &state, coverage: &coverage)
+            return
+        }
+        if let sessionID = parsed.sessionID {
+            guard sessionID == expectedSessionID else {
+                state.transcriptIdentityInvalid = true
+                state.transcriptIdentityVerified = false
+                resetLifecycleState(&state)
+                state.model = nil
+                state.signals = TranscriptSignals()
+                return
+            }
+            state.transcriptIdentityVerified = true
+        }
+        guard !state.transcriptIdentityInvalid else { return }
+
+        let acceptedLifecycle = processLifecycle(
+            lifecycle: parsed.lifecycle,
+            expectedSessionID: expectedSessionID,
+            state: &state,
+            observations: &lifecycle
+        )
+        // Child Codex records are deliberately invisible to the model clocks as
+        // well as to the journal. A response/tool line alone is not a turn edge.
+        if acceptedLifecycle || parsed.lifecycle == nil {
+            if let model = parsed.model { state.model = model }
+            if let event = parsed.event { state.signals.apply(event) }
+        }
+    }
+
+    private static func processLifecycle(
+        lifecycle: ParsedTranscriptLifecycle?,
+        expectedSessionID: String,
+        state: inout ModelTailState,
+        observations: inout [TranscriptLifecycleObservation]
+    ) -> Bool {
+        guard let lifecycle else { return false }
+        switch lifecycle {
+        case .codex(let kind, let at, let turnID, let rootTurnID):
+            guard state.transcriptIdentityVerified else { return false }
+            guard let turnID, !turnID.isEmpty else { return false }
+            let isChild = rootTurnID.map { $0 != turnID } ?? false
+            if isChild {
+                rememberCodexChild(turnID, state: &state)
+                return false
+            }
+            if state.codexChildTurnIDs.contains(turnID) { return false }
+            switch kind {
+            case .turnStarted:
+                state.codexRootTurnID = turnID
+                observations.append(.init(kind: .turnStarted, occurredAt: at,
+                                           nativeEvent: "turn.started", turnID: turnID, isChild: false))
+                return true
+            case .turnCompleted, .turnInterrupted:
+                guard state.codexRootTurnID == turnID || rootTurnID == turnID else { return false }
+                observations.append(.init(
+                    kind: kind, occurredAt: at,
+                    nativeEvent: kind == .turnCompleted ? "turn.completed" : "turn.interrupted",
+                    turnID: turnID, isChild: false
+                ))
+                state.codexRootTurnID = nil
+                return kind == .turnCompleted
+            default:
+                return false
+            }
+        case .grokStart(let at, let turnID, let sessionID, let primary):
+            state.grokPendingStart = nil
+            guard primary, sessionID == expectedSessionID, let turnID, let at else { return false }
+            state.grokPendingStart = GrokPendingTurn(turnID: turnID, occurredAt: at)
+            observations.append(.init(kind: .turnStarted, occurredAt: at,
+                                       nativeEvent: "turn.started", turnID: turnID, isChild: false))
+            return false
+        case .grokEnd(let at, let outcome):
+            guard outcome == "completed", let pending = state.grokPendingStart,
+                  let at else {
+                state.grokPendingStart = nil
+                return false
+            }
+            if let startedAt = pending.occurredAt, at < startedAt {
+                state.grokPendingStart = nil
+                return false
+            }
+            observations.append(.init(kind: .turnCompleted, occurredAt: at,
+                                       nativeEvent: "turn.completed", turnID: pending.turnID, isChild: false))
+            state.grokPendingStart = nil
+            return false
+        case .grokMalformed:
+            state.grokPendingStart = nil
+            return false
+        }
+    }
+
+    private static func rememberCodexChild(_ turnID: String, state: inout ModelTailState) {
+        state.codexChildTurnIDs.removeAll { $0 == turnID }
+        state.codexChildTurnIDs.append(turnID)
+        if state.codexChildTurnIDs.count > 32 { state.codexChildTurnIDs.removeFirst() }
+    }
+
+    private static func resetLifecycleState(_ state: inout ModelTailState, preserveCoverage: Bool = false) {
+        state.codexRootTurnID = nil
+        state.codexChildTurnIDs.removeAll(keepingCapacity: true)
+        state.grokPendingStart = nil
+        state.transcriptIdentityInvalid = false
+        if !preserveCoverage { state.coverageDegraded = false }
+    }
+
+    private static func markCoverageGap(
+        skippedBytes: UInt64,
+        state: inout ModelTailState,
+        coverage: inout TranscriptCoverage
+    ) {
+        resetLifecycleState(&state, preserveCoverage: true)
+        guard !state.coverageDegraded else { return }
+        state.coverageDegraded = true
+        coverage = .gap(skippedBytes: max(1, skippedBytes))
     }
 
     private func readRange(_ handle: FileHandle, from: UInt64, to: UInt64) -> Data? {
@@ -299,25 +541,28 @@ struct AgentModelProbe: Sendable {
     /// Complete (newline-terminated) lines in `data`, and the byte count through
     /// the last newline. A trailing partial line is left unconsumed so the next
     /// poll re-reads it once complete.
-    static func completeLines(in data: Data, droppingLeadingPartial: Bool) -> (lines: [Data], consumed: Int) {
+    static func completeLines(in data: Data, droppingLeadingPartial: Bool) -> (lines: [Data], consumed: Int, leadingSkipped: Int) {
         var lines: [Data] = []
         var lineStart = data.startIndex
         var consumed = 0
+        var leadingSkipped = 0
         var skipFirst = droppingLeadingPartial
         var index = data.startIndex
         while index < data.endIndex {
             if data[index] == 0x0A {
+                let next = data.index(after: index)
                 if skipFirst {
+                    leadingSkipped = data.distance(from: data.startIndex, to: next)
                     skipFirst = false
                 } else if index > lineStart {
                     lines.append(data.subdata(in: lineStart..<index))
                 }
-                lineStart = data.index(after: index)
+                lineStart = next
                 consumed = data.distance(from: data.startIndex, to: lineStart)
             }
             index = data.index(after: index)
         }
-        return (lines, consumed)
+        return (lines, consumed, leadingSkipped)
     }
 
     // MARK: - Line parsing
@@ -330,6 +575,7 @@ struct AgentModelProbe: Sendable {
         switch kind {
         case "claude-code": return parseClaude(line)
         case "codex": return parseCodex(line)
+        case "grok": return parseGrok(line)
         case "pi", "omp": return parsePiOmp(kind: kind, line: line)
         default: return ParsedTranscriptLine()
         }
@@ -391,13 +637,45 @@ struct AgentModelProbe: Sendable {
         if hasType(line, "turn_context") || hasType(line, "session_meta") {
             guard line.count <= maxParseBytes, let object = parseObject(line),
                   let payload = object["payload"] as? [String: Any] else { return ParsedTranscriptLine() }
-            return ParsedTranscriptLine(model: normalized(payload["model"] as? String))
+            return ParsedTranscriptLine(
+                model: normalized(payload["model"] as? String),
+                sessionID: validOpaque(payload["id"] as? String)
+            )
         }
         // Codex writes `timestamp` as the first key of every line, so the first
         // occurrence is the line's own.
         let at = timestamp(in: line, last: false)
+        if line.count <= maxParseBytes, let object = parseObject(line),
+           let payload = object["payload"] as? [String: Any],
+           let type = payload["type"] as? String {
+            switch type {
+            case "task_started":
+                return ParsedTranscriptLine(
+                    event: .prompt(at: at),
+                    lifecycle: .codex(kind: .turnStarted, at: at,
+                                      turnID: validOpaque(payload["turn_id"] as? String),
+                                      rootTurnID: validOpaque(payload["root_turn_id"] as? String))
+                )
+            case "task_complete":
+                return ParsedTranscriptLine(
+                    event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil),
+                    lifecycle: .codex(kind: .turnCompleted, at: at,
+                                      turnID: validOpaque(payload["turn_id"] as? String),
+                                      rootTurnID: validOpaque(payload["root_turn_id"] as? String))
+                )
+            case "turn_aborted":
+                return ParsedTranscriptLine(
+                    lifecycle: .codex(kind: .turnInterrupted, at: at,
+                                      turnID: validOpaque(payload["turn_id"] as? String),
+                                      rootTurnID: validOpaque(payload["root_turn_id"] as? String))
+                )
+            default:
+                break
+            }
+        }
         if hasType(line, "task_started") { return ParsedTranscriptLine(event: .prompt(at: at)) }
         if hasType(line, "task_complete") { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
+        if hasType(line, "turn_aborted") { return ParsedTranscriptLine() }
         if hasType(line, "token_count") {
             var tokens = 0
             var key: String?
@@ -425,6 +703,32 @@ struct AgentModelProbe: Sendable {
             return ParsedTranscriptLine()
         }
         return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
+    }
+
+    private static func parseGrok(_ line: Data) -> ParsedTranscriptLine {
+        guard hasType(line, "turn_started") || hasType(line, "turn_ended") else {
+            return ParsedTranscriptLine()
+        }
+        guard line.count <= maxParseBytes, let object = parseObject(line),
+              let type = object["type"] as? String else {
+            return ParsedTranscriptLine(lifecycle: .grokMalformed)
+        }
+        let at = (object["ts"] as? String).flatMap(parseISO)
+        switch type {
+        case "turn_started":
+            return ParsedTranscriptLine(lifecycle: .grokStart(
+                at: at,
+                turnID: decimalTurnID(object["turn_number"]),
+                sessionID: validOpaque(object["session_id"] as? String),
+                primary: (object["session_relationship"] as? String) == "primary"
+            ))
+        case "turn_ended":
+            return ParsedTranscriptLine(lifecycle: .grokEnd(
+                at: at, outcome: object["outcome"] as? String
+            ))
+        default:
+            return ParsedTranscriptLine()
+        }
     }
 
     private static func parsePiOmp(kind: String, line: Data) -> ParsedTranscriptLine {
@@ -488,6 +792,29 @@ struct AgentModelProbe: Sendable {
 
     private static func int(_ value: Any?) -> Int {
         (value as? NSNumber)?.intValue ?? 0
+    }
+
+    /// Journal identifiers are opaque but must stay printable and bounded.
+    /// Rejecting rather than truncating keeps a malformed transcript from being
+    /// correlated with a different turn.
+    private static func validOpaque(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty, raw.utf8.count <= 128,
+              raw.utf8.allSatisfy({ $0 >= 33 && $0 <= 126 && $0 != 47 && $0 != 92 }) else {
+            return nil
+        }
+        return raw
+    }
+
+    private static func decimalTurnID(_ value: Any?) -> String? {
+        if let number = value as? NSNumber {
+            let double = number.doubleValue
+            guard double.isFinite, double >= 0, double.rounded() == double else { return nil }
+            return String(number.int64Value)
+        }
+        guard let raw = value as? String,
+              !raw.isEmpty, raw.allSatisfy(\.isNumber), raw.utf8.count <= 128 else { return nil }
+        return raw
     }
 
     /// A line's `"timestamp":"<ISO 8601>"` read without parsing JSON: the first
@@ -569,6 +896,11 @@ struct AgentModelProbe: Sendable {
             let slug = OmpScraper.sessionSlug(forCwd: cwd, homeDirectory: home)
             let dir = home.appendingPathComponent(".omp/agent/sessions/\(slug)", isDirectory: true)
             return fileWithSuffix("_\(ref.id).jsonl", in: dir)
+        case "grok":
+            guard case .string(let directory)? = ref.payload?[GrokStrategy.sessionDirectoryPayloadKey],
+                  !directory.isEmpty else { return nil }
+            let events = URL(fileURLWithPath: directory).appendingPathComponent("events.jsonl").path
+            return fm.fileExists(atPath: events) ? events : nil
         default:
             return nil
         }
@@ -763,11 +1095,17 @@ final class AgentModelDetector: @unchecked Sendable {
                         let ref = refs[target.surfaceId.uuidString]?.active
                         var state = states[target.surfaceId] ?? ModelTailState()
                         let hadModel = state.model != nil
-                        let result = probe.detect(kind: target.kind, ref: ref, state: &state)
+                        let detection = probe.detectWithObservations(kind: target.kind, ref: ref, state: &state)
                         states[target.surfaceId] = state
                         setSignals(state.signals, forSurface: target.surfaceId)
-                        publish(result, target: target)
-                        if result == .none, hadModel {
+                        if let ref {
+                            JournalTranscriptProducer.shared.submit(
+                                target: target, ref: ref, lifecycle: detection.lifecycle,
+                                coverage: detection.coverage
+                            )
+                        }
+                        publish(detection.detection, target: target)
+                        if detection.detection == .none, hadModel {
                             // The session this model came from is gone.
                             clearDerived(workspaceId: target.workspaceId, surfaceId: target.surfaceId)
                         }

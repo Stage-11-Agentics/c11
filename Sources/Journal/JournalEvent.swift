@@ -11,7 +11,7 @@ enum JournalError: String, Error {
     case unsupportedVersion = "unsupported_version"
 }
 
-enum JournalKind: String, Codable, CaseIterable {
+enum JournalKind: String, Codable, CaseIterable, Sendable {
     case sessionStarted = "agent.session.started", sessionEnded = "agent.session.ended"
     case turnStarted = "agent.turn.started", turnCompleted = "agent.turn.completed"
     case turnInterrupted = "agent.turn.interrupted"
@@ -22,7 +22,7 @@ enum JournalKind: String, Codable, CaseIterable {
     case attentionResolved = "agent.attention.resolved", messagePublished = "agent.message.published"
 }
 
-enum JournalSource: String, Codable {
+enum JournalSource: String, Codable, Sendable {
     case hook, plugin, transcript, screen, shell, keypress, selfReport = "self_report", c11
     var rank: Int {
         switch self {
@@ -37,7 +37,7 @@ enum JournalSource: String, Codable {
     }
 }
 
-enum JournalAdapter: String, Codable {
+enum JournalAdapter: String, Codable, Sendable {
     case claudeHook = "claude_hook", opencodePlugin = "opencode_plugin", piPlugin = "pi_plugin"
     case codexNotify = "codex_notify", codexTranscript = "codex_transcript", grokTranscript = "grok_transcript"
     case shell, keypress, selfReport = "self_report", c11
@@ -57,14 +57,15 @@ enum JournalAdapter: String, Codable {
         case .claudeHook: return ["session", "turn", "blocked", "error"]
         case .opencodePlugin: return ["session", "turn", "blocked", "error"]
         case .piPlugin, .codexNotify: return ["turn"]
-        case .codexTranscript, .grokTranscript: return ["turn", "interrupt"]
+        case .codexTranscript: return ["turn", "interrupt"]
+        case .grokTranscript: return ["turn"]
         case .c11: return ["control"]
         default: return []
         }
     }
 }
 
-enum JournalTimeQuality: String, Codable { case nativeLocal = "native_local", observed, missing }
+enum JournalTimeQuality: String, Codable, Sendable { case nativeLocal = "native_local", observed, missing }
 enum JournalToolClass: String, Codable { case askUserQuestion = "ask_user_question", exitPlanMode = "exit_plan_mode", other }
 enum JournalSignal: String, Codable {
     case toolActivity = "tool_activity", operatorResponse = "operator_response", connectionLost = "connection_lost"
@@ -137,7 +138,7 @@ struct JournalDraft: Codable, Equatable {
             guard let s else { return true }
             return !s.isEmpty && s.utf8.count <= limit && s.utf8.allSatisfy { $0 >= 33 && $0 <= 126 && $0 != 47 && $0 != 92 }
         }
-        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "connection_lost", "operator_response"]
+        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "connection_lost", "operator_response", "adapter_gap", "adapter_recovered"]
         guard schemaVersion == 1 else { throw JournalError.unsupportedVersion }
         guard source == adapter.source, emittedAtMs >= 0, occurredAtMs.map({ $0 >= 0 }) ?? true,
               (occurredAtMs == nil) == (timeQuality == .missing),

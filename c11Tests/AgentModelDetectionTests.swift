@@ -183,10 +183,15 @@ final class AgentModelDetectionTests: XCTestCase {
         return String(format: ".codex/sessions/%04d/%02d/%02d/rollout-2026-01-01T00-00-00-%@.jsonl", c.year!, c.month!, c.day!, id)
     }
 
+    private func codexFixture(_ id: String) throws -> Data {
+        let raw = try String(data: fixture("codex-rollout.jsonl"), encoding: .utf8)!
+        return Data(raw.replacingOccurrences(of: "019a0000-0000-7000-8000-000000000001", with: id).utf8)
+    }
+
     func testCodexTakesLatestTurnContextModel() throws {
         let now = Date()
         let id = uuidV7(now)
-        try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        try place(codexFixture(id), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         XCTAssertEqual(detect("codex", ref("codex", id: id), &state), .model("gpt-6-astra"))
     }
@@ -194,12 +199,67 @@ final class AgentModelDetectionTests: XCTestCase {
     func testCodexPicksUpModelChangeOnTheNextTurn() throws {
         let now = Date()
         let id = uuidV7(now)
-        let url = try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        let url = try place(codexFixture(id), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         let r = ref("codex", id: id)
         _ = detect("codex", r, &state)
         try append(#"{"type":"turn_context","payload":{"model":"gpt-5.5-codex"}}"# + "\n", to: url)
         XCTAssertEqual(detect("codex", r, &state), .model("gpt-5.5-codex"))
+    }
+
+    func testCodexLifecycleEdgesAreAdvisoryAndDoNotRepeatOnASecondPoll() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let lines = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(id)","model_provider":"openai"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
+        {"timestamp":"2026-01-01T09:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","output":"SENTINEL"}}
+        {"timestamp":"2026-01-01T09:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"root-1","last_agent_message":"SENTINEL"}}
+        """
+        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let first = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
+        XCTAssertEqual(first.lifecycle.map(\.nativeEvent), ["turn.started", "turn.completed"])
+        XCTAssertEqual(first.lifecycle.map(\.turnID), ["root-1", "root-1"])
+        XCTAssertEqual(first.lifecycle.map(\.isChild), [false, false])
+        XCTAssertTrue(first.lifecycle.allSatisfy { $0.occurredAt != nil })
+        XCTAssertTrue(first.lifecycle.allSatisfy { $0.kind != .questionRequested })
+        let second = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
+        XCTAssertTrue(second.lifecycle.isEmpty, "the same byte range must not emit a second edge")
+    }
+
+    func testCodexChildEdgesAndOutputDoNotBecomeRootEdges() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let lines = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(id)"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
+        {"timestamp":"2026-01-01T09:00:02.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"child-1","root_turn_id":"root-1"}}
+        {"timestamp":"2026-01-01T09:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"child-1"}}
+        {"timestamp":"2026-01-01T09:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":"SENTINEL"}}
+        {"timestamp":"2026-01-01T09:00:05.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"root-1"}}
+        """
+        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
+        XCTAssertEqual(result.lifecycle.map(\.nativeEvent), ["turn.started", "turn.interrupted"])
+        XCTAssertEqual(result.lifecycle.map(\.turnID), ["root-1", "root-1"])
+        XCTAssertFalse(result.lifecycle.contains { $0.turnID == "child-1" })
+    }
+
+    func testCodexQuietAndOutputOnlyRecordsDoNotClaimCompletionOrBlocked() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let lines = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(id)"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","output":"SENTINEL"}}
+        {"timestamp":"2026-01-01T09:00:02.000Z","type":"event_msg","payload":{"type":"phase_changed","phase":"working"}}
+        """
+        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
+        XCTAssertTrue(result.lifecycle.isEmpty)
+        XCTAssertNotEqual(result.lifecycle.map(\.kind), [.turnCompleted])
     }
 
     // MARK: - Pi and omp
@@ -237,6 +297,133 @@ final class AgentModelDetectionTests: XCTestCase {
         let updated = String(data: try fixture("grok-summary.json"), encoding: .utf8)!.replacingOccurrences(of: "grok-4.7", with: "grok-5")
         try Data(updated.utf8).write(to: url)
         XCTAssertEqual(detect("grok", r, &state), .model("grok-5"))
+    }
+
+    func testGrokQualifiedTurnPairEmitsOnceAndUsesTheNativeTurnNumber() throws {
+        let sessionID = "grok-session-276"
+        let dir = "grok-edge"
+        let events = """
+        {"type":"turn_started","ts":"2026-01-01T06:10:00.123456Z","turn_number":42,"session_id":"\(sessionID)","session_relationship":"primary"}
+        {"type":"phase_changed","ts":"2026-01-01T06:10:01.000Z","phase":"working"}
+        """
+        let url = try place(Data(events.utf8), at: "\(dir)/events.jsonl")
+        let r = ref("grok", id: sessionID,
+                   payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+
+        let first = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertEqual(first.lifecycle.map(\.nativeEvent), ["turn.started"])
+        XCTAssertEqual(first.lifecycle.first?.turnID, "42")
+
+        try append(#"{"type":"turn_ended","ts":"2026-01-01T06:10:02.123456Z","outcome":"completed"}"# + "\n", to: url)
+        let second = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertEqual(second.lifecycle.map(\.nativeEvent), ["turn.completed"])
+        XCTAssertEqual(second.lifecycle.first?.turnID, "42")
+        XCTAssertTrue(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.isEmpty)
+    }
+
+    func testGrokMismatchedOrNonPrimaryStartCannotPairAnIdlessEnd() throws {
+        let sessionID = "grok-session-276"
+        let dir = "grok-unqualified"
+        let events = """
+        {"type":"turn_started","ts":"2026-01-01T06:20:00.000Z","turn_number":7,"session_id":"\(sessionID)","session_relationship":"child"}
+        {"type":"turn_started","ts":"2026-01-01T06:20:01.000Z","turn_number":8,"session_id":"other-session","session_relationship":"primary"}
+        {"type":"turn_ended","ts":"2026-01-01T06:20:02.000Z","outcome":"completed"}
+        {"type":"phase_changed","ts":"2026-01-01T06:20:03.000Z","phase":"working"}
+        """
+        let url = try place(Data(events.utf8), at: "\(dir)/events.jsonl")
+        let r = ref("grok", id: sessionID,
+                   payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+        let result = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertTrue(result.lifecycle.isEmpty)
+        XCTAssertEqual(result.coverage, .none)
+    }
+
+    func testGrokPartialEndCompletesOnceThenReplacementCannotCompleteWithoutAStart() throws {
+        let sessionID = "grok-session-276"
+        let dir = "grok-partial"
+        let start = #"{"type":"turn_started","ts":"2026-01-01T06:30:00.000Z","turn_number":9,"session_id":"grok-session-276","session_relationship":"primary"}"# + "\n"
+        let end = #"{"type":"turn_ended","ts":"2026-01-01T06:30:01.000Z","outcome":"completed"}"#
+        let url = try place(Data((start + String(end.prefix(24))).utf8), at: "\(dir)/events.jsonl")
+        let r = ref("grok", id: sessionID,
+                   payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+        XCTAssertEqual(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.map(\.nativeEvent), ["turn.started"])
+
+        try append(String(end.dropFirst(24)) + "\n", to: url)
+        XCTAssertEqual(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.map(\.nativeEvent), ["turn.completed"])
+
+        try Data((end + "\n").utf8).write(to: url)
+        XCTAssertTrue(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.isEmpty)
+    }
+
+    func testCodexIncrementalBacklogGapDoesNotCompleteASkippedTurn() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let path = codexPath(id: id, date: now)
+        let prefix = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(id)","model_provider":"openai"}}
+        {"timestamp":"2026-01-01T09:00:00.500Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
+        """
+        let url = try place(Data(prefix.utf8), at: path)
+        let r = ref("codex", id: id)
+        var state = ModelTailState()
+        XCTAssertEqual(probe.detectWithObservations(kind: "codex", ref: r, state: &state).lifecycle.map(\.nativeEvent), ["turn.started"])
+
+        let filler = String(repeating: #"{"type":"response_item","payload":{"type":"reasoning","text":""}"}# + "\n", count: 5_000)
+        try append(filler + #"{"timestamp":"2026-01-01T09:05:00.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"root-1"}}"# + "\n", to: url)
+        let result = probe.detectWithObservations(kind: "codex", ref: r, state: &state)
+        guard case .gap(let skipped) = result.coverage else { return XCTFail("expected a transcript coverage gap") }
+        XCTAssertGreaterThan(skipped, 4 * 1024 * 1024 - 1024)
+        XCTAssertTrue(state.coverageDegraded)
+        XCTAssertTrue(result.lifecycle.isEmpty, "the completion's matching start was in the skipped span")
+    }
+
+    func testCodexLifecycleRequiresAnExactSessionMetaIdentity() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let lines = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
+        """
+        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
+        XCTAssertTrue(result.lifecycle.isEmpty)
+        XCTAssertEqual(result.detection, .model("gpt-6-astra"))
+    }
+
+    func testTranscriptDraftKeepsOnlyAllowlistedProvenanceAndGapSignal() throws {
+        let target = AgentModelDetector.Target(
+            workspaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            surfaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            kind: "codex"
+        )
+        let r = ref("codex", id: "codex-session-276")
+        let observation = TranscriptLifecycleObservation(
+            kind: .turnCompleted, occurredAt: t("09:05:07"), nativeEvent: "turn.completed",
+            turnID: "root-1", isChild: false
+        )
+        let draft = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+            observation: observation, target: target, ref: r, emittedAt: t("09:05:08")
+        ))
+        XCTAssertEqual(draft.source, .transcript)
+        XCTAssertEqual(draft.adapter, .codexTranscript)
+        XCTAssertEqual(draft.kind, .turnCompleted)
+        XCTAssertEqual(draft.turnID, "root-1")
+        XCTAssertFalse(String(decoding: try draft.canonicalData(), as: UTF8.self).contains("last_agent_message"))
+        XCTAssertNil(JournalTranscriptProducer.makeDraft(
+            observation: .init(kind: .questionRequested, occurredAt: nil,
+                               nativeEvent: "question.requested", turnID: nil, isChild: false),
+            target: target, ref: r, emittedAt: t("09:05:08")
+        ))
+
+        let gap = try XCTUnwrap(JournalTranscriptProducer.makeGapDraft(target: target, ref: r, emittedAt: t("09:05:08")))
+        XCTAssertEqual(gap.source, .c11)
+        XCTAssertEqual(gap.signal, .adapterGap)
+        XCTAssertNoThrow(try gap.validate())
     }
 
     func testOpencodeReadsSessionModelFromSqlite() throws {
@@ -323,7 +510,7 @@ final class AgentModelDetectionTests: XCTestCase {
     func testCodexSignalsUseTaskStartedAndTokenCounts() throws {
         let now = Date()
         let id = uuidV7(now)
-        try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        try place(codexFixture(id), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         _ = detect("codex", ref("codex", id: id), &state)
         let s = state.signals
@@ -363,7 +550,7 @@ final class AgentModelDetectionTests: XCTestCase {
         // The fixture repeats every token_count line three times, as real rollouts do.
         let now = Date()
         let id = uuidV7(now)
-        try place(fixture("codex-rollout.jsonl"), at: codexPath(id: id, date: now))
+        try place(codexFixture(id), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         _ = detect("codex", ref("codex", id: id), &state)
         XCTAssertEqual(state.signals.turnTokens, (1000 - 600) + 50, "one call, not three")

@@ -539,6 +539,7 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		E0487C8EB075EF8AC02786A3 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353D9F81533C5DBA22A6231B /* JournalStoreTests.swift */; };
 		5A2DFF69E794B58324815D7F /* JournalSpoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CA11BE82B440612345BE5A /* JournalSpoolTests.swift */; };
 		65631BA6FFA800CEC5F61F99 /* JournalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */; };
+		C11276000000000000000002 /* JournalTranscriptProducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11276000000000000000001 /* JournalTranscriptProducer.swift */; };
 		AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */; };
 		EFCC13F4E9E4ABE05B000382 /* JournalHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85085E0EAE607FAB6DBB0F42 /* JournalHandlers.swift */; };
 		C11284000000000000000002 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
@@ -1128,6 +1129,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		353D9F81533C5DBA22A6231B /* JournalStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalStoreTests.swift; path = JournalStoreTests.swift; sourceTree = "<group>"; };
 		A8CA11BE82B440612345BE5A /* JournalSpoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalSpoolTests.swift; path = JournalSpoolTests.swift; sourceTree = "<group>"; };
 		849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalCoordinator.swift; path = Journal/JournalCoordinator.swift; sourceTree = "<group>"; };
+		C11276000000000000000001 /* JournalTranscriptProducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalTranscriptProducer.swift; path = Journal/JournalTranscriptProducer.swift; sourceTree = "<group>"; };
 		FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalCommand.swift; path = JournalCommand.swift; sourceTree = "<group>"; };
 		85085E0EAE607FAB6DBB0F42 /* JournalHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalHandlers.swift; sourceTree = "<group>"; };
 		C11284000000000000000001 /* CapabilityFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeatures.swift; sourceTree = "<group>"; };
@@ -1276,6 +1278,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				3C562C4BF3F41684F3E215BC /* JournalSpool.swift */,
 				732505E4F8E3443519782672 /* JournalEvent.swift */,
 				849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */,
+				C11276000000000000000001 /* JournalTranscriptProducer.swift */,
 				24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */,
 				EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */,
 				193AECCF771604D4FFC20573 /* JournalStore.swift */,
@@ -2187,6 +2190,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				E3867CBB3CF06F201C937F2F /* JournalSpool.swift in Sources */,
 				A2B7B0EE04816F2F9B5CCD20 /* JournalEvent.swift in Sources */,
 				65631BA6FFA800CEC5F61F99 /* JournalCoordinator.swift in Sources */,
+				C11276000000000000000002 /* JournalTranscriptProducer.swift in Sources */,
 				DD7DDF8F72DE2E0646F89E04 /* JournalStorageLayout.swift in Sources */,
 				31C140AD458A0058070C992D /* JournalReducer.swift in Sources */,
 				B9139F7F4E89C12E276551BB /* JournalStore.swift in Sources */,

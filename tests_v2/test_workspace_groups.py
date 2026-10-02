@@ -3,7 +3,8 @@
 
 Run through scripts/sandbox-tests-v2.sh in the isolated guest against its tagged
 QA app, with explicit C11_SOCKET and C11_CLI supplied by the runner. Never
-discovers a socket or a CLI automatically; direct host execution is rejected.
+discovers a socket or a CLI automatically. Explicitly authorized dedicated host
+tags may use C11_GROUPS_TEST_TAG=<tag>; the socket must match that exact tag.
 These checks prove model/selection behavior, not macOS responder focus or
 restart persistence (those require the tagged validator scenario).
 """

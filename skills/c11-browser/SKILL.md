@@ -45,6 +45,27 @@ Notes:
 - Keep using one `tab:N` per task within the current c11 process unless you intentionally switch. Short refs (`tab:N`, `area:N`, `workspace:N`, `window:N`) start over after a restart; store the tab UUID from `c11 --id-format both tree --json` to find that same browser tab afterward.
 - **Default to a tab in the existing browser area.** If the workspace already has a browser area, open new pages as tabs inside it rather than spawning a new browser area — browsers are tabbed by default, and a fresh area each time is the awkward interaction to avoid. Find the browser area in `c11 tree --json` and add the tab with `c11 new-tab --type browser --url <url> --area <browser-area-ref>`. Open a new browser area (`c11 new-area --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser tab when one is available.
 
+## Browser Profiles
+
+Profiles isolate WebKit cookies, storage, and history. The built-in `Default`
+profile is always present and cannot be renamed, cleared, or deleted.
+
+```bash
+c11 browser profiles list --json
+c11 browser profiles add smoke-b3 --json
+c11 browser profiles rename smoke-b3 smoke-b3-renamed --json
+c11 browser open https://example.com --profile smoke-b3-renamed --json
+c11 browser profiles clear smoke-b3-renamed --yes --json
+c11 browser profiles delete smoke-b3-renamed --yes --json
+```
+
+`--profile` is one-shot: it selects the profile for the tab being created and
+does not change the profile used by a later unscoped `browser open`, `new-tab`,
+or `new-area`. Profile names resolve case-insensitively when unique; UUIDs are
+accepted as well. `clear` and `delete` never show a dialog: both require
+`--yes`, refuse the built-in profile, and refuse profiles attached to any live
+browser tab. Close those tabs before retrying.
+
 ## Plain `http://` Navigation
 
 c11 guards plain-HTTP navigation, and socket-driven navigation is the path most likely to hit it.

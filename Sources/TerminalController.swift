@@ -2338,6 +2338,11 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.profiles.list",
+        "browser.profiles.add",
+        "browser.profiles.rename",
+        "browser.profiles.clear",
+        "browser.profiles.delete",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

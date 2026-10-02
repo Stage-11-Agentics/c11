@@ -2605,6 +2605,10 @@ struct CMUXCLI {
             let file = optionValue(createArgs, name: "--file")
             let title = optionValue(createArgs, name: "--title")
             let cwd = optionValue(createArgs, name: "--cwd")
+            let profile = optionValue(createArgs, name: "--profile")
+            if profile != nil, type?.lowercased() != "browser" {
+                throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+            }
             var params: [String: Any] = ["direction": direction]
             if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -2613,6 +2617,7 @@ struct CMUXCLI {
             if let url { params["url"] = url }
             if let file { params["file"] = file }
             if let title, !title.isEmpty { params["title"] = title }
+            if let profile { params["profile"] = profile }
             // --cwd <path> sets the new terminal's working directory. `inherit`
             // (or omitting the flag) keeps the default: the workspace root,
             // else the parent surface's cwd. Resolved relative to the CLI's
@@ -2865,6 +2870,10 @@ struct CMUXCLI {
             let url = optionValue(createArgs, name: "--url")
             let file = optionValue(createArgs, name: "--file")
             let cwd = optionValue(createArgs, name: "--cwd")
+            let profile = optionValue(createArgs, name: "--profile")
+            if profile != nil, type?.lowercased() != "browser" {
+                throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+            }
             let noFocus = createArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             if let initialInput { params["initial_input"] = initialInput }
@@ -2875,6 +2884,7 @@ struct CMUXCLI {
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
+            if let profile { params["profile"] = profile }
             // --cwd <path> wins over the workspace root for a terminal surface.
             // Resolved relative to the CLI's cwd; validated server-side.
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
@@ -7613,7 +7623,7 @@ struct CMUXCLI {
         var surfaceRaw = surfaceOpt
         var args = argsWithoutSurfaceFlag
 
-        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify"]
+        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
         if surfaceRaw == nil, let first = args.first {
             if !first.hasPrefix("-") && !verbsWithoutSurface.contains(first.lowercased()) {
                 surfaceRaw = first
@@ -7766,11 +7776,89 @@ struct CMUXCLI {
             return
         }
 
+        if subcommand == "profiles" {
+            guard surfaceRaw == nil else {
+                throw CLIError(message: String(localized: "browser.profile.cli.tabHandle", defaultValue: "browser profiles does not take a tab handle"))
+            }
+            guard let profileCommand = subArgs.first?.lowercased() else {
+                throw CLIError(message: String(localized: "browser.profile.cli.commandRequired", defaultValue: "browser profiles requires list, add, rename, clear, or delete"))
+            }
+            let profileArgs = Array(subArgs.dropFirst())
+
+            if profileCommand == "list" {
+                let payload = try client.sendV2(method: "browser.profiles.list", params: [:])
+                if effectiveJSONOutput {
+                    print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
+                } else {
+                    let profiles = payload["profiles"] as? [[String: Any]] ?? []
+                    for profile in profiles {
+                        let name = (profile["name"] as? String) ?? ""
+                        let id = (profile["id"] as? String) ?? ""
+                        let builtIn = (profile["built_in"] as? Bool) == true ? " built-in" : ""
+                        let inUse = (profile["in_use"] as? Bool) == true ? " in-use" : ""
+                        print("\(id)  \(name)\(builtIn)\(inUse)")
+                    }
+                }
+                return
+            }
+
+            guard ["add", "rename", "clear", "delete"].contains(profileCommand) else {
+                throw CLIError(message: String(localized: "browser.profile.cli.unknownCommand", defaultValue: "Unknown browser profiles command \(profileCommand)"))
+            }
+
+            var params: [String: Any] = [:]
+            let (profileOpt, argsAfterProfile) = parseOption(profileArgs, name: "--profile")
+            let (nameOpt, remaining) = parseOption(argsAfterProfile, name: "--name")
+            let (withoutYes, confirmed) = parseFlag(remaining, name: "--yes")
+            let positionals = withoutYes.filter { !$0.hasPrefix("-") }
+
+            switch profileCommand {
+            case "add":
+                let name = nameOpt ?? positionals.joined(separator: " ")
+                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: String(localized: "browser.profile.cli.addRequiresName", defaultValue: "browser profiles add requires a name"))
+                }
+                params["name"] = name
+            case "rename":
+                let profile = profileOpt ?? positionals.first
+                let name = nameOpt ?? (positionals.count > 1 ? positionals.dropFirst().joined(separator: " ") : nil)
+                guard let profile, let name,
+                      !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: String(localized: "browser.profile.cli.renameRequiresArgs", defaultValue: "browser profiles rename requires <profile> <name>"))
+                }
+                params["profile"] = profile
+                params["name"] = name
+            case "clear", "delete":
+                let profile = profileOpt ?? positionals.first
+                guard let profile, !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: String(localized: "browser.profile.cli.operationRequiresProfile", defaultValue: "browser profiles \(profileCommand) requires <profile>"))
+                }
+                params["profile"] = profile
+                params["confirm"] = confirmed
+            default:
+                break
+            }
+
+            let method = "browser.profiles.\(profileCommand)"
+            let payload = try client.sendV2(method: method, params: params)
+            output(
+                payload,
+                fallback: profileCommand == "delete"
+                    ? String(localized: "browser.profile.cli.deleted", defaultValue: "Deleted browser profile")
+                    : profileCommand == "clear"
+                        ? String(localized: "browser.profile.cli.cleared", defaultValue: "Cleared browser profile")
+                        : "OK"
+            )
+            return
+        }
+
         if subcommand == "open" || subcommand == "open-split" || subcommand == "new" {
             // Parse routing flags before URL assembly so they never leak into the URL string.
             let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
             let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
-            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterWindow, name: "--allow-insecure-http")
+            let (profileOpt, argsAfterProfile) = parseOption(argsAfterWindow, name: "--profile")
+            let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterProfile, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_RESPECT_EXTERNAL_OPEN_RULES"] else {
@@ -7786,6 +7874,9 @@ struct CMUXCLI {
 
             if surfaceRaw != nil, subcommand == "open" {
                 // Treat `browser <surface> open <url>` as navigate for agent-browser ergonomics.
+                guard profileOpt == nil else {
+                    throw CLIError(message: String(localized: "browser.profile.error.creationOnly", defaultValue: "--profile is only valid when creating a browser tab"))
+                }
                 let sid = try requireSurface()
                 guard !url.isEmpty else {
                     throw CLIError(message: "browser <tab> open requires a URL")
@@ -7817,6 +7908,9 @@ struct CMUXCLI {
             }
             if allowInsecureHTTP {
                 params["allow_insecure_http"] = true
+            }
+            if let profileOpt {
+                params["profile"] = profileOpt
             }
             if let windowRaw = windowOpt {
                 if let window = try normalizeWindowHandle(windowRaw, client: client) {
@@ -9911,6 +10005,7 @@ struct CMUXCLI {
               --direction <left|right|up|down>    Split direction (default: right)
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser areas
+              --profile <name|id>                 Browser profile for browser areas (one-shot)
               --file <path>                       File path for markdown areas
               --title <text>                      Seed the new area's title metadata atomically with creation
               --cwd <path|inherit>                Working directory for the new terminal. A path
@@ -10013,6 +10108,7 @@ struct CMUXCLI {
               --area <id|ref>                     Target area
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser tabs
+              --profile <name|id>                 Browser profile for browser tabs (one-shot)
               --file <path>                       File path for markdown tabs
               --cwd <path|inherit>                Working directory for a terminal tab. A path
                                                   (absolute or relative to the CLI's cwd) is
@@ -10962,8 +11058,15 @@ struct CMUXCLI {
             `open`/`open-split`/`new`/`identify` can run without an explicit tab.
 
             Subcommands:
-              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--allow-insecure-http]
+              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--profile <name|id>] [--allow-insecure-http]
                 open/open-split/new default to $CMUX_WORKSPACE_ID when --workspace is omitted and --window is not set
+                --profile selects one browser profile for this creation only
+              profiles list
+              profiles add <name>
+              profiles rename <profile> <name>
+              profiles clear <profile> --yes
+              profiles delete <profile> --yes
+                clear/delete never prompt; they refuse without --yes and refuse built-in or in-use profiles
               goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
                 --allow-insecure-http consents to one plain-http navigation to that host without
                 prompting a human (loopback hosts are already allowed by default)

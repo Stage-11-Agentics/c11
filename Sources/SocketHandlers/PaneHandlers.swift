@@ -192,6 +192,14 @@ extension TerminalController {
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
         let titleSeed = v2String(params, "title")
+        let profileRaw = v2String(params, "profile")
+        if profileRaw != nil, panelType != .browser {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"),
+                data: nil
+            )
+        }
 
         // Validate and resolve markdown file path
         var resolvedMarkdownPath: String?
@@ -216,6 +224,26 @@ extension TerminalController {
             guard let ws = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
+            }
+            var preferredProfileID: UUID?
+            var sticksAsPreferred = true
+            switch self.v2ResolveBrowserProfileParam(profileRaw) {
+            case .none:
+                break
+            case .error(let error):
+                result = error
+                return
+            case .profile(let profile):
+                guard !ws.isRemoteWorkspace else {
+                    result = .err(code: "invalid_params", message: String(localized: "browser.profile.error.remoteUnsupported", defaultValue: "Browser profiles are not supported in remote workspaces"), data: nil)
+                    return
+                }
+                guard !BrowserProfileStore.shared.isReserved(profile.id) else {
+                    result = self.v2BrowserProfileError(.busy)
+                    return
+                }
+                preferredProfileID = profile.id
+                sticksAsPreferred = false
             }
             self.v2MaybeFocusWindow(for: workspaceManager)
             self.v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
@@ -249,7 +277,13 @@ extension TerminalController {
                 targetPaneForTab = paneId
                 switch panelType {
                 case .browser:
-                    newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: self.v2FocusAllowed())?.id
+                    newPanelId = ws.newBrowserSurface(
+                        inPane: paneId,
+                        url: url,
+                        focus: self.v2FocusAllowed(),
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred
+                    )?.id
                 case .markdown:
                     newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
@@ -263,7 +297,15 @@ extension TerminalController {
                 let insertFirst = actualDirection.insertFirst
                 switch panelType {
                 case .browser:
-                    newPanelId = ws.newBrowserSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, url: url, focus: self.v2FocusAllowed())?.id
+                    newPanelId = ws.newBrowserSplit(
+                        from: focusedPanelId,
+                        orientation: orientation,
+                        insertFirst: insertFirst,
+                        url: url,
+                        preferredProfileID: preferredProfileID,
+                        sticksAsPreferred: sticksAsPreferred,
+                        focus: self.v2FocusAllowed()
+                    )?.id
                 case .markdown:
                     newPanelId = ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
@@ -292,6 +334,9 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: createdPanelId),
                 "type": panelType.rawValue
             ]
+            if let browserProfileID = ws.browserPanel(for: createdPanelId)?.profileID {
+                ok["profile_id"] = browserProfileID.uuidString
+            }
             if initialInput != nil { ok["initial_input"] = "queued" }
             self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
             result = .ok(ok)

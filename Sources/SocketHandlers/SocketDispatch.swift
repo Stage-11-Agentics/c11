@@ -140,6 +140,12 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            return v2Result(
+                id: request.id,
+                v2BrowserProfileCommand(method: request.method, params: request.params)
+            )
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

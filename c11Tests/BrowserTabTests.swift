@@ -150,6 +150,80 @@ final class BrowserTabProfileIsolationTests: XCTestCase {
     }
 }
 
+@MainActor
+final class BrowserProfileStoreLifecycleTests: XCTestCase {
+    func testDelayedRemovalReservesProfileUntilCompletion() throws {
+        let store = BrowserProfileStore.shared
+        let profile = try makeTemporaryBrowserPanelProfile(named: "Delayed-clear")
+        var pendingCompletion: ((Error?) -> Void)?
+        var operationResult: Result<Void, BrowserProfileOperationError>?
+        store.websiteDataRemovalHandler = { _, _, completion in
+            pendingCompletion = completion
+        }
+        defer {
+            store.websiteDataRemovalHandler = nil
+            store.release(profile.id)
+            _ = store.removeProfileDefinition(id: profile.id)
+        }
+
+        let start = store.beginClear(id: profile.id, inUse: false) { result in
+            operationResult = result
+        }
+        guard case .started = start else {
+            return XCTFail("Expected clear to start")
+        }
+        XCTAssertTrue(store.isReserved(profile.id))
+        guard case .failed(.busy) = store.beginClear(id: profile.id, inUse: false, completion: { _ in }) else {
+            return XCTFail("Expected a second clear to refuse a reserved profile")
+        }
+
+        pendingCompletion?(nil)
+        drainBrowserPanelMainQueue()
+        XCTAssertFalse(store.isReserved(profile.id))
+        guard case .success = operationResult else {
+            return XCTFail("Expected delayed completion to finish successfully: \(String(describing: operationResult))")
+        }
+    }
+
+    func testNeverCompletingRemovalLeavesWorkerPendingAndProfileResponsive() async throws {
+        let store = BrowserProfileStore.shared
+        let profile = try makeTemporaryBrowserPanelProfile(named: "Never-completes")
+        store.websiteDataRemovalHandler = { _, _, _ in }
+        defer {
+            store.websiteDataRemovalHandler = nil
+            store.release(profile.id)
+            _ = store.removeProfileDefinition(id: profile.id)
+        }
+
+        let controller = TerminalController.shared
+        let response = await Task.detached(priority: .utility) {
+            controller.v2BrowserProfileCommand(
+                method: "browser.profiles.clear",
+                params: ["profile": profile.id.uuidString, "confirm": true]
+            )
+        }.value
+        guard case .err(let code, _, _) = response else {
+            return XCTFail("Expected a pending response, got (response)")
+        }
+        XCTAssertEqual(code, "operation_pending")
+        XCTAssertTrue(store.isReserved(profile.id))
+        XCTAssertNotNil(store.profileDefinition(id: profile.id))
+
+        let listResponse = await Task.detached(priority: .utility) {
+            controller.v2BrowserProfileCommand(
+                method: "browser.profiles.list",
+                params: [:]
+            )
+        }.value
+        guard case .ok(let payload) = listResponse,
+              let object = payload as? [String: Any],
+              let profiles = object["profiles"] as? [[String: Any]] else {
+            return XCTFail("Profile list did not remain responsive: (listResponse)")
+        }
+        XCTAssertEqual(profiles.filter { ($0["id"] as? String) == profile.id.uuidString }.count, 1)
+    }
+}
+
 
 @MainActor
 final class BrowserTabAddressBarFocusRequestTests: XCTestCase {

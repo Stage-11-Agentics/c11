@@ -9,6 +9,7 @@ import subprocess
 import uuid
 
 from cmux import cmux
+from test_claude_attention_batch import eventually
 
 
 def require_guest():
@@ -26,6 +27,12 @@ def require_guest():
 def focused_tab(client):
     focused = client.identify().get("focused") or {}
     return focused.get("workspace_id"), focused.get("tab_id") or focused.get("surface_id")
+
+
+def aqua(command):
+    user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
+    return ["/usr/bin/sudo", "-n", "/bin/launchctl", "asuser", str(os.getuid()),
+            "/usr/bin/sudo", "-n", "-u", user, *command]
 
 
 def main():
@@ -46,12 +53,13 @@ def main():
             # not type an answer, submit it, or activate c11 over Finder.
             client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})
             client.send_surface(ask_tab, "SYNTHETIC_UNSUBMITTED_264")
-            import time
-            time.sleep(0.5)
+            eventually(lambda: "SYNTHETIC_UNSUBMITTED_264" in client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"], "partial input visible")
             before_text = client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"]
-            subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate'], check=True)
+            artifacts = "/Volumes/My Shared Files/out"
+            subprocess.run(aqua(["/usr/sbin/screencapture", "-x", f"{artifacts}/feed-open-before.png"]), check=True)
+            subprocess.run(aqua(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate']), check=True)
             def frontmost():
-                return subprocess.check_output(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'], text=True).strip()
+                return subprocess.check_output(aqua(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true']), text=True).strip()
             assert frontmost() == "Finder"
 
             opened = subprocess.run(
@@ -66,6 +74,7 @@ def main():
             target_workspaces = client.list_workspaces(window)
             assert any(row[1] == ask_workspace and row[3] for row in target_workspaces)
             assert frontmost() == "Finder", "feed open activated or raised c11"
+            subprocess.run(aqua(["/usr/sbin/screencapture", "-x", f"{artifacts}/feed-open-after.png"]), check=True)
             assert client._call("tab.read_text", {"workspace_id": ask_workspace, "tab_id": ask_tab})["text"] == before_text, "feed open sent terminal input"
             unchanged_focus = focused_tab(client)
 

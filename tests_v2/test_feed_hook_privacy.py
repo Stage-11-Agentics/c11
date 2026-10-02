@@ -73,13 +73,16 @@ def main():
                            "permission_mode": "bypassPermissions", "tool_name": "AskUserQuestion",
                            "tool_input": {"questions": [{"question": SENTINEL, "options": [{"label": "Synthetic option"}]}]}}
                 if mode == "no-draft":
-                    payload.pop("session_id")
+                    # The native request identity cannot form a bounded draft.
+                    payload["tool_use_id"] = "x" * 129
                 subprocess.run([cli, "--socket", address, "claude-hook", "pre-tool-use",
                                 "--workspace", WORKSPACE, "--tab", TAB], input=json.dumps(payload),
                                env=env, capture_output=True, text=True, timeout=10)
                 legacy = [c for c in calls if isinstance(c, str)]
                 if mode != "no-draft":
                     assert any(isinstance(c, dict) and c["method"] == "agent.event.append" for c in calls), mode
+                else:
+                    assert not any(isinstance(c, dict) and c["method"] == "agent.event.append" for c in calls), calls
                 if mode in ("method_not_found", "no-draft"):
                     assert any(c.startswith("notify_target ") and SENTINEL in c for c in legacy), calls
                     if mode == "method_not_found":

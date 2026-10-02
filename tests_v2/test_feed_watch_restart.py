@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import re
 import time
 import uuid
 
@@ -29,7 +30,9 @@ def main():
         old_log = Path.home() / "Library/Application Support/c11/events" / f"events-{old_instance}.ndjson"
         assert old_log.is_file(), old_log
         client.close()
-        subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/killall", "c11"], check=True)
+        pids = subprocess.check_output(["/usr/bin/pgrep", "-f", re.escape(str(app / "Contents/MacOS/c11")) + "$"], text=True).split()
+        assert len(pids) == 1, pids
+        subprocess.run(["/bin/kill", pids[0]], check=True)
         watcher.until(lambda value: value.get("continuity") == "unavailable")
         # Same selected socket, clean QA launch, same console user and packaged binary.
         user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()

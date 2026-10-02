@@ -160,6 +160,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.
 - **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
+- **Send modes and status:** default `send` decodes literal `\n`, `\r`, `\t`; `send --raw` and `paste` preserve escapes and newline content. `send -` reads stdin; `paste` reads stdin when text is omitted. `--no-submit` suppresses c11's extra Return. `delivered` means PTY input, `queued` means waiting for attach, and `submitted` means Return scheduled, never agent acknowledgment. [Delivery details](references/api.md#reading--sending).
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
 
 ### Two channels for agent communication

@@ -9760,7 +9760,7 @@ struct CMUXCLI {
 
             Send text to a terminal tab. paste is an alias for send --raw;
             paste with no text reads stdin. send - reads stdin explicitly.
-            Default send decodes \n and \r as Return, \t as Tab.
+            Default send decodes \\n and \\r as Return, \\t as Tab.
             --raw preserves literal escapes and newline content.
             --no-submit suppresses c11's additional Return; newline content
             can still execute in a program that does not use bracketed paste.

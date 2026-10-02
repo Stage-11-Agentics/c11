@@ -3087,6 +3087,33 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
 /// can undo its inbox claim instead of marking undelivered mail delivered.
 @MainActor
 final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
+    func testRawQueuedSubmitKeepsLeadingAndTrailingNewlines() {
+        for text in ["\nline1\nline2\r\n", "\n", "\r\n"] {
+            let surface = TerminalSurface(
+                workspaceId: UUID(),
+                context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+                configTemplate: nil,
+                workingDirectory: nil
+            )
+            XCTAssertNil(surface.surface)
+            surface.sendSubmitFormText(text, preserveNewlines: true)
+            XCTAssertEqual(surface.pendingInitialInputForTests, text)
+            XCTAssertTrue(surface.pendingSubmitOnFlushForTests)
+        }
+    }
+
+    func testRawQueuedNoSubmitKeepsNewlineOnlyInputWithoutArmingReturn() {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        surface.sendText("\n\r\n")
+        XCTAssertEqual(surface.pendingInitialInputForTests, "\n\r\n")
+        XCTAssertFalse(surface.pendingSubmitOnFlushForTests)
+    }
+
     func testSubmitReportsFalseForUnattachedSurfaceWithoutQueueing() {
         let surface = TerminalSurface(
             workspaceId: UUID(),

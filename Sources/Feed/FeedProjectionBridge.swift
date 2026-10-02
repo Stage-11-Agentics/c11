@@ -1,9 +1,9 @@
 import Foundation
+import Combine
 
 /// Applies journal and attention snapshots off the keystroke path.
 /// Ask events come only from blocked-request changes. Scope, suppression, and display notes do not emit them.
-/// `feed.list` reads the cached inputs on the socket worker. This ticket has no UI consumer,
-/// so publishing does not hop to main.
+/// Sorts only on this worker; consumers receive immutable snapshots on their chosen queue.
 final class FeedProjectionBridge: @unchecked Sendable {
     static let shared = FeedProjectionBridge()
 
@@ -16,6 +16,31 @@ final class FeedProjectionBridge: @unchecked Sendable {
     private var attention: [UUID: FeedAttentionFact] = [:]
     private var tracker = FeedAskTracker()
     private let cache = AskDisplayCache()
+    private var projected = FeedProjectionSnapshot.empty
+    private let snapshotLock = NSLock()
+    private var publishedSnapshot = FeedProjectionSnapshot.empty
+    private let changes = CurrentValueSubject<FeedProjectionSnapshot, Never>(.empty)
+    var snapshots: AnyPublisher<FeedProjectionSnapshot, Never> { changes.eraseToAnyPublisher() }
+
+    /// UI reads never wait behind journal processing or sorting.
+    func snapshot() -> FeedProjectionSnapshot {
+        snapshotLock.lock()
+        defer { snapshotLock.unlock() }
+        return publishedSnapshot
+    }
+
+    private func refreshProjection() {
+        let next = FeedProjectionSnapshot(rows: FeedProjector.project(
+            journalRows: Array(journal.values), attention: Array(attention.values),
+            notes: cache.notesByTab(), scope: .all
+        ))
+        guard next != projected else { return }
+        projected = next
+        snapshotLock.lock()
+        publishedSnapshot = next
+        snapshotLock.unlock()
+        changes.send(next)
+    }
 
     init() {}
 
@@ -53,6 +78,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
             self.cache.prune(openRequests: self.journal.mapValues { snap in
                 FeedProjector.blockingKind(snap) == nil ? nil : snap.requestID
             })
+            self.refreshProjection()
         }
     }
 
@@ -71,6 +97,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
             } else {
                 self.attention.removeValue(forKey: fact.tabID)
             }
+            self.refreshProjection()
         }
     }
 
@@ -87,6 +114,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
         }
         queue.async { [self] in
             self.attention = Dictionary(uniqueKeysWithValues: facts.map { ($0.tabID, $0) })
+            self.refreshProjection()
         }
     }
 
@@ -96,6 +124,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
         queue.async { [self] in
             if attention[tabID]?.workspaceID == workspaceID { attention.removeValue(forKey: tabID) }
             if journal[tabID]?.workspaceID == workspaceID { retireTab(tabID) }
+            refreshProjection()
         }
     }
 
@@ -108,6 +137,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
                 attention.removeValue(forKey: tabID)
                 retireTab(tabID)
             }
+            refreshProjection()
         }
     }
 
@@ -148,6 +178,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
             let note = FeedDisplayNote(eventID: eventID, requestID: requestID, prompt: prompt, options: options)
             do {
                 try cache.store(tabID: tabID, note: note)
+                refreshProjection()
                 return nil
             } catch let error as FeedNoteError {
                 return error.rawValue
@@ -159,12 +190,13 @@ final class FeedProjectionBridge: @unchecked Sendable {
 
     func list(scope: FeedScope) -> [String: Any] {
         queue.sync {
-            let rows = FeedProjector.project(
-                journalRows: Array(journal.values),
-                attention: Array(attention.values),
-                notes: cache.notesByTab(),
-                scope: scope
-            )
+            let rows = scope == .all ? projected.rows : projected.attentionRows.map { row in
+                // A flagged completed turn is a flag-only row in attention scope.
+                guard row.kind == .turnEnd else { return row }
+                return FeedRow(workspaceID: row.workspaceID, tabID: row.tabID, kind: nil,
+                    prompt: nil, options: nil, promptAvailable: false, source: nil, sourceRank: nil,
+                    openedAtMs: nil, state: nil, requestID: nil, confirmation: nil, blocking: nil, flag: row.flag)
+            }
             return [
                 "scope": scope.rawValue,
                 "instance": EventEmitter.shared.currentInstance() ?? NSNull(),

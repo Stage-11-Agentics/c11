@@ -61,13 +61,9 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "invalid_params", data: nil)
         }
         return v2MainSync {
-            guard let manager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceID),
-                  let workspace = manager.workspaces.first(where: { $0.id == workspaceID }),
-                  workspace.panels[tabID] != nil else {
+            guard AppDelegate.shared?.selectFeedTarget(.init(workspaceID: workspaceID, tabID: tabID)) == true else {
                 return .err(code: "unavailable", message: "unavailable", data: nil)
             }
-            manager.selectWorkspace(workspace)
-            workspace.focusPanel(tabID)
             return .ok(["workspace_id": workspaceID.uuidString, "tab_id": tabID.uuidString])
         }
     }

@@ -51,6 +51,7 @@
 		2DAD13E51CF90A021D8893D5 /* SocketTabRefRejectionWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36732611CC1BEFB8D99BB606 /* SocketTabRefRejectionWiringTests.swift */; };
 		C11287000000000000000001 /* WebContentReplacementGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11287000000000000000002 /* WebContentReplacementGateTests.swift */; };
 		2E31BAE909C0A3DD44589F3E /* HealthIPSParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH010BF1A1B2C3D4E5F60718 /* HealthIPSParserTests.swift */; };
+		C1126900A1B2C3D4E5F60001 /* SkillInstallerPluginBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126900A1B2C3D4E5F60011 /* SkillInstallerPluginBoundaryTests.swift */; };
 		3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */; };
 		33575F7E4C63569F35E154A9 /* NewWorkspaceTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B19DC55D6C39A2387147C3 /* NewWorkspaceTitleTests.swift */; };
 		352C25FFD890137B5F7A23B3 /* AgentManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */; };
@@ -937,6 +938,7 @@
 		D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataKeys.swift; sourceTree = "<group>"; };
 		D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataValidatorTests.swift; sourceTree = "<group>"; };
 		D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIAdvisoryConnectivity.swift; sourceTree = "<group>"; };
+		C1126900A1B2C3D4E5F60011 /* SkillInstallerPluginBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillInstallerPluginBoundaryTests.swift; sourceTree = "<group>"; };
 		D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIAdvisoryConnectivityTests.swift; sourceTree = "<group>"; };
 		D7100BF1A1B2C3D4E5F60718 /* MailboxLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxLayout.swift; sourceTree = "<group>"; };
 		D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxLayoutTests.swift; sourceTree = "<group>"; };
@@ -1610,6 +1612,7 @@
 				D8016BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift */,
 				D8019BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintMarkdownTests.swift */,
 				D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */,
+				C1126900A1B2C3D4E5F60011 /* SkillInstallerPluginBoundaryTests.swift */,
 				D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */,
 				C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */,
 				C11284000000000000000031 /* BundledSkillTests.swift */,
@@ -1940,6 +1943,7 @@
 				53D5E057358DF622C3B16996 /* ChromeScaleObserverTests.swift in Sources */,
 				53A8353DD72E0C6954D5F42A /* ChromeScaleSettingsTests.swift in Sources */,
 				9C51A1CE6AEEBF2E0B4C3E61 /* ChromeScaleTokensTests.swift in Sources */,
+				C1126900A1B2C3D4E5F60001 /* SkillInstallerPluginBoundaryTests.swift in Sources */,
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,
 				C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */,

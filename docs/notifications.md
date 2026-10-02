@@ -106,78 +106,35 @@ Then use:
 notify = ["bash", "~/.local/bin/codex-notify.sh"]
 ```
 
-### OpenCode Plugin (auto-installed)
+### OpenCode runtime plugin
 
-c11 ships a bundled OpenCode plugin that bridges `session.idle`, `permission.asked`, `session.error`, and `session.status` events into c11 notifications and sidebar status updates. This gives OpenCode the same "blue ring + tab highlight + Cmd+Shift+U jump-to-unread" workflow that Claude Code and Codex have.
+c11's bundled PATH wrapper loads `c11-notify.js` for interactive OpenCode
+processes inside a live c11 terminal. It bridges lifecycle events into c11
+notifications, status and exact-session resume without writing tenant config.
 
-**Install:**
+| OpenCode event | c11 action |
+|---|---|
+| `session.idle` | Waiting-for-input notification and idle status |
+| `permission.asked` | Approval-needed notification |
+| `session.error` | Session-error notification |
+| `session.status` | Loop-status update |
 
-```bash
-c11 skill install --tool opencode
-```
+The wrapper uses `OPENCODE_CONFIG_CONTENT` when free. If that is already set,
+it preserves the value and uses a process-owned `/dev/fd/3` config through
+`OPENCODE_CONFIG` when that slot is free. When both slots are occupied, it
+preserves both and continues without injecting the bundled plugin. Outside c11,
+or when the socket is unreachable, the wrapper transparently executes OpenCode.
 
-This copies:
-- The c11 skill bundle into `~/.opencode/skills/`
-- The notification plugin into `~/.config/opencode/plugins/c11-notify.js`
+`c11 skill install --tool opencode` installs only skills in `~/.config/opencode/skills/`.
+`c11 skill remove --tool opencode` removes only c11-installed skills. Neither
+operation creates, updates or deletes `~/.config/opencode/plugins/`.
 
-OpenCode auto-loads plugins from `~/.config/opencode/plugins/` at startup — no `opencode.json` edit required.
-
-**What the plugin does:**
-
-| OpenCode event | c11 action | Claude Code equivalent |
-|---|---|---|
-| `session.idle` | `c11 notify "Waiting for input"` + `set-metadata status=idle` | `idle_prompt` matcher |
-| `permission.asked` | `c11 notify "Approval needed"` + `set-metadata status="Needs input"` | `permission_prompt` matcher |
-| `session.error` | `c11 notify "Session error"` | (no equivalent) |
-| `session.status` | `c11 set-metadata status=<value>` | (wrapper-emitted status) |
-
-**Uninstall:**
-
-```bash
-c11 skill remove --tool opencode
-```
-
-Removes both the skill bundle and the plugin file.
-
-**Manual installation (advanced):**
-
-If you prefer not to use `c11 skill install`, you can create `.config/opencode/plugins/c11-notify.js` manually:
-
-```javascript
-export const C11NotifyPlugin = async ({ $ }) => {
-  const c11 = async (args) => {
-    try { await $`c11 ${args}`; } catch {}
-  };
-  const notify = (title, body, subtitle) => {
-    const args = ["notify", "--title", title];
-    if (subtitle) args.push("--subtitle", subtitle);
-    if (body) args.push("--body", body);
-    return c11(args);
-  };
-  return {
-    event: async ({ event }) => {
-      switch (event.type) {
-        case "session.idle":
-          await notify("OpenCode", "Waiting for input");
-          await c11(["set-metadata", "--key", "status", "--value", "idle"]);
-          break;
-        case "permission.asked":
-          await notify("OpenCode", "Approval needed", "Permission");
-          await c11(["set-metadata", "--key", "status", "--value", "Needs input"]);
-          break;
-        case "session.error":
-          await notify("OpenCode", "Session error", "Error");
-          break;
-        case "session.status":
-          if (event.properties?.status) {
-            await c11(["set-metadata", "--key", "status", "--value", event.properties.status]);
-          }
-          break;
-      }
-    },
-  };
-};
-```
+Older releases may have copied `c11-notify.js` and `c11-notify.c11-plugin.json`
+into that directory. These files remain untouched, including operator edits.
+An old copy may load alongside the runtime plugin; duplicate loading is not
+claimed eliminated. To retire an old copy, the operator can inspect and back up
+both files, then manually remove them if appropriate. A filename or marker alone
+does not establish that an edited plugin is safe to delete.
 
 ## Environment Variables
 

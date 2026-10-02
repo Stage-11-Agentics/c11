@@ -60,6 +60,10 @@ scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]
 - Suppress the startup dialogs for automation: `C11_QA_LAUNCH=fresh` (the skills-install and resume-picker sheets otherwise block coordinate-driven UI). `reload.sh --tag` does **not** set it; export it yourself or use `launch-tagged-automation.sh --qa`.
 - Quit only **your** build when done — `kill <your-pid>`, never a blanket match on `c11`.
 
+## Handing validation to a fresh agent
+
+A watched validation pass runs in a fresh context, so the result doesn't inherit the builder's assumptions. Open a new tab, start interactive `codex --yolo` (never `codex exec`, which the operator can't watch), and send a file-backed prompt naming the tagged app and window, the scenario, success criteria, safety boundaries, expected artifacts, and your workspace and tab refs so it can report back with `c11 send`. Works across harnesses: Claude can hand to Codex, Codex to another Codex tab.
+
 ## Reading what the app actually did
 
 - **Capture stdout by launching the binary directly.** `open` sends it nowhere, and libraries that

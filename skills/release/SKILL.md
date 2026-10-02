@@ -97,6 +97,9 @@ This is a checklist trigger, not a CI gate.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
+- Before handing off, screenshot the staging window and inspect every surface
+  the changelog touches (sheets, titlebar, sidebar, new or redesigned modals).
+  Release-only layout regressions have shipped past Debug builds before.
 - Hand off to the operator for a smoke pass against the changelog's
   user-facing bullets. The smoke list should mirror what goes in the PR's
   test plan.

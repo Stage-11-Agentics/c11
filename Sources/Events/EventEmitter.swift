@@ -166,6 +166,10 @@ final class EventEmitter {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
 
+    func emitLifecycleChanged(workspace: UUID, tab: UUID, payload: [String: Any]) {
+        emit(.lifecycleChanged, workspace: workspace, surface: tab, payload: payload)
+    }
+
     func emitFlagRaised(
         workspace: UUID,
         surface: UUID,

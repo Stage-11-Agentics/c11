@@ -78,6 +78,21 @@ final class EventLogTests: XCTestCase {
         XCTAssertNil(EventEnvelope.seq(fromLine: ""))
     }
 
+    func testLifecycleChangedEnvelopeUsesTheClosedTypeAndPayload() {
+        let tab = UUID(uuidString: "6f9619ff-8b86-d011-b42d-00cf4fc964ff")!
+        let line = EventEnvelope(
+            type: .lifecycleChanged,
+            instance: "i",
+            ts: Date(timeIntervalSince1970: 1_770_000_123),
+            workspace: "9b2d4e6a-1c3f-4a5b-8d7e-2f0a1b3c4d5e",
+            surface: tab.uuidString,
+            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"]
+        ).serialize(seq: 12)
+        let object = parse(line)
+        XCTAssertEqual(object["type"] as? String, "lifecycle.changed")
+        XCTAssertEqual((object["payload"] as? [String: Any])?["to"] as? String, "blocked")
+    }
+
     // MARK: - Layout
 
     func testLayoutFilenameAndInstanceSanitize() {
@@ -179,6 +194,52 @@ final class EventLogTests: XCTestCase {
         let types = readLines(logURL()).compactMap { EventEnvelope.type(fromLine: $0) }
         XCTAssertTrue(types.contains("log.dropped"),
                       "backpressure drops must be observable as a log.dropped marker")
+    }
+
+    func testDroppedLifecycleLineRecoversFromCommittedJournalSnapshot() throws {
+        let tab = JournalTestData.tab
+        let workspace = JournalTestData.workspace
+        let draft = JournalTestData.draft(.questionRequested)
+        let journalLayout = JournalStorageLayout(directory: tempDir.appendingPathComponent("journal", isDirectory: true))
+        let store = try JournalStore(layout: journalLayout, clock: { 1_000 })
+        _ = try store.append(draft: draft, context: JournalContext(eligible: true))
+
+        let log = EventLog(url: logURL(), instance: "drop-recovery", maxPending: 1)
+        let writerBlocked = DispatchSemaphore(value: 0)
+        let releaseWriter = DispatchSemaphore(value: 0)
+        log.onQueueBeforeWrite = {
+            writerBlocked.signal()
+            releaseWriter.wait()
+        }
+        EventEmitter.shared.startForTesting(log: log, instance: "drop-recovery")
+        EventEmitter.shared.emitMetadataChanged(
+            scope: "surface", workspace: workspace, surface: tab,
+            key: "status", value: "waiting", prior: "working", source: "fixture")
+        XCTAssertEqual(writerBlocked.wait(timeout: .now() + .seconds(1)), .success)
+
+        EventEmitter.shared.emitLifecycleChanged(
+            workspace: workspace, tab: tab,
+            payload: ["tab": tab.uuidString, "agent": "claude-code", "from": "working", "to": "blocked", "reason": "question"])
+        for _ in 0..<8 { releaseWriter.signal() }
+        log.flush()
+        EventEmitter.shared.emitMetadataChanged(
+            scope: "surface", workspace: workspace, surface: tab,
+            key: "status", value: "blocked", prior: "waiting", source: "fixture")
+        EventEmitter.shared.flush()
+
+        let written = readLines(logURL()).compactMap { EventEnvelope.type(fromLine: $0) }
+        XCTAssertTrue(written.contains("log.dropped"))
+        XCTAssertFalse(written.contains("lifecycle.changed"), "the saturated writer deliberately dropped the phase edge")
+
+        let baseline = try XCTUnwrap(store.current(owner: try XCTUnwrap(draft.owner)))
+        let page = try store.retainedOwnerEvents(owner: baseline.owner, throughSequence: baseline.lastSequence)
+        let recovered = AgentRoster.document(
+            live: [], currents: [JournalReplayPolicy.restored(baseline)], eventsByOwner: [baseline.owner.key: page.events],
+            truncatedOwners: [], unattributed: 0, storePruned: false, storageAvailable: true,
+            healthDegraded: false, now: 2_000, liveIdentity: "unavailable")
+        let candidates = recovered["restore_candidates"] as? [[String: Any]] ?? []
+        XCTAssertEqual(candidates.first?["state"] as? String, "blocked")
+        XCTAssertEqual(candidates.first?["reason"] as? String, "question")
     }
 
     // MARK: - Emitter

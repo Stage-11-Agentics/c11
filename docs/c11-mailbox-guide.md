@@ -1,6 +1,6 @@
 # c11 Mailbox: Agent-to-Agent Messaging Guide
 
-The c11 mailbox is the in-workspace message board agents use to coordinate. One agent writes a small JSON envelope to a shared outbox; the dispatcher routes it by tab name, drops a copy into the recipient's inbox, and (when configured) injects a framed `<c11-msg>` block straight into the recipient's PTY.
+The c11 mailbox is the in-workspace message board agents use to coordinate. One agent writes a small JSON envelope to a shared outbox; the dispatcher resolves the recipient by stable address, role, or title, drops a copy into the recipient tab's UUID-keyed inbox, and (when configured) injects a framed `<c11-msg>` block straight into the recipient's PTY.
 
 Mailbox traffic is the durable coordination channel: the envelope and body remain recorded for later inspection. `c11 send` is a separate, direct PTY poke for a nudge or brief. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers; use a poke when the recipient simply needs to see an instruction in its working tab.
 
@@ -40,11 +40,19 @@ Choose the channel by whether the communication needs a record:
 
 | Need | Command | Contract |
 |---|---|---|
-| Nudge, short brief, or immediate instruction in a tab | `c11 send --workspace <ref> --tab <ref> "…"` | Types into the target PTY and submits one turn. It is transient and is not a completion receipt. |
-| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body for durable inspection. A waiting agent receives it as a turn; a busy agent receives it at its next turn boundary. |
-| Review the recorded exchange | `c11 messages view` or `c11 mailbox view` | Opens the same durable traffic view. The mailbox spelling is an alias. |
+| Nudge, short brief, or immediate instruction in a tab | `c11 send --workspace <ref> --tab <ref> "…"` | Types into the target PTY and submits one turn. c11 records the full text as `tab.input_sent`, but the PTY action is not a durable completion receipt. |
+| Request, handoff, completion report, or recoverable blocker | `c11 mailbox send --to <address> --body "…"` | Records the envelope and body. `mailbox.accepted` and `mailbox.delivered` events make the exchange inspectable; delivery records `via: push`, `drain`, or `inbox`. A waiting agent receives a new turn; a busy agent receives it at the end of its turn. |
+| Review the recorded exchange | `c11 messages view` or `c11 mailbox view` | Opens the live traffic page in a c11 browser tab without taking focus. The mailbox spelling is an alias. |
 
 Declare `mailbox.address` once during orientation, before peers need to reach the tab. The address is stable across title changes, so it is the right value to use with `--to`; a title is display text and can change.
+
+If the tab is an interactive agent and should receive pushed mail, opt in during orientation:
+
+```bash
+c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.delivery --value stdin --type string
+```
+
+c11 pushes only to an interactive agent that owns its terminal: the tab must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never receive agent mail. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's c11 wrapper and Codex's per-launch hooks drain at turn boundaries; Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit inbox floor.
 
 Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 

@@ -33,7 +33,7 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 - If your model chip is blank (an unpinned launch c11 couldn't label), set it: `c11 set-agent --tab "$C11_TAB_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"` — substitute your own known type/model if those vars are empty.
 - Reach for `c11 tree` / `c11 identify --json` only when you actually need layout or your refs (footgun below).
 - Read a reference (map below) only for the capability you're using — not preemptively.
-- **Declare a stable mailbox address during orientation, before peers need to reach you**, if peers will coordinate with you: `c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Depth → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
+- **Declare mailbox identity during orientation, before peers need to reach you**: `c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.address --value "<stable-handle>" --type string`. If this is an interactive agent tab, also opt into waiting-agent push with `c11 set-metadata --tab "$C11_TAB_ID" --key mailbox.delivery --value stdin --type string`. Titles are mutable; the address survives renames. c11 pushes only to a real agent-owned interactive terminal, never a plain shell or one-shot command. (Depth → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
 
 **Launched with only a hydrate message and no task yet?** An operator can configure a "load the skill" launch prompt, so your first turn may carry no real task. Don't invent a title — leave the placeholder, reply in one line that you're ready, and set your real title/description from the next real message, as your first action that turn.
 
@@ -162,9 +162,10 @@ A few cross-cutting rules worth knowing before you reach for those:
 
 ### Two channels for agent communication
 
-- **`c11 send` is a direct poke.** It types into a target tab's PTY and submits one turn. Use it for a nudge, a short brief, or an instruction that should be seen in that tab; do not use it as the only record of a completion or blocker.
-- **`c11 mailbox send` is durable coordination.** Its envelope and body are recorded for later inspection, so use it for requests, handoffs, completion reports, and recoverable blockers. A waiting agent receives the delivery as a turn; a busy agent receives it at its next turn boundary. Declare `mailbox.address` during orientation so renames do not change who you reach.
-- **`c11 messages view` is the traffic view.** It opens the recorded message timeline; `c11 mailbox view` is the mailbox spelling of the same view. Use it when you need the durable conversation rather than a transient PTY poke.
+- **`c11 send` is a direct poke.** It types into a target tab's PTY and submits one turn, and c11 records the full text as a `tab.input_sent` event. Use it for a nudge, short brief, or immediate instruction; it is not the durable completion or blocker record.
+- **`c11 mailbox send` is durable coordination.** Its envelope and body are recorded through `mailbox.accepted` / `mailbox.delivered` events, with delivery marked `via: push|drain|inbox`. Use it for requests, handoffs, completion reports, and recoverable blockers. A waiting agent gets a new turn; a busy agent gets mail at its turn boundary.
+- **Opt into push only for an agent-owned interactive tab.** Set `mailbox.delivery` to `stdin` during orientation. c11 checks foreground ownership and raw-mode input before typing; plain shells, one-shot commands, and other programs are left with their inbox mail. Claude and Codex drain at turn boundaries through their wrappers/hooks; Grok relies on push. `c11 mailbox recv --drain` is the explicit floor.
+- **`c11 messages view` is the traffic view.** It opens the live recorded timeline in a c11 browser tab without taking focus; `c11 mailbox view` is the mailbox spelling of the same view.
 
 ## Tab bar and tab sheet
 

@@ -246,6 +246,81 @@ def record_all_workspaces(client: cmux, state: dict[str, Any]) -> None:
             state["workspaces"][name] = record_workspace(client, name, wid)
 
 
+def assert_identity(before: dict[str, Any], after: dict[str, Any],
+                    *, removed: set[str] | None = None, added_tabs: set[str] | None = None) -> list[str]:
+    """Assert the declared removal, every surviving tab, and available shell processes."""
+    removed, added_tabs = removed or set(), added_tabs or set()
+    old_ids, new_ids = set(before["workspace_order"]), set(after["workspace_order"])
+    require(len(new_ids) == len(after["workspace_order"]), "duplicate workspace IDs")
+    require(old_ids - new_ids == removed and new_ids - old_ids == set(),
+            f"workspace removal differs: expected {removed}, actual {old_ids - new_ids}")
+    unknown: list[str] = []
+    for wid in old_ids - removed:
+        old, new = before["workspaces"][wid], after["workspaces"][wid]
+        old_tabs = {tab["id"]: tab for tab in old["tabs"]}
+        new_tabs = {tab["id"]: tab for tab in new["tabs"]}
+        require(len(new_tabs) == len(new["tabs"]), f"duplicate tab IDs in {wid}")
+        require(set(new_tabs) - set(old_tabs) <= added_tabs and set(old_tabs) <= set(new_tabs),
+                f"surviving workspace {wid} lost/recreated tabs")
+        for tid, tab in old_tabs.items():
+            current = new_tabs[tid]
+            require(current["type"] == tab["type"], f"tab type changed: {tid}")
+            if tab["type"] == "terminal":
+                if tab["shell_pids"]:
+                    require(current["shell_pids"] == tab["shell_pids"], f"shell PID set changed: {tid}")
+                    require(current["tty"] == tab["tty"], f"terminal TTY changed: {tid}")
+                else:
+                    unknown.append(f"shell identity unavailable for terminal {tid}")
+    for wid in removed:
+        for tab in before["workspaces"][wid]["tabs"]:
+            for pid in tab["shell_pids"]:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    proc = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
+                                          capture_output=True, text=True, timeout=2)
+                    if not proc.stdout.strip() or proc.stdout.strip().startswith("Z"):
+                        break
+                    time.sleep(.05)
+                else:
+                    raise AssertionError(f"closed workspace retained shell PID {pid}")
+            if tab["type"] == "terminal" and not tab["shell_pids"]:
+                unknown.append(f"closed terminal process identity unavailable: {tab['id']}")
+    all_tabs = [tid for workspace in after["workspaces"].values() for tid in workspace["tab_ids"]]
+    require(len(all_tabs) == len(set(all_tabs)), "duplicate tabs across workspaces")
+    return unknown
+
+
+def assert_move(client: cmux, state: dict[str, Any], name: str, destination: str | None,
+                *, before: str | None = None, after: str | None = None) -> dict[str, Any]:
+    old = workspace_snapshot(client, state["window_id"])
+    wid = workspace_id(state, name)
+    move_workspace(client, state, name, destination, before=before, after=after)
+    new = workspace_snapshot(client, state["window_id"])
+    state.setdefault("intermediate", []).append({"operation": "move", "workspace": name,
+                                                "destination": destination, "before": old, "after": new})
+    assert_identity(old, new)
+    require(new["workspaces"][wid]["group_id"] == destination, f"{name} did not enter {destination}")
+    require(new["workspaces"][wid]["pinned"] == old["workspaces"][wid]["pinned"], f"{name} pin changed")
+    # A move may reposition only its source. Every other workspace must retain order/membership.
+    require([item for item in new["workspace_order"] if item != wid] ==
+            [item for item in old["workspace_order"] if item != wid], "move reordered unrelated workspaces")
+    for other in set(old["workspaces"]) - {wid}:
+        require(old["workspaces"][other]["group_id"] == new["workspaces"][other]["group_id"],
+                "move changed unrelated membership")
+    peers = [item for item in new["workspace_order"]
+             if new["workspaces"][item]["group_id"] == destination
+             and new["workspaces"][item]["pinned"] == new["workspaces"][wid]["pinned"]]
+    if before and workspace_id(state, before) in peers:
+        require(peers.index(wid) + 1 == peers.index(workspace_id(state, before)), "before placement failed")
+    elif after and workspace_id(state, after) in peers:
+        require(peers.index(wid) == peers.index(workspace_id(state, after)) + 1, "after placement failed")
+    elif before or after:
+        require(peers[0 if before else -1] == wid, "pin-boundary clamping failed")
+    else:
+        require(peers[-1] == wid, "move did not append to destination segment")
+    return new
+
+
 def group_id(state: dict[str, Any], role: str) -> str:
     value = state["groups"].get(role)
     require(value, f"fixture group role has no ID: {role}")
@@ -464,6 +539,7 @@ def snapshot_command(client: cmux, state_path: Path, out: Path | None) -> dict[s
 def run_step(client: cmux, state: dict[str, Any], output, name: str,
              action: Callable[[], tuple[list[str], list[str]]]) -> dict[str, Any]:
     started = time.time()
+    state["intermediate"] = []
     before = workspace_snapshot(client, state["window_id"])
     result: dict[str, Any] = {
         "step": name, "started_at": now_iso(), "status": "FAIL", "assertions": [],
@@ -471,6 +547,10 @@ def run_step(client: cmux, state: dict[str, Any], output, name: str,
     }
     try:
         assertions, unverified = action()
+        after = workspace_snapshot(client, state["window_id"])
+        removed = set(state["closed_workspace_ids"]) & set(before["workspace_order"])
+        unverified += assert_identity(before, after, removed=removed,
+                                      added_tabs=set(state["agent_probe_tab_ids"]))
         result["assertions"] = assertions
         result["unverified"] = unverified
         result["status"] = "UNVERIFIED" if unverified else "PASS"
@@ -478,12 +558,14 @@ def run_step(client: cmux, state: dict[str, Any], output, name: str,
         result["error"] = str(error)
         result["status"] = "FAIL"
         result["after"] = workspace_snapshot(client, state["window_id"])
+        result["intermediate"] = state["intermediate"]
         result["finished_at"] = now_iso()
         result["elapsed_seconds"] = round(time.time() - started, 3)
         output.write(json.dumps(result, sort_keys=True) + "\n")
         output.flush()
         raise
     result["after"] = workspace_snapshot(client, state["window_id"])
+    result["intermediate"] = state["intermediate"]
     result["finished_at"] = now_iso()
     result["elapsed_seconds"] = round(time.time() - started, 3)
     output.write(json.dumps(result, sort_keys=True) + "\n")
@@ -495,6 +577,9 @@ def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
                        *, suppressed: bool = False, timeout: float = 60.0) -> dict[str, Any]:
     workspace = workspace_id(state, workspace_name)
     caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
+    # This chapter uses a fresh, disposable tagged instance. Clear its notice
+    # history once, before seeding the exact synthetic notice IDs.
+    client._call("notification.clear")
     params: dict[str, Any] = {
         "type": "codex",
         "workspace_id": workspace,
@@ -532,6 +617,61 @@ def launch_agent_probe(client: cmux, state: dict[str, Any], workspace_name: str,
     }
 
 
+def signal_eligible(notice: dict[str, Any], records: list[dict[str, Any]]) -> bool:
+    tid = notice.get("tab_id") or notice.get("surface_id")
+    if tid is None:
+        return True
+    metadata = next((tab["metadata"] for tab in records if tab["id"] == tid), {})
+    return metadata.get("suppressed") is not True or bool(metadata.get("flag"))
+
+
+def setup_attention(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
+    """Repeatable C2 scene: real exact-tab unread on declared synthetic agent tabs."""
+    caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
+    for number in range(9, 15):
+        name = f"g60-w{number:02d}"
+        params = {"workspace_id": workspace_id(state, name), "tab_id": state["workspaces"][name]["tab_ids"][0]}
+        client._call("flag.lower", {**params, "by": "operator"})
+        client._call("flag.unsuppress", {**params, "by": "operator"})
+        if number in (10, 11, 14):
+            client._call("tab.set_metadata", {**params, "metadata": {"terminal_type": "codex"}, "source": "explicit"})
+            client._call("notification.create_for_tab", {**params, "title": "C11-261 synthetic waiting",
+                                                        "body": name})
+        if number in (11, 12):
+            client._call("flag.suppress", {**params, "by": "operator"})
+        if number in (9, 11):
+            client._call("flag.raise", {**params, "caller_tab_id": caller, "by": "operator",
+                                       "reason": "C11-261 synthetic escalation"})
+    oracle = attention_oracle(client, state)
+    summary = oracle["group"][group_id(state, "collapsed_flag")]
+    require(len(summary["expected"]["flagged_tab_ids"]) == 2, "C2 setup requires exactly two flags")
+    require(len(summary["expected"]["waiting_tab_ids"]) == 2, "C2 setup requires two unsuppressed exact notices")
+    require(len(summary["expected"]["unread_notification_ids"]) == 3, "flagged suppressed unread remains eligible")
+    state["attention_oracle"] = oracle
+    return {"status": "SETUP", "seam": "real exact-tab unread plus declared synthetic terminal_type",
+            "oracle": oracle, "ui_proven": False}
+
+
+def geometry(client: cmux, state: dict[str, Any], count: int) -> dict[str, Any]:
+    require(count in (9, 10, 99, 100), "geometry count must be 9, 10, 99 or 100")
+    if "geometry" not in state["groups"]:
+        created = client._call("workspace.group.create", {"window_id": state["window_id"], "name": "Geometry"})
+        state["groups"]["geometry"] = created["group"]["id"]
+    for number in range(61, 101):
+        name = f"g60-w{number:02d}"
+        if name not in state["workspaces"]:
+            wid = client.new_workspace(window_id=state["window_id"])
+            client._call("workspace.rename", {"workspace_id": wid, "title": name})
+            state["workspaces"][name] = record_workspace(client, name, wid)
+    names = sorted(state["workspaces"])
+    for index, name in enumerate(names):
+        move_workspace(client, state, name, group_id(state, "geometry") if index < count else None)
+    snap = workspace_snapshot(client, state["window_id"])
+    require(len(snap["workspaces"]) == 100, "geometry must have exactly 100 workspaces")
+    require(snap["group_by_id"][group_id(state, "geometry")]["member_count"] == count, "geometry count mismatch")
+    return {"status": "SETUP", "member_count": count, "snapshot": snap, "ui_proven": False}
+
+
 def attention_oracle(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
     snap = workspace_snapshot(client, state["window_id"])
     member_ids = {wid for group in snap["groups"] for wid in group["member_workspace_ids"]}
@@ -555,7 +695,8 @@ def attention_oracle(client: cmux, state: dict[str, Any]) -> dict[str, Any]:
             "flagged_tab_ids": sorted(flagged),
             "waiting_tab_ids": sorted(waiting),
             "unread_notification_ids": sorted(str(n.get("id")) for n in relevant
-                                                if n.get("workspace_id") == wid and not n.get("is_read", False)),
+                if n.get("workspace_id") == wid and not n.get("is_read", False)
+                and signal_eligible(n, records)),
         }
     headers: dict[str, Any] = {}
     for group in snap["groups"]:
@@ -589,7 +730,16 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             result = run_step(client, state, output, name, action)
             results.append(result)
             state["steps"].append({"step": name, "status": result["status"], "finished_at": result["finished_at"]})
-            record_all_workspaces(client, state)
+            # Keep the provisioned ownership records immutable. Only explicitly
+            # launched A8 tabs are added for cleanup after their identity checks.
+            for record in state["workspaces"].values():
+                live = result["after"]["workspaces"].get(record["id"])
+                if live:
+                    known = set(record["tab_ids"])
+                    for tab in live["tabs"]:
+                        if tab["id"] not in known and tab["id"] in state["agent_probe_tab_ids"]:
+                            record["tab_ids"].append(tab["id"])
+                            record["tabs"].append(tab)
             atomic_write(state_path, state)
 
         add("A1", lambda: (
@@ -599,8 +749,8 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
         ) if assert_g60(client, state) else ([], []))
 
         def a2() -> tuple[list[str], list[str]]:
-            move_workspace(client, state, "g60-w35", group_id(state, "move_lane"))
-            move_workspace(client, state, "g60-w35", None)
+            assert_move(client, state, "g60-w35", group_id(state, "move_lane"))
+            assert_move(client, state, "g60-w35", None)
             snap = workspace_snapshot(client, state["window_id"])
             require(snap["workspaces"][workspace_id(state, "g60-w35")]["group_id"] is None,
                     "A2 out-of-group move did not detach w35")
@@ -608,9 +758,9 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
         add("A2", a2)
 
         def a3() -> tuple[list[str], list[str]]:
-            move_workspace(client, state, "g60-w16", group_id(state, "tail"), before="g60-w15")
-            move_workspace(client, state, "g60-w16", group_id(state, "move_lane"), before="g60-w25")
-            move_workspace(client, state, "g60-w16", group_id(state, "tail"), before="g60-w17")
+            assert_move(client, state, "g60-w16", group_id(state, "tail"), before="g60-w15")
+            assert_move(client, state, "g60-w16", group_id(state, "move_lane"), before="g60-w25")
+            assert_move(client, state, "g60-w16", group_id(state, "tail"), before="g60-w17")
             tail = workspace_snapshot(client, state["window_id"])["group_by_id"][group_id(state, "tail")]
             expected = [workspace_id(state, name) for name in GROUP_MEMBERS["tail"]]
             require(tail["member_workspace_ids"] == expected, "A3 did not restore Tail member order")
@@ -618,13 +768,13 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
         add("A3", a3)
 
         def a4() -> tuple[list[str], list[str]]:
-            move_workspace(client, state, "g60-w36", group_id(state, "empty_pinned"))
-            move_workspace(client, state, "g60-w37", group_id(state, "empty_collapsed"))
+            assert_move(client, state, "g60-w36", group_id(state, "empty_pinned"))
+            assert_move(client, state, "g60-w37", group_id(state, "empty_collapsed"))
             before = workspace_snapshot(client, state["window_id"])
             require(before["group_by_id"][group_id(state, "empty_collapsed")]["is_collapsed"],
                     "A4 expanded Empty Collapsed during a move")
-            move_workspace(client, state, "g60-w36", None)
-            move_workspace(client, state, "g60-w37", None)
+            assert_move(client, state, "g60-w36", None)
+            assert_move(client, state, "g60-w37", None)
             after = workspace_snapshot(client, state["window_id"])
             require(after["group_by_id"][group_id(state, "empty_pinned")]["member_count"] == 0,
                     "A4 did not restore Empty Pinned")
@@ -636,12 +786,12 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
 
         def a5() -> tuple[list[str], list[str]]:
             before = workspace_snapshot(client, state["window_id"])
-            move_workspace(client, state, "g60-w38", None, before="g60-w29")
-            move_workspace(client, state, "g60-w01", None, after="g60-w39")
+            assert_move(client, state, "g60-w38", None, before="g60-w29")
+            assert_move(client, state, "g60-w01", None, after="g60-w39")
             interim = workspace_snapshot(client, state["window_id"])
             require(interim["workspaces"][workspace_id(state, "g60-w29")]["pinned"], "w29 pin changed")
             require(interim["workspaces"][workspace_id(state, "g60-w01")]["pinned"], "w01 pin changed")
-            move_workspace(client, state, "g60-w01", group_id(state, "pinned_fleet"), before="g60-w02")
+            assert_move(client, state, "g60-w01", group_id(state, "pinned_fleet"), before="g60-w02")
             after = workspace_snapshot(client, state["window_id"])
             require(after["workspaces"][workspace_id(state, "g60-w38")]["pinned"] ==
                     before["workspaces"][workspace_id(state, "g60-w38")]["pinned"],
@@ -677,8 +827,22 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             close_names = [f"g60-w{i:02d}" for i in (15, 24)] + [f"g60-w{i:02d}" for i in range(16, 24)]
             for name in close_names:
                 wid = workspace_id(state, name)
+                before = workspace_snapshot(client, state["window_id"])
+                members = before["group_by_id"][group_id(state, "tail")]["member_workspace_ids"]
+                if name == "g60-w15":
+                    require(members[0] == wid, "w15 is not the first Tail member")
+                if name == "g60-w24":
+                    require(members[-1] == wid, "w24 is not the last Tail member")
                 client.close_workspace(wid)
                 state["closed_workspace_ids"].append(wid)
+                after = workspace_snapshot(client, state["window_id"])
+                state["intermediate"].append({"operation": "close", "removed_workspace_ids": [wid],
+                    "removed_tabs": before["workspaces"][wid]["tabs"], "before": before, "after": after})
+                assert_identity(before, after, removed={wid})
+                require(after["workspace_order"] == [item for item in before["workspace_order"] if item != wid],
+                        "close changed surviving order")
+                require(after["group_by_id"][group_id(state, "tail")]["member_workspace_ids"] ==
+                        [item for item in members if item != wid], "close changed unrelated Tail membership")
             snap = workspace_snapshot(client, state["window_id"])
             tail = snap["group_by_id"][group_id(state, "tail")]
             require(tail["member_count"] == 0, "A7 did not drain Tail")
@@ -690,64 +854,10 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
         add("A7", a7)
 
         def a8() -> tuple[list[str], list[str]]:
-            unverified: list[str] = []
-            w09, w10, w11, w12, w13, w14 = [workspace_id(state, f"g60-w{i:02d}") for i in range(9, 15)]
-            caller = state["workspaces"]["g60-w03"]["tab_ids"][0]
-            w09_tab = state["workspaces"]["g60-w09"]["tab_ids"][0]
-            w11_tab = state["workspaces"]["g60-w11"]["tab_ids"][0]
-            w12_tab = state["workspaces"]["g60-w12"]["tab_ids"][0]
-            w14_tab = state["workspaces"]["g60-w14"]["tab_ids"][0]
-            client._call("flag.raise", {
-                "workspace_id": w09, "tab_id": w09_tab, "caller_tab_id": caller,
-                "by": "agent", "reason": "C11-261 plain collapsed-group flag",
-            })
-            try:
-                w10_probe = launch_agent_probe(client, state, "g60-w10", timeout=lifecycle_timeout)
-                if not w10_probe["waiting_observed"]:
-                    unverified.append("w10 native agent launch did not expose lifecycle_state=waiting within timeout")
-            except Exception as error:
-                w10_probe = {"status": "unperformed", "error": str(error)}
-                unverified.append(f"w10 native agent launch unavailable: {error}")
-            try:
-                w11_probe = launch_agent_probe(client, state, "g60-w11", timeout=lifecycle_timeout)
-                w11_probe_tab = w11_probe.get("tab_id")
-            except Exception as error:
-                w11_probe = {"status": "unperformed", "error": str(error)}
-                w11_probe_tab = w11_tab
-                unverified.append(f"w11 native agent launch unavailable: {error}")
-            w11_workspace = w11
-            client._call("flag.suppress", {"workspace_id": w11_workspace, "tab_id": w11_probe_tab, "by": "agent"})
-            client._call("flag.raise", {
-                "workspace_id": w11_workspace, "tab_id": w11_probe_tab, "caller_tab_id": caller,
-                "by": "agent", "reason": "C11-261 suppressed collapsed-group escalation",
-            })
-            client._call("flag.suppress", {"workspace_id": w12, "tab_id": w12_tab, "by": "agent"})
-            before_notices = list((client._call("notification.list") or {}).get("notifications") or [])
-            workspace_notice = client._call("notification.create", {
-                "workspace_id": w13, "title": "C11-261 workspace notice", "subtitle": "g60-v1",
-                "body": "Workspace-scoped synthetic notification",
-            }) or {}
-            tab_notice = client._call("notification.create_for_tab", {
-                "workspace_id": w14, "tab_id": w14_tab, "title": "C11-261 exact-tab notice",
-                "subtitle": "g60-v1", "body": "Exact-tab synthetic notification",
-            }) or {}
-            if workspace_notice.get("surface_id") or workspace_notice.get("tab_id"):
-                unverified.append("w13 workspace notification used a focused tab; null-tab aggregation was not proven")
-            oracle = attention_oracle(client, state)
-            collapsed = oracle["group"][group_id(state, "collapsed_flag")]
-            require(collapsed["collapsed"], "A8 attention group was expanded")
-            require(w09_tab in collapsed["expected"]["flagged_tab_ids"], "w09 plain flag missing from oracle")
-            require(w11_probe_tab in collapsed["expected"]["flagged_tab_ids"], "w11 escalation flag missing from oracle")
-            require(w12_tab not in collapsed["expected"]["waiting_tab_ids"], "w12 suppressed tab counted waiting")
-            new_notices = [notice for notice in oracle["notifications"] if notice not in before_notices]
-            require(any((notice.get("tab_id") or notice.get("surface_id")) == w14_tab for notice in new_notices),
-                    "w14 exact-tab notification missing")
-            state["attention_oracle"] = oracle
-            state["attention_probe"] = {"w10": w10_probe, "w11": w11_probe,
-                                         "w13_response": workspace_notice, "w14_response": tab_notice}
-            return ["w09 plain flag recorded", "w10 native waiting probe attempted",
-                    "w11 suppression then escalation recorded", "w12 suppression excluded from waiting",
-                    "w14 exact-tab notification resolved by ID", "counts derived from live IDs"], unverified
+            setup_attention(client, state)
+            return ["two flags including suppressed escalation",
+                    "suppressed routine waiting excluded", "eligible unread matched exact IDs"], []
+
         add("A8", a8)
 
         def a9() -> tuple[list[str], list[str]]:
@@ -757,10 +867,20 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             require(before["group_by_id"][empty_pinned]["member_count"] == 0, "Empty Pinned is not empty")
             move_members = list(before["group_by_id"][move_lane]["member_workspace_ids"])
             client._call("workspace.group.delete", {"window_id": state["window_id"], "group_id": empty_pinned})
+            middle = workspace_snapshot(client, state["window_id"])
+            assert_identity(before, middle)
+            require(set(before["group_by_id"]) - set(middle["group_by_id"]) == {empty_pinned},
+                    "delete removed an unexpected group")
+            state["intermediate"].append({"operation": "delete", "before": before, "after": middle})
             client._call("workspace.group.ungroup", {"window_id": state["window_id"], "group_id": move_lane})
             state["deleted_group_ids"].append(empty_pinned)
             state["un_grouped_ids"].extend(move_members)
             after = workspace_snapshot(client, state["window_id"])
+            assert_identity(middle, after)
+            require(set(middle["group_by_id"]) - set(after["group_by_id"]) == {move_lane},
+                    "ungroup removed an unexpected group")
+            require(before["workspace_order"] == after["workspace_order"], "ungroup changed canonical order")
+            state["intermediate"].append({"operation": "ungroup", "before": middle, "after": after})
             require(empty_pinned not in after["group_by_id"], "A9 did not delete Empty Pinned")
             require(move_lane not in after["group_by_id"], "A9 did not remove Move Lane")
             for wid in move_members:
@@ -782,6 +902,12 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
             }) or {}
             after = workspace_snapshot(client, state["window_id"])
             require(set(after["workspace_order"]) == set(before["workspace_order"]), "A10 changed workspace set")
+            pins = [wid for wid in before["workspace_order"] if before["workspaces"][wid]["pinned"]]
+            expected = pins + partial + [wid for wid in before["workspace_order"] if wid not in pins + partial]
+            require(after["workspace_order"] == expected, "A10 real batch did not apply the exact partial order")
+            require(real.get("changed") is True, "A10 real batch was a no-op")
+            require(all(after["workspaces"][wid]["group_id"] == before["workspaces"][wid]["group_id"]
+                        for wid in before["workspaces"]), "A10 changed membership")
             for name in PINNED_WORKSPACES:
                 require(after["workspaces"][workspace_id(state, name)]["pinned"] ==
                         before["workspaces"][workspace_id(state, name)]["pinned"],
@@ -876,15 +1002,15 @@ def session_semantics(path: Path) -> dict[str, Any]:
                     record["markdown"] = panel.get("markdown")
                 panels.append(record)
             workspaces.append({
-                "id": workspace.get("id"), "processTitle": workspace.get("processTitle"),
+                "id": workspace.get("id"),
                 "customTitle": workspace.get("customTitle"), "isPinned": workspace.get("isPinned", False),
                 "groupId": workspace.get("groupId"),
                 "panels": panels,
             })
         groups_raw = manager.get("workspaceGroups")
-        groups_value = None if groups_raw is None else [
+        groups_value = [
             {key: group.get(key) for key in ("id", "name", "color", "icon", "isCollapsed", "isPinned")}
-            for group in groups_raw
+            for group in groups_raw or []
         ]
         windows.append({
             "workspaces": workspaces,
@@ -911,12 +1037,16 @@ def compare_sessions(expected: Path, actual: Path, mode: str) -> dict[str, Any]:
         require(expected_semantics == actual_semantics,
                 "clean restart changed group identity/order/membership or workspace/tab semantics")
     elif mode == "pre-group":
+        require(expected_semantics == actual_semantics,
+                "pre-group restore changed fixture workspace/tab identity or persisted semantics")
         require(len(actual_semantics["windows"]) == 1, "pre-group restore did not yield one window")
         window = actual_semantics["windows"][0]
         require(not window["workspaceGroups"], "pre-group restore invented workspace groups")
         require(len(window["workspaces"]) == 1 and window["workspaces"][0]["groupId"] is None,
                 "pre-group restore did not yield one ungrouped workspace")
     elif mode == "empty-group":
+        require(expected_semantics == actual_semantics,
+                "empty-group restore changed fixture workspace/tab or group identity/properties")
         require(len(actual_semantics["windows"]) == 1, "empty-group restore did not yield one window")
         window = actual_semantics["windows"][0]
         require(window["workspaceGroups"] and len(window["workspaceGroups"]) == 1,
@@ -954,6 +1084,13 @@ def main() -> int:
     cleanup_parser.add_argument("--state", required=True, type=Path)
     cleanup_parser.add_argument("--out", type=Path)
 
+    for chapter in ("attention", "geometry"):
+        chapter_parser = sub.add_parser(chapter)
+        chapter_parser.add_argument("--state", required=True, type=Path)
+        chapter_parser.add_argument("--out", type=Path)
+        if chapter == "geometry":
+            chapter_parser.add_argument("--count", required=True, type=int)
+
     compare_parser = sub.add_parser("compare-session")
     compare_parser.add_argument("--expected", required=True, type=Path)
     compare_parser.add_argument("--actual", required=True, type=Path)
@@ -977,6 +1114,13 @@ def main() -> int:
             result = automated(client, args.state, args.out, args.lifecycle_timeout)
         elif args.command == "cleanup":
             result = cleanup(client, args.state, args.out)
+        elif args.command in ("attention", "geometry"):
+            state = read_json(args.state)
+            require(state["socket"] == socket_path, "chapter state belongs to another socket")
+            result = setup_attention(client, state) if args.command == "attention" else geometry(client, state, args.count)
+            atomic_write(args.state, state)
+            if args.out:
+                atomic_write(args.out, result)
         else:
             raise AssertionError(f"unknown command: {args.command}")
     print(json.dumps(result, sort_keys=True))

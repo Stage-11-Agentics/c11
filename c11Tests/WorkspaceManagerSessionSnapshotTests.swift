@@ -355,7 +355,7 @@ extension WorkspaceManagerSessionSnapshotTests {
 }
 
 extension WorkspaceManagerSessionSnapshotTests {
-    func testCollapsedGroupProductionAdapterCountsRawUnreadSeparatelyFromWaitingAndFlags() throws {
+    func testCollapsedGroupProductionAdapterExcludesSuppressedRoutineUnreadButRetainsFlags() throws {
         let manager = WorkspaceManager()
         let plainFlagged = try XCTUnwrap(manager.selectedWorkspace)
         let suppressed = manager.addWorkspace(select: false)
@@ -370,7 +370,8 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertFalse(AreaSizePolicy.isAgentKind(plainFlagged.surfaceActivityTerminalKind(panelId: tabIds[0])))
 
         // Seed the real index and workspace projections, as production attention delivery does.
-        // Neither a flag nor suppression may remove an entry from the raw unread count.
+        // Suppressed routine unread stays in history but must not reach the header.
+        // A suppressed explicit flag remains signal eligible, exactly like a row.
         for index in 0..<2 {
             let snapshot = TabAttentionSnapshot(workspaceId: members[index].id, surfaceId: tabIds[index],
                 flagReason: index == 0 ? "Synthetic flag" : nil,
@@ -407,7 +408,7 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertEqual(store.unreadCount, 2, "Suppressed unflagged notification is excluded only from signal demand")
         XCTAssertEqual(members.map { store.rawUnreadCount(forWorkspaceId: $0.id) }, [1, 1, 1])
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
-                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
+                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 2))
         XCTAssertTrue(coordinator.projection.visibleWorkspaceIds.isEmpty)
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: UUID()), 0)
 
@@ -416,7 +417,7 @@ extension WorkspaceManagerSessionSnapshotTests {
         flushRefresh()
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: waiting.id), 2)
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
-                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 4))
+                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
 
         // Reading a suppressed notification changes raw history even though eligible demand stays unchanged.
         let eligibleBeforeRead = store.unreadCount

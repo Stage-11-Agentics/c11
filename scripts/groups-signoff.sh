@@ -9,6 +9,7 @@ PYTHON="${PYTHON:-python3}"
 TAG=""
 RESULTS_DIR=""
 BASELINE_ARTIFACT=""
+PERF_ARTIFACT=""
 LIFECYCLE_TIMEOUT="60"
 SKIP_RESTORE="0"
 
@@ -21,7 +22,7 @@ leaves the C1-C6 computer-use chapters for the independent reviewer.
 
 Options:
   --results <absolute-dir>          Evidence directory (default: /tmp/c11-groups-signoff-<tag>-<utc>)
-  --baseline-artifact <absolute>    C11-270 registered performance baseline artifact
+  --perf-artifact <absolute>        Completed targeted candidate-versus-main comparison
   --lifecycle-timeout <seconds>     A8 native waiting probe bound (default: 60)
   --skip-restore                    Record restore chapters as unverified; use only for a partial run
 EOF
@@ -57,6 +58,11 @@ while [[ $# -gt 0 ]]; do
     --baseline-artifact)
       [[ $# -ge 2 ]] || die "--baseline-artifact requires a path"
       BASELINE_ARTIFACT="$2"
+      shift 2
+      ;;
+    --perf-artifact)
+      [[ $# -ge 2 ]] || die "--perf-artifact requires a path"
+      PERF_ARTIFACT="$2"
       shift 2
       ;;
     --lifecycle-timeout)
@@ -119,6 +125,9 @@ run_logged() {
 }
 
 quit_tagged() {
+  local chapter="${1:-cleanup}"
+  local outcome="graceful"
+  if [[ -z "$(tagged_pids)" ]]; then outcome="already_absent"; fi
   # AppleScript can wait indefinitely when the tagged app has already exited
   # but LaunchServices still has a stale bundle registration. The process
   # probe below is authoritative, so keep the courtesy quit request bounded.
@@ -136,6 +145,7 @@ quit_tagged() {
   local deadline=$(( $(epoch_seconds) + 30 ))
   while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
+      record_quit "$chapter" "$outcome"
       return 0
     fi
     sleep 0.25
@@ -148,11 +158,13 @@ quit_tagged() {
   local pids
   pids="$(tagged_pids)"
   if [[ -n "$pids" ]]; then
+    outcome="forced_term"
     kill $pids 2>/dev/null || true
   fi
   deadline=$(( $(epoch_seconds) + 10 ))
   while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
+      record_quit "$chapter" "$outcome"
       return 0
     fi
     sleep 0.25
@@ -160,16 +172,29 @@ quit_tagged() {
 
   pids="$(tagged_pids)"
   if [[ -n "$pids" ]]; then
+    outcome="forced_kill"
     kill -KILL $pids 2>/dev/null || true
   fi
   deadline=$(( $(epoch_seconds) + 5 ))
   while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
+      record_quit "$chapter" "$outcome"
       return 0
     fi
     sleep 0.25
   done
+  record_quit "$chapter" "still_running"
   return 1
+}
+
+record_quit() {
+  QUIT_OUTCOME="$2"
+  "$PYTHON" - "$RESULTS_DIR/termination.jsonl" "$1" "$2" <<'PY'
+import json, sys, time
+with open(sys.argv[1], "a") as stream:
+    stream.write(json.dumps({"chapter": sys.argv[2], "outcome": sys.argv[3],
+                            "at": time.time(), "clean_quit": sys.argv[3] == "graceful"}) + "\n")
+PY
 }
 
 tagged_pids() {
@@ -237,6 +262,11 @@ manifest = {
         "app_exists": Path(app).is_dir(),
         "cli": cli,
         "cli_sha256": hashlib.sha256(Path(cli).read_bytes()).hexdigest() if Path(cli).is_file() else None,
+        "artifact_sha256": {relative: hashlib.sha256((Path(app) / relative).read_bytes()).hexdigest()
+                            for relative in ("Contents/MacOS/c11", "Contents/MacOS/c11.debug.dylib", "Contents/Resources/bin/c11")
+                            if (Path(app) / relative).is_file()},
+        "bundle_info": run("/usr/bin/plutil", "-convert", "json", "-o", "-", str(Path(app) / "Contents/Info.plist")),
+        "running_build_identity": run(cli, "--socket", socket_path, "--json", "capabilities"),
         "socket": socket_path,
         "socket_is_production": socket_path == os.path.expanduser("~/Library/Application Support/c11/c11.sock"),
     },
@@ -281,15 +311,26 @@ if [[ "$SKIP_RESTORE" = "1" ]]; then
   printf '%s\n' '{"status":"UNVERIFIED","reason":"--skip-restore was requested; A11-A13 were not run","operator_signoff":null}' \
     > "$RESULTS_DIR/restore.json"
 else
-  quit_tagged
+  quit_tagged A11
+  a11_quit="$QUIT_OUTCOME"
   launch_tagged resume
   run_logged "$CLI" --socket "$SOCKET" --json state save --out "$RESULTS_DIR/post-resume.json" \
     > "$RESULTS_DIR/post-resume-save.json"
   run_logged "$PYTHON" "$ROOT_DIR/tests_v2/test_workspace_groups_scale.py" compare-session \
     --mode groups --expected "$RESULTS_DIR/post-mutation.json" --actual "$RESULTS_DIR/post-resume.json" \
-    > "$RESULTS_DIR/a11-compare.json"
+    > "$RESULTS_DIR/a11-semantics.json"
+  "$PYTHON" - "$RESULTS_DIR/a11-semantics.json" "$RESULTS_DIR/a11-compare.json" "$a11_quit" <<'PY'
+import json, sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+result["termination_outcome"] = sys.argv[3]
+result["restart_kind"] = "clean-restart" if sys.argv[3] == "graceful" else "forced-restore"
+if sys.argv[3] != "graceful":
+    result.update(status="UNVERIFIED", reason="A11 requires a graceful quit; forced cleanup is not clean-restart proof")
+Path(sys.argv[2]).write_text(json.dumps(result, indent=2) + "\n")
+PY
 
-  quit_tagged
+  quit_tagged A12
   cp "$ROOT_DIR/tests_v2/fixtures/pre-group-session.json" "$SESSION_PATH"
   launch_tagged resume
   run_logged "$CLI" --socket "$SOCKET" --json state save --out "$RESULTS_DIR/pre-group-resume.json" \
@@ -298,7 +339,7 @@ else
     --mode pre-group --expected "$ROOT_DIR/tests_v2/fixtures/pre-group-session.json" \
     --actual "$RESULTS_DIR/pre-group-resume.json" > "$RESULTS_DIR/a12-compare.json"
 
-  quit_tagged
+  quit_tagged A13
   cp "$ROOT_DIR/tests_v2/fixtures/empty-group-session.json" "$SESSION_PATH"
   launch_tagged resume
   run_logged "$CLI" --socket "$SOCKET" --json state save --out "$RESULTS_DIR/empty-group-resume.json" \
@@ -308,30 +349,14 @@ else
     --actual "$RESULTS_DIR/empty-group-resume.json" > "$RESULTS_DIR/a13-compare.json"
 fi
 
-if [[ -n "$BASELINE_ARTIFACT" ]]; then
-  [[ -f "$BASELINE_ARTIFACT" && ! -L "$BASELINE_ARTIFACT" ]] || die "baseline artifact is missing or a symlink"
-  baseline_status="provided; AC5 measurement still belongs to the registered C11-270 harness"
-  baseline_sha="$(shasum -a 256 "$BASELINE_ARTIFACT" | awk '{print $1}')"
-else
-  baseline_status="unverified: no C11-270 baseline artifact was supplied"
-  baseline_sha=""
-fi
-python3 - "$RESULTS_DIR/perf.json" "$baseline_status" "$BASELINE_ARTIFACT" "$baseline_sha" <<'PY'
-import json
+"$PYTHON" - "$RESULTS_DIR/perf.json" "$PERF_ARTIFACT" <<'PY'
+import json, sys
 from pathlib import Path
-import sys
-
-path, status, artifact, sha = sys.argv[1:]
-Path(path).write_text(json.dumps({
-    "schema": "c11-261-ac5-record-v1",
-    "status": "unverified",
-    "reason": status,
-    "baseline_artifact": artifact or None,
-    "baseline_sha256": sha or None,
-    "registered_owner": "C11-270",
-    "same_host_display_pair": None,
-    "operator_signoff": None,
-}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+path, artifact = sys.argv[1:]
+result = json.loads(Path(artifact).read_text()) if artifact else {
+    "status": "unverified", "reason": "targeted candidate-versus-main comparison not supplied"}
+result["operator_signoff"] = None
+Path(path).write_text(json.dumps(result, indent=2) + "\n")
 PY
 
 run_logged "$ROOT_DIR/scripts/groups-fixture.sh" "$TAG" cleanup --state "$STATE" \

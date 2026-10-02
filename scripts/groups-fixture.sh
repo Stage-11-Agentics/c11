@@ -12,16 +12,18 @@ STATE=""
 FIXTURE_ROOT=""
 OUT=""
 LIFECYCLE_TIMEOUT="60"
+COUNT=""
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/groups-fixture.sh <tag> <provision|snapshot|automated|cleanup> [options]
+Usage: ./scripts/groups-fixture.sh <tag> <provision|snapshot|automated|attention|geometry|cleanup> [options]
 
 Options:
   --state <absolute-path>          Ownership state (default: /tmp/c11-groups-g60-<tag>/state.json)
   --fixture-root <absolute-path>   Synthetic files and default state directory
   --out <absolute-path>            JSON/JSONL result destination
   --lifecycle-timeout <seconds>    A8 native waiting probe bound (default: 60)
+  --count <9|10|99|100>            Geometry chapter member count
 
 The wrapper requires C11_SOCKET and C11_CLI when they are set. Otherwise it
 derives the exact tagged socket and CLI for <tag>. It never uses the stable
@@ -45,7 +47,7 @@ shift 2
 
 [[ "$TAG" =~ ^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$ ]] || die "tag must be a simple tagged-build name"
 case "$PHASE" in
-  provision|snapshot|automated|cleanup) ;;
+  provision|snapshot|automated|attention|geometry|cleanup) ;;
   *) die "unknown phase: $PHASE" ;;
 esac
 
@@ -75,6 +77,11 @@ while [[ $# -gt 0 ]]; do
     --lifecycle-timeout)
       [[ $# -ge 2 ]] || die "--lifecycle-timeout requires seconds"
       LIFECYCLE_TIMEOUT="$2"
+      shift 2
+      ;;
+    --count)
+      [[ $# -ge 2 ]] || die "--count requires a count"
+      COUNT="$2"
       shift 2
       ;;
     -h|--help)
@@ -118,6 +125,12 @@ case "$PHASE" in
     args+=(--out "$OUT" --lifecycle-timeout "$LIFECYCLE_TIMEOUT")
     ;;
   cleanup)
+    ;;
+  geometry)
+    [[ -n "$COUNT" ]] || die "geometry requires --count"
+    args+=(--count "$COUNT")
+    ;;
+  attention)
     ;;
 esac
 [[ -n "$OUT" && "$PHASE" != automated ]] && args+=(--out "$OUT")

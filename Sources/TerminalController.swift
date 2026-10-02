@@ -400,7 +400,8 @@ class TerminalController {
         "browser.tab.switch",
         "debug.command_palette.toggle",
         "debug.notification.focus",
-        "debug.app.activate"
+        "debug.app.activate",
+        "feed.open"
     ]
 
     // C11-159: widened private->internal so per-domain socket handler
@@ -2281,6 +2282,9 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        // Feed list and display notes parse off main and do not move focus.
+        "feed.list",
+        "feed.note_display",
         // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
         "workspace.reorder_batch",
         "workspace.group.list",
@@ -2338,6 +2342,8 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        "browser.cookies.clear",
+        "browser.state.load",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

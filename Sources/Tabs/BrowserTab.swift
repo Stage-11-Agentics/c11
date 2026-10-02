@@ -893,6 +893,39 @@ enum BrowserNavigationDisposition: Equatable {
     case blocked(host: String, reason: BrowserInsecureHTTPBlockReason)
 }
 
+/// The origin used by browser state restore to decide whether a navigation
+/// settled on the document that the saved storage belongs to. Paths may
+/// redirect within an origin; scheme, host and effective port may not.
+func browserNavigationOrigin(_ url: URL) -> String? {
+    guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return nil }
+
+    let host = url.host?.lowercased() ?? ""
+    if (scheme == "http" || scheme == "https") && host.isEmpty { return nil }
+    let effectivePort: Int?
+    if let port = url.port {
+        effectivePort = port
+    } else {
+        switch scheme {
+        case "http":
+            effectivePort = 80
+        case "https":
+            effectivePort = 443
+        default:
+            effectivePort = nil
+        }
+    }
+
+    if let effectivePort {
+        return "\(scheme)://\(host):\(effectivePort)"
+    }
+    return "\(scheme)://\(host)"
+}
+
+enum BrowserStateLoadNavigationResult {
+    case success(URL)
+    case failure(String)
+}
+
 /// The advice appended to every blocked/pending insecure-HTTP report. Socket
 /// callers are the ones who hit these paths, and the CLI drops structured
 /// error `data`, so the remedy has to travel in readable text.
@@ -2491,6 +2524,15 @@ final class BrowserTab: TabContent, ObservableObject {
     private var webViewObservers: [NSKeyValueObservation] = []
     private var activeDownloadCount: Int = 0
 
+    private struct PendingStateLoadNavigation {
+        let token: UUID
+        let webView: WKWebView
+        let webViewInstanceID: UUID
+        let expectedOrigin: String
+        let completion: (BrowserStateLoadNavigationResult) -> Void
+    }
+    private var pendingStateLoadNavigation: PendingStateLoadNavigation?
+
     // Avoid flickering the loading indicator for very fast navigations.
     private let minLoadingIndicatorDuration: TimeInterval = 0.35
     private var loadingStartedAt: Date?
@@ -2848,6 +2890,12 @@ final class BrowserTab: TabContent, ObservableObject {
                 // sampler. didFinish lands after the WebContent process is
                 // alive, and process-per-origin reloads can change the pid.
                 self.refreshCachedWebContentPid()
+                self.finishPendingStateLoadNavigation(
+                    webView: webView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: webView.url,
+                    failure: nil
+                )
             }
         }
         navigationDelegate.didFailNavigation = { [weak self] failedWebView, failedURL in
@@ -2860,6 +2908,12 @@ final class BrowserTab: TabContent, ObservableObject {
                 self.lastFaviconURLString = nil
                 // Keep find-in-page open and clear stale counters on failed loads.
                 self.restoreFindStateAfterNavigation(replaySearch: false)
+                self.finishPendingStateLoadNavigation(
+                    webView: failedWebView,
+                    webViewInstanceID: boundWebViewInstanceID,
+                    settledURL: nil,
+                    failure: failedURL.isEmpty ? "Navigation failed" : "Navigation failed: \(failedURL)"
+                )
             }
         }
     }
@@ -4167,6 +4221,78 @@ final class BrowserTab: TabContent, ObservableObject {
         }
         navigateWithoutInsecureHTTPPrompt(request: request, recordTypedNavigation: recordTypedNavigation)
         return record(disposition: .proceeded)
+    }
+
+    /// Start a navigation for browser state restore and notify the caller only
+    /// after WebKit finishes a same-origin document or reports a real failure.
+    /// The callback is always delivered from the main actor. A caller waiting
+    /// on a socket worker must own the timeout; this method never blocks main.
+    @discardableResult
+    func navigateForStateLoad(
+        to url: URL,
+        completion: @escaping (BrowserStateLoadNavigationResult) -> Void
+    ) -> UUID {
+        let token = UUID()
+        let pending = PendingStateLoadNavigation(
+            token: token,
+            webView: webView,
+            webViewInstanceID: webViewInstanceID,
+            expectedOrigin: browserNavigationOrigin(url) ?? "",
+            completion: completion
+        )
+
+        pendingStateLoadNavigation?.completion(.failure("Navigation superseded"))
+        pendingStateLoadNavigation = pending
+
+        let disposition = navigate(to: url)
+        guard disposition == .proceeded else {
+            pendingStateLoadNavigation = nil
+            let message: String
+            switch disposition {
+            case .prompting:
+                message = "Navigation requires operator approval"
+            case .blocked:
+                message = "Navigation was blocked"
+            case .proceeded:
+                message = "Navigation did not start"
+            }
+            completion(.failure(message))
+            return token
+        }
+        return token
+    }
+
+    func cancelStateLoadNavigation(token: UUID) {
+        guard pendingStateLoadNavigation?.token == token else { return }
+        pendingStateLoadNavigation = nil
+    }
+
+    private func finishPendingStateLoadNavigation(
+        webView: WKWebView,
+        webViewInstanceID: UUID,
+        settledURL: URL?,
+        failure: String?
+    ) {
+        guard let pending = pendingStateLoadNavigation,
+              pending.webView === webView,
+              pending.webViewInstanceID == webViewInstanceID else {
+            return
+        }
+
+        pendingStateLoadNavigation = nil
+        if let failure {
+            pending.completion(.failure(failure))
+            return
+        }
+
+        guard let settledURL,
+              let settledOrigin = browserNavigationOrigin(settledURL),
+              settledOrigin == pending.expectedOrigin else {
+            let settled = settledURL?.absoluteString ?? "(missing URL)"
+            pending.completion(.failure("Navigation settled on unexpected origin: \(settled)"))
+            return
+        }
+        pending.completion(.success(settledURL))
     }
 
     private func navigateWithoutInsecureHTTPPrompt(

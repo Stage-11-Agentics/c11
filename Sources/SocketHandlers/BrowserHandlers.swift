@@ -51,7 +51,10 @@ extension TerminalController {
     struct V2BrowserOffMainTarget {
         let workspaceId: UUID
         let surfaceId: UUID
+        let browserTab: BrowserTab
         let webView: WKWebView
+        let cookieStore: WKHTTPCookieStore
+        let currentURL: URL?
         let frameSelector: String?
         let resolvedSelector: String?
         let responseEnvelope: [String: Any]
@@ -320,7 +323,10 @@ extension TerminalController {
         return .ready(V2BrowserOffMainTarget(
             workspaceId: ws.id,
             surfaceId: surfaceId,
+            browserTab: browserPanel,
             webView: browserPanel.webView,
+            cookieStore: browserPanel.webView.configuration.websiteDataStore.httpCookieStore,
+            currentURL: browserPanel.currentURL,
             frameSelector: v2BrowserCurrentFrameSelector(surfaceId: surfaceId),
             resolvedSelector: resolvedSelector,
             responseEnvelope: [
@@ -575,6 +581,106 @@ extension TerminalController {
             return .failure(resultError)
         }
         return .success(outcome.0)
+    }
+
+    /// WKHTTPCookieStore callbacks are asynchronous, but WebKit still expects
+    /// the store operation itself to be submitted from the main actor. The
+    /// socket worker owns the wait so a slow store cannot hold main.
+    nonisolated func v2BrowserCookieStoreAllOffMain(
+        _ store: WKHTTPCookieStore,
+        timeout: TimeInterval = 3.0
+    ) -> [HTTPCookie]? {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2BrowserCookieStoreAll(store, timeout: timeout)
+            }
+        }
+
+        let gate = V2BrowserAwaitGate()
+        let result = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.getAllCookies { cookies in
+                    guard gate.complete() else { return }
+                    finish(cookies)
+                }
+            }
+        }
+        gate.cancel()
+        return result
+    }
+
+    nonisolated func v2BrowserCookieStoreSetOffMain(
+        _ store: WKHTTPCookieStore,
+        cookie: HTTPCookie,
+        timeout: TimeInterval = 3.0
+    ) -> Bool {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2BrowserCookieStoreSet(store, cookie: cookie, timeout: timeout)
+            }
+        }
+
+        let gate = V2BrowserAwaitGate()
+        let result: Bool? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.setCookie(cookie) {
+                    guard gate.complete() else { return }
+                    finish(true)
+                }
+            }
+        }
+        gate.cancel()
+        return result == true
+    }
+
+    nonisolated func v2BrowserCookieStoreDeleteOffMain(
+        _ store: WKHTTPCookieStore,
+        cookie: HTTPCookie,
+        timeout: TimeInterval = 3.0
+    ) -> Bool {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                v2BrowserCookieStoreDelete(store, cookie: cookie, timeout: timeout)
+            }
+        }
+
+        let gate = V2BrowserAwaitGate()
+        let result: Bool? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                store.delete(cookie) {
+                    guard gate.complete() else { return }
+                    finish(true)
+                }
+            }
+        }
+        gate.cancel()
+        return result == true
+    }
+
+    nonisolated func v2BrowserNavigateForStateLoadOffMain(
+        _ browserTab: BrowserTab,
+        url: URL,
+        timeout: TimeInterval
+    ) -> BrowserStateLoadNavigationResult {
+        if Thread.isMainThread {
+            return .failure("State-load navigation must run on a socket worker")
+        }
+
+        let gate = V2BrowserAwaitGate()
+        let result: BrowserStateLoadNavigationResult? = v2AwaitCallback(timeout: timeout) { finish in
+            DispatchQueue.main.async {
+                guard gate.begin() else { return }
+                browserTab.navigateForStateLoad(to: url) { navigationResult in
+                    guard gate.complete() else { return }
+                    finish(navigationResult)
+                }
+            }
+        }
+        gate.cancel()
+        return result ?? .failure("Timed out waiting for navigation to commit")
     }
 
     nonisolated func v2AwaitCallback<T>(
@@ -1003,6 +1109,30 @@ extension TerminalController {
 
     func v2BrowserCurrentFrameSelector(surfaceId: UUID) -> String? {
         v2BrowserFrameSelectorBySurface[surfaceId]
+    }
+
+    nonisolated func v2SetBrowserFrameSelectorOffMain(surfaceId: UUID, selector: String?) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                if let selector {
+                    v2BrowserFrameSelectorBySurface[surfaceId] = selector
+                } else {
+                    v2BrowserFrameSelectorBySurface.removeValue(forKey: surfaceId)
+                }
+            }
+            return
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            defer { semaphore.signal() }
+            if let selector {
+                v2BrowserFrameSelectorBySurface[surfaceId] = selector
+            } else {
+                v2BrowserFrameSelectorBySurface.removeValue(forKey: surfaceId)
+            }
+        }
+        semaphore.wait()
     }
 
     func v2RunBrowserJavaScript(

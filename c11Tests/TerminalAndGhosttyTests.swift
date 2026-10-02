@@ -3564,7 +3564,8 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("observed")
         let command = "/bin/sh -c 'printf \"%s|%s\" \"$C11_CONFIG_PROBE\" \"$PWD\" > \"\(output.path)\"; sleep 30'"
-        let pointers = [directory.path, command, "", "C11_CONFIG_PROBE", "owned-buffer-value"].map { strdup($0)! }
+        let values: [String] = [directory.path, command, "", "C11_CONFIG_PROBE", "owned-buffer-value"]
+        let pointers: [UnsafeMutablePointer<CChar>] = values.map { strdup($0)! }
         var entry = ghostty_env_var_s(key: pointers[3], value: pointers[4])
         var config = ghostty_surface_config_new()
         config.working_directory = UnsafePointer(pointers[0])

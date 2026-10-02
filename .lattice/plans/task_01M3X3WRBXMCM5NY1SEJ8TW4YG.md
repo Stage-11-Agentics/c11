@@ -1,23 +1,23 @@
 # C11-267 plan: on-demand input state, and a send guard for real drafts
 
-P2. Planning only. One PR, its own branch `c11-1.0/C11-267-send-draft-guard` from `origin/main` at build time. No Feed command in this PR.
+P2 implementation. One PR on `c11-1.0/C11-267-send-guard`, refreshed from `origin/main` before validation and handoff. No Feed command in this PR.
 
 ## Why it can ship alone
 
-Nothing in the release depends on this ticket. `feed answer` is C11-268 and stays out. Refusal applies only when the active screen is positively a draft or a dialog. An unrecognized screen, a cold tab, or an older app keeps today's delivery and says so in the response (`input_guard: unknown` or a missing field). `--allow-unguarded` is an explicit override, not the default. Reverting the PR restores `send` with no migration. The release can ship without it.
+Nothing in the release depends on this ticket. `feed answer` is C11-268 and stays out. Refusal applies only when the active screen is positively a draft or a dialog. An unrecognized screen or cold tab keeps today's delivery and reports `input_guard: unknown`; an older app is visibly `unguarded`. `--allow-unguarded` is an explicit override, not the default. Reverting the PR restores `send` with no migration. The release can ship without it.
 
-## Citations on `0ff8887e5e`
+## Citations on refreshed `origin/main` `1199866cbc`
 
-- `deliverSocketSendText` (`Sources/TerminalController.swift:6703`) pastes, then `scheduleSubmitReturnAfterPasteDelay`. No draft check. Paste-vs-key rules are `socketTextIsPasteDeliverable` (`:6662`) and `trimmingTrailingNewlines` (`:6679`).
-- `v2SurfaceSendText` (`Sources/SocketHandlers/SurfaceHandlers.swift:846`) resolves the tab, then on the phase-B main hop (`:905`) re-reads the live surface and either delivers or queues. `submitted`, `queued`, and `delivered` are already the response (`:976`).
-- `readTerminalTextBase64` (`TerminalController.swift:3453`) can read `GHOSTTY_POINT_ACTIVE`, separate from the scrolled viewport. `ghostty_surface_read_text` (`ghostty.h:1120`) returns plain `ghostty_text_s` (`:381`). There is no per-cell style. `read-screen` therefore cannot tell a faint suggestion from typed text (`skills/c11/references/api.md:278`).
-- `send-key` is out. Do not change `v2SurfaceSendKey`.
+- `deliverSocketSendText` (`Sources/TerminalController.swift:7215`) writes text and schedules the submit Return after the paste-settle delay. It has no draft check; paste-vs-key handling is in `socketTextIsPasteDeliverable` (`:7235`).
+- `v2SurfaceSendText` (`Sources/SocketHandlers/SurfaceHandlers.swift:938`) resolves the tab in Phase A, re-reads its live surface on the Phase B main hop (`:1013-1018`), then delivers or queues (`:1015-1047`). `submitted`, `queued`, and `delivered` are response fields (`:1086-1090`).
+- `readTerminalTextBase64` (`Sources/TerminalController.swift:3865`) distinguishes active screen from viewport/scrollback, but `ghostty_surface_read_text` (`ghostty/include/ghostty.h:1141`) returns plain text without per-cell faint style. It cannot distinguish Claude's faint suggestion from typed text (`skills/c11/references/api.md:278`).
+- C11-294 added one-shot try-lock reads (`ghostty/src/apprt/embedded.zig:1703-1735`); the prompt-region export uses the same bounded acquisition rule. `v2SurfaceSendKey` (`Sources/SocketHandlers/SurfaceHandlers.swift:1104`) stays unchanged.
 
 ## C11-257 boundary
 
-C11-257 is in progress. It owns `tab.input_sent` emission on the send path and every mailbox file (`Sources/Mailbox/`, inbox drain, `messages.html`, mailbox event bodies).
+C11-257 is done and merged to `origin/main` (integration commits include `0bc4b61779`). It owns `tab.input_sent` emission on the send path and every mailbox file (`Sources/Mailbox/`, inbox drain, `messages.html`, mailbox event bodies).
 
-This ticket does not emit events, does not log send bodies, and does not edit those files. The guard runs inside `v2SurfaceSendText` immediately before `deliverSocketSendText` and before either queue fallback (`:927` and `:958`). A refusal returns without calling them. If C11-257 emits only after a payload reaches the PTY, a refusal stays unlogged, which matches their contract. Do not move or rewrite their emit. Implement only after C11-257 merges, as the board dependency now requires. Do not touch its shared send/dispatch files earlier, even at different hunks. Integrate onto its landed change; the guard is one call, not a second writer.
+This ticket does not add or move event emission and does not edit mailbox files. The guard runs inside `v2SurfaceSendText` immediately before `deliverSocketSendText` and both queue paths. A refusal returns before the existing successful-send event and includes no prompt contents. Work is based on C11-257's landed send path.
 
 ## Style seam
 
@@ -25,9 +25,9 @@ AC1 needs the faint bit. Plain text cannot supply it.
 
 A single cursor row cannot recognize a multi-row question/plan chooser or preserve a wrapped draft; it can mislabel the last blank composer row empty. Add one bounded active-screen styled prompt-region export, not cmux's render grid. Return cursor coordinates, explicit row/soft-wrap boundaries, UTF-8 runs and SGR-2 faint bits for up to 16 rows around the cursor, 4096 cells / 16 KiB text total. Mark clipped/ambiguous prompt regions incomplete; an incomplete region is unknown, never empty. Keep capture limits inside native copying, not clipping a full-screen allocation afterward. No colors, full screen or scrollback. Fixture-backed complete prompt geometry is required before reporting empty/suggestion/draft/dialog; surrounding prose containing ❯ alone is unknown.
 
-Verified pinned Ghostty `26c3e499ed8c4d65e3748248de7fd04c1e9a8103`: `include/ghostty.h:381` gives plain text only; `src/apprt/embedded.zig:1675-1721` holds the renderer mutex while dumping text; `src/terminal/style.zig:33` retains faint. Plan changes are in that header, embedded export/free pair and terminal style/page access helper, plus native behavior tests. The worktree's submodule is uninitialized; this evidence was read from the pinned Ghostty checkout/header Git object, with no initialization/build performed. Never borrow its modified worktree files for implementation.
+The parent pins Ghostty `5830d1976eecca0d7dee202aef8fb2338d99ed6d`, where `include/ghostty.h` exposes plain text and `src/apprt/embedded.zig` provides one-shot `try_read_text` / `try_read_selection`. The new export and `src/terminal/prompt_region.zig` are limited to the active screen, and native tests cover faint plus soft-wrap preservation and bounded truncation.
 
-Native capture remains main-actor under the established surface-lifetime policy. Use the C11-294 landed bounded-lock acquisition policy; if not available or contended, return unavailable. A cell cap alone does not bound mutex wait. Implement this optional ABI after C11-294's fork/GhosttyKit integration, push the submodule change to the fork's main before moving the parent pointer, update `docs/ghostty-fork.md`, and wait for the auto-generated matching checksum and green GhosttyKit CI. Do not invent a checksum or bypass the one-build lock. Parser tests take an immutable prompt-region value; native tests cover actual attributes and wrap bounds.
+Native capture remains main-actor under the established surface-lifetime policy. Use the C11-294 bounded-lock acquisition policy; contention returns immediately. This optional ABI is implemented in the Ghostty submodule. Push the submodule change to the Stage-11 fork's `main` before moving the parent pointer, update `docs/ghostty-fork.md`, and wait for the auto-generated matching checksum and green GhosttyKit CI. Do not invent a checksum or bypass the build route. Parser tests take an immutable prompt-region value; native tests cover actual attributes and wrap bounds.
 
 If that export cannot land, stop and send BLOCKED. Do not guess faint from theme color.
 
@@ -68,26 +68,28 @@ Help text states the check is not atomic with a later keypress. A person can typ
 
 Response fields, added beside the existing `submitted` / `queued` / `delivered`: `input_guard`, `input_state`, `draft_length` (null except for draft), `source` (`active_screen` or null), `observed_at_ms`. No draft text.
 
-## Skill
+## Skill and localization
 
-Update `skills/c11/references/api.md` at the send section (`:270` and the ghost-text note `:278`): `input-state`, the guard field, `--allow-unguarded`, and that `send-key` is not guarded. One sentence in `skills/c11/SKILL.md`. Sync the installed skill when the edit lands, not during planning. No new SwiftUI strings. Machine codes stay codes. C11-291 has nothing to translate unless a later UI string appears.
+Update `skills/c11/references/api.md` at the send section (`:270` and the ghost-text note `:278`): `input-state`, the guard field, `--allow-unguarded`, and that `send-key` is not guarded. One sentence in `skills/c11/SKILL.md`. Do not sync the installed skill in this owner run; only the Merge Captain syncs after landing.
+
+New localized keys: `cli.input_state.arguments`, `cli.input_state.duplicate_tab`, `cli.input_state.help`, `cli.input_state.tab_required`, `cli.send.guard_refused`, `cli.send.input_guard`, `socket.input_state.tab_required`, `socket.input_state.timeout`, `socket.input_state.unsupported`, `socket.send.guard_refused`, and `socket.send.target_unavailable`. The six-locale catalog pass is C11-291; machine codes stay codes.
 
 ## Acceptance → oracle → proof
 
 | AC | Oracle | Proof |
 |---|---|---|
-| 1. Draft, empty, faint, dialog, unrecognized stay distinct; faint is not a draft; no draft text in the result | Claude ghost line (`api.md:278`); cmux draft-guard idea | `PromptInputClassifierTests` on recorded regions, including wrapped/multiline draft with blank final row, full chooser layout and text containing a prompt-like glyph. Incomplete/oversize capture returns unknown. Assert the sentinel characters are absent. |
-| 2. Draft and dialog refuse before any PTY write; empty still sends | `deliverSocketSendText:6703` has no check | `SendInputGuardTests` plus a socket-handler test with a fake writer that records calls. Refused states record zero writes. |
-| 3. Scrolled viewport is not the input; cold and unknown are not `empty` | Active vs viewport tags in `readTerminalTextBase64:3499` | Classifier tests take the active region, not a viewport string. Collection test: a fake reader fails if asked for scrollback. Unreadable → `unavailable`, not `empty`. |
+| 1. Draft, empty, faint, dialog, unrecognized stay distinct; faint is not a draft; no draft text in the result | Claude ghost line (`api.md:278`); cmux draft-guard idea | `PromptInputClassifierTests` on sanitized recorded layouts, including wrapped/multiline draft with blank final row, both chooser layouts, an old chooser above a live prompt, and prompt-like prose. Incomplete/oversize capture returns unknown. Assert the sentinel characters are absent. |
+| 2. Draft and dialog refuse before any PTY write; empty still sends | `deliverSocketSendText` has no input-state check | `SendInputGuardTests` exercise the write-decision seam with a recording closure. Atlas tagged runtime proof checks that refused text leaves the PTY and successful-send event stream unchanged, while an empty prompt accepts the send. |
+| 3. Scrolled viewport is not the input; cold and unknown are not `empty` | Active vs viewport tags in `readTerminalTextBase64:3865` | Native capture calls only the active-screen API. Atlas runtime proof scrolls the viewport away from the prompt, then verifies `input-state` still reports the active composer. An unattached tab reports `unavailable`; an unreadable or unsupported layout is never `empty`. |
 | 4. A replaced tab is not written; help admits the race | Phase-B surface can change (`SurfaceHandlers.swift:896`) | Guard test: identity mismatch returns `unavailable` and does not call the writer. Help/skill text contains no atomic-safety claim. The test checks the response, not a source grep of the help file: the CLI `--help` path prints the sentence and the test asserts that sentence. |
-| 5. An older server is visibly unguarded | Agents already depend on send succeeding | CLI test with a fake socket that returns unknown method: send still returns success and `input_guard: unguarded`. A new server's checked empty send returns `input_guard: checked`. |
+| 5. An older server is visibly unguarded | Agents already depend on send succeeding | CLI fixture against a legacy response with no guard fields: send succeeds and shows `input_guard: unguarded`. A new server's checked empty send returns `input_guard: checked`; refusal preserves structured JSON and exits nonzero. |
 
-Atlas tagged app, `C11_QA_LAUNCH=fresh`, after BUILD MODE: computer use types a real unsent draft in one terminal and `c11 send` from another tab. The draft is still there and the command's `input_guard` is `refused`. A second tab with an empty Claude prompt accepts send. A scrolled-up viewport still reports the draft on the active row. Record the artifact SHA. Compare one on-demand inspect plus a typing sample to the C11-270 baseline. No new threshold. Do not run this on Hyperion.
+Build, test, and launch only on Atlas through `scripts/remote-build.sh` with tag `c11-267`; launch with `C11_QA_LAUNCH=fresh` in an isolated guest. Computer use types a synthetic unsent draft in one terminal and invokes `c11 send` from another tab. The draft remains and the command reports `input_guard: refused`. An empty Claude prompt accepts send; a faint suggestion is not refused; a dialog is refused; Codex/unknown and a cold live tab retain delivery/queue behavior with `unknown`; multiline sends and `send-key` preserve existing behavior. Inspect the active screen after scrolling the viewport up. Compare a short on-demand inspection and typing sample to a tagged `origin/main` build with the same scenario and record both values, artifact/source SHAs, and Atlas load average. This is descriptive evidence, not a C11-270 soak pass or a new threshold. No production session and no Hyperion launch.
 
 ## Cut line
 
 Out: `feed answer` (C11-268), send-key guarding, polling, a classifier for every TUI, menu keys, approvals, the blocking hook bridge, `tab.input_sent`, mailbox delivery, and the messages page.
 
-Packaging: register `tab.input_state` in worker routing/capabilities and include new app/CLI/test files in compile entry points. Native capture uses a short lifetime-safe main hop; parser/response encoding stay off main where feasible. Ordinary-send phase-B guard remains immediately before delivery/queue with no extra per-key observer. Atlas evidence includes native-copy/lock timing against C11-270, not only parser tests.
+Packaging: register `tab.input_state` in worker routing/capabilities and include new app/CLI/test files in compile entry points. Native capture uses a short lifetime-safe main hop; parser/response encoding stay off main where feasible. Ordinary-send phase-B guard remains immediately before delivery/queue with no extra per-key observer. Atlas evidence includes native-copy/lock timing, the paired short typing sample, and host load; no full C11-270 soak claim.
 
-Open decisions: none. P2 remains optional and must not gate P1 Feed; an unavailable native seam is BLOCKED, never a guessed style. Takeover verification performed without builds/tests/product edits.
+Open decisions: none. P2 remains optional and must not gate P1 Feed; an unavailable native seam is BLOCKED, never a guessed style. Implementation and runtime proof follow this plan.

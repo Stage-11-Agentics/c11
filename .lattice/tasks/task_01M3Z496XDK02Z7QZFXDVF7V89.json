@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-10-02T20:18:24Z",
+  "created_by": "agent:claude-opus-5-5",
+  "custom_fields": {},
+  "description": "## Why\nAgents proving browser features (pollers, timers, video, rAF) need the page running. A browser tab in a background workspace is hidden: the portal container is set `isHidden` (`Sources/BrowserWindowPortal.swift:3928-3938`) and the panel is throttled (`Sources/Panels/BrowserPanel.swift:3131-3134`). So the page likely sees `document.hidden = true`, with timers and media paused. That pushed the LAT-365 agent to switch Atin's workspace to keep its page visible (2026-10-02). Once agents can't switch workspaces, they need a way to keep a background browser running.\n\n## Scope\nLet an agent keep a browser tab running while its workspace is hidden. For example, a per-tab `keep-live` option (`c11 browser <s> keep-live on|off`) that keeps the WKWebView unoccluded or hosted off screen, and reports `document.visibilityState` as visible. Precedent: the invisible bootstrap window for hidden terminals (C11-114, `Sources/GhosttyTerminalView.swift:2910-2929`). Take snapshots of a kept-live page while it is in the background.\n\nOut: anything that changes the operator's visible workspace.\n\n## Acceptance\nA browser tab in a background workspace with keep-live on keeps its timers running, reports `document.hidden === false`, plays video, and returns a non-blank `browser snapshot`. The operator's workspace never changes. Turning keep-live off restores normal throttling.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3Z496XDK02Z7QZFXDVF7V89",
+  "last_event_id": "ev_01M3Z496XTGN6GGWMACWSDZCYB",
+  "last_status_changed_at": "2026-10-02T20:18:24Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-324",
+  "status": "backlog",
+  "tags": [
+    "focus",
+    "browser"
+  ],
+  "title": "Keep a background browser tab running without showing it",
+  "type": "task",
+  "updated_at": "2026-10-02T20:18:24Z",
+  "urgency": "normal"
+}

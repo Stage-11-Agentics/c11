@@ -1,0 +1,102 @@
+{
+  "control": {
+    "source_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "merge_base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "source_tree_dirty": false,
+    "remote_build_invocation": "d907baccb72647c095bd2cee381d5761",
+    "build_options": {
+      "mode": "debug",
+      "tag": "c11-261",
+      "no_launch": true,
+      "Xcode": "26.3",
+      "Zig": "0.15.2"
+    },
+    "app_path": "/private/tmp/c11-261-perf/builds/control/c11 DEV c11-261.app",
+    "artifact_sha256": {
+      "Contents/MacOS/c11": "657429efbb365204f21180f5ca07ea8914e05a795baec47a890881843c2dc9c1",
+      "Contents/MacOS/c11.debug.dylib": "ae0e1dbd8ffb1741d3c732532e0e67b3d7798ec2cbb7e13a1c0d9d8dc8e8bc89",
+      "Contents/Resources/bin/c11": "8f92dcd89f41787826748fdff865e52a8b42047098976dd78c47939b10aa8d0b"
+    },
+    "script_sha256": {
+      "appearance.py": "88933c5140fa01c683503537d0746d0fae90f2e5fd6b6a08751ec72dd133b2b2",
+      "calibrate.py": "a967911f04dff2406e1d36e0484aabe362faa94e423c169c748cb642c41b8b57",
+      "cmux.py": "39a76331c5117d3b29b59d4515c26c14b33050dccf9a6ad07cec94dfc7f49fb0",
+      "compare.py": "e97cbb9315813ba446c10cc62ac2a1148cf45298fa5e78df8dc58813edc9ccfd",
+      "configure.py": "bf98be12a0c5de0cc062e49829e8a11e26d47d5763c18466227a5caac69ca410",
+      "dismiss.py": "584d3bd9947fa5b6f3b2191ceab20a9d086ff3cd5b6fcb07c91bb2cfba1b45da",
+      "g60.py": "92ee8826fecdbb2163452033838f5403829c36eb4df032a5ea0e5fdef9dd6d6a",
+      "guarded.py": "2ee601dfb04e993a8408006c47c4bdbda4173621c3cb5447947b194800325ff2",
+      "install_probes.py": "3a23e4f124baf5d51df90d8ec3fd21259da8d1aa7905640eee8cc68806a836b9",
+      "interleave.py": "af832e399467b0170aafb60abe83d7a3be906b2ed777515a829940a405644ba8",
+      "lease.py": "fa30761898b4530feb36964e1bb944aebe0c1918fbad6bdd287ea9e7e8867f83",
+      "pointer_burst.py": "93f771f794049b3f47ebc3d1dba76bdba83158a634db651405b25d4f2bc24bd1",
+      "prime_gate.py": "6a4494e4cc830fc110bbb472dacfe25bfa62f127e8b4bc80215e1b9e59572019",
+      "probe_terminal.py": "d245566ec379e55e7030f0013c1a0be3340ba4c51f0834b6cd0eecd540b04a0c",
+      "quiet_external.py": "a4bc19f82191768ce93ef0ecbd3c4e6932e2cc5cb6440a344b3bb8427f1576ee",
+      "quiet_window.py": "b01d770bb74f8be8071d79c8e1c281775314f0131c71b31a12d0de5b777676d6",
+      "run_phases.py": "f34910055747272ea64b7a5b8471b8b2d6c56c2f80254cee34a84c75ddd444b7",
+      "seal.py": "93cf56a4678aa3e7c3993caae5307c545ec6f419d18addaf4c0dd220542ece99",
+      "signoff_watch.py": "d35f10aa4a437b50b20b9da19f9eefe10a1e385588e06fb1edaee13c5f74b82b",
+      "test_preparation.py": "079d91a659e651ac87abd414bb5c168e8f75ba6d28dc716d92c3bbcdf99d443f",
+      "test_workspace_groups.py": "567147ead259a505cf7d71c7d6e680446e18b20b7cc2ea7615a857f8684730e1",
+      "test_workspace_groups_scale.py": "2e4a52268870cea98797edf9b218229f90da63b9f4392d27050025d3dd690274",
+      "test_workspace_groups_scale_oracles.py": "9fcdee9f21187492892d2139984ed6e3936f055e9a08a5a8805c04ae496b5073",
+      "ui_pair.py": "bef2b2a80f4f0e99d20eac8dd16c9df70f05bf8af884442d1dfe52080bd8f59e",
+      "ui_slot.py": "6771e88d0833dacc8d9c415090775e67e0d3e32676a0e1d73c0f7777e44e1ef4",
+      "visual_probe.py": "87957517ce7c711aa00728301cd660bcbcca4ddc1275a49be7f5b399e33fdc22"
+    },
+    "calibration_spec_sha256": "090e3f4043bb9a3f3e6f5eb65a15476de0c6791c899788372b04a70854880495",
+    "protocol_sha256": "86fe67d9b71615f4e32de197446e68123ad7965dd6ec69970ec2b3dc863db203"
+  },
+  "candidate": {
+    "source_sha": "a2e448b74d9ecdfdf356498cfb431036de9e5c95",
+    "base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "merge_base_sha": "dedc6007a5bb886388af23d7c48c48d76025772f",
+    "source_tree_dirty": false,
+    "remote_build_invocation": "55201e4f386a43658359deab1c1d1676",
+    "build_options": {
+      "mode": "debug",
+      "tag": "c11-261",
+      "no_launch": true,
+      "Xcode": "26.3",
+      "Zig": "0.15.2"
+    },
+    "app_path": "/private/tmp/c11-261-perf/builds/candidate/c11 DEV c11-261.app",
+    "artifact_sha256": {
+      "Contents/MacOS/c11": "91b9c7f479a43f61411dd05dd87b8470bd8fc364cff96011fb9a624a9c9acd77",
+      "Contents/MacOS/c11.debug.dylib": "8e02c92bf082443b0e71ed46f777fdb40d74a2109fd58f2ac3b20b7bdf6fdf70",
+      "Contents/Resources/bin/c11": "8f92dcd89f41787826748fdff865e52a8b42047098976dd78c47939b10aa8d0b"
+    },
+    "script_sha256": {
+      "appearance.py": "88933c5140fa01c683503537d0746d0fae90f2e5fd6b6a08751ec72dd133b2b2",
+      "calibrate.py": "a967911f04dff2406e1d36e0484aabe362faa94e423c169c748cb642c41b8b57",
+      "cmux.py": "39a76331c5117d3b29b59d4515c26c14b33050dccf9a6ad07cec94dfc7f49fb0",
+      "compare.py": "e97cbb9315813ba446c10cc62ac2a1148cf45298fa5e78df8dc58813edc9ccfd",
+      "configure.py": "bf98be12a0c5de0cc062e49829e8a11e26d47d5763c18466227a5caac69ca410",
+      "dismiss.py": "584d3bd9947fa5b6f3b2191ceab20a9d086ff3cd5b6fcb07c91bb2cfba1b45da",
+      "g60.py": "92ee8826fecdbb2163452033838f5403829c36eb4df032a5ea0e5fdef9dd6d6a",
+      "guarded.py": "2ee601dfb04e993a8408006c47c4bdbda4173621c3cb5447947b194800325ff2",
+      "install_probes.py": "3a23e4f124baf5d51df90d8ec3fd21259da8d1aa7905640eee8cc68806a836b9",
+      "interleave.py": "af832e399467b0170aafb60abe83d7a3be906b2ed777515a829940a405644ba8",
+      "lease.py": "fa30761898b4530feb36964e1bb944aebe0c1918fbad6bdd287ea9e7e8867f83",
+      "pointer_burst.py": "93f771f794049b3f47ebc3d1dba76bdba83158a634db651405b25d4f2bc24bd1",
+      "prime_gate.py": "6a4494e4cc830fc110bbb472dacfe25bfa62f127e8b4bc80215e1b9e59572019",
+      "probe_terminal.py": "d245566ec379e55e7030f0013c1a0be3340ba4c51f0834b6cd0eecd540b04a0c",
+      "quiet_external.py": "a4bc19f82191768ce93ef0ecbd3c4e6932e2cc5cb6440a344b3bb8427f1576ee",
+      "quiet_window.py": "b01d770bb74f8be8071d79c8e1c281775314f0131c71b31a12d0de5b777676d6",
+      "run_phases.py": "f34910055747272ea64b7a5b8471b8b2d6c56c2f80254cee34a84c75ddd444b7",
+      "seal.py": "93cf56a4678aa3e7c3993caae5307c545ec6f419d18addaf4c0dd220542ece99",
+      "signoff_watch.py": "d35f10aa4a437b50b20b9da19f9eefe10a1e385588e06fb1edaee13c5f74b82b",
+      "test_preparation.py": "079d91a659e651ac87abd414bb5c168e8f75ba6d28dc716d92c3bbcdf99d443f",
+      "test_workspace_groups.py": "567147ead259a505cf7d71c7d6e680446e18b20b7cc2ea7615a857f8684730e1",
+      "test_workspace_groups_scale.py": "2e4a52268870cea98797edf9b218229f90da63b9f4392d27050025d3dd690274",
+      "test_workspace_groups_scale_oracles.py": "9fcdee9f21187492892d2139984ed6e3936f055e9a08a5a8805c04ae496b5073",
+      "ui_pair.py": "bef2b2a80f4f0e99d20eac8dd16c9df70f05bf8af884442d1dfe52080bd8f59e",
+      "ui_slot.py": "6771e88d0833dacc8d9c415090775e67e0d3e32676a0e1d73c0f7777e44e1ef4",
+      "visual_probe.py": "87957517ce7c711aa00728301cd660bcbcca4ddc1275a49be7f5b399e33fdc22"
+    },
+    "calibration_spec_sha256": "090e3f4043bb9a3f3e6f5eb65a15476de0c6791c899788372b04a70854880495",
+    "protocol_sha256": "86fe67d9b71615f4e32de197446e68123ad7965dd6ec69970ec2b3dc863db203"
+  }
+}

@@ -66,27 +66,13 @@ func dispatchedC11PointerHit(
         windowNumber: window.windowNumber, context: nil,
         eventNumber: 1, clickCount: 1, pressure: 1
     ))
-    // AppKit posts mouse events through their Quartz representation. Supply
-    // a screen point in the display's Quartz coordinates, including any
-    // display scaling, so dispatch reconstructs the requested window point.
-    let screen = try XCTUnwrap(window.screen)
-    let displayNumber = try XCTUnwrap(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
-    let displayBounds = CGDisplayBounds(CGDirectDisplayID(displayNumber.uint32Value))
-    let screenPoint = window.convertPoint(toScreen: location)
-    let cgEvent = try XCTUnwrap(event.cgEvent)
-    cgEvent.location = CGPoint(
-        x: displayBounds.minX + (screenPoint.x - screen.frame.minX) * displayBounds.width / screen.frame.width,
-        y: displayBounds.minY + (screen.frame.maxY - screenPoint.y) * displayBounds.height / screen.frame.height
-    )
-    let postedEvent = try XCTUnwrap(NSEvent(cgEvent: cgEvent))
-    XCTAssertEqual(postedEvent.windowNumber, window.windowNumber)
-    NSApp.postEvent(postedEvent, atStart: false)
+    NSApp.postEvent(event, atStart: false)
     let delivered = await waitForC11HostCondition { received }
     XCTAssertTrue(delivered, "AppKit must dispatch the posted pointer event to the test window")
     XCTAssertEqual(currentType, .leftMouseDown, "hitTest must run under the production pointer guard")
     XCTAssertEqual(currentWindowNumber, window.windowNumber)
     let deliveredLocation = try XCTUnwrap(dispatchedLocation)
-    let coordinateContext = "window=\(window.frame) screen=\(screen.frame) display=\(displayBounds) quartz=\(cgEvent.location) posted=\(postedEvent.locationInWindow) current=\(String(describing: NSApp.currentEvent?.locationInWindow))"
+    let coordinateContext = "window=\(window.frame) posted=\(event.locationInWindow) current=\(String(describing: NSApp.currentEvent?.locationInWindow))"
     XCTAssertEqual(deliveredLocation.x, location.x, accuracy: 0.01, coordinateContext)
     XCTAssertEqual(deliveredLocation.y, location.y, accuracy: 0.01, coordinateContext)
     return hit

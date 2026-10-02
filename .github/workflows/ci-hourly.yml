@@ -155,6 +155,12 @@ jobs:
             # C11-253: ttyname(stdin) can name a pty without making it the
             # host process's controlling tty; PROC_TTY_ONLY then has no match.
             c11Tests/TabLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY
+            # C11-253: this standalone AppKit host remaps posted pointer
+            # window coordinates, failing the fixture's dispatch precondition.
+            # Keep the real-event guards; Atlas guest scenarios 9/10 must prove
+            # collapsed-divider reopening until the host harness is repaired.
+            c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed
+            c11Tests/WindowTerminalHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed
           )
           SKIP_ARGS=()
           for test_id in "${HOST_TEST_QUARANTINE[@]}"; do

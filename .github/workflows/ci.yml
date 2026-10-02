@@ -213,6 +213,9 @@ jobs:
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
 
+      - name: Shell helper lifetime and git reporting
+        run: bash tests/test_shell_git_watchers.sh
+
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
         # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)

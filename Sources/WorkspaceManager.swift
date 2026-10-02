@@ -2603,8 +2603,12 @@ class WorkspaceManager: ObservableObject {
         ]
     }
 
-    func closeWorkspace(_ workspace: Workspace) {
-        guard workspaces.count > 1 else { return }
+    func closeWorkspace(_ requestedWorkspace: Workspace) {
+        guard workspaces.count > 1,
+              let index = workspaces.firstIndex(where: { $0.id == requestedWorkspace.id }) else { return }
+        // A stale caller from another window must not tear down its terminals.
+        // Resolve the owned instance before any cleanup, even for a matching ID.
+        let workspace = workspaces[index]
         sentryBreadcrumb("workspace.close", data: surfaceShapeSummary(tabCount: workspaces.count - 1))
         clearWorkspaceGitProbes(workspaceId: workspace.id)
         sidebarSelectedWorkspaceIds.remove(workspace.id)
@@ -2615,16 +2619,14 @@ class WorkspaceManager: ObservableObject {
         unwireClosedBrowserTracking(for: workspace)
         workspace.owningWorkspaceManager = nil
 
-        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-            workspaces.remove(at: index)
+        workspaces.remove(at: index)
 
-            if selectedWorkspaceId == workspace.id {
-                // Keep the "focused index" stable when possible:
-                // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
-                // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
-                let newIndex = min(index, max(0, workspaces.count - 1))
-                selectedWorkspaceId = workspaces[newIndex].id
-            }
+        if selectedWorkspaceId == workspace.id {
+            // Keep the "focused index" stable when possible:
+            // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
+            // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
+            let newIndex = min(index, max(0, workspaces.count - 1))
+            selectedWorkspaceId = workspaces[newIndex].id
         }
     }
 

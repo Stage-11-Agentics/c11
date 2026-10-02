@@ -3420,7 +3420,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
-        let snapshot = SessionPersistenceStore.load()
+        let snapshot = SessionPersistenceStore.load().map {
+            SessionRestoreNormalization.prepareStartupSnapshot($0)
+        }
         startupSessionSnapshot = snapshot
 
         // Resolve the one-shot policy before any slow work. Even if seed or
@@ -3755,6 +3757,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func completeStartupSessionRestore() {
+        FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
         _ = saveSessionSnapshot(includeScrollback: false)
@@ -4859,7 +4862,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return AppSessionSnapshot(
             version: SessionSnapshotSchema.currentVersion,
             createdAt: Date().timeIntervalSince1970,
-            windows: windows
+            windows: windows,
+            focusHistory: FocusHistoryStore.shared.snapshot()
         )
     }
 

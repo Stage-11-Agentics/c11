@@ -65,6 +65,8 @@ extension TerminalController {
         }
 
         switch request.method {
+        case "history.list":
+            return v2Result(id: request.id, v2HistoryList(params: request.params))
         case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
@@ -998,6 +1000,7 @@ extension TerminalController {
     /// seam DX-1 asks for; the router (parse/auth-gate/policy/main-sync) is
     /// unchanged. Runs on the main actor exactly like the switch it replaces.
     func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
+        if method.hasPrefix("history.") { return v2DispatchHistory(method, id: id, params: params) }
         if method.hasPrefix("agent.") { return v2DispatchAgent(method, id: id, params: params) }
         if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }

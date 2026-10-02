@@ -57,6 +57,9 @@ extension TerminalController {
             "system.identify",
             "system.brand",
             "system.tree",
+            "history.list",
+            "history.back",
+            "history.forward",
             "auth.login",
             "window.list",
             "window.current",
@@ -275,6 +278,7 @@ extension TerminalController {
             "debug.command_palette.rename_input.select_all",
             "debug.browser.address_bar_focused",
             "debug.browser.favicon",
+            "debug.browser.simulate_web_content_termination",
             "debug.sidebar.visible",
             "debug.terminal.is_focused",
             "debug.terminal.read_text",
@@ -307,7 +311,10 @@ extension TerminalController {
             "version": 2,
             "socket_path": socketPath,
             "access_mode": accessMode.rawValue,
-            "methods": methods.sorted()
+            "methods": methods.sorted(),
+            "features_version": CapabilityFeatures.schemaVersion,
+            "features": CapabilityFeatures.current.payload,
+            "server": C11BuildIdentity(info: Bundle.main.infoDictionary ?? [:]).payload
         ]
     }
 

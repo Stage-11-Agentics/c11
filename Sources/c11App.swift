@@ -146,6 +146,8 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.prevSurface.defaultsKey) private var prevSurfaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultsKey) private var nextWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultsKey) private var prevWorkspaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusHistoryBack.defaultsKey) private var focusHistoryBackShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusHistoryForward.defaultsKey) private var focusHistoryForwardShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.splitRight.defaultsKey) private var splitRightShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.splitDown.defaultsKey) private var splitDownShortcutData = Data()
     @AppStorage(BrowserToolbarAccessorySpacingDebugSettings.key) private var browserToolbarAccessorySpacingRaw = BrowserToolbarAccessorySpacingDebugSettings.defaultSpacing
@@ -1017,6 +1019,16 @@ struct cmuxApp: App {
                 }
             }
 
+            CommandMenu(String(localized: "menu.history.title", defaultValue: "History")) {
+                splitCommandButton(title: String(localized: "menu.history.back", defaultValue: "Back"), shortcut: focusHistoryBackMenuShortcut) {
+                    _ = FocusHistoryStore.shared.navigate(back: true)
+                }
+
+                splitCommandButton(title: String(localized: "menu.history.forward", defaultValue: "Forward"), shortcut: focusHistoryForwardMenuShortcut) {
+                    _ = FocusHistoryStore.shared.navigate(back: false)
+                }
+            }
+
             // C11-41 Browser menu: every browser-surface verb in one home.
             CommandMenu(String(localized: "menu.browser.title", defaultValue: "Browser")) {
                 Button(String(localized: "menu.browser.back", defaultValue: "Back")) {
@@ -1184,6 +1196,14 @@ struct cmuxApp: App {
             from: prevWorkspaceShortcutData,
             fallback: KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultShortcut
         )
+    }
+
+    private var focusHistoryBackMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusHistoryBackShortcutData, fallback: KeyboardShortcutSettings.Action.focusHistoryBack.defaultShortcut)
+    }
+
+    private var focusHistoryForwardMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusHistoryForwardShortcutData, fallback: KeyboardShortcutSettings.Action.focusHistoryForward.defaultShortcut)
     }
 
     private var splitDownMenuShortcut: StoredShortcut {
@@ -6501,7 +6521,7 @@ struct SettingsView: View {
             ShortcutSettingsGroup(
                 id: "navigation",
                 title: String(localized: "settings.shortcuts.group.navigation", defaultValue: "Navigation"),
-                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .renameTab, .renameWorkspace, .closeWorkspace, .newSurface]
+                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .focusHistoryBack, .focusHistoryForward, .renameTab, .renameWorkspace, .closeWorkspace, .newSurface]
             ),
             ShortcutSettingsGroup(
                 id: "panes",
@@ -7239,7 +7259,7 @@ private struct ShortcutSettingRow: View {
     }
 
     var body: some View {
-        KeyboardShortcutRecorder(label: action.label, shortcut: $shortcut)
+        KeyboardShortcutRecorder(label: action.label, action: action, shortcut: $shortcut)
             .onChange(of: shortcut) { newValue in
                 KeyboardShortcutSettings.setShortcut(newValue, for: action)
             }

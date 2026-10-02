@@ -98,23 +98,114 @@ final class WorkspaceManagerChildExitCloseTests: XCTestCase {
 
 @MainActor
 final class WorkspaceManagerWorkspaceOwnershipTests: XCTestCase {
-    func testCloseWorkspaceIgnoresWorkspaceNotOwnedByManager() {
-        let manager = WorkspaceManager()
-        _ = manager.addWorkspace()
-        let initialWorkspaceIds = manager.workspaces.map(\.id)
-        let initialSelectedWorkspaceId = manager.selectedWorkspaceId
+    func testCloseWorkspaceIgnoresWorkspaceNotOwnedByManager() throws {
+        let owner = WorkspaceManager()
+        let ownedWorkspace = owner.addWorkspace()
+        let other = WorkspaceManager()
+        _ = other.addWorkspace()
+        let ownerIds = owner.workspaces.map(\.id)
+        let otherIds = other.workspaces.map(\.id)
+        let ownerSelection = owner.selectedWorkspaceId
+        let otherSelection = other.selectedWorkspaceId
+        let panelIdentities = ownedWorkspace.panels.mapValues { ObjectIdentifier($0 as AnyObject) }
+        let titles = ownedWorkspace.tabTitles
+        XCTAssertFalse(panelIdentities.isEmpty)
+        XCTAssertTrue(ownedWorkspace.owningWorkspaceManager === owner)
 
-        let externalWorkspace = Workspace(title: "External workspace")
-        let externalPanelCountBefore = externalWorkspace.panels.count
-        let externalTabTitlesBefore = externalWorkspace.tabTitles
+        let appDelegate = try XCTUnwrap(AppDelegate.shared)
+        let store = TerminalNotificationStore.shared
+        let originalStore = appDelegate.notificationStore
+        let originalNotifications = store.notifications
+        appDelegate.notificationStore = store
+        defer {
+            store.replaceNotificationsForTesting(originalNotifications)
+            appDelegate.notificationStore = originalStore
+        }
+        let notification = TerminalNotification(
+            id: UUID(), workspaceId: ownedWorkspace.id, surfaceId: ownedWorkspace.focusedPanelId,
+            title: "Synthetic ownership notification", subtitle: "", body: "",
+            createdAt: Date(), isRead: false
+        )
+        store.replaceNotificationsForTesting([notification])
 
-        manager.closeWorkspace(externalWorkspace)
+        other.closeWorkspace(ownedWorkspace)
 
-        XCTAssertEqual(manager.workspaces.map(\.id), initialWorkspaceIds)
-        XCTAssertEqual(manager.selectedWorkspaceId, initialSelectedWorkspaceId)
-        XCTAssertEqual(externalWorkspace.panels.count, externalPanelCountBefore)
-        XCTAssertEqual(externalWorkspace.tabTitles, externalTabTitlesBefore)
+        XCTAssertEqual(owner.workspaces.map(\.id), ownerIds)
+        XCTAssertEqual(other.workspaces.map(\.id), otherIds)
+        XCTAssertEqual(owner.selectedWorkspaceId, ownerSelection)
+        XCTAssertEqual(other.selectedWorkspaceId, otherSelection)
+        XCTAssertEqual(ownedWorkspace.panels.mapValues { ObjectIdentifier($0 as AnyObject) }, panelIdentities)
+        XCTAssertEqual(ownedWorkspace.tabTitles, titles)
+        XCTAssertTrue(ownedWorkspace.owningWorkspaceManager === owner)
+        XCTAssertEqual(store.notifications.map(\.id), [notification.id])
+
+        owner.closeWorkspace(ownedWorkspace)
+        XCTAssertEqual(owner.workspaces.map(\.id), ownerIds.filter { $0 != ownedWorkspace.id })
+        XCTAssertEqual(owner.selectedWorkspaceId, ownerIds.first)
+        XCTAssertTrue(ownedWorkspace.panels.isEmpty)
+        XCTAssertNil(ownedWorkspace.owningWorkspaceManager)
+        XCTAssertTrue(store.notifications.isEmpty)
+        XCTAssertEqual(other.workspaces.map(\.id), otherIds)
     }
+
+    func testStaleManagerCannotCloseWorkspaceAfterDetachAndAttach() throws {
+        let source = WorkspaceManager()
+        _ = source.addWorkspace()
+        let moved = source.addWorkspace()
+        let destination = WorkspaceManager()
+        _ = destination.addWorkspace()
+        let identities = moved.panels.mapValues { ObjectIdentifier($0 as AnyObject) }
+        let titles = moved.tabTitles
+
+        let detached = try XCTUnwrap(source.detachWorkspace(workspaceId: moved.id))
+        XCTAssertTrue(detached === moved)
+        XCTAssertEqual(moved.panels.mapValues { ObjectIdentifier($0 as AnyObject) }, identities)
+        destination.attachWorkspace(detached)
+        let sourceIds = source.workspaces.map(\.id)
+        let destinationIds = destination.workspaces.map(\.id)
+        let sourceSelection = source.selectedWorkspaceId
+        let destinationSelection = destination.selectedWorkspaceId
+        XCTAssertGreaterThan(sourceIds.count, 1, "exercise ownership, not the last-workspace guard")
+
+        source.closeWorkspace(moved)
+
+        XCTAssertEqual(source.workspaces.map(\.id), sourceIds)
+        XCTAssertEqual(destination.workspaces.map(\.id), destinationIds)
+        XCTAssertEqual(source.selectedWorkspaceId, sourceSelection)
+        XCTAssertEqual(destination.selectedWorkspaceId, destinationSelection)
+        XCTAssertEqual(moved.panels.mapValues { ObjectIdentifier($0 as AnyObject) }, identities)
+        XCTAssertEqual(moved.tabTitles, titles)
+        XCTAssertTrue(moved.owningWorkspaceManager === destination)
+
+        destination.closeWorkspace(moved)
+        XCTAssertFalse(destination.workspaces.contains { $0.id == moved.id })
+        XCTAssertTrue(moved.panels.isEmpty)
+        XCTAssertNil(moved.owningWorkspaceManager)
+    }
+
+    func testDirectCloseKeepsLastWorkspaceAndPanels() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.workspaces.first)
+        let identities = workspace.panels.mapValues { ObjectIdentifier($0 as AnyObject) }
+        manager.closeWorkspace(workspace)
+        XCTAssertEqual(manager.workspaces.map(\.id), [workspace.id])
+        XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
+        XCTAssertEqual(workspace.panels.mapValues { ObjectIdentifier($0 as AnyObject) }, identities)
+        XCTAssertTrue(workspace.owningWorkspaceManager === manager)
+    }
+
+    func testCloseResolvesOwnedInstanceForMatchingWorkspaceId() {
+        let manager = WorkspaceManager()
+        let owned = manager.addWorkspace()
+        let alias = Workspace(id: owned.id, title: "Synthetic alternate instance")
+        let aliasIdentities = alias.panels.mapValues { ObjectIdentifier($0 as AnyObject) }
+        manager.closeWorkspace(alias)
+        XCTAssertFalse(manager.workspaces.contains { $0.id == owned.id })
+        XCTAssertTrue(owned.panels.isEmpty)
+        XCTAssertNil(owned.owningWorkspaceManager)
+        XCTAssertEqual(alias.panels.mapValues { ObjectIdentifier($0 as AnyObject) }, aliasIdentities)
+    }
+
 }
 
 
@@ -235,6 +326,7 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         let manager = WorkspaceManager()
         let foreground = manager.workspaces[0]
         _ = manager.addWorkspace()
+        manager.selectWorkspace(foreground)
         XCTAssertEqual(manager.selectedWorkspaceId, foreground.id)
 
         var promptCount = 0

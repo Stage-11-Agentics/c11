@@ -6074,7 +6074,7 @@ struct ContentView: View {
             AppDelegate.shared?.toggleNotificationsPopover(animated: false)
         }
         registry.register(commandId: "palette.jumpUnread") {
-            AppDelegate.shared?.jumpToLatestUnread()
+            AppDelegate.shared?.operatorJumpToLatestUnread()
         }
         registry.register(commandId: "palette.openSettings") {
 #if DEBUG
@@ -11090,7 +11090,7 @@ private struct SidebarWaitingAgentCluster: View {
 
     private func jump() {
         DispatchQueue.main.async {
-            AppDelegate.shared?.jumpToLatestUnread()
+            AppDelegate.shared?.operatorJumpToLatestUnread()
         }
     }
 }
@@ -12445,7 +12445,7 @@ private struct WorkspaceRowView: View, Equatable {
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
         guard agent.flagged || agent.presentedState == .waiting else { return }
-        _ = AppDelegate.shared?.openNotification(
+        _ = AppDelegate.shared?.operatorOpenNotification(
             workspaceId: workspace.id,
             surfaceId: agent.surfaceId,
             notificationId: nil

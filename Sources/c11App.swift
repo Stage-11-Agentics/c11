@@ -443,7 +443,7 @@ struct cmuxApp: App {
                 }
 
                 splitCommandButton(title: String(localized: "menu.notifications.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: jumpToUnreadMenuShortcut) {
-                    appDelegate.jumpToLatestUnread()
+                    appDelegate.operatorJumpToLatestUnread()
                 }
                 .disabled(!snapshot.hasUnreadNotifications && snapshot.flags.isEmpty && !appDelegate.hasJournalAttention)
 
@@ -1335,7 +1335,7 @@ struct cmuxApp: App {
     }
 
     private func openNotificationFromMainMenu(_ notification: TerminalNotification) {
-        _ = appDelegate.openNotification(
+        _ = appDelegate.operatorOpenNotification(
             workspaceId: notification.workspaceId,
             surfaceId: notification.surfaceId,
             notificationId: notification.id

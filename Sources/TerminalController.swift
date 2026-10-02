@@ -191,7 +191,7 @@ final class SocketCommandContext: @unchecked Sendable {
         self.callerTTYDevice = callerTTYDevice
     }
 
-    static func withContext<T>(_ context: SocketCommandContext?, _ body: () -> T) -> T {
+    static func withContext<T>(_ context: SocketCommandContext?, _ body: () throws -> T) rethrows -> T {
         let prior = current
         if let context { Thread.current.threadDictionary[threadKey] = context }
         else { Thread.current.threadDictionary.removeObject(forKey: threadKey) }
@@ -199,7 +199,7 @@ final class SocketCommandContext: @unchecked Sendable {
             if let prior { Thread.current.threadDictionary[threadKey] = prior }
             else { Thread.current.threadDictionary.removeObject(forKey: threadKey) }
         }
-        return body()
+        return try body()
     }
 
     static var blockedMessage: String {

@@ -922,11 +922,11 @@ class WorkspaceManager: ObservableObject {
     }
 
     private var workspaceSelectionCause = "menu"
-    func withWorkspaceSelectionCause<T>(_ cause: String, _ body: () -> T) -> T {
+    func withWorkspaceSelectionCause<T>(_ cause: String, _ body: () throws -> T) rethrows -> T {
         let prior = workspaceSelectionCause
         workspaceSelectionCause = cause
         defer { workspaceSelectionCause = prior }
-        return body()
+        return try body()
     }
 
     @Published private(set) var storedSelectedWorkspaceId: UUID? {
@@ -2687,7 +2687,7 @@ class WorkspaceManager: ObservableObject {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return nil }
         if selectedWorkspaceId == workspaceId, SocketCommandContext.current != nil {
             // A socket move cannot remove the visible workspace and force a switch.
-            selectedWorkspaceId = closeFallback(excluding: workspaceId, index: index) ?? UUID()
+            selectedWorkspaceId = closeFallback(excluding: workspaceId, index: index)
             return nil
         }
         clearWorkspaceGitProbes(workspaceId: workspaceId)

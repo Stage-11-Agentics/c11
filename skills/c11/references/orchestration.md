@@ -287,8 +287,8 @@ For most TUIs, the skill-driven self-reporting path above is how status gets pop
 
 ### opencode
 
-- **Bundled notification plugin.** OpenCode has a clean plugin API (`session.idle`, `permission.asked`, `session.status`, `session.error`). `c11 skill install --tool opencode` copies a bundled plugin (`c11-notify.js`) into `~/.config/opencode/plugins/` that bridges these events into c11 notifications + sidebar status — same workflow as Claude Code's hooks. No PATH wrapper, no `opencode.json` modification.
-- **No PATH wrapper.** Like codex, status comes from the plugin (if installed) or skill-driven self-reporting. If neither is set up, the sidebar won't show status for opencode; that is expected, not a bug.
+- **Runtime notification plugin.** The bundled PATH wrapper bridges OpenCode lifecycle events per process inside a live c11 terminal. It uses a free inline config slot or fd-backed config, preserving existing values. If both slots are occupied, injection is skipped; skill-driven self-reporting remains available.
+- **Skills only.** `c11 skill install/remove --tool opencode` never writes or deletes `~/.config/opencode/plugins/`. Older copied plugins and sidecars stay untouched; an operator can inspect, back up and manually retire them. Until then an old copy may load alongside the runtime plugin.
 - **Launch command is operator-configured** under Settings → Agents & Automation → Agent Launcher Button. The resolver materializes whatever the operator chose into `$C11_DEFAULT_AGENT_LAUNCH` at shell-spawn time. Preference changes only take effect on newly-spawned shells, not already-running ones.
 
 ### kimi, others

@@ -420,21 +420,27 @@ c11 trigger-flash [--tab <id|ref>]     # Visual flash on a tab
 
 Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 
-## Skill + Plugin Installation (`c11 skill install`)
+## Skill Installation (`c11 skill install`)
 
-`c11 skill install --tool <tui>` copies the c11 skill bundle (and for OpenCode, a notification plugin) into the TUI's config directories. Human-run, consent-gated, reversible.
+`c11 skill install --tool <tui>` copies the c11 skill bundle into the TUI's skills directory. Human-run, consent-gated, reversible.
 
 ```bash
 c11 skill install --tool claude        # Skills → ~/.claude/skills/
-c11 skill install --tool opencode      # Skills → ~/.opencode/skills/ + plugin → ~/.config/opencode/plugins/
+c11 skill install --tool opencode      # Skills → ~/.opencode/skills/
 c11 skill install --tool codex         # Skills → ~/.codex/skills/
 c11 skill install --tool kimi          # Skills → ~/.kimi/skills/
 c11 skill status [--json]              # Detection + install state for all tools
 c11 skill install --tool opencode --dry-run   # Show what would be written
-c11 skill remove --tool opencode       # Reverses install (skills + plugins)
+c11 skill remove --tool opencode       # Removes c11-installed skills only
 ```
 
-For OpenCode, the installer also copies a bundled plugin (`c11-notify.js`) into `~/.config/opencode/plugins/`. The plugin bridges `session.idle`, `permission.asked`, `session.error`, and `session.status` events into c11 notifications and sidebar status updates — giving OpenCode the same "blue ring + tab highlight + Cmd+Shift+U" workflow as Claude Code. OpenCode auto-loads plugins from that directory at startup; no `opencode.json` edit is required.
+OpenCode's bundled PATH wrapper loads the notification/status plugin per process
+inside a live c11 terminal. It uses a free `OPENCODE_CONFIG_CONTENT` slot, or
+`OPENCODE_CONFIG=/dev/fd/3` while preserving existing inline content. If both
+slots are occupied, both remain unchanged and bundled-plugin injection is skipped.
+Skill installation/removal never touches `~/.config/opencode/plugins/`. Older
+copied plugins and sidecars remain for operator inspection and backup; the operator
+may manually retire them. An old copy can still load alongside the runtime plugin.
 
 > **Historical note:** `c11 install <tui>` (without the `skill` subcommand) is not a real command — it was aspirational in earlier docs. The actual install path is `c11 skill install --tool <tui>`.
 

@@ -15896,12 +15896,16 @@ struct CMUXCLI {
         }
         argv.append(nil)
 
+        // c11 ignores SIGPIPE for its own safe writes; the child must start
+        // with the normal disposition. Restore it if exec returns an error.
+        let priorSIGPIPE = signal(SIGPIPE, SIG_DFL)
         if claudeExecutablePath != nil {
             execv(launchPath, &argv)
         } else {
             execvp("claude", &argv)
         }
         let code = errno
+        _ = signal(SIGPIPE, priorSIGPIPE)
         throw CLIError(message: "Failed to launch claude: \(String(cString: strerror(code)))")
     }
 
@@ -18410,11 +18414,10 @@ extension CMUXCLI {
           For every other tool, c11 prints the manual command and only writes
           to disk when --tool is passed explicitly — the operator stays in charge.
 
-        Plugins:
-          For OpenCode, `install --tool opencode` also copies bundled plugins
-          (notification + status bridge) into ~/.config/opencode/plugins/.
-          OpenCode auto-loads plugins from that directory at startup — no
-          opencode.json edit required.
+        OpenCode runtime plugin:
+          The bundled PATH wrapper loads the notification/status plugin for
+          that process only. Skill install/remove never writes or deletes
+          ~/.config/opencode/plugins/. Older copies remain for operator review.
         """
     }
 

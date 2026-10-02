@@ -31,7 +31,7 @@ window:1   workspace:1   area:2   tab:3   tab:1
 
 **Operator-spoken tab numbers are tab refs.** With the "Show Tab Numbers in Tab Titles" setting on (Settings → Tabs & Areas), every tab renders as `N: title` where N is its `tab:N` ordinal. When the operator says "send this to 292", target `tab:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth tab in list order), which is a different tab. Your own number is `$C11_TAB_NUM`.
 
-`tab:N`, `area:N`, `workspace:N`, and `window:N` are process-local ordinals that start over when c11 restarts; keep them for live targets, and store UUIDs from `c11 --id-format both tree --json` (or `$C11_TAB_ID` / `$C11_WORKSPACE_ID`) for targeting the same object after a restart.
+`tab:N`, `area:N`, `workspace:N`, and `window:N` are process-local ordinals that start over when c11 restarts; keep them for live targets. Tabs and workspaces retain their UUIDs when restored from a saved session, so store those UUIDs from `c11 --id-format both tree --json` (or `$C11_TAB_ID` / `$C11_WORKSPACE_ID`) for targeting after a restart. Restored areas and windows receive new UUIDs; rediscover them with `c11 --id-format both tree --json` after a restart.
 
 **`--workspace` AND `--tab` must be used together** when targeting a remote tab. Either flag alone fails or targets the wrong thing.
 

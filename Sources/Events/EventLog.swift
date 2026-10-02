@@ -17,6 +17,11 @@ import Foundation
 /// memory without bound — drops surface in-stream as a `log.dropped` marker.
 final class EventLog {
 
+    /// Posted on the log's utility queue after a line has been handed to the
+    /// file handle. Consumers such as the messages page use it to debounce
+    /// their own off-main rebuild without adding work to event emitters.
+    static let eventWrittenNotification = Notification.Name("com.stage11.c11.event-log-line-written")
+
     let url: URL
     private let instance: String
     private let sizeCap: Int
@@ -115,6 +120,11 @@ final class EventLog {
         nextSeq &+= 1
         let line = envelope.serialize(seq: nextSeq)
         writeLine(line)
+        NotificationCenter.default.post(
+            name: Self.eventWrittenNotification,
+            object: envelope.type,
+            userInfo: ["seq": nextSeq]
+        )
         rotateIfNeeded()
     }
 

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:51:29Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2QXQ3H6N10X43WE11G1N6",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2QXQ3H6N10X43WE11G1N6.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Frozen interleaved helper and artifact identity 006",
+  "token_usage": null,
+  "type": "file"
+}

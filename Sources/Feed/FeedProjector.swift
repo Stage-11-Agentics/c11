@@ -35,7 +35,7 @@ struct FeedAttentionFact: Equatable {
 
 struct FeedFlagFact: Equatable {
     var reason: String
-    var raisedAtMs: Int64
+    var raisedAtMs: Int64?
     var callerTabID: UUID?
 }
 
@@ -81,7 +81,7 @@ struct FeedRow: Equatable {
         if let flag {
             object["flag"] = [
                 "reason": flag.reason,
-                "raised_at_ms": NSNumber(value: flag.raisedAtMs),
+                "raised_at_ms": flag.raisedAtMs.map { NSNumber(value: $0) } ?? NSNull(),
                 "caller_tab_id": flag.callerTabID?.uuidString ?? NSNull(),
             ]
         }
@@ -132,10 +132,7 @@ enum FeedProjector {
                 rows.append(row)
             }
         }
-        return rows.sorted {
-            if $0.workspaceID != $1.workspaceID { return $0.workspaceID.uuidString < $1.workspaceID.uuidString }
-            return $0.tabID.uuidString < $1.tabID.uuidString
-        }
+        return AttentionOrder.ordered(rows)
     }
 
     private static func row(
@@ -158,7 +155,7 @@ enum FeedProjector {
 
         let flag = flagged ? FeedFlagFact(
             reason: attention?.flagReason ?? "",
-            raisedAtMs: attention?.flagRaisedAtMs ?? 0,
+            raisedAtMs: attention?.flagRaisedAtMs,
             callerTabID: attention?.flagCallerTabID
         ) : nil
 

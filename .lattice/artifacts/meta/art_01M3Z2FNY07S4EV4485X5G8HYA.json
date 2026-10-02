@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:46:59Z",
+  "created_by": "agent:sol-feed",
+  "custom_fields": {},
+  "id": "art_01M3Z2FNY07S4EV4485X5G8HYA",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3Z2FNY07S4EV4485X5G8HYA.png",
+    "size_bytes": 100093
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Screenshot: longest shipped ko label, fixed controls and 120-row counts",
+  "token_usage": null,
+  "type": "file"
+}

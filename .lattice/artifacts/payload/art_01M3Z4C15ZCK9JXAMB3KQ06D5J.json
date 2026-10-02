@@ -1,0 +1,27 @@
+{
+  "invocation": "54e0a7dd76554977a48bf92c176f7cb4",
+  "head": "63b353a3c33e1ccb914a49cdb117fc2ab3b5be98",
+  "parent_head": "31103a7dcf0c9dde539a69976bc225f2bbc684da",
+  "branch": "c11-1.0/C11-266-quick-view",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-266",
+  "slug": "c11-266",
+  "mode": "debug",
+  "extra": [],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "na",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "app": "c11 DEV c11-266.app",
+  "executable_sha256": "d0fa4e60f099c989e74af33af6a8cf597433db3cad115667ae525205f2c11e9c",
+  "ok": true,
+  "local_executable_sha256": "b51c119dd48a34ef6ac8d57622332f7d0c89143cacd2e4091c8a6d5e449357e9"
+}

@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "statusMenu.attention.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No flags · no open asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグなし · 未対応の依頼なし" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Немає прапорців · немає відкритих запитів" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 없음 · 미해결 요청 없음" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无标记 · 无待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "沒有標記 · 沒有待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет флагов · нет открытых запросов" } }
+      }
+    },
+    "statusMenu.attention.flags.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 flag" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグ：1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 прапорець" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个标记" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個標記" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 флаг" } }
+      }
+    },
+    "statusMenu.attention.flags.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld flags" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグ：%lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Прапорці: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个标记" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個標記" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Флаги: %lld" } }
+      }
+    },
+    "statusMenu.attention.asks.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 open ask" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未対応の依頼：1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 відкритий запит" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미해결 요청 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 открытый запрос" } }
+      }
+    },
+    "statusMenu.attention.asks.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld open asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未対応の依頼：%lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Відкриті запити: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미해결 요청 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открытые запросы: %lld" } }
+      }
+    },
     "shortcut.focusHistoryBack.label": {
       "extractionState": "manual",
       "localizations": {
@@ -997,7 +1057,13 @@
             "state": "translated",
             "value": "Couldn't set the default — please try again."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "デフォルトに設定できませんでした。もう一度お試しください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Не вдалося зробити конфігурацію типовою. Спробуйте ще раз." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "기본값으로 설정하지 못했습니다. 다시 시도해 주세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法设为默认项，请重试。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "無法設為預設項，請再試一次。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось назначить конфигурацию по умолчанию. Попробуйте ещё раз." } }
       }
     },
     "agentConfigEditor.default.unlaunchable": {
@@ -1008,7 +1074,13 @@
             "state": "translated",
             "value": "That config can't launch as written, so it can't be the default — give it a command first."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "この設定は現在の内容では起動できないため、デフォルトにできません。先に起動コマンドを設定してください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Цю конфігурацію не можна запустити в поточному вигляді, тому її не можна зробити типовою. Спершу задайте команду запуску." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 설정은 현재 상태로 실행할 수 없어 기본값으로 지정할 수 없습니다. 먼저 실행 명령을 설정해 주세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此配置目前无法启动，因此不能设为默认项。请先设置启动命令。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此設定目前無法啟動，因此不能設為預設項。請先設定啟動命令。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Эту конфигурацию нельзя запустить в текущем виде, поэтому её нельзя назначить используемой по умолчанию. Сначала задайте команду запуска." } }
       }
     },
     "agentConfigEditor.effort.inheritResolved": {
@@ -1019,7 +1091,13 @@
             "state": "translated",
             "value": "inherit · %@"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "継承 · %@" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "успадкування · %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "상속 · %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "继承 · %@" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "繼承 · %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "наследуется · %@" } }
       }
     },
     "agentConfigEditor.effort.kimiHint": {
@@ -1030,7 +1108,13 @@
             "state": "translated",
             "value": "kimi has no effort flag — rides %@ in the launch environment"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "Kimi は effort フラグに対応していません。起動環境では %@ を使用します。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Kimi не підтримує прапорець effort — значення задається змінною середовища запуску %@." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Kimi는 effort 플래그를 지원하지 않습니다. 실행 환경에서 %@를 사용합니다." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "Kimi 不支持 effort 标志，启动环境中使用 %@。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "Kimi 不支援 effort 旗標，啟動環境中使用 %@。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Kimi не поддерживает флаг effort — в среде запуска используется %@." } }
       }
     },
     "agentConfigEditor.harness.alternate": {
@@ -1041,7 +1125,13 @@
             "state": "translated",
             "value": "also serves it"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "このモデルにも対応" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "також підтримує цю модель" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 모델도 지원" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "也支持此模型" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "也支援此模型" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "также поддерживает эту модель" } }
       }
     },
     "agentConfigEditor.harness.default": {
@@ -1052,7 +1142,13 @@
             "state": "translated",
             "value": "default for this model"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "このモデルのデフォルト" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "типове для цієї моделі" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 모델의 기본 실행 환경" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此模型的默认项" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此模型的預設項" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "по умолчанию для этой модели" } }
       }
     },
     "agentConfigEditor.harness.hint": {
@@ -1063,7 +1159,13 @@
             "state": "translated",
             "value": "the last question — which shell runs it"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "最後の質問 — どの実行環境で動かすか" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "останнє запитання — у якому середовищі запускати" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "마지막 질문: 어떤 실행 환경에서 실행할까요?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最后一步：选择运行它的执行环境" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "最後一步：選擇執行它的環境" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "последний вопрос — в какой среде запускать" } }
       }
     },
     "agentConfigEditor.harness.onlyOne": {
@@ -1074,7 +1176,13 @@
             "state": "translated",
             "value": "the only harness that serves this model"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "このモデルに対応する唯一の実行環境" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "єдине середовище запуску, що підтримує цю модель" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 모델을 지원하는 유일한 실행 환경" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "唯一支持此模型的执行环境" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "唯一支援此模型的執行環境" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "единственная среда запуска для этой модели" } }
       }
     },
     "agentConfigEditor.launch.declined": {
@@ -1085,7 +1193,13 @@
             "state": "translated",
             "value": "Saved, but it didn't launch. %@"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "保存しましたが、起動しませんでした。%@" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Збережено, але запуск не відбувся. %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "저장했지만 실행되지 않았습니다. %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保存，但未能启动。%@" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "已儲存，但未能啟動。%@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Сохранено, но не запущено. %@" } }
       }
     },
     "agentConfigEditor.model.comingSoon": {
@@ -1096,7 +1210,13 @@
             "state": "translated",
             "value": "coming soon"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "近日対応予定" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "незабаром" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "출시 예정" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "即将推出" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "即將推出" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "скоро" } }
       }
     },
     "agentConfigEditor.model.noMatches": {
@@ -1107,7 +1227,13 @@
             "state": "translated",
             "value": "no models match"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "一致するモデルがありません" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Відповідних моделей не знайдено" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "일치하는 모델이 없습니다" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有匹配的模型" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "找不到相符的模型" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "подходящих моделей не найдено" } }
       }
     },
     "agentConfigEditor.model.pickProvider": {
@@ -1118,7 +1244,13 @@
             "state": "translated",
             "value": "pick a provider above, or search every catalog from here"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "上のプロバイダーを選ぶか、ここからすべてのカタログを検索してください" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "виберіть провайдера вище або шукайте тут в усіх каталогах" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "위에서 제공자를 선택하거나 여기서 모든 카탈로그를 검색하세요" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先选择上方的提供方，或在此搜索所有目录" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請先選擇上方的提供者，或在此搜尋所有目錄" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "выберите провайдера выше или ищите здесь по всем каталогам" } }
       }
     },
     "agentConfigEditor.model.searchAll": {
@@ -1129,7 +1261,13 @@
             "state": "translated",
             "value": "search every provider's models…"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "すべてのプロバイダーのモデルを検索…" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Пошук моделей у всіх провайдерів…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모든 제공자의 모델 검색…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索所有提供方的模型…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "搜尋所有提供者的模型…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Поиск моделей у всех провайдеров…" } }
       }
     },
     "agentConfigEditor.model.searchProvider": {
@@ -1140,7 +1278,13 @@
             "state": "translated",
             "value": "search %lld %@ models…"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "%lld 件の %@ モデルを検索…" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Пошук %lld моделей у %@…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%lld개의 %@ 모델 검색…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索 %lld 个 %@ 模型…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "搜尋 %lld 個 %@ 模型…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Поиск %lld моделей у %@…" } }
       }
     },
     "agentConfigEditor.model.upgradeTo": {
@@ -1151,7 +1295,13 @@
             "state": "translated",
             "value": "→ %@"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "→ %@" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "→ %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "→ %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "→ %@" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "→ %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "→ %@" } }
       }
     },
     "agentConfigEditor.newItem": {
@@ -1162,7 +1312,13 @@
             "state": "translated",
             "value": "New item"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "新しい項目" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Новий елемент" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "새 항목" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建项" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "新增項目" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Новый элемент" } }
       }
     },
     "agentConfigEditor.provider": {
@@ -1173,7 +1329,13 @@
             "state": "translated",
             "value": "Provider"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダー" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Провайдер" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "제공자" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提供方" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "供應商" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Провайдер" } }
       }
     },
     "agentConfigEditor.provider.hint": {
@@ -1184,7 +1346,13 @@
             "state": "translated",
             "value": "pick the brain — model, effort and harness follow"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダーを選ぶと、モデル、effort、実行環境が決まります" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "виберіть провайдера — від нього залежать модель, effort і середовище запуску" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "제공자를 선택하면 모델, effort, 실행 환경이 정해집니다" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择提供方后即可设置模型、effort 和执行环境" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "選擇提供者後即可設定模型、effort 和執行環境" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "выберите провайдера — от него зависят модель, effort и среда запуска" } }
       }
     },
     "agentConfigEditor.provider.inherit": {
@@ -1195,7 +1363,13 @@
             "state": "translated",
             "value": "Inherit"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "継承" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Успадкувати" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "상속" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "继承" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "繼承" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Наследовать" } }
       }
     },
     "agentConfigEditor.provider.inheritNote": {
@@ -1206,7 +1380,13 @@
             "state": "translated",
             "value": "harness picks its own"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "実行環境に従う" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "визначає середовище запуску" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실행 환경에서 결정" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "由执行环境决定" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "由執行環境決定" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "определяется средой запуска" } }
       }
     },
     "agentConfigEditor.provider.modelCount": {
@@ -1217,7 +1397,13 @@
             "state": "translated",
             "value": "%lld models"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "モデル %lld 件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Моделі: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "모델 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个模型" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個模型" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Модели: %lld" } }
       }
     },
     "agentConfigEditor.provider.more": {
@@ -1228,7 +1414,13 @@
             "state": "translated",
             "value": "More…"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "さらに表示…" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Ще…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "더 보기…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "更多…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "更多…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ещё…" } }
       }
     },
     "agentConfigEditor.provider.moreCount": {
@@ -1239,7 +1431,13 @@
             "state": "translated",
             "value": "%lld more"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "さらに %lld 件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Ще моделей: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%lld개 더" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "另有 %lld 个" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "另有 %lld 個" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Ещё моделей: %lld" } }
       }
     },
     "agentConfigEditor.provider.overflowRow": {
@@ -1250,7 +1448,13 @@
             "state": "translated",
             "value": "%@ (%lld)"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "%@ (%lld)" } }
       }
     },
     "agentConfigEditor.refusal.customCommandEmpty": {
@@ -1261,7 +1465,13 @@
             "state": "translated",
             "value": "A Custom config needs a launch command — open Advanced and give it one, or pick a harness that ships its own."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "カスタム設定には起動コマンドが必要です。「詳細」を開いて入力するか、専用のコマンドを備えた実行環境を選んでください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Для власної конфігурації потрібна команда запуску — відкрийте «Додатково» й задайте її або виберіть середовище запуску з власною командою." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용자 지정 설정에는 실행 명령이 필요합니다. ‘고급’을 열어 명령을 입력하거나 자체 명령이 포함된 실행 환경을 선택하세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "自定义配置需要启动命令。请打开“高级”并填写命令，或选择自带启动命令的执行环境。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "自訂設定需要啟動命令。請開啟「進階」並填入命令，或選擇內建啟動命令的執行環境。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Для пользовательской конфигурации нужна команда запуска — откройте «Дополнительно» и укажите её либо выберите среду запуска со своей командой." } }
       }
     },
     "agentConfigEditor.unsaved": {
@@ -1272,7 +1482,13 @@
             "state": "translated",
             "value": "unsaved"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "未保存" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "не збережено" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "저장되지 않음" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未保存" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "未儲存" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "не сохранено" } }
       }
     },
     "agentLaunch.decline.emptyCommand": {
@@ -1283,7 +1499,13 @@
             "state": "translated",
             "value": "This config resolves to an empty command (%@) — set a launch command for it under Edit Launch Agents."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "この設定から解決されたコマンドは空です（%@）。「エージェント起動設定を編集」で起動コマンドを設定してください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Ця конфігурація дає порожню команду (%@) — задайте команду запуску в розділі «Редагувати агентів запуску»." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 설정에서 확인된 명령이 비어 있습니다(%@). ‘에이전트 실행 설정 편집’에서 실행 명령을 설정하세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此配置解析出的命令为空（%@）。请在“编辑智能体启动项”中设置启动命令。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此設定解析出的命令為空（%@）。請在「編輯代理程式啟動設定」中設定啟動命令。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Эта конфигурация разрешается в пустую команду (%@) — задайте команду запуска в разделе «Редактировать настройки запуска агентов»." } }
       }
     },
     "agentLaunch.decline.surfaceFailed": {
@@ -1341,7 +1563,13 @@
             "state": "translated",
             "value": "c11 doesn't know the harness '%@' this config names — pick a known harness under Edit Launch Agents."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "c11 はこの設定が指定する実行環境「%@」を認識できません。「エージェント起動設定を編集」で既知の実行環境を選んでください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "c11 не розпізнає середовище запуску «%@», указане в цій конфігурації — виберіть відоме середовище в розділі «Редагувати агентів запуску»." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "c11은 이 설정에서 지정한 ‘%@’ 실행 환경을 알 수 없습니다. ‘에이전트 실행 설정 편집’에서 지원되는 환경을 선택하세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "c11 不认识此配置指定的执行环境“%@”。请在“编辑智能体启动项”中选择已知环境。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "c11 不認識此設定指定的執行環境「%@」。請在「編輯代理程式啟動設定」中選擇已知環境。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "c11 не распознаёт среду запуска «%@», указанную в этой конфигурации — выберите известную среду в разделе «Редактировать настройки запуска агентов»." } }
       }
     },
     "agentLauncher.kind.claudeCode": {
@@ -1681,7 +1909,13 @@
             "state": "translated",
             "value": "Edit Launch Agents"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント起動設定を編集" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Редагувати агентів запуску" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 실행 설정 편집" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑智能体启动项" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "編輯代理程式啟動設定" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Редактировать настройки запуска агентов" } }
       }
     },
     "agentPicker.header.launchAgent": {
@@ -1739,7 +1973,13 @@
             "state": "translated",
             "value": "edit"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "編集" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "редагувати" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "편집" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "編輯" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "изменить" } }
       }
     },
     "agentPicker.hint.launch": {
@@ -2079,7 +2319,13 @@
             "state": "translated",
             "value": "Couldn't set '%@' as the default — please try again."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "「%@」をデフォルトに設定できませんでした。もう一度お試しください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Не вдалося зробити «%@» типовою конфігурацією. Спробуйте ще раз." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "‘%@’을(를) 기본값으로 설정하지 못했습니다. 다시 시도해 주세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法将“%@”设为默认项，请重试。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "無法將「%@」設為預設項，請再試一次。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не удалось назначить «%@» конфигурацией по умолчанию. Попробуйте ещё раз." } }
       }
     },
     "agentPicker.notice.pinUnlaunchable": {
@@ -2090,7 +2336,13 @@
             "state": "translated",
             "value": "'%@' can't launch as written, so it can't be the default — give it a launch command first."
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "「%@」は現在の設定では起動できないため、デフォルトにできません。先に起動コマンドを設定してください。" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "«%@» не можна запустити в поточному вигляді, тому її не можна зробити типовою — спершу задайте команду запуску." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "‘%@’은(는) 현재 설정으로 실행할 수 없어 기본값으로 지정할 수 없습니다. 먼저 실행 명령을 설정해 주세요." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "“%@”目前无法启动，因此不能设为默认项。请先为其设置启动命令。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "「%@」目前無法啟動，因此不能設為預設項。請先為它設定啟動命令。" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "«%@» нельзя запустить в текущем виде, поэтому её нельзя назначить используемой по умолчанию — сначала задайте команду запуска." } }
       }
     },
     "agentPicker.pin.help": {
@@ -48161,7 +48413,13 @@
             "state": "translated",
             "value": "Edit Launch Agents"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "エージェント起動設定を編集" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Редагувати агентів запуску" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "에이전트 실행 설정 편집" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑智能体启动项" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "編輯代理程式啟動設定" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Редактировать настройки запуска агентов" } }
       }
     },
     "settings.section.agentIntegrations": {
@@ -57243,7 +57501,13 @@
             "state": "translated",
             "value": "1 browser"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "ブラウザー 1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 браузер" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "브라우저 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个浏览器" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個瀏覽器" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 браузер" } }
       }
     },
     "sidebar.workspacePulse.browserCount.other": {
@@ -57254,7 +57518,13 @@
             "state": "translated",
             "value": "%lld browsers"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "ブラウザー %lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Браузери: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "브라우저 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个浏览器" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個瀏覽器" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Браузеры: %lld" } }
       }
     },
     "sidebar.workspacePulse.censusEmpty": {
@@ -57409,7 +57679,13 @@
             "state": "translated",
             "value": "1 doc"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "ドキュメント 1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 документ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "문서 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个文档" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個文件" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 документ" } }
       }
     },
     "sidebar.workspacePulse.documentCount.other": {
@@ -57421,7 +57697,13 @@
             "state": "translated",
             "value": "%lld docs"
           }
-        }
+        },
+        "ja": { "stringUnit": { "state": "translated", "value": "ドキュメント %lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Документи: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "문서 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个文档" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個文件" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Документы: %lld" } }
       }
     },
     "sidebar.workspacePulse.flagged.accessibility": {

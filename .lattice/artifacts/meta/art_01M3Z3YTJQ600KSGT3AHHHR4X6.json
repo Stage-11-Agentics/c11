@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:12:43Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3YTJQ600KSGT3AHHHR4X6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z3YTJQ600KSGT3AHHHR4X6.md",
+    "size_bytes": 23638
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Measured protocol015 full counts fixed130s phases runloop focus verification",
+  "token_usage": null,
+  "type": "file"
+}

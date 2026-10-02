@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:19:56Z",
+  "created_by": "agent:sol-feed",
+  "custom_fields": {},
+  "id": "art_01M3Z4C15ZCK9JXAMB3KQ06D5J",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z4C15ZCK9JXAMB3KQ06D5J.json",
+    "size_bytes": 918
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact-head c11-266 tagged app manifest for packaged UI proof",
+  "token_usage": null,
+  "type": "file"
+}

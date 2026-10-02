@@ -36,6 +36,10 @@ sanitize_path() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
 }
 
+epoch_seconds() {
+  /bin/date +%s
+}
+
 [[ $# -ge 1 ]] || { usage >&2; exit 2; }
 TAG="$1"
 shift
@@ -120,17 +124,17 @@ quit_tagged() {
   # probe below is authoritative, so keep the courtesy quit request bounded.
   /usr/bin/osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 &
   local quit_pid=$!
-  local quit_deadline=$((SECONDS + 5))
+  local quit_deadline=$(( $(epoch_seconds) + 5 ))
   while kill -0 "$quit_pid" 2>/dev/null; do
-    if (( SECONDS >= quit_deadline )); then
+    if (( $(epoch_seconds) >= quit_deadline )); then
       kill "$quit_pid" 2>/dev/null || true
       break
     fi
     sleep 0.25
   done
   wait "$quit_pid" 2>/dev/null || true
-  local deadline=$((SECONDS + 30))
-  while (( SECONDS < deadline )); do
+  local deadline=$(( $(epoch_seconds) + 30 ))
+  while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
       return 0
     fi
@@ -146,8 +150,8 @@ quit_tagged() {
   if [[ -n "$pids" ]]; then
     kill $pids 2>/dev/null || true
   fi
-  deadline=$((SECONDS + 10))
-  while (( SECONDS < deadline )); do
+  deadline=$(( $(epoch_seconds) + 10 ))
+  while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
       return 0
     fi
@@ -158,8 +162,8 @@ quit_tagged() {
   if [[ -n "$pids" ]]; then
     kill -KILL $pids 2>/dev/null || true
   fi
-  deadline=$((SECONDS + 5))
-  while (( SECONDS < deadline )); do
+  deadline=$(( $(epoch_seconds) + 5 ))
+  while (( $(epoch_seconds) < deadline )); do
     if [[ -z "$(tagged_pids)" ]]; then
       return 0
     fi
@@ -177,8 +181,8 @@ launch_tagged() {
   local mode="$1"
   run_logged "$ROOT_DIR/scripts/launch-tagged-automation.sh" "$TAG" --qa "$mode" --wait-socket 30
   [[ -S "$SOCKET" ]] || die "tagged socket did not appear after QA launch: $SOCKET"
-  local deadline=$((SECONDS + 60))
-  while (( SECONDS < deadline )); do
+  local deadline=$(( $(epoch_seconds) + 60 ))
+  while (( $(epoch_seconds) < deadline )); do
     if "$CLI" --socket "$SOCKET" --json tree --all >/dev/null 2>&1; then
       return 0
     fi

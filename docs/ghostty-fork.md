@@ -202,11 +202,11 @@ These files change frequently upstream; be careful when rebasing the fork:
 
 If you resolve a conflict, update this doc with what changed.
 
-### 11) C11-294 terminal patch set (in validation)
+### 11) C11-294 terminal patch set
 
-This section describes the C11-294 draft work. The parent gitlink is updated only
-once the engine commits are available from the Stage 11 fork's `main`; an
-in-progress document or fixture is not evidence that an engine change shipped.
+The engine tip is `cbacb6b6f` on the Stage 11 fork's `main`. The parent
+gitlink refers to that published commit. Product validation and parent PR state
+are tracked on C11-294; this section records the engine integration.
 
 - Surface teardown publishes cancellation before search, renderer, or IO joins.
   Worker mailbox backpressure retries in 50 ms intervals and can abort for its
@@ -224,7 +224,9 @@ in-progress document or fixture is not evidence that an engine change shipped.
   Detached/disowned processes no longer attributable to the PTY are kept.
   Defaults: 12 s HUP grace, a verified HUP-ignoring Darwin leader gets 250 ms TERM
   grace, then at most 3 s KILL/reaping. The TERM signal is actually delivered
-  before its grace interval expires.
+  before its grace interval expires. Cancellation joins the reader before the
+  owned PTY master closes, allowing macOS login to observe hangup. Shutdown is
+  idempotent so IO thread exit and final deinit share one signal/reap budget.
 - Two additive C exports, `ghostty_surface_try_read_text` and
   `ghostty_surface_try_read_selection`, attempt the renderer mutex once. Statuses
   are OK=0, BUSY=1, INVALID_SELECTION=2, FAILED=3, NO_SELECTION=4. Non-OK results
@@ -250,6 +252,11 @@ parent contains the real-PTY teardown host and pinned-libxev backpressure probe.
 The B072 probe distinguishes ordinary saturation from a synthetic competing
 writer: only the latter has reproduced WouldBlock and a dropped 64-byte request
 on the pinned backend. That result does not claim production c11 byte loss.
+B072 therefore carries only the queued-write retry patch (`2f6ee7b3`, Austin
+Wang) in a reproducible archive of the original libxev revision. The dependency
+URL pins fork artifact commit `b6b0522c9`; `vendor/libxev-c11/VENDORED.md` in
+Ghostty records source, patch, archive checksum, and reproduction commands. Both
+ordinary and synthetic-race probes preserve all bytes with the patched archive.
 
 Rebase conflicts to preserve: cancellation must precede the first join; cancelled
 owned messages must be disposed; final search resets follow already-queued

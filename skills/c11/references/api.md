@@ -270,15 +270,7 @@ c11 new-tab --type terminal --area "$CALLER_AREA"
 
 ## Tab initialization quirk
 
-Tabs are lazily initialized — no PTY until they have non-zero screen bounds. Tabs created in a non-visible workspace are inert until shown.
-
-Workaround: after creating in a hidden workspace, select it briefly so SwiftUI runs the layout pass:
-
-```bash
-c11 select-workspace --workspace workspace:N
-sleep 2
-# now the tab has real bounds and accepts input
-```
+Terminals start lazily. `send` and `read-screen` request a runtime even in a hidden workspace, so selecting the workspace is not a prerequisite. If a send's runtime still cannot attach, its text waits in the pending queue and the result reports `queued: true`, `delivered: false`. Showing the tab lets queued input flush when the runtime attaches.
 
 ## Reading & sending
 

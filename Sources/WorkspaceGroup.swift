@@ -39,9 +39,13 @@ enum WorkspaceSidebarItem: Equatable, Sendable {
 enum WorkspaceGroupProjection {
     static func items(groups: [WorkspaceGroup], workspaces: [WorkspaceOrderEntry]) -> [WorkspaceSidebarItem] {
         func segment(pinned: Bool) -> [WorkspaceSidebarItem] {
-            groups.filter { $0.isPinned == pinned }.map { group in
+            let folders: [WorkspaceSidebarItem] = groups.filter { $0.isPinned == pinned }.map { group in
                 .group(group, memberWorkspaceIds: workspaces.filter { $0.groupId == group.id }.map(\.id))
-            } + workspaces.filter { $0.groupId == nil && $0.isPinned == pinned }.map { .workspace($0.id) }
+            }
+            let ungrouped: [WorkspaceSidebarItem] = workspaces.filter {
+                $0.groupId == nil && $0.isPinned == pinned
+            }.map { .workspace($0.id) }
+            return folders + ungrouped
         }
         return segment(pinned: true) + segment(pinned: false)
     }

@@ -26,9 +26,10 @@ final class WorkspaceReorderPlannerTests: XCTestCase {
     }
 
     func testBatchRejectsAllInvalidTargetsBeforeProducingPlan() {
-        for (request, error) in [([], WorkspaceGroupOperationError.invalidParams),
-                                 ([ids[0], ids[0]], .duplicateWorkspace),
-                                 ([ids[0], UUID()], .workspaceNotFound)] {
+        let cases: [([UUID], WorkspaceGroupOperationError)] = [
+            ([], .invalidParams), ([ids[0], ids[0]], .duplicateWorkspace), ([ids[0], UUID()], .workspaceNotFound)
+        ]
+        for (request, error) in cases {
             XCTAssertThrowsError(try WorkspaceReorderPlanner.batch(workspaces: entries(), orderedWorkspaceIds: request)) {
                 XCTAssertEqual($0 as? WorkspaceGroupOperationError, error)
             }

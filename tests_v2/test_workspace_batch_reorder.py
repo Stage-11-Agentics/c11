@@ -103,6 +103,23 @@ def exercise_batch(f):
     f.cli("reorder-workspaces", "--window", f.window, "--order", f"{a},{a}", fail=True)
     require(f.snapshot() == state, "CLI invalid batch partially applied")
 
+    # G-order pin matrix: folder pin never toggles individual pins; cross-pin
+    # relative member placement clamps to the member's own segment.
+    f.mutate("move", workspace_id=d, to_group_id=h)
+    require(f.group(h)["is_pinned"] and not next(r for r in f.rows() if r["id"] == d)["pinned"],
+            "transfer into pinned folder toggled member pin")
+    f.mutate("move", workspace_id=b, to_group_id=g, before_id=a)
+    members = f.group(g)["member_workspace_ids"]
+    require(members.index(b) > members.index(a) and members.index(b) > members.index(c),
+            "unpinned member crossed pinned members")
+    f.mutate("move", workspace_id=a, to_group_id=g, after_id=b)
+    members = f.group(g)["member_workspace_ids"]
+    require(members.index(a) < members.index(b), "pinned member crossed unpinned member")
+    f.mutate("move", workspace_id=a, to_group_id=None)
+    require(next(r for r in f.rows() if r["id"] == a)["pinned"], "leaving folder cleared member pin")
+    require({r["id"] for r in f.rows() if r["pinned"]} == pin_set, "member move toggled pins")
+    f.parity()
+
 
 def main():
     socket_path, cli = test_environment()

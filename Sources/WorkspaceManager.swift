@@ -2438,15 +2438,6 @@ class WorkspaceManager: ObservableObject {
         workspaces.insert(workspace, at: insertIndex)
     }
 
-    private func clampedReorderIndex(for workspace: Workspace, targetIndex: Int) -> Int {
-        let clamped = max(0, min(targetIndex, workspaces.count - 1))
-        let pinnedCount = workspaces.filter { $0.isPinned }.count
-        if workspace.isPinned {
-            return min(clamped, max(0, pinnedCount - 1))
-        }
-        return max(clamped, pinnedCount)
-    }
-
     // MARK: - Surface Directory Updates (Backwards Compatibility)
 
     func updateSurfaceDirectory(workspaceId: UUID, surfaceId: UUID, directory: String) {

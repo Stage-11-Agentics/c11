@@ -71,6 +71,104 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(input), .init(state: .draft, draftLength: expectedLength))
     }
 
+    func testBlankRowsInsideAMultilineDraftAreContentNotTheEndOfTheComposer() {
+        // Leading blank row: empty prompt row, a blank continuation, typed text on the cursor row.
+        let leading = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}")]),
+            Row(y: 2, spans: [Span(text: "  ")]),
+            Row(y: 3, spans: [Span(text: "  typed after a blank line")]),
+            Row(y: 4, spans: [Span(text: rule)]),
+        ], cursorY: 3)
+        XCTAssertEqual(
+            PromptInputClassifier.classify(leading),
+            .init(state: .draft, draftLength: "typed after a blank line".unicodeScalars.count)
+        )
+
+        // Embedded blank row between two typed rows, cursor on the last.
+        let embedded = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}first")]),
+            Row(y: 2, spans: [Span(text: "")]),
+            Row(y: 3, spans: [Span(text: "  third")]),
+            Row(y: 4, spans: [Span(text: rule)]),
+        ], cursorY: 3)
+        XCTAssertEqual(
+            PromptInputClassifier.classify(embedded),
+            .init(state: .draft, draftLength: "first\n\n  third".unicodeScalars.count)
+        )
+
+        // A rule above the cursor row means the typed row was never reached: unknown, not empty.
+        let ruleBeforeCursor = region([
+            Row(y: 0, spans: [Span(text: "❯\u{00A0}")]),
+            Row(y: 1, spans: [Span(text: rule)]),
+            Row(y: 2, spans: [Span(text: "  typed below a rule")]),
+        ], cursorY: 2)
+        XCTAssertEqual(PromptInputClassifier.classify(ruleBeforeCursor).state, .unknown)
+    }
+
+    func testSecondOptionSelectedStillClassifiesBothSupportedChoosers() {
+        // Selecting the second option leaves the first one above the selected row.
+        let trust = region([
+            Row(y: 7, spans: [Span(text: " one you trust? (Like your own code, a well-known open")]),
+            Row(y: 8, spans: [Span(text: "")]),
+            Row(y: 9, spans: [Span(text: " Security guide")]),
+            Row(y: 10, spans: [Span(text: "")]),
+            Row(y: 11, spans: [Span(text: "   No, exit")]),
+            Row(y: 12, spans: [Span(text: " \u{276F} Yes, I trust this folder")]),
+            Row(y: 13, spans: [Span(text: "")]),
+            Row(y: 14, spans: [Span(text: " Enter to confirm \u{00B7} Esc to cancel")]),
+        ], cursorY: 12)
+        XCTAssertEqual(PromptInputClassifier.classify(trust).state, .dialog)
+
+        let plan = region([
+            Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
+            Row(y: 1, spans: [Span(text: "  Yes, implement this plan")]),
+            Row(y: 2, spans: [Span(text: "\u{276F} No, keep planning")]),
+            Row(y: 3, spans: [Span(text: "Enter to select \u{00B7} Esc to go back")]),
+        ], cursorY: 2)
+        XCTAssertEqual(PromptInputClassifier.classify(plan).state, .dialog)
+
+        // A lone option with no partner, or a stale chooser above a live composer, stays unguarded.
+        let lone = region([
+            Row(y: 0, spans: [Span(text: "\u{276F} No, exit")]),
+            Row(y: 1, spans: [Span(text: "Enter to confirm \u{00B7} Esc to cancel")]),
+        ], cursorY: 0)
+        XCTAssertEqual(PromptInputClassifier.classify(lone).state, .unknown)
+    }
+
+    func testHumanTypingAfterObservationIsNotCaughtByThePriorCheck() {
+        // Documents the check-to-use limitation (not a safety promise): a person can type
+        // between the observation and the paste. The guard acts on the state it was given.
+        var composer = ""
+        func observe() -> PromptInputState {
+            PromptInputClassifier.classify(region([
+                Row(y: 0, spans: [Span(text: rule)]),
+                Row(y: 1, spans: [Span(text: "❯\u{00A0}" + composer)]),
+                Row(y: 2, spans: [Span(text: rule)]),
+            ], cursorY: 1)).state
+        }
+
+        let observed = observe()
+        XCTAssertEqual(observed, .empty)
+
+        var writes = 0
+        let decision = SendInputGuard.perform(state: observed, allowUnguarded: false) {
+            composer += "human typed this first"   // lands after the check, before the paste
+            composer += "SENT-PAYLOAD"
+            writes += 1
+        }
+        XCTAssertEqual(decision, .deliver(.checked))
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(composer, "human typed this firstSENT-PAYLOAD", "the earlier check cannot prevent this interleaving")
+
+        // A fresh observation now sees the draft and refuses; nothing more is written.
+        XCTAssertEqual(observe(), .draft)
+        let second = SendInputGuard.perform(state: observe(), allowUnguarded: false) { writes += 1 }
+        XCTAssertEqual(second, .refuse(reason: "draft"))
+        XCTAssertEqual(writes, 1)
+    }
+
     func testSoftWrappedDraftJoinsRowsWithoutLosingContent() {
         let input = region([
             Row(y: 0, spans: [Span(text: rule)]),

@@ -37,7 +37,7 @@ then uses `--tab "$MY_TAB"` on every tab-scoped write. Ticket-bound roles additi
     tab creation and an idle TUI prove only liveness.
 
 15. **One build per machine.** Never run `xcodebuild` bare; every build goes through `scripts/with-build-lock.sh` (the repo's `reload.sh` / `test-unit-local.sh` already do), so parallel delegators queue instead of stacking swift-frontends until the load average is in the hundreds. `build-for-testing` and local `test` actions are CI's job, not a delegator's. Boot prompts state this; a waiting `[build-lock]` line is the expected shape, not a hang. The same holds for any heavy local command a project has (a pre-PR gate, a whole-tree lint or typecheck): one machine-wide lock, named in every boot prompt, because builders on one machine start them at the same moments.
-16. **Questions go to the parent's tab.** Every question, decision request and receipt is sent with `c11 send` + `send-key enter` to the named parent tab, and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read; "idle until you answer" on its own screen is this failure, however clearly the brief said otherwise.
+16. **Questions go to the parent's tab.** Every question, decision request and receipt is sent with `c11 send … && c11 send-key … enter` to the named parent tab (a refused send exits nonzero and types nothing, so the Enter never runs; do not press it by hand, and tell the operator instead of retrying blind), and the child keeps working on whatever the question does not block. A question left only on the child's own screen is never read; "idle until you answer" on its own screen is this failure, however clearly the brief said otherwise.
 17. **The CI window (shared runner).** A branch push without a PR costs no CI; opening or updating a PR starts a gate run. When the gate shares one runner and its wall budget is tight, children push freely but open or update a PR only when the Orchestrator grants the window by name. With headroom, the window is off and runs overlap.
 18. **Shared enumerations are edited at their canonical source.** A child adding a value to a shared allow-list or replacing a shared object uses the canonical list and landing order its ticket names, never a copy from the last migration it saw.
 
@@ -47,11 +47,11 @@ then uses `--tab "$MY_TAB"` on every tab-scoped write. Ticket-bound roles additi
 
 ```bash
 c11 new-tab --area "$DELEGATE_AREA" --cwd <abs-worktree> --no-focus   # capture the new tab ref
-c11 send --workspace $WS --tab $NEW_TAB "cd <abs-worktree> && claude --dangerously-skip-permissions --model <model> \"Read <prompt-path> and follow the instructions.\""
-c11 send-key --workspace $WS --tab $NEW_TAB enter
+c11 send --workspace $WS --tab $NEW_TAB "cd <abs-worktree> && claude --dangerously-skip-permissions --model <model> \"Read <prompt-path> and follow the instructions.\"" \
+  && c11 send-key --workspace $WS --tab $NEW_TAB enter
 ```
 
-The send + explicit `send-key enter` two-step is the durable Claude-to-Claude handoff. Stage prompts at `<worktree>/.lattice/tmp-prompts/<phase>-prompt.md` (physically bound to the worktree); a `/tmp/<proj>-<n>-<phase>-prompt.md` path is acceptable only with an atomic launch plus the receiver guard (Standard Clause 1).
+The chained send + explicit `send-key enter` (`&&`, so Enter runs only after a successful send) is the durable Claude-to-Claude handoff. A send into a tab that shows an operator draft or a question/plan dialog is refused (`input_guard_refused`, nothing typed); a fresh tab you just created never is. Stage prompts at `<worktree>/.lattice/tmp-prompts/<phase>-prompt.md` (physically bound to the worktree); a `/tmp/<proj>-<n>-<phase>-prompt.md` path is acceptable only with an atomic launch plus the receiver guard (Standard Clause 1).
 
 ## Worktree prep (at dispatch)
 
@@ -73,9 +73,9 @@ Three tells: bare `❯` with no indicator = genuinely idle; `✻ <verb> for Xm` 
 
 The canonical stall tell is a **cost counter frozen across 2+ ticks**. Diagnose before nudging: frozen cost + a live shell footer usually means a legitimately long-running command — `pgrep -fl "<worktree-slug>.*<suite>"` for a live PID, and read tee'd logs for buffered progress. Frozen cost + live shell = background-watching, not a stall.
 
-- Real stall → `c11 send` an "ORCHESTRATOR NOTE: cost frozen N ticks — report status and continue" **plus** `send-key enter`. Never trust `send-key enter` alone — the TUI sometimes swallows synthetic Return; always pair it with a fresh `send`.
+- Real stall → `c11 send` an "ORCHESTRATOR NOTE: cost frozen N ticks — report status and continue" chained with `send-key enter` (`c11 send … && c11 send-key … enter`). Never trust `send-key enter` alone — the TUI sometimes swallows synthetic Return; always pair it with a fresh `send`. If the send is refused the tab shows a draft or dialog: press nothing, and surface it to the operator.
 - Auth halt (`⎿ Not logged in · Please run /login` in a deep screen read — typically after the operator swaps accounts mid-run) → once restored, send "auth restored, retry the tool call, resume /loop".
-- Queued-but-unsubmitted text (cost moves slightly, input box shows stuck content) → a new `send` replaces the buffer.
+- Queued-but-unsubmitted text (cost moves slightly, input box shows stuck content) → a new `send` replaces the buffer unless the guard refuses it because the stuck text reads as a draft; clear the line (`c11 send-key ctrl+c`) only when it is the agent's own staged text, and leave an operator's alone.
 - **After a usage-limit reset or any fleet-wide outage, nudge every tab**: delegators, their sub-agent tabs (planners, implementers, fixers), in-process review agents and captains. Verify each shows fresh commits or activity within one tick. A nudged delegator whose implementer died waits forever, and one whose work is done may be waiting on a CI window you never gave it.
 - **A subtitle unchanged for over 45 minutes means read the screen.** The description is self-reported and goes stale exactly when an agent is stuck or waiting on you.
 - Two consecutive dead sends → the session is dead; surface to the operator and offer a respawn from the latest commit. Dead-session state recovery itself belongs to c11 (workspace persistence + session-resume hook), not the Orchestrator.

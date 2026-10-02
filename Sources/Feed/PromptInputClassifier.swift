@@ -143,10 +143,15 @@ enum PromptInputClassifier {
                     return .unknown
                 }
                 if isRule(line) {
+                    // The composer's closing rule sits below the cursor row. A rule
+                    // above it means the typed row was never reached: not empty.
+                    if line.y <= region.cursorY { return .unknown }
                     stoppedAtRule = true
                     break
                 }
-                if isBlank(line), line.y != region.cursorY, !previous.softWrap {
+                // Blank rows inside a multiline composer (leading or embedded) are
+                // content; only a blank row past the cursor row ends the scan.
+                if isBlank(line), line.y > region.cursorY, !previous.softWrap {
                     stoppedAtRule = true
                     break
                 }
@@ -240,25 +245,33 @@ enum PromptInputClassifier {
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed)
     }
 
+    private static let chooserOptionPairs: [(String, String)] = [
+        ("no, exit", "yes, i trust this folder"),
+        ("yes, implement this plan", "no, keep planning"),
+    ]
+
     private static func isSupportedDialog(_ lines: [Line], cursorY: Int) -> Bool {
         for optionIndex in lines.indices where isClaudeOption(lines[optionIndex]) {
-            let selected = collapsedLowercased(lines[optionIndex].text)
             let following = lines.dropFirst(optionIndex + 1).prefix(6)
             guard let footer = following.first(where: hasDialogFooter) else { continue }
 
             // The bounded capture can start below a heading that a narrow pane has
             // wrapped far above the cursor, so a chooser is recognized by its
-            // selected option, its other option and its footer alone.
-            let afterText = collapsedLowercased(following.map(\.text).joined(separator: " "))
-            let safetyChooser = (selected.contains("no, exit") && afterText.contains("yes, i trust this folder"))
-                || (selected.contains("yes, i trust this folder") && afterText.contains("no, exit"))
-            let planChooser = (selected.contains("yes, implement this plan") && afterText.contains("no, keep planning"))
-                || (selected.contains("no, keep planning") && afterText.contains("yes, implement this plan"))
+            // selected option, its other option and its footer alone. The other
+            // option can sit on either side of the selected row (selecting the
+            // second option leaves the first above it).
+            let selected = collapsedLowercased(lines[optionIndex].text)
+            let before = lines[..<optionIndex].suffix(6)
+            let siblings = collapsedLowercased((before + following).map(\.text).joined(separator: " "))
+            let isChooser = chooserOptionPairs.contains { first, second in
+                (selected.contains(first) && siblings.contains(second))
+                    || (selected.contains(second) && siblings.contains(first))
+            }
 
             // These layouts render the selection and its footer at the live
             // cursor. A stale chooser above a later composer must not block it.
             let cursorIsInChooser = lines[optionIndex].y <= cursorY && cursorY <= footer.y
-            if cursorIsInChooser && (safetyChooser || planChooser) {
+            if cursorIsInChooser && isChooser {
                 return true
             }
         }

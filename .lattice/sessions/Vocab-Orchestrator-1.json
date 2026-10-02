@@ -1,0 +1,25 @@
+{
+  "agent_type": "orchestrate",
+  "base_name": "Vocab-Orchestrator",
+  "framework": "claude-code",
+  "last_active": "2026-10-01T20:45:14Z",
+  "model": "claude-opus-5-5",
+  "name": "Vocab-Orchestrator-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3TXQZTC9HCBP5EECY8M3VDB",
+    "reported": {
+      "branch": "main",
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11"
+    }
+  },
+  "parent": "agent:cairn",
+  "prompt": "lattice-orchestrator-v2",
+  "serial": 1,
+  "session": "sess_01M3TXQZTGG53TPS4J5327ZDVX",
+  "started_at": "2026-10-01T05:07:10Z",
+  "status": "active"
+}

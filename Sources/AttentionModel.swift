@@ -71,13 +71,12 @@ struct TabAttentionSnapshot: Equatable, Identifiable {
 enum AttentionJumpSelector {
     static func orderedFlags(_ snapshots: [TabAttentionSnapshot]) -> [TabAttentionSnapshot] {
         snapshots.filter(\.isFlagged).sorted {
-            let lhsDate = $0.flagRaisedAt ?? .distantPast
-            let rhsDate = $1.flagRaisedAt ?? .distantPast
-            if lhsDate != rhsDate { return lhsDate < rhsDate }
-            if $0.workspaceId != $1.workspaceId {
-                return $0.workspaceId.uuidString < $1.workspaceId.uuidString
-            }
-            return $0.surfaceId.uuidString < $1.surfaceId.uuidString
+            AttentionOrder.precedes(
+                time: $0.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
+                target: .init(workspaceID: $0.workspaceId, tabID: $0.surfaceId),
+                time: $1.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
+                target: .init(workspaceID: $1.workspaceId, tabID: $1.surfaceId)
+            )
         }
     }
 }
@@ -222,7 +221,11 @@ final class TabAttentionIndex: ObservableObject {
 final class TabAttentionService {
     static let shared = TabAttentionService()
 
-    private init() {}
+    private let feedProjection: FeedProjectionBridge
+
+    init(feedProjection: FeedProjectionBridge = .shared) {
+        self.feedProjection = feedProjection
+    }
 
     @discardableResult
     func raise(
@@ -339,6 +342,7 @@ final class TabAttentionService {
         )
         TabMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
         TabAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        feedProjection.removeTab(workspaceID: workspaceId, tabID: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)
@@ -370,6 +374,7 @@ final class TabAttentionService {
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
+        feedProjection.pruneWorkspace(workspaceID: workspaceId, validTabIDs: validSurfaceIds)
     }
 
     private func mutate(
@@ -462,5 +467,7 @@ final class TabAttentionService {
         AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
             .workspaces.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
+        // Copy the snapshot off main. Do not project the feed row here.
+        feedProjection.noteAttention(snapshot)
     }
 }

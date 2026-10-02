@@ -178,6 +178,11 @@ extension TerminalController {
             "markdown.get_content",
             "sidebar.state",
             "browser.open_split",
+            "browser.profiles.list",
+            "browser.profiles.add",
+            "browser.profiles.rename",
+            "browser.profiles.clear",
+            "browser.profiles.delete",
             "browser.navigate",
             "browser.back",
             "browser.forward",
@@ -262,6 +267,9 @@ extension TerminalController {
             "browser.input_keyboard",
             "browser.input_touch",
         ]
+        if CapabilityFeatures.current.supports(.windowResize) {
+            methods.append("window.resize")
+        }
 #if DEBUG
         methods.append(contentsOf: [
             "debug.shortcut.set",
@@ -311,6 +319,11 @@ extension TerminalController {
 
         if CapabilityFeatures.current.supports(.terminalSelection) {
             methods.append("tab.read_selection")
+        }
+        if CapabilityFeatures.current.supports(.feedAsks) {
+            methods.append("feed.list")
+            methods.append("feed.open")
+            methods.append("feed.note_display")
         }
 
         return [

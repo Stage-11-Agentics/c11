@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:21:39Z",
+  "created_by": "agent:luna-291",
+  "custom_fields": {},
+  "id": "art_01M3YK9V9NKDTH6PQ5W3EWDXZQ",
+  "model": null,
+  "payload": {
+    "content_type": "image/png",
+    "file": "art_01M3YK9V9NKDTH6PQ5W3EWDXZQ.png",
+    "size_bytes": 743093
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Exact merged head 7378162477ec7256ddef509d53cfcee46c82c12a in tagged c11-291-locales; History rendered as \u5c65\u6b74 with \u623b\u308b and \u9032\u3080.",
+  "tags": [],
+  "title": "Atlas Japanese History menu open",
+  "token_usage": null,
+  "type": "file"
+}

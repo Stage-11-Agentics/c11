@@ -1,0 +1,158 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-groups",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-260-groups-sidebar",
+      "linked_at": "2026-10-02T07:57:15Z",
+      "linked_by": "agent:astra-groups",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-260-groups-sidebar",
+      "linked_at": "2026-10-02T10:32:47Z",
+      "linked_by": "agent:astra-groups",
+      "repo": "Stage-11-Agentics/c11"
+    }
+  ],
+  "comment_count": 17,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:30:05Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nThe operator needs to collapse a fleet into folders without hiding the worker that needs attention, and move workspaces between folders directly in the sidebar. Backlog item: W2.\n\n## Evidence\n- c11: `Sources/ContentView.swift:8392-8408,8535-8536` on origin/main (0ff8887e5e) is the SwiftUI WorkspaceSidebar and workspace list. `Sources/ContentView.swift:8572-8576,8598-8638` precomputes activity/unread and carries flagged/suppressed attention into row values.\n- Upstream: cmux #4815/#5018 introduced groups. At upstream/main (920ff39ff7), `Sources/SidebarWorkspaceGroupHeaderView.swift` is an Equatable header but doubles as an anchor workspace; `Sources/SidebarWorkspaceGroupContextMenuRunner.swift` and `Sources/SidebarWorkspaceReorderDropView.swift` are interaction references. Follow-up bugs #5253, #8925, #9176, #13688 and #15892 warn against copying the anchor model.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` proposal \u00a73; Fable audit row 4.12; Astra audit rows 4.12/4.12b. BACKLOG.md D17/W2 makes folders core despite the older deferral in `c11-1.0.html` \u00a74; automatic root filing stays cut.\n\n## Scope\nIn: W1 folder headers with chevron, icon, name, member count and attention badge; collapse/expand, drag to join/leave/reorder, group context menu, six translations and accessibility labels.\nOut: anchor-workspace semantics, generated anchor terminals, automatic root filing, automatic naming, AppKit sidebar rewrite, redesigning the attention state machine or Feed (A1-A4), W4 history, Recently Closed and stable tab numbers. W1 owns persistence and CLI; W3 owns integrated scale/sign-off evidence.\n\n## Approach\nProject W1's folder records and current per-tab attention into immutable header values. Keep expensive aggregation outside typing-hot row bodies, preserving existing Equatable optimization. Reserve badge/label space so changing counts and hover controls do not shift hit targets. Violet represents any flagged member, including flagged-and-suppressed; the waiting count excludes suppressed tabs, while unread follows the existing notification definition. A collapsed header must retain the flag signal. Specify drop targets and pinned-segment behavior using W1's move core, including empty and collapsed folders. Context menu exposes Rename, Color, Icon, Pin/Unpin, Ungroup and Delete; deletion follows W1's non-destructive membership contract. Use the existing confirmation pattern if any explicitly destructive member-close action is later proposed; it is not required here.\n\n## Acceptance criteria\n1. In the real tagged sidebar, create populated and empty folders via W1; every header shows its chevron, icon, name and correct member count. Collapse hides only member rows, and expand restores the same order without starting or closing any terminal.\n2. A fixture containing one unsuppressed waiting tab, one suppressed waiting tab, unread notifications and a flagged-and-suppressed tab shows waiting count one and a violet flag. Collapse, then raise/lower flags on hidden members: the visible header updates correctly without requiring expansion. Unread agrees with member notification records; removing the final flag restores the ordinary badge state.\n3. Pointer-driven drags cover ungrouped to folder, folder to ungrouped, folder to folder, within-folder reorder, empty/collapsed targets and cancelled/outside drops. Each changes exactly the intended membership/order, obeys W1 pin semantics, and preserves unrelated workspaces and tab identities.\n4. Every context-menu action changes the intended folder only. Ungroup/Delete preserves the members and running work; closing the first member never promotes another into a special anchor role.\n5. With an unrelated terminal accepting typed input, badge changes do not move controls, hide the active terminal or steal keyboard/app focus. Group updates issued through non-focus CLI commands have the same preservation behavior.\n6. New visible and accessibility strings render in English and all six locales; JSON is valid and interpolation tokens are preserved. Long labels and changing counts remain usable at narrow sidebar widths, in Light/Dark theme slots and with keyboard/VoiceOver navigation.\n\n## Validation\nAdd behavioral attention-projection and drop-planner tests, including the suppressed-flag fixture. Use tests_v2 against a tagged socket for setup/oracles, then fresh-context computer use to drive actual drag/drop, menus, collapse and focus; retain screenshots. W3 repeats at 50+ workspaces and supplies Atin's numbered sign-off script. Compare typing under attention/drop churn against F2 budgets; builds and soaks run on Atlas once F1/C11-216 lands, using the build lock and tagged QA launch. No passing claim based only on socket mutations or source-string tests.\n\n## Dependencies\nW1 (C11-259) is required. F1 (C11-216) supplies Atlas builds; F2 supplies baseline/budgets. A1/A3 are adjacent attention changes to coordinate with, not a requirement to rebuild their logic here. W3 (C11-261) consumes the integrated sidebar. The lead links cross-workstream dependencies.\n\n## Risks\nSidebar observation breadth and per-member aggregation can regress typing/main-thread responsiveness. Do not add work to hitTest outside pointer handling or forceRefresh. Pin/drop ambiguity and collapse can hide attention unless the explicit fixture passes. No tenant config writes. Six-locale localization and accessible fixed geometry are part of delivery. Sanitize public screenshots, names and paths.\n\nSize: L. Tier: P1. Doctrine check: a visible folder primitive and projection of existing attention; no task inference, auto-answering or agent configuration writes.\n",
+  "done_at": "2026-10-02T10:49:26Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XV8W1S6QXQG513WEA8579P",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XZEZGC7QW0D48VFTJXD8FT",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y0E1V7K6X4DF70EMC52M6F",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y0WMAY5MH606A6D34T2EZ5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y1V12SH11D49XPY5YFKVD6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y1ZW5YZY31WXQDM4AHK3QM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y258P0SC4M0TYTGKMR9Z8K",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y26MMBS0NRH8RVQ0JGK0VC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y2ABABZAQXSPWP4ZKFNF2D",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y2ABNF1XZTQ9SV102P4YB8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y2ABQZ9JTNRW6KJTPXR6P6",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y2EASPZKX3D3G8C8CTFSXE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y2F2X0793NJ45NR5FTGJZW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y2MCFD2GRTS48JRT9754CS",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y2RXR52F1T73C4EXZFSCVK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y3HEB2SE9T6F3ARAHFC9Q5",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y3QDD9RB0J58BGY54CQDRY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y3QDCS98KP706KKHS92GH8",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X3Q72SRQC6X52RE70A9ZFK",
+  "last_event_id": "ev_01M3Y3QDD9RB0J58BGY54CQDS0",
+  "last_status_changed_at": "2026-10-02T10:49:26Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:30:43Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3Q706AHNBFJT4AW4F07NE",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T01:46:31Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:48Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-260",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:workspaces",
+    "tier:p1"
+  ],
+  "title": "Workspace groups: sidebar folders, drag/drop and visible attention",
+  "type": "task",
+  "updated_at": "2026-10-02T10:49:26Z",
+  "urgency": null
+}

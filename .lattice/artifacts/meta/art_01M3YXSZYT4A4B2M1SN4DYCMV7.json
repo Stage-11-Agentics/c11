@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T18:25:14Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YXSZYT4A4B2M1SN4DYCMV7",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YXSZYT4A4B2M1SN4DYCMV7.html",
+    "size_bytes": 13301
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-274 executable transport evidence; native steps pending",
+  "token_usage": null,
+  "type": "file"
+}

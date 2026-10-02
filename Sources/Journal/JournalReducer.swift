@@ -33,10 +33,14 @@ enum JournalReducer {
         if context.historical && s.appInstanceID == instanceID && s.lastLiveSequence > 0 {
             return unchanged(.stale, "newer_live_evidence")
         }
+        let nativeClockKey = context.verifiedNativeClock
+            ? (JournalNativeClockEvidence.watermarkKey(for: d) ?? d.adapter.rawValue)
+            : nil
         let comparable = context.verifiedNativeClock && d.timeQuality == .nativeLocal
             && d.occurredAtMs.map { $0 <= now + 300_000 } == true
         let nativeTime = comparable ? d.occurredAtMs : nil
-        if let nativeTime, let watermark = s.nativeWatermarks[d.adapter.rawValue], nativeTime < watermark {
+        if let nativeTime, let nativeClockKey,
+           let watermark = s.nativeWatermarks[nativeClockKey], nativeTime < watermark {
             return unchanged(.stale, "native_time_older")
         }
         if let activeTurn = s.turnID, let eventTurn = d.turnID, activeTurn != eventTurn,
@@ -63,6 +67,19 @@ enum JournalReducer {
             refreshed.lastSequence = sequence
             refreshed.lastLiveSequence = sequence
             refreshed.lastLiveEmittedAtMs = d.emittedAtMs
+            if d.source.rank > refreshed.rank {
+                refreshed.source = d.source
+                refreshed.adapter = d.adapter
+                refreshed.rank = d.source.rank
+                if s.terminalBarrier && [.turnCompleted, .turnInterrupted].contains(d.kind) {
+                    refreshed.terminalRank = max(refreshed.terminalRank, d.source.rank)
+                }
+            }
+            if let nativeTime, let nativeClockKey {
+                refreshed.nativeWatermarks[nativeClockKey] = max(
+                    refreshed.nativeWatermarks[nativeClockKey] ?? nativeTime, nativeTime
+                )
+            }
             return JournalFoldResult(snapshot: refreshed, effect: .duplicateEvidence, reason: reason, fromPhase: nil, fromSinceMs: nil)
         }
 
@@ -94,7 +111,10 @@ enum JournalReducer {
             if s.phase == .error && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             if transcript && s.terminalBarrier && s.terminalRank > d.source.rank {
                 let newNativeTurn = d.turnID != nil && d.turnID != s.turnID
-                let newerNativeTime = nativeTime.map { t in s.nativeWatermarks[d.adapter.rawValue].map { t > $0 } ?? false } ?? false
+                let newerNativeTime = nativeTime.map { t in
+                    guard let nativeClockKey else { return false }
+                    return s.nativeWatermarks[nativeClockKey].map { t > $0 } ?? false
+                } ?? false
                 guard newNativeTurn || newerNativeTime else { return unchanged(.duplicateEvidence, "ambiguous_turn_start") }
             }
             if s.phase == .working && (d.turnID == nil || d.turnID == s.turnID) {
@@ -213,7 +233,9 @@ enum JournalReducer {
                 s.rank = d.source.rank
             }
         }
-        if let nativeTime { s.nativeWatermarks[d.adapter.rawValue] = nativeTime }
+        if let nativeTime, let nativeClockKey {
+            s.nativeWatermarks[nativeClockKey] = max(s.nativeWatermarks[nativeClockKey] ?? nativeTime, nativeTime)
+        }
         if d.timeQuality != .missing && !comparable { s.timingUncertain = true }
         if now < s.observedAtMs { s.timingUncertain = true; s.health = .degraded }
         s.observedAtMs = now

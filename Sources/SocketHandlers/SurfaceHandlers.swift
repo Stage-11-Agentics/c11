@@ -119,6 +119,7 @@ extension TerminalController {
                 v2SetSeenFields(&item, panelId: panel.id)
                 if let browserTab = panel as? BrowserTab {
                     item["developer_tools_visible"] = browserTab.isDeveloperToolsVisible()
+                    item["profile_id"] = browserTab.profileID.uuidString
                 }
                 if let markdownTab = panel as? MarkdownTab {
                     item["file_path"] = markdownTab.filePath
@@ -442,6 +443,14 @@ extension TerminalController {
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
+        let hasProfileArgument = params.keys.contains("profile")
+        if hasProfileArgument, panelType != .browser {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"),
+                data: nil
+            )
+        }
 
         // Validate and resolve markdown file path
         var resolvedMarkdownPath: String?
@@ -464,6 +473,26 @@ extension TerminalController {
             guard let ws = self.v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
+            }
+            var preferredProfileID: UUID?
+            var sticksAsPreferred = true
+            switch self.v2ResolveBrowserProfileParam(params: params) {
+            case .none:
+                break
+            case .error(let error):
+                result = error
+                return
+            case .profile(let profile):
+                guard !ws.isRemoteWorkspace else {
+                    result = .err(code: "invalid_params", message: String(localized: "browser.profile.error.remoteUnsupported", defaultValue: "Browser profiles are not supported in remote workspaces"), data: nil)
+                    return
+                }
+                guard !BrowserProfileStore.shared.isReserved(profile.id) else {
+                    result = self.v2BrowserProfileError(.busy)
+                    return
+                }
+                preferredProfileID = profile.id
+                sticksAsPreferred = false
             }
             // Caller may pass focus: false to opt out of focus (--no-focus in CLI).
             // surface.create is NOT in focusIntentV2Methods, so v2FocusAllowed returns false
@@ -492,7 +521,13 @@ extension TerminalController {
             let newPanelId: UUID?
             switch panelType {
             case .browser:
-                newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: focus)?.id
+                newPanelId = ws.newBrowserSurface(
+                    inPane: paneId,
+                    url: url,
+                    focus: focus,
+                    preferredProfileID: preferredProfileID,
+                    sticksAsPreferred: sticksAsPreferred
+                )?.id
             case .markdown:
                 newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
@@ -516,6 +551,9 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
             ]
+            if let browserProfileID = ws.browserPanel(for: newPanelId)?.profileID {
+                ok["profile_id"] = browserProfileID.uuidString
+            }
             if initialInput != nil { ok["initial_input"] = "queued" }
             result = .ok(ok)
         }) != nil else {

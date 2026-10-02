@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -10,15 +11,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPVE9PWRX4FZ4PRW8959FQW7",
-  "last_event_id": "ev_01KPVE9PWSTW3SXVX13YNRXNGD",
-  "last_status_changed_at": "2026-04-22T20:32:24Z",
+  "last_event_id": "ev_01M3YXY5AJXJB315RXMH4KPVHP",
+  "last_status_changed_at": "2026-10-02T18:27:30Z",
   "linked_files": [],
   "priority": "low",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-11",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "linux",
     "platform",
@@ -27,6 +28,6 @@
   ],
   "title": "Linux companion app (GTK4, agent-driven feature parity)",
   "type": "spike",
-  "updated_at": "2026-04-22T20:32:24Z",
+  "updated_at": "2026-10-02T18:27:30Z",
   "urgency": null
 }

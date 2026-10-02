@@ -22,6 +22,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Installation (`c11 install`)](#installation-c11-install)
 - [Troubleshooting](#troubleshooting)
 - [New Workspace recents and pins](#new-workspace-recents-and-pins)
+- [Feed](#feed)
 
 ## Addressing & targeting
 
@@ -128,7 +129,7 @@ with `id` and `version`, plus `server` and `cli` identities (`short_version`,
 true for matching short/full hashes, false for different commits, null if
 either stamp is unavailable. It never substitutes checkout or environment
 identity. Existing ids: `vocabulary.workspace_area_tab`, `send.explicit_tab`,
-`events.offline`. Later commands advertise `routing.canonical_keys`,
+`events.offline`, `feed.asks`. Later commands advertise `routing.canonical_keys`,
 `create.initial_input`, `send.raw`, `read_selection.terminal`, and
 `window.route_without_focus` only when implemented. Adding an id preserves
 `features_version`; changing an existing id's meaning increments it.
@@ -842,3 +843,51 @@ Candidate `confirmation` is `unconfirmed`. Candidate `connection` is
 
 `lifecycle.changed` is the phase edge. `waiting.left` remains the unread exit
 and is never renamed. See [events.md](events.md).
+
+## Feed
+
+```bash
+c11 feed list [--json] [--scope attention|all]
+c11 feed open <tab> [--workspace <id|ref>] [--json]
+c11 feed watch [--json] [--scope attention|all]
+```
+
+`feed list` defaults to scope `attention`: open blocking asks and flag rows.
+`--scope all` adds non-suppressed `turn_end` rows. Both scopes use one projector.
+Rows sort flags first by raised time, then eligible open asks by opened time,
+oldest first with missing times last. Ties use tab UUID, then workspace UUID.
+The configured attention jump uses the same prefix, then oldest eligible unread
+completions/legacy notices with exact tab targets; `all` appends turns oldest first.
+Generic `input` is unsupported.
+
+`feed open` selects that workspace and focuses that tab inside c11. It does not
+activate the macOS app, mark anything read, or send an answer. A missing
+workspace or tab returns `unavailable` and changes nothing. `list` and `watch`
+never move focus.
+
+`feed watch` prints one list snapshot, then follows `ask.opened`, `ask.closed`,
+`flag.raised`, `flag.lowered`, `flag.suppressed`, `flag.unsuppressed`, and the
+log markers. It binds `events-<instance>.ndjson` for the `instance` returned by
+`feed list`. It does not follow the newest-mtime log. A new instance, a sequence
+gap, or `log.dropped` prints `{"continuity":"unavailable"}` and a fresh snapshot.
+
+JSON rows use `workspace_id`, `tab_id`, `kind` (`question`, `plan`, `permission`,
+`turn_end`, or null for a flag-only row), `state` (`open` for a blocking ask,
+otherwise null), `source`, `source_rank`, `opened_at_ms`, `request_id`,
+`confirmation`, `blocking`, and `flag` when one is set. `prompt` and `options`
+appear only in this process's live list/watch JSON. They are not written to the
+journal, the event log, or `ask.opened` / `ask.closed`. After restart,
+`prompt` is null and `prompt_available` is false. Null means unknown. An empty
+`options` array means the hook extracted zero labels.
+
+Socket methods: `feed.list` (`scope`), `feed.open` (`workspace_id`, `tab_id`),
+`feed.note_display` (hook/plugin display text; not a command agents call), and
+feature id `feed.asks` version 1. Discover it before depending on the methods.
+
+A managed Claude or OpenCode ask keeps prompt text in that live cache. An
+unmanaged legacy hook, where the journal method is unsupported or no draft was
+built, still stores `lastBody` and may notify with that body. This command does
+not erase those older records.
+
+Live answer and resume traces that need later producer work stay out of this
+command. `feed open` is focus only.

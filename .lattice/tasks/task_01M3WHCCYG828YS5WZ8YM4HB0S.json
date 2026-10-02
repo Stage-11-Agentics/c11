@@ -1,0 +1,55 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:sol-253",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-253-ci-host-gate",
+      "linked_at": "2026-10-02T18:30:24Z",
+      "linked_by": "agent:sol-253",
+      "repo": null
+    }
+  ],
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-10-01T20:09:36Z",
+  "created_by": "agent:claude-release-captain",
+  "custom_fields": {},
+  "description": "The c11Tests host step in .github/workflows/ci.yml (~line 227) is continue-on-error: true, and main carries 44 pre-existing failing host tests. A new host-test regression therefore never turns CI red. During C11-248 phase 3 the rename orchestrator had to diff the failure list per PR by hand (zero new failures across #482/#483/#484). Fix: triage the 44 (fix, or quarantine with a named skip list and a ticket each), then drop continue-on-error so the step gates. Interim option: a CI step that fails when the failure set grows versus a checked-in baseline. Related: C11-109 (skipped 7 flaky classes), C11-27 (logic/host split).",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3Z1J0M5KSXSS935W0WA0CHW",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1QWB1SMHFHG2DBRSFBQFM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1VBDW2R2X1SXRKZY9NA35",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3WHCCYG828YS5WZ8YM4HB0S",
+  "last_event_id": "ev_01M3Z24BERT59NZA85QHH9Q8MM",
+  "last_status_changed_at": "2026-10-02T19:38:26Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-253",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "CI: make the c11Tests host step gating again (44 failing tests, regressions invisible)",
+  "type": "chore",
+  "updated_at": "2026-10-02T19:40:47Z",
+  "urgency": null
+}

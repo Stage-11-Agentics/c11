@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:04:35Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3FX2Q4G52QK9ZY2SZW8XC",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z3FX2Q4G52QK9ZY2SZW8XC.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final premeasurement identity013 same frozen build pair",
+  "token_usage": null,
+  "type": "file"
+}

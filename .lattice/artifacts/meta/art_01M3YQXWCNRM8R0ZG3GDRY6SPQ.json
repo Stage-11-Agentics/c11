@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T16:42:30Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YQXWCNRM8R0ZG3GDRY6SPQ",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YQXWCNRM8R0ZG3GDRY6SPQ.html",
+    "size_bytes": 14619
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-285 Batch 4 standalone runtime evidence",
+  "token_usage": null,
+  "type": "file"
+}

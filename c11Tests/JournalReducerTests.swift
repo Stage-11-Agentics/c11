@@ -191,6 +191,43 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertEqual(JournalTestData.fold(stopped, start, seq: 4).snapshot?.phase, .working)
     }
 
+    func testTranscriptRankNeverSetsOrClearsBlockedAndGrokCannotClaimInterrupt() {
+        let blocked = JournalTestData.fold(nil, JournalTestData.draft(.questionRequested), seq: 1).snapshot
+
+        var transcriptStart = JournalTestData.draft(.turnStarted)
+        transcriptStart.source = .transcript
+        transcriptStart.adapter = .codexTranscript
+        transcriptStart.nativeEvent = "turn.started"
+        transcriptStart.turnID = "turn-1"
+        let afterStart = JournalTestData.fold(blocked, transcriptStart, seq: 2)
+        XCTAssertEqual(afterStart.effect, .advisory)
+        XCTAssertEqual(afterStart.snapshot?.phase, .blocked)
+        XCTAssertEqual(afterStart.snapshot?.rank, JournalSource.hook.rank)
+
+        var transcriptStop = JournalTestData.draft(.turnCompleted)
+        transcriptStop.source = .transcript
+        transcriptStop.adapter = .codexTranscript
+        transcriptStop.nativeEvent = "turn.completed"
+        transcriptStop.turnID = "turn-1"
+        let afterStop = JournalTestData.fold(blocked, transcriptStop, seq: 3)
+        XCTAssertEqual(afterStop.effect, .advisory)
+        XCTAssertEqual(afterStop.snapshot?.phase, .blocked)
+
+        var gap = JournalTestData.draft(.stateChanged)
+        gap.source = .c11
+        gap.adapter = .c11
+        gap.nativeEvent = "adapter_gap"
+        gap.signal = .adapterGap
+        let degraded = JournalTestData.fold(blocked, gap, seq: 4)
+        XCTAssertEqual(degraded.snapshot?.phase, .blocked)
+        XCTAssertEqual(degraded.snapshot?.health, .degraded)
+
+        var grokInterrupt = transcriptStop
+        grokInterrupt.adapter = .grokTranscript
+        XCTAssertEqual(JournalAdapter.grokTranscript.capabilities, ["turn"])
+        XCTAssertEqual(JournalTestData.fold(afterStart.snapshot, grokInterrupt, seq: 5).effect, .advisory)
+    }
+
     // Retain C11-271 provenance: replay the captured hook stream in its recorded order.
     func testMergedFixtureCorpusHookSequences() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")

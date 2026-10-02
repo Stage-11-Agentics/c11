@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:51:40Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3YN0T0ZR26AZT0VTYQZ7PB1",
+  "model": null,
+  "payload": {
+    "content_type": "text/html",
+    "file": "art_01M3YN0T0ZR26AZT0VTYQZ7PB1.html",
+    "size_bytes": 5346
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-279 batch 4 independent runtime validation",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,161 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-journal",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-273-journal",
+      "linked_at": "2026-10-02T06:49:35Z",
+      "linked_by": "agent:astra-journal",
+      "repo": null
+    }
+  ],
+  "comment_count": 26,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nA finished agent must not return to working because an earlier hook arrived late, and a crash must not erase the evidence of an unresolved ask. The same record must support the operator\u2019s analytics questions. Backlog item: J2.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Sources/SocketHandlers/SocketDispatch.swift:426` handles report_agent_activity off-main and hops to main at `:437`; `Sources/TabLivenessDeriver.swift:155` writes derived activity. `Sources/Events/EventLog.swift:51` and `:70` show why the lossy telemetry log cannot be the durable journal. `Sources/AgentModelDetection.swift:2` already imports SQLite3.\n- Upstream: #10490; `Packages/macOS/CmuxAgentJournal/Sources/CmuxAgentJournal/AgentJournalStore.swift:78` stable-id append receipts; `AgentLifecycleReducer.swift:62` ordering and `AgentJournalReplayPolicy.swift:24` replay filtering. #15173/#16257 motivate late-arrival fixtures.\n- Research: BACKLOG.md J2; report 01 Components/Effort and risk; Astra \u00a74 spool/retention counterexamples; J1\u2019s reviewed spec. The 2026-10-01 BACKLOG.md rulings D1/D3 override the older audit and c11-1.0.html deferral: the journal is core 1.0, uses SQLite WAL, and has analytics as its named consumer.\n\n## Scope\nIn: agent.event.append, system SQLite WAL under c11 App Support, serial storage, pure fold, current-state baseline, client spool/startup drain, time/byte retention, and migration of existing signals into the approved schema. Out: producer widening (J3\u2013J5), roster/clock UI (J6), analytics CLI (J7), Feed replies, auto-resume, remote federation and tenant hooks installation.\n\n## Approach\nImplement the reviewed J1 schema and bounds. Parse/validate/attribute off main, serialize durable writes, return the defined receipt, and apply only the changed projection using main.async. Map existing Claude/OpenCode/pi and guarded Codex-notify inputs without changing their authority or double-counting. Reuse existing exact conversation identity. Retain activity compatibility and keep the telemetry log a separate wake-up stream. Use stable event IDs for ambiguous acknowledgements; startup drains only bounded c11-owned spool records with known attribution.\n\n## Acceptance criteria\n1. F3 replays yield their approved marks: bypass asks remain blocked, Stop then late earlier PreToolUse stays completed, Esc is not asserted working after its supported interrupt signal, sibling activity cannot clear another ask, and child completion cannot finish its parent.\n2. Against a tagged socket, append returns the committed sequence per J1. Repeating a timed-out committed record from the spool yields one event and the original receipt; a same-ID/different-content retry reports conflict without replacing it.\n3. With the app socket unavailable, the client records a bounded c11-owned spool entry; after startup it drains once. Exercise a truncated last line, stale session/tab attribution and a repeated drain using the J1 outcomes.\n4. Force-kill/relaunch of the tagged app shows prior blocked/error evidence as unconfirmed, never old running as present liveness; fresh supported events reconcile it. A retained old open ask survives the time/byte pruning fixture.\n5. During the F3 burst and F2 registered workload, append/fold I/O does not block main and resource/typing measurements remain within registered budgets; saturation/disk failure exposes degraded evidence per spec.\n6. The existing sidebar, \u2325V and flag/suppression workflows still consume activity as specified. Journal, WAL, spool and error paths contain only allowlisted structural fields, with no prompt/tool bodies.\n\n## Validation\nExecute pure fold and SQLite behavioral tests with a temporary database and F3 replay; exercise retry/drain/restart via tests_v2 against an isolated tagged socket. Independently view blocked/unread/replay marks with computer use on a verified display, timeout and dismissal. Native builds, full tests and F2 soak run on Atlas after C11-216; do not equate build-for-testing with assertions.\n\n## Dependencies\nDepends on J1; F3 and F1 / C11-216 are transitive. Coordinates the single blocked-state contract with A2 (Feed) and A1 scoped fixes; those cross-workstream links are for the lead. J3\u2013J7 depend on this seam. J8 documents and syncs new verbs.\nWithin-workstream prerequisites: J1 (C11-272).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: L. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": "2026-10-02T12:01:33Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XR9XM5NP9KP89ZHMPBM9GE",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XVKKMJT5TNR57ST8988G97",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XXCK6VWP4JXB1NTS20ZQ87",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y08AXSMVNBM4A5ETZT3M42",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y2415VRTQG2N8WDCGX0HWB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y27MAHHA7EHN9W3ZYCDMGB",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y29B8FMKKEZRCTZFAGM931",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y34RCE0Y61FQRVT01P8F3Z",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y49ARMR5XY228R1ABREXKT",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4EWQRCGY77JF4WN2V2SA9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4YMA9ANWZ5CZ73XFPGTGY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y57AG8N68QJWBK4WFECW93",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y5ZKXFD6CYZR21927A1P26",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y61F9W36EP0580VTWXWDFA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y6JKGXJMHEEHC3M48MTRJV",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y6JKK9Q2CMXNJQATXRBWN3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y78N8D80GDNWKNDB88Y0YN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y78NANHS1EWQ298C0CKZW2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y7VF474YH5F0X0HMZ7E8AG",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y7VF3V7P73CQZ4PTDR4618",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y7VNA2W0K8QS08Y97M6E55",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3XPNP88K5250NDJPYK02S",
+  "last_event_id": "ev_01M3Y7VNA2W0K8QS08Y97M6E55",
+  "last_status_changed_at": "2026-10-02T12:01:33Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:07Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPJSSY6XSPBYGP6VCSRR",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:46Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3WR1DQPZP82V13DV9KR34",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-273",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Implement journal append, SQLite store, pure fold and bounded replay",
+  "type": "task",
+  "updated_at": "2026-10-02T12:01:40Z",
+  "urgency": null
+}

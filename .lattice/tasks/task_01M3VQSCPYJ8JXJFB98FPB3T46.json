@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:luna-250",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-250-close-safety",
+      "linked_at": "2026-10-02T18:32:17Z",
+      "linked_by": "agent:luna-250",
+      "repo": null
+    }
+  ],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-10-01T12:42:19Z",
+  "created_by": "agent:claude-release-captain",
+  "custom_fields": {},
+  "description": "Non-blocking findings from the fresh Opus review of #469 (merged 2edc4e374, shipped in 0.67.0). Fix the real ones (2, 5, 6), decide 4 and 7, close the test gaps.\n\n# PR #469 follow-ups (non-blocking, from fresh Opus review; merged as 2edc4e374)\n1. AppDelegate.swift:4395-4403 \u2014 @discardableResult + \"Full clean boundary\" doc now sit on persistLastWindowSnapshot(); move back to persistCleanShutdownSnapshot.\n2. AppDelegate.swift:2165-2171/13139 \u2014 mainWindowCloseGuards sole strong ref removed in unregisterMainWindow; willClose observer (5047) may release guard before windowWillClose reaches it.\n3. AppDelegate.swift:13143 \u2014 up to 5 s main stall on last-window close (persistLastWindowSnapshot waits on conversation suspension). CHANGELOG line.\n4. Snapshot taken before teardown: closed-only-workspace resurfaces in next resume picker.\n5. AppDelegate.swift:6105 \u2014 socket close-window returns OK when an operator close sheet is attached; return invalid_state.\n6. PaneInteractionCardView.swift:51 \u2014 highlight fallback .confirm vs runtime fallback .cancel.\n7. close_above/close_below and tab close_others still mass-close without prompt.\n8. Test gaps: v2RejectUnresolvedTargetRefs, close-guard routing, SessionPersistenceTests:748 vacuous, tests_v2 stale-ref test, Thread.sleep in CloseWorkspaceCmdDUITests.\n9. AppDelegate.swift:6171 \u2014 debug seam re-entrant close (tests only).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3VQSCPYJ8JXJFB98FPB3T46",
+  "last_event_id": "ev_01M3YYWP6P0ZP43TTGYC589M22",
+  "last_status_changed_at": "2026-10-02T18:37:49Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-250",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "Close safety follow-ups from the #469 review",
+  "type": "chore",
+  "updated_at": "2026-10-02T18:44:11Z",
+  "urgency": null
+}

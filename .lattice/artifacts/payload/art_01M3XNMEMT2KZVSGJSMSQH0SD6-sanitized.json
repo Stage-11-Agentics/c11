@@ -1,0 +1,254 @@
+{
+  "scope": "tagged-c11-263-only",
+  "native_provider": true,
+  "source_head": "b0fc4000f2e4061698a73d4c1aa0cf45669bdd4b",
+  "execution_host": "disposable-macos-guest",
+  "source_head_provenance": "caller-supplied-build-sha",
+  "computer_use": true,
+  "ui_actions": "guest Finder activation; provider input through owned PTY",
+  "oracles": [
+    {
+      "label": "before-plan-approval",
+      "t_ns": 1790922520414479000,
+      "unread": 1,
+      "activity": "idle",
+      "derived_mark": "waiting"
+    },
+    {
+      "label": "after-approved-stop",
+      "t_ns": 1790922521540512000,
+      "unread": 1,
+      "activity": "idle",
+      "derived_mark": "waiting"
+    }
+  ],
+  "approval_sent": true,
+  "approved_reply": true,
+  "cleanup": {
+    "owned_descendants_alive": 0,
+    "provider_alive": false,
+    "original_selection_restored": true,
+    "workspace_removed": true,
+    "credential_files_removed": true
+  },
+  "startup_observations": [
+    {
+      "trust_visible": false,
+      "bypass_visible": false,
+      "no_exit_visible": false,
+      "login_visible": true,
+      "theme_visible": false,
+      "continue_visible": false,
+      "exit_plan_hook_seen": false
+    },
+    {
+      "trust_visible": true,
+      "bypass_visible": false,
+      "no_exit_visible": true,
+      "login_visible": true,
+      "theme_visible": false,
+      "continue_visible": false,
+      "exit_plan_hook_seen": false
+    },
+    {
+      "trust_visible": false,
+      "bypass_visible": true,
+      "no_exit_visible": true,
+      "login_visible": true,
+      "theme_visible": false,
+      "continue_visible": false,
+      "exit_plan_hook_seen": false
+    },
+    {
+      "trust_visible": false,
+      "bypass_visible": false,
+      "no_exit_visible": false,
+      "login_visible": true,
+      "theme_visible": false,
+      "continue_visible": false,
+      "exit_plan_hook_seen": false
+    },
+    {
+      "trust_visible": false,
+      "bypass_visible": false,
+      "no_exit_visible": false,
+      "login_visible": false,
+      "theme_visible": false,
+      "continue_visible": false,
+      "exit_plan_hook_seen": true
+    }
+  ],
+  "startup_actions": [
+    {
+      "dialog": "trust",
+      "before": {
+        "yes_selected": false,
+        "no_exit_selected": true
+      },
+      "input": "down-enter-default-no",
+      "numbered_row_visible": false,
+      "after_down": {
+        "yes_selected": true,
+        "no_exit_selected": false
+      },
+      "enter_sent": true,
+      "after_enter": {
+        "yes_selected": false,
+        "no_exit_selected": true
+      }
+    },
+    {
+      "dialog": "bypass",
+      "before": {
+        "yes_selected": false,
+        "no_exit_selected": true
+      },
+      "input": "down-enter-default-no",
+      "numbered_row_visible": false,
+      "after_down": {
+        "yes_selected": true,
+        "no_exit_selected": false
+      },
+      "enter_sent": true,
+      "after_enter": {
+        "yes_selected": false,
+        "no_exit_selected": false
+      }
+    }
+  ],
+  "foreground_reads": [
+    {
+      "label": "before-owned-selection",
+      "application": "tagged-c11"
+    },
+    {
+      "label": "after-owned-selection",
+      "application": "tagged-c11"
+    },
+    {
+      "label": "after-finder-activation",
+      "application": "finder"
+    },
+    {
+      "label": "after-startup-choice",
+      "application": "finder"
+    },
+    {
+      "label": "after-startup-choice",
+      "application": "finder"
+    },
+    {
+      "label": "after-original-selection-restored",
+      "application": "tagged-c11"
+    }
+  ],
+  "focus_setup": {
+    "original_selection_saved": true,
+    "owned_workspace_selected": true,
+    "owned_tab_focused": true,
+    "finder_activated": true
+  },
+  "display_verification": "caller-verified-single-guest-display",
+  "bundle_identifier": "com.stage11.c11.debug.c11.263",
+  "packaged_cli_version": "0.67.0",
+  "provider_version": "2.1.287",
+  "waiting_oracle_observed": true,
+  "provider_approval_ui_observed": true,
+  "approval_option": "manual",
+  "provider_exit_code": -9,
+  "hooks": [
+    {
+      "t_ns": 1790922514471818000,
+      "source": "claude-hook",
+      "hook_event_name": "SessionStart",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922515133821000,
+      "source": "claude-hook",
+      "hook_event_name": "UserPromptSubmit",
+      "permission_mode": "bypassPermissions",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922517621730000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "bypassPermissions",
+      "tool_name": "EnterPlanMode",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922517664629000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "plan",
+      "tool_name": "EnterPlanMode",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922519381527000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "plan",
+      "tool_name": "Write",
+      "approved_reply": false,
+      "write_inside_temporary_runtime": true
+    },
+    {
+      "t_ns": 1790922519448655000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "plan",
+      "tool_name": "Write",
+      "approved_reply": false,
+      "write_inside_temporary_runtime": true
+    },
+    {
+      "t_ns": 1790922520143381000,
+      "source": "claude-hook",
+      "hook_event_name": "PreToolUse",
+      "permission_mode": "plan",
+      "tool_name": "ExitPlanMode",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922520187110000,
+      "source": "claude-hook",
+      "hook_event_name": "PermissionRequest",
+      "permission_mode": "plan",
+      "tool_name": "ExitPlanMode",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922520693046000,
+      "source": "claude-hook",
+      "hook_event_name": "PostToolUse",
+      "permission_mode": "bypassPermissions",
+      "tool_name": "ExitPlanMode",
+      "approved_reply": false
+    },
+    {
+      "t_ns": 1790922521347141000,
+      "source": "claude-hook",
+      "hook_event_name": "Stop",
+      "permission_mode": "bypassPermissions",
+      "stop_hook_active": false,
+      "approved_reply": true
+    },
+    {
+      "t_ns": 1790922521639032000,
+      "source": "claude-hook",
+      "hook_event_name": "SessionEnd",
+      "approved_reply": false
+    }
+  ],
+  "exit_plan_modes_observed": [
+    "bypassPermissions",
+    "plan"
+  ],
+  "exit_plan_emitted": true,
+  "bypass_exit_pretool_observed": false,
+  "plan_exit_pretool_observed": true,
+  "outcome": "observed-native-plan-approval-and-approved-stop"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T05:56:43Z",
+  "created_by": "agent:astra-ghostty",
+  "custom_fields": {},
+  "id": "art_01M3XJZDS8YEQ2ZT6XQJ15FX0T",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XJZDS8YEQ2ZT6XQJ15FX0T.zip",
+    "size_bytes": 606461
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Matched Atlas-built tagged artifacts, 100/100 UI probes each, exact paste, shutdown, selection and focus screenshots; limits in validation.md.",
+  "tags": [],
+  "title": "C11-294 final native and tagged runtime evidence",
+  "token_usage": null,
+  "type": "file"
+}

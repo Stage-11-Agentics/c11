@@ -99,6 +99,8 @@ extension TerminalController {
         switch request.method {
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
+        case "window.resize":
+            return v2WindowResizeWorker(id: request.id, params: request.params)
         case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
@@ -107,6 +109,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
         case "agents.list":
             return v2Result(id: request.id, v2AgentsList(params: request.params))
+        case "feed.list":
+            return v2Result(id: request.id, v2FeedList(params: request.params))
+        case "feed.note_display":
+            return v2Result(id: request.id, v2FeedNoteDisplay(params: request.params))
         case "tab.read_selection":
             return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
         case "tab.read_text":
@@ -142,6 +148,16 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
+        case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
+             "browser.profiles.clear", "browser.profiles.delete":
+            return v2Result(
+                id: request.id,
+                v2BrowserProfileCommand(method: request.method, params: request.params)
+            )
+        case "browser.cookies.clear":
+            return v2Result(id: request.id, v2BrowserCookiesClearOffMain(params: request.params))
+        case "browser.state.load":
+            return v2Result(id: request.id, v2BrowserStateLoadOffMain(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }
@@ -1103,6 +1119,8 @@ extension TerminalController {
         if method.hasPrefix("snapshot.") { return v2DispatchSnapshot(method, id: id, params: params) }
         if method.hasPrefix("conversation.") { return v2DispatchConversation(method, id: id, params: params) }
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
+        if method == "feed.open" { return v2Result(id: id, v2FeedOpen(params: params)) }
+        if method.hasPrefix("feed.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
         if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") || method == "messages.view" { return v2DispatchMisc(method, id: id, params: params) }

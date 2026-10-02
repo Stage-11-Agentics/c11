@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T09:05:55Z",
+  "created_by": "agent:codex-validator",
+  "custom_fields": {},
+  "id": "art_01M3XXSW2F94YJX9ZNF956PR7B",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XXSW2F94YJX9ZNF956PR7B.md",
+    "size_bytes": 622
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Needs operator: nothing. C11-284 PASS at `b6f239bd077164d2ff2e7aa18d5464d4e885fd35`, canonical Debug invocation `273d23384a7a436b8d5d14b81eb6f292`. Built-CLI offline guide/alias/help/discovery/error c",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

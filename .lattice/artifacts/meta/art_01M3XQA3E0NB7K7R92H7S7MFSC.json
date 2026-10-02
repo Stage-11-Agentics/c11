@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T07:12:27Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XQA3E0NB7K7R92H7S7MFSC",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M3XQA3E0NB7K7R92H7S7MFSC.txt",
+    "size_bytes": 5695
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-297 exact-head Atlas targeted test evidence",
+  "token_usage": null,
+  "type": "file"
+}

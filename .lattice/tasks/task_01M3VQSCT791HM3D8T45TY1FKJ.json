@@ -1,0 +1,39 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-251",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-251-sidebar-target",
+      "linked_at": "2026-10-02T18:32:18Z",
+      "linked_by": "agent:codex-251",
+      "repo": null
+    }
+  ],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-10-01T12:42:19Z",
+  "created_by": "agent:claude-release-captain",
+  "custom_fields": {},
+  "description": "Pre-existing in 0.66.1 and unchanged in 0.67.0. From a shell outside c11 (no C11_WORKSPACE_ID), clear-status, clear-progress, clear-log, list-status, list-log and sidebar-state with NO target flag act on the operator's currently selected workspace. A cron job running 'c11 clear-status <key>' silently clears whatever workspace Atin is looking at. Writes already require a target; make the destructive clear-* commands require one too (fail loudly), and decide whether list-*/sidebar-state should. See the final --tab matrix from C11-248 PR #472.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3VQSCT791HM3D8T45TY1FKJ",
+  "last_event_id": "ev_01M3Z1CJ9NSGZVP6C0E1VVHKYV",
+  "last_status_changed_at": "2026-10-02T18:37:30Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-251",
+  "status": "in_progress",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "Bare-shell clear/list sidebar commands act on the selected workspace",
+  "type": "bug",
+  "updated_at": "2026-10-02T19:27:48Z",
+  "urgency": null
+}

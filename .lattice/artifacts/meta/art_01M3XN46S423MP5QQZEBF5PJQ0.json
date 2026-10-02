@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:34:17Z",
+  "created_by": "agent:astra-crashes",
+  "custom_fields": {},
+  "id": "art_01M3XN46S423MP5QQZEBF5PJQ0",
+  "model": null,
+  "payload": {
+    "content_type": "application/zip",
+    "file": "art_01M3XN46S423MP5QQZEBF5PJQ0.zip",
+    "size_bytes": 545708
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Atlas 9b1380e08f reproduces empty URL and no_document with fresh control and Validator snapshot; synthetic runtime evidence.",
+  "tags": [],
+  "title": "Pre-299 about:blank baseline evidence",
+  "token_usage": null,
+  "type": "file"
+}

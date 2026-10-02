@@ -1,0 +1,31 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-10-02T14:44:15Z",
+  "created_by": "agent:claude-orchestrator",
+  "custom_fields": {},
+  "description": "Atin (2026-10-02): the c11 1.0 run spent most rebase churn on CLI/c11.swift (~19k lines), TerminalController.swift, SocketHandlers/SocketDispatch.swift, Sources/CapabilityFeatures.swift and Localizable.xcstrings. Split the CLI into one file per command family and make registry entries and dispatch cases additive per-feature files so parallel tickets stop conflicting. Behavior-preserving refactor; land between releases.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3YH5CEV1VX1G696D2GS20QR",
+  "last_event_id": "ev_01M3YH5CF7XYWFKRWPZG8KN9PC",
+  "last_status_changed_at": "2026-10-02T14:44:15Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-317",
+  "status": "backlog",
+  "tags": [
+    "infra",
+    "post-1.0"
+  ],
+  "title": "Split CLI/c11.swift and make the capability registry and socket dispatch per-feature",
+  "type": "task",
+  "updated_at": "2026-10-02T14:44:15Z",
+  "urgency": null
+}

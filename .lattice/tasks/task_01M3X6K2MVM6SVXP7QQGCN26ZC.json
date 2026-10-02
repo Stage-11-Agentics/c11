@@ -1,0 +1,120 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-history",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-305-shell-helpers",
+      "linked_at": "2026-10-02T06:52:13Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-305-test-cleanup",
+      "linked_at": "2026-10-02T08:07:36Z",
+      "linked_by": "agent:codex-history",
+      "repo": null
+    }
+  ],
+  "comment_count": 15,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nDisowned shell watchers outlive the shell, and the git reporter takes the index lock while agents are committing. Days-long sessions collect orphan processes, and agent commits fail with `index.lock`. Backlog items: B023, B094.\n\n## Evidence\norigin/main `0ff8887e5e`, verified in the zsh integration.\n\n- B094: `Resources/shell-integration/cmux-zsh-integration.zsh:253` runs `git status --porcelain` inside the branch reporter. The HEAD watch reaches that reporter. Git can refresh and lock the index. Upstream cmux #2797 (`e53b9794e9`) removed `git status` from automatic reporting.\n- B023: the zsh PR watcher loops on `kill -0` of the parent pid only (about `:466`), started disowned. A reused pid keeps it alive. The HEAD watch at `:502` is `while true` with `sleep 1` and no parent check, disowned. Upstream #11035 (`22eec580cb`) records the parent pid and its start time.\n- The bash integration has the same `kill -0` poll (ledger cited `cmux-bash-integration.bash` near 328). Re-find and fix it in the same pass. zsh is the shell operators use here. Bash gets the same identity check, not a prompt rewrite.\n- Research: Fable cluster C8, wave 1. Upstream orphan counts are not c11 measurements. The mechanism is confirmed.\n\n## Scope\nIn:\n- Automatic branch reporting does not run `git status` and does not take `index.lock`. Branch name can still update.\n- A disowned watcher exits when its parent process is gone, matched by pid and start time, not `kill -0` alone. This covers the PR watcher and the HEAD watcher in zsh, and the matching bash watcher.\n- The scripts stay the bundled files under `Resources/shell-integration/`. They are sourced in c11 terminals. Do not write `~/.zshrc`, `~/.bashrc`, or any tenant config.\n\nOut:\n- Bash multiline prompt rewriting (parked B098). Do not touch prompt rewriting.\n- `gh` polling, `lsof` scans, fork-per-send, and git-in-non-repos. Those are Fable nice-to-haves and they are not tier 2. Leave them.\n- The Claude wrapper exec loop (B064). Tier-2 sweep. Different file (`Resources/bin/claude`).\n- Dirty-state shown in the sidebar if some other explicit command asks for it. This ticket only removes it from the automatic watcher.\n\n## Approach\nDelete the porcelain call from the automatic reporter. For watchers, capture the parent pid and `lstart` (or the equivalent) at start, and exit the loop when that identity is gone. Keep the disown. A watcher must not become a foreground job. Do not add a new long-lived process.\n\n## Acceptance criteria\n1. In a c11 terminal, while an agent runs `git commit`, the watcher does not fail that commit with `index.lock`. A repro is one repo, one commit, and the HEAD watch running.\n2. Exit the shell. Its watchers are gone within a couple of seconds. They do not survive because a new process reused the pid. Check with a process listing before and after, in the tagged app.\n3. The branch name in the UI still updates when the agent checks out another branch.\n4. Opening a normal terminal outside c11 is unchanged, because these scripts are not installed into the user's shell rc.\n\n## Validation\nA shell-level fixture if you can source the function and stub `git` and `ps`. The `index.lock` case wants a real git repo in a tagged c11 terminal, on Atlas after C11-216. No soak. No source-grep test. Computer use is unnecessary if the socket or the process list shows the result.\n\n## Dependencies\nNone inside ws:bugs. Cross-workstream: F1 is C11-216 for the tagged terminal. The lead links it.\n\n## Risks\nA watcher that exits while the shell is still alive, so branch updates stop. The start-time check has to match the parent, not a random process. Doctrine: bundled scripts only. No writes to `~/.gitconfig` or shell rc. No new UI strings. Public repo: an orphan and a lock, not a git exploit.\n\nSize: S. Tier: P1. Doctrine check: bundled shell integration only. No tenant config.\n",
+  "done_at": "2026-10-02T14:49:37Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XQ8HCXZ3VC204GGVDP1CCV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQCSFKC5JMRXQ5E0NNA89K",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XQNCE4BT1HQ65VTAYADR3B",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRN43MYBQ13C8FE5QJ03MC",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRQ8JKXA7EAAMKPEPX9FT3",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XTVBDDMYHBHQ56XBYV33AG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XV98RXFFC3CYN8BKAPXX0M",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XVY93A1ZFE33DHFYBB22KV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XZRWZN7TKC1S5WGTFWZ24R",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XZS78CTZY2ZWMXS3SQDTWG",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YHF6FTS1NXQRWQ2XYJK0RJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YHF6J6G7KAJAW6GHC603M6",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YHF6J2T4FE7Z06VHD6AX5G",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2MVM6SVXP7QQGCN26ZC",
+  "last_event_id": "ev_01M3YHF6J6G7KAJAW6GHC603M8",
+  "last_status_changed_at": "2026-10-02T14:49:37Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-305",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Stop shell helpers from outliving the shell and locking git",
+  "type": "bug",
+  "updated_at": "2026-10-02T14:49:37Z",
+  "urgency": null
+}

@@ -85,6 +85,15 @@ final class EventEmitter {
         lock.unlock()
     }
 
+    /// Instance id of the log this process is writing, or nil before `start()`
+    /// and whenever recording is off. Feed watch binds to this id, not newest-mtime.
+    func currentInstance() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard enabled, !instanceId.isEmpty else { return nil }
+        return instanceId
+    }
+
     /// Whether emits currently reach a log (false before `start()`, when
     /// disabled, and under XCTest without an injected log).
     var isRecording: Bool {
@@ -193,6 +202,18 @@ final class EventEmitter {
 
     func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: TabAttentionActor) {
         emit(.flagUnsuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    }
+
+    /// Structural ask open. The payload must not carry prompt text.
+    @discardableResult
+    func emitAskOpened(workspace: UUID?, surface: UUID, payload: [String: Any]) -> Bool {
+        emit(.askOpened, workspace: workspace, surface: surface, payload: payload)
+    }
+
+    /// Structural ask close. `resolution` may be null. The payload must not carry prompt text.
+    @discardableResult
+    func emitAskClosed(workspace: UUID?, surface: UUID, payload: [String: Any]) -> Bool {
+        emit(.askClosed, workspace: workspace, surface: surface, payload: payload)
     }
 
     /// C11-257 C1: build the stable payload for a successful socket send. This

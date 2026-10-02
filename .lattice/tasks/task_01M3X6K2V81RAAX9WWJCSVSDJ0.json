@@ -1,0 +1,135 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-browser",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-307-sparkle-macos26",
+      "linked_at": "2026-10-02T06:24:29Z",
+      "linked_by": "agent:codex-browser",
+      "repo": null
+    }
+  ],
+  "comment_count": 9,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:16Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nc11 is pinned to Sparkle 2.8.1. On macOS 26 that helper is rejected, so an update never starts and 1.0 cannot reach machines that are already installed. The operator is on macOS 26. Backlog item: B200.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` pins `sparkle` at 2.8.1.\n- `Sources/Update/UpdateViewModel.swift` (ledger cited `:394`) tells the user to install by hand on Sparkle error 4005. That string is not a dependency fix.\n- Upstream cmux #6678 (`96221935ca6f`) moves the pin to Sparkle 2.9.3. The upstream note is the helper error \"connection was never initiated.\"\n- The rejection itself was not reproduced in the audit. The pin is confirmed. Memory from this workspace: on macOS 26 the 2.8.1 helper is rejected with Sparkle error 4005, and `attemptUpdate` also stops if state returns to idle before `.updateAvailable` is published. Re-check that second path while you are in `UpdateViewModel`. If it is still there, fix it in this PR. If it is gone, say so.\n- Research: Fable \u00a73 B200, wave 1, early, because the update path has to be proven on a tagged build. `05-bug-reconciled.md`.\n\n## Scope\nIn: the Sparkle pin moves to a version whose helper macOS 26 will launch. Start from upstream's 2.9.3 and take a newer 2.x if 2.9.3 does not build against this tree. The in-app update check on a signed tagged build gets far enough to see an update or a clean \"you are current.\" Error 4005 from the helper connection is gone.\n\nAlso, if `attemptUpdate` still gives up when state falls back to idle before `.updateAvailable`, keep the check alive until Sparkle reports. That is the second half of the same user-visible failure.\n\nOut:\n- Updater polish that is not this rejection (Fable's not-a-priority updater rows). Do not restyle the update UI.\n- The second-instance kill (B005). If a Sparkle relaunch would hit `enforceSingleInstance`, name that in the PR. The yield fix is the other ticket. Do not force-kill the running fleet from this one.\n- Release sign-off (C11-293) and the appcast. This ticket lands the dependency. It does not publish 1.0.0.\n- A hand-written six-locale pass. If you change the 4005 string, use `String(localized:)` and leave the locales to the translation ticket.\n\n## Approach\nBump the Swift package pin and resolve it. Read the Sparkle release notes between 2.8.1 and the version you take for the helper-launch fix, and cite the note in the PR. Do not copy an upstream workflow that needs `GHOSTTY_RELEASE_TOKEN`.\n\nProve it with a signed build. An unsigned dev app will not exercise the helper the way production does. Use the project's sign path. Do not invent a new one. The check runs on macOS 26.\n\n## Acceptance criteria\n1. `Package.resolved` is no longer Sparkle 2.8.1. The app builds with the new pin.\n2. On macOS 26, a signed tagged build's Check for Updates does not fail with helper error 4005 or \"connection was never initiated.\" It reports an update or that the app is current.\n3. If no update is published yet, the check still completes and returns to idle on its own. It does not stick, and it does not stop early while Sparkle is still deciding.\n4. The existing manual-install guidance still shows for a real failure that is not the helper rejection.\n\n## Validation\nSigned tagged build on Atlas after C11-216, on macOS 26. Computer use or a screenshot of the update panel for the result. No soak. No source-grep test. Do not build on Hyperion. Do not publish a GitHub release from this ticket, and do not move the `latest` release tag.\n\n## Dependencies\nNone inside ws:bugs. Neighbor: B005, so a relaunch does not kill the fleet. Cross-workstream: F1 is C11-216. The release sign-off is X3 / C11-293. The lead links those. This ticket should be done before that sign-off build.\n\n## Risks\nA Sparkle minor that changes the delegate callbacks this app uses. Read the build log and the update panel. Do not silence 4005 by catching the error and reporting success. Doctrine: no tenant config. The feed URL stays the existing appcast. Public repo: a dependency bump and an error code, not a signing bypass.\n\nSize: S. Tier: P1. Doctrine check: package pin and the update state machine. No tenant config.\n",
+  "done_at": "2026-10-02T08:37:06Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3XRVEJZDZ2ZDYS7PDQZVDW3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XRVENEKG8KH93PHY6MTHD1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XRVER3NCCXZBYGXMHHHH98",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XS46EAKA5XGN33HMSP6PY6",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XS46HTC516JEQQHRGJ5T5J",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XS6YPG98B9MPCBRB60M1CD",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XSJ2HF2GYFMWVD32EKVE2V",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XTYVR6C0ZMJS76AWCPMV7Y",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XW4A4Q1DPFGVR0WK4JRR91",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XW534CEK6F6H0XMPAYWVHJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XW534A4ZHZQH8KQT4TBQT0",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJC7N7FY0D5R1E1TAH8C1",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJCB7KZAKK9TQE56XGH5T",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJCEWE89EN8VTWRB43HBG",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJCJH0DM8PJ2DC4DNR056",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XX96T140VR0Y1K58CM8FKC",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K2V81RAAX9WWJCSVSDJ0",
+  "last_event_id": "ev_01M3XXC4RB9JD2RW8MG0GHR0G1",
+  "last_status_changed_at": "2026-10-02T08:37:06Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:27:19Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:32:23Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3XAPVSTQ5H68S9K7J8N6NMY",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-307",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Bump Sparkle so macOS 26 can install updates",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:58:25Z",
+  "urgency": null
+}

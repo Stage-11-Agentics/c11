@@ -1,0 +1,22 @@
+{
+  "base_name": "C11-257-Review-A-r3",
+  "framework": "claude-code",
+  "last_active": "2026-10-02T02:01:37Z",
+  "model": "claude-opus-5-5",
+  "name": "C11-257-Review-A-r3-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3X5GYHSK9SN8HEVKF38C2ZW",
+    "reported": {
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11-worktrees/c11-257-a-review"
+    }
+  },
+  "parent": "agent:C11-257-Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M3X5GYHVQB3EBZGKHY0MESHV",
+  "started_at": "2026-10-02T02:01:37Z",
+  "status": "active"
+}

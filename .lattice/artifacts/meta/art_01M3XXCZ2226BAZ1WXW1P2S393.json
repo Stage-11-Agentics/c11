@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:58:52Z",
+  "created_by": "agent:astra-groups",
+  "custom_fields": {},
+  "id": "art_01M3XXCZ2226BAZ1WXW1P2S393",
+  "model": null,
+  "payload": {
+    "content_type": "application/x-tar",
+    "file": "art_01M3XXCZ2226BAZ1WXW1P2S393.gz",
+    "size_bytes": 5034795
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Head0440a7e; both flock slots held, starts below8, control load later20.89. Churn-scroll p99 72.623ms vs71.264ms limit. Both pairs, raw data, hashes, load, cleanup and separate stack trace preserved. No review handoff. Public derivative omits all images and binary test results; original embedded hashes are historical identifiers. See PUBLIC-OMISSIONS-MANIFEST.json.",
+  "tags": [],
+  "title": "C11-259 one follow-up pair: raw FAIL, diagnosis unresolved (public sanitized derivative)",
+  "token_usage": null,
+  "type": "file"
+}

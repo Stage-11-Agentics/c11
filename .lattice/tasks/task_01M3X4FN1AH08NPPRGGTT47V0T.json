@@ -1,0 +1,125 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-launch",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-280-initial-input",
+      "linked_at": "2026-10-02T07:21:46Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-280-test-fresh-object",
+      "linked_at": "2026-10-02T15:18:00Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    }
+  ],
+  "comment_count": 11,
+  "complexity": "low",
+  "created_at": "2026-10-02T01:43:26Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAn agent that wants a new terminal already running a command has to create the surface and then `send`, and the send races shell startup. `new-workspace --command` does that race today and drops the queued result. Backlog item: C2.\n\n## Evidence\n- c11: `CLI/c11.swift:2213-2244` on origin/main (0ff8887e5e). `new-workspace --command` calls `workspace.create`, then `tab.send_text` with `unescapeSendText(commandText + \"\\\\n\")`, and discards the response (`:2241-2244`).\n- c11: `new-split` (`:2247-2279`, method `tab.split`), `new-area` (`:2350-2377`, method `area.create`), and `new-tab` (`:2601-2623`, method `tab.create`) take cwd, title, and type. None takes `--command`. Help text at `:9010`, `:9137`, and `:9238` matches that.\n- c11: `Sources/SocketHandlers/WorkspaceHandlers.swift:117-118` and `:232` pass `initial_command` into `addWorkspace` as `initialTerminalCommand`. That field replaces the shell. `Sources/GhosttyTerminalView.swift:3689-3709` writes it to `surfaceConfig.command` inside `withCString` before `ghostty_surface_new`.\n- c11: `ghostty.h:447-450` already has both `command` (shell replacement) and `initial_input` (typed into the interactive shell). Nothing in Swift assigns `initial_input`.\n- Upstream: cmux #9614 (`7a0ba63056`). The CLI sends `initial_input = text + \"\\r\"` on split, pane create, surface create, and workspace create. Non-terminal types are rejected. Blank text is dropped. The shell outlives the command.\n- Research: `upstream-triage/c11-1.0/06-grab-list.md` \u00a71c. Fable row 4.3 (core). Astra row 4.3 raised the effort and marked it if-time. The backlog and `c11-1.0.html` revised decision keep it core.\n\n## Scope\nIn: `--command` on `new-split`, `new-area`, and `new-tab`, carried as Ghostty `initial_input` with a trailing CR. Move `new-workspace --command` onto that same field. Reject it for browser and markdown. Drop blank text. Keep `initial_command` / `initialTerminalCommand` as the socket-only shell replacement.\nOut: `launch-agent` prompt delivery (C11-258, and backlog C8). The bracketed-paste split (bug harvest #4). A delivery report that claims the command finished. `--command` together with `--layout` must not be invented as a second executor. Reject that pair with a clear error. The layout branch of `v2WorkspaceCreate` (`WorkspaceHandlers.swift:159-216`) returns before `initialTerminalCommand` is applied.\n\n## Approach\nThread an `initial_input` string from the CLI through `tab.split`, `area.create`, `tab.create`, and `workspace.create`, and assign `surfaceConfig.initial_input` beside the existing `command` assignment, still inside a `withCString` that outlives `ghostty_surface_new`. Do not set `surfaceConfig.command` for this flag. Append `\\r` in the app, not by reusing `unescapeSendText`, so a command that contains the two characters backslash-n stays literal. `new-workspace --command` stops calling `tab.send_text`. Return the created refs. Say in the human summary that the text was queued into the new shell, not that it ran. Update `skills/c11/references/api.md` and sync the installed c11 skill on the machine that lands the PR. Register feature flag `create.initial_input` if C6's list exists.\n\n## Acceptance criteria\n1. On a tagged build, `c11 new-tab --command 'printf hi-from-create'` shows `hi-from-create` in that tab, and the shell is still alive afterwards (`echo ok` works). The same for `new-split down` and `new-area`.\n2. `c11 new-tab --type browser --command 'echo no'` and the markdown equivalent exit with a usage error and open nothing.\n3. `c11 new-workspace --command 'printf ws-create'` no longer issues `tab.send_text`. The text appears in the new workspace's terminal, and a slow shell rc does not lose it the way a follow-up send can. Record one run where rc output arrives before the command echo, and say whether the command still ran.\n4. `c11 new-workspace --layout <name> --command 'printf x'` fails with an error that names both flags. No workspace is left behind, or the error says a workspace was not created.\n5. A socket `workspace.create` with `initial_command` still replaces the shell. A fixture or existing test covers that, so the two fields stay distinct.\n\n## Validation\nA `tests_v2` script against a tagged build's socket for the four create verbs, plus one computer-use check that the new terminal is readable and still at a prompt. No soak. Ghostty buffers `initial_input` in the PTY before rc files finish. The acceptance run in criterion 3 is the check that this is livable. Do not add a retry loop that sends the command again.\n\n## Dependencies\nNone. Related to C3: once this lands, `new-workspace --command` no longer has a `queued` send result to surface. C3 documents send. This ticket documents create. Feature flag name lives with C6.\n\n## Risks\nTyping latency: this runs at surface create, not per keystroke. Do not add a display link or a manual draw. Main thread: surface creation is already on the spawn path. Do not block the socket worker on rc completion. Doctrine: the command is spawn config for c11's own terminal. No shell rc writes, no tenant config. Localization: new CLI errors go through `String(localized:)`. Six-locale fill is X1. Public repo: nothing sensitive.\n\nSize: S. Tier: P1. Doctrine check: the shell stays the shell. `--command` types into it.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01M3XVTESJVCH2GNWE0N47QZ9M",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XVTEVZW7SY82KH6V0713XS",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XVXM0M87HQB5NMH0Z3WE78",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XW9D57XKYNM5YJ12GPW0N4",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XWG2KZS30PEN3ZVRJNSRXP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWG2QKXWQ1HNYNB3672B1A",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJ53T62F8V9WCQQBF37FR",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJ57BKY5EPX9SCWX1FQ9V",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWKV11PF9HSJDPNC8F05AT",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YK0NNDYKDA82KC041D079Z",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YM06ZCRMWS2GWFYPJHCWJP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YM0MKBBPWK64ZSJ2S2XJZ6",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3YM19B76391DHG6N9WXWB7B",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3YPV4CBW62R0QGMQ9B74JWV",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X4FN1AH08NPPRGGTT47V0T",
+  "last_event_id": "ev_01M3YPV4CBW62R0QGMQ9B74JWV",
+  "last_status_changed_at": "2026-10-02T15:54:38Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:44:00Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X4FNEE0AF12PMBE9QV14DR",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-280",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:cli-browser-release",
+    "tier:p1"
+  ],
+  "title": "Type --command into a new terminal via Ghostty initial_input",
+  "type": "task",
+  "updated_at": "2026-10-02T16:23:31Z",
+  "urgency": null
+}

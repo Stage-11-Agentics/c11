@@ -68,6 +68,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
               [.turnStarted, .turnCompleted, .turnInterrupted].contains(observation.kind),
               target.kind != "grok" || observation.kind != .turnInterrupted,
               !observation.isChild,
+              let occurredAt = observation.occurredAt,
               let adapter = adapter(for: target.kind) else { return nil }
         var draft = JournalDraft(
             kind: observation.kind,
@@ -82,10 +83,9 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         draft.sessionID = ref.id
         draft.turnID = observation.turnID
         draft.isChild = observation.isChild
-        if let occurredAt = observation.occurredAt {
-            draft.occurredAtMs = epochMilliseconds(occurredAt)
-            draft.timeQuality = .nativeLocal
-        }
+        draft.adapterVersion = JournalNativeClockEvidence.adapterVersion(for: adapter) ?? "1"
+        draft.occurredAtMs = epochMilliseconds(occurredAt)
+        draft.timeQuality = .nativeLocal
         guard (try? draft.validate()) != nil else { return nil }
         return draft
     }
@@ -173,7 +173,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
             guard let self else { return }
             let succeeded: Bool
             do {
-                _ = try JournalCoordinator.shared.append(draft)
+                _ = try JournalCoordinator.shared.appendTranscript(draft)
                 succeeded = true
             } catch {
                 succeeded = false

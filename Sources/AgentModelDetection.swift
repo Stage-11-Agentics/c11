@@ -168,6 +168,9 @@ struct AgentModelProbe: Sendable {
     static let maxInitialWindow = 4 * 1024 * 1024
     /// Largest slice one poll will read; a bigger backlog is skipped to its end.
     static let maxPollBytes = 4 * 1024 * 1024
+    /// Codex session identity lives at the rollout header, outside a bounded
+    /// tail window on old or resumed sessions.
+    static let maxIdentityHeaderBytes = 64 * 1024
     static let locateRetry: TimeInterval = 30
     /// How far back the substring-only `turn_context` search may look.
     static let maxBackwardSearch: UInt64 = 64 * 1024 * 1024
@@ -227,13 +230,20 @@ struct AgentModelProbe: Sendable {
                 state.signals.sessionTokens = row.tokens
             }
         case "grok":
-            if case .string(let dir)? = ref.payload?[GrokStrategy.sessionDirectoryPayloadKey],
-               let summary = readGrokSummary(sessionDirectory: dir) {
-                if let model = summary.model { state.model = model }
-                state.signals.lastEventAt = summary.lastActiveAt
+            let summary: (model: String?, lastActiveAt: Date?)?
+            if case .string(let dir)? = ref.payload?[GrokStrategy.sessionDirectoryPayloadKey] {
+                summary = readGrokSummary(sessionDirectory: dir)
+            } else {
+                summary = nil
             }
             tail(kind: kind, ref: ref, state: &state, now: now,
                  lifecycle: &lifecycle, coverage: &coverage)
+            if let summary {
+                if let model = summary.model { state.model = model }
+                if let lastActiveAt = summary.lastActiveAt {
+                    state.signals.lastEventAt = max(state.signals.lastEventAt ?? lastActiveAt, lastActiveAt)
+                }
+            }
         case "claude-code", "codex", "pi", "omp":
             tail(kind: kind, ref: ref, state: &state, now: now,
                  lifecycle: &lifecycle, coverage: &coverage)
@@ -284,10 +294,24 @@ struct AgentModelProbe: Sendable {
             state.offset = 0
             state.model = nil
             Self.resetLifecycleState(&state)
+            state.transcriptIdentityInvalid = false
+            state.transcriptIdentityVerified = false
         }
         state.inode = inode
 
         if state.offset == 0 {
+            if kind == "codex" {
+                state.transcriptIdentityInvalid = false
+                state.transcriptIdentityVerified = false
+                switch verifyCodexSessionIdentity(handle: handle, size: size, expectedSessionID: ref.id) {
+                case .verified:
+                    state.transcriptIdentityVerified = true
+                case .mismatch:
+                    state.transcriptIdentityInvalid = true
+                case .unavailable:
+                    break
+                }
+            }
             initialScan(kind: kind, expectedSessionID: ref.id, handle: handle, size: size,
                         state: &state, lifecycle: &lifecycle, coverage: &coverage)
         } else if size > state.offset {
@@ -319,28 +343,41 @@ struct AgentModelProbe: Sendable {
             state.signals = TranscriptSignals()
             Self.resetLifecycleState(&state, preserveCoverage: true)
             var candidateLifecycle: [TranscriptLifecycleObservation] = []
-            state.transcriptIdentityInvalid = false
-            state.transcriptIdentityVerified = false
+            var candidateCoverage: TranscriptCoverage = .none
             for line in lines {
                 Self.fold(kind: kind, expectedSessionID: expectedSessionID, line: line,
-                          into: &state, lifecycle: &candidateLifecycle, coverage: &coverage)
+                          into: &state, lifecycle: &candidateLifecycle, coverage: &candidateCoverage)
             }
             state.offset = start + UInt64(consumed)
             let complete = state.model != nil && (state.signals.turnStartedAt != nil || start == 0)
             if complete || start == 0 || window >= UInt64(Self.maxInitialWindow) {
+                if start > 0 {
+                    // The omitted prefix invalidates pairings from before the
+                    // retained window, but a qualified Grok start inside that
+                    // window is continuous evidence for a later appended end.
+                    state.model = nil
+                    state.signals = TranscriptSignals()
+                    state.coverageDegraded = false
+                    Self.resetLifecycleState(&state, preserveCoverage: true)
+                    candidateLifecycle.removeAll(keepingCapacity: true)
+                    candidateCoverage = .none
+                    Self.markCoverageGap(
+                        skippedBytes: start + UInt64(leadingSkipped),
+                        state: &state,
+                        coverage: &candidateCoverage
+                    )
+                    for line in lines {
+                        Self.fold(kind: kind, expectedSessionID: expectedSessionID, line: line,
+                                  into: &state, lifecycle: &candidateLifecycle, coverage: &candidateCoverage)
+                    }
+                }
                 // One very long turn can push the last `turn_context` out of the
                 // window; look further back for just that line.
                 if state.model == nil, start > 0, kind == "codex" {
                     state.model = findEarlierTurnContextModel(handle: handle, before: start)
                 }
                 lifecycle.append(contentsOf: candidateLifecycle)
-                if start > 0 {
-                    Self.markCoverageGap(
-                        skippedBytes: start + UInt64(leadingSkipped),
-                        state: &state,
-                        coverage: &coverage
-                    )
-                }
+                if case .gap = candidateCoverage { coverage = candidateCoverage }
                 return
             }
             window *= 4
@@ -402,6 +439,33 @@ struct AgentModelProbe: Sendable {
         state.offset = start + UInt64(consumed)
     }
 
+    private enum CodexIdentityRead {
+        case verified
+        case mismatch
+        case unavailable
+    }
+
+    /// Reads only the bounded file prefix. This identity check is independent
+    /// of the retained tail window and is repeated on every initial scan.
+    private func verifyCodexSessionIdentity(
+        handle: FileHandle,
+        size: UInt64,
+        expectedSessionID: String
+    ) -> CodexIdentityRead {
+        guard size > 0 else { return .unavailable }
+        let end = min(size, UInt64(Self.maxIdentityHeaderBytes))
+        guard let data = readRange(handle, from: 0, to: end) else { return .unavailable }
+        let (lines, _, _) = Self.completeLines(in: data, droppingLeadingPartial: false)
+        for line in lines where hasType(line, "session_meta") {
+            guard line.count <= Self.maxParseBytes,
+                  let parsedID = Self.parseLine(kind: "codex", line: line).sessionID else {
+                return .unavailable
+            }
+            return parsedID == expectedSessionID ? .verified : .mismatch
+        }
+        return .unavailable
+    }
+
     private static func fold(
         kind: String,
         expectedSessionID: String,
@@ -423,9 +487,6 @@ struct AgentModelProbe: Sendable {
                 state.model = nil
                 state.signals = TranscriptSignals()
                 return
-            }
-            if parsed.sessionMetaIdentity {
-                state.transcriptIdentityVerified = true
             }
         }
         guard !state.transcriptIdentityInvalid else { return }
@@ -516,7 +577,6 @@ struct AgentModelProbe: Sendable {
         state.codexRootTurnID = nil
         state.codexChildTurnIDs.removeAll(keepingCapacity: true)
         state.grokPendingStart = nil
-        state.transcriptIdentityInvalid = false
         if !preserveCoverage { state.coverageDegraded = false }
     }
 

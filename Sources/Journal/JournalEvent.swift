@@ -159,6 +159,45 @@ struct JournalDraft: Codable, Equatable {
     }
 }
 
+/// Versioned parser evidence for comparing a provider's own timestamps within
+/// one adapter/session clock. The version is persisted with each transcript
+/// draft so a future parser or clock-format change cannot inherit this clock.
+enum JournalNativeClockEvidence {
+    static let codexTranscriptVersion = "codex-rollout-clock-v1"
+    static let grokTranscriptVersion = "grok-events-clock-v1"
+
+    static func adapterVersion(for adapter: JournalAdapter) -> String? {
+        switch adapter {
+        case .codexTranscript: return codexTranscriptVersion
+        case .grokTranscript: return grokTranscriptVersion
+        default: return nil
+        }
+    }
+
+    static func verifies(_ draft: JournalDraft) -> Bool {
+        guard draft.source == .transcript, draft.timeQuality == .nativeLocal,
+              draft.occurredAtMs != nil, draft.turnID != nil, !draft.isChild,
+              adapterVersion(for: draft.adapter) == draft.adapterVersion else {
+            return false
+        }
+        switch (draft.agentKind, draft.adapter, draft.nativeEvent, draft.kind) {
+        case ("codex", .codexTranscript, "turn.started", .turnStarted),
+             ("codex", .codexTranscript, "turn.completed", .turnCompleted),
+             ("codex", .codexTranscript, "turn.interrupted", .turnInterrupted),
+             ("grok", .grokTranscript, "turn.started", .turnStarted),
+             ("grok", .grokTranscript, "turn.completed", .turnCompleted):
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func watermarkKey(for draft: JournalDraft) -> String? {
+        guard verifies(draft) else { return nil }
+        return "\(draft.adapter.rawValue):\(draft.adapterVersion)"
+    }
+}
+
 enum JournalPhase: String, Codable { case unknown, working, blocked, idle, error }
 enum JournalConfirmation: String, Codable { case confirmed, unconfirmed }
 enum JournalConnection: String, Codable { case live, disconnected, unknown }
@@ -200,8 +239,34 @@ struct JournalContext {
     var eligible: Bool
     var historical = false
     var modelID: String? = nil
-    // Set by a registered adapter only after its fixture verifies the clock.
+    // Set only by the bounded transcript append route after its versioned
+    // parser evidence validates.
     var verifiedNativeClock = false
+
+    /// Shared by the live coordinator and executable append-path tests. A
+    /// provider clock is enabled only by the registered adapter/version pair.
+    static func forAppend(
+        draft: JournalDraft,
+        eligible: Bool,
+        historical: Bool = false,
+        modelID: String? = nil
+    ) -> Self {
+        Self(eligible: eligible, historical: historical, modelID: modelID,
+             verifiedNativeClock: false)
+    }
+
+    /// Only the bounded transcript producer can register its parsed provider
+    /// timestamp. Generic socket and spool appends cannot opt in by supplying
+    /// draft fields alone.
+    static func forTranscriptAppend(
+        draft: JournalDraft,
+        eligible: Bool,
+        historical: Bool = false,
+        modelID: String? = nil
+    ) -> Self {
+        Self(eligible: eligible, historical: historical, modelID: modelID,
+             verifiedNativeClock: JournalNativeClockEvidence.verifies(draft))
+    }
 }
 
 struct JournalEvent: Codable {

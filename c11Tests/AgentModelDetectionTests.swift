@@ -228,6 +228,44 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertTrue(second.lifecycle.isEmpty, "the same byte range must not emit a second edge")
     }
 
+    func testCodexLargeRolloutVerifiesSessionMetaOutsideTailWindow() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        let otherID = uuidV7(now.addingTimeInterval(-1))
+        let path = codexPath(id: id, date: now)
+        let header = #"{"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\#(id)"}}"# + "\n"
+        let fillerLine = #"{"timestamp":"2026-01-01T09:00:00.500Z","type":"response_item","payload":{"type":"reasoning","text":"\#(String(repeating: "x", count: 900))"}}"# + "\n"
+        let tail = """
+        {"timestamp":"2026-01-01T09:05:00.000Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
+        {"timestamp":"2026-01-01T09:05:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"large-root"}}
+        {"timestamp":"2026-01-01T09:05:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"large-root"}}
+        """
+        let content = header + String(repeating: fillerLine, count: 5_000) + tail + "\n"
+        let url = try place(Data(content.utf8), at: path)
+        XCTAssertGreaterThan(try Data(contentsOf: url).count, AgentModelProbe.maxInitialWindow)
+
+        var matchingState = ModelTailState()
+        let matching = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &matchingState)
+        XCTAssertEqual(matching.lifecycle.map(\.nativeEvent), ["turn.started", "turn.completed"])
+        XCTAssertTrue(matchingState.transcriptIdentityVerified)
+        guard case .gap = matching.coverage else { return XCTFail("expected the bounded tail to report its omitted prefix") }
+        try append("""
+        {"timestamp":"2026-01-01T09:06:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"fresh-root"}}
+        {"timestamp":"2026-01-01T09:06:01.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"fresh-root"}}
+        """ + "\n", to: url)
+        let incremental = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &matchingState)
+        XCTAssertEqual(incremental.lifecycle.map(\.turnID), ["fresh-root", "fresh-root"])
+
+        let mismatchedHeader = header.replacingOccurrences(of: id, with: otherID)
+        let mismatchedContent = content.replacingOccurrences(of: header, with: mismatchedHeader)
+        try Data(mismatchedContent.utf8).write(to: url)
+        var mismatchedState = ModelTailState()
+        let mismatched = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &mismatchedState)
+        XCTAssertTrue(mismatched.lifecycle.isEmpty)
+        XCTAssertFalse(mismatchedState.transcriptIdentityVerified)
+        XCTAssertTrue(mismatchedState.transcriptIdentityInvalid)
+    }
+
     func testCodexChildEdgesAndOutputDoNotBecomeRootEdges() throws {
         let now = Date()
         let id = uuidV7(now)
@@ -299,6 +337,25 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(detect("grok", r, &state), .model("grok-5"))
     }
 
+    func testGrokSummaryModelAndActivitySurviveEmptyAndNonemptyEventTails() throws {
+        let sessionID = "F0000000-0000-4000-8000-000000000004"
+        for (name, eventBytes) in [
+            ("empty", Data()),
+            ("nonempty", Data((#"{"type":"phase_changed","ts":"2026-01-01T05:59:00.000Z","phase":"working"}"# + "\n").utf8))
+        ] {
+            let dir = "grok-summary-\(name)"
+            let summaryURL = try place(fixture("grok-summary.json"), at: "\(dir)/summary.json")
+            try place(eventBytes, at: "\(dir)/events.jsonl")
+            let r = ref("grok", id: sessionID,
+                        payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(summaryURL.deletingLastPathComponent().path)])
+            var state = ModelTailState()
+            XCTAssertEqual(detect("grok", r, &state), .model("grok-4.7"), "events tail: \(name)")
+            XCTAssertEqual(state.signals.lastEventAt, AgentModelProbe.parseISO("2026-01-01T06:00:00.123456Z"))
+            XCTAssertEqual(detect("grok", r, &state), .model("grok-4.7"), "second poll: \(name)")
+            XCTAssertEqual(state.signals.lastEventAt, AgentModelProbe.parseISO("2026-01-01T06:00:00.123456Z"))
+        }
+    }
+
     func testGrokQualifiedTurnPairEmitsOnceAndUsesTheNativeTurnNumber() throws {
         let sessionID = "grok-session-276"
         let dir = "grok-edge"
@@ -320,6 +377,28 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(second.lifecycle.map(\.nativeEvent), ["turn.completed"])
         XCTAssertEqual(second.lifecycle.first?.turnID, "42")
         XCTAssertTrue(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.isEmpty)
+    }
+
+    func testGrokRetainedStartAfterInitialGapCanPairWithIncrementalEnd() throws {
+        let sessionID = "grok-session-276"
+        let dir = "grok-retained-start-gap"
+        let fillerLine = #"{"type":"phase_changed","ts":"2026-01-01T06:39:59.000Z","phase":"working","detail":"\#(String(repeating: "x", count: 900))"}"# + "\n"
+        let start = #"{"type":"turn_started","ts":"2026-01-01T06:40:00.000Z","turn_number":11,"session_id":"grok-session-276","session_relationship":"primary"}"# + "\n"
+        let url = try place(Data((String(repeating: fillerLine, count: 5_000) + start).utf8), at: "\(dir)/events.jsonl")
+        XCTAssertGreaterThan(try Data(contentsOf: url).count, AgentModelProbe.maxInitialWindow)
+        let r = ref("grok", id: sessionID,
+                    payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+        var state = ModelTailState()
+
+        let initial = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertEqual(initial.lifecycle.map(\.nativeEvent), ["turn.started"])
+        XCTAssertEqual(initial.lifecycle.first?.turnID, "11")
+        guard case .gap = initial.coverage else { return XCTFail("expected an initial omitted-prefix gap") }
+
+        try append(#"{"type":"turn_ended","ts":"2026-01-01T06:40:01.000Z","outcome":"completed"}"# + "\n", to: url)
+        let finished = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+        XCTAssertEqual(finished.lifecycle.map(\.nativeEvent), ["turn.completed"])
+        XCTAssertEqual(finished.lifecycle.first?.turnID, "11")
     }
 
     func testGrokMismatchedOrNonPrimaryStartCannotPairAnIdlessEnd() throws {
@@ -396,6 +475,92 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(result.detection, .model("gpt-6-astra"))
     }
 
+    func testTranscriptRescanUsesProductionAppendPathAndPreservesNotifyBarrier() throws {
+        let now = Date()
+        let sessionID = uuidV7(now)
+        let workspaceID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let tabID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let target = AgentModelDetector.Target(workspaceId: workspaceID, surfaceId: tabID, kind: "codex")
+        let conversation = ref("codex", id: sessionID)
+        let text = """
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\(sessionID)"}}
+        {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-A"}}
+        {"timestamp":"2026-01-01T09:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-A"}}
+        {"timestamp":"2026-01-01T09:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-B"}}
+        {"timestamp":"2026-01-01T09:00:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-B"}}
+        """
+        let url = try place(Data((text + "\n").utf8), at: codexPath(id: sessionID, date: now))
+        var state = ModelTailState()
+        let observed = probe.detectWithObservations(kind: "codex", ref: conversation, state: &state)
+        XCTAssertEqual(observed.lifecycle.map(\.turnID), ["turn-A", "turn-A", "turn-B", "turn-B"])
+
+        let journalDirectory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("c11-transcript-fold-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: journalDirectory) }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let store = try JournalStore(layout: JournalStorageLayout(directory: journalDirectory), clock: { nowMs })
+        let coordinator = JournalCoordinator(store: store)
+        coordinator.register(tabID: tabID, workspaceID: workspaceID)
+        coordinator.setOwner(tabID: tabID, owner: JournalOwner(tabID: tabID, agentKind: "codex", sessionID: sessionID))
+        defer { coordinator.remove(tabID: tabID) }
+        let emittedAt = Date()
+        func appendTranscript(_ observations: [TranscriptLifecycleObservation]) throws -> [JournalAppendResult] {
+            try observations.map { observation in
+                let draft = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+                    observation: observation, target: target, ref: conversation, emittedAt: emittedAt
+                ))
+                return try coordinator.appendTranscript(draft)
+            }
+        }
+
+        let gapDeadline = Date().addingTimeInterval(3)
+        var observedCodexGap = false
+        while Date() < gapDeadline {
+            if try store.readPage(after: 0, limit: 20).contains(where: { $0.draft.nativeEvent == "adapter_gap" }) {
+                observedCodexGap = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertTrue(observedCodexGap, "the normal owner path should persist Codex's notify-only adapter gap")
+
+        let firstAppend = try appendTranscript(observed.lifecycle)
+        XCTAssertEqual(firstAppend.map(\.receipt.projectionEffect), Array(repeating: .applied, count: 4))
+        let prior = try XCTUnwrap(store.current(owner: JournalOwner(tabID: tabID, agentKind: "codex", sessionID: sessionID)))
+        XCTAssertEqual(prior.phase, .idle)
+        XCTAssertEqual(prior.turnID, "turn-B")
+        XCTAssertEqual(prior.nativeWatermarks["codex_transcript:\(JournalNativeClockEvidence.codexTranscriptVersion)"],
+                       Int64(t("09:00:04").timeIntervalSince1970 * 1000))
+
+        var notify = JournalDraft(kind: .turnCompleted, emittedAtMs: nowMs, tabID: tabID,
+                                  workspaceID: workspaceID, sessionID: sessionID, agentKind: "codex",
+                                  source: .hook, adapter: .codexNotify, nativeEvent: "agent-turn-complete")
+        notify.turnID = "turn-B"
+        XCTAssertEqual(try coordinator.append(notify).receipt.projectionEffect, .duplicateEvidence)
+        let barrier = try XCTUnwrap(store.current(owner: prior.owner))
+        XCTAssertEqual(barrier.phase, .idle)
+        XCTAssertEqual(barrier.turnOutcome, "completed")
+        XCTAssertEqual(barrier.rank, JournalSource.hook.rank)
+        XCTAssertEqual(barrier.terminalRank, JournalSource.hook.rank)
+        XCTAssertEqual(barrier.adapter, .codexNotify)
+
+        let replacement = url.appendingPathExtension("replacement")
+        try Data((text + "\n").utf8).write(to: replacement)
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.moveItem(at: replacement, to: url)
+        let rescanned = probe.detectWithObservations(kind: "codex", ref: conversation, state: &state)
+        XCTAssertEqual(rescanned.lifecycle.map(\.turnID), ["turn-A", "turn-A", "turn-B", "turn-B"])
+        let rescanAppend = try appendTranscript(rescanned.lifecycle)
+        XCTAssertEqual(rescanAppend.map(\.receipt.projectionEffect), [.stale, .stale, .stale, .duplicateEvidence])
+        let afterRescan = try XCTUnwrap(store.current(owner: prior.owner))
+        XCTAssertEqual(afterRescan.phase, .idle)
+        XCTAssertEqual(afterRescan.turnOutcome, "completed")
+        XCTAssertEqual(afterRescan.turnID, "turn-B")
+        XCTAssertEqual(afterRescan.rank, JournalSource.hook.rank)
+        XCTAssertEqual(afterRescan.terminalRank, JournalSource.hook.rank)
+        XCTAssertEqual(afterRescan.lastSequence, 6)
+    }
+
     func testTranscriptDraftKeepsOnlyAllowlistedProvenanceAndGapSignal() throws {
         let target = AgentModelDetector.Target(
             workspaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
@@ -412,17 +577,37 @@ final class AgentModelDetectionTests: XCTestCase {
         ))
         XCTAssertEqual(draft.source, .transcript)
         XCTAssertEqual(draft.adapter, .codexTranscript)
+        XCTAssertEqual(draft.adapterVersion, JournalNativeClockEvidence.codexTranscriptVersion)
         XCTAssertEqual(draft.kind, .turnCompleted)
         XCTAssertEqual(draft.turnID, "root-1")
+        XCTAssertTrue(JournalNativeClockEvidence.verifies(draft))
+        var unsupportedClockVersion = draft
+        unsupportedClockVersion.adapterVersion = "1"
+        XCTAssertFalse(JournalNativeClockEvidence.verifies(unsupportedClockVersion))
+        var mismatchedClockKind = draft
+        mismatchedClockKind.kind = .turnStarted
+        XCTAssertFalse(JournalNativeClockEvidence.verifies(mismatchedClockKind))
         XCTAssertFalse(String(decoding: try draft.canonicalData(), as: UTF8.self).contains("last_agent_message"))
         XCTAssertNil(JournalTranscriptProducer.makeDraft(
             observation: .init(kind: .questionRequested, occurredAt: nil,
                                nativeEvent: "question.requested", turnID: nil, isChild: false),
             target: target, ref: r, emittedAt: t("09:05:08")
         ))
+        XCTAssertNil(JournalTranscriptProducer.makeDraft(
+            observation: .init(kind: .turnStarted, occurredAt: nil,
+                               nativeEvent: "turn.started", turnID: "root-2", isChild: false),
+            target: target, ref: r, emittedAt: t("09:05:08")
+        ), "a turn without native clock evidence cannot enter the fold")
         let grokTarget = AgentModelDetector.Target(
             workspaceId: target.workspaceId, surfaceId: target.surfaceId, kind: "grok"
         )
+        let grokStart = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+            observation: .init(kind: .turnStarted, occurredAt: t("09:05:07"),
+                               nativeEvent: "turn.started", turnID: "42", isChild: false),
+            target: grokTarget, ref: ref("grok", id: "grok-session-276"), emittedAt: t("09:05:08")
+        ))
+        XCTAssertEqual(grokStart.adapterVersion, JournalNativeClockEvidence.grokTranscriptVersion)
+        XCTAssertTrue(JournalNativeClockEvidence.verifies(grokStart))
         XCTAssertNil(JournalTranscriptProducer.makeDraft(
             observation: .init(kind: .turnInterrupted, occurredAt: t("09:05:07"),
                                nativeEvent: "turn.interrupted", turnID: "7", isChild: false),

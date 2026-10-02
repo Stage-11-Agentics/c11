@@ -162,6 +162,22 @@ flat `windows[].workspaces`, adds `workspace_groups`, and adds workspace `group_
 Use `c11 --id-format both … --json` when you need UUIDs and refs together.
 Full verbs, errors and ordering: [API reference](references/api.md#workspace-groups-and-batch-order).
 
+In the sidebar, the chevron hides/shows member rows without changing the active
+terminal. Click the group name to focus a member. The header stays highlighted
+when its active member is hidden. Its fixed slots show members, flagged tabs,
+unsuppressed waiting tabs, and unread notifications separately, including hidden
+members. Any flag makes the group signal violet, even on a suppressed or plain
+terminal; unread alone does not add a waiting tab. Counts above 99 show `99+`,
+with exact counts in accessibility labels and tooltips.
+
+Use the header menu for Rename, Color, Icon, Pin/Unpin, Ungroup or Delete Group;
+name/icon popovers accept Escape to cancel. New Group is in the sidebar menu.
+Workspace menus offer Move to Group and Ungrouped. Drag onto a header to join,
+onto member edges to position, or onto the Ungrouped lane to leave. Folder drags
+reorder folders within their pin segment. Cancelled/invalid drops do not commit.
+These controls organize existing work; deleting a group never closes its members.
+
+
 ## SSH workspaces
 
 `c11 ssh <host>` opens a remote shell in a workspace. Remote-to-local c11 commands

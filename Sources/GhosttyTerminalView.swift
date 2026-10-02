@@ -9173,6 +9173,17 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
 
+        // ensureFocus also runs from deferred workspace/layout reconciliation.
+        // A selected terminal is not permission to leave an editor opened since
+        // that reconciliation was queued. Explicit focus uses moveFocus or a
+        // restored panel focus intent instead.
+        if Self.hasNativeTextEntryFirstResponder(in: window) {
+#if DEBUG
+            dlog("focus.ensure.skip surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") reason=nativeTextEntryFocused")
+#endif
+            return
+        }
+
         // Search focus restoration — only after confirming this is the active tab/pane.
         if surfaceView.terminalSurface?.searchState != nil {
 #if DEBUG
@@ -9318,7 +9329,24 @@ final class GhosttySurfaceScrollView: NSView {
         terminalSurface.forceRefresh(reason: "focus.surface.\(reason)")
     }
 
-    private func applyFirstResponderIfNeeded() {
+    private static func hasNativeTextEntryFirstResponder(in window: NSWindow) -> Bool {
+        if let editor = window.firstResponder as? NSTextView,
+           editor.isFieldEditor, editor.isEditable {
+            return true
+        }
+        return (window.firstResponder as? NSTextField)?.isEditable == true
+    }
+
+    /// Consume only the editor present when an explicit focus request arrives.
+    /// Deferred recovery must still respect an editor opened after this boundary.
+    static func endNativeTextEntryForExplicitFocus(in window: NSWindow) {
+        // The caller supplies its exact target window, which may not be key yet.
+        // Ending its old edit must not activate it or disturb another window.
+        guard hasNativeTextEntryFirstResponder(in: window) else { return }
+        _ = window.makeFirstResponder(nil)
+    }
+
+    private func applyFirstResponderIfNeeded(preservingNativeTextEntry: Bool = true) {
         let hasUsablePortalGeometry: Bool = {
             let size = bounds.size
             return size.width > 1 && size.height > 1
@@ -9344,6 +9372,13 @@ final class GhosttySurfaceScrollView: NSView {
 #if DEBUG
             dlog("focus.apply.skip surface=\(surfaceShort) reason=stale_target")
 #endif
+            return
+        }
+        // Visibility/layout refreshes are not a request to leave a native editor.
+        // SwiftUI popovers can use the main window's shared field editor, so a
+        // key-window check alone does not protect group name/icon entry. Keep this
+        // guard on recovery; an explicit restored terminal intent may override it.
+        if preservingNativeTextEntry, Self.hasNativeTextEntryFirstResponder(in: window) {
             return
         }
         if surfaceView.terminalSurface?.searchState != nil {
@@ -9482,7 +9517,7 @@ final class GhosttySurfaceScrollView: NSView {
         case .surface:
             searchFocusTarget = .terminal
             setActive(true)
-            applyFirstResponderIfNeeded()
+            applyFirstResponderIfNeeded(preservingNativeTextEntry: false)
             return true
         case .findField:
             guard let terminalSurface = surfaceView.terminalSurface,

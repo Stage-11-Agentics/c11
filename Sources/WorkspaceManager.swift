@@ -2808,10 +2808,19 @@ class WorkspaceManager: ObservableObject {
         }
     }
 
+    private func prepareForExplicitWorkspaceSelection(to workspaceId: UUID) {
+        guard workspaceId != selectedWorkspaceId, let window else { return }
+        // Release the editor synchronously, before selectedWorkspaceId queues its
+        // focus restoration. A newer editor opened before that work executes is
+        // protected by the terminal's normal recovery guard.
+        GhosttySurfaceScrollView.endNativeTextEntryForExplicitFocus(in: window)
+    }
+
     func selectWorkspace(_ workspace: Workspace) {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select", to: workspace.id)
 #endif
+        prepareForExplicitWorkspaceSelection(to: workspace.id)
         selectedWorkspaceId = workspace.id
     }
 
@@ -3571,6 +3580,7 @@ class WorkspaceManager: ObservableObject {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("focus", to: workspaceId)
 #endif
+        prepareForExplicitWorkspaceSelection(to: workspaceId)
         selectedWorkspaceId = workspaceId
         NotificationCenter.default.post(
             name: .ghosttyDidFocusTab,
@@ -3661,6 +3671,7 @@ class WorkspaceManager: ObservableObject {
         debugPrepareWorkspaceSwitch("next", from: currentId, to: nextId)
 #endif
         activateWorkspaceCycleHotWindow()
+        prepareForExplicitWorkspaceSelection(to: workspaces[nextIndex].id)
         selectedWorkspaceId = workspaces[nextIndex].id
     }
 
@@ -3673,6 +3684,7 @@ class WorkspaceManager: ObservableObject {
         debugPrepareWorkspaceSwitch("prev", from: currentId, to: prevId)
 #endif
         activateWorkspaceCycleHotWindow()
+        prepareForExplicitWorkspaceSelection(to: workspaces[prevIndex].id)
         selectedWorkspaceId = workspaces[prevIndex].id
     }
 
@@ -3792,11 +3804,13 @@ class WorkspaceManager: ObservableObject {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select_index", to: workspaces[index].id)
 #endif
+        prepareForExplicitWorkspaceSelection(to: workspaces[index].id)
         selectedWorkspaceId = workspaces[index].id
     }
 
     func selectLastWorkspace() {
         guard let lastTab = workspaces.last else { return }
+        prepareForExplicitWorkspaceSelection(to: lastTab.id)
         selectedWorkspaceId = lastTab.id
     }
 
@@ -3917,6 +3931,7 @@ class WorkspaceManager: ObservableObject {
             if workspaces.contains(where: { $0.id == workspaceId }) {
                 isNavigatingHistory = true
                 historyIndex = targetIndex
+                prepareForExplicitWorkspaceSelection(to: workspaceId)
                 selectedWorkspaceId = workspaceId
                 isNavigatingHistory = false
                 return
@@ -3938,6 +3953,7 @@ class WorkspaceManager: ObservableObject {
             if workspaces.contains(where: { $0.id == workspaceId }) {
                 isNavigatingHistory = true
                 historyIndex = targetIndex
+                prepareForExplicitWorkspaceSelection(to: workspaceId)
                 selectedWorkspaceId = workspaceId
                 isNavigatingHistory = false
                 return

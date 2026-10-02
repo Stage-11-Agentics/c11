@@ -57042,7 +57042,7 @@
       }
     },
     "sidebar.workspacePulse.censusEmpty": {
-      "comment" : "Workspace pulse card surface census when the workspace holds no countable surfaces.",
+      "comment": "Workspace pulse card surface census when the workspace holds no countable surfaces.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -57090,7 +57090,7 @@
       }
     },
     "sidebar.workspacePulse.censusSeparator": {
-      "comment" : "Joins the parts of the workspace pulse surface census, e.g. \"13 agents, 2 browsers\". Use the list separator conventional for the locale.",
+      "comment": "Joins the parts of the workspace pulse surface census, e.g. \"13 agents, 2 browsers\". Use the list separator conventional for the locale.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -57185,7 +57185,7 @@
       }
     },
     "sidebar.workspacePulse.documentCount.one": {
-      "comment" : "One markdown surface in the workspace pulse census. Keep it short; the card is narrow.",
+      "comment": "One markdown surface in the workspace pulse census. Keep it short; the card is narrow.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -57197,7 +57197,7 @@
       }
     },
     "sidebar.workspacePulse.documentCount.other": {
-      "comment" : "Markdown surfaces in the workspace pulse census. Keep it short; the card is narrow.",
+      "comment": "Markdown surfaces in the workspace pulse census. Keep it short; the card is narrow.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -57256,7 +57256,7 @@
       }
     },
     "sidebar.workspacePulse.markOverflow": {
-      "comment" : "Accessibility label for the workspace pulse agent-mark row when the census does not fit the sidebar; %lld is the number of agents not drawn.",
+      "comment": "Accessibility label for the workspace pulse agent-mark row when the census does not fit the sidebar; %lld is the number of agents not drawn.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -70177,6 +70177,391 @@
           "stringUnit": {
             "state": "translated",
             "value": "Панель"
+          }
+        }
+      }
+    },
+    "workspaceGroup.accessibility.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: %lld workspaces, %lld flagged tabs, %lld waiting tabs, %lld unread notifications"
+          }
+        }
+      }
+    },
+    "workspaceGroup.memberCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld workspaces"
+          }
+        }
+      }
+    },
+    "workspaceGroup.flaggedCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld flagged tabs"
+          }
+        }
+      }
+    },
+    "workspaceGroup.waitingCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld waiting tabs"
+          }
+        }
+      }
+    },
+    "workspaceGroup.unreadCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld unread notifications"
+          }
+        }
+      }
+    },
+    "workspaceGroup.colorValue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color %@"
+          }
+        }
+      }
+    },
+    "workspaceGroup.expand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.collapse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.deleteHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove the group and keep all member workspaces running, ungrouped."
+          }
+        }
+      }
+    },
+    "workspaceGroup.accessibility.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empty group. Add a workspace to focus it."
+          }
+        }
+      }
+    },
+    "workspaceGroup.accessibility.focus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focus a workspace in this group."
+          }
+        }
+      }
+    },
+    "workspaceGroup.pinned": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.actions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group actions"
+          }
+        }
+      }
+    },
+    "workspaceGroup.rename": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "workspaceGroup.dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        }
+      }
+    },
+    "workspaceGroup.countOverflow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "99+"
+          }
+        }
+      }
+    },
+    "workspaceGroup.color": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color"
+          }
+        }
+      }
+    },
+    "workspaceGroup.clearColor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Color"
+          }
+        }
+      }
+    },
+    "workspaceGroup.icon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icon…"
+          }
+        }
+      }
+    },
+    "workspaceGroup.unpin": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpin Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.pin": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.ungroup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungroup"
+          }
+        }
+      }
+    },
+    "workspaceGroup.delete": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group name"
+          }
+        }
+      }
+    },
+    "workspaceGroup.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "workspaceGroup.iconTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group Icon"
+          }
+        }
+      }
+    },
+    "workspaceGroup.iconName": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SF Symbol name"
+          }
+        }
+      }
+    },
+    "workspaceGroup.invalidIcon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid SF Symbol name."
+          }
+        }
+      }
+    },
+    "workspaceGroup.clearIcon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Icon"
+          }
+        }
+      }
+    },
+    "workspaceGroup.new": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.create": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create"
+          }
+        }
+      }
+    },
+    "workspaceGroup.drop.ungroup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Ungrouped"
+          }
+        }
+      }
+    },
+    "workspaceGroup.moveToGroup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Group"
+          }
+        }
+      }
+    },
+    "workspaceGroup.ungrouped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungrouped"
           }
         }
       }

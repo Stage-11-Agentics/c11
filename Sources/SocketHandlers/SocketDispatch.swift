@@ -114,8 +114,9 @@ extension TerminalController {
 
         // The legacy launch parser reads caller files and stages runtime copies.
         // Keep it on the worker; only its target/send snapshots enter main.
-        let legacyParts = command.split(separator: " ", maxSplits: 1).map(String.init)
-        if legacyParts.first == "default_agent", legacyParts.count == 2 {
+        let legacyParts = command.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ", maxSplits: 1).map(String.init)
+        if legacyParts.first?.lowercased() == "default_agent", legacyParts.count == 2 {
             let tokens = Self.tokenizeArgsStatic(legacyParts[1])
             if tokens.first == "launch" {
                 return withSocketCommandPolicy(commandKey: "default_agent", isV2: false) {

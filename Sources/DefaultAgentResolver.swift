@@ -156,7 +156,7 @@ struct ResolvedAgentLaunch: Equatable {
 
 /// Pure resolver. No I/O; callers pass in the merged user default + project
 /// config and the resolver picks the right per-agent entry, then materializes
-/// the launch command (with optional positional-arg prompt for claude-code).
+/// the bare launch command; launch callers stage initial prompts separately.
 enum DefaultAgentResolver {
 
     /// Resolve the launch shape for a specific agent. Project config (if any)

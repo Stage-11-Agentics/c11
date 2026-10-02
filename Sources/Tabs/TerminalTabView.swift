@@ -17,6 +17,7 @@ struct TerminalTabView: View {
     private var textBoxEnterToSend = TextBoxInputSettings.defaultEnterToSend
     @AppStorage(TextBoxInputSettings.shortcutBehaviorKey)
     private var textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
+    let areaId: UUID
     let drawsPortalTopFrameEdge: Bool
     let isFocused: Bool
     let isVisibleInUI: Bool
@@ -105,6 +106,7 @@ struct TerminalTabView: View {
         VStack(spacing: 0) {
             GhosttyTerminalView(
                 terminalSurface: panel.surface,
+                areaId: areaId,
                 isActive: isFocused,
                 isVisibleInUI: isVisibleInUI,
                 portalZPriority: portalPriority,

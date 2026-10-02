@@ -2183,13 +2183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let visibleFrame: CGRect
     }
 
-    private struct PersistedWindowGeometry: Codable, Sendable {
-        let frame: SessionRectSnapshot
-        let display: SessionDisplaySnapshot?
-    }
-
-    private static let persistedWindowGeometryDefaultsKey = "cmux.session.lastWindowGeometry.v1"
-
     weak var workspaceManager: WorkspaceManager?
     weak var notificationStore: TerminalNotificationStore?
     weak var sidebarState: SidebarState?
@@ -3558,11 +3551,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func persistedWindowGeometry(
         defaults: UserDefaults = .standard
-    ) -> PersistedWindowGeometry? {
-        guard let data = defaults.data(forKey: Self.persistedWindowGeometryDefaultsKey) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(PersistedWindowGeometry.self, from: data)
+    ) -> WindowGeometryPersistenceStore.Geometry? {
+        WindowGeometryPersistenceStore.load(defaults: defaults)
     }
 
     private func persistWindowGeometry(
@@ -3573,16 +3563,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let data = Self.encodedPersistedWindowGeometryData(frame: frame, display: display) else {
             return
         }
-        defaults.set(data, forKey: Self.persistedWindowGeometryDefaultsKey)
+        WindowGeometryPersistenceStore.persist(data, defaults: defaults)
     }
 
     private nonisolated static func encodedPersistedWindowGeometryData(
         frame: SessionRectSnapshot?,
         display: SessionDisplaySnapshot?
     ) -> Data? {
-        guard let frame else { return nil }
-        let payload = PersistedWindowGeometry(frame: frame, display: display)
-        return try? JSONEncoder().encode(payload)
+        WindowGeometryPersistenceStore.encodedData(frame: frame, display: display)
     }
 
     private func persistWindowGeometry(from window: NSWindow?) {
@@ -4774,10 +4762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let writeBlock = { () -> Bool in
             if let persistedGeometryData {
-                UserDefaults.standard.set(
-                    persistedGeometryData,
-                    forKey: Self.persistedWindowGeometryDefaultsKey
-                )
+                WindowGeometryPersistenceStore.persist(persistedGeometryData)
             }
             if let snapshot {
                 return SessionPersistenceStore.save(snapshot)

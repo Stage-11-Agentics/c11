@@ -3285,10 +3285,24 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
 /// B087: reading a never-presented terminal is itself a runtime demand.
 @MainActor
 final class ColdTerminalReadTests: XCTestCase {
+    private func registerPrivateWindow(manager: WorkspaceManager) throws -> NSWindow {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let windowID = UUID()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowID.uuidString)")
+        app.registerMainWindow(window, windowId: windowID, workspaceManager: manager,
+                               sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState())
+        return window
+    }
+
     func testReadStartsNeverPresentedTerminalWithoutChangingSelection() async throws {
         let controller = TerminalController.shared
         let originalManager = controller.workspaceManager
         let manager = WorkspaceManager()
+        let window = try registerPrivateWindow(manager: manager)
+        defer { window.close() }
         controller.workspaceManager = manager
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let selectedTab = workspace.focusedPanelId
@@ -3320,6 +3334,8 @@ final class ColdTerminalReadTests: XCTestCase {
         let controller = TerminalController.shared
         let originalManager = controller.workspaceManager
         let manager = WorkspaceManager()
+        let window = try registerPrivateWindow(manager: manager)
+        defer { window.close() }
         controller.workspaceManager = manager
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let terminal = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
@@ -3348,5 +3364,235 @@ final class ColdTerminalReadTests: XCTestCase {
             return XCTFail("Read succeeded for a workspace removed during startup")
         }
         XCTAssertEqual(code, "not_found")
+    }
+}
+
+/// C11-295: these fixtures exercise production attachment, native creation, and
+/// ready observers. Run in the isolated host on Atlas, never the operator app.
+@MainActor
+final class TerminalSurfaceColdLifecycleTests: XCTestCase {
+    private func makeSurface(config: ghostty_surface_config_s? = nil) -> TerminalSurface {
+        TerminalSurface(workspaceId: UUID(), context: GHOSTTY_SURFACE_CONTEXT_SPLIT, configTemplate: config)
+    }
+
+    private func nextMainTurn() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    func testCloseBeforeQueuedStartAndLateAttachNeverCreateRuntime() async {
+        let surface = makeSurface()
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        surface.teardownSurface()
+        await nextMainTurn()
+        XCTAssertNil(surface.surface)
+        XCTAssertNil(surface.hostedView.window)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        defer { window.close() }
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(surface.hostedView)
+        surface.hostedView.attachSurface(surface)
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        XCTAssertNil(surface.surface, "Late window attachment must not revive a closed terminal")
+        XCTAssertNil(surface.debugRuntimeSurfaceCreatedAt())
+    }
+
+    func testClosingBeforeQueuedStartNeverCreatesRuntime() async {
+        let surface = makeSurface()
+        defer { surface.teardownSurface() }
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        surface.beginPortalCloseLifecycle(reason: "test-close-before-start")
+        await nextMainTurn()
+        XCTAssertNil(surface.surface)
+        XCTAssertNil(surface.hostedView.window)
+    }
+
+    func testParkedBootstrapHostIsReadoptedForRuntimeRetry() async throws {
+        let surface = makeSurface()
+        defer { surface.teardownSurface() }
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        _ = try XCTUnwrap(surface.surface, "Fixture needs an unlocked host with Ghostty initialized")
+        let bootstrap = try XCTUnwrap(surface.hostedView.window)
+        XCTAssertTrue(surface.isHeadlessStartupWindow(bootstrap))
+        surface.hostedView.removeFromSuperview()
+        surface.releaseSurfaceForTesting()
+        XCTAssertNil(surface.hostedView.window)
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        XCTAssertTrue(surface.hostedView.window === bootstrap)
+        XCTAssertNotNil(surface.surface)
+        XCTAssertNil(surface.uiWindow, "Recovery stays invisible to the operator")
+    }
+
+    func testReadyObserverSeesQueuedBytesFlushedAndLatestColdFocusApplied() async throws {
+        for desiredFocus in [false, true] {
+            let surface = makeSurface()
+            defer { surface.teardownSurface() }
+            surface.setFocus(!desiredFocus)
+            surface.setFocus(desiredFocus)
+            surface.sendText("cold-ready-marker")
+            XCTAssertEqual(surface.pendingInitialInputForTests, "cold-ready-marker")
+            var readyCount = 0
+            let observer = NotificationCenter.default.addObserver(
+                forName: .terminalSurfaceDidBecomeReady, object: surface, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    readyCount += 1
+                    XCTAssertEqual(surface.pendingInitialInputForTests, "")
+                    XCTAssertEqual(surface.appliedFocusForTests, desiredFocus)
+                    XCTAssertTrue(surface.hasLiveProcess())
+                }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            surface.requestBackgroundSurfaceStartIfNeeded()
+            await nextMainTurn()
+            _ = try XCTUnwrap(surface.surface)
+            XCTAssertEqual(readyCount, 1)
+        }
+    }
+
+    func testReadyObserverCanCloseWithoutRecreatingRuntime() async {
+        let surface = makeSurface()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .terminalSurfaceDidBecomeReady, object: surface, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { surface.teardownSurface() }
+        }
+        defer { NotificationCenter.default.removeObserver(observer); surface.teardownSurface() }
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        XCTAssertNotNil(surface.debugRuntimeSurfaceCreatedAt(), "The close must come from a ready callback")
+        XCTAssertNil(surface.surface)
+        XCTAssertNil(surface.hostedView.window)
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        XCTAssertNil(surface.surface)
+    }
+
+    func testNewSameSizeHostWinsAndOldHostCannotReclaimOrReleaseIt() {
+        let surface = makeSurface()
+        defer { surface.teardownSurface() }
+        let oldHost = NSView(), replacement = NSView()
+        let oldOrder = TerminalSurface.allocatePortalHostOrder()
+        let replacementOrder = TerminalSurface.allocatePortalHostOrder()
+        let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+        func claim(_ host: NSView, _ order: UInt64, _ bounds: CGRect) -> Bool {
+            surface.claimPortalHost(hostId: ObjectIdentifier(host), order: order,
+                                    inWindow: true, bounds: bounds, reason: "test")
+        }
+        XCTAssertTrue(claim(oldHost, oldOrder, bounds))
+        XCTAssertFalse(claim(replacement, replacementOrder, .zero), "A placeholder cannot displace a usable host")
+        XCTAssertTrue(claim(replacement, replacementOrder, bounds), "Equal size is sufficient for a newer host")
+        XCTAssertFalse(claim(oldHost, oldOrder, CGRect(x: 0, y: 0, width: 1000, height: 1000)))
+        XCTAssertFalse(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(oldHost), order: oldOrder, reason: "stale-dismantle"))
+        XCTAssertEqual(surface.debugPortalHostLease().hostId, String(describing: ObjectIdentifier(replacement)))
+        XCTAssertTrue(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(replacement), order: replacementOrder, reason: "dismantle"))
+        XCTAssertFalse(claim(oldHost, oldOrder, bounds), "Release must not revive an older host")
+        surface.beginPortalCloseLifecycle(reason: "test")
+        XCTAssertFalse(claim(replacement, replacementOrder, bounds))
+    }
+
+    func testCurrentAreaAllowsOlderHostReturnAndRejectsDepartedAreaCallbacks() {
+        let surface = makeSurface()
+        defer { surface.teardownSurface() }
+        let areaA = UUID(), areaB = UUID()
+        let hostA = NSView(), hostB = NSView()
+        let orderA = TerminalSurface.allocatePortalHostOrder()
+        let orderB = TerminalSurface.allocatePortalHostOrder()
+        let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+        func claim(_ host: NSView, _ order: UInt64, area: UUID, current: UUID) -> Bool {
+            surface.claimPortalHost(hostId: ObjectIdentifier(host), order: order,
+                                    areaId: area, currentAreaId: current,
+                                    inWindow: true, bounds: bounds, reason: "area-move")
+        }
+        XCTAssertTrue(claim(hostA, orderA, area: areaA, current: areaA))
+        XCTAssertFalse(claim(hostB, orderB, area: areaB, current: areaA))
+        XCTAssertTrue(claim(hostB, orderB, area: areaB, current: areaB))
+        XCTAssertFalse(claim(hostA, orderA, area: areaA, current: areaB))
+        XCTAssertTrue(claim(hostA, orderA, area: areaA, current: areaA),
+                      "Returning to an older retained host in the current area is legitimate")
+        XCTAssertFalse(claim(hostB, orderB, area: areaB, current: areaA),
+                       "The departed area's newer token must not steal the current host")
+        XCTAssertFalse(surface.releasePortalHostIfOwned(hostId: ObjectIdentifier(hostB), order: orderB, reason: "stale-area-dismantle"))
+        XCTAssertEqual(surface.debugPortalHostLease().hostId, String(describing: ObjectIdentifier(hostA)))
+    }
+
+    func testSnapshotEligibilityUsesProcessLivenessAndPreservesCloseConfirmation() async throws {
+        let surface = makeSurface()
+        let tab = TerminalTab(workspaceId: surface.workspaceId, surface: surface)
+        defer { surface.teardownSurface() }
+        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot(), "Cold terminals have no live output")
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        _ = try XCTUnwrap(surface.surface)
+        for needsConfirmation in [false, true] {
+            surface.setNeedsConfirmCloseOverrideForTesting(needsConfirmation)
+            XCTAssertTrue(tab.shouldPersistScrollbackForSessionSnapshot(), "Live shells and running commands both qualify")
+            XCTAssertEqual(tab.needsConfirmClose(), needsConfirmation, "Operator close policy remains independent")
+        }
+        surface.teardownSurface()
+        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot())
+    }
+
+    func testExitedChildIsIneligibleForScrollbackReplay() async throws {
+        var config = ghostty_surface_config_new()
+        config.wait_after_command = true
+        let surface = "/usr/bin/true".withCString { command -> TerminalSurface in
+            config.command = command
+            return makeSurface(config: config)
+        }
+        defer { surface.teardownSurface() }
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        _ = try XCTUnwrap(surface.surface)
+        for _ in 0..<100 where surface.hasLiveProcess() {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(surface.hasLiveProcess())
+        let tab = TerminalTab(workspaceId: surface.workspaceId, surface: surface)
+        XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot())
+    }
+
+    func testInheritedConfigOwnsFreedBuffersUntilNativeCreate() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-config-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("observed")
+        let command = "/bin/sh -c 'printf \"%s|%s\" \"$C11_CONFIG_PROBE\" \"$PWD\" > \"\(output.path)\"; sleep 30'"
+        let pointers = [directory.path, command, "", "C11_CONFIG_PROBE", "owned-buffer-value"].map { strdup($0)! }
+        var entry = ghostty_env_var_s(key: pointers[3], value: pointers[4])
+        var config = ghostty_surface_config_new()
+        config.working_directory = UnsafePointer(pointers[0])
+        config.command = UnsafePointer(pointers[1])
+        config.initial_input = UnsafePointer(pointers[2])
+        config.font_size = 19
+        let surface = withUnsafeMutablePointer(to: &entry) { env -> TerminalSurface in
+            config.env_vars = env
+            config.env_var_count = 1
+            return makeSurface(config: config)
+        }
+        for pointer in pointers { free(pointer) }
+        defer { surface.teardownSurface() }
+        XCTAssertNil(surface.surface, "The source buffers must die before native creation")
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        let native = try XCTUnwrap(surface.surface)
+        for _ in 0..<150 {
+            if let observed = try? String(contentsOf: output, encoding: .utf8), observed.contains("|") { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let observed = try String(contentsOf: output, encoding: .utf8).split(separator: "|", maxSplits: 1)
+        XCTAssertEqual(observed.first.map(String.init), "owned-buffer-value")
+        let observedDirectory = try XCTUnwrap(observed.count == 2 ? String(observed[1]) : nil)
+        XCTAssertEqual(URL(fileURLWithPath: observedDirectory).resolvingSymlinksInPath().path,
+                       directory.resolvingSymlinksInPath().path)
+        let tab = TerminalTab(workspaceId: surface.workspaceId, surface: surface)
+        XCTAssertTrue(tab.shouldPersistScrollbackForSessionSnapshot(), "The live sleep command is eligible")
+        XCTAssertEqual(try XCTUnwrap(cmuxCurrentSurfaceFontSizePoints(native)), 19, accuracy: 0.1)
     }
 }

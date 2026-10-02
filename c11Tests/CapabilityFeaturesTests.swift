@@ -7,6 +7,12 @@ import XCTest
 #endif
 
 final class CapabilityFeaturesTests: XCTestCase {
+    func testCurrentAdvertisesBrowserProfilesAndFeedAsks() {
+        let featureIDs = Set(CapabilityFeatures.current.payload.compactMap { $0["id"] as? String })
+        XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.browserProfiles.rawValue))
+        XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.feedAsks.rawValue))
+    }
+
     func testDisabledAndMissingFeaturesNeverExecute() throws {
         let registry = CapabilityFeatures(entries: [
             .init(id: .terminalSelection, version: 3, enabled: false)

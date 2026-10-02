@@ -5339,6 +5339,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Snapshot every browser profile currently attached to a live tab across
+    /// all windows. Profile clear/delete uses this on the main actor so a
+    /// destructive request cannot race a tab in another workspace.
+    func liveBrowserProfileIDs() -> Set<UUID> {
+        Set(mainWindowContexts.values.flatMap { context in
+            context.workspaceManager.workspaces.flatMap { workspace in
+                workspace.panels.values.compactMap { ($0 as? BrowserTab)?.profileID }
+            }
+        })
+    }
+
     func windowMoveTargets(referenceWindowId: UUID?) -> [WindowMoveTarget] {
         let orderedSummaries = orderedMainWindowSummaries(referenceWindowId: referenceWindowId)
         let labels = windowLabelsById(orderedSummaries: orderedSummaries, referenceWindowId: referenceWindowId)

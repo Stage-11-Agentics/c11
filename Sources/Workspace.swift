@@ -6418,7 +6418,9 @@ final class Workspace: Identifiable, ObservableObject {
             )
         }
         tabSubscriptions[browserTab.id] = subscription
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
     }
 
     func setPreferredBrowserProfileID(_ profileID: UUID?) {
@@ -6434,20 +6436,27 @@ final class Workspace: Identifiable, ObservableObject {
         preferredProfileID: UUID? = nil,
         sourcePanelId: UUID? = nil
     ) -> UUID {
-        if let preferredProfileID,
-           BrowserProfileStore.shared.profileDefinition(id: preferredProfileID) != nil {
-            return preferredProfileID
+        func available(_ profileID: UUID?) -> UUID? {
+            guard let profileID,
+                  BrowserProfileStore.shared.profileDefinition(id: profileID) != nil,
+                  !BrowserProfileStore.shared.isReserved(profileID) else { return nil }
+            return profileID
+        }
+
+        if let profileID = available(preferredProfileID) {
+            return profileID
         }
         if let sourcePanelId,
            let sourceBrowserPanel = browserPanel(for: sourcePanelId),
-           BrowserProfileStore.shared.profileDefinition(id: sourceBrowserPanel.profileID) != nil {
-            return sourceBrowserPanel.profileID
+           sourceBrowserPanel.sticksAsPreferred,
+           let profileID = available(sourceBrowserPanel.profileID) {
+            return profileID
         }
-        if let preferredBrowserProfileID,
-           BrowserProfileStore.shared.profileDefinition(id: preferredBrowserProfileID) != nil {
-            return preferredBrowserProfileID
+        if let profileID = available(preferredBrowserProfileID) {
+            return profileID
         }
-        return BrowserProfileStore.shared.effectiveLastUsedProfileID
+        return available(BrowserProfileStore.shared.effectiveLastUsedProfileID)
+            ?? BrowserProfileStore.shared.builtInDefaultProfileID
     }
 
     private func declareMarkdownTitleFromTab(_ markdownTab: MarkdownTab) {
@@ -8891,6 +8900,7 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         url: URL? = nil,
         preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         focus: Bool = true,
         bypassInsecureHTTPHostOnce: String? = nil,
         pendingHibernate: Bool = false
@@ -8904,6 +8914,7 @@ final class Workspace: Identifiable, ObservableObject {
                 preferredProfileID: preferredProfileID,
                 sourcePanelId: panelId
             ),
+            sticksAsPreferred: sticksAsPreferred,
             initialURL: url,
             bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
@@ -8937,7 +8948,9 @@ final class Workspace: Identifiable, ObservableObject {
             tabTitles.removeValue(forKey: browserTab.id)
             return nil
         }
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
 
         // See newTerminalSplit: suppress old view's becomeFirstResponder during reparenting.
         let previousHostedView = focusedTerminalTab?.hostedView
@@ -8976,6 +8989,7 @@ final class Workspace: Identifiable, ObservableObject {
         focus: Bool? = nil,
         insertAtEnd: Bool = false,
         preferredProfileID: UUID? = nil,
+        sticksAsPreferred: Bool = true,
         bypassInsecureHTTPHostOnce: String? = nil,
         panelId: UUID? = nil,
         pendingHibernate: Bool = false,
@@ -8994,6 +9008,7 @@ final class Workspace: Identifiable, ObservableObject {
                 preferredProfileID: preferredProfileID,
                 sourcePanelId: sourcePanelId
             ),
+            sticksAsPreferred: sticksAsPreferred,
             initialURL: url,
             bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
@@ -9020,7 +9035,9 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         bonsplitTabIdToTabId[newBonsplitTabId] = browserTab.id
-        setPreferredBrowserProfileID(browserTab.profileID)
+        if browserTab.sticksAsPreferred {
+            setPreferredBrowserProfileID(browserTab.profileID)
+        }
 
         // Keyboard/browser-open paths want "new tab at end" regardless of global new-tab placement.
         if insertAtEnd {

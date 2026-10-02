@@ -100,12 +100,19 @@ def main():
                 assert_isolation(sibling_id)
                 print(f"PASS: {event} preserves sibling waiting")
 
-            for tool in ("AskUserQuestion", "ExitPlanMode"):
+            capture = json.loads((Path(__file__).parent / "fixtures" /
+                                  "c11-263-native-exit-plan-before.json").read_text())
+            native_plan = next(row for row in capture["hooks"]
+                               if row.get("hook_event_name") == "PreToolUse" and
+                               row.get("tool_name") == "ExitPlanMode")
+            for tool, mode in (("AskUserQuestion", "bypassPermissions"),
+                               ("ExitPlanMode", "bypassPermissions"),
+                               (native_plan["tool_name"], native_plan["permission_mode"])):
                 hook("session-start", {"session_id": session})
                 sibling_id = seed()
                 legacy(socket_path, f"clear_notifications --tab={workspace} --panel={caller}")
                 eventually(lambda: not unread(caller), "prepare bypass ask")
-                hook("pre-tool-use", {"session_id": session, "permission_mode": "bypassPermissions",
+                hook("pre-tool-use", {"session_id": session, "permission_mode": mode,
                                       "tool_name": tool, "tool_input": {}})
                 eventually(lambda: len(unread(caller)) == 1, f"{tool} must wait without Notification")
                 assert unread(sibling)[0]["id"] == sibling_id
@@ -113,7 +120,7 @@ def main():
                 eventually(lambda: len(unread(caller)) == 1, "follow-up must replace, not duplicate")
                 hook("prompt-submit", {"session_id": session})
                 assert_isolation(sibling_id)
-                print(f"PASS: bypass {tool} enters waiting without a Notification hook")
+                print(f"PASS: {tool} in {mode} enters waiting without a Notification hook")
 
             hook("session-start", {"session_id": session})
             sibling_id = seed()

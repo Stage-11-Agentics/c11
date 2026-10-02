@@ -17197,8 +17197,12 @@ struct CMUXCLI {
                 preferredSurface, workspaceId: workspaceId, client: client
             )
             let toolName = parsedInput.object?["tool_name"] as? String
-            let bypass = parsedInput.object?["permission_mode"] as? String == "bypassPermissions"
-            if toolName == "AskUserQuestion" || (bypass && toolName == "ExitPlanMode") {
+            let permissionMode = parsedInput.object?["permission_mode"] as? String
+            let bypass = permissionMode == "bypassPermissions"
+            // A bypass-started session emits ExitPlanMode in plan mode while
+            // its approval UI waits. The native trace has no Notification edge.
+            let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
+            if toolName == "AskUserQuestion" || planApproval {
                 let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
                 let body: String
                 if toolName == "ExitPlanMode" {
@@ -17217,7 +17221,7 @@ struct CMUXCLI {
                     client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
                     activity: "idle", fromNotification: true
                 )
-                if bypass {
+                if bypass || planApproval {
                     let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
                     _ = try sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
                     try setClaudeStatus(

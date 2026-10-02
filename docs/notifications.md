@@ -207,9 +207,11 @@ contribute to the menu-bar extra's attention count.
 Claude lifecycle clears belong to the originating tab. Prompt submission,
 ordinary tool continuation, eligible session end, and stale-PID cleanup preserve
 sibling notices. A PID without a known tab association clears no notices. In
-bypass-permissions mode, AskUserQuestion and ExitPlanMode publish waiting from
-PreToolUse without requiring a later Notification hook; a later notification
-replaces the same tab's item.
+bypass-permissions mode, AskUserQuestion publishes waiting from PreToolUse.
+ExitPlanMode publishes waiting in plan or bypass-permissions mode: a session
+started with bypass permissions enters plan mode before asking for approval.
+Neither requires a later Notification hook; a later notification replaces the
+same tab's item.
 
 c11 sets these in child shells:
 

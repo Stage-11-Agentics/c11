@@ -3745,11 +3745,12 @@ final class AreaInteractionOverlayFocusTests: XCTestCase {
         }
     }
 
-    func testVisibleHostStillRestoresPriorFieldEditorWhenDismissed() throws {
+    func testVisibleHostStillRestoresPriorResponderWhenDismissed() throws {
         try withFixture { window, field, runtime, panelId, host in
             drainUpdates()
-            XCTAssertTrue(window.makeFirstResponder(field))
-            let editor = try XCTUnwrap(window.firstResponder)
+            let responder = FocusableView(frame: field.frame)
+            try XCTUnwrap(window.contentView).addSubview(responder)
+            XCTAssertTrue(window.makeFirstResponder(responder))
             runtime.present(panelId: panelId, interaction: .confirm(confirm()))
             drainUpdates()
             XCTAssertFalse(host.isHidden)
@@ -3757,8 +3758,12 @@ final class AreaInteractionOverlayFocusTests: XCTestCase {
             runtime.cancelActive(panelId: panelId)
             drainUpdates()
             XCTAssertTrue(host.isHidden)
-            XCTAssertTrue(window.firstResponder === editor)
+            XCTAssertTrue(window.firstResponder === responder)
         }
+    }
+
+    private final class FocusableView: NSView {
+        override var acceptsFirstResponder: Bool { true }
     }
 
     private func drainUpdates() {

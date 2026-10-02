@@ -13539,6 +13539,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             persistLastWindowSnapshot()
         }
         guard let removed = unregisterMainWindowContext(for: window) else { return }
+        if !mainWindowContexts.values.contains(where: { $0.workspaceManager === removed.workspaceManager }) {
+            removed.workspaceManager.retireForWindowClose()
+        }
         commandPaletteVisibilityByWindowId.removeValue(forKey: removed.windowId)
         commandPalettePendingOpenByWindowId.removeValue(forKey: removed.windowId)
         commandPaletteRecentRequestAtByWindowId.removeValue(forKey: removed.windowId)

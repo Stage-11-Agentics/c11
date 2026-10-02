@@ -4900,6 +4900,11 @@ final class Workspace: Identifiable, ObservableObject {
     /// Callback used by TabManager to capture recently closed browser panels for Cmd+Shift+T restore.
     var onClosedBrowserTab: ((ClosedBrowserTabRestoreSnapshot) -> Void)?
     weak var owningWorkspaceManager: WorkspaceManager?
+    private(set) var isRetiredForWindowClose = false
+
+    func retireForWindowClose() {
+        isRetiredForWindowClose = true
+    }
 
     /// Workspace-scoped presenter for pane-anchored interactions (close-confirm,
     /// rename, custom-color, socket-triggered agent consent). Per-panel FIFO
@@ -8742,6 +8747,8 @@ final class Workspace: Identifiable, ObservableObject {
         panelId: UUID? = nil,
         createdAt: Date? = Date()
     ) -> TerminalTab? {
+        guard !isRetiredForWindowClose else { return nil }
+
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
         let previousHostedView = focusedTerminalTab?.hostedView
@@ -12201,7 +12208,7 @@ extension Workspace: BonsplitDelegate {
         // Detach/move flows intentionally allow a temporary empty workspace so AppDelegate can
         // prune the source workspace/window after the tab is attached elsewhere.
         if panels.isEmpty {
-            if isDetaching {
+            if isDetaching || isRetiredForWindowClose {
                 scheduleTerminalGeometryReconcile()
                 return
             }

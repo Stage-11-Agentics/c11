@@ -226,9 +226,6 @@ final class MessagesPageWriter {
         let now = DispatchTime.now().uptimeNanoseconds
         if now < deadline {
             lock.unlock()
-            queue.asyncAfter(deadline: DispatchTime(uptimeNanoseconds: deadline)) { [weak self] in
-                self?.runMaxWaitIfDue()
-            }
             return
         }
         generation &+= 1

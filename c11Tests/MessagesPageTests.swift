@@ -159,6 +159,63 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(rejected.lifecycle.map(\.state), ["rejected"])
     }
 
+    func testOversizedRejectedBodyIsTruncatedAndSkippedWithoutHidingHistory() throws {
+        let mailboxRoot = tempDir
+            .appendingPathComponent("workspaces", isDirectory: true)
+            .appendingPathComponent("workspace-oversized", isDirectory: true)
+            .appendingPathComponent("mailboxes", isDirectory: true)
+        let readInbox = mailboxRoot.appendingPathComponent("_read", isDirectory: true)
+        let rejectedInbox = mailboxRoot.appendingPathComponent(
+            MailboxLayout.rejectedDirectoryName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: readInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: rejectedInbox, withIntermediateDirectories: true)
+
+        let olderID = "01K3A2B7X8PQRTVWYZ0123456N"
+        let olderEnvelope: [String: Any] = [
+            "version": 1,
+            "id": olderID,
+            "from": "history-sender",
+            "to": "history-recipient",
+            "ts": "2026-10-01T22:00:00.000Z",
+            "body": "OLDER_HISTORY_SURVIVES",
+        ]
+        try JSONSerialization.data(withJSONObject: olderEnvelope)
+            .write(to: readInbox.appendingPathComponent("\(olderID).msg"))
+
+        let oversizedID = "01K3A2B7X8PQRTVWYZ0123456P"
+        let oversizedEnvelope: [String: Any] = [
+            "version": 1,
+            "id": oversizedID,
+            "from": "rejected-sender",
+            "to": "missing-recipient",
+            "ts": "2026-10-01T23:00:00.000Z",
+            "body": String(repeating: "x", count: 2 * 1024 * 1024),
+        ]
+        try JSONSerialization.data(withJSONObject: oversizedEnvelope)
+            .write(to: rejectedInbox.appendingPathComponent("\(oversizedID).msg"))
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let oversizedArtifact = try XCTUnwrap(
+            source.mailboxArtifacts.first(where: { $0.id == oversizedID })
+        )
+        XCTAssertEqual(oversizedArtifact.body?.utf8.count, 256 * 1024)
+        XCTAssertTrue(oversizedArtifact.truncated)
+
+        let snapshot = MessagesPageBuilder.build(
+            events: source.events,
+            mailboxArtifacts: source.mailboxArtifacts,
+            generatedAt: "now",
+            messageByteLimit: 200_000
+        )
+        XCTAssertEqual(snapshot.totalObserved, 2)
+        XCTAssertEqual(snapshot.messages.map(\.id), [olderID])
+        XCTAssertEqual(snapshot.messages.first?.body, "OLDER_HISTORY_SURVIVES")
+        XCTAssertEqual(snapshot.messages.first?.status, "read")
+        XCTAssertFalse(snapshot.messages.first?.truncated ?? true)
+    }
+
     func testMailboxOnlyEventLogIsReadWithoutASeparateSendMarker() throws {
         let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
         try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
@@ -324,13 +381,13 @@ final class MessagesPageTests: XCTestCase {
         let snapshot = MessagesPageBuilder.build(
             events: events,
             generatedAt: "now",
-            messageByteLimit: 1_000
+            messageByteLimit: 10_000
         )
         XCTAssertEqual(snapshot.messages.count, 1)
         XCTAssertEqual(snapshot.messages.first?.body.count, 128)
         XCTAssertEqual(snapshot.messages.first?.sequence, 3)
         XCTAssertTrue(snapshot.wasBounded)
-        XCTAssertEqual(snapshot.messageByteLimit, 1_000)
+        XCTAssertEqual(snapshot.messageByteLimit, 10_000)
     }
 
     func testPagePathIsSharedOnlyForProductionBundle() {
@@ -391,8 +448,8 @@ final class MessagesPageTests: XCTestCase {
 
         let writer = MessagesPageWriter(
             stateURL: tempDir,
-            debounceInterval: 0.15,
-            maxWaitInterval: 0.35,
+            debounceInterval: 0.05,
+            maxWaitInterval: 0.1,
             observeEvents: false,
             allowStartUnderXCTest: true,
             label: "com.stage11.c11.messages-page-max-wait-tests-\(UUID().uuidString)"
@@ -402,6 +459,7 @@ final class MessagesPageTests: XCTestCase {
         var armed = false
         var firstSteadyWrite: DispatchTime?
         let startupExpectation = expectation(description: "startup page written")
+        let steadyWriteExpectation = expectation(description: "steady max-wait page written")
         let observer = NotificationCenter.default.addObserver(
             forName: MessagesPageWriter.pageDidWriteNotification,
             object: nil,
@@ -413,6 +471,7 @@ final class MessagesPageTests: XCTestCase {
                 startupExpectation.fulfill()
             } else if armed, firstSteadyWrite == nil {
                 firstSteadyWrite = .now()
+                steadyWriteExpectation.fulfill()
             }
             callbackLock.unlock()
         }
@@ -425,10 +484,15 @@ final class MessagesPageTests: XCTestCase {
         callbackLock.unlock()
 
         let began = DispatchTime.now()
-        for _ in 0..<20 {
+        let runUntil = began.uptimeNanoseconds + 200_000_000
+        while DispatchTime.now().uptimeNanoseconds < runUntil {
             writer.scheduleRebuildForTesting()
-            Thread.sleep(forTimeInterval: 0.05)
         }
+        // This is intentionally a tight loop with no sleep. The loop lasts
+        // longer than maxWait while every trailing debounce generation is
+        // superseded; the max-wait item must still produce a write before the
+        // old r2 trailing debounce could fire.
+        wait(for: [steadyWriteExpectation], timeout: 0.03)
         writer.stopForTesting()
 
         callbackLock.lock()
@@ -438,6 +502,6 @@ final class MessagesPageTests: XCTestCase {
             Double($0.uptimeNanoseconds - began.uptimeNanoseconds) / 1_000_000_000
         }
         XCTAssertNotNil(steadyWrite)
-        XCTAssertLessThan(elapsed ?? .greatestFiniteMagnitude, 0.8)
+        XCTAssertLessThan(elapsed ?? .greatestFiniteMagnitude, 0.35)
     }
 }

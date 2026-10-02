@@ -243,6 +243,7 @@ struct MessagesPageMailboxArtifact {
     let replyTo: String?
     let inReplyTo: String?
     let urgent: Bool?
+    let truncated: Bool
     let fileState: String?
     let lifecycle: [MessagesPageLifecycle]
 }
@@ -340,6 +341,12 @@ enum MessagesPageBuilder {
         var estimatedBytes = pageOverheadByteAllowance
         for message in candidates.reversed() {
             let messageBytes = estimatedJSONBytes(for: message)
+            // A single pathological record must not stop older, smaller
+            // history from being considered. The renderer's exact pass will
+            // enforce the final page bound after this conservative filter.
+            if messageBytes > byteLimit {
+                continue
+            }
             if !messages.isEmpty && estimatedBytes + messageBytes > byteLimit {
                 break
             }
@@ -445,7 +452,7 @@ enum MessagesPageBuilder {
             urgent: artifact.urgent,
             submitted: nil,
             queued: nil,
-            truncated: false,
+            truncated: artifact.truncated,
             status: artifact.fileState ?? "observed",
             lifecycle: []
         )
@@ -462,6 +469,7 @@ enum MessagesPageBuilder {
         if record.replyTo == nil { record.replyTo = artifact.replyTo }
         if record.inReplyTo == nil { record.inReplyTo = artifact.inReplyTo }
         if record.urgent == nil { record.urgent = artifact.urgent }
+        record.truncated = record.truncated || artifact.truncated
         if let fileState = artifact.fileState {
             record.status = mergedStatus(record.status, fileState)
         }
@@ -757,6 +765,7 @@ enum MessagesPageSource {
                         replyTo: nil,
                         inReplyTo: nil,
                         urgent: nil,
+                        truncated: false,
                         fileState: state,
                         lifecycle: history.lifecycle
                     )
@@ -774,20 +783,32 @@ enum MessagesPageSource {
         dispatch: DispatchHistory?
     ) -> MessagesPageMailboxArtifact {
         let object = object ?? [:]
+        let body = boundedDurableBody(MessagesPageJSON.string(object["body"]))
         return MessagesPageMailboxArtifact(
             workspace: workspace,
             id: MessagesPageJSON.string(object["id"]) ?? id,
             timestamp: MessagesPageJSON.string(object["ts"]),
             from: MessagesPageJSON.string(object["from"]) ?? dispatch?.from,
             to: MessagesPageJSON.string(object["to"]) ?? dispatch?.to,
-            body: MessagesPageJSON.string(object["body"]),
+            body: body.value,
             bodyRef: MessagesPageJSON.string(object["body_ref"]),
             topic: MessagesPageJSON.string(object["topic"]),
             replyTo: MessagesPageJSON.string(object["reply_to"]),
             inReplyTo: MessagesPageJSON.string(object["in_reply_to"]),
             urgent: MessagesPageJSON.bool(object["urgent"]),
+            truncated: body.truncated,
             fileState: state,
             lifecycle: dispatch?.lifecycle ?? []
+        )
+    }
+
+    private static func boundedDurableBody(_ body: String?) -> (value: String?, truncated: Bool) {
+        guard let body else { return (nil, false) }
+        let bodyBytes = body.utf8
+        guard bodyBytes.count > 256 * 1024 else { return (body, false) }
+        return (
+            String(decoding: bodyBytes.prefix(256 * 1024), as: UTF8.self),
+            true
         )
     }
 

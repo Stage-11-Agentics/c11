@@ -446,6 +446,20 @@ final class CmuxMainThreadTurnProfiler {
 #endif
 
 enum FinderServicePathResolver {
+    private static func canonicalTargetComponents(_ url: URL) -> [String] {
+        // Foundation may leave the entire path unresolved when its final
+        // component is absent. Resolve the existing ancestor first so a
+        // missing descendant reached through a bundle symlink is still self.
+        var ancestor = url.standardizedFileURL
+        var missingComponents: [String] = []
+        while ancestor.path != "/", !FileManager.default.fileExists(atPath: ancestor.path) {
+            missingComponents.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        return ancestor.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+            + missingComponents.reversed()
+    }
+
     static func servicePathURLs(from pasteboard: NSPasteboard) -> [URL] {
         if let pathURLs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !pathURLs.isEmpty {
             return pathURLs
@@ -503,8 +517,7 @@ enum FinderServicePathResolver {
     ) -> [String] {
         var seen: Set<String> = []
         var directories: [String] = []
-        let bundleComponents = applicationBundleURL.resolvingSymlinksInPath()
-            .standardizedFileURL.pathComponents
+        let bundleComponents = canonicalTargetComponents(applicationBundleURL)
 
         for url in pathURLs {
             guard url.isFileURL else { continue }
@@ -512,7 +525,7 @@ enum FinderServicePathResolver {
             // request. Compare the original target before taking a file's
             // parent, and resolve symlinks so aliases into the bundle cannot
             // accidentally suppress session restoration.
-            let targetComponents = url.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+            let targetComponents = canonicalTargetComponents(url)
             guard !targetComponents.starts(with: bundleComponents) else { continue }
             let directoryURL = resolvedDirectoryURL(from: url)
             let path = canonicalDirectoryPath(directoryURL.path(percentEncoded: false))

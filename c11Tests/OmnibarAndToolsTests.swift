@@ -99,6 +99,7 @@ final class FinderServicePathResolverTests: XCTestCase {
 
         let directories = FinderServicePathResolver.orderedUniqueDirectories(
             from: [bundleLink, sibling, contentsLink, bundleLink.appendingPathComponent("Contents/Info.plist"),
+                   bundleLink.appendingPathComponent("Contents/missing/deep/file"),
                    other.appendingPathComponent("README.md"), sibling],
             applicationBundleURL: bundleLink
         )

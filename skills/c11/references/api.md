@@ -832,7 +832,10 @@ not guess a bundle from a missing socket. A live bundle that disagrees with
 `--bundle-id` is rejected. An invalid id errors. A missing journal file
 returns storage unavailable and no candidates.
 
+Offline example: `c11 agents --json --bundle-id com.stage11.c11-qa`.
+
 `restore_candidates[].label` is `historical_candidate`, `ended`, or `unknown`.
+`restore_candidates[].agent_kind` is the journal owner kind.
 Candidate `confirmation` is `unconfirmed`. Candidate `connection` is
 `disconnected` or `unknown`. `coverage` on a candidate is `retained` or
 `event_pruned`. The command never starts a process.

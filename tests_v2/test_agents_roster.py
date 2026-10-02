@@ -154,6 +154,7 @@ def main():
         eventually(labeled, "restore labels were not classified", timeout=8)
         document = roster()
         assert candidate(document, ended)["label"] == "ended"
+        assert candidate(document, ended)["agent_kind"] == "claude-code"
         assert candidate(document, ended)["confirmation"] == "unconfirmed"
         assert candidate(document, historical)["connection"] == "disconnected"
         assert candidate(document, historical)["coverage"] == "retained"

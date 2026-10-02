@@ -66,6 +66,7 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertEqual(bare["last_seen_at"] as? String, AgentRoster.isoSeconds(date: seen))
         let candidates = document["restore_candidates"] as? [[String: Any]] ?? []
         XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates[0]["agent_kind"] as? String, "claude-code")
         XCTAssertEqual(candidates[0]["session_id"] as? String, "owner-c")
         XCTAssertEqual(candidates[0]["label"] as? String, "historical_candidate")
         XCTAssertEqual(candidates[0]["confirmation"] as? String, "unconfirmed")

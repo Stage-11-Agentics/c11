@@ -250,7 +250,7 @@ enum AgentRoster {
             "tab_id": row.owner.tabID.uuidString,
             "workspace_id": row.workspaceID?.uuidString ?? NSNull(),
             "session_id": row.owner.sessionID,
-            "kind": row.owner.agentKind,
+            "agent_kind": row.owner.agentKind,
             "model": row.modelID ?? NSNull(),
             "state": row.phase.rawValue,
             "reason": waitingReason(row.reason) ?? NSNull(),

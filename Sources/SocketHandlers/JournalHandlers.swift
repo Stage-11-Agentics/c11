@@ -27,4 +27,17 @@ extension TerminalController {
             return .err(code: code, message: code, data: nil)
         }
     }
+
+    nonisolated func v2JournalClear(params: [String: Any]) -> V2CallResult {
+        guard Set(params.keys) == Set(["yes"]), (params["yes"] as? Bool) == true else {
+            return .err(code: "invalid_params", message: "journal.clear requires yes=true", data: nil)
+        }
+        do {
+            try JournalCoordinator.shared.clear()
+            return .ok(["cleared": true])
+        } catch {
+            let code = (error as? JournalError)?.rawValue ?? JournalError.unavailable.rawValue
+            return .err(code: code, message: code, data: nil)
+        }
+    }
 }

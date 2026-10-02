@@ -16,6 +16,23 @@ final class JournalStoreTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
     private var layout: JournalStorageLayout { JournalStorageLayout(directory: directory) }
 
+    func testClearRemovesHistoryAndCurrentStateWithoutReusingSequenceNumbers() throws {
+        let store = try JournalStore(layout: layout, clock: { 1000 })
+        let draft = JournalTestData.draft(.questionRequested)
+        let receipt = try store.append(draft: draft, context: JournalContext(eligible: true)).receipt
+        XCTAssertEqual(try store.readPage(after: 0).count, 1)
+        XCTAssertNotNil(try store.current(owner: draft.owner!))
+
+        try store.clear()
+
+        XCTAssertTrue(try store.readPage(after: 0).isEmpty)
+        XCTAssertNil(try store.current(owner: draft.owner!))
+        XCTAssertGreaterThan(try store.coverage().first, receipt.sequence)
+        var next = JournalTestData.draft(.turnStarted); next.eventID = UUID()
+        let nextReceipt = try store.append(draft: next, context: JournalContext(eligible: true)).receipt
+        XCTAssertGreaterThan(nextReceipt.sequence, receipt.sequence)
+    }
+
     // Ambiguous committed acknowledgement + crash/reopen dedupe.
     func testReceiptSurvivesReopenAndConflictCannotReplaceIt() throws {
         let draft = JournalTestData.draft(.turnStarted)

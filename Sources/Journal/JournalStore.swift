@@ -247,6 +247,32 @@ final class JournalStore {
              try scalar("SELECT value FROM journal_meta WHERE key='last_writer_observation'"))
         }
     }
+
+    /// Clear only this namespace's lifecycle history and current projections.
+    /// The AUTOINCREMENT sequence is retained so a pre-clear cursor cannot be
+    /// mistaken for a post-clear event stream.
+    func clear() throws {
+        try queue.sync {
+            try autoreleasepool {
+                try execute("BEGIN IMMEDIATE")
+                do {
+                    try execute("DELETE FROM journal_events")
+                    try execute("DELETE FROM journal_current")
+                    let next = try scalar("SELECT COALESCE(MAX(seq),0)+1 FROM sqlite_sequence WHERE name='journal_events'")
+                    try execute("UPDATE journal_meta SET value=? WHERE key='coverage_low_water'", [.integer(next)])
+                    try execute("UPDATE journal_meta SET value=? WHERE key='last_writer_observation'", [.integer(clock())])
+                    try execute("COMMIT")
+                } catch {
+                    try? execute("ROLLBACK")
+                    throw error
+                }
+                healthCode = nil
+                sincePrune = 0
+                lastPrune = clock()
+            }
+        }
+    }
+
     func health() -> JournalError? { queue.sync { healthCode } }
     func prune(now: Int64) throws { try queue.sync { try pruneOnQueue(now: now, pressure: false) } }
 

@@ -56,6 +56,19 @@ final class JournalCoordinator: @unchecked Sendable {
     func health() -> JournalError? {
         lock.lock(); defer { lock.unlock() }; return storageError
     }
+
+    func clear() throws {
+        let store = try storage()
+        try store.clear()
+        lock.lock()
+        let tabIDs = Array(snapshots.keys)
+        snapshots.removeAll()
+        storageError = nil
+        let callback = sink
+        lock.unlock()
+        for tabID in tabIDs { callback?(tabID, nil, nil) }
+    }
+
     /// Existing metadata readback can expose this value without consulting SQLite.
     func readback(tabID: UUID, now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [String: Any] {
         lock.lock(); let state = snapshots[tabID]; let error = storageError; lock.unlock()

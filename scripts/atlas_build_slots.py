@@ -33,7 +33,7 @@ def capacity(root):
         now = time.time()
         threshold = float(os.environ.get("C11_ATLAS_LOAD_LIMIT", "40"))
         duration = float(os.environ.get("C11_ATLAS_HIGH_LOAD_SECONDS", "60"))
-        high_since = state.get("high_since", now) if load > threshold else None
+        high_since = (state.get("high_since") or now) if load > threshold else None
         state_path.write_text(json.dumps({"high_since": high_since}) + "\n")
         return 1 if high_since is not None and now - high_since >= duration else 2
 

@@ -98,9 +98,9 @@ def snapshot(root, payload, args):
             dst.symlink_to(item["target"])
         if entry(root, name) != item:
             raise ValueError(f"source changed during snapshot: {name!r}")
-    run(["git", "-C", root, "bundle", "create", payload / "parent.bundle", "HEAD"])
+    run(["git", "-c", "pack.threads=2", "-C", root, "bundle", "create", payload / "parent.bundle", "HEAD"])
     for index, name in enumerate(SUBMODULES):
-        run(["git", "-C", root / name, "bundle", "create", payload / f"module-{index}.bundle", "HEAD"])
+        run(["git", "-c", "pack.threads=2", "-C", root / name, "bundle", "create", payload / f"module-{index}.bundle", "HEAD"])
     manifest = {"invocation": uuid.uuid4().hex, "head": head,
                 "branch": git(root, "branch", "--show-current"), "submodules": modules,
                 "overlay": overlays, "dirty": bool(overlays), "tag": args.tag,
@@ -114,6 +114,33 @@ def snapshot(root, payload, args):
 
 def slug(tag):
     return re.sub(r"[^a-z0-9]+", "-", tag.lower()).strip("-")
+
+
+def bundle_cache(ssh, relative, manifest, populate=False):
+    """Reuse complete, SHA-addressed Git bundles; never upload history on every test."""
+    bundles = {"parent.bundle": "parent-" + manifest["head"] + ".bundle"}
+    for i, name in enumerate(SUBMODULES):
+        bundles[f"module-{i}.bundle"] = "module-" + manifest["submodules"][name] + ".bundle"
+    # Atomic hard links publish complete uploaded files. Concurrent identical commits
+    # may populate the same cache key; remote checkout still verifies the pinned SHA.
+    code = """import json,os,sys
+from pathlib import Path
+payload=Path(sys.argv[1]); cache=Path.home()/'c11-builds/bundles'
+cache.mkdir(parents=True,exist_ok=True); hits=[]
+for name,key in json.loads(sys.argv[2]).items():
+    src,dst=payload/name,cache/key
+    if sys.argv[3]=='populate':
+        try: os.link(src,dst)
+        except FileExistsError: pass
+    elif dst.is_file():
+        try: os.link(dst,src)
+        except FileExistsError: pass
+        hits.append(name)
+print(json.dumps(hits))
+"""
+    response = run([*ssh, shlex.join(["python3", "-c", code, relative, json.dumps(bundles),
+                                     "populate" if populate else "prepare"])], stdout=subprocess.PIPE)
+    return json.loads(response.stdout)
 
 
 def apply_overlay(root, payload, manifest):
@@ -151,6 +178,12 @@ def remote(payload, locked=False):
     try:
         # Stable per-tag paths preserve incremental compiler/Zig caches between invocations.
         source = base / "source"
+        prior_overlay = base / "last-overlay.json"
+        if prior_overlay.exists():
+            for item in json.loads(prior_overlay.read_text()):
+                path = safe_path(source, item["path"])
+                if path.is_file() or path.is_symlink():
+                    path.unlink()
         if not (source / ".git").is_dir():
             run(["git", "clone", "--quiet", payload / "parent.bundle", source])
         else:
@@ -169,6 +202,7 @@ def remote(payload, locked=False):
                 run(["git", "-C", module, "fetch", "--quiet", payload / f"module-{index}.bundle", "HEAD"])
             run(["git", "-C", module, "reset", "--hard", manifest["submodules"][name]], stdout=subprocess.DEVNULL)
         apply_overlay(source, payload, manifest)
+        prior_overlay.write_text(json.dumps(manifest["overlay"]) + "\n")
         if git(source, "rev-parse", "HEAD") != manifest["head"] or any(
                 git(source / n, "rev-parse", "HEAD") != h for n, h in manifest["submodules"].items()):
             raise ValueError("remote source identity mismatch")
@@ -244,7 +278,10 @@ def client(args):
         relative = f"c11-builds/{manifest['slug']}/incoming/{manifest['invocation']}"
         ssh = ["ssh", "-o", "BatchMode=yes", host]
         run([*ssh, shlex.join(["mkdir", "-p", relative])])
-        run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", str(payload) + "/", host + ":" + relative + "/"])
+        cached = bundle_cache(ssh, relative, manifest)
+        excludes = [arg for name in cached for arg in ("--exclude", name)]
+        run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", *excludes, str(payload) + "/", host + ":" + relative + "/"])
+        bundle_cache(ssh, relative, manifest, populate=True)
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])
         print(f"[remote-build] host={host} tag={args.tag} invocation={manifest['invocation']} head={manifest['head']}", flush=True)
         print(f"[remote-build] remote log: ~/c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/build.log", flush=True)
@@ -300,6 +337,16 @@ def client(args):
             shutil.rmtree(backup)
         result["local_executable_sha256"] = digest(destination / "Contents/MacOS/c11")
         (local / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        if args.mode == "debug":
+            # Publish the convenience CLI pointer only after a complete artifact replace.
+            pointer = Path("/tmp/c11-last-cli-path")
+            staged_pointer = pointer.with_name(pointer.name + "-" + manifest["invocation"])
+            try:
+                staged_pointer.write_text(str(destination / "Contents/Resources/bin/c11") + "\n")
+                staged_pointer.chmod(0o600)
+                staged_pointer.replace(pointer)
+            except OSError:
+                staged_pointer.unlink(missing_ok=True)
         print(f"APP_PATH={destination}\nC11_REMOTE_OK compile=ok tests=na")
         if args.launch:
             run([root / "scripts/launch-tagged-automation.sh", args.tag, "--qa", "fresh"])

@@ -54,6 +54,8 @@ class SlotsTests(unittest.TestCase):
         self.assertEqual(self.finish([self.start("same"), self.start("same")]), 1)
 
     def test_sustained_high_load_one_slot_then_recovers(self):
+        self.assertEqual(self.finish([self.start("control")]), 1)
+        self.log.unlink()
         self.load.write_text("45")
         self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
         self.assertEqual(self.finish([self.start("a"), self.start("b")]), 1)

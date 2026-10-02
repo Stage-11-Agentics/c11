@@ -88,6 +88,19 @@ class RoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be provisioned, clean"):
             remote.snapshot(self.worktree, self.payload, self.args)
 
+    def test_bundle_cache_reuses_complete_pinned_bundles(self):
+        manifest = remote.snapshot(self.worktree, self.payload, self.args)
+        home = self.base / "cache-home"
+        home.mkdir()
+        with patch.dict(os.environ, HOME=str(home)):
+            remote.bundle_cache(["bash", "-c"], str(self.payload), manifest, populate=True)
+            incoming = self.base / "second-incoming"
+            incoming.mkdir()
+            hits = remote.bundle_cache(["bash", "-c"], str(incoming), manifest)
+        self.assertEqual(set(hits), {"parent.bundle", "module-0.bundle", "module-1.bundle"})
+        for name in hits:
+            self.assertEqual(remote.digest(incoming / name), remote.digest(self.payload / name))
+
     def test_reload_build_failure_does_not_stage_or_launch_existing_app(self):
         scripts = self.base / "scripts"
         scripts.mkdir()
@@ -148,7 +161,7 @@ class RoutingTests(unittest.TestCase):
             (fixture_scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
         fake = self.base / "fake"
         fake.mkdir()
-        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *mkdir*) exit 0;; *) exit 23;; esac\n")
+        (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *'python3 -c'*) echo '[]'; exit 0;; *mkdir*) exit 0;; *) exit 23;; esac\n")
         (fake / "rsync").write_text("#!/bin/sh\nexit 0\n")
         (fake / "open").write_text("#!/bin/sh\ntouch \"$LAUNCH_MARKER\"\nexit 99\n")
         for path in fake.iterdir():

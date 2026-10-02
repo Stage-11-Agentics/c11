@@ -7,9 +7,15 @@
       "linked_at": "2026-10-02T14:50:20Z",
       "linked_by": "agent:luna-291",
       "repo": null
+    },
+    {
+      "branch": "c11-1.0/C11-291-locale-refresh",
+      "linked_at": "2026-10-02T20:11:48Z",
+      "linked_by": "agent:luna-291",
+      "repo": null
     }
   ],
-  "comment_count": 6,
+  "comment_count": 10,
   "complexity": "medium",
   "created_at": "2026-10-02T01:43:27Z",
   "created_by": "agent:grok",
@@ -41,11 +47,26 @@
       "id": "ev_01M3YKMHP2W9ENB0PKWH7PY376",
       "role": "review",
       "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z3D5GT6X55SG287D86B1ET",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z3Q34RXKQ7FCXEHJ4DXH5G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z421NKE2SPA2C8Y7VED5Q8",
+      "role": "validation",
+      "source_type": "comment"
     }
   ],
   "id": "task_01M3X4FP52HXJRCN87FS7AXTPZ",
-  "last_event_id": "ev_01M3YM06CW0E8WKFK1F83NGCB1",
-  "last_status_changed_at": "2026-10-02T15:33:51Z",
+  "last_event_id": "ev_01M3Z4BKX66V9DV68PJ9N7D6VT",
+  "last_status_changed_at": "2026-10-02T20:19:43Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -113,10 +134,10 @@
       "type": "depends_on"
     }
   ],
-  "reopened_count": 0,
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-291",
-  "status": "in_validation",
+  "status": "in_progress",
   "tags": [
     "c11-1.0",
     "ws:cli-browser-release",
@@ -124,6 +145,6 @@
   ],
   "title": "Translate new 1.0 strings into the six locales",
   "type": "chore",
-  "updated_at": "2026-10-02T15:33:51Z",
+  "updated_at": "2026-10-02T20:19:43Z",
   "urgency": null
 }

@@ -9,7 +9,7 @@
       "repo": null
     }
   ],
-  "comment_count": 3,
+  "comment_count": 5,
   "complexity": "medium",
   "created_at": "2026-10-02T01:33:39Z",
   "created_by": "agent:codex",
@@ -26,11 +26,21 @@
       "id": "ev_01M3YQB60FEEK91XB7TFRT314Y",
       "role": "review",
       "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1D5E98KVNK5V3FDPRHC9R",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Z1VFZMZQWZ230KSJGA12DC",
+      "role": "review",
+      "source_type": "comment"
     }
   ],
   "id": "task_01M3X3XQC3KVBT6T1PRE7RR4F0",
-  "last_event_id": "ev_01M3YQGAVQTV2XN3SVVCQWCT6S",
-  "last_status_changed_at": "2026-10-02T16:35:06Z",
+  "last_event_id": "ev_01M3Z22W26VWTNVNPYXNDMEPRJ",
+  "last_status_changed_at": "2026-10-02T19:39:59Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -42,7 +52,7 @@
       "type": "depends_on"
     }
   ],
-  "reopened_count": 1,
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-277",
   "status": "in_progress",
@@ -53,6 +63,6 @@
   ],
   "title": "Query lifecycle analytics and export the journal as NDJSON",
   "type": "task",
-  "updated_at": "2026-10-02T16:35:06Z",
+  "updated_at": "2026-10-02T19:39:59Z",
   "urgency": null
 }

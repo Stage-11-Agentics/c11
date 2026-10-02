@@ -107,6 +107,21 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(ruleBeforeCursor).state, .unknown)
     }
 
+    func testDraftLengthIgnoresRowPaddingOnMultilineDrafts() {
+        let padding = String(repeating: " ", count: 40)
+        let input = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}first line" + padding)]),
+            Row(y: 2, spans: [Span(text: "" + padding)]),
+            Row(y: 3, spans: [Span(text: "  third line" + padding)]),
+            Row(y: 4, spans: [Span(text: rule)]),
+        ], cursorY: 3)
+        XCTAssertEqual(
+            PromptInputClassifier.classify(input),
+            .init(state: .draft, draftLength: "first line\n\n  third line".unicodeScalars.count)
+        )
+    }
+
     func testSecondOptionSelectedStillClassifiesBothSupportedChoosers() {
         // Selecting the second option leaves the first one above the selected row.
         let trust = region([

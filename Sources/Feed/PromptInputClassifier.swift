@@ -170,14 +170,22 @@ enum PromptInputClassifier {
                 content = stripTrailingBoxEdge(content)
             }
 
+            // Rows are padded to the pane width; the padding is not typed text,
+            // so a hard row's trailing whitespace is dropped (a soft-wrapped row's
+            // trailing space is real content).
+            var rowScalars: [Unicode.Scalar] = []
             for item in content {
                 guard !item.faint else {
                     if !isWhitespace(item.value) { hasFaintSuggestion = true }
                     continue
                 }
-                typedScalars.append(item.value)
+                rowScalars.append(item.value)
                 if !isWhitespace(item.value) { hasTypedText = true }
             }
+            if !line.softWrap {
+                while let last = rowScalars.last, isWhitespace(last) { rowScalars.removeLast() }
+            }
+            typedScalars.append(contentsOf: rowScalars)
             previousIndex = index
         }
 

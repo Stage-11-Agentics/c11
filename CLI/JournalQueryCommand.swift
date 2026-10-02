@@ -448,6 +448,11 @@ enum JournalQueryCommand {
                  --stall-ms <milliseconds> --bundle-id <identifier>
                  export only: --output <local-path>
         App-down query/export/clear requires --bundle-id.
+
+        Operator-response coverage: an unmodified Return or Enter in the ask's
+        terminal tab and the text box Send are observed. A Claude AskUserQuestion
+        picker answer is not observed (its commit key is unknown, so c11 records
+        nothing), so a mixed window under-counts operator responses.
         """
     }
 }

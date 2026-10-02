@@ -54,6 +54,22 @@ scripts/sandbox-tests-v2.sh <run-id> [tests_v2/test_file.py ...]
 
 `sandbox-up` clones a stopped golden image and launches the `.app` inside that guest. It does not boot the golden image. `--app-source local-app` (the default) is a bundle path on this machine. `--app-source atlas-build` is reserved for a later branch build on the Tart host and exits before SSH; it does not install Xcode. The Tart host is `C11_SANDBOX_HOST` (default `atlas`). The default clone keeps the golden serial, so Setup Assistant does not run. A second concurrent guest needs `--allow-second`, gets a new serial, and may show Setup Assistant. Live `tests_v2` runs go through `sandbox-tests-v2.sh` after `sandbox-up`. They are python3 scripts, not pytest, they keep going after a failing file, and the suite has to match the app build. They never attach to the operator's c11. If `sandbox-up` is cut off, `sandbox-down <run-id>` removes the clone. Why this shape, and the one-time host setup, live in `docs/c11-sandbox-research.md`.
 
+### Live agent proofs run in the sandbox
+
+A proof that needs real agents (a Claude Code, Codex, or Grok tab receiving mail, hooks firing, a turn running) runs in the sandbox guest, never in a tagged build on the operator's laptop:
+
+```
+scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok
+scripts/sandbox-agent.sh <run-id> launch <claude|codex|grok> <brief.md> --title lc-claude
+scripts/sandbox-agent.sh <run-id> c11 new-tab --workspace workspace:2 --no-focus  # any guest c11 command; this one makes a shell tab
+scripts/sandbox-agent.sh <run-id> c11 send --workspace workspace:2 --tab tab:12 "c11 mailbox send --to lc-claude --body 'reply PONG'"
+scripts/sandbox-agent.sh <run-id> screen tab:6 --workspace workspace:2 --lines 60
+scripts/sandbox-down.sh <run-id>
+scripts/sandbox-agent.sh <run-id> verify-clean            # after down; --control while up proves the scan sees guest files
+```
+
+`--agents` copies the Tart host's installed agent CLIs into the clone and stages one access credential per kind from the Overwatch seat logins on that host (`seat.sh export-cred`). Credentials go host to guest on SSH stdin and live only in the clone; the golden image never holds one, and `verify-clean` searches its disk for them after `sandbox-down`. `launch` delivers the brief as a file pointer through the guest's `c11 launch-agent`, opts the tab into mailbox push, and waits for the composer. `mailbox send` needs a sender tab, so send mail from a shell tab inside the guest workspace, as above; that is also what an agent sees. An operator draft is `c11 send --raw --no-submit`. A kind whose account is out of quota starts logged in and then shows the provider's limit screen: read the screen before calling a delivery failure. `C11_SANDBOX_CLAUDE_ACCOUNT` picks the Claude call-sign.
+
 ## Launch discipline
 
 - Launch **only tagged builds** (`./scripts/reload.sh --tag <tag>`, or `./scripts/launch-tagged-automation.sh <tag> --qa fresh`). Never `open` an untagged `c11 DEV.app` — it conflicts with the operator's running instance. For a click, drag, or activation check, pass that `.app` to `scripts/sandbox-up.sh` instead of opening it on the operator's session.

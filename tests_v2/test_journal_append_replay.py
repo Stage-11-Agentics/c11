@@ -15,7 +15,7 @@ import tempfile
 import time
 import uuid
 
-from cmux import cmux
+from cmux import cmux, cmuxError
 from test_claude_attention_batch import eventually, legacy
 
 
@@ -23,6 +23,16 @@ def main():
     path, cli = os.environ['C11_SOCKET_PATH'], os.environ['C11_CLI']
     assert 'sandbox' in path or 'c11-sb-' in path, 'Use sandbox-tests-v2.sh'
     with cmux(path) as client, tempfile.TemporaryDirectory(prefix='c11-journal-') as temporary:
+        def session_ready():
+            try:
+                client._call('workspace.list', timeout_s=2)
+            except cmuxError as error:
+                if str(error).startswith('not_ready:'):
+                    return False
+                raise
+            return True
+
+        eventually(session_ready, 'session restoration readiness', timeout=30)
         workspace = client.new_workspace()
         tab = client.list_surfaces(workspace)[0][1]
         sibling = client._call('tab.create', {'workspace_id': workspace, 'type': 'terminal'})['tab_id']
@@ -34,6 +44,9 @@ def main():
         env['CMUX_BUNDLE_ID'] = bundle
         journal_dir = Path.home() / 'Library/Application Support/c11/journal' / bundle
         session = str(uuid.uuid4())
+        client._call('conversation.push', {
+            'tab_id': tab, 'kind': 'claude-code', 'id': session, 'source': 'hook'
+        })
 
         def hook(event, fields=None):
             payload = {'session_id': session, **(fields or {})}

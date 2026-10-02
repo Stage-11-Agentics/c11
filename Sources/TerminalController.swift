@@ -2301,6 +2301,7 @@ class TerminalController {
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",
+        "tab.read_selection",
         "tab.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI

@@ -50,6 +50,14 @@ Most commands default to the caller's context via env vars — no flags needed w
 
 Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
 
+## Terminal selection
+
+`c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]` reads the terminal selection without clearing or changing it. Omitted targets use the caller context like `read-screen`; empty or stale explicit targets fail. `--json` returns `has_selection`, `kind: terminal`, `text`, `base64`, `truncated` and routing handles. Without a selection it succeeds with empty text/base64 and `has_selection: false`; human output says `No selection.` Browser and markdown tabs return an error.
+
+Socket method: `tab.read_selection`. Discover `read_selection.terminal` version 1 before depending on it. The response is capped at 1 MiB, clipped to a complete UTF-8 scalar; base64 represents the same bytes as text. `busy` means the renderer lock was unavailable; retry later. A single five-second deadline bounds the worker's wait, including queued capture and worker encoding. Abandoned queued work skips capture; an already-running capture cleans up without publishing a late result.
+
+Native try-lock capture, formatting/allocation and the capped byte copy/free remain on main for surface lifetime safety. Only UTF-8 clipping, text/base64 encoding and response assembly run off main. The response cap and caller deadline do **not** bound native allocation or formatting time after the lock is acquired.
+
 Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
 
 ## Environment variables

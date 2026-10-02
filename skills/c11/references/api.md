@@ -163,9 +163,9 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # (default: the picker's last layout). No agent is launched unless --agent. Does not steal focus.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
-c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
-c11 new-area [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
-c11 new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
+c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
+c11 new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
+c11 new-tab [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
@@ -239,6 +239,8 @@ c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
 c11 close-tab [--tab <id|ref>]      # Close a tab (defaults to caller's)
 c11 close-workspace --workspace <id|ref>    # Close entire workspace
 ```
+
+For these four create commands, `--command` queues literal text plus Return into the new terminal shell through Ghostty startup input. It keeps the shell alive and reports `initial_input: queued`, which does not mean the command finished. Blank input is omitted. Browser/markdown tabs and areas reject nonblank `--command`; `new-workspace --layout` also rejects it before creating anything. `initial_command` remains a separate shell-replacement RPC field. Queued input is consumed at native creation and is not saved or replayed during restore.
 
 ### `new-split` vs `new-area` vs `new-tab`
 
@@ -423,6 +425,8 @@ Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still 
 - Navigation: `home`, `end`, `pageup`, `pagedown`
 - Function keys: `f1`–`f12`
 - Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
+
+`ctrl-c`, `ctrl-d`, `ctrl-z`, and `ctrl-<letter>` are real key events, so a Kitty TUI such as Claude Code or Codex can be interrupted; pass one key per call, a second key is an error, and send the next key in a second call.
 
 ## Live messages page
 

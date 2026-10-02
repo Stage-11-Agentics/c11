@@ -1380,6 +1380,7 @@ class WorkspaceManager: ObservableObject {
         rootDirectory overrideRootDirectory: String? = nil,
         establishRootFromWorkingDirectory: Bool = true,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
         select: Bool = true,
         eagerLoadTerminal: Bool = false,
@@ -1412,6 +1413,7 @@ class WorkspaceManager: ObservableObject {
             portOrdinal: ordinal,
             configTemplate: inheritedConfig,
             initialTerminalCommand: initialTerminalCommand,
+            initialTerminalInput: initialTerminalInput,
             initialTerminalEnvironment: initialTerminalEnvironment
         )
         newWorkspace.owningWorkspaceManager = self
@@ -3962,14 +3964,15 @@ class WorkspaceManager: ObservableObject {
 
     /// Create a new split in the specified direction
     /// Returns the new panel's ID (which is also the surface ID for terminals)
-    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil) -> UUID? {
+    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil, initialInput: String? = nil) -> UUID? {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
         return workspace.newTerminalSplit(
             from: surfaceId,
             orientation: direction.orientation,
             insertFirst: direction.insertFirst,
             focus: focus,
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
+            initialInput: initialInput
         )?.id
     }
 

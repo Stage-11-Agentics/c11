@@ -5615,6 +5615,9 @@ final class Workspace: Identifiable, ObservableObject {
             initialEnvironmentOverrides: initialTerminalEnvironment
         )
         panels[terminalTab.id] = terminalTab
+        // Initialization bypasses panels.didSet. Register the first tab through
+        // the same identity-only seam used by later inserts and restored tabs.
+        JournalCoordinator.shared.register(tabID: terminalTab.id, workspaceID: self.id)
         tabTitles[terminalTab.id] = terminalTab.displayTitle
         seedTerminalInheritanceFontPoints(panelId: terminalTab.id, configTemplate: configTemplate)
 

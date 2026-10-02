@@ -68,7 +68,7 @@ done
         )
 
         make_executable(
-            wrapper_dir / "cmux",
+            wrapper_dir / "c11",
             """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s timeout=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" >> "$FAKE_CMUX_LOG"
@@ -91,6 +91,7 @@ exit 0
             test_socket.bind(socket_path)
 
         env = os.environ.copy()
+        env["TMPDIR"] = str(tmp)
         env["PATH"] = f"{wrapper_dir}:{real_dir}:/usr/bin:/bin"
         env["CMUX_SURFACE_ID"] = "surface:test"
         env["CMUX_SOCKET_PATH"] = socket_path
@@ -115,7 +116,15 @@ exit 0
 
         claudecode_lines = read_lines(real_claudecode_log)
         claudecode_value = claudecode_lines[0] if claudecode_lines else ""
-        return proc.returncode, read_lines(real_args_log), read_lines(cmux_log), proc.stderr.strip(), claudecode_value
+        real_argv = read_lines(real_args_log)
+        # Capture the actual per-launch settings payload before the isolated
+        # temporary directory is removed. The wrapper now passes a file path.
+        if "--settings" in real_argv:
+            settings_index = real_argv.index("--settings") + 1
+            settings_arg = real_argv[settings_index]
+            if not settings_arg.startswith("{"):
+                real_argv[settings_index] = Path(settings_arg).read_text(encoding="utf-8")
+        return proc.returncode, real_argv, read_lines(cmux_log), proc.stderr.strip(), claudecode_value
 
 
 def expect(condition: bool, message: str, failures: list[str]) -> None:

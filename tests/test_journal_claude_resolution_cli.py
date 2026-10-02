@@ -27,6 +27,12 @@ def main():
                     self.wfile.write(b'OK\n'); self.wfile.flush(); continue
                 if command.startswith('{'):
                     request = json.loads(command)
+                    if request['method'] == 'system.capabilities':
+                        response = {'id': request['id'], 'ok': True, 'result': {
+                            'methods': ['tab.list', 'agent.event.append']}}
+                        self.wfile.write((json.dumps(response) + '\n').encode())
+                        self.wfile.flush()
+                        continue
                     assert request['method'] == 'agent.event.append', request['method']
                     calls.append(request)
                     response = {'id': request['id'], 'ok': True, 'result': {

@@ -7,52 +7,46 @@ description: "Hot-reload workflow for c11 development: initial setup, tagged Deb
 
 How to build, reload, and tail a c11 dev instance.
 
-## Initial setup
+## Default: build on Atlas
+
+From a provisioned delegator worktree on the laptop:
 
 ```bash
-./scripts/setup.sh
+./scripts/remote-build.sh --tag <your-branch-slug>
 ```
 
-Initializes submodules and builds GhosttyKit.
+This runs no local xcodebuild. It bundles the exact parent/submodule commits, overlays tracked modifications and untracked non-ignored files with content hashes, and retrieves the tagged Debug app plus logs and `result.json` under `build-remote/<invocation>/`. Tracked deletions, executable modes and symlinks are preserved. Dirty submodules are refused: commit and pin their changes first. Initialize the required submodules with `git submodule update --init --recursive ghostty vendor/bonsplit`; do not run `setup.sh` on the laptop to build GhosttyKit.
 
-## The tagged-build rule
+Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_HOST` defaults to `atlas`; `--host` overrides it. `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
 
-**Never run bare `xcodebuild` or `open` an untagged `c11 DEV.app`.** Untagged builds share the default debug socket and bundle ID with any other agent's running instance, causing conflicts and stealing focus. Always reload with a tag:
+The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
+
+Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 
 ```bash
-./scripts/reload.sh --tag <your-branch-slug>
+./scripts/launch-tagged-automation.sh <tag> --qa fresh
+# Equivalent convenience on an authorized client:
+./scripts/remote-build.sh --tag <tag> --launch
 ```
 
-A tagged build gets its own name, bundle ID, socket, and derived data path so it runs isolated alongside anything else.
+In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. The laptop receives the app but does not launch it. On Atlas, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
 
-`reload.sh --tag` also repoints the machine-wide `c11` shims (`/tmp/c11-last-cli-path`) at the tagged build's CLI. When the tagged build speaks a different protocol than the running app, restore the path to the production CLI (`/Applications/c11.app/Contents/Resources/bin/c11`) so other agents keep working.
+## Remote variants
 
-## Reload variants
-
-| Command | What it does |
+| Command | Result |
 |---|---|
-| `./scripts/reload.sh --tag <tag>` | Build and launch Debug, tagged (required tag) |
-| `./scripts/reloadp.sh` | Build and launch Release (tears down running c11 via `pkill -x c11`) |
-| `./scripts/reloads.sh` | Build and launch Release as "c11 STAGING" (isolated from production c11) |
-| `./scripts/reload2.sh --tag <tag>` | Reload both Debug and Release (tag required for Debug) |
+| `./scripts/remote-build.sh --tag <tag>` | Tagged Debug app, logs, source identity; no launch |
+| `./scripts/remote-build.sh --tag <tag> --mode test -- -only-testing:c11LogicTests/<Class>` | Actual test action on Atlas; assertion results separate from compilation |
+| `./scripts/remote-build.sh --tag <tag> --mode release` | Ad-hoc staging Release app; no publish or launch |
+| `./scripts/remote-build.sh --tag <tag> --mode release --wmo --universal` | Release staging with production compilation settings |
 
-**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x c11`, which tears down every c11 area — fatal if another agent is mid-task in a sibling area, or if the current agent session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
+Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials.
 
-```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
-```
+## Existing on-Atlas entry points
 
-macOS lets you overwrite a running app's bundle — the already-loaded binary stays in memory, and the rebuilt `.app` is picked up on the next manual launch (⌘Q then relaunch). Use this when collaborating with other agents or when the user explicitly asks to avoid session churn.
+A person working on Atlas may use `./scripts/reload.sh --tag <tag>` to build and launch Debug, or `./scripts/reloads.sh --tag <tag>` for staging. For coordinated builds prefer the remote route, including from an SSH client. Both scripts support `--no-launch` to stage and sign without CLI-shim/socket writes, quits or launches. Their default remains launch. Never run `reloadp.sh` over another agent's session: it terminates the running production app.
 
-**A rebuild-and-relaunch keeps agent resume only on a clean quit.** When a reload does restart the app over a running instance, let the script's clean quit drive the teardown — do **not** `pkill -9` / pre-kill it first. Browser and markdown tabs restore either way, but agent terminals only resume their conversation when the prior process shut down cleanly; SIGKILL'd, they come back as bare shells.
-
-## Build-only verification (no launch)
-
-If you only need to verify the build compiles, use a tagged derivedDataPath:
-
-```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/c11-<your-tag> build
-```
+A clean quit preserves agent resume; do not pre-kill the app before a reload. Use QA fresh/resume deliberately for validation.
 
 ## Driving a Release/staging build over the socket
 
@@ -90,7 +84,8 @@ The launcher unsets any inherited `C11_QA_LAUNCH` and only sets it when `--qa` i
 When rebuilding `GhosttyKit.xcframework`, always use Release optimizations:
 
 ```bash
-cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
+# On Atlas only, coordinated with its build slots:
+cd ghostty && ../scripts/with-build-lock.sh zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
 ```
 
 ## Reporting a tagged reload in chat

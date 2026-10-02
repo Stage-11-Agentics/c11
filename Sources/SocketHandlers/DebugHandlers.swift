@@ -51,6 +51,12 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugBrowserAddressBarFocused(params: params))
         case "debug.browser.favicon":
             return v2Result(id: id, self.v2DebugBrowserFavicon(params: params))
+        case "debug.browser.simulate_web_content_termination":
+            // Main-thread lookup is necessary for WKWebView identity. Recovery
+            // itself is queued by the tab, outside this synchronous socket hop.
+            return v2Result(id: id, v2BrowserWithPanel(params: params) { _, _, _, browserTab in
+                .ok(["scheduled": browserTab.debugSimulateWebContentProcessTermination()])
+            })
         case "debug.sidebar.visible":
             return v2Result(id: id, self.v2DebugSidebarVisible(params: params))
         case "debug.terminal.is_focused":

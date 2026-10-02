@@ -116,7 +116,12 @@ c11 launch-agent --type codex --model gpt-5.2 --effort high \
     --title "Login Impl" --json
 ```
 
-**The prompt is a one-line pointer; the brief lives in a file.** Write every specific (cwd, ticket, rules, reply channel) into a brief file and pass only `Read <absolute path> and follow it exactly.` as `--prompt`. `--prompt-file` reads the file's contents and uses the same delivery path as `--prompt` (for argv-capable agents the full text still rides the launch command), so it is not a substitute: a long inline prompt can leave the shell at a `>` continuation prompt for as long as nobody looks, or start a tab whose agent never runs. Keep the brief file where the child can read it and where a later reader can find it.
+**Keep durable briefs in files.** Put cwd, ticket, rules and reply channel into a
+brief the child can read and later readers can find. Both `--prompt` and
+`--prompt-file` now stage a private copy and send only a short file-reading
+instruction. The owned copy survives until the terminal tab closes; the caller's
+original file stays untouched. Passing a pointer to a durable brief is still
+useful for provenance.
 
 It creates the tab (in an area, a workspace, or `--new-workspace`), renders
 the right per-agent invocation (claude wrapper + skip-permissions, codex
@@ -128,8 +133,10 @@ follow-up `send`/`read-screen`. Full reference: `docs/launch-agent-reference.md`
 
 ### Positive launch receipt
 
-`launch-agent` returning a tab ref proves that c11 created a tab and
-delivered a prompt. It does **not** prove that the child read the brief, landed in
+`launch-agent` returning a tab ref proves that c11 accepted the launch into a tab.
+`startup=started` additionally proves an identified foreground provider process
+was observed; `pending` means it was not proven. Neither proves the child read
+the brief, landed in
 the intended cwd, resolved the intended work item, or is looking at the expected
 git head. For consequential work, the launch prompt requires one positive receipt
 back to the parent before the child proceeds:
@@ -299,6 +306,15 @@ For most TUIs, the skill-driven self-reporting path above is how status gets pop
 ### Banner-string scraping is always wrong
 
 Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other prompt or banner string. They drift across releases and produce silent stalls. Use one-shot argv delivery, or poll a status row when it is safe to do so.
+
+## Choosing a message channel
+
+There are two deliberate paths between agent tabs:
+
+- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn, and c11 records the full text as `tab.input_sent`. Use it for a nudge, short brief, or immediate instruction. Because it is a PTY action rather than a durable mailbox report, pair it with mailbox completion/blocker reporting when the exchange must survive the tab.
+- **Use `c11 mailbox send` for durable coordination.** The envelope and body remain inspectable through `mailbox.accepted` / `mailbox.delivered`, whose delivery marker is `via: push|drain|inbox`. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent that opted into push (`mailbox.delivery=stdin`) receives a new turn; a busy agent receives mail at its turn boundary. At orientation, declare `mailbox.address` and set `mailbox.delivery` to `stdin` when the recipient is an interactive agent tab.
+- **Push is agent-only.** c11 verifies that the recipient owns its foreground terminal and is using raw-mode interactive input before typing. It never pushes into a plain shell, one-shot command, or other program; failed pushes remain in the inbox. Claude and Codex drain at turn boundaries through their wrapper/hooks, while Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit floor.
+- **Use `c11 messages view` for the recorded timeline.** It opens the live traffic page in a c11 browser tab without taking focus. `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a tab.
 
 ## Agent-to-agent communication
 

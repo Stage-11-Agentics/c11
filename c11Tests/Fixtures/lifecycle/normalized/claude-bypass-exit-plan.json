@@ -1,0 +1,14 @@
+{
+  "id": "claude-bypass-exit-plan",
+  "origin": "gap",
+  "events": [],
+  "current": {
+    "mark": "not-observed",
+    "notes": "ExitPlanMode did not fire. The bypass launch offered only that tool, then the session stopped. No plan-exit event was recorded."
+  },
+  "intended": {
+    "mark": "waiting",
+    "notes": "ExitPlanMode in bypass mode is a blocked ask. The tab enters waiting from the tool hook itself."
+  },
+  "recapture_required": "tagged-build"
+}

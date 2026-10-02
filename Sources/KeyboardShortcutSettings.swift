@@ -23,6 +23,8 @@ enum KeyboardShortcutSettings {
         case prevSurface
         case nextSidebarWorkspace = "nextSidebarTab"
         case prevSidebarWorkspace = "prevSidebarTab"
+        case focusHistoryBack
+        case focusHistoryForward
         case renameTab
         case renameWorkspace
         case closeWorkspace
@@ -70,6 +72,8 @@ enum KeyboardShortcutSettings {
             case .prevSurface: return String(localized: "shortcut.previousSurface.label", defaultValue: "Previous Tab")
             case .nextSidebarWorkspace: return String(localized: "shortcut.nextWorkspace.label", defaultValue: "Next Workspace")
             case .prevSidebarWorkspace: return String(localized: "shortcut.previousWorkspace.label", defaultValue: "Previous Workspace")
+            case .focusHistoryBack: return String(localized: "shortcut.focusHistoryBack.label", defaultValue: "Focus History Back")
+            case .focusHistoryForward: return String(localized: "shortcut.focusHistoryForward.label", defaultValue: "Focus History Forward")
             case .renameTab: return String(localized: "shortcut.renameTab.label", defaultValue: "Rename Tab")
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
             case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
@@ -107,6 +111,8 @@ enum KeyboardShortcutSettings {
             case .triggerFlash: return "shortcut.triggerFlash"
             case .nextSidebarWorkspace: return "shortcut.nextSidebarTab"
             case .prevSidebarWorkspace: return "shortcut.prevSidebarTab"
+            case .focusHistoryBack: return "shortcut.focusHistoryBack"
+            case .focusHistoryForward: return "shortcut.focusHistoryForward"
             case .renameTab: return "shortcut.renameTab"
             case .renameWorkspace: return "shortcut.renameWorkspace"
             case .closeWorkspace: return "shortcut.closeWorkspace"
@@ -157,6 +163,8 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "]", command: true, shift: false, option: false, control: true)
             case .prevSidebarWorkspace:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
+            case .focusHistoryBack, .focusHistoryForward:
+                return .unbound
             case .renameTab:
                 // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
                 return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
@@ -312,7 +320,12 @@ struct StoredShortcut: Codable, Equatable {
     var option: Bool
     var control: Bool
 
+    static let unbound = StoredShortcut(key: "", command: false, shift: false, option: false, control: false)
+
     var displayString: String {
+        guard !key.isEmpty else {
+            return String(localized: "shortcut.unbound", defaultValue: "None")
+        }
         var parts: [String] = []
         if control { parts.append("⌃") }
         if option { parts.append("⌥") }
@@ -465,6 +478,7 @@ struct StoredShortcut: Codable, Equatable {
 /// View for recording a keyboard shortcut
 struct KeyboardShortcutRecorder: View {
     let label: String
+    let action: KeyboardShortcutSettings.Action
     @Binding var shortcut: StoredShortcut
     @State private var isRecording = false
 
@@ -474,18 +488,20 @@ struct KeyboardShortcutRecorder: View {
 
             Spacer()
 
-            ShortcutRecorderButton(shortcut: $shortcut, isRecording: $isRecording)
+            ShortcutRecorderButton(action: action, shortcut: $shortcut, isRecording: $isRecording)
                 .frame(width: 120)
         }
     }
 }
 
 private struct ShortcutRecorderButton: NSViewRepresentable {
+    let action: KeyboardShortcutSettings.Action
     @Binding var shortcut: StoredShortcut
     @Binding var isRecording: Bool
 
     func makeNSView(context: Context) -> ShortcutRecorderNSButton {
         let button = ShortcutRecorderNSButton()
+        button.shortcutAction = action
         button.shortcut = shortcut
         button.onShortcutRecorded = { newShortcut in
             shortcut = newShortcut
@@ -498,12 +514,14 @@ private struct ShortcutRecorderButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
+        nsView.shortcutAction = action
         nsView.shortcut = shortcut
         nsView.updateTitle()
     }
 }
 
 private class ShortcutRecorderNSButton: NSButton {
+    var shortcutAction: KeyboardShortcutSettings.Action?
     var shortcut: StoredShortcut = KeyboardShortcutSettings.showNotificationsDefault
     var onShortcutRecorded: ((StoredShortcut) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
@@ -557,7 +575,21 @@ private class ShortcutRecorderNSButton: NSButton {
                 return nil
             }
 
+            let isHistoryShortcut = self.shortcutAction == .focusHistoryBack || self.shortcutAction == .focusHistoryForward
+            if isHistoryShortcut && (event.keyCode == 51 || event.keyCode == 117) { // Delete, Forward-Delete
+                self.shortcut = .unbound
+                self.onShortcutRecorded?(.unbound)
+                self.stopRecording()
+                return nil
+            }
+
             if let newShortcut = StoredShortcut.from(event: event) {
+                // Browser Back/Forward retain their public chords; only history rejects them.
+                if isHistoryShortcut && (newShortcut.key == "[" || newShortcut.key == "]")
+                    && newShortcut.command && !newShortcut.shift && !newShortcut.option && !newShortcut.control {
+                    self.stopRecording()
+                    return nil
+                }
                 self.shortcut = newShortcut
                 self.onShortcutRecorded?(newShortcut)
                 self.stopRecording()

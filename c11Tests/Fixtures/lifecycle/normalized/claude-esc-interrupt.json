@@ -1,0 +1,113 @@
+{
+  "id": "claude-esc-interrupt",
+  "origin": "observed",
+  "events": [
+    {
+      "t": "2026-10-02T03:05:29Z",
+      "source": "claude-hook",
+      "name": "SessionStart",
+      "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
+      "attrs": {
+        "session_id": "sess-7",
+        "scratchpad_dir": "[redacted]",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T03:05:29Z",
+      "source": "claude-hook",
+      "name": "UserPromptSubmit",
+      "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
+      "attrs": {
+        "session_id": "sess-7",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-8",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "UserPromptSubmit"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T03:05:38Z",
+      "source": "claude-hook",
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "sess-7",
+      "tab": "tab-esc",
+      "attrs": {
+        "session_id": "sess-7",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-8",
+        "permission_mode": "bypassPermissions",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-4"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 9000
+    },
+    {
+      "t": "2026-10-02T03:05:40Z",
+      "source": "driver",
+      "name": "escape-sent",
+      "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
+      "attrs": {
+        "stop_seen": "false",
+        "post_seen": "false",
+        "bash_pretool": "true",
+        "key_sent": "true"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 11000
+    },
+    {
+      "t": "2026-10-02T03:05:40Z",
+      "source": "oracle",
+      "name": "after-escape",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-esc",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
+      },
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": ""
+      },
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 11000
+    }
+  ],
+  "current": {
+    "mark": "working",
+    "notes": "Escape was sent after Bash PreToolUse and before PostToolUse and Stop. The following oracle mark is the observed tab state."
+  },
+  "intended": {
+    "mark": "idle",
+    "notes": "An Esc interruption during a tool ends the turn. The tab must not stay working. This build has no turn.interrupted hook."
+  }
+}

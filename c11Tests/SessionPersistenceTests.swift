@@ -42,6 +42,35 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(restored.tabTitle(panelId: restoredPanelId), "Readme")
     }
 
+    func testRepairedDuplicateRecordsStayUniqueAfterSaveAndLoad() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-duplicate-persistence-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("session.json")
+        var app = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        var workspace = app.windows[0].workspaceManager.workspaces[0]
+        let id = UUID()
+        let tab = SessionTabSnapshot(
+            id: id, type: .terminal, title: "Synthetic", customTitle: nil,
+            directory: "/tmp", isPinned: false, isManuallyUnread: false,
+            gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
+            browser: nil, markdown: nil, metadata: nil, metadataSources: nil
+        )
+        workspace.panels = [tab, tab]
+        workspace.layout = .pane(SessionAreaLayoutSnapshot(panelIds: [id, id], selectedPanelId: id))
+        app.windows[0].workspaceManager.workspaces[0] = workspace
+        XCTAssertTrue(SessionPersistenceStore.save(app, fileURL: url))
+        var loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: url))
+        let repaired = SessionRestoreNormalization.normalize(loaded.windows[0].workspaceManager.workspaces[0])
+        XCTAssertEqual(repaired.drops.count, 2)
+        loaded.windows[0].workspaceManager.workspaces[0] = repaired.snapshot
+        XCTAssertTrue(SessionPersistenceStore.save(loaded, fileURL: url))
+        let reloaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: url))
+        let second = SessionRestoreNormalization.normalize(reloaded.windows[0].workspaceManager.workspaces[0])
+        XCTAssertTrue(second.drops.isEmpty)
+        XCTAssertEqual(second.snapshot.panels.map(\.id), [id])
+    }
+
     func testSaveAndLoadRoundTripWithCustomSnapshotPath() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-tests-\(UUID().uuidString)", isDirectory: true)

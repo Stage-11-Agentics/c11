@@ -2564,6 +2564,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // recreates workspaces/surfaces — so surface.created and the
         // log.opened marker land from the first instant (amendment K).
         EventEmitter.shared.start()
+        // C11-257 D: keep the local, self-contained messages page current.
+        // The writer rebuilds off-main and starts from the existing event and
+        // mailbox history before listening for new message events. XCTest
+        // hosts intentionally do not write the operator's shared page.
+        if !MessagesPageWriter.isRunningUnderXCTest() {
+            MessagesPageWriter.shared.start()
+        }
         if let resolvedResumeRecoveryMode {
             recordResolvedResumeRecoveryMode(resolvedResumeRecoveryMode)
         }
@@ -3413,7 +3420,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
-        let snapshot = SessionPersistenceStore.load()
+        let snapshot = SessionPersistenceStore.load().map {
+            SessionRestoreNormalization.prepareStartupSnapshot($0)
+        }
         startupSessionSnapshot = snapshot
 
         // Resolve the one-shot policy before any slow work. Even if seed or
@@ -3748,6 +3757,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func completeStartupSessionRestore() {
+        FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
         _ = saveSessionSnapshot(includeScrollback: false)
@@ -4852,7 +4862,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return AppSessionSnapshot(
             version: SessionSnapshotSchema.currentVersion,
             createdAt: Date().timeIntervalSince1970,
-            windows: windows
+            windows: windows,
+            focusHistory: FocusHistoryStore.shared.snapshot()
         )
     }
 
@@ -7036,6 +7047,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             bringToFront(window)
         }
 
+        var configuredLaunch: (surfaceId: String, agent: AgentType, launch: ResolvedAgentLaunch)?
         var injected = plan
         injected.workspace.workingDirectory = workingDirectory
         if let trimmed = workspaceName?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
@@ -7053,11 +7065,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let idx = injected.surfaces.firstIndex(where: { surface in
                 surface.kind == .terminal && (surface.command?.isEmpty ?? true)
             }) {
-                // Trailing newline submits the command. The "A" tab-bar button
-                // appends "\n" at its call site (Workspace.launchAgentSurface);
-                // SurfaceSpec.command is delivered verbatim by the layout
-                // executor, so the newline has to live in the value itself.
-                injected.surfaces[idx].command = command + "\n"
+                // Submit after layout materialization so prompt ownership can
+                // bind to the actual terminal object, without filesystem I/O here.
+                configuredLaunch = (injected.surfaces[idx].id, resolved.agent, resolved.launch)
+                injected.surfaces[idx].command = nil
                 // No orientation prompt is baked by default (see
                 // `c11OrientPrompt`), so mirror launchAgentSurface: stamp the
                 // identity the sidebar would otherwise wait on the agent to
@@ -7102,6 +7113,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             options: ApplyOptions(select: activate),
             dependencies: dependencies
         )
+        if let configuredLaunch,
+           let ref = result.surfaceRefs[configuredLaunch.surfaceId],
+           let tabId = UUID(uuidString: ref.replacingOccurrences(of: "surface:", with: "")),
+           let workspace = context.workspaceManager.workspaces.first(where: { $0.terminalPanel(for: tabId) != nil }),
+           let panel = workspace.terminalPanel(for: tabId) {
+            panel.submitConfiguredAgentLaunch(agent: configuredLaunch.agent, launch: configuredLaunch.launch) { [weak workspace, weak panel] in
+                guard let workspace, let panel else { return false }
+                return workspace.terminalPanel(for: panel.id) === panel
+            }
+        }
         #if DEBUG
         for failure in result.failures {
             FocusLogStore.shared.append(

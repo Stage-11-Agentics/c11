@@ -9169,7 +9169,7 @@ enum BrowserDataImporter {
         var warnings: [String] = []
     }
 
-    private struct HistoryRow {
+    struct HistoryRow {
         let url: String
         let title: String?
         let visitCount: Int
@@ -9629,6 +9629,41 @@ enum BrowserDataImporter {
         return HistoryImportResult(importedCount: importedCount, warnings: warnings)
     }
 
+    /// Safari keeps `title` on `history_visits`, not `history_items`. In a query with a single
+    /// `MAX()` aggregate, SQLite takes bare columns from the row holding the maximum, so
+    /// `history_visits.title` is the title of the most recent visit.
+    static func readWebKitHistoryRows(databaseURL: URL, domainFilters: [String]) throws -> [HistoryRow] {
+        var rows: [HistoryRow] = []
+        try querySQLiteRows(
+            sourceDatabaseURL: databaseURL,
+            sql: """
+            SELECT history_items.url,
+                   history_visits.title,
+                   COUNT(history_visits.id) AS visit_count,
+                   MAX(history_visits.visit_time) AS last_visit_time
+            FROM history_items
+            JOIN history_visits
+              ON history_items.id = history_visits.history_item
+            GROUP BY history_items.url
+            ORDER BY last_visit_time DESC
+            LIMIT 5000
+            """
+        ) { statement in
+            let url = sqliteColumnText(statement, index: 0) ?? ""
+            let title = sqliteColumnText(statement, index: 1)
+            let visitCount = max(1, Int(sqliteColumnInt64(statement, index: 2)))
+            let lastVisitReferenceSeconds = sqliteColumnDouble(statement, index: 3)
+            guard let parsedURL = URL(string: url),
+                  let host = parsedURL.host,
+                  domainMatches(host: host, filters: domainFilters) else {
+                return
+            }
+            let lastVisited = Date(timeIntervalSinceReferenceDate: lastVisitReferenceSeconds)
+            rows.append(HistoryRow(url: url, title: title, visitCount: visitCount, lastVisited: lastVisited))
+        }
+        return rows
+    }
+
     private static func importWebKitHistory(
         from browser: InstalledBrowserCandidate,
         sourceProfiles: [InstalledBrowserProfile],
@@ -9669,33 +9704,7 @@ enum BrowserDataImporter {
 
         for databaseURL in uniqueURLs {
             do {
-                try querySQLiteRows(
-                    sourceDatabaseURL: databaseURL,
-                    sql: """
-                    SELECT history_items.url,
-                           history_items.title,
-                           COUNT(history_visits.id) AS visit_count,
-                           MAX(history_visits.visit_time) AS last_visit_time
-                    FROM history_items
-                    JOIN history_visits
-                      ON history_items.id = history_visits.history_item
-                    GROUP BY history_items.url
-                    ORDER BY last_visit_time DESC
-                    LIMIT 5000
-                    """
-                ) { statement in
-                    let url = sqliteColumnText(statement, index: 0) ?? ""
-                    let title = sqliteColumnText(statement, index: 1)
-                    let visitCount = max(1, Int(sqliteColumnInt64(statement, index: 2)))
-                    let lastVisitReferenceSeconds = sqliteColumnDouble(statement, index: 3)
-                    guard let parsedURL = URL(string: url),
-                          let host = parsedURL.host,
-                          domainMatches(host: host, filters: domainFilters) else {
-                        return
-                    }
-                    let lastVisited = Date(timeIntervalSinceReferenceDate: lastVisitReferenceSeconds)
-                    rows.append(HistoryRow(url: url, title: title, visitCount: visitCount, lastVisited: lastVisited))
-                }
+                rows.append(contentsOf: try readWebKitHistoryRows(databaseURL: databaseURL, domainFilters: domainFilters))
             } catch {
                 warnings.append(
                     String(

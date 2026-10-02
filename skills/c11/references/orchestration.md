@@ -133,6 +133,15 @@ birth, and delivers the prompt one-shot via argv where the agent supports it —
 no ready-state race. `--json` returns the new tab/area/workspace refs for
 follow-up `send`/`read-screen`. Full reference: `docs/launch-agent-reference.md`.
 
+### A launch can stop at the agent's own trust prompt
+
+Some agents ask whether to trust a directory the first time they run in it, before they read the prompt. Grok Build
+does this for a new git worktree (the question names the main repository): the surface shows only its splash in
+`read-screen` and the brief waits behind the question. Answer it with `c11 send-key --workspace <ws> --surface <s>
+enter` ("Yes, proceed" is the default). Typing `y` with `send --no-submit` does nothing, and `send-key y` is an unknown
+key. The argv prompt then runs. After launching any agent into a directory it has not seen, read its screen once
+before assuming it started.
+
 ### Positive launch receipt
 
 `launch-agent` returning a tab ref proves that c11 accepted the launch into a tab.

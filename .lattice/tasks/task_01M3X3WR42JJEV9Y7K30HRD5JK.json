@@ -9,7 +9,7 @@
       "repo": null
     }
   ],
-  "comment_count": 10,
+  "comment_count": 11,
   "complexity": "medium",
   "created_at": "2026-10-02T01:33:07Z",
   "created_by": "agent:codex",
@@ -41,10 +41,15 @@
       "id": "ev_01M3YW8PSHREV9V6J92XC03HK0",
       "role": "validation",
       "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YZ7AMJKG7S7JZTYRSERT6S",
+      "role": "validation",
+      "source_type": "comment"
     }
   ],
   "id": "task_01M3X3WR42JJEV9Y7K30HRD5JK",
-  "last_event_id": "ev_01M3YW9E9FS3G88C0GJMBKZH5Y",
+  "last_event_id": "ev_01M3YZ7AMJKG7S7JZTYRSERT6S",
   "last_status_changed_at": "2026-10-02T17:58:43Z",
   "linked_files": [],
   "priority": "high",
@@ -75,6 +80,6 @@
   ],
   "title": "Feed: typed per-tab asks with list, open, watch and ask events",
   "type": "task",
-  "updated_at": "2026-10-02T17:58:43Z",
+  "updated_at": "2026-10-02T18:49:59Z",
   "urgency": null
 }

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:46:49Z",
+  "created_by": "agent:sol-feed",
+  "custom_fields": {},
+  "id": "art_01M3Z2FCEJHYGYWQFR6YGC8XTW",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2FCEJHYGYWQFR6YGC8XTW.json",
+    "size_bytes": 1221
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Exact-head Atlas native test manifest: 27 tests passed",
+  "token_usage": null,
+  "type": "file"
+}

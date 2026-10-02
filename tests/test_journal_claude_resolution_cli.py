@@ -19,6 +19,8 @@ TAB = '22222222-2222-4222-8222-222222222222'
 
 def main():
     cli = os.environ['C11_CLI_BIN']
+    # Warm dyld/code-signing caches before measuring the socket deadline.
+    subprocess.run([cli, '--version'], check=True, capture_output=True, timeout=5)
     calls = []
     stall_clear = False
     class Handler(socketserver.StreamRequestHandler):

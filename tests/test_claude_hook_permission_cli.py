@@ -66,6 +66,8 @@ def spool_files(root: Path) -> list[Path]:
 
 def main() -> None:
     cli = os.environ["C11_CLI_BIN"]
+    # Cold executable admission is outside the hook socket's aggregate budget.
+    subprocess.run([cli, "--version"], check=True, capture_output=True, timeout=5)
     payload = {
         "session_id": "sess-1",
         "tool_name": "Bash",

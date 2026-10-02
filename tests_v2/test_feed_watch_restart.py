@@ -9,7 +9,7 @@ import time
 import uuid
 
 from cmux import cmux
-from test_feed_list_watch import FeedWatcher, require_guest
+from test_feed_list_watch import FeedWatcher, require_guest, wait_guest_ready
 
 
 def rss(pid):
@@ -20,9 +20,10 @@ def main():
     path, cli = require_guest()
     app = Path(cli).parents[3]
     assert app.name == "c11 DEV c11-264.app", app
-    watcher = FeedWatcher(cli, path)
     client = cmux(path)
     client.connect()
+    wait_guest_ready(client)
+    watcher = FeedWatcher(cli, path)
     try:
         initial = watcher.until(lambda value: "rows" in value)
         old_instance = initial["instance"]

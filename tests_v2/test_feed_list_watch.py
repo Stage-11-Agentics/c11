@@ -13,11 +13,23 @@ import threading
 import time
 import uuid
 
-from cmux import cmux
+from cmux import cmux, cmuxError
 from test_claude_attention_batch import eventually
 
 
 SENTINEL = "PRIVATE-SENTINEL-264"
+
+
+def wait_guest_ready(client):
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            client._call("feed.list")
+            return
+        except cmuxError as error:
+            if not str(error).startswith("not_ready:") or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
 
 
 class FeedWatcher:
@@ -69,6 +81,7 @@ def cli_json(cli, path, args):
 def main():
     path, cli = require_guest()
     with cmux(path) as client:
+        wait_guest_ready(client)
         features = client.capabilities()["features"]
         assert any(item.get("id") == "feed.asks" and item.get("version") == 1 for item in features), features
         window = client.new_window()

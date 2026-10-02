@@ -10,6 +10,7 @@ import uuid
 
 from cmux import cmux
 from test_claude_attention_batch import eventually
+from test_feed_list_watch import wait_guest_ready
 
 
 def require_guest():
@@ -38,6 +39,7 @@ def aqua(command):
 def main():
     path, cli = require_guest()
     with cmux(path) as client:
+        wait_guest_ready(client)
         window = client.new_window()
         other_window = client.new_window()
         try:

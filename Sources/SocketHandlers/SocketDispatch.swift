@@ -957,7 +957,7 @@ extension TerminalController {
             return reloadConfig(args)
 
         case "refresh_surfaces":
-            return refreshSurfaces()
+            return refreshSurfaces(args)
 
             case "surface_health":
                 return surfaceHealth(args)

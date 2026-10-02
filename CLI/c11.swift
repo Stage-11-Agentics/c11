@@ -1435,7 +1435,7 @@ final class SocketClient {
                 .contains { $0.caseInsensitiveCompare(value) == .orderedSame }
         }
         if let value = (params["workspace_id"] ?? params["workspace"]) as? String, !workspaces.contains(where: { matches($0, value) }) {
-            throw CLIError(message: "not_found: Workspace not found in scoped window")
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceNotFound", defaultValue: "Workspace not found in scoped window"))
         }
         var tabs: [[String: Any]] = []
         var areas: [[String: Any]] = []
@@ -1451,12 +1451,12 @@ final class SocketClient {
         }
         for key in ["tab_id", "before_tab_id", "after_tab_id"] {
             if let value = params[key] as? String, !tabs.contains(where: { matches($0, value) }) {
-                throw CLIError(message: "not_found: Tab not found in scoped window")
+                throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.tabNotFound", defaultValue: "Tab not found in scoped window"))
             }
         }
         for key in ["area_id", "target_area_id", "pane"] {
             if let value = params[key] as? String, !areas.contains(where: { matches($0, value) }) {
-                throw CLIError(message: "not_found: Area not found in scoped window")
+                throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.areaNotFound", defaultValue: "Area not found in scoped window"))
             }
         }
     }
@@ -2846,14 +2846,22 @@ struct CMUXCLI {
             guard let surface else {
                 throw CLIError(message: "drag-tab-to-split requires --tab <id|index>")
             }
-            guard let direction = rem1.first else {
+            let (_, directionArgs) = parseOption(rem1, name: "--workspace")
+            guard let direction = directionArgs.first else {
                 throw CLIError(message: "drag-tab-to-split requires a direction")
             }
-            let response = try sendV1Command("drag_surface_to_split \(surface) \(direction)", client: client)
+            let scopedWorkspace = client.scopedWindow != nil
+                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
+            let target = try scopedWorkspace.map { try resolveSurfaceId(surface, workspaceId: $0, client: client) } ?? surface
+            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
+            let response = try sendV1Command("drag_surface_to_split \(target) \(direction)\(scope)", client: client)
             print(response)
 
         case "refresh-tabs":
-            let response = try sendV1Command("refresh_surfaces", client: client)
+            let scopedWorkspace = client.scopedWindow != nil
+                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
+            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
+            let response = try sendV1Command("refresh_surfaces\(scope)", client: client)
             print(response)
 
         case "tab-health":
@@ -8844,7 +8852,7 @@ struct CMUXCLI {
                     return id
                 }
             }
-            throw CLIError(message: "Workspace ref not found: \(raw)")
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceNotFound", defaultValue: "Workspace not found in scoped window") + ": \(raw)")
         }
         if let raw, isUUID(raw) {
             return raw
@@ -8885,12 +8893,15 @@ struct CMUXCLI {
         if let raw, raw.isEmpty {
             throw CLIError(message: "--tab received an empty value (likely from an unset shell variable, e.g. $C11_TAB_ID). Pass a real ref or omit the flag.")
         }
+        if let raw, client.scopedWindow != nil, !isUUID(raw), !isHandleRef(raw), Int(raw) == nil {
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceTabNotFound", defaultValue: "Tab not found in scoped workspace") + ": \(raw)")
+        }
         if let raw, isUUID(raw) {
             if client.scopedWindow != nil {
                 let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
                 let items = listed["tabs"] as? [[String: Any]] ?? []
                 guard items.contains(where: { ($0["id"] as? String)?.caseInsensitiveCompare(raw) == .orderedSame }) else {
-                    throw CLIError(message: "not_found: Tab not found in scoped workspace")
+                    throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceTabNotFound", defaultValue: "Tab not found in scoped workspace"))
                 }
             }
             return raw
@@ -12773,8 +12784,31 @@ struct CMUXCLI {
         // first match across the fleet is the target. An explicit `--workspace`
         // (or `CMUX_WORKSPACE_ID` in the caller's env) scopes the search when
         // provided, matching how send narrows resolution.
+        var launchWorkspace: String? = nil
         var inSurfaceUUID: String? = nil
-        if let raw = inSurfaceRaw {
+        if client.scopedWindow != nil {
+            let explicitWorkspace = optionValue(commandArgs, name: "--workspace")
+            launchWorkspace = try resolveWorkspaceId(explicitWorkspace, client: client)
+            if let raw = inSurfaceRaw {
+                // UUIDs and refs can name a tab in a nonselected workspace
+                // within the scoped window. Numeric indexes stay workspace-local.
+                if explicitWorkspace == nil && Int(raw) == nil {
+                    let listed = try client.sendV2(method: "workspace.list")
+                    for workspace in listed["workspaces"] as? [[String: Any]] ?? [] {
+                        guard let id = workspace["id"] as? String else { continue }
+                        let tabs = try client.sendV2(method: "tab.list", params: ["workspace_id": id])
+                        if (tabs["tabs"] as? [[String: Any]] ?? []).contains(where: {
+                            ($0["id"] as? String)?.caseInsensitiveCompare(raw) == .orderedSame
+                                || ($0["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw)
+                        }) {
+                            launchWorkspace = id
+                            break
+                        }
+                    }
+                }
+                inSurfaceUUID = try resolveSurfaceId(raw, workspaceId: launchWorkspace!, client: client)
+            }
+        } else if let raw = inSurfaceRaw {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if isUUID(trimmed) {
                 inSurfaceUUID = trimmed
@@ -12823,6 +12857,7 @@ struct CMUXCLI {
         // Compose v1 command. Multi-word values get quoted so tokenizeArgs
         // on the server reconstructs them as single tokens.
         var parts: [String] = ["default_agent", "launch"]
+        if let launchWorkspace { parts.append("--workspace"); parts.append(launchWorkspace) }
         if let agentArg { parts.append("--agent"); parts.append(agentArg) }
         if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
         if let paneArg { parts.append("--pane"); parts.append(paneArg) }
@@ -14804,7 +14839,9 @@ struct CMUXCLI {
             "all_windows": options.scope == .all
         ]
         if let workspaceRaw = options.workspaceHandle {
-            guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
+            guard let workspaceHandle = client.scopedWindow != nil
+                ? try resolveWorkspaceId(workspaceRaw, client: client)
+                : try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
                 throw CLIError(message: "Invalid workspace handle")
             }
             params["workspace_id"] = workspaceHandle
@@ -14866,7 +14903,9 @@ struct CMUXCLI {
         let allWindows = windowsPayload["windows"] as? [[String: Any]] ?? []
 
         if let workspaceRaw = options.workspaceHandle {
-            guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
+            guard let workspaceHandle = client.scopedWindow != nil
+                ? try resolveWorkspaceId(workspaceRaw, client: client)
+                : try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
                 throw CLIError(message: "Invalid workspace handle")
             }
 
@@ -14875,7 +14914,10 @@ struct CMUXCLI {
             let window = allWindows.first(where: { treeItemMatchesHandle($0, handle: workspaceWindowHandle) })
                 ?? treeFallbackWindow(from: workspaceListPayload)
 
-            let workspaces = workspaceListPayload["workspaces"] as? [[String: Any]] ?? []
+            // workspace.list enumerates the manager; workspace_id selects its
+            // owner, not an individual row. Filter the explicit tree target.
+            let workspaces = (workspaceListPayload["workspaces"] as? [[String: Any]] ?? [])
+                .filter { treeItemMatchesHandle($0, handle: workspaceHandle) }
             if workspaces.isEmpty {
                 throw CLIError(message: "Workspace not found")
             }

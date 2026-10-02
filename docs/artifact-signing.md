@@ -42,8 +42,8 @@ gh workflow run sign-artifact.yml --repo Stage-11-Agentics/c11 --ref main \
   -f purpose=candidate -f target_tag=v1.0.0
 ```
 
-The standard `macos-15` runner uses process-local Xcode 26.3, Zig 0.15.2 and
-create-dmg 8.0.0.
+The `macos-15-xlarge` runner uses process-local Xcode 16.4, Zig 0.15.2 and
+create-dmg 8.0.0, matching the observed production Release toolchain.
 Unavailable Xcode or missing signing inputs fail explicitly. The run summary
 records individual asset SHA-256 values and the uploaded archive identity/digest.
 Artifact names include purpose, 12-character source SHA, run id and attempt:

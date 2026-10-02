@@ -193,9 +193,11 @@ final class AgentStartupProbeTests: XCTestCase {
             try? input.fileHandleForWriting.close()
             fixture.waitUntilExit() // fixture self-terminates after ten seconds
         }
-        let deadline = Date().addingTimeInterval(3)
+        // Interpreter/PTY startup gets its own budget under Atlas build load.
+        // The fixture still self-terminates after ten seconds.
+        let fixtureStartupDeadline = Date().addingTimeInterval(10)
         var recorded: [String: Any]?
-        while Date() < deadline {
+        while Date() < fixtureStartupDeadline {
             if let data = try? Data(contentsOf: report),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 recorded = object
@@ -208,8 +210,9 @@ final class AgentStartupProbeTests: XCTestCase {
         let foreground = try XCTUnwrap(object["foreground"] as? Int32)
         let background = try XCTUnwrap(object["background"] as? Int32)
         XCTAssertGreaterThan(background, foreground)
+        let snapshotDeadline = Date().addingTimeInterval(3)
         var snapshot: AgentStartupProbe.Snapshot?
-        while Date() < deadline {
+        while Date() < snapshotDeadline {
             let sample = AgentStartupProbe.nativeSnapshot(ttyName: tty)
             if sample?.processes.contains(where: { $0.pid == foreground && $0.executablePath.hasSuffix("/sleep") }) == true {
                 snapshot = sample

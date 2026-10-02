@@ -420,7 +420,9 @@ Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 
 Claude lifecycle hooks clear only their originating tab's notices. Unknown tab
 attribution preserves existing notices. Bypass AskUserQuestion and ExitPlanMode
-enter waiting from PreToolUse; a follow-up Notification replaces that tab's item.
+enter waiting from PreToolUse. ExitPlanMode also enters waiting in plan mode,
+which Claude reports after a bypass-started session enters plan mode. A follow-up
+Notification replaces that tab's item.
 Flags appear separately in the enabled menu-bar extra, including suppressed
 flags; routine clear/read controls do not lower them.
 

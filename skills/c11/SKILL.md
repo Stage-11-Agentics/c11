@@ -73,7 +73,7 @@ priority; suppression reroutes routine attention, it never blocks escalation.
 
 Feed and the configured attention jump use oldest flags first, then oldest eligible open asks (tab UUID, then workspace UUID for ties). The jump continues through oldest eligible unread completions/legacy notices with exact tab targets.
 
-Show Notifications (default ⌘I; custom bindings preserved) opens the read-only Feed quick view: arrows select, Return opens that exact tab, Esc restores the originating focus, and Turns shows finished turns without removing attention-jump targets.
+Show Notifications (default ⌘I; custom bindings preserved) opens the read-only Feed quick view: arrows select, Tab switches Asks/Turns, Return opens that exact tab, Esc restores the originating focus, and Turns shows finished turns without removing attention-jump targets.
 
 ### Flag
 

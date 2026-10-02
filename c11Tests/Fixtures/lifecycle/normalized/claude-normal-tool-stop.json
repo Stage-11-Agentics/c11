@@ -3,73 +3,12 @@
   "origin": "observed",
   "events": [
     {
-      "t": "2026-10-02T02:28:06.470Z",
-      "source": "c11-event",
-      "name": "surface.created",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3780,
-        "surface": "tab-normal",
-        "payload": {
-          "kind": "terminal"
-        }
-      },
-      "seq": 1,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:28:06.472Z",
-      "source": "c11-event",
-      "name": "metadata.changed",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3781,
-        "surface": "tab-normal",
-        "payload": {
-          "key": "title",
-          "scope": "surface",
-          "source": "declare",
-          "value": "[redacted]"
-        }
-      },
-      "seq": 2,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:28:07.037Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3782,
-        "surface": "tab-normal",
-        "payload": {
-          "state": "idle"
-        }
-      },
-      "seq": 3,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:28:07.063Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3783,
-        "surface": "tab-normal",
-        "payload": {
-          "state": "working"
-        }
-      },
-      "seq": 4,
-      "t_ms": 0
-    },
-    {
       "t": "2026-10-02T02:28:08Z",
       "source": "claude-hook",
       "name": "SessionStart",
       "tool_name": null,
+      "session_id": "sess-8",
+      "tab": "tab-normal",
       "attrs": {
         "session_id": "sess-8",
         "scratchpad_dir": "[redacted]",
@@ -77,7 +16,9 @@
         "source": "startup",
         "model": "claude-haiku-4-5-20251001"
       },
-      "seq": 5,
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
       "t_ms": 0
     },
     {
@@ -85,6 +26,8 @@
       "source": "claude-hook",
       "name": "UserPromptSubmit",
       "tool_name": null,
+      "session_id": "sess-8",
+      "tab": "tab-normal",
       "attrs": {
         "session_id": "sess-8",
         "scratchpad_dir": "[redacted]",
@@ -92,14 +35,40 @@
         "permission_mode": "default",
         "hook_event_name": "UserPromptSubmit"
       },
-      "seq": 6,
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
       "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:28:10Z",
+      "source": "claude-hook",
+      "name": "PostToolUse",
+      "tool_name": "Bash",
+      "session_id": "sess-8",
+      "tab": "tab-normal",
+      "attrs": {
+        "session_id": "sess-8",
+        "scratchpad_dir": "[redacted]",
+        "prompt_id": "id-5",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-2",
+        "duration_ms": "254"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 2000
     },
     {
       "t": "2026-10-02T02:28:10Z",
       "source": "claude-hook",
       "name": "PreToolUse",
       "tool_name": "Bash",
+      "session_id": "sess-8",
+      "tab": "tab-normal",
       "attrs": {
         "session_id": "sess-8",
         "scratchpad_dir": "[redacted]",
@@ -109,66 +78,54 @@
         "tool_name": "Bash",
         "tool_use_id": "tool-2"
       },
-      "seq": 7,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:28:10Z",
-      "source": "claude-hook",
-      "name": "PostToolUse",
-      "tool_name": "Bash",
-      "attrs": {
-        "session_id": "sess-8",
-        "scratchpad_dir": "[redacted]",
-        "prompt_id": "id-5",
-        "permission_mode": "default",
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash",
-        "tool_use_id": "tool-2",
-        "duration_ms": 254
-      },
-      "seq": 8,
-      "t_ms": 0
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 2000
     },
     {
       "t": "2026-10-02T02:28:13Z",
       "source": "claude-hook",
       "name": "Stop",
       "tool_name": null,
+      "session_id": "sess-8",
+      "tab": "tab-normal",
       "attrs": {
         "session_id": "sess-8",
         "scratchpad_dir": "[redacted]",
         "prompt_id": "id-5",
         "permission_mode": "default",
         "hook_event_name": "Stop",
-        "stop_hook_active": false,
-        "background_tasks": [],
-        "session_crons": []
+        "stop_hook_active": "false",
+        "background_tasks": "0",
+        "session_crons": "0"
       },
-      "seq": 9,
-      "t_ms": 0
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 5000
     },
     {
       "t": "2026-10-02T02:28:15Z",
       "source": "oracle",
       "name": "after-normal",
       "tool_name": null,
+      "session_id": null,
+      "tab": "tab-normal",
       "attrs": {
-        "tabs": {
-          "tab-normal": {
-            "metadata": {
-              "activity": "working",
-              "terminal_type": "claude-code",
-              "model": "haiku",
-              "lifecycle_state": "throttled"
-            },
-            "unread_notifications": 0,
-            "notification_titles": []
-          }
-        }
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
       },
-      "seq": 10,
-      "t_ms": 0
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": ""
+      },
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 7000
     }
   ],
   "current": {

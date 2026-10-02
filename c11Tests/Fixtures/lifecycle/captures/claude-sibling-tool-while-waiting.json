@@ -2,159 +2,205 @@
   "id": "claude-sibling-tool-while-waiting",
   "provider": "claude-code",
   "mode": "bypass",
-  "hooks": [
+  "origin": "observed",
+  "events": [
     {
-      "t": "2026-10-02T02:26:16Z",
+      "t": "2026-10-02T02:59:57Z",
+      "source": "oracle",
+      "name": "ask-is-waiting",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
+      },
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
+      },
+      "seq": 1,
+      "id": "ev-1",
+      "t_ms": 0
+    },
+    {
+      "t": "2026-10-02T02:59:58.124Z",
+      "source": "c11-event",
+      "name": "surface.created",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "kind": "terminal",
+        "c11_seq": "4116",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
+      "t_ms": 1124
+    },
+    {
+      "t": "2026-10-02T02:59:58.125Z",
+      "source": "c11-event",
+      "name": "metadata.changed",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "key": "title",
+        "scope": "surface",
+        "source": "declare",
+        "value": "[redacted]",
+        "c11_seq": "4117",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 1125
+    },
+    {
+      "t": "2026-10-02T02:59:58.727Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "state": "idle",
+        "c11_seq": "4118",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 1727
+    },
+    {
+      "t": "2026-10-02T02:59:58.769Z",
+      "source": "c11-event",
+      "name": "liveness.derived",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-sibling",
+      "attrs": {
+        "state": "working",
+        "c11_seq": "4119",
+        "workspace": "ws-repair"
+      },
+      "oracle": null,
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 1769
+    },
+    {
+      "t": "2026-10-02T03:00:00Z",
       "source": "claude-hook",
       "name": "SessionStart",
-      "payload": {
+      "tool_name": null,
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
         "session_id": "sess-2",
         "scratchpad_dir": "[redacted]",
         "hook_event_name": "SessionStart",
         "source": "startup",
         "model": "claude-haiku-4-5-20251001"
-      }
+      },
+      "oracle": null,
+      "seq": 6,
+      "id": "ev-6",
+      "t_ms": 3000
     },
     {
-      "t": "2026-10-02T02:26:16Z",
+      "t": "2026-10-02T03:00:00Z",
       "source": "claude-hook",
       "name": "UserPromptSubmit",
-      "payload": {
+      "tool_name": null,
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
         "session_id": "sess-2",
         "scratchpad_dir": "[redacted]",
         "prompt_id": "id-2",
         "permission_mode": "bypassPermissions",
         "hook_event_name": "UserPromptSubmit"
-      }
+      },
+      "oracle": null,
+      "seq": 7,
+      "id": "ev-7",
+      "t_ms": 3000
     },
     {
-      "t": "2026-10-02T02:26:19Z",
+      "t": "2026-10-02T03:00:02Z",
       "source": "claude-hook",
       "name": "PreToolUse",
       "tool_name": "Bash",
-      "payload": {
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
         "session_id": "sess-2",
         "scratchpad_dir": "[redacted]",
         "prompt_id": "id-2",
         "permission_mode": "bypassPermissions",
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
-        "tool_use_id": "tool-3"
-      }
+        "tool_use_id": "tool-2"
+      },
+      "oracle": null,
+      "seq": 8,
+      "id": "ev-8",
+      "t_ms": 5000
     },
     {
-      "t": "2026-10-02T02:26:19Z",
+      "t": "2026-10-02T03:00:03Z",
       "source": "claude-hook",
       "name": "PostToolUse",
       "tool_name": "Bash",
-      "payload": {
+      "session_id": "sess-2",
+      "tab": "tab-sibling",
+      "attrs": {
         "session_id": "sess-2",
         "scratchpad_dir": "[redacted]",
         "prompt_id": "id-2",
         "permission_mode": "bypassPermissions",
         "hook_event_name": "PostToolUse",
         "tool_name": "Bash",
-        "tool_use_id": "tool-3",
-        "duration_ms": 271
-      }
-    }
-  ],
-  "c11_events": [
-    {
-      "t": "2026-10-02T02:26:14.764Z",
-      "source": "c11-event",
-      "name": "surface.created",
-      "c11_seq": 3727,
-      "payload": {
-        "kind": "terminal"
+        "tool_use_id": "tool-2",
+        "duration_ms": "268"
       },
-      "workspace": "ws-bypass",
-      "surface": "tab-sibling"
+      "oracle": null,
+      "seq": 9,
+      "id": "ev-9",
+      "t_ms": 6000
     },
     {
-      "t": "2026-10-02T02:26:14.764Z",
-      "source": "c11-event",
-      "name": "metadata.changed",
-      "c11_seq": 3728,
-      "payload": {
-        "key": "title",
-        "scope": "surface",
-        "source": "declare",
-        "value": "[redacted]"
+      "t": "2026-10-02T03:00:03Z",
+      "source": "oracle",
+      "name": "after-sibling",
+      "tool_name": null,
+      "session_id": null,
+      "tab": "tab-ask",
+      "attrs": {
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled",
+        "sibling_mark": "working",
+        "sibling_unread": "0"
       },
-      "workspace": "ws-bypass",
-      "surface": "tab-sibling"
-    },
-    {
-      "t": "2026-10-02T02:26:15.005Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "c11_seq": 3729,
-      "payload": {
-        "state": "idle"
+      "oracle": {
+        "mark": "waiting",
+        "unread": 1,
+        "activity": "idle",
+        "status": ""
       },
-      "workspace": "ws-bypass",
-      "surface": "tab-sibling"
-    },
-    {
-      "t": "2026-10-02T02:26:15.021Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "c11_seq": 3730,
-      "payload": {
-        "state": "working"
-      },
-      "workspace": "ws-bypass",
-      "surface": "tab-sibling"
-    },
-    {
-      "t": "2026-10-02T02:26:17.036Z",
-      "source": "c11-event",
-      "name": "waiting.entered",
-      "c11_seq": 3731,
-      "payload": {},
-      "workspace": "ws-bypass"
-    },
-    {
-      "t": "2026-10-02T02:27:26.543Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "c11_seq": 3762,
-      "payload": {
-        "state": "idle"
-      },
-      "workspace": "ws-bypass",
-      "surface": "tab-sibling"
-    }
-  ],
-  "oracles": [
-    {
-      "name": "after-sibling-tool",
-      "t": "2026-10-02T02:26:22Z",
-      "tabs": {
-        "tab-ask": {
-          "metadata": {
-            "activity": "idle",
-            "terminal_type": "claude-code",
-            "model": "haiku",
-            "lifecycle_state": "throttled"
-          },
-          "unread_notifications": 1,
-          "notification_titles": [
-            "Claude Code"
-          ]
-        },
-        "tab-sibling": {
-          "metadata": {
-            "activity": "working",
-            "terminal_type": "claude-code",
-            "model": "haiku",
-            "lifecycle_state": "throttled"
-          },
-          "unread_notifications": 0,
-          "notification_titles": []
-        }
-      }
+      "seq": 10,
+      "id": "ev-10",
+      "t_ms": 6000
     }
   ]
 }

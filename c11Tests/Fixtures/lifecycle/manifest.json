@@ -8,7 +8,7 @@
     "path_cli_version": "c11 0.67.0 (131)",
     "source_sha": "0ff8887e5e965400b01645ef40b85fd0b2605cf2",
     "capture_host": "production-c11",
-    "amendment": "Captured from production c11. AC1 tagged-build wording is amended. Cases that need a disposable app are marked recapture on tagged build.",
+    "amendment": "Repair cycle 1 recaptured the reachable incidents on production c11. The app was not restarted. Untriggered cases are gaps with recapture_required tagged-build.",
     "providers": {
       "claude-code": "2.1.287 (Claude Code)",
       "codex": "codex-cli 0.159.3",
@@ -25,14 +25,14 @@
       "incident": "bypass-ask-user-question",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
+      "recapture_required": null,
       "gap": null,
-      "replay_recipe": "launch-agent claude-code haiku effort low, bypass command, per-process settings hook logger, prompt to call AskUserQuestion once, then read get-metadata and list-notifications.",
+      "replay_recipe": "launch-agent claude-code haiku effort low, bypass command, per-process settings hook logger. Poll until the ask tab's mark is waiting, then record that oracle.",
       "capture_file": "captures/claude-bypass-ask.json",
       "normalized_file": "normalized/claude-bypass-ask.json",
       "missing_native_signals": [],
-      "current_behavior": "The after-ask oracle, two seconds after AskUserQuestion, was working with 0 unread. waiting.entered and the Notification hook are later in this same record. Hook names: Notification, PermissionRequest, PreToolUse, SessionStart, UserPromptSubmit. Tool name on PreToolUse and PermissionRequest was AskUserQuestion. Notification type was permission_prompt.",
-      "intended_projection": "A bypass AskUserQuestion is a blocked ask. The originating unsuppressed tab enters waiting without depending on a later Notification, and that waiting state is the ask rather than an unread completion."
+      "current_behavior": "AskUserQuestion was followed by an oracle whose mark was waiting. The ask tab had one unread notification, and waiting.entered is in the same record.",
+      "intended_projection": "A bypass AskUserQuestion is a blocked ask. The originating unsuppressed tab enters waiting."
     },
     {
       "id": "claude-sibling-tool-while-waiting",
@@ -41,31 +41,31 @@
       "incident": "sibling-tool-clears-waiting",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
-      "gap": "Ask tab was not waiting when the sibling started, so this run does not prove the clear. The sibling hook sequence is still real.",
-      "replay_recipe": "With the ask tab still in the bypass workspace, launch a second claude-code tab whose only tool is Bash ls. Snapshot notifications for both tabs after the sibling PreToolUse or Stop.",
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "Wait until tab A is waiting on an ask. Record that oracle. Then launch tab B and record its Bash PreToolUse, then oracle both tabs.",
       "capture_file": "captures/claude-sibling-tool-while-waiting.json",
       "normalized_file": "normalized/claude-sibling-tool-while-waiting.json",
       "missing_native_signals": [],
-      "current_behavior": "Tab ask was working before the sibling tool and waiting after. Unread on ask after sibling: 1. Sibling hooks: ['PostToolUse', 'PreToolUse', 'SessionStart', 'UserPromptSubmit'].",
-      "intended_projection": "Tab B starting a tool or submitting a prompt clears only tab B. Tab A's unread waiting state survives."
+      "current_behavior": "Tab A was waiting before tab B's Bash tool started. After that tool, tab A's mark was still waiting and its unread notification remained.",
+      "intended_projection": "A tool starting on tab B clears only tab B. Tab A's waiting mark survives."
     },
     {
       "id": "claude-bypass-exit-plan",
       "provider": "claude-code",
       "mode": "bypass",
       "incident": "bypass-exit-plan-mode",
-      "origin": "observed",
+      "origin": "gap",
       "derived_from": null,
-      "recapture": null,
-      "gap": "The model did not emit ExitPlanMode. No plan-exit event was fabricated.",
-      "replay_recipe": "launch-agent claude-code in the bypass workspace and prompt for ExitPlanMode only. Record hooks and the tab oracle.",
+      "recapture_required": "tagged-build",
+      "gap": "ExitPlanMode did not fire on production c11.",
+      "replay_recipe": "launch-agent claude-code with the tool list limited to ExitPlanMode and bypass permissions. Record the tool hook.",
       "capture_file": "captures/claude-bypass-exit-plan.json",
       "normalized_file": "normalized/claude-bypass-exit-plan.json",
       "missing_native_signals": [
-        "ExitPlanMode was not emitted"
+        "ExitPlanMode"
       ],
-      "current_behavior": "Observed mark working. Hook names ['SessionStart', 'Stop', 'UserPromptSubmit'].",
+      "current_behavior": "ExitPlanMode did not fire. The bypass launch offered only that tool, then the session stopped. No plan-exit event was recorded.",
       "intended_projection": "ExitPlanMode in bypass mode is a blocked ask. The tab enters waiting from the tool hook itself."
     },
     {
@@ -75,36 +75,50 @@
       "incident": "esc-interrupt",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
-      "gap": "The model stopped without a Bash sleep tool. Escape was sent after Stop, not during a tool.",
-      "replay_recipe": "launch-agent claude-code to run sleep 25. After PreToolUse, send-key escape to that tab only. Record the hooks that follow.",
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "launch-agent claude-code to run sleep 45. Send escape when Bash PreToolUse is present and PostToolUse and Stop are not.",
       "capture_file": "captures/claude-esc-interrupt.json",
       "normalized_file": "normalized/claude-esc-interrupt.json",
       "missing_native_signals": [
-        "turn.interrupted",
-        "Bash PreToolUse before escape"
+        "turn.interrupted"
       ],
-      "current_behavior": "No Bash PreToolUse arrived. Stop and SubagentStop fired, then Notification type idle_prompt. Escape was sent after that Stop, so this run does not show an in-flight interruption. The after-escape mark was waiting.",
-      "intended_projection": "An Esc interruption ends the turn. The tab must not stay working. A turn.interrupted signal is the intended journal event; this build has no such hook."
+      "current_behavior": "Escape was sent after Bash PreToolUse and before PostToolUse and Stop. The following oracle mark is the observed tab state.",
+      "intended_projection": "An Esc interruption during a tool ends the turn. The tab must not stay working. This build has no turn.interrupted hook."
     },
     {
       "id": "claude-restart-while-waiting",
       "provider": "claude-code",
       "mode": "bypass",
       "incident": "restart-while-waiting",
-      "origin": "observed",
+      "origin": "gap",
       "derived_from": null,
-      "recapture": null,
-      "gap": null,
-      "replay_recipe": "While the ask tab is up, send-key ctrl+c twice to that tab only. Snapshot both tabs before and after. This is an agent-process restart, not an app restart.",
+      "recapture_required": "tagged-build",
+      "gap": "Production c11 was not restarted.",
+      "replay_recipe": "Requires an app or agent restart while a tab is waiting. Not run against production c11.",
       "capture_file": "captures/claude-restart-while-waiting.json",
       "normalized_file": "normalized/claude-restart-while-waiting.json",
       "missing_native_signals": [
-        "app-restart sequence",
-        "SessionEnd within 4s of ctrl+c"
+        "restart sequence"
       ],
-      "current_behavior": "Two ctrl+c keystrokes did not produce SessionEnd within 4 seconds. After that window ask unread=1 and sibling unread=1, and the ask mark was still waiting. Hook names in the window: Notification, PermissionRequest, PreToolUse, SessionStart, UserPromptSubmit.",
-      "intended_projection": "Ending one waiting agent clears only that tab. A sibling's waiting state survives. App restart is a separate recapture."
+      "current_behavior": "The production app was not restarted. This case is not the clean session end. No restart sequence was recorded.",
+      "intended_projection": "Ending one waiting agent clears only that tab. A sibling's waiting state survives."
+    },
+    {
+      "id": "claude-session-end",
+      "provider": "claude-code",
+      "mode": "bypass",
+      "incident": "clean-session-end",
+      "origin": "observed",
+      "derived_from": null,
+      "recapture_required": null,
+      "gap": null,
+      "replay_recipe": "After Stop, send /exit to that tab only. Keep the SessionEnd hook only if get-metadata still answers for the tab.",
+      "capture_file": "captures/claude-session-end.json",
+      "normalized_file": "normalized/claude-session-end.json",
+      "missing_native_signals": [],
+      "current_behavior": "SessionEnd arrived while get-metadata for that tab still succeeded. The oracle after SessionEnd is the observed mark.",
+      "intended_projection": "A clean session end clears that tab's running turn. The mark comes from the oracle taken while the tab still exists."
     },
     {
       "id": "claude-normal-tool-stop",
@@ -113,9 +127,9 @@
       "incident": "normal-tool-then-stop",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
+      "recapture_required": null,
       "gap": null,
-      "replay_recipe": "Project command is claude without --dangerously-skip-permissions. Haiku, effort low, Bash ls once. A terminal permission prompt may be answered with send-key 1 and enter. No clicks.",
+      "replay_recipe": "Project command is claude without bypass. Haiku, effort low, Bash ls once. No permission key was required in the captured hooks.",
       "capture_file": "captures/claude-normal-tool-stop.json",
       "normalized_file": "normalized/claude-normal-tool-stop.json",
       "missing_native_signals": [],
@@ -127,18 +141,18 @@
       "provider": "codex",
       "mode": "bypass",
       "incident": "gaf-13-child-completion",
-      "origin": "observed",
+      "origin": "gap",
       "derived_from": null,
-      "recapture": null,
-      "gap": "No notify payload was observed. Absence is recorded; no Codex event was fabricated.",
-      "replay_recipe": "launch-agent codex --model gpt-5.6-luna --yolo. A PATH shim tees the wrapper notify payload, sanitizes it, then forwards to the bundled __c11-notify. Prompt asks for one ls subagent. No ~/.codex write.",
+      "recapture_required": "tagged-build",
+      "gap": "No Codex notify callback was observed.",
+      "replay_recipe": "launch-agent codex with the notify tee. A child notify with a distinct thread id is the event. None arrived.",
       "capture_file": "captures/codex-child-completion.json",
       "normalized_file": "normalized/codex-child-completion.json",
       "missing_native_signals": [
         "codex notify payload"
       ],
-      "current_behavior": "Notify records: 0. Distinct synthetic thread ids: 0. Mark idle.",
-      "intended_projection": "A child callback whose thread id is not the captured root must not be treated as the root finishing, and must not create the root's waiting notification. A missing thread id does not mutate attention."
+      "current_behavior": "No notify callback arrived. The retry recorded zero notify rows. No child-completion event was recorded.",
+      "intended_projection": "A child callback whose thread id is not the captured root must not be treated as the root finishing, and must not create the root's waiting notification."
     },
     {
       "id": "grok-session",
@@ -147,9 +161,9 @@
       "incident": "provider-grok",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
+      "recapture_required": null,
       "gap": null,
-      "replay_recipe": "launch-agent grok --model grok-4.7-build-fast --always-approve with a one-word prompt. The bundled wrapper has session identity only, no lifecycle hooks. Record c11 events and metadata. Do not read the session transcript.",
+      "replay_recipe": "launch-agent grok. The bundled wrapper has session identity only. Record the metadata oracle. Do not invent Claude hooks.",
       "capture_file": "captures/grok-session.json",
       "normalized_file": "normalized/grok-session.json",
       "missing_native_signals": [
@@ -169,9 +183,9 @@
       "incident": "provider-opencode",
       "origin": "observed",
       "derived_from": null,
-      "recapture": null,
+      "recapture_required": null,
       "gap": null,
-      "replay_recipe": "launch-agent opencode --model opencode/mimo-v2.6-flash-free. Per-process OPENCODE_CONFIG_CONTENT adds a capture plugin. The wrapper still supplies its own plugin through the other config slot. No ~/.config/opencode write.",
+      "replay_recipe": "launch-agent opencode with a per-process capture plugin. Keep plugin events that were actually written. Do not invent session.idle.",
       "capture_file": "captures/opencode-session.json",
       "normalized_file": "normalized/opencode-session.json",
       "missing_native_signals": [],
@@ -185,9 +199,9 @@
       "incident": "late-pretool-after-stop",
       "origin": "derived-reorder",
       "derived_from": "claude-normal-tool-stop",
-      "recapture": null,
+      "recapture_required": null,
       "gap": null,
-      "replay_recipe": "Not a second live run. The PreToolUse record from claude-normal-tool-stop is moved to just after that capture's Stop. Arrival order is the variant; payloads are the real sanitized records.",
+      "replay_recipe": "Not a second live run. The PreToolUse record from claude-normal-tool-stop is moved to just after that capture's Stop. Each event points at the source event id.",
       "capture_file": "captures/derived-late-pretool-after-stop.json",
       "normalized_file": "normalized/derived-late-pretool-after-stop.json",
       "missing_native_signals": [],
@@ -201,16 +215,16 @@
       "incident": "app-restart-while-waiting",
       "origin": "gap",
       "derived_from": null,
-      "recapture": "recapture on tagged build",
+      "recapture_required": "tagged-build",
       "gap": "Production c11 was not restarted.",
-      "replay_recipe": "Requires restarting c11. Not run: this Mac is on the production app and the operator session.",
+      "replay_recipe": "Requires restarting c11. Not run. The production app hosts the live fleet.",
       "capture_file": "captures/app-restart-while-waiting.json",
       "normalized_file": "normalized/app-restart-while-waiting.json",
       "missing_native_signals": [
         "app restart event sequence"
       ],
-      "current_behavior": "No app restart was performed. The agent-process ctrl+c case is the observed neighbor.",
-      "intended_projection": "After an app restart, a tab that was blocked stays blocked and unconfirmed rather than being dropped or applied to a sibling."
+      "current_behavior": "No app restart was performed. No restart event was recorded.",
+      "intended_projection": "After an app restart, a tab that was blocked stays blocked rather than being dropped or applied to a sibling."
     }
   ]
 }

@@ -3,211 +3,111 @@
   "origin": "observed",
   "events": [
     {
-      "t": "2026-10-02T02:26:17.036Z",
-      "source": "c11-event",
-      "name": "waiting.entered",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3731,
-        "surface": null,
-        "payload": {}
-      },
-      "seq": 1,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:26:33.758Z",
-      "source": "c11-event",
-      "name": "surface.created",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3745,
-        "surface": "tab-esc",
-        "payload": {
-          "kind": "terminal"
-        }
-      },
-      "seq": 2,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:26:33.759Z",
-      "source": "c11-event",
-      "name": "metadata.changed",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3746,
-        "surface": "tab-esc",
-        "payload": {
-          "key": "title",
-          "scope": "surface",
-          "source": "declare",
-          "value": "[redacted]"
-        }
-      },
-      "seq": 3,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:26:34.000Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3748,
-        "surface": "tab-esc",
-        "payload": {
-          "state": "idle"
-        }
-      },
-      "seq": 4,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:26:34.026Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3749,
-        "surface": "tab-esc",
-        "payload": {
-          "state": "working"
-        }
-      },
-      "seq": 5,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:26:35Z",
+      "t": "2026-10-02T03:05:29Z",
       "source": "claude-hook",
       "name": "SessionStart",
       "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
       "attrs": {
-        "session_id": "sess-6",
+        "session_id": "sess-7",
         "scratchpad_dir": "[redacted]",
         "hook_event_name": "SessionStart",
         "source": "startup",
         "model": "claude-haiku-4-5-20251001"
       },
-      "seq": 6,
+      "oracle": null,
+      "seq": 1,
+      "id": "ev-1",
       "t_ms": 0
     },
     {
-      "t": "2026-10-02T02:26:35Z",
+      "t": "2026-10-02T03:05:29Z",
       "source": "claude-hook",
       "name": "UserPromptSubmit",
       "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
       "attrs": {
-        "session_id": "sess-6",
+        "session_id": "sess-7",
         "scratchpad_dir": "[redacted]",
-        "prompt_id": "id-4",
+        "prompt_id": "id-8",
         "permission_mode": "bypassPermissions",
         "hook_event_name": "UserPromptSubmit"
       },
-      "seq": 7,
+      "oracle": null,
+      "seq": 2,
+      "id": "ev-2",
       "t_ms": 0
     },
     {
-      "t": "2026-10-02T02:26:42Z",
+      "t": "2026-10-02T03:05:38Z",
       "source": "claude-hook",
-      "name": "Stop",
-      "tool_name": null,
+      "name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "sess-7",
+      "tab": "tab-esc",
       "attrs": {
-        "session_id": "sess-6",
+        "session_id": "sess-7",
         "scratchpad_dir": "[redacted]",
-        "prompt_id": "id-4",
+        "prompt_id": "id-8",
         "permission_mode": "bypassPermissions",
-        "hook_event_name": "Stop",
-        "stop_hook_active": false,
-        "background_tasks": [],
-        "session_crons": []
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "tool-4"
       },
-      "seq": 8,
-      "t_ms": 0
+      "oracle": null,
+      "seq": 3,
+      "id": "ev-3",
+      "t_ms": 9000
     },
     {
-      "t": "2026-10-02T02:26:48Z",
-      "source": "claude-hook",
-      "name": "SubagentStop",
+      "t": "2026-10-02T03:05:40Z",
+      "source": "driver",
+      "name": "escape-sent",
       "tool_name": null,
+      "session_id": "sess-7",
+      "tab": "tab-esc",
       "attrs": {
-        "session_id": "sess-6",
-        "scratchpad_dir": "[redacted]",
-        "prompt_id": "id-4",
-        "permission_mode": "bypassPermissions",
-        "agent_id": "sess-7",
-        "agent_type": "",
-        "hook_event_name": "SubagentStop",
-        "stop_hook_active": false,
-        "agent_transcript_path": "[redacted]",
-        "background_tasks": [],
-        "session_crons": []
+        "stop_seen": "false",
+        "post_seen": "false",
+        "bash_pretool": "true",
+        "key_sent": "true"
       },
-      "seq": 9,
-      "t_ms": 0
+      "oracle": null,
+      "seq": 4,
+      "id": "ev-4",
+      "t_ms": 11000
     },
     {
-      "t": "2026-10-02T02:27:42.004Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3770,
-        "surface": "tab-esc",
-        "payload": {
-          "state": "idle"
-        }
-      },
-      "seq": 10,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:27:42Z",
-      "source": "claude-hook",
-      "name": "Notification",
-      "tool_name": null,
-      "attrs": {
-        "session_id": "sess-6",
-        "scratchpad_dir": "[redacted]",
-        "prompt_id": "id-4",
-        "hook_event_name": "Notification",
-        "notification_type": "idle_prompt"
-      },
-      "seq": 11,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:27:58Z",
+      "t": "2026-10-02T03:05:40Z",
       "source": "oracle",
       "name": "after-escape",
       "tool_name": null,
+      "session_id": null,
+      "tab": "tab-esc",
       "attrs": {
-        "tabs": {
-          "tab-esc": {
-            "metadata": {
-              "activity": "idle",
-              "terminal_type": "claude-code",
-              "model": "haiku",
-              "lifecycle_state": "throttled"
-            },
-            "unread_notifications": 1,
-            "notification_titles": [
-              "Claude Code"
-            ]
-          }
-        }
+        "terminal_type": "claude-code",
+        "model": "haiku",
+        "lifecycle_state": "throttled"
       },
-      "seq": 12,
-      "t_ms": 0
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": ""
+      },
+      "seq": 5,
+      "id": "ev-5",
+      "t_ms": 11000
     }
   ],
   "current": {
-    "mark": "waiting",
-    "notes": "No Bash PreToolUse arrived. Stop and SubagentStop fired, then Notification type idle_prompt. Escape was sent after that Stop, so this run does not show an in-flight interruption. The after-escape mark was waiting."
+    "mark": "working",
+    "notes": "Escape was sent after Bash PreToolUse and before PostToolUse and Stop. The following oracle mark is the observed tab state."
   },
   "intended": {
     "mark": "idle",
-    "notes": "An Esc interruption ends the turn. The tab must not stay working. A turn.interrupted signal is the intended journal event; this build has no such hook."
+    "notes": "An Esc interruption during a tool ends the turn. The tab must not stay working. This build has no turn.interrupted hook."
   }
 }

@@ -3,89 +3,26 @@
   "origin": "observed",
   "events": [
     {
-      "t": "2026-10-02T02:30:30.766Z",
-      "source": "c11-event",
-      "name": "surface.created",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3840,
-        "surface": "tab-grok",
-        "payload": {
-          "kind": "terminal"
-        }
-      },
-      "seq": 1,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:30:30.768Z",
-      "source": "c11-event",
-      "name": "metadata.changed",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3841,
-        "surface": "tab-grok",
-        "payload": {
-          "key": "title",
-          "scope": "surface",
-          "source": "declare",
-          "value": "[redacted]"
-        }
-      },
-      "seq": 2,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:30:31.175Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3842,
-        "surface": "tab-grok",
-        "payload": {
-          "state": "idle"
-        }
-      },
-      "seq": 3,
-      "t_ms": 0
-    },
-    {
-      "t": "2026-10-02T02:30:31.176Z",
-      "source": "c11-event",
-      "name": "liveness.derived",
-      "tool_name": null,
-      "attrs": {
-        "c11_seq": 3843,
-        "surface": "tab-grok",
-        "payload": {
-          "state": "working"
-        }
-      },
-      "seq": 4,
-      "t_ms": 0
-    },
-    {
       "t": "2026-10-02T02:30:56Z",
       "source": "oracle",
       "name": "after-grok-wait",
       "tool_name": null,
+      "session_id": null,
+      "tab": "tab-grok",
       "attrs": {
-        "tabs": {
-          "tab-grok": {
-            "metadata": {
-              "activity": "working",
-              "terminal_type": "grok",
-              "model_detected": "grok-4.7-build-fast",
-              "model_label": "grok-4.7-build-f",
-              "lifecycle_state": "throttled"
-            },
-            "unread_notifications": 0,
-            "notification_titles": []
-          }
-        }
+        "terminal_type": "grok",
+        "model_detected": "grok-4.7-build-fast",
+        "model_label": "grok-4.7-build-f",
+        "lifecycle_state": "throttled"
       },
-      "seq": 5,
+      "oracle": {
+        "mark": "working",
+        "unread": 0,
+        "activity": "working",
+        "status": ""
+      },
+      "seq": 1,
+      "id": "ev-1",
       "t_ms": 0
     }
   ],

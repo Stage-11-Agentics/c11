@@ -14075,6 +14075,9 @@ struct CMUXCLI {
                 parts.append(handle)
             }
         }
+        if let startup = payload["startup"] as? String {
+            parts.append("startup=\(startup)")
+        }
         return parts.joined(separator: " ")
     }
 

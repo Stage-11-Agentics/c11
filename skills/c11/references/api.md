@@ -155,7 +155,13 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new tab or a
     # fresh workspace. One command owns the per-agent invocation quirks, model/effort
     # flag syntax, identity-at-birth (env + metadata + title), and prompt delivery;
-    # --json returns the new refs. Canonical reference: docs/launch-agent-reference.md.
+    # Both prompt flags stage a private byte-exact file; only a short file-reading
+    # instruction reaches the shell. The owned copy lives until tab close.
+    # --json returns refs, prompt_file, startup and startup_process. started means
+    # an identified foreground process, not readiness or a prompt-read receipt.
+    # pending means startup was not proven. Post-boot kinds start their 2.5-second
+    # prompt delay after the launcher Return, including late terminal attachment.
+    # Canonical reference: docs/launch-agent-reference.md.
     # --system-prompt-mode append|replace injects the kind's system-prompt flag
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.

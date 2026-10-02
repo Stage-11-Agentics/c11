@@ -215,6 +215,21 @@ final class ConfigCommandCoreTests: XCTestCase {
         XCTAssertEqual(r2.prompt, "override")
     }
 
+    func testSavedLaunchPreservesLiteralPromptWhitespace() throws {
+        let body = "  synthetic\n' $() 日本語\n trailing  "
+        let saved = SavedAgentConfig(id: "literal", name: "literal", order: 0,
+            config: AgentLaunchConfig(harness: "codex", initialPrompt: body))
+        XCTAssertEqual(ConfigCommandCore.buildLaunchRequest(from: saved, promptOverride: nil).prompt, body)
+        for fromFile in [false, true] {
+            let inputs = try ConfigCommandCore.parseLaunchInputs(
+                nameOrId: "literal", pane: nil, workspace: nil, newWorkspace: false,
+                cwd: nil, prompt: fromFile ? nil : body, promptFile: fromFile ? "/fixture" : nil,
+                promptFileContents: fromFile ? body : nil, json: true)
+            XCTAssertEqual(inputs.prompt, body)
+            XCTAssertEqual(ConfigCommandCore.buildLaunchRequest(from: saved, promptOverride: inputs.prompt).prompt, body)
+        }
+    }
+
     // MARK: window / axis parsing
 
     func testParseWindowAcceptsCanonicalAndDays() throws {

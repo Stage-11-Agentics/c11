@@ -48,7 +48,7 @@ private struct ConfirmCard: View {
     @State private var pulse: Bool = false
 
     private var selected: ConfirmSelectionField {
-        runtime.confirmSelection[panelId] ?? .confirm
+        runtime.confirmSelectionForDisplay(panelId: panelId)
     }
 
     private var isCritical: Bool {

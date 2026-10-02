@@ -46,6 +46,27 @@ final class NotificationAndMenuBarTests: XCTestCase {
         return condition()
     }
 
+    /// These async socket tests must register their workspace's owner, as a
+    /// real window does. Assigning only the active pointers is temporary: the
+    /// host re-synchronizes them while captureRuntimeEnv/waitUntil yields.
+    private func registerNotificationTestWindow(
+        manager: WorkspaceManager,
+        appDelegate: AppDelegate
+    ) -> NSWindow {
+        let windowId = UUID()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        appDelegate.registerMainWindow(
+            window, windowId: windowId, workspaceManager: manager,
+            sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState()
+        )
+        return window
+    }
+
     private func legacyCodexNotifyPayload(threadId: String) throws -> String {
         let data = try JSONSerialization.data(
             withJSONObject: [
@@ -231,8 +252,10 @@ final class NotificationAndMenuBarTests: XCTestCase {
         appDelegate.notificationStore = store
         controller.workspaceManager = manager
         AppFocusState.overrideIsFocused = false
+        let testWindow = registerNotificationTestWindow(manager: manager, appDelegate: appDelegate)
 
         defer {
+            testWindow.close()
             store.resetWaitingEdgeHandlerForTesting()
             store.resetNotificationDeliveryHandlerForTesting()
             store.replaceNotificationsForTesting(originalNotifications)
@@ -266,6 +289,8 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
+        XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager,
+                      "Fixture must remain addressable across async host window synchronization")
         let response = controller.v2DispatchNotification(
             "notification.create_for_tab",
             id: 1,
@@ -306,8 +331,10 @@ final class NotificationAndMenuBarTests: XCTestCase {
         appDelegate.notificationStore = store
         controller.workspaceManager = manager
         AppFocusState.overrideIsFocused = false
+        let testWindow = registerNotificationTestWindow(manager: manager, appDelegate: appDelegate)
 
         defer {
+            testWindow.close()
             store.resetWaitingEdgeHandlerForTesting()
             store.resetNotificationDeliveryHandlerForTesting()
             store.replaceNotificationsForTesting(originalNotifications)
@@ -340,6 +367,8 @@ final class NotificationAndMenuBarTests: XCTestCase {
             ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
         })
 
+        XCTAssertTrue(appDelegate.workspaceManagerFor(workspaceId: workspace.id) === manager,
+                      "Fixture must remain addressable across async host window synchronization")
         let response = controller.v2DispatchNotification(
             "notification.create_for_tab",
             id: 2,

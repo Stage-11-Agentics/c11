@@ -10921,6 +10921,18 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
 #if DEBUG
+    var debugLayoutFollowUpSnapshotForTesting: (flushCount: UInt64, active: Bool) {
+        (debugLayoutFlushCount, layoutFollowUpTimeoutWorkItem != nil)
+    }
+
+    func debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: Bool = false) {
+        beginEventDrivenLayoutFollowUp(reason: "test.deferred.layout", includeGeometry: includeGeometry)
+    }
+
+    func debugClearLayoutFollowUpForTesting() {
+        clearLayoutFollowUp()
+    }
+
     func debugRunLayoutFollowUpForTesting(terminalFocusPanelId: UUID? = nil) {
         beginEventDrivenLayoutFollowUp(
             reason: "test.workspace.layout",

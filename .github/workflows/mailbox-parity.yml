@@ -167,13 +167,15 @@ jobs:
             -only-testing:c11LogicTests/MailboxTabResolverTests \
             -only-testing:c11LogicTests/MailboxULIDTests \
             -only-testing:c11LogicTests/MailboxDrainTests \
+            -only-testing:c11LogicTests/MailboxReceiptRecorderTests \
             -only-testing:c11LogicTests/StdinHandlerFormattingTests \
             COMPILER_INDEX_STORE_ENABLE=NO \
             test
 
       - name: Mailbox drain CLI behavior
         # The c11-logic build above also builds the c11 CLI. This drives it
-        # against a fake c11 socket: a stall after the claim, an empty inbox
-        # beside a full one, a closed stdout pipe, recipient attribution, a
-        # moved tab, and the claim deadline.
+        # against fake c11 sockets: stalled, reading one line then stopping,
+        # reading nothing, slow; an empty inbox beside a full one, a closed
+        # stdout pipe, delivery receipts and their attribution, a moved tab,
+        # and the claim cutoff.
         run: C11_CLI_BIN="$PWD/.ci-derived-data/Build/Products/Debug/c11" python3 tests/test_mailbox_hook_drain_cli.py

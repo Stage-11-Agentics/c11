@@ -490,6 +490,8 @@
 		C2570021A1B2C3D4E5F60719 /* MailboxDrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */; };
 		C2570022A1B2C3D4E5F60719 /* MailboxFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */; };
 		C2570031A1B2C3D4E5F60718 /* MailboxDrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */; };
+		C2570013A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */; };
+		C2570032A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1014,6 +1016,8 @@
 		C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxDrain.swift; sourceTree = "<group>"; };
 		C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxFraming.swift; sourceTree = "<group>"; };
 		C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDrainTests.swift; sourceTree = "<group>"; };
+		C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxReceiptRecorder.swift; sourceTree = "<group>"; };
+		C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxReceiptRecorderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1224,6 +1228,7 @@
 				D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */,
 				C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */,
 				C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */,
+				C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */,
 				C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */,
 				A5008F12 /* TabTitleBarView.swift */,
 				C9A3B2A7D755BCA0666E041D /* WorkspaceRootEditor.swift */,
@@ -1523,6 +1528,7 @@
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
+				C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */,
 				D7104BF1A1B2C3D4E5F60718 /* MailboxIOTests.swift */,
 				D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */,
 				D7107BF1A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift */,
@@ -1855,6 +1861,7 @@
 				BAE105919F0262DEA7D0DE0C /* MailboxIOTests.swift in Sources */,
 				3D7DB8FD9FE7DECBA43949B6 /* MailboxLayoutTests.swift in Sources */,
 				C2570031A1B2C3D4E5F60718 /* MailboxDrainTests.swift in Sources */,
+				C2570032A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift in Sources */,
 				176BB8C7A69033D4F4671809 /* MailboxOutboxWatcherTests.swift in Sources */,
 				39AF4F57C52E593EC8CF0680 /* MailboxTabResolverTests.swift in Sources */,
 				C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */,
@@ -2041,6 +2048,7 @@
 				D7106BF0A1B2C3D4E5F60718 /* MailboxEnvelope.swift in Sources */,
 				C2570011A1B2C3D4E5F60718 /* MailboxDrain.swift in Sources */,
 				C2570012A1B2C3D4E5F60718 /* MailboxFraming.swift in Sources */,
+				C2570013A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift in Sources */,
 				D7108BF0A1B2C3D4E5F60718 /* MailboxDispatchLog.swift in Sources */,
 				D710ABF0A1B2C3D4E5F60718 /* MailboxTabResolver.swift in Sources */,
 				D710ADD0A1B2C3D4E5F60718 /* MailboxAddress.swift in Sources */,

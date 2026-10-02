@@ -306,18 +306,13 @@ enum MailboxHookOutput {
     /// No claim starts after this many seconds of the hook process's life.
     /// Claude and Codex kill a hook at 10 s and then discard its stdout; mail
     /// claimed that late could land in `_read/` without reaching the agent.
-    /// What follows a claim is one stdout write and spawning the detached
-    /// reporter: no socket I/O, so it cannot run into the kill.
+    /// What follows a claim is one stdout write and one receipt file: no
+    /// socket I/O, so it cannot run into the kill.
     static let claimDeadlineSeconds: TimeInterval = 6
 
     static func mayClaim(processElapsedSeconds: TimeInterval?) -> Bool {
         (processElapsedSeconds ?? 0) < claimDeadlineSeconds
     }
-
-    /// Ceiling on the plain `recv --drain` delivery report (capability probe
-    /// included). The hook drain does not report inline: it hands the report
-    /// to a detached process.
-    static let reportBudgetSeconds: TimeInterval = 1
 
     /// Whether this hook invocation may consume mail at all.
     ///
@@ -378,5 +373,111 @@ enum MailboxHookOutput {
             options: [.sortedKeys, .withoutEscapingSlashes]
         ) else { return "" }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+// MARK: - Delivery receipts
+
+/// A drain's record of what it delivered, handed to the app through the
+/// filesystem: `<mailboxes>/_receipts/<ULID>.receipt`. The CLI writes one per
+/// drained batch right after the claim (temp file + rename, no socket), and
+/// the app turns each delivery into a `mailbox.delivered` event with
+/// `via: "drain"` and deletes the receipt (`MailboxReceiptRecorder`). No
+/// connection means nothing to authorize or authenticate, and a paused, quit
+/// or crashed app records the delivery when it next runs.
+///
+/// Same trust level as `_outbox/`: any local process of the user can write
+/// one, so content is validated and size-limited, and anything malformed is
+/// moved to `_receipts/_rejected/`.
+struct MailboxDeliveryReceipt: Equatable {
+
+    struct Delivery: Equatable {
+        let id: String
+        let recipient: String
+    }
+
+    static let version = 1
+    static let directoryName = "_receipts"
+    static let rejectedDirectoryName = "_rejected"
+    static let fileExtension = "receipt"
+    static let maxBytes = 64 * 1024
+    static let maxDeliveries = 512
+    static let allowedKeys: Set<String> = ["version", "via", "tab_id", "deliveries", "ts"]
+
+    /// The recipient tab, when the drain knows it (a hook always does; `recv
+    /// --tab <name>` may not). Never the caller's tab by default.
+    let tabId: UUID?
+    let deliveries: [Delivery]
+    let via: String
+    let ts: String
+
+    init(tabId: UUID?, deliveries: [Delivery], via: String = "drain", ts: String = MailboxEnvelope.currentRFC3339()) {
+        self.tabId = tabId
+        self.deliveries = deliveries
+        self.via = via
+        self.ts = ts
+    }
+
+    static func spoolURL(mailboxesRoot: URL) -> URL {
+        mailboxesRoot.appendingPathComponent(directoryName, isDirectory: true)
+    }
+
+    func encode() -> Data? {
+        var object: [String: Any] = [
+            "version": Self.version,
+            "via": via,
+            "ts": ts,
+            "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] }
+        ]
+        if let tabId { object["tab_id"] = tabId.uuidString }
+        return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    /// Strict parse: known keys only, version 1, `via` "drain", 1...512
+    /// deliveries with ULID ids and non-empty recipients of at most 256 bytes.
+    static func decode(_ data: Data) -> MailboxDeliveryReceipt? {
+        guard data.count <= maxBytes,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              Set(object.keys).isSubset(of: allowedKeys),
+              (object["version"] as? NSNumber)?.intValue == version,
+              let via = object["via"] as? String, via == "drain",
+              let ts = object["ts"] as? String, !ts.isEmpty, ts.utf8.count <= 64,
+              let rawDeliveries = object["deliveries"] as? [Any],
+              (1...maxDeliveries).contains(rawDeliveries.count) else { return nil }
+        var tabId: UUID?
+        if let rawTab = object["tab_id"] {
+            guard let string = rawTab as? String, let uuid = UUID(uuidString: string) else { return nil }
+            tabId = uuid
+        }
+        var deliveries: [Delivery] = []
+        for raw in rawDeliveries {
+            guard let entry = raw as? [String: Any],
+                  Set(entry.keys).isSubset(of: ["id", "recipient"]),
+                  let id = entry["id"] as? String,
+                  id.range(of: MailboxEnvelope.ulidPattern, options: .regularExpression) != nil,
+                  let recipient = entry["recipient"] as? String,
+                  !recipient.isEmpty, recipient.utf8.count <= MailboxEnvelope.maxStringFieldBytes else { return nil }
+            deliveries.append(Delivery(id: id, recipient: recipient))
+        }
+        return MailboxDeliveryReceipt(tabId: tabId, deliveries: deliveries, via: via, ts: ts)
+    }
+
+    /// Writes the receipt atomically into the workspace's spool and returns
+    /// its URL, or nil on failure (the mail was already delivered; only the
+    /// event is lost).
+    @discardableResult
+    func write(mailboxesRoot: URL, fileManager: FileManager = .default) -> URL? {
+        guard !deliveries.isEmpty, let data = encode() else { return nil }
+        let spool = Self.spoolURL(mailboxesRoot: mailboxesRoot)
+        try? fileManager.createDirectory(at: spool, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let name = MailboxULID.make()
+        let temp = spool.appendingPathComponent(".\(name).tmp")
+        let target = spool.appendingPathComponent("\(name).\(Self.fileExtension)")
+        guard (try? data.write(to: temp)) != nil else { return nil }
+        guard rename(temp.path, target.path) == 0 else {
+            try? fileManager.removeItem(at: temp)
+            return nil
+        }
+        return target
     }
 }

@@ -358,52 +358,6 @@ extension TerminalController {
     ///
     /// Returns `{ resolution: "unique"|"ambiguous"|"unresolved",
     /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
-    /// `mailbox.report_delivered` — C11-257 Lane C. A CLI consumer (`c11
-    /// mailbox recv --drain`, a harness hook drain) reports the envelopes it
-    /// claimed into `_read/`, in one call however many workspaces they came
-    /// from, and the app records one `mailbox.delivered` per envelope.
-    /// Params: `deliveries` ([{`id`, `recipient`, `workspace_id`}]; an entry
-    /// without `workspace_id` uses the top-level `workspace_id`), `tab_id` (the
-    /// recipient tab's UUID; omitted when the consumer does not know it, so the
-    /// event carries no surface rather than a wrong one), `via` (default
-    /// `"drain"`).
-    ///
-    /// Telemetry: on the socket-worker policy (`socketWorkerV2Methods`), so
-    /// it is validated and emitted off-main (EventEmitter is thread-safe) and
-    /// lands even while the main thread is busy; nothing here touches AppKit
-    /// or the model.
-    nonisolated static func v2MailboxReportDelivered(params: [String: Any]) -> V2CallResult {
-        let defaultWorkspace = (params["workspace_id"] as? String).flatMap(UUID.init(uuidString:))
-        let deliveries: [(id: String, recipient: String, workspace: UUID)] = (params["deliveries"] as? [Any] ?? []).compactMap {
-            guard let entry = $0 as? [String: Any],
-                  let id = entry["id"] as? String, !id.isEmpty,
-                  let recipient = entry["recipient"] as? String, !recipient.isEmpty
-            else { return nil }
-            // An entry that names a workspace must name a valid one; it never
-            // falls back to the top-level workspace.
-            let workspace: UUID?
-            if let raw = entry["workspace_id"] {
-                workspace = (raw as? String).flatMap(UUID.init(uuidString:))
-            } else {
-                workspace = defaultWorkspace
-            }
-            guard let workspace else { return nil }
-            return (id, recipient, workspace)
-        }
-        let via = (params["via"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "drain"
-        let tabId = (params["tab_id"] as? String).flatMap(UUID.init(uuidString:))
-        for delivery in deliveries {
-            EventEmitter.shared.emitMailboxDelivered(
-                workspace: delivery.workspace,
-                id: delivery.id,
-                recipient: delivery.recipient,
-                surface: tabId,
-                via: via
-            )
-        }
-        return .ok(["recorded": deliveries.count])
-    }
-
     private func v2MailboxResolve(params: [String: Any]) -> V2CallResult {
         guard let to = v2String(params, "to"), !to.isEmpty else {
             return .err(code: "invalid_to", message: "to is required", data: nil)

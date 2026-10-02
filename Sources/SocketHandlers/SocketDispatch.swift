@@ -98,9 +98,6 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserWait(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
-        // C11-257: drain delivery telemetry, events only.
-        case "mailbox.report_delivered":
-            return v2Result(id: request.id, Self.v2MailboxReportDelivered(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

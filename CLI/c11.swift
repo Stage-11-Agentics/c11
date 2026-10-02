@@ -1401,13 +1401,6 @@ final class SocketClient {
         return try sendV2Raw(method: method, params: params, deadline: deadline)
     }
 
-    /// `sendV2` without the capability probe, for a method a legacy app does
-    /// not have under any name (so there is nothing to translate). Saves the
-    /// probe's round-trip, which the app answers on the main actor.
-    func sendV2Unprobed(method: String, params: [String: Any], deadline: SocketDeadline) throws -> [String: Any] {
-        try sendV2Raw(method: method, params: params, deadline: deadline)
-    }
-
     private func sendV2Raw(
         method: String,
         params: [String: Any],
@@ -1927,14 +1920,6 @@ struct CMUXCLI {
         // socket.
         if command == "model-costs" {
             try runModelCostsCommand(commandArgs: commandArgs)
-            return
-        }
-
-        // C11-257: the detached delivery reporter a hook drain spawns after it
-        // has written its output. Runs before the shared connect so its own
-        // hard bound (alarm) covers the connect too.
-        if command == "mailbox", commandArgs.first == Self.mailboxReportSubcommand {
-            runDetachedMailboxReport(json: commandArgs.dropFirst().first ?? "", socketPath: resolvedSocketPath)
             return
         }
 
@@ -19085,12 +19070,7 @@ extension CMUXCLI {
         let recipientTabId = surfaceOverride == nil
             ? Self.callerTabEnv().flatMap(UUID.init(uuidString:))
             : surfaceOverride.flatMap(UUID.init(uuidString:))
-        reportMailboxDrained(
-            client: client,
-            recipientTabId: recipientTabId,
-            deliveries: claimed.map { ($0.id, tabName, workspaceId) },
-            budget: MailboxHookOutput.reportBudgetSeconds
-        )
+        writeDeliveryReceipts(claimed, recipientTabId: recipientTabId, recipient: { _ in tabName })
     }
 
     /// Checked stdout write: false when the bytes could not be written.
@@ -19221,8 +19201,8 @@ extension CMUXCLI {
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
     /// go back to the inbox (C3-order), otherwise each one is recorded as
     /// `mailbox.delivered` with `via: "drain"`, under the workspace whose inbox
-    /// held it, by a detached reporter. Returns whether it delivered (the
-    /// write, not the report).
+    /// held it, through a receipt the app picks up. Returns whether it
+    /// delivered (the write, not the receipt).
     @discardableResult
     private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
         signal(SIGPIPE, SIG_IGN)
@@ -19230,127 +19210,32 @@ extension CMUXCLI {
             drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return false
         }
-        // No socket I/O after the claim: a c11 that stops reading must never
-        // hold this process toward the harness's kill. The delivery events are
-        // sent by a detached child that does not hold this process's stdout.
-        spawnDetachedMailboxReport(
-            socketPath: client.socketPath,
-            params: mailboxReportParams(
-                recipientTabId: drain.tabId,
-                deliveries: drain.claimed.compactMap { message in
-                    MailboxDrain.workspaceId(ofInbox: message.inbox).map {
-                        (message.id, message.recipient ?? drain.tabId.uuidString.lowercased(), $0)
-                    }
-                }
-            )
-        )
+        // No socket I/O after the claim: the delivery is recorded through the
+        // filesystem, and the hook is done.
+        writeDeliveryReceipts(drain.claimed, recipientTabId: drain.tabId) {
+            $0.recipient ?? drain.tabId.uuidString.lowercased()
+        }
         return true
     }
 
-    /// `mailbox.report_delivered` params: every delivery with its own
-    /// workspace, in one call. `recipientTabId` nil omits `tab_id`, so an
-    /// unknown recipient is never attributed to the caller.
-    private func mailboxReportParams(
+    /// Hands claimed envelopes to the app as `mailbox.delivered via:"drain"`:
+    /// one receipt per workspace whose inbox they came from, written atomically
+    /// into that workspace's `_receipts/` spool. Filesystem only, so nothing a
+    /// stalled, paused or quit c11 does can delay the caller, and no
+    /// connection has to be authorized. `recipientTabId` nil leaves the
+    /// event without a surface rather than attributing it to the caller.
+    private func writeDeliveryReceipts(
+        _ claimed: [MailboxDrain.ClaimedMessage],
         recipientTabId: UUID?,
-        deliveries: [(id: String, recipient: String, workspaceId: UUID)]
-    ) -> [String: Any] {
-        var params: [String: Any] = [
-            "deliveries": deliveries.map {
-                ["id": $0.id, "recipient": $0.recipient, "workspace_id": $0.workspaceId.uuidString]
-            },
-            "via": "drain"
-        ]
-        if let recipientTabId {
-            params["tab_id"] = recipientTabId.uuidString
-        }
-        return params
-    }
-
-    /// Records claimed envelopes as `mailbox.delivered` in one socket call
-    /// inside `budget` seconds (the capability probe and the report share it;
-    /// writes and reads are both bounded). Best effort: an unreachable or
-    /// stalled socket only costs the events, never the delivery. Used by the
-    /// plain `recv --drain`, which no harness kills.
-    private func reportMailboxDrained(
-        client: SocketClient,
-        recipientTabId: UUID?,
-        deliveries: [(id: String, recipient: String, workspaceId: UUID)],
-        budget: TimeInterval
+        recipient: (MailboxDrain.ClaimedMessage) -> String
     ) {
-        guard !deliveries.isEmpty, budget > 0 else { return }
-        // `sendV2` may probe capabilities first with the same per-call
-        // deadline, so each of the two round-trips gets half the budget.
-        _ = try? client.sendV2(
-            method: "mailbox.report_delivered",
-            params: mailboxReportParams(recipientTabId: recipientTabId, deliveries: deliveries),
-            deadline: .custom(budget / 2)
-        )
-    }
-
-    /// Hidden `c11 mailbox __report-delivered <params-json>`: the detached
-    /// reporter.
-    static let mailboxReportSubcommand = "__report-delivered"
-
-    /// Hard bound on the detached reporter's whole life, connect included.
-    /// Long on purpose: a c11 whose main thread is stuck usually recovers, and
-    /// the reporter simply waits on its one request so the delivery is still
-    /// recorded. `C11_MAILBOX_REPORT_LIFETIME_SECONDS` (1...120) shortens it
-    /// for tests.
-    static func mailboxReportLifetimeSeconds(_ env: [String: String] = ProcessInfo.processInfo.environment) -> UInt32 {
-        let requested = env["C11_MAILBOX_REPORT_LIFETIME_SECONDS"].flatMap(UInt32.init) ?? 120
-        return min(max(requested, 1), 120)
-    }
-
-    /// Starts the detached reporter and returns at once. The child gets its
-    /// own session (no terminal signals, outside the harness's process group),
-    /// `/dev/null` on fds 0-2 and no other inherited descriptor, so it never
-    /// holds the hook's stdout or the hook's socket connection. Failure to
-    /// spawn only costs the events.
-    private func spawnDetachedMailboxReport(socketPath: String, params: [String: Any]) {
-        guard (params["deliveries"] as? [Any])?.isEmpty == false,
-              let data = try? JSONSerialization.data(withJSONObject: params),
-              let json = String(data: data, encoding: .utf8) else { return }
-        var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        var pathSize = UInt32(pathBuffer.count)
-        guard _NSGetExecutablePath(&pathBuffer, &pathSize) == 0 else { return }
-        let executable = String(cString: pathBuffer)
-
-        var attributes: posix_spawnattr_t?
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
-        var fileActions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&fileActions)
-        defer { posix_spawn_file_actions_destroy(&fileActions) }
-        posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&fileActions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)
-        posix_spawn_file_actions_addopen(&fileActions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)
-
-        let arguments = [executable, "--socket", socketPath, "mailbox", Self.mailboxReportSubcommand, json]
-        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
-        defer { argv.forEach { free($0) } }
-        var pid: pid_t = 0
-        _ = posix_spawn(&pid, executable, &fileActions, &attributes, &argv, environ)
-    }
-
-    /// The detached reporter's body: one bounded `mailbox.report_delivered`
-    /// call, the whole process killed by `alarm` when its lifetime ends.
-    private func runDetachedMailboxReport(json: String, socketPath: String) {
-        let lifetime = Self.mailboxReportLifetimeSeconds()
-        alarm(lifetime)
-        guard let data = json.data(using: .utf8),
-              let params = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        let client = SocketClient(path: socketPath)
-        guard (try? client.connect()) != nil else { return }
-        defer { client.close() }
-        // One request, no probe: the app handles it on a socket worker, off
-        // the main actor, and the write and the read each get nearly the whole
-        // lifetime, so a c11 that resumes reading in time still records it.
-        _ = try? client.sendV2Unprobed(
-            method: "mailbox.report_delivered",
-            params: params,
-            deadline: .custom(Double(lifetime) - 0.5)
-        )
+        let byMailboxesRoot = Dictionary(grouping: claimed) { $0.inbox.deletingLastPathComponent().path }
+        for (root, messages) in byMailboxesRoot {
+            MailboxDeliveryReceipt(
+                tabId: recipientTabId,
+                deliveries: messages.map { .init(id: $0.id, recipient: recipient($0)) }
+            ).write(mailboxesRoot: URL(fileURLWithPath: root, isDirectory: true))
+        }
     }
 
     // MARK: - trace

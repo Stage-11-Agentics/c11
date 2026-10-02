@@ -9,24 +9,19 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      sibling inbox holds mail.
   3. A plain drain whose stdout is a closed pipe puts the envelope back: no
      mail reaches `_read/` without reaching stdout.
-  4. `mailbox.delivered` reports name the recipient tab, never the caller:
-     a hook drain reports its own tab, `recv --tab <name>` reports no tab.
+  4. Each drain leaves a delivery receipt in the workspace's `_receipts/`
+     spool (how `mailbox.delivered via:"drain"` reaches the app, no socket):
+     it names the recipient tab, or none for `recv --tab <name>`, never the
+     caller, and it lands in the workspace whose inbox held the mail.
   5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
-     its inbox there, with no socket call, and the report names that
-     workspace.
+     its inbox there, with no socket call.
   6. A hook whose pre-claim socket calls are slow stops them at the 6 s claim
      cutoff and exits before 8 s; its mail is claimed and printed, or left in
      the inbox, never claimed into a result the harness would discard.
-  7. After the claim the hook does no socket I/O at all: with a socket that
-     reads one line and then stops reading, the hook exits at once with its
-     output intact, the detached reporter ends within its lifetime, and a
-     large plain-drain report is cut off by the send deadline.
-  8. A c11 that stops reading for a while and then recovers still records
-     every delivery (the detached reporter waits), for the Codex hook format
-     and for Claude's `claude-hook stop`.
-  9. Socket calls a hook makes before its claim stop at the claim cutoff: a
-     `claude-hook prompt-submit` against a c11 that stops reading exits
-     well before 8 s and leaves the mail in the inbox.
+  7. After the claim a hook makes no socket request at all: against a socket
+     that reads one line and stops, or reads nothing, with 70 inboxes, in the
+     Codex format and through `claude-hook stop`, it exits at once with its
+     output intact and its receipts written.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -124,16 +119,6 @@ class FakeC11:
                     result = {"methods": ["tab.list", "mailbox.report_delivered"]}
                 conn.sendall(json.dumps({"id": req.get("id"), "ok": True, "result": result}).encode() + b"\n")
 
-    def reports(self, wait: float = 3.0) -> list[dict]:
-        # The hook's report comes from a detached child, so it may land a
-        # moment after the hook exits.
-        deadline = time.monotonic() + wait
-        while True:
-            found = [r["params"] for r in self.requests if r.get("method") == "mailbox.report_delivered"]
-            if found or time.monotonic() > deadline:
-                return found
-            time.sleep(0.05)
-
     def close(self) -> None:
         self.sock.close()
 
@@ -163,6 +148,20 @@ class Fixture:
         read_dir = os.path.join(inbox, "_read")
         read = sorted(n for n in os.listdir(read_dir) if n.endswith(".msg")) if os.path.isdir(read_dir) else []
         return root, read
+
+    def receipts(self, workspace: str = WORKSPACE) -> list[dict]:
+        spool = os.path.join(self.mailboxes.replace(WORKSPACE, workspace), "_receipts")
+        if not os.path.isdir(spool):
+            return []
+        found = []
+        for name in sorted(os.listdir(spool)):
+            if name.endswith(".receipt"):
+                with open(os.path.join(spool, name)) as f:
+                    found.append(json.load(f))
+        return found
+
+    def receipt_ids(self, workspace: str = WORKSPACE) -> list[str]:
+        return [d["id"] for r in self.receipts(workspace) for d in r["deliveries"]]
 
     def env(self, sock_path: str) -> dict:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("C11_", "CMUX_"))}
@@ -216,7 +215,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="c11-drain-sock-")
     stop_input = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False})
 
-    # 1. Stalled socket after the claim.
+    # 1. Stalled socket.
     fx = Fixture()
     stalled = FakeC11(os.path.join(tmp, "stall.sock"), stall=True)
     ulid = fx.deliver(TAB.lower())
@@ -225,12 +224,13 @@ def main() -> int:
     out = proc.stdout.decode()
     check(proc.returncode == 0, "stalled socket: exit 0", f"exit {proc.returncode} {proc.stderr!r}")
     check('"decision":"block"' in out and ulid in out, "stalled socket: hook JSON with the message printed", out[:200])
-    check(ms < 2500, f"stalled socket: exits well inside the 10 s hook deadline ({ms:.0f} ms)")
+    check(ms < 1000, f"stalled socket: exits at once ({ms:.0f} ms)")
     check(fx.listing(TAB.lower()) == ([], [ulid + ".msg"]), "stalled socket: envelope claimed into _read/")
+    check(fx.receipt_ids() == [ulid], "stalled socket: delivery receipt written", str(fx.receipts()))
+    check(stalled.requests == [], "stalled socket: no socket request at all", str(stalled.requests[:2]))
+    stalled.close()
 
     # 2. Empty recipient, sibling holds mail: no socket call before answering.
-    #    A fresh socket, so check 1's detached reporter cannot land in its log.
-    stalled.close()
     stalled = FakeC11(os.path.join(tmp, "stall-empty.sock"), stall=True)
     fx.deliver(SIBLING.lower())
     timings = []
@@ -245,39 +245,43 @@ def main() -> int:
     stalled.close()
     fx.cleanup()
 
-    # 3 + 4. Recording socket.
+    # 3 + 4. Receipts and attribution.
     fx = Fixture()
     rec = FakeC11(os.path.join(tmp, "rec.sock"), stall=False)
     ulid = fx.deliver(TAB.lower(), to="lane-c-agent")
     proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
                   fx.env(rec.path), stop_input)
-    reports = rec.reports()
-    check(len(reports) == 1 and reports[0].get("tab_id", "").upper() == TAB,
-          "hook drain reports the recipient tab", json.dumps(reports))
-    check(bool(reports) and reports[0].get("deliveries") == [{"id": ulid, "recipient": "lane-c-agent", "workspace_id": WORKSPACE}]
-          and reports[0].get("via") == "drain", "hook drain report names the envelope recipient", json.dumps(reports))
+    receipts = fx.receipts()
+    check(len(receipts) == 1 and receipts[0].get("tab_id", "").upper() == TAB and receipts[0].get("via") == "drain",
+          "hook drain receipt names the recipient tab", json.dumps(receipts))
+    check(bool(receipts) and receipts[0].get("deliveries") == [{"id": ulid, "recipient": "lane-c-agent"}],
+          "hook drain receipt names the envelope recipient", json.dumps(receipts))
+    spool = os.path.join(fx.mailboxes, "_receipts")
+    check(not [n for n in os.listdir(spool) if n.endswith(".tmp")], "receipt written atomically (no temp file left)")
+    os.remove(os.path.join(spool, os.listdir(spool)[0]))
 
     # Plain drain of someone else's (title-keyed) inbox into a closed pipe.
     ids = [fx.deliver("watcher") for _ in range(3)]
     read_fd, write_fd = os.pipe()
     os.close(read_fd)
-    rec.requests.clear()
     proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"],
                   fx.env(rec.path), stdout=write_fd)
     os.close(write_fd)
     root, read = fx.listing("watcher")
     check(root == sorted(i + ".msg" for i in ids) and read == [],
           "broken pipe: every envelope stays in the inbox, none in _read/", f"root={root} read={read}")
-    check(rec.reports() == [], "broken pipe: nothing reported delivered", json.dumps(rec.reports()))
+    check(fx.receipts() == [], "broken pipe: no receipt", json.dumps(fx.receipts()))
 
+    rec.requests.clear()
     proc, _ = run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(rec.path))
     printed = proc.stdout.decode()
     root, read = fx.listing("watcher")
     check(all(i in printed for i in ids) and root == [] and len(read) == 3,
           "plain drain to a live pipe: all printed and claimed")
-    reports = rec.reports()
-    check(len(reports) == 1 and "tab_id" not in reports[0] and len(reports[0].get("deliveries", [])) == 3,
-          "recv --tab <name>: report carries no tab_id rather than the caller's", json.dumps(reports))
+    receipts = fx.receipts()
+    check(len(receipts) == 1 and "tab_id" not in receipts[0] and sorted(fx.receipt_ids()) == sorted(ids),
+          "recv --tab <name>: receipt carries no tab_id rather than the caller's", json.dumps(receipts))
+    check(rec.requests == [], "plain drain: no socket request", str(rec.requests[:2]))
     rec.close()
     fx.cleanup()
 
@@ -289,78 +293,35 @@ def main() -> int:
                    fx.env(stalled.path), stop_input)
     check(ulid in proc.stdout.decode() and fx.listing(TAB.lower(), MOVED_TO) == ([], [ulid + ".msg"]),
           "moved tab: mail in the other workspace's inbox is delivered and claimed", proc.stdout.decode()[:120])
-    pre_claim = [r for r in stalled.requests if r.get("method") != "mailbox.report_delivered"
-                 and r.get("method") != "system.capabilities"]
-    check(pre_claim == [], "moved tab: no socket call before the claim", str(pre_claim[:2]))
+    check(stalled.requests == [], "moved tab: no socket request", str(stalled.requests[:2]))
+    check(fx.receipt_ids(MOVED_TO) == [ulid] and fx.receipts() == [],
+          "moved tab: receipt lands in the workspace that held the inbox")
     stalled.close()
-    rec = FakeC11(os.path.join(tmp, "rec2.sock"), stall=False)
-    ulid = fx.deliver(TAB.lower(), workspace=MOVED_TO)
-    run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"], fx.env(rec.path), stop_input)
-    reports = rec.reports()
-    check(len(reports) == 1 and [d.get("workspace_id", "").upper() for d in reports[0].get("deliveries", [])] == [MOVED_TO],
-          "moved tab: report names the workspace that held the inbox", json.dumps(reports))
-    rec.close()
     fx.cleanup()
 
-    # 7. Many workspace groups, socket that reads one line and stops: the hook
-    #    exits at once with every message, the reporter dies within its bound.
-    fx = Fixture()
-    stuck = FakeC11(os.path.join(tmp, "oneline.sock"), stall=False, one_line=True)
-    # 70 inboxes: the hook claims what fits its budget (~60), whose report is
-    # over 8 KB, past what the socket buffers when the peer stops reading.
+    # 7. 70 inboxes against a socket that reads one line and stops, then one
+    #    that reads nothing; Codex format and claude-hook stop.
     groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 71)]
-    ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
-    env = fx.env(stuck.path)
-    env["C11_MAILBOX_REPORT_LIFETIME_SECONDS"] = "2"
-    proc, ms = run(cli, ["--socket", stuck.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
-                   env, stop_input, timeout=12)
-    out = proc.stdout.decode()
-    taken = [(w, u) for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
-    claimed = len(taken) >= 50 and all(u in out for _, u in taken)
-    check(proc.returncode == 0 and '"decision":"block"' in out and claimed,
-          f"{len(groups)} workspace inboxes, socket stops reading: hook exits 0 and prints every message it claimed "
-          f"({len(taken)})", f"exit {proc.returncode} {out[:120]}")
-    check(ms < 500, f"{len(groups)} workspace inboxes, socket stops reading: hook exits in {ms:.0f} ms (no socket I/O after the claim)")
-    time.sleep(3.0)
-    lingering = subprocess.run(["pgrep", "-f", f"{stuck.path} mailbox __report-delivered"], capture_output=True).stdout
-    check(lingering.strip() == b"", "detached reporter ends within its lifetime (2 s here, 120 s by default)", lingering.decode())
-    stuck.close()
-    fx.cleanup()
-
-    # Same kind of socket, plain drain with a report far over the socket send buffer:
-    # the send deadline ends it.
-    fx = Fixture()
-    stuck = FakeC11(os.path.join(tmp, "oneline2.sock"), stall=False, one_line=True)
-    many = [fx.deliver("watcher") for _ in range(300)]
-    proc, ms = run(cli, ["--socket", stuck.path, "mailbox", "recv", "--drain", "--tab", "watcher"], fx.env(stuck.path),
-                   timeout=30)
-    root, read = fx.listing("watcher")
-    check(proc.returncode == 0 and len(read) == 300 and all(u in proc.stdout.decode() for u in many),
-          "plain drain, 300 messages (report far over the socket buffer), socket stops reading: all printed and claimed")
-    check(ms < 3000, f"plain drain report bounded by the send deadline ({ms:.0f} ms)")
-    stuck.close()
-    fx.cleanup()
-
-    # 8. Wedged-then-recovered c11: 70 inboxes, the socket reads nothing for 4 s.
     for label, args, stdin in [
         ("codex hook format", ["mailbox", "recv", "--drain", "--hook-format", "codex"], stop_input),
         ("claude-hook stop", ["claude-hook", "stop"], json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})),
     ]:
-        fx = Fixture()
-        paused = FakeC11(os.path.join(tmp, f"pause-{len(label)}.sock"), stall=False, pause=4.0)
-        ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
-        proc, ms = run(cli, ["--socket", paused.path, *args], fx.env(paused.path), stdin, timeout=12)
-        out = proc.stdout.decode()
-        taken = [u for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
-        check(proc.returncode == 0 and '"decision":"block"' in out and len(taken) >= 50 and all(u in out for u in taken),
-              f"{label}, c11 not reading: hook exits 0 with every claimed message ({len(taken)})", out[:120])
-        check(ms < 1000, f"{label}, c11 not reading: hook exits in {ms:.0f} ms")
-        reports = paused.reports(wait=8.0)
-        recorded = [d["id"] for r in reports for d in r.get("deliveries", [])]
-        check(sorted(recorded) == sorted(taken), f"{label}: once c11 reads again, all {len(taken)} deliveries are recorded",
-              f"{len(recorded)} recorded")
-        paused.close()
-        fx.cleanup()
+        for mode, kwargs in [("reads one line then stops", {"one_line": True}), ("reads nothing", {"pause": 30.0})]:
+            fx = Fixture()
+            stuck = FakeC11(os.path.join(tmp, f"stuck-{len(label)}-{len(mode)}.sock"), stall=False, **kwargs)
+            ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
+            proc, ms = run(cli, ["--socket", stuck.path, *args], fx.env(stuck.path), stdin, timeout=12)
+            out = proc.stdout.decode()
+            taken = [(w, u) for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
+            receipted = all(fx.receipt_ids(w) == [u] for w, u in taken)
+            check(proc.returncode == 0 and '"decision":"block"' in out and len(taken) >= 50
+                  and all(u in out for _, u in taken) and receipted,
+                  f"{label}, socket {mode}: exit 0, every claimed message printed and receipted ({len(taken)})",
+                  f"exit {proc.returncode} {out[:120]}")
+            check(ms < 1000, f"{label}, socket {mode}: hook exits in {ms:.0f} ms")
+            check(stuck.requests == [], f"{label}, socket {mode}: no socket request", str(stuck.requests[:1]))
+            stuck.close()
+            fx.cleanup()
 
     # 9. Pre-claim calls bounded by the claim cutoff.
     fx = Fixture()

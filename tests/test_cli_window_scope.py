@@ -13,6 +13,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shlex
 import socketserver
 import subprocess
 import tempfile
@@ -36,7 +37,8 @@ def fixture() -> list[dict]:
             workspace = {"id": identifier(f"{name}/workspace/{index}"),
                          "ref": f"workspace:{ordinal}", "index": index,
                          "title": f"{name} workspace {index}", "selected": index == 0,
-                         "areas": [], "tabs": []}
+                         "areas": [], "tabs": [], "status": {},
+                         "notifications": [f"{name}-notification-{index}"]}
             for ti in range(2):
                 area = {"id": identifier(f"{name}/{index}/area/{ti}"),
                         "ref": f"area:{ordinal * 10 + ti}", "index": ti,
@@ -80,7 +82,10 @@ class Handler(socketserver.StreamRequestHandler):
                     except RPCError as error:
                         response = "ERROR: " + error.payload["message"]
                 else:
-                    response = "ERROR: unexpected v1 command " + wire
+                    try:
+                        response = self.server.dispatch_v1(wire)
+                    except RPCError as error:
+                        response = "ERROR: " + error.payload["message"]
             else:
                 request = json.loads(wire)
                 method, params = request["method"], request.get("params", {})
@@ -156,6 +161,36 @@ class Server(socketserver.ThreadingUnixStreamServer):
         self.mutations.append(("focus", window["ref"]))
         return window
 
+    def dispatch_v1(self, wire: str) -> str:
+        args = shlex.split(wire)
+        command = args[0]
+        options = {arg[2:].split("=", 1)[0]: arg.split("=", 1)[1]
+                   for arg in args[1:] if arg.startswith("--") and "=" in arg}
+        if command == "clear_notifications":
+            # This legacy endpoint really clears every window when unqualified.
+            if "tab" not in options:
+                workspaces = [(window, workspace) for window in self.windows
+                              for workspace in window["workspaces"]]
+            else:
+                params = {"workspace_id": options["tab"]}
+                window = self.window(params)
+                workspaces = [(window, self.workspace(window, params))]
+            for window, workspace in workspaces:
+                workspace["notifications"].clear()
+                self.mutations.append((command, window["ref"], workspace["ref"]))
+            return "OK"
+        if command in ("set_status", "clear_status", "set_progress", "clear_progress", "log", "clear_log"):
+            params = {"workspace_id": options["tab"]} if "tab" in options else {}
+            window = self.window(params)
+            workspace = self.workspace(window, params)
+            if "surface" in options:
+                self.target(workspace, "tab", {"tab_id": options["surface"]})
+            positionals = [arg for arg in args[1:] if not arg.startswith("--")]
+            workspace["status"][command] = positionals
+            self.mutations.append((command, window["ref"], workspace["ref"]))
+            return "OK"
+        raise RPCError("method_not_found", f"Unexpected v1 command: {command}")
+
     @staticmethod
     def context(window: dict, workspace: dict, tab: dict | None = None) -> dict:
         result = {"window_id": window["id"], "window_ref": window["ref"],
@@ -171,8 +206,13 @@ class Server(socketserver.ThreadingUnixStreamServer):
                                 "workspace.select", "area.list", "area.tabs", "area.create",
                                 "tab.list", "tab.read_text", "tab.send_text", "tab.send_key",
                                 "tab.create", "tab.split", "tab.get_metadata", "tab.set_metadata",
-                                "system.identify", "system.tree", "workspace.group.list"],
-                    "feature_schema_version": 1,
+                                "system.identify", "system.tree", "workspace.group.list",
+                                "notification.create", "notification.create_for_tab", "sidebar.state",
+                                "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress",
+                                "snapshot.create", "snapshot.restore", "snapshot.restore_set",
+                                "tab.get_titlebar_state", "area.swap", "area.join",
+                                "tab.move", "tab.reorder", "config.launch"],
+                    "features_version": 1,
                     "features": [{"id": name, "version": 1} for name in
                                  ("vocabulary.workspace_area_tab", "send.explicit_tab",
                                   "window.route_without_focus")],
@@ -185,13 +225,101 @@ class Server(socketserver.ThreadingUnixStreamServer):
         if method == "system.tree":
             if self.tree_mode == "unsupported":
                 raise RPCError("method_not_found", "system.tree is unavailable")
-            # Simulate a modern server that accepts, but ignores, window_id.
+            # Actual scope semantics: default selects one workspace of the
+            # key window; --window selects all its workspaces; --all all windows.
+            # The pre-fix modern server accepts, but ignores, window_id.
             key = next(item for item in self.windows if item["key"])
+            target = self.window(params) if self.tree_mode == "scoped" else key
+            scope = params.get("scope", "workspace")
+            windows = copy.deepcopy(self.windows if scope == "all" else [target])
+            if scope == "workspace":
+                windows[0]["workspaces"] = [item for item in windows[0]["workspaces"] if item["selected"]]
             return {"active": self.context(key, key["workspaces"][0], key["workspaces"][0]["tabs"][0]),
-                    "caller": None, "windows": copy.deepcopy(self.windows)}
+                    "caller": None, "windows": windows}
+        if method in ("tab.move", "tab.reorder"):
+            # Existing endpoints locate the source globally and ignore window
+            # routing for source membership. CLI admission must guard this seam.
+            window = self.window({"tab_id": params.get("tab_id")})
+            workspace = self.workspace(window, {"tab_id": params.get("tab_id")})
+            tab = self.target(workspace, "tab", params)
+            if method == "tab.move":
+                destination_params = {"workspace_id": params["workspace_id"]} if "workspace_id" in params else {}
+                destination = self.workspace(self.window(destination_params), destination_params) if destination_params else workspace
+                if "area_id" in params:
+                    area = self.target(destination, "area", params)
+                    tab["area_id"], tab["area_ref"] = area["id"], area["ref"]
+                if destination is not workspace:
+                    workspace["tabs"].remove(tab)
+                    destination["tabs"].append(tab)
+                    workspace = destination
+            else:
+                workspace["tabs"].remove(tab)
+                workspace["tabs"].insert(params.get("index", 0), tab)
+            self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
+            return self.context(window, workspace, tab)
+        if method in ("area.swap", "area.join"):
+            # These endpoints locate handles globally. Validate scoped area
+            # and tab membership in the client before entering this endpoint.
+            def locate_area(token: str) -> tuple[dict, dict, dict]:
+                for item in self.windows:
+                    for ws in item["workspaces"]:
+                        for area in ws["areas"]:
+                            if matches(area, token):
+                                return item, ws, area
+                raise RPCError("not_found", f"Area not found: {token}")
+
+            window, workspace, source = locate_area(params["area_id"])
+            _, _, target = locate_area(params["target_area_id"])
+            if method == "area.swap":
+                for tab in workspace["tabs"]:
+                    replacement = target if tab["area_id"] == source["id"] else source
+                    tab["area_id"], tab["area_ref"] = replacement["id"], replacement["ref"]
+            else:
+                tabs = [self.target(workspace, "tab", params)] if "tab_id" in params else workspace["tabs"]
+                for tab in tabs:
+                    if tab["area_id"] == source["id"]:
+                        tab["area_id"], tab["area_ref"] = target["id"], target["ref"]
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return self.context(window, workspace)
         window = self.window(params)
         workspace = self.workspace(window, params)
         context = self.context(window, workspace)
+        if method == "config.launch":
+            # The CLI test models a server preserving scope through config ->
+            # agent.launch. Real server forwarding requires a separate gate.
+            if params.get("new_workspace"):
+                workspace = copy.deepcopy(workspace)
+                workspace.update(id=identifier("config/new-workspace"), ref="workspace:9000",
+                                 index=len(window["workspaces"]), selected=False, title="Synthetic config")
+                window["workspaces"].append(workspace)
+                window["workspace_count"] += 1
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return self.context(window, workspace, workspace["tabs"][0])
+        if method == "sidebar.state":
+            return {**context, "status": copy.deepcopy(workspace["status"])}
+        if method == "snapshot.create":
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return {**context, "snapshot_id": "synthetic-snapshot", "path": "synthetic-snapshot.json",
+                    "tab_count": len(workspace["tabs"])}
+        if method == "snapshot.restore":
+            if params.get("in_place"):
+                workspace = self.workspace(window, {"workspace_id": params["target_workspace_id"]})
+                workspace["tabs"][0]["text"] = "Synthetic restored content"
+            else:
+                workspace = copy.deepcopy(workspace)
+                workspace.update(id=identifier("restore/new-workspace"), ref="workspace:9001",
+                                 index=len(window["workspaces"]), selected=False, title="Synthetic restore")
+                window["workspaces"].append(workspace)
+                window["workspace_count"] += 1
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return self.context(window, workspace)
+        if method in ("notification.create", "notification.create_for_tab"):
+            if method == "notification.create_for_tab":
+                tab = self.target(workspace, "tab", params)
+                context = self.context(window, workspace, tab)
+            workspace["notifications"].append(params.get("title", "synthetic"))
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return context
         if method == "workspace.list":
             items = window["workspaces"]
             if params.get("workspace_id") is not None:
@@ -236,10 +364,17 @@ class Server(socketserver.ThreadingUnixStreamServer):
             return self.context(window, workspace, tab)
         tab = self.target(workspace, "tab", params)
         context = self.context(window, workspace, tab)
+        if method.startswith("flag."):
+            tab["attention"] = method
+            self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
+            return context
         if method == "tab.read_text":
             return {**context, "text": tab["text"]}
         if method == "tab.get_metadata":
             return {**context, "metadata": copy.deepcopy(tab["metadata"])}
+        if method == "tab.get_titlebar_state":
+            return {**context, "title": tab["metadata"].get("title", tab["title"]),
+                    "description": tab["metadata"].get("description", "")}
         if method in ("tab.send_text", "tab.send_key", "tab.set_metadata"):
             if method == "tab.send_text":
                 tab["text"] += params["text"]
@@ -315,6 +450,10 @@ def main() -> int:
             payload = json.loads(run("list-workspaces", env=caller).stdout)
             assert [item["ref"] for item in payload["workspaces"]] == [item["ref"] for item in b["workspaces"]]
             routed("workspace.list")
+            unchanged()
+            payload = json.loads(run("current-workspace", env=caller).stdout)
+            assert payload["workspace_id"] == b_ws["id"], payload
+            routed("workspace.current")
             unchanged()
             payload = json.loads(run("identify", env=caller).stdout)
             assert payload["focused"]["window_id"] == b["id"], payload
@@ -401,14 +540,154 @@ def main() -> int:
             assert payload["metadata"] == {"scope-test": "B-only"}, payload
             routed("tab.get_metadata")
 
+            # Title helpers ignore A caller workspace when an explicit B tab
+            # is supplied; get-titlebar-state reads those same applied values.
+            for command, key, value, reset in (("set-title", "title", "Scoped title", True),
+                                                ("set-description", "description", "Scoped description", False)):
+                run(command, "--tab", b_tab["id"], value, env=caller, reset=reset)
+                routed("tab.set_metadata")
+                assert server.windows[1]["workspaces"][0]["tabs"][0]["metadata"][key] == value
+                assert server.windows[0] == a, server.windows[0]
+            payload = json.loads(run("get-titlebar-state", "--tab", b_tab["id"], env=caller, reset=False).stdout)
+            assert payload["title"] == "Scoped title" and payload["description"] == "Scoped description", payload
+            routed("tab.get_titlebar_state")
+            assert len(server.mutations) == 2 and server.windows[0] == a, server.mutations
+
+            # v1 notification clearing and sidebar writes need an explicit
+            # selected-workspace UUID because their wire protocol has no window.
+            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+                run("clear-notifications", *extra, env=caller)
+                assert server.windows[0] == a, server.windows[0]
+                assert len(server.mutations) == 1 and server.mutations[0][2] == expected_ws["ref"], server.mutations
+                assert not server.windows[1]["workspaces"][expected_ws["index"]]["notifications"]
+                commands = [name for name, _ in server.calls if name.startswith("clear_notifications")]
+                assert len(commands) == 1 and f"--tab={expected_ws['id']}" in commands[0], commands
+            run("set-status", "scope-test", "B-only", env=caller)
+            assert server.windows[1]["workspaces"][0]["status"] == {"set_status": ["scope-test", "B-only"]}
+            assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+            for args in (("--workspace", a_ws["id"]), ("--workspace", a_ws["ref"]),
+                         ("--tab", a_ws["id"]), ("--tab", a_ws["ref"]),
+                         ("--tab", a_tab["id"]), ("--tab", a_tab["ref"])):
+                run("set-status", "scope-test", "foreign", *args, env=caller, success=False)
+                assert not any(name.startswith("set_status") for name, _ in server.calls), server.calls
+                unchanged()
+            run("clear-notifications", "--workspace", a_ws["id"], success=False)
+            assert not any(name.startswith("clear_notifications") for name, _ in server.calls), server.calls
+            unchanged()
+
+            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+                payload = json.loads(run("sidebar-state", *extra, env=caller).stdout)
+                assert payload["workspace_id"] == expected_ws["id"], payload
+                routed("sidebar.state")
+                unchanged()
+            for extra, method in (([], "notification.create"),
+                                  (["--tab", "1"], "notification.create_for_tab")):
+                payload = json.loads(run("notify", "--title", "B-only", *extra, env=caller).stdout)
+                assert payload["workspace_id"] == b_ws["id"], payload
+                routed(method)
+                if extra:
+                    assert payload["tab_id"] == b_ws["tabs"][1]["id"], payload
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                assert server.windows[1]["workspaces"][0]["notifications"][-1] == "B-only"
+            run("notify", "--title", "foreign", "--tab", a_tab["ref"], success=False)
+            unchanged()
+
+            for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
+                                    ("suppress", "flag.suppress"), ("unsuppress", "flag.unsuppress")):
+                args = [command, "--tab", "1", "--by", "operator"]
+                if command == "raise-flag":
+                    args.append("Synthetic reason")
+                payload = json.loads(run(*args, env=caller).stdout)
+                assert payload["window_id"] == b["id"] and payload["tab_id"] == b_ws["tabs"][1]["id"], payload
+                routed(method)
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                args[2] = a_tab["ref"]
+                run(*args, env=caller, success=False)
+                unchanged()
+
+            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+                payload = json.loads(run("snapshot", *extra, env=caller).stdout)
+                assert payload["workspace_id"] == expected_ws["id"], payload
+                routed("snapshot.create")
+                assert server.mutations == [("snapshot.create", b["ref"], expected_ws["ref"])], server.mutations
+                assert server.windows == fixture(), server.windows
+            run("snapshot", "--workspace", a_ws["id"], success=False)
+            assert not any(name == "snapshot.create" for name, _ in server.calls), server.calls
+            unchanged()
+            for extra in ([], ["--in-place"]):
+                payload = json.loads(run("restore", "synthetic-snapshot", *extra, env=caller).stdout)
+                assert payload["window_id"] == b["id"], payload
+                params = routed("snapshot.restore")
+                if extra:
+                    routed("workspace.current")
+                    assert params["target_workspace_id"] == b_ws["id"], params
+                    assert server.windows[1]["workspaces"][0]["tabs"][0]["text"] == "Synthetic restored content"
+                else:
+                    assert len(server.windows[1]["workspaces"]) == 3
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+
+            for command, method in (("swap-pane", "area.swap"), ("join-pane", "area.join")):
+                args = [command, "--pane", b_ws["areas"][0]["ref"],
+                        "--target-pane", b_ws["areas"][1]["ref"]]
+                if command == "join-pane":
+                    args += ["--tab", b_tab["ref"], "--no-focus"]
+                payload = json.loads(run(*args, env=caller).stdout)
+                assert payload["window_id"] == b["id"], payload
+                routed(method)
+                assert server.windows[1]["workspaces"][0]["tabs"][0]["area_ref"] == b_ws["areas"][1]["ref"]
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                for position in (2, 4):
+                    foreign_args = list(args)
+                    foreign_args[position] = a_ws["areas"][0]["ref"]
+                    run(*foreign_args, env=caller, success=False)
+                    assert not any(name == method for name, _ in server.calls), server.calls
+                    unchanged()
+                if command == "join-pane":
+                    args[6] = a_tab["id"]
+                    run(*args, env=caller, success=False)
+                    assert not any(name == method for name, _ in server.calls), server.calls
+                    unchanged()
+
+            # Global source lookup in move/reorder requires client membership
+            # checks for the source, destination workspace/area, and anchor.
+            for command, extra, method in (("move-tab", ["--area", b_ws["areas"][1]["ref"]], "tab.move"),
+                                           ("reorder-tab", ["--index", "0"], "tab.reorder")):
+                payload = json.loads(run(command, "--tab", b_ws["tabs"][1]["ref"], *extra).stdout)
+                assert payload["window_id"] == b["id"], payload
+                routed(method)
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                run(command, "--tab", a_tab["ref"], *extra, success=False)
+                assert not any(name == method for name, _ in server.calls), server.calls
+                unchanged()
+            for command, extra, method in (("move-tab", ["--workspace", a_ws["id"]], "tab.move"),
+                                           ("move-tab", ["--area", a_ws["areas"][0]["ref"]], "tab.move"),
+                                           ("move-tab", ["--before", a_tab["ref"]], "tab.move"),
+                                           ("reorder-tab", ["--after", a_tab["ref"]], "tab.reorder")):
+                run(command, "--tab", b_tab["ref"], *extra, success=False)
+                assert not any(name == method for name, _ in server.calls), server.calls
+                unchanged()
+
+            # config.launch carries scope even when requesting a new workspace.
+            for extra in ([], ["--new-workspace"]):
+                payload = json.loads(run("config", "launch", "synthetic-config", *extra, env=caller).stdout)
+                assert payload["window_id"] == b["id"], payload
+                routed("config.launch")
+                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                assert len(server.windows[1]["workspaces"]) == (3 if extra else 2)
+            for extra in (["--workspace", a_ws["id"]], ["--area", a_ws["areas"][0]["ref"]]):
+                run("config", "launch", "synthetic-config", *extra, success=False)
+                assert not any(name == "config.launch" for name, _ in server.calls), server.calls
+                unchanged()
+
             # Both modern response filtering and method-not-found fallback stay in B.
-            for mode in ("ignores_scope", "unsupported"):
+            for mode in ("scoped", "ignores_scope", "unsupported"):
                 server.tree_mode = mode
                 for flags in ([], ["--all"], ["--window"]):
                     payload = json.loads(run("tree", *flags, env=caller).stdout)
                     assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
+                    expected_workspaces = b["workspaces"] if flags else [b_ws]
                     assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [
-                        item["ref"] for item in b["workspaces"]], payload
+                        item["ref"] for item in expected_workspaces], payload
                     routed("system.tree")
                     if mode == "unsupported":
                         routed("workspace.list")
@@ -435,7 +714,7 @@ def main() -> int:
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
-    print(f"PASS: {cases} CLI fake-socket window-scope cases using {cli}")
+    print(f"PASS: {cases} CLI fake-socket window-scope cases using the supplied CLI")
     return 0
 
 

@@ -186,6 +186,7 @@ extension TerminalController {
         launchParams["config_id"] = saved.id
         launchParams["source"] = AgentLaunchSource.socket.rawValue
         if params["focus"] != nil { launchParams["focus"] = params["focus"] }
+        if let window = params["window_id"] { launchParams["window_id"] = window }
 
         return v2AgentLaunch(params: launchParams)
     }

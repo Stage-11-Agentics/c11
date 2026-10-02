@@ -1391,8 +1391,14 @@ final class SocketClient {
         var params = params
         if let scopedWindow, params["window_id"] == nil,
            method.hasPrefix("workspace.") || method.hasPrefix("tab.") || method.hasPrefix("area.")
-            || ["system.identify", "system.tree", "agent.launch", "config.launch", "notification.create"].contains(method) {
+            || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
+            || ["system.identify", "system.tree", "agent.launch", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
             params["window_id"] = scopedWindow
+        }
+        if let scopedWindow, ["tab.move", "tab.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress"].contains(method) {
+            // These older handlers locate tabs globally. Check the source and
+            // destination handles before allowing a window-scoped mutation.
+            try validateScopedTargets(params, window: scopedWindow, deadline: deadline)
         }
         if method == "system.capabilities" {
             return try sendV2Raw(method: method, params: params, deadline: deadline)
@@ -1408,6 +1414,40 @@ final class SocketClient {
             return CLIVersionSkew.modernResult(legacyResult)
         }
         return try sendV2Raw(method: method, params: params, deadline: deadline)
+    }
+
+    private func validateScopedTargets(_ params: [String: Any], window: String, deadline: SocketDeadline) throws {
+        let payload = try sendV2(method: "workspace.list", params: ["window_id": window], deadline: deadline)
+        let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
+        func matches(_ item: [String: Any], _ value: String) -> Bool {
+            [item["id"] as? String, item["ref"] as? String].compactMap { $0 }
+                .contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+        }
+        if let value = (params["workspace_id"] ?? params["workspace"]) as? String, !workspaces.contains(where: { matches($0, value) }) {
+            throw CLIError(message: "not_found: Workspace not found in scoped window")
+        }
+        var tabs: [[String: Any]] = []
+        var areas: [[String: Any]] = []
+        for workspace in workspaces {
+            guard let id = workspace["id"] as? String else { continue }
+            let route: [String: Any] = ["window_id": window, "workspace_id": id]
+            let listed = try sendV2(method: "tab.list", params: route, deadline: deadline)
+            tabs += listed["tabs"] as? [[String: Any]] ?? []
+            if params["area_id"] != nil || params["target_area_id"] != nil || params["pane"] != nil {
+                let listedAreas = try sendV2(method: "area.list", params: route, deadline: deadline)
+                areas += listedAreas["areas"] as? [[String: Any]] ?? []
+            }
+        }
+        for key in ["tab_id", "before_tab_id", "after_tab_id"] {
+            if let value = params[key] as? String, !tabs.contains(where: { matches($0, value) }) {
+                throw CLIError(message: "not_found: Tab not found in scoped window")
+            }
+        }
+        for key in ["area_id", "target_area_id", "pane"] {
+            if let value = params[key] as? String, !areas.contains(where: { matches($0, value) }) {
+                throw CLIError(message: "not_found: Area not found in scoped window")
+            }
+        }
     }
 
     private func sendV2Raw(
@@ -2682,7 +2722,15 @@ struct CMUXCLI {
             guard cfgSub == "launch" else {
                 throw CLIError(message: "config: '\(cfgSub)' should have been handled app-down; this is a bug")
             }
-            let (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            var (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            if client.scopedWindow != nil {
+                if let workspace = cfgParams["workspace"] as? String {
+                    cfgParams["workspace"] = try resolveWorkspaceId(workspace, client: client)
+                }
+                if let pane = cfgParams["pane"] as? String {
+                    cfgParams["pane"] = try normalizePaneHandle(pane, client: client, workspaceHandle: cfgParams["workspace"] as? String)
+                }
+            }
             let cfgPayload = try client.sendV2(method: "config.launch", params: cfgParams)
             let cfgJSONOut = jsonOutput || cfgJSON
             printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
@@ -2989,7 +3037,9 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: rootJSONOut, idFormat: idFormat, fallbackText: fallbackText)
 
         case "current-workspace":
-            let response = try sendV1Command("current_workspace", client: client)
+            let response = client.scopedWindow != nil
+                ? try resolveWorkspaceId(nil, client: client)
+                : try sendV1Command("current_workspace", client: client)
             if jsonOutput {
                 print(jsonString(["workspace_id": response]))
             } else {
@@ -3199,8 +3249,10 @@ struct CMUXCLI {
             if let wsFlag = optionValue(commandArgs, name: "--workspace") {
                 let wsId = try resolveWorkspaceId(wsFlag, client: client)
                 socketCmd += " --tab=\(wsId)"
-            } else if windowId == nil,
-                      let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+            } else if windowId != nil {
+                let wsId = try resolveWorkspaceId(nil, client: client)
+                socketCmd += " --tab=\(wsId)"
+            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
                       let wsId = try? resolveWorkspaceId(envWs, client: client) {
                 socketCmd += " --tab=\(wsId)"
             }
@@ -3288,7 +3340,7 @@ struct CMUXCLI {
                     if let ws = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
                         params["workspace_id"] = ws
                     }
-                } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+                } else if windowId == nil, let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
                           let ws = try normalizeWorkspaceHandle(envWs, client: client) {
                     params["workspace_id"] = ws
                 }
@@ -4335,7 +4387,7 @@ struct CMUXCLI {
             // currently has selected. Only when the CLI is invoked
             // outside a c11 surface (no env) do we fall back to
             // `workspace.current`.
-            let callerWs = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
+            let callerWs = client.scopedWindow == nil ? (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]) : nil
             if let trimmed = callerWs?.trimmingCharacters(in: .whitespacesAndNewlines),
                !trimmed.isEmpty,
                UUID(uuidString: trimmed) != nil {
@@ -6293,8 +6345,8 @@ struct CMUXCLI {
             throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: c11 clear-metadata --key title")
         }
 
-        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
-        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let surfaceRaw = surfaceOpt ?? (client.scopedWindow == nil ? Self.callerTabEnv() : nil)
+        let workspaceRaw = workspaceOpt ?? (client.scopedWindow == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
 
         let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
@@ -6346,8 +6398,8 @@ struct CMUXCLI {
             throw CLIError(message: "get-titlebar-state: unknown flag '\(unknown)'")
         }
 
-        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
-        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let surfaceRaw = surfaceOpt ?? (client.scopedWindow == nil ? Self.callerTabEnv() : nil)
+        let workspaceRaw = workspaceOpt ?? (client.scopedWindow == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
         let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
 
@@ -8823,6 +8875,13 @@ struct CMUXCLI {
             throw CLIError(message: "--tab received an empty value (likely from an unset shell variable, e.g. $C11_TAB_ID). Pass a real ref or omit the flag.")
         }
         if let raw, isUUID(raw) {
+            if client.scopedWindow != nil {
+                let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
+                let items = listed["tabs"] as? [[String: Any]] ?? []
+                guard items.contains(where: { ($0["id"] as? String)?.caseInsensitiveCompare(raw) == .orderedSame }) else {
+                    throw CLIError(message: "not_found: Tab not found in scoped workspace")
+                }
+            }
             return raw
         }
         if let raw, isHandleRef(raw) {
@@ -14284,7 +14343,7 @@ struct CMUXCLI {
             if trimmed.lowercased().hasPrefix("workspace:") {
                 asWorkspace = try resolveWorkspaceId(trimmed, client: client)
             } else if isUUID(trimmed), try isWorkspaceUUID(trimmed, client: client) {
-                asWorkspace = trimmed
+                asWorkspace = try resolveWorkspaceId(trimmed, client: client)
             } else if Int(trimmed) != nil {
                 throw CLIError(message: "ambiguous --tab \(trimmed): use --workspace \(trimmed) or tab:\(trimmed)")
             }
@@ -14738,6 +14797,8 @@ struct CMUXCLI {
                 throw CLIError(message: "Invalid workspace handle")
             }
             params["workspace_id"] = workspaceHandle
+        } else if client.scopedWindow != nil, options.scope == .workspace {
+            params["workspace_id"] = try resolveWorkspaceId(nil, client: client)
         }
         if let caller = treeCallerContextFromEnvironment() {
             params["caller"] = caller
@@ -14833,6 +14894,7 @@ struct CMUXCLI {
         return try targetWindows.map {
             try buildTreeWindowNode(
                 window: $0,
+                selectedWorkspaceOnly: client.scopedWindow != nil && options.scope == .workspace,
                 activePath: activePath,
                 client: client
             )
@@ -14856,6 +14918,7 @@ struct CMUXCLI {
 
     private func buildTreeWindowNode(
         window: [String: Any],
+        selectedWorkspaceOnly: Bool,
         activePath: TreePath,
         client: SocketClient
     ) throws -> [String: Any] {
@@ -14864,7 +14927,10 @@ struct CMUXCLI {
             workspaceParams["window_id"] = windowHandle
         }
         let workspacePayload = try client.sendV2(method: "workspace.list", params: workspaceParams)
-        let workspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
+        let listedWorkspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
+        let workspaces = selectedWorkspaceOnly
+            ? listedWorkspaces.filter { ($0["selected"] as? Bool) == true }
+            : listedWorkspaces
         let workspaceNodes = try workspaces.map { try buildTreeWorkspaceNode(workspace: $0, activePath: activePath, client: client) }
         var windowNode = window
         let isActiveWindow = treeItemMatchesHandle(windowNode, handle: activePath.windowHandle)

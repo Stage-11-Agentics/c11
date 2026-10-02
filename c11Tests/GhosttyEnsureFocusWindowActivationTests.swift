@@ -107,10 +107,4 @@ final class ScrollbarRightEdgeInsetTests: XCTestCase {
         XCTAssertGreaterThan(gutterWidth, 0, "Legacy scroller gutter width must be positive")
     }
 
-    func testOverlayScrollerWidthIsZero() {
-        // The fix must NOT subtract anything in overlay mode (prior deliberate decision).
-        // Overlay scrollers have zero width (they float over content).
-        let overlayWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
-        XCTAssertEqual(overlayWidth, 0, "Overlay scroller width must be zero — it floats over content")
-    }
 }

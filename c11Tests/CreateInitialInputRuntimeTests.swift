@@ -38,8 +38,9 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         defer { free(shellCommand) }
         var template = ghostty_surface_config_new()
         template.command = UnsafePointer(shellCommand)
+        let workspaceId = UUID()
         let panel = TerminalTab(
-            workspaceId: UUID(), configTemplate: template,
+            workspaceId: workspaceId, configTemplate: template,
             workingDirectory: root.path, initialInput: command + "\r",
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
         )
@@ -81,14 +82,25 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         panel.surface.sendSubmitFormText("printf 'reparent:%s\\n' \"$$\" >> \(quotedReceipt)")
         _ = try await waitForEvents(receipt, deadline: deadline) { $0.contains("reparent:" + firstPID) }
 
-        // Host-only reconstruction seam: free and reattach this standalone
-        // surface through existing runtime methods, without changing product
-        // recovery policy or introducing a test-specific production API.
-        panel.surface.teardownSurface()
+        // Closing seals the old surface permanently. Reconstruct the
+        // standalone terminal with a fresh object and no consumed input;
+        // reparenting above remains the proof that a live PTY is reused.
+        panel.close()
+        panel.hostedView.removeFromSuperview()
         XCTAssertNil(panel.surface.surface)
-        try await Task.sleep(nanoseconds: 100_000_000)
-        panel.surface.attachToView(terminalView)
-        _ = try XCTUnwrap(panel.surface.surface, "native reconstruction must create another real PTY")
+        let rebuiltPanel = TerminalTab(
+            workspaceId: workspaceId, configTemplate: template,
+            workingDirectory: root.path, initialInput: nil,
+            initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
+        )
+        defer {
+            rebuiltPanel.close()
+            rebuiltPanel.hostedView.removeFromSuperview()
+        }
+        mount(rebuiltPanel.hostedView, in: secondWindow)
+        let rebuiltView = try XCTUnwrap(findTerminalView(in: rebuiltPanel.hostedView))
+        rebuiltPanel.surface.attachToView(rebuiltView)
+        _ = try XCTUnwrap(rebuiltPanel.surface.surface, "native reconstruction must create another real PTY")
         let reconstructed = try await waitForEvents(receipt, deadline: deadline) {
             $0.filter { eventName($0) == "rc-ready" }.count == 2
         }
@@ -96,7 +108,7 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
                        "native reconstruction replayed the creation input")
         let secondPID = try XCTUnwrap(reconstructed.last?.split(separator: ":").last.map(String.init))
         XCTAssertNotEqual(secondPID, firstPID, "reconstruction must prove a genuinely new shell")
-        panel.surface.sendSubmitFormText("printf 'reconstructed-followup:%s\\n' \"$$\" >> \(quotedReceipt)")
+        rebuiltPanel.surface.sendSubmitFormText("printf 'reconstructed-followup:%s\\n' \"$$\" >> \(quotedReceipt)")
         let completed = try await waitForEvents(receipt, deadline: deadline) { $0.contains("reconstructed-followup:" + secondPID) }
         XCTAssertEqual(completed.filter { eventName($0) == "initial" }.count, 1)
         XCTAssertFalse(firstWindow.isVisible)

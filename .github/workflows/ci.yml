@@ -211,6 +211,10 @@ jobs:
           CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
           test -x "$CLI_BINARY"
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
+
+      - name: Shell helper lifetime and git reporting
+        run: bash tests/test_shell_git_watchers.sh
 
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,

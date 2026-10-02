@@ -205,7 +205,8 @@ enum LaunchResumePicker {
         return AppSessionSnapshot(
             version: snapshot.version,
             createdAt: snapshot.createdAt,
-            windows: newWindows
+            windows: newWindows,
+            focusHistory: snapshot.focusHistory
         )
     }
 

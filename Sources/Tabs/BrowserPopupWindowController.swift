@@ -264,6 +264,8 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
         closeAllChildPopups()
 
+        webView.cmuxCloseInspectorBeforeHostTeardown()
+
         // Invalidate observations
         titleObservation?.invalidate()
         titleObservation = nil
@@ -529,7 +531,7 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
 
 // MARK: - PopupNavigationDelegate
 
-private class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
+class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
     weak var controller: BrowserPopupWindowController?
     var downloadDelegate: WKDownloadDelegate?
 
@@ -538,13 +540,28 @@ private class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        decidePolicy(
+            for: navigationAction.request.url,
+            isMainFrame: navigationAction.targetFrame?.isMainFrame != false,
+            in: webView,
+            decisionHandler: decisionHandler
+        )
+    }
+
+    // Also permits a behavioral test without fabricating a WKNavigationAction.
+    func decidePolicy(
+        for url: URL?,
+        isMainFrame: Bool,
+        in webView: WKWebView,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
         // Only guard main-frame navigations
-        guard navigationAction.targetFrame?.isMainFrame != false else {
+        guard isMainFrame else {
             decisionHandler(.allow)
             return
         }
 
-        guard let url = navigationAction.request.url else {
+        guard let url else {
             decisionHandler(.allow)
             return
         }
@@ -564,7 +581,11 @@ private class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
             #if DEBUG
             dlog("popup.nav.insecureHTTP url=\(url.absoluteString)")
             #endif
-            controller?.presentInsecureHTTPAlert(for: url, in: webView, decisionHandler: decisionHandler)
+            guard let controller else {
+                decisionHandler(.cancel)
+                return
+            }
+            controller.presentInsecureHTTPAlert(for: url, in: webView, decisionHandler: decisionHandler)
             return
         }
 

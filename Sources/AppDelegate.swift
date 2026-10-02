@@ -3865,6 +3865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func completeStartupSessionRestore() {
+        FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
         finishInitialSessionReadiness()
@@ -4981,7 +4982,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return AppSessionSnapshot(
             version: SessionSnapshotSchema.currentVersion,
             createdAt: Date().timeIntervalSince1970,
-            windows: windows
+            windows: windows,
+            focusHistory: FocusHistoryStore.shared.snapshot()
         )
     }
 
@@ -7139,6 +7141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             bringToFront(window)
         }
 
+        var configuredLaunch: (surfaceId: String, agent: AgentType, launch: ResolvedAgentLaunch)?
         var injected = plan
         injected.workspace.workingDirectory = workingDirectory
         if let trimmed = workspaceName?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
@@ -7156,11 +7159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let idx = injected.surfaces.firstIndex(where: { surface in
                 surface.kind == .terminal && (surface.command?.isEmpty ?? true)
             }) {
-                // Trailing newline submits the command. The "A" tab-bar button
-                // appends "\n" at its call site (Workspace.launchAgentSurface);
-                // SurfaceSpec.command is delivered verbatim by the layout
-                // executor, so the newline has to live in the value itself.
-                injected.surfaces[idx].command = command + "\n"
+                // Submit after layout materialization so prompt ownership can
+                // bind to the actual terminal object, without filesystem I/O here.
+                configuredLaunch = (injected.surfaces[idx].id, resolved.agent, resolved.launch)
+                injected.surfaces[idx].command = nil
                 // No orientation prompt is baked by default (see
                 // `c11OrientPrompt`), so mirror launchAgentSurface: stamp the
                 // identity the sidebar would otherwise wait on the agent to
@@ -7205,6 +7207,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             options: ApplyOptions(select: activate),
             dependencies: dependencies
         )
+        if let configuredLaunch,
+           let ref = result.surfaceRefs[configuredLaunch.surfaceId],
+           let tabId = UUID(uuidString: ref.replacingOccurrences(of: "surface:", with: "")),
+           let workspace = context.workspaceManager.workspaces.first(where: { $0.terminalPanel(for: tabId) != nil }),
+           let panel = workspace.terminalPanel(for: tabId) {
+            panel.submitConfiguredAgentLaunch(agent: configuredLaunch.agent, launch: configuredLaunch.launch) { [weak workspace, weak panel] in
+                guard let workspace, let panel else { return false }
+                return workspace.terminalPanel(for: panel.id) === panel
+            }
+        }
         #if DEBUG
         for failure in result.failures {
             FocusLogStore.shared.append(

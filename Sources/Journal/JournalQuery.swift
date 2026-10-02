@@ -278,7 +278,7 @@ enum JournalQuery {
         var result = TimelineBuild()
         let retained = events.filter { $0.draft.owner != nil && $0.sequence <= highWater }
         let grouped = Dictionary(grouping: retained, by: { $0.draft.owner!.key })
-        let baselineByOwner = Dictionary(uniqueKeysWithValues: baselines.compactMap { baseline in
+        let baselineByOwner: [String: JournalSnapshot] = Dictionary(uniqueKeysWithValues: baselines.compactMap { baseline in
             guard baseline.lastSequence <= highWater else { return nil }
             return (baseline.owner.key, baseline)
         })

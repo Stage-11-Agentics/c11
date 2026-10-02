@@ -133,6 +133,7 @@ extension TerminalController {
             "config.default",
             "config.launch",
             "mailbox.resolve",
+            "mailbox.report_delivered",
             "area.list",
             "area.focus",
             "area.tabs",

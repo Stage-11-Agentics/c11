@@ -20,6 +20,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2SessionSave(params: params))
         case "mailbox.resolve":
             return v2Result(id: id, self.v2MailboxResolve(params: params))
+        case "mailbox.report_delivered":
+            return v2Result(id: id, self.v2MailboxReportDelivered(params: params))
         case "sidebar.state":
             return v2Result(id: id, self.v2SidebarState(params: params))
         default:
@@ -358,6 +360,36 @@ extension TerminalController {
     ///
     /// Returns `{ resolution: "unique"|"ambiguous"|"unresolved",
     /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
+    /// `mailbox.report_delivered` — C11-257 Lane C. A CLI consumer (`c11
+    /// mailbox recv --drain`, a harness hook drain) reports the envelopes it
+    /// claimed into `_read/`, and the app records one `mailbox.delivered` per
+    /// id. Params: `workspace_id` (UUID), `recipient` (string), `ids`
+    /// ([string]), `tab_id` (UUID, optional), `via` (default `"drain"`).
+    ///
+    /// Telemetry: validated and emitted off-main (EventEmitter is
+    /// thread-safe); nothing here touches AppKit or the model.
+    private func v2MailboxReportDelivered(params: [String: Any]) -> V2CallResult {
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(code: "invalid_workspace_id", message: "workspace_id must be a UUID", data: nil)
+        }
+        guard let recipient = v2String(params, "recipient"), !recipient.isEmpty else {
+            return .err(code: "invalid_recipient", message: "recipient is required", data: nil)
+        }
+        let ids = (params["ids"] as? [Any] ?? []).compactMap { $0 as? String }.filter { !$0.isEmpty }
+        let via = v2String(params, "via") ?? "drain"
+        let tabId = v2UUID(params, "tab_id")
+        for envelopeId in ids {
+            EventEmitter.shared.emitMailboxDelivered(
+                workspace: workspaceId,
+                id: envelopeId,
+                recipient: recipient,
+                surface: tabId,
+                via: via
+            )
+        }
+        return .ok(["recorded": ids.count])
+    }
+
     private func v2MailboxResolve(params: [String: Any]) -> V2CallResult {
         guard let to = v2String(params, "to"), !to.isEmpty else {
             return .err(code: "invalid_to", message: "to is required", data: nil)

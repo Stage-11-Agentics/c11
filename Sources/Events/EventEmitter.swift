@@ -190,13 +190,14 @@ final class EventEmitter {
         workspace: UUID,
         id: String,
         recipient: String,
-        surface: UUID?
+        surface: UUID?,
+        via: String = "inbox"
     ) {
         emit(
             .mailboxDelivered,
             workspace: workspace,
             surface: surface,
-            payload: ["id": id, "recipient": recipient]
+            payload: ["id": id, "recipient": recipient, "via": via]
         )
     }
 

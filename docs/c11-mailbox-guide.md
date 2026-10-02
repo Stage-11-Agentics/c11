@@ -63,7 +63,7 @@ c11 set-metadata mailbox.delivery stdin   # opt in to PTY injection
 # The framed block lands in the PTY the next time builder sends — at a shell
 # prompt it injects immediately; if watcher is mid-command it buffers and
 # flushes at the next prompt (see "Prompt-gated delivery" below).
-c11 mailbox recv --drain                   # robust floor: pull at turn boundaries
+c11 mailbox recv --drain                   # pull now (agents also get mail at turn boundaries via hooks)
 ```
 
 If `mailbox.delivery` is not set on the recipient, the envelope still lands in `<tab-name>/` inbox; the recipient drains it explicitly with `c11 mailbox recv`. Even with `stdin` set, draining at turn boundaries is the reliable delivery path — push is prompt-gated and best-effort.
@@ -220,8 +220,8 @@ sequenceDiagram
         Note over Agent: Inbox file sits until drained
     end
     Note over Agent: pull at every turn boundary — the robust floor
-    Agent->>Inbox: c11 mailbox recv --drain
-    Inbox-->>Agent: prints + unlinks each .msg
+    Agent->>Inbox: c11 mailbox recv --drain (or a turn-boundary hook)
+    Inbox-->>Agent: claims each .msg into _read/, then prints it
 ```
 
 ### When the framed block arrives in your PTY
@@ -260,12 +260,42 @@ Buffered blocks flush in FIFO order the moment the tab transitions back to `prom
 ### Explicit inbox drain
 
 ```bash
-c11 mailbox recv --drain    # default: list, print, unlink
+c11 mailbox recv --drain    # default: print each message, move it to _read/
 c11 mailbox recv --peek     # list + print only, leave files in place
 c11 mailbox recv --tab watcher --drain   # drain on someone else's behalf
 ```
 
 Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender.
+
+**Consuming is a claim, not a delete.** Every consumer (`recv --drain`, a turn-boundary hook, the stdin push) renames `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* it prints or types the message. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope reaches the agent once. A consumer whose injection fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery. Each claimed envelope is recorded as a `mailbox.delivered` event with `via: "drain"`.
+
+### Turn-boundary drain (harness hooks)
+
+An agent that is busy when mail arrives sees it at its next turn boundary, through its harness's own hooks. Nothing to call by hand; c11's launch wrappers wire this up inside c11 tabs.
+
+| Harness | Prompt submit | Stop | How c11 wires it |
+|---|---|---|---|
+| Claude Code | messages added as context to the turn that starts | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook prompt-submit` / `stop` hooks `Resources/bin/claude` already injects via `--settings` |
+| Codex | same | same (Codex turns the block into a continuation prompt) | `Resources/bin/codex` passes the hooks and their trust hash as `-c` session flags, per launch; nothing is written under `~/.codex` |
+| Grok Build | no (Grok discards an allowing UserPromptSubmit hook's output) | same, on `reason: "end_turn"` only | no per-launch hook path in the Grok TUI; Grok mail relies on stdin push until a wiring is chosen |
+
+The hook command is:
+
+```bash
+c11 mailbox recv --drain --hook-format claude|codex|grok [--event prompt-submit|stop]
+```
+
+It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail:
+
+```json
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}}
+{"decision":"block","reason":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}
+```
+
+- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness.
+- **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and blocks only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
+- **Budget.** One hook delivers at most about 8,000 characters of framed messages (every message whole; the oldest is always taken). The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
+- **Opt out:** `C11_MAILBOX_HOOK_DRAIN=0` in the environment disables the hook drain for that process; plain `recv` is unaffected.
 
 ### Exact PTY frame shape
 

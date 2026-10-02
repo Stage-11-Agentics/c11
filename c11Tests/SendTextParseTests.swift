@@ -9,7 +9,12 @@ import XCTest
 final class SendTextParseTests: XCTestCase {
     func testBuiltCLISendProtocolFixtures() throws {
         let products = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
-        let cli = products.appendingPathComponent("c11 DEV.app/Contents/Resources/bin/c11")
+        #if DEBUG
+        let appName = "c11 DEV.app"
+        #else
+        let appName = "c11.app"
+        #endif
+        let cli = products.appendingPathComponent(appName + "/Contents/Resources/bin/c11")
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cli.path))
         let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("tests_v2/test_send_raw_and_flags.py")

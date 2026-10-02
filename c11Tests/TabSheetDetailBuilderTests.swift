@@ -242,4 +242,47 @@ final class TabSheetDetailBuilderTests: XCTestCase {
         a.subtitle = "changed"
         XCTAssertNotEqual(TabSheetDetailBuilder.ignoringClocks(a), TabSheetDetailBuilder.ignoringClocks(b))
     }
+
+    func testTurnClockFreezesWhenTheTurnHasEnded() {
+        var input = inputs(activity: .running)
+        input.turnStartedAt = t0
+        input.turnEndedAt = t0.addingTimeInterval(12)
+        input.now = t0.addingTimeInterval(12)
+        let early = TabSheetDetailBuilder.build(input).clockTexts["turn"]
+        input.now = t0.addingTimeInterval(90)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).clockTexts["turn"], early)
+        input.turnEndedAt = nil
+        let later = TabSheetDetailBuilder.build(input).clockTexts["turn"]
+        input.now = t0.addingTimeInterval(12)
+        XCTAssertNotEqual(TabSheetDetailBuilder.build(input).clockTexts["turn"], later)
+    }
+
+    func testJournalPhaseSinceReplacesTheActivityClockAndCanStayBlank() {
+        var input = inputs(activity: .running)
+        input.journalPhaseSinceApplies = true
+        input.journalPhaseSince = nil
+        let blank = TabSheetDetailBuilder.build(input).status
+        XCTAssertEqual(blank?.kind, .working)
+        XCTAssertNil(blank?.since)
+        input.journalPhaseSince = t0.addingTimeInterval(5)
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
+        input.activity = .idle
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).status?.since, t0.addingTimeInterval(5))
+        input.isFlagged = true
+        let flagged = TabSheetDetailBuilder.build(input).status
+        XCTAssertEqual(flagged?.kind, .flagged)
+        XCTAssertEqual(flagged?.since, t0.addingTimeInterval(30))
+        var waiting = inputs(activity: .waiting)
+        waiting.journalPhaseSinceApplies = false
+        waiting.journalPhaseSince = t0.addingTimeInterval(99)
+        let unread = TabSheetDetailBuilder.build(waiting).status
+        XCTAssertEqual(unread?.kind, .waiting)
+        XCTAssertEqual(unread?.since, t0)
+    }
+
+    func testUnconfirmedEvidenceNoteJoinsTheSubtitle() {
+        var input = inputs(description: "synthetic")
+        input.evidenceNote = "Unconfirmed"
+        XCTAssertEqual(TabSheetDetailBuilder.build(input).subtitle, "synthetic · Unconfirmed")
+    }
 }

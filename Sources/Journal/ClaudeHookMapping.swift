@@ -67,7 +67,10 @@ enum ClaudeHookMapping {
             adapter: .claudeHook,
             nativeEvent: native
         )
-        draft.turnID = opaque(object["prompt_id"] as? String)
+        // SessionEnd is session-scoped. Claude may include a prompt_id that
+        // belongs to a later prompt; carrying it would make the reducer reject
+        // the end as stale against the session's last committed turn.
+        draft.turnID = kind == .sessionEnded ? nil : opaque(object["prompt_id"] as? String)
         draft.requestID = request
         if kind == .attentionResolved { draft.resolution = .resumed }
         if kind == .errorReported { draft.reasonCode = .sessionFailure }

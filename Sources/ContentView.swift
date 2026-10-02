@@ -8556,6 +8556,8 @@ struct WorkspaceSidebar: View {
                 for: ChromeScaleSettings.preset(for: chromeScalePresetRaw)
             )
         )
+        // Shared by every folder header in this projection evaluation.
+        let groupPalette = WorkspaceColorSettings.palette()
 
         VStack(spacing: 0) {
             GeometryReader { proxy in
@@ -8576,7 +8578,7 @@ struct WorkspaceSidebar: View {
                             ForEach(groupCoordinator.projection.rows) { row in
                                 switch row {
                                 case .group(let header):
-                                    groupHeader(header, chromeTokens: chromeTokens)
+                                    groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette)
                                 case .workspace(let item):
                                     if let ws = workspacesById[item.workspaceId] {
                                         workspaceRow(ws, item: item, chromeTokens: chromeTokens)
@@ -8818,10 +8820,11 @@ struct WorkspaceSidebar: View {
         .padding(.horizontal, 6)
     }
 
-    private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens) -> some View {
+    private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens,
+                             palette: [WorkspaceColorEntry]) -> some View {
         WorkspaceGroupHeaderView(
             group: header.group, summary: header.summary, isActive: header.isActive,
-            scale: chromeTokens.multiplier, colorScheme: colorScheme, palette: WorkspaceColorSettings.palette(),
+            scale: chromeTokens.multiplier, colorScheme: colorScheme, palette: palette,
             onToggleCollapse: { id in
                 guard let group = workspaceManager.workspaceGroups.first(where: { $0.id == id }) else { return }
                 try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
@@ -14598,131 +14601,12 @@ struct SidebarDropIndicator {
 }
 
 enum SidebarDropPlanner {
-    static func indicator(
-        draggedWorkspaceId: UUID?,
-        targetWorkspaceId: UUID?,
-        workspaceIds: [UUID],
-        pinnedWorkspaceIds: Set<UUID>,
-        pointerY: CGFloat? = nil,
-        targetHeight: CGFloat? = nil
-    ) -> SidebarDropIndicator? {
-        guard workspaceIds.count > 1, let draggedWorkspaceId else { return nil }
-        guard let fromIndex = workspaceIds.firstIndex(of: draggedWorkspaceId) else { return nil }
-
-        let insertionPosition: Int
-        if let targetWorkspaceId {
-            guard let targetWorkspaceIndex = workspaceIds.firstIndex(of: targetWorkspaceId) else { return nil }
-            let edge: SidebarDropEdge
-            if let pointerY, let targetHeight {
-                edge = edgeForPointer(locationY: pointerY, targetHeight: targetHeight)
-            } else {
-                edge = preferredEdge(fromIndex: fromIndex, targetWorkspaceId: targetWorkspaceId, workspaceIds: workspaceIds)
-            }
-            insertionPosition = (edge == .bottom) ? targetWorkspaceIndex + 1 : targetWorkspaceIndex
-        } else {
-            insertionPosition = workspaceIds.count
-        }
-
-        let legalInsertionPosition = legalInsertionPosition(
-            draggedWorkspaceId: draggedWorkspaceId,
-            proposedInsertionPosition: insertionPosition,
-            workspaceIds: workspaceIds,
-            pinnedWorkspaceIds: pinnedWorkspaceIds
-        )
-        let legalTargetIndex = resolvedTargetIndex(
-            from: fromIndex,
-            insertionPosition: legalInsertionPosition,
-            totalCount: workspaceIds.count
-        )
-        guard legalTargetIndex != fromIndex else { return nil }
-        return indicatorForInsertionPosition(legalInsertionPosition, workspaceIds: workspaceIds)
-    }
-
-    static func targetIndex(
-        draggedWorkspaceId: UUID,
-        targetWorkspaceId: UUID?,
-        indicator: SidebarDropIndicator?,
-        workspaceIds: [UUID],
-        pinnedWorkspaceIds: Set<UUID>
-    ) -> Int? {
-        guard let fromIndex = workspaceIds.firstIndex(of: draggedWorkspaceId) else { return nil }
-
-        let insertionPosition: Int
-        if let indicator, let indicatorInsertion = insertionPositionForIndicator(indicator, workspaceIds: workspaceIds) {
-            insertionPosition = indicatorInsertion
-        } else if let targetWorkspaceId {
-            guard let targetWorkspaceIndex = workspaceIds.firstIndex(of: targetWorkspaceId) else { return nil }
-            let edge = (indicator?.workspaceId == targetWorkspaceId)
-                ? (indicator?.edge ?? preferredEdge(fromIndex: fromIndex, targetWorkspaceId: targetWorkspaceId, workspaceIds: workspaceIds))
-                : preferredEdge(fromIndex: fromIndex, targetWorkspaceId: targetWorkspaceId, workspaceIds: workspaceIds)
-            insertionPosition = (edge == .bottom) ? targetWorkspaceIndex + 1 : targetWorkspaceIndex
-        } else {
-            insertionPosition = workspaceIds.count
-        }
-
-        let legalInsertionPosition = legalInsertionPosition(
-            draggedWorkspaceId: draggedWorkspaceId,
-            proposedInsertionPosition: insertionPosition,
-            workspaceIds: workspaceIds,
-            pinnedWorkspaceIds: pinnedWorkspaceIds
-        )
-        return resolvedTargetIndex(from: fromIndex, insertionPosition: legalInsertionPosition, totalCount: workspaceIds.count)
-    }
-
-    private static func indicatorForInsertionPosition(_ insertionPosition: Int, workspaceIds: [UUID]) -> SidebarDropIndicator {
-        let clampedInsertion = max(0, min(insertionPosition, workspaceIds.count))
-        if clampedInsertion >= workspaceIds.count {
-            return SidebarDropIndicator(workspaceId: nil, edge: .bottom)
-        }
-        return SidebarDropIndicator(workspaceId: workspaceIds[clampedInsertion], edge: .top)
-    }
-
-    private static func insertionPositionForIndicator(_ indicator: SidebarDropIndicator, workspaceIds: [UUID]) -> Int? {
-        if let workspaceId = indicator.workspaceId {
-            guard let targetWorkspaceIndex = workspaceIds.firstIndex(of: workspaceId) else { return nil }
-            return indicator.edge == .bottom ? targetWorkspaceIndex + 1 : targetWorkspaceIndex
-        }
-        return workspaceIds.count
-    }
-
-    private static func preferredEdge(fromIndex: Int, targetWorkspaceId: UUID, workspaceIds: [UUID]) -> SidebarDropEdge {
-        guard let targetIndex = workspaceIds.firstIndex(of: targetWorkspaceId) else { return .top }
-        return fromIndex < targetIndex ? .bottom : .top
-    }
-
-    private static func legalInsertionPosition(
-        draggedWorkspaceId: UUID,
-        proposedInsertionPosition: Int,
-        workspaceIds: [UUID],
-        pinnedWorkspaceIds: Set<UUID>
-    ) -> Int {
-        let clampedInsertion = max(0, min(proposedInsertionPosition, workspaceIds.count))
-        guard !pinnedWorkspaceIds.isEmpty else { return clampedInsertion }
-
-        let pinnedCount = workspaceIds.reduce(into: 0) { count, workspaceId in
-            if pinnedWorkspaceIds.contains(workspaceId) {
-                count += 1
-            }
-        }
-        guard pinnedCount > 0 else { return clampedInsertion }
-
-        if pinnedWorkspaceIds.contains(draggedWorkspaceId) {
-            return min(clampedInsertion, pinnedCount)
-        }
-        return max(clampedInsertion, pinnedCount)
-    }
-
     static func edgeForPointer(locationY: CGFloat, targetHeight: CGFloat) -> SidebarDropEdge {
         guard targetHeight > 0 else { return .top }
         let clampedY = min(max(locationY, 0), targetHeight)
         return clampedY < (targetHeight / 2) ? .top : .bottom
     }
 
-    private static func resolvedTargetIndex(from sourceIndex: Int, insertionPosition: Int, totalCount: Int) -> Int {
-        let clampedInsertion = max(0, min(insertionPosition, totalCount))
-        let adjusted = clampedInsertion > sourceIndex ? clampedInsertion - 1 : clampedInsertion
-        return max(0, min(adjusted, max(0, totalCount - 1)))
-    }
 }
 
 enum SidebarAutoScrollDirection: Equatable {

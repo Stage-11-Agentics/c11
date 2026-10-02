@@ -61007,7 +61007,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Every area keeps its tab list on the left. Undo puts Tabs back."
+            "value": "This area's tab list stays open on the left. Undo puts Tabs back."
           }
         },
         "ja": {
@@ -72373,6 +72373,18 @@
             "value": "Восстановление сеанса ещё выполняется. Повторите попытку чуть позже."
           }
         }
+      }
+    },
+    "journal.evidence.unconfirmed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unconfirmed" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未確認" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Не підтверджено" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "확인되지 않음" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未确认" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "未確認" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Не подтверждено" } }
       }
     }
   }

@@ -216,4 +216,228 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
         XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
     }
+
+    func testReadOnlyOpenLeavesAMissingFileAbsent() {
+        let outsideProduction = directory.path.contains("com.stage11.c11")
+        XCTAssertFalse(outsideProduction)
+        let missing = JournalStorageLayout(directory: directory.appendingPathComponent("absent"))
+        XCTAssertThrowsError(try JournalStore(layout: missing, readOnly: true)) {
+            XCTAssertEqual($0 as? JournalError, .unavailable)
+        }
+        let created = FileManager.default.fileExists(atPath: missing.database.path)
+        XCTAssertFalse(created)
+    }
+
+    func testReadOnlyTimelineIsNewestFirstAndCountsUnattributedRows() throws {
+        let outsideProduction = directory.path.contains("com.stage11.c11")
+        XCTAssertFalse(outsideProduction)
+        let clock: Int64 = 5_000
+        var writer: JournalStore? = try JournalStore(layout: layout, clock: { clock })
+        var started = JournalTestData.draft(.sessionStarted, at: clock)
+        started.nativeEvent = "SessionStart"
+        _ = try writer!.append(draft: started, context: JournalContext(eligible: true))
+        var ended = JournalTestData.draft(.sessionEnded, at: clock)
+        ended.nativeEvent = "SessionEnd"
+        ended.eventID = UUID()
+        _ = try writer!.append(draft: ended, context: JournalContext(eligible: true))
+        var loose = JournalTestData.draft(.stateChanged, at: clock)
+        loose.eventID = UUID()
+        loose.tabID = nil
+        loose.workspaceID = nil
+        loose.sessionID = nil
+        loose.signal = .observation
+        loose.nativeEvent = "other"
+        _ = try writer!.append(draft: loose, context: JournalContext(eligible: false))
+        let owner = try XCTUnwrap(started.owner)
+        writer = nil
+        let reader = try JournalStore(layout: layout, readOnly: true)
+        XCTAssertEqual(try reader.listCurrent().count, 1)
+        let page = try reader.retainedOwnerEvents(owner: owner)
+        XCTAssertEqual(page.events.map(\.draft.kind), [.sessionEnded, .sessionStarted])
+        XCTAssertFalse(page.truncated)
+        let capped = try reader.retainedOwnerEvents(owner: owner, limit: 1)
+        XCTAssertTrue(capped.truncated)
+        XCTAssertEqual(capped.events.map(\.draft.kind), [.sessionEnded])
+        XCTAssertEqual(try reader.unattributedCount(), 1)
+        XCTAssertThrowsError(try reader.append(draft: JournalTestData.draft(.turnStarted, at: clock), context: JournalContext(eligible: true))) {
+            XCTAssertEqual($0 as? JournalError, .unavailable)
+        }
+    }
+
+    func testReopenProjectsOnlyAppliedExactEvidenceBehindEachBaseline() throws {
+        var now: Int64 = 1_000
+        let context = JournalContext(eligible: true, verifiedNativeClock: true)
+        var writer: JournalStore? = try JournalStore(layout: layout, clock: { now })
+
+        var liveStart = JournalTestData.draft(.sessionStarted, at: 900)
+        liveStart.sessionID = "live-session"
+        liveStart.nativeEvent = "SessionStart"
+        let liveOwner = try XCTUnwrap(liveStart.owner)
+        XCTAssertEqual(try writer!.append(draft: liveStart, context: context).receipt.projectionEffect, .applied)
+
+        var repeatedStart = liveStart
+        repeatedStart.eventID = UUID()
+        now = 950
+        XCTAssertEqual(try writer!.append(draft: repeatedStart, context: context).receipt.projectionEffect, .observation)
+
+        var turn = JournalTestData.draft(.turnStarted, at: 1_000)
+        turn.sessionID = liveOwner.sessionID
+        turn.turnID = "turn-live"
+        turn.timeQuality = .nativeLocal
+        turn.occurredAtMs = 1_000
+        now = 1_000
+        XCTAssertEqual(try writer!.append(draft: turn, context: context).receipt.projectionEffect, .applied)
+
+        var repeatedTurn = turn
+        repeatedTurn.eventID = UUID()
+        repeatedTurn.emittedAtMs = 4_000
+        repeatedTurn.occurredAtMs = 4_000
+        now = 4_000
+        XCTAssertEqual(try writer!.append(draft: repeatedTurn, context: context).receipt.projectionEffect, .duplicateEvidence)
+
+        var ask = JournalTestData.draft(.questionRequested, at: 5_000)
+        ask.sessionID = liveOwner.sessionID
+        ask.turnID = "turn-live"
+        ask.requestID = "request-live"
+        ask.timeQuality = .nativeLocal
+        ask.occurredAtMs = 5_000
+        now = 5_000
+        XCTAssertEqual(try writer!.append(draft: ask, context: context).receipt.projectionEffect, .applied)
+
+        var repeatedAsk = ask
+        repeatedAsk.eventID = UUID()
+        repeatedAsk.emittedAtMs = 8_000
+        repeatedAsk.occurredAtMs = 8_000
+        now = 8_000
+        XCTAssertEqual(try writer!.append(draft: repeatedAsk, context: context).receipt.projectionEffect, .duplicateEvidence)
+
+        var advisoryAsk = ask
+        advisoryAsk.eventID = UUID()
+        advisoryAsk.source = .transcript
+        advisoryAsk.adapter = .codexTranscript
+        advisoryAsk.requestID = "advisory-request"
+        advisoryAsk.emittedAtMs = 9_000
+        advisoryAsk.occurredAtMs = 9_000
+        now = 9_000
+        XCTAssertEqual(try writer!.append(draft: advisoryAsk, context: context).receipt.projectionEffect, .advisory)
+
+        var lost = JournalTestData.draft(.stateChanged, at: 10_000)
+        lost.sessionID = liveOwner.sessionID
+        lost.source = .c11
+        lost.adapter = .c11
+        lost.nativeEvent = "connection_lost"
+        lost.signal = .connectionLost
+        now = 10_000
+        XCTAssertEqual(try writer!.append(draft: lost, context: context).receipt.projectionEffect, .applied)
+
+        var endedStart = JournalTestData.draft(.sessionStarted, at: 11_000)
+        endedStart.tabID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        endedStart.sessionID = "ended-session"
+        endedStart.nativeEvent = "SessionStart"
+        let endedOwner = try XCTUnwrap(endedStart.owner)
+        now = 11_000
+        XCTAssertEqual(try writer!.append(draft: endedStart, context: context).receipt.projectionEffect, .applied)
+        var endedTurn = JournalTestData.draft(.turnStarted, at: 12_000)
+        endedTurn.tabID = endedOwner.tabID
+        endedTurn.sessionID = endedOwner.sessionID
+        endedTurn.turnID = "turn-ended"
+        endedTurn.timeQuality = .nativeLocal
+        endedTurn.occurredAtMs = 12_000
+        now = 12_000
+        XCTAssertEqual(try writer!.append(draft: endedTurn, context: context).receipt.projectionEffect, .applied)
+        var end = JournalTestData.draft(.sessionEnded, at: 13_000)
+        end.tabID = endedOwner.tabID
+        end.sessionID = endedOwner.sessionID
+        end.nativeEvent = "SessionEnd"
+        now = 13_000
+        XCTAssertEqual(try writer!.append(draft: end, context: context).receipt.projectionEffect, .applied)
+        var startAfterEnd = endedStart
+        startAfterEnd.eventID = UUID()
+        startAfterEnd.emittedAtMs = 14_000
+        now = 14_000
+        XCTAssertEqual(try writer!.append(draft: startAfterEnd, context: context).receipt.projectionEffect, .observation)
+
+        let originalInstance = writer!.instanceID
+        writer = nil
+        let reopened = try JournalStore(layout: layout, clock: { 15_000 })
+        XCTAssertNotEqual(reopened.instanceID, originalInstance)
+
+        let liveBaseline = try XCTUnwrap(reopened.current(owner: liveOwner))
+        let livePage = try reopened.retainedOwnerEvents(owner: liveOwner, throughSequence: liveBaseline.lastSequence)
+        let repeatedStartRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedStart.eventID })
+        let duplicateTurnRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedTurn.eventID })
+        let duplicateAskRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedAsk.eventID })
+        let advisoryRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == advisoryAsk.eventID })
+        XCTAssertEqual(repeatedStartRow.event.effect, .observation)
+        XCTAssertEqual(repeatedStartRow.event.attribution, "exact")
+        XCTAssertEqual(duplicateTurnRow.event.effect, .duplicateEvidence)
+        XCTAssertEqual(duplicateAskRow.event.effect, .duplicateEvidence)
+        XCTAssertEqual(advisoryRow.event.effect, .advisory)
+        XCTAssertEqual(duplicateAskRow.event.attribution, "exact")
+        XCTAssertEqual(AgentRoster.turnStartMs(turnID: liveBaseline.turnID, throughSequence: liveBaseline.lastSequence, eventsNewestFirst: livePage.events), 1_000)
+        let restoredAsk = try XCTUnwrap(AgentRoster.restoredAsk(snapshot: liveBaseline, eventsNewestFirst: livePage.events))
+        XCTAssertEqual(restoredAsk.eventID, ask.eventID)
+        XCTAssertEqual(restoredAsk.requestID, ask.requestID)
+        XCTAssertEqual(restoredAsk.openedAtMs, 5_000)
+
+        let endedBaseline = try XCTUnwrap(reopened.current(owner: endedOwner))
+        let endedPage = try reopened.retainedOwnerEvents(owner: endedOwner, throughSequence: endedBaseline.lastSequence)
+        let fullEndedPage = try reopened.retainedOwnerEvents(owner: endedOwner)
+        let postEndStart = try XCTUnwrap(fullEndedPage.events.first { $0.draft.eventID == startAfterEnd.eventID })
+        XCTAssertEqual(postEndStart.event.effect, .observation)
+        XCTAssertEqual(postEndStart.event.attribution, "exact")
+        XCTAssertGreaterThan(postEndStart.sequence, endedBaseline.lastSequence)
+        XCTAssertEqual(
+            AgentRoster.classifyRestore(eventsNewestFirst: endedPage.events, throughSequence: endedBaseline.lastSequence, truncated: false, storePruned: false).label,
+            "ended"
+        )
+
+        let projected = try reopened.listCurrent().map(JournalReplayPolicy.restored)
+        let pages = [liveOwner, endedOwner].reduce(into: [String: [AgentRoster.RetainedEvent]]()) { result, owner in
+            let lastSequence = owner == liveOwner ? liveBaseline.lastSequence : endedBaseline.lastSequence
+            result[owner.key] = (try? reopened.retainedOwnerEvents(owner: owner, throughSequence: lastSequence).events) ?? []
+        }
+        let document = AgentRoster.document(
+            live: [], currents: projected, eventsByOwner: pages, truncatedOwners: [], unattributed: 0,
+            storePruned: false, storageAvailable: true, healthDegraded: false, now: 15_000, liveIdentity: "unavailable")
+        let labels: [String: String] = Dictionary(uniqueKeysWithValues: (document["restore_candidates"] as? [[String: Any]] ?? []).compactMap { candidate -> (String, String)? in
+            guard let sessionID = candidate["session_id"] as? String, let label = candidate["label"] as? String else { return nil }
+            return (sessionID, label)
+        })
+        XCTAssertEqual(labels[liveOwner.sessionID], "historical_candidate")
+        XCTAssertEqual(labels[endedOwner.sessionID], "ended")
+    }
+
+    func testCrashLiveBaselineBecomesCandidateOnlyAfterReplayProjection() throws {
+        var writer: JournalStore? = try JournalStore(layout: layout, clock: { 1_000 })
+        var start = JournalTestData.draft(.sessionStarted, at: 900)
+        start.nativeEvent = "SessionStart"
+        let owner = try XCTUnwrap(start.owner)
+        _ = try writer!.append(draft: start, context: JournalContext(eligible: true))
+        var turn = JournalTestData.draft(.turnStarted, at: 1_000)
+        turn.turnID = "crash-live-turn"
+        turn.timeQuality = .nativeLocal
+        turn.occurredAtMs = 1_000
+        _ = try writer!.append(draft: turn, context: JournalContext(eligible: true, verifiedNativeClock: true))
+        let confirmed = try XCTUnwrap(writer!.current(owner: owner))
+        XCTAssertEqual(confirmed.confirmation, .confirmed)
+        XCTAssertEqual(confirmed.connection, .live)
+        writer = nil // model a process close with no SessionEnd or connection_lost write
+
+        let reopened = try JournalStore(layout: layout, clock: { 2_000 })
+        let raw = try XCTUnwrap(reopened.current(owner: owner))
+        XCTAssertEqual(raw.confirmation, .confirmed, "the stored row is not rewritten by read-only reopen")
+        let restored = JournalReplayPolicy.restored(raw)
+        XCTAssertTrue(restored.isHistorical)
+        let page = try reopened.retainedOwnerEvents(owner: owner, throughSequence: restored.lastSequence)
+        XCTAssertFalse(page.events.contains { $0.draft.signal == .connectionLost })
+        let document = AgentRoster.document(
+            live: [], currents: [restored], eventsByOwner: [owner.key: page.events], truncatedOwners: [],
+            unattributed: 0, storePruned: false, storageAvailable: true, healthDegraded: false,
+            now: 2_000, liveIdentity: "unavailable")
+        let candidates = document["restore_candidates"] as? [[String: Any]] ?? []
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates[0]["label"] as? String, "historical_candidate")
+        XCTAssertEqual(candidates[0]["connection"] as? String, "unknown")
+    }
 }

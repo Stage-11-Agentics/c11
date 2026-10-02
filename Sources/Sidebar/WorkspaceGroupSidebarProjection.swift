@@ -226,7 +226,7 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
                                                                   isSuppressed: attention.suppressed)
                             }
                             return WorkspaceGroupMemberAttention(tabs: tabs,
-                                unreadCount: notificationStore.rawUnreadCount(forWorkspaceId: workspace.id))
+                                unreadCount: notificationStore.unreadCount(forWorkspaceId: workspace.id))
                         })
                 }
             },

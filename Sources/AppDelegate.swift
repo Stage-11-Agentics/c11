@@ -13684,6 +13684,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    func updateSurfaceDirectoryFromGhosttyAction(workspaceId: UUID, surfaceId: UUID, directory: String) {
+        let owningManager = workspaceManagerFor(workspaceId: workspaceId) ?? workspaceManager
+        owningManager?.updateSurfaceDirectory(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            directory: directory
+        )
+    }
+
     func closeMainWindowContainingWorkspaceId(_ workspaceId: UUID) {
         guard let context = contextContainingWorkspaceId(workspaceId) else { return }
         let expectedIdentifier = "cmux.main.\(context.windowId.uuidString)"

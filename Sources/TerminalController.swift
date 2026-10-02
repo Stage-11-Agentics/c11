@@ -2282,6 +2282,8 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        "journal.clear",
+        "journal.status",
         // Feed list and display notes parse off main and do not move focus.
         "feed.list",
         "feed.note_display",
@@ -2351,7 +2353,66 @@ class TerminalController {
         "browser.profiles.clear",
         "browser.profiles.delete",
         "browser.cookies.clear",
+        // B006: reading/setting cookies and saving storage also await WebKit.
+        // Keep those waits and state-file writes off the main actor.
+        "browser.cookies.get",
+        "browser.cookies.set",
+        "browser.state.save",
         "browser.state.load",
+        "browser.open_split",
+        "browser.navigate",
+        "browser.back",
+        "browser.forward",
+        "browser.reload",
+        "browser.snapshot",
+        "browser.click",
+        "browser.dblclick",
+        "browser.hover",
+        "browser.focus",
+        "browser.type",
+        "browser.fill",
+        "browser.press",
+        "browser.keydown",
+        "browser.keyup",
+        "browser.check",
+        "browser.uncheck",
+        "browser.select",
+        "browser.scroll",
+        "browser.scroll_into_view",
+        "browser.screenshot",
+        "browser.get.text",
+        "browser.get.html",
+        "browser.get.value",
+        "browser.get.attr",
+        "browser.get.count",
+        "browser.get.box",
+        "browser.get.styles",
+        "browser.is.visible",
+        "browser.is.enabled",
+        "browser.is.checked",
+        "browser.find.role",
+        "browser.find.text",
+        "browser.find.label",
+        "browser.find.placeholder",
+        "browser.find.alt",
+        "browser.find.title",
+        "browser.find.testid",
+        "browser.find.first",
+        "browser.find.last",
+        "browser.find.nth",
+        "browser.frame.select",
+        "browser.dialog.accept",
+        "browser.dialog.dismiss",
+        "browser.storage.get",
+        "browser.storage.set",
+        "browser.storage.clear",
+        "browser.console.list",
+        "browser.console.clear",
+        "browser.errors.list",
+        "browser.highlight",
+        "browser.addinitscript",
+        "browser.addscript",
+        "browser.addstyle",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
@@ -4497,7 +4558,7 @@ class TerminalController {
         return rep.representation(using: .png, properties: [:])
     }
 
-    func bestEffortPruneTemporaryFiles(
+    nonisolated func bestEffortPruneTemporaryFiles(
         in directoryURL: URL,
         keepingMostRecent maxCount: Int = 50,
         maxAge: TimeInterval = 24 * 60 * 60

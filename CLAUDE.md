@@ -29,7 +29,7 @@ Everything else about agent lifecycle is self-reported: agents that read the c11
 
 - Say **workspace**, never "room", in c11 copy.
 - Ghostty-facing code keeps Ghostty's names (`TerminalSurface`, `GhosttySurfaceScrollView`, `ghostty_surface_*`), as do the tmux-compat commands (`--pane`, `--surface`).
-- **c11, never cmux.** Residual `cmux`/`CMUX`/`cmuxterm` in this tree is a bug to rename, except lineage talk and the deliberate `cmux` CLI compat alias. Write `C11_*` env vars, never `CMUX_*`.
+- **c11, never cmux.** Residual `cmux`/`CMUX`/`cmuxterm` in this tree is a bug to rename, except lineage talk and the deliberate `cmux` CLI compat alias. Write `C11_*` env vars, never `CMUX_*`. Rename as you touch files; a tree-wide sweep needs Atin's go.
 - Short name **c11**; formal long name **c11 terminal multiplexer** for first references in press, docs landing pages, legal copy.
 - Theme copy: **c11 theme** and **Light/Dark theme slots**. "Chrome theme" is internal only, to disambiguate from Ghostty terminal themes.
 
@@ -49,10 +49,12 @@ Never `open` an untagged `c11 DEV.app`. Full build workflow and remote variants:
 
 - c11 lives on **GitHub** (`Stage-11-Agentics/c11`, public), an exception to Stage 11's Forgejo default. `upstream` is `manaflow-ai/cmux`, fetch-only. Only `origin` tags mean anything; prune cmux tags that leak in.
 - **c11 is publicly released with live users.** Cutting a release, tags, the appcast, Homebrew, or anything else users receive needs Atin's named approval. PRs to `main` follow normal review and merge.
-- Releases are cut from `release/*` branches that are not always merged back, so `main` can lag a shipped tag. Before fixing a bug found by reading `main`, diff against the tag's content.
-- Text-only README edits go straight to `main`; everything else goes through a PR.
+- **Check content, not topology.** Releases are cut from `release/*` branches that are not always merged back, and reconciles are cherry-picks, so `main` can lag a shipped tag and `merge-base --is-ancestor` misleads either way. An unmerged branch says nothing about whether its code is on `main`. Before fixing a bug found by reading `main`, or claiming code is absent from a ref, compare content: `git grep <symbol> <ref>`, `git diff <tag> main -- <path>`.
+- Text-only README and CLAUDE.md edits go straight to `main`; everything else goes through a PR. Atin authors most PRs: check `gh pr view <n> --json author` before naming anyone else.
 - A PR with merge conflicts gets **no** `pull_request` CI while Drawbridge still passes. A missing `build` job means rebase onto `origin/main`.
 - CI runs no eslint (`web-typecheck` is tsc only). Green CI on a lint-dependency bump proves nothing; run `bun run lint` locally.
+- Drawbridge (`TRIAGE_POLICY.md`) triages issues and PRs, currently in dry-run. Flipping it live is Atin's call.
+- The app icon's source art (`design/c11mux-lattice-icon-source.png`, from `gregorovitch/art/`) is public by Atin's authorization. No other Gregorovitch art enters this repo without asking.
 
 ## Lineage
 
@@ -79,6 +81,8 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 - **Build on Atlas.** `remote-build.sh` ships the exact parent and submodule commits plus your dirty files, builds there, and retrieves the app and logs under `build-remote/`; it runs no local xcodebuild. Delegators and headless runs build and test only this way. In the c11 1.0 run, packaged-app validation and computer use happen on Atlas; the laptop receives the app but doesn't launch it.
 - **Admission is mandatory.** Atlas admits two builds (one after load stays above 40 for 60 s) and same-tag requests serialize; any Atlas build outside `remote-build.sh` must be coordinated with its slots. Hyperion is one build at a time through `scripts/with-build-lock.sh` (`/tmp/c11-build.lock`; dead-owner takeover, exit 75 after 90 min), which every `reload*.sh` and `test-unit*.sh` uses. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` is for single-tenant CI runners only. Uncontrolled parallel builds hit load 250 on 2026-09-11.
 - **Hyperion does small loops only:** incremental builds and narrowed `-only-testing` slices, one at a time. Full suites go to Atlas or CI.
+- **PR CI stays cheap.** `ci.yml` runs workflow guards, remote-daemon tests, and web typecheck. Mailbox parity runs Python syntax only; native mailbox tests are in hourly logic tests. Native build/tests, compatibility smoke, and GhosttyKit packaging run hourly and by `workflow_dispatch` on GitHub-hosted `macos-15` / `macos-15-xlarge`; no self-hosted runner is used. Atin decides the boundary for any future access-restricted runner.
+- **Landing gate.** Require fresh review and cheap checks at the exact PR head after merging current `origin/main`; Atlas `remote-build.sh` gates every Swift/native change. Docs-only changes are exempt only when no Swift, native workflow, script, project, submodule, test, or build input changes. After merge, hourly red main is fixed forward.
 - **QA launches suppress the startup dialogs.** A bare launch blocks on the Agent Skills sheet and the "Resume previous session?" picker. `launch-tagged-automation.sh --qa [fresh|resume]` sets `C11_QA_LAUNCH`; `reload.sh --tag` does not. Policy: `Sources/QALaunchPolicy.swift`.
 - **A fresh worktree needs its submodules** before any build: `git submodule update --init --recursive ghostty vendor/bonsplit`. Dirty submodules are refused by the remote route; commit and pin them first. For a local build, link the SHA-keyed GhosttyKit cache too (the build scripts repair a stale link):
 
@@ -119,6 +123,8 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 - **pbxproj edits via the `xcodeproj` gem reformat the whole file.** Review them with `xcodebuild -list`, file-membership counts, and `-showBuildSettings` spot-checks, not line diffs. Don't hand-restore whitespace.
 - **A locked screen blocks every new terminal** in every c11 build: tabs stay unattached and the ghostty log shows `error initializing surface err=error.OutOfMemory`. It is WindowServer refusing the GPU surface, not memory. Park the work and ask Atin to unlock; queued sends flush on attach. Don't reboot or reset anything.
 - **CLI says `Socket not found` while c11 is still running:** the socket file was unlinked under a live listener. Run **Restart CLI Listener** from the command palette (Cmd+Shift+P); it rebinds without touching workspaces or PTYs. `tools/socket-watcher/` and `docs/c11-socket-unlink-diagnostic.md` catch any new unlink source.
+- **Attention state stays simple.** A ticket that reaches for launch epochs, crash-durable markers, or transactional launch coordinators to track attention has hit the C11-188 failure signature (`docs/aar-c11-188-attention-loop.md`): stop and escalate.
+- **Sidebar analytics are getting dense.** Before stacking more onto the workspace cards, raise a dedicated analytics screen with Atin.
 - **Portal lifecycle debugging:** `C11_PORTAL_DEBUG=1` logs bind/detach/sync events to `/tmp/c11-portal.log` (override with `C11_PORTAL_LOG`; truncated per process). Drive churn with `scripts/repro-c11-18.sh`.
 
 ## Localization
@@ -133,7 +139,7 @@ English plus ja, uk, ko, zh-Hans, zh-Hant, ru, all in `Resources/Localizable.xcs
 
 Remotes in `ghostty/`: `stage11` = our fork (`Stage-11-Agentics/ghostty`, the only one we push to), `origin` = manaflow-ai (fetch only, never push), `upstream` = ghostty-org. Commit Ghostty changes on a branch, push to `stage11`, then bump the parent pointer. To sync, fetch `origin`, merge into `main`, push `stage11 main`. Fork changes and conflict notes go in `docs/ghostty-fork.md`; keep it current.
 
-- **A ghostty bump needs a checksum** in `scripts/ghosttykit-checksums.txt`; the `build-ghosttykit` workflow commits it. Run 1 shows `build`, `workflow-guard-tests`, and `compat-tests` red until that lands. Expected; check whether `build-ghosttykit` is still running before treating red as real.
+- **A ghostty bump needs a checksum** in `scripts/ghosttykit-checksums.txt`; before merge, manually dispatch `Build GhosttyKit` against the internal bump branch, wait for the bot checksum commit, refresh PR checks at that head, then run the landing gate. The hourly main run is the post-merge check; red main is fixed forward.
 - **Run 2 can stall in `action_required`** because the checksum commit is bot-authored. Approve it:
 
   ```bash

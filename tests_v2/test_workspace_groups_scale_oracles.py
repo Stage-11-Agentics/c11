@@ -5,18 +5,33 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from test_workspace_groups_scale import assert_identity, compare_sessions
+from test_workspace_groups_scale import assert_identity, assert_move, compare_sessions
 
 
 def snapshot():
     return {"workspace_order": ["one", "two"], "workspaces": {
-        wid: {"tab_ids": [wid + "-tab"], "tabs": [{"id": wid + "-tab", "type": "terminal",
+        wid: {"group_id": None, "pinned": False, "tab_ids": [wid + "-tab"], "tabs": [{"id": wid + "-tab", "type": "terminal",
               "tty": "synthetic-tty", "shell_pids": [123], "metadata": {}}]}
         for wid in ("one", "two")}}
 
 
 class ScaleOracleTests(unittest.TestCase):
+    def test_transfer_noop_is_rejected_at_intermediate_state(self):
+        state = {"window_id": "window", "workspaces": {"source": {"id": "one"}}}
+        with patch("test_workspace_groups_scale.workspace_snapshot", return_value=snapshot()), \
+                patch("test_workspace_groups_scale.move_workspace"):
+            with self.assertRaises(AssertionError):
+                assert_move(None, state, "source", "destination")
+
+    def test_relative_reorder_noop_is_rejected(self):
+        state = {"window_id": "window", "workspaces": {"source": {"id": "two"}, "target": {"id": "one"}}}
+        with patch("test_workspace_groups_scale.workspace_snapshot", return_value=snapshot()), \
+                patch("test_workspace_groups_scale.move_workspace"):
+            with self.assertRaises(AssertionError):
+                assert_move(None, state, "source", None, before="target")
+
     def test_surviving_tab_replacement_is_rejected(self):
         before, after = snapshot(), snapshot()
         after["workspaces"]["one"]["tabs"][0]["id"] = "replacement"

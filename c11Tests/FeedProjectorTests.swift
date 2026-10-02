@@ -115,20 +115,21 @@ final class FeedProjectorTests: XCTestCase {
     func testDisplayNoteRequiresCurrentAppendIdentity() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
         let owner = question.owner
+        let workspaceID = try XCTUnwrap(question.workspaceID)
         let requestID = try XCTUnwrap(question.requestID)
         let bridge = FeedProjectionBridge()
         let currentEvent = UUID()
         bridge.noteJournal(tabID: owner.tabID, snapshot: question, eventID: currentEvent)
 
         let wrong = bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: question.workspaceID,
+            tabID: owner.tabID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: UUID(), requestID: requestID, prompt: sentinel, options: nil
         )
         XCTAssertEqual(wrong, FeedNoteError.unmatched.rawValue)
 
         XCTAssertNil(bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: question.workspaceID,
+            tabID: owner.tabID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: currentEvent, requestID: requestID, prompt: sentinel, options: nil
         ))
@@ -137,7 +138,7 @@ final class FeedProjectorTests: XCTestCase {
 
         bridge.noteJournal(tabID: owner.tabID, snapshot: JournalReplayPolicy.restored(question))
         let replayed = bridge.acceptNote(
-            tabID: owner.tabID, workspaceID: question.workspaceID,
+            tabID: owner.tabID, workspaceID: workspaceID,
             agentKind: owner.agentKind, sessionID: owner.sessionID,
             eventID: currentEvent, requestID: requestID, prompt: "stale", options: nil
         )

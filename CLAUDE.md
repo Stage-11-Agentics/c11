@@ -1,264 +1,147 @@
 # c11 agent notes
 
+`AGENTS.md` is a symlink to this file, so every harness (Claude Code, Codex, Grok, …) reads the same rules. Project rules belong here, not in one harness's memory.
+
 ## Mission
 
-c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown tabs composed in one window — addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace itself as the atom of work.
+c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown tabs composed in one window: addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace as the atom of work.
 
-c11's model is workspaces → areas → tabs: a pane is an area, a surface is a tab, and a sidebar entry is a workspace, never a tab. Old names (commands, flags, refs, socket methods, env vars, JSON keys) keep working as hidden aliases that never appear in help, skills or docs.
+**Who it's for.** The operator running eight, thirty, two hundred agents at once, tired of `cmd-tab` roulette across a screen of terminal windows. Not less work, just enough shape that the whole orchestra stays legible while the agents drive.
 
-Short name: **c11**. Formal long name (publicly): **c11 terminal multiplexer**. Use the short form in CLI, UI, filenames, and default prose; reach for the long form for first references in formal external contexts (press, docs landing pages, legal copy).
+**What that implies for this codebase.** Every tab has a handle. Every handle is scriptable from outside the process. The CLI and socket exist so agents compose their own environment without the operator in the loop for routine moves.
 
-Theme naming: in user-facing product copy, say **c11 theme** and **Light/Dark theme slots**; reserve **chrome theme** for internal code/socket disambiguation from Ghostty terminal themes.
+### Host and primitive, never configurator
 
-**Who it's for.** The operator running eight, ten, thirty agents at once. The one already feeling the pain of `cmd-tab` roulette across a screen full of terminal windows and wanting structure — not less work, just enough shape that the whole orchestra stays legible while the agents drive.
+c11 provides workspaces, areas, tabs, a socket, a CLI, and a metadata seam, all scoped to its own runtime. The operator's tenant config (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files) is off-limits: c11 never installs hooks, persists configuration, or injects behavior into a TUI's on-disk state. `c11 install <tui>` stays rejected, consent prompts or not.
 
-**What that implies for this codebase.** Every tab has a handle. Every handle is scriptable from outside the process. Agents are first-class; the CLI and socket exist so they can compose their own environment without the operator in the loop for routine moves.
+The one exception is the **session-resume wrappers** in `Resources/bin/` (`claude` is the reference; `codex`, `grok`, `opencode`, `pi`, `copilot`, `omp` follow it). A wrapper must:
+
+- be prepended to PATH only inside c11 terminals (gated on `C11_TAB_ID` plus a live socket; `Resources/bin/claude` still reads the legacy `CMUX_SURFACE_ID`, a residual to rename);
+- write nothing outside c11's own runtime (`/tmp` is fine, `~/.claude/` and friends are not);
+- capture only what resume needs (session id, `terminal_type`, lifecycle status where the TUI exposes it);
+- fall through to the real binary unchanged outside c11 or when the socket is unreachable.
+
+Everything else about agent lifecycle is self-reported: agents that read the c11 skill call `c11 set-metadata` / `c11 set-status` themselves. The skill file is c11's only outgoing touch on agent behavior.
+
+## Vocabulary
+
+**window → workspace → area → tab.** An area is a split region; a tab is a terminal, browser, or markdown viewer inside it; a sidebar entry is a workspace, never a tab. Use these words everywhere. Old names (commands, flags, refs, socket methods, env vars, JSON keys) keep working as hidden aliases that never appear in help, skills, or docs.
+
+- Say **workspace**, never "room", in c11 copy.
+- Ghostty-facing code keeps Ghostty's names (`TerminalSurface`, `GhosttySurfaceScrollView`, `ghostty_surface_*`), as do the tmux-compat commands (`--pane`, `--surface`).
+- **c11, never cmux.** Residual `cmux`/`CMUX`/`cmuxterm` in this tree is a bug to rename, except lineage talk and the deliberate `cmux` CLI compat alias. Write `C11_*` env vars, never `CMUX_*`.
+- Short name **c11**; formal long name **c11 terminal multiplexer** for first references in press, docs landing pages, legal copy.
+- Theme copy: **c11 theme** and **Light/Dark theme slots**. "Chrome theme" is internal only, to disambiguate from Ghostty terminal themes.
+
+## Quick commands
+
+```bash
+./scripts/remote-build.sh --tag <slug>                       # tagged Debug app, built on Atlas, no launch
+./scripts/remote-build.sh --tag <slug> --mode test -- -only-testing:c11LogicTests/<Class>
+./scripts/launch-tagged-automation.sh <tag> --qa fresh       # launch on an authorized machine, dialogs off
+scripts/sandbox-up.sh <run-id> <tagged.app>                  # guest for clicks, drags, tests_v2
+scripts/sync-installed-skills.sh [name]                      # after ANY skill source edit
+```
+
+Never `open` an untagged `c11 DEV.app`. Full build workflow and remote variants: `skills/c11-hotload/SKILL.md`. Release: `skills/release/SKILL.md` (`/release`).
+
+## Repo, release state, autonomy
+
+- c11 lives on **GitHub** (`Stage-11-Agentics/c11`, public), an exception to Stage 11's Forgejo default. `upstream` is `manaflow-ai/cmux`, fetch-only. Only `origin` tags mean anything; prune cmux tags that leak in.
+- **c11 is publicly released with live users.** Cutting a release, tags, the appcast, Homebrew, or anything else users receive needs Atin's named approval. PRs to `main` follow normal review and merge.
+- Releases are cut from `release/*` branches that are not always merged back, so `main` can lag a shipped tag. Before fixing a bug found by reading `main`, diff against the tag's content.
+- Text-only README edits go straight to `main`; everything else goes through a PR.
+- A PR with merge conflicts gets **no** `pull_request` CI while Drawbridge still passes. A missing `build` job means rebase onto `origin/main`.
+- CI runs no eslint (`web-typecheck` is tsc only). Green CI on a lint-dependency bump proves nothing; run `bun run lint` locally.
 
 ## Lineage
 
-tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. tmux was for humans driving shells. cmux by [manaflow-ai](https://github.com/manaflow-ai) is the parent — the Ghostty embed, the browser substrate, and the CLI shape all belong to them upstream. c11 is the fork-level iteration for the operator:agent pair: more primitives (markdown tabs, addressable tab handles, the skill system, agent-written sidebar telemetry), same ancestry. The tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk), forked in `vendor/bonsplit/`.
+tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. cmux (manaflow-ai) gave us the Ghostty embed, the browser substrate, and the CLI shape; [Bonsplit](https://github.com/almonk/bonsplit) (almonk, forked in `vendor/bonsplit/`) gave us the tab and split chrome. c11 adds the operator:agent primitives: markdown tabs, addressable handles, the skill system, agent-written sidebar telemetry.
 
-### The cmux ↔ c11 relationship is bidirectional
+- **Pull freely.** Cherry-pick or merge upstream fixes cleanly with original authorship, so provenance stays obvious (`upstream-triage` skill). Divergence is deliberate; don't push for a resync.
+- **Never write upstream.** No push, branch, issue, or PR against `manaflow-ai/*`. If a c11 fix would help cmux, tell Atin in one line.
+- **Keep inherited features.** Removing something cmux shipped defaults to keep-and-adapt; cmux migrants may rely on it.
 
-Both projects are open source. The relationship between them is unusual and worth making explicit so nobody has to guess:
+## The skill is the contract
 
-- **Upstream → c11 (pull).** We may cherry-pick or merge PRs and commits from `manaflow-ai/cmux` when they fix bugs, improve performance, or add primitives we want. Credit stays with the original authors in the commit metadata. Don't rewrite their code to look like ours; import it cleanly so the provenance is obvious and future syncs stay clean.
-- **c11 → upstream (suggest).** When a fix or improvement made in c11 would also benefit cmux — a bug fix in a shared code path, a performance win in Ghostty embedding, a CLI ergonomics improvement that isn't c11-specific — surface it. Options: open a PR against `manaflow-ai/cmux` directly, or flag it to the operator with a one-line note so they can decide. Default to offering the fix upstream; c11-specific work (skill system, agent telemetry, markdown tabs, operator-centric primitives) stays here.
-- **What stays c11-only.** Anything that only makes sense under "the operator:agent pair is the unit" framing. Agent-facing primitives, skill infrastructure, sidebar telemetry written by agents, the c11 brand surface. These are fork-level by design.
+c11's value to an agent is `skills/c11/SKILL.md` and its peers (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-computer-use`, `c11-hotload`, `release`). The bar: an agent that read the skill drives a whole c11 session (spawn, dissolve, report, recover) without the operator stepping in. **A change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill matches it.**
 
-**Practical implication for agents working in this repo:** when you touch a file that clearly came from upstream and your fix isn't c11-specific, flag it. The operator can decide whether to land it here, upstream, or both. Don't silently diverge on shared code — it makes future upstream merges painful and costs both projects improvements they'd otherwise share.
+**Syncing the installed copy is part of the edit (HARD RULE).** c11 installs skills as one-time copies in `~/.claude/skills/<name>/` (stamped `.c11-skill.json`) and never tracks the repo afterward. Editing or committing a skill under `skills/` changes nothing an agent loads. For any skill in `skills/MANIFEST.json`, the edit is done only after `scripts/sync-installed-skills.sh [name]` and a check of the live copy.
 
-Treat upstream patterns as load-bearing unless you have a specific reason to diverge. Gratuitous divergence burns goodwill and future merge bandwidth.
+To validate what the operator actually sees, load `c11-computer-use`. Socket and CLI checks prove state, not UI.
 
-## The skill is the agent's steering wheel
+## Lattice tickets
 
-c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer skills (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-hotload`, `release`). An agent that's read the skill learns to split areas, open markdown tabs, drive the embedded browser, report status to the sidebar, and navigate the workspace as infrastructure. An agent that hasn't just sees another terminal.
+Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projects/Stage11/code/overwatch/skills/lattice-orchestrator-v2/`). The in-repo `skills/lattice-orchestrator` is the legacy version, still shipped for installs; don't use it for c11 tickets. v2 runs one owner per ticket in its own worktree, independent review, runtime proof, a Merge Captain, terminal audit. c11 tickets earn it: typing-latency hot paths, tagged builds, localization passes, and submodule state that must not bleed between parallel work. Inline is fine for one-line edits, mechanical changes with no review surface, or when Atin says "just do it." The c11 board is local (`.lattice/`, not hosted). Commit deliberate `.lattice/config.json` edits immediately.
 
-**The bar: fast, fluid, effective.** An agent should be able to fully drive a c11 session — spawning the tabs it needs, dissolving them when done, reporting progress, recovering from its own mistakes — without the operator having to intervene for routine moves. That only happens if the skill teaches it how, accurately, tersely, and in the exact shape of the CLI that ships.
+## Builds
 
-**Therefore:** every change to the CLI, socket protocol, metadata schema, or tab model is incomplete until the skill is updated to match. If you add a command, add it to the skill. If you rename a command, rename it in the skill. If you change defaults, update the examples. The skill is the contract; let it rot and agents get worse at using c11. Invest there first, not last.
+- **Build on Atlas.** `remote-build.sh` ships the exact parent and submodule commits plus your dirty files, builds there, and retrieves the app and logs under `build-remote/`; it runs no local xcodebuild. Delegators and headless runs build and test only this way. In the c11 1.0 run, packaged-app validation and computer use happen on Atlas; the laptop receives the app but doesn't launch it.
+- **Admission is mandatory.** Atlas admits two builds (one while load stays above 40), same-tag requests serialize, and no Atlas build runs outside that route. Hyperion is one build at a time through `scripts/with-build-lock.sh` (`/tmp/c11-build.lock`; dead-owner takeover, exit 75 after 90 min), which every `reload*.sh` and `test-unit*.sh` uses. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` is for single-tenant CI runners only. Uncontrolled parallel builds hit load 250 on 2026-09-11.
+- **Hyperion does small loops only:** incremental builds and narrowed `-only-testing` slices, one at a time. Full suites go to Atlas or CI.
+- **QA launches suppress the startup dialogs.** A bare launch blocks on the Agent Skills sheet and the "Resume previous session?" picker. `launch-tagged-automation.sh --qa [fresh|resume]` sets `C11_QA_LAUNCH`; `reload.sh --tag` does not. Policy: `Sources/QALaunchPolicy.swift`.
+- **A fresh worktree needs its submodules** before any build: `git submodule update --init --recursive ghostty vendor/bonsplit`. Dirty submodules are refused by the remote route; commit and pin them first. For a local build, link the SHA-keyed GhosttyKit cache too (the build scripts repair a stale link):
 
-### Editing a skill source is incomplete until the installed copy is synced (HARD RULE)
+  ```bash
+  ln -s "${CMUX_GHOSTTYKIT_CACHE_DIR:-$HOME/.cache/cmux/ghosttykit}/$(git -C ghostty rev-parse HEAD)/GhosttyKit.xcframework" GhosttyKit.xcframework
+  ```
 
-c11 installs its skills (Settings → Agent Skills) as **one-time copies** into `~/.claude/skills/<name>/`, each stamped with a `.c11-skill.json` marker. **The app does not track the repo source after install.** So editing — or committing — a skill under `skills/` does *nothing* to the copy an agent actually loads on any machine where that skill is already installed. The committed source and the live skill are two different files; fixing one leaves the other stale. This has bitten us before: a fix lands in `skills/c11/SKILL.md`, the commit is green, and agents keep reading the old wording for weeks because nobody refreshed the install.
+## Testing
 
-**Whenever you edit any installable skill** (the list lives in `skills/MANIFEST.json` — c11 and its peers, `lattice-orchestrator`, the `tone-*` stages, `venture-partner`), the change is not done until you run:
+- **`c11-logic`** (`c11LogicTests`): logic only, no host app. Use it for Mailbox, Theme, workspace snapshots, the health parser, CLI runtime, persistence, parsers. Run it with `remote-build.sh --mode test`, or as a narrowed local slice under the lock (`-project GhosttyTabs.xcodeproj -scheme c11-logic -destination platform=macOS test -only-testing:c11LogicTests/<Class>`). Tests that construct a `Workspace`/`TabManager` crash the bare runner locally (`NSApp` is nil) and pass in CI; narrow to pure-logic classes and let CI cover those.
+- **`c11-unit`** (`c11Tests`): host-required; spawns a DEV.app that beachballs for about 22 s. Locally, only through `scripts/test-unit-local.sh`, which isolates the socket from your running c11 and runs both test targets.
+- **`tests_v2/`** (plain `python3` socket scripts, not pytest): live runs only through `scripts/sandbox-tests-v2.sh` in a `sandbox-up.sh` guest, never against the operator's session.
+- **There is no UI/e2e workflow.** Visible behavior is validated with `c11-computer-use`; clicks, drags, and app activation run in a sandbox guest, never on the operator's session.
+- `build-for-testing` proves the tests link, not that they pass. Don't report a fix verified off it, and parse logs for `** TEST SUCCEEDED/FAILED **` rather than trusting a trailing `grep`'s exit code.
+- **Window, view, event, or IME code:** iterate with a tagged build; tests go to Atlas or CI.
 
-```bash
-scripts/sync-installed-skills.sh            # refresh every installed installable skill from source
-scripts/sync-installed-skills.sh c11        # or just one
-```
+**Test quality.** Tests exercise runtime behavior through executable paths (unit, integration, CLI). No tests that grep source text, signatures, or AST shape, and none that read `Info.plist`, `project.pbxproj`, `.xcconfig`, or source files to assert a key exists; verify the built bundle or the behavior instead. If behavior can't be reached yet, add a small runtime seam first. If no meaningful test is practical, skip it and say so.
 
-The script mirrors `skills/<name>/` → `~/.claude/skills/<name>/` (preserving the app's `.c11-skill.json` marker) and is idempotent. Treat it as the skill-editing equivalent of `reload.sh` after a code change: source edit → commit → **sync** → verify the live copy. A skill PR that updates source without the maintainer syncing their own machine ships a fix that isn't actually live for them.
+## Socket policies
 
-## Computer use is a maintainer validation skill, not the c11 operating skill
+**Threading.** Never `DispatchQueue.main.sync` on high-frequency telemetry (`report_*`, `ports_kick`, status/progress/log/metadata). Parse, validate, and coalesce off-main; hop to main with `async` only for the minimal mutation. Commands that manipulate AppKit/Ghostty state (focus, select, open, close, send key/input, exact snapshot queries) may run on main. New socket commands default to off-main; main-thread execution needs a comment explaining why.
 
-There are two different genres here; do not blur them:
-
-- **Agent operating skill (`c11`).** Teaches an agent inside c11 how to use the room: split areas, open tabs, target handles, report status, drive browser/markdown tabs, and compose its own working environment.
-- **Maintainer validation skill (`c11-computer-use`, planned).** Teaches a maintainer/developer agent how to test c11 as a product through the real macOS UI: screenshots, clicks, keyboard focus, area readability, visual recovery, and user-path validation.
-
-The distinction matters. Socket/CLI commands are excellent for setup, orchestration, recovery, and deterministic oracle checks, but they do not prove that a human-visible workflow works. Computer use should validate behaviors that are visual, spatial, focus-sensitive, pointer-driven, or human-ergonomic.
-
-When validating c11 with computer use:
-
-- Launch only tagged builds (`./scripts/reload.sh --tag <tag>` and `./scripts/launch-tagged-automation.sh <tag>`). Never launch an untagged `c11 DEV.app`.
-- Default handoff is a fresh c11 tab running interactive Codex: create a new terminal area/tab, run `codex --yolo`, then send a file-backed expert prompt. Do not use `codex exec` for watched validation tabs.
-- The expert prompt should name the target tagged app/window, the scenario, success criteria, safety boundaries, artifact expectations, and the caller's workspace/tab refs so Codex can report back with `c11 send` or leave a readable result for `read-screen`.
-- This pattern is cross-agent: Claude Code can delegate visual validation to Codex, and Codex can delegate a clean computer-use pass to another Codex tab. Keep the handoff explicit so the validation context is fresh and inspectable.
-- Use the socket as setup/oracle infrastructure, not as a substitute for the UI path being tested.
-- Capture screenshots and scenario artifacts for claims about visible behavior.
-- Inspect `c11 tree --no-layout` before calling a run successful. If important areas are too small for a human to read, rebalance them and treat that as part of the validation, not cleanup.
-- Prefer repeatable harness scenarios for comparisons across providers. Manual computer-use runs are useful, but they should feed back into reusable scenarios and skill guidance.
-
-The lesson from the OpenAI CUA runner work: "it executed" is not enough. If the resulting workspace is hard for the operator to read, the validation found a product/workflow issue worth preserving.
-
-## Principle: unopinionated about the terminal
-
-c11 is **host and primitive, not configurator.** It provides tabs, areas, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. The operator's tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.) are off-limits: c11 never reaches in to install hooks, persist configuration, or inject behavior into any TUI's on-disk state.
-
-**One narrow exception: session-resume wrappers under `Resources/bin/`.** When a TUI's lifecycle is otherwise opaque to c11, c11 may ship a PATH-scoped wrapper that captures the minimum lifecycle signal needed for *session resume* across c11 reboots. The wrapper must:
-
-- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `C11_TAB_ID` + a live socket).
-- Make **no persistent writes** to tenant config, dotfiles, or any path outside c11's own runtime (`/tmp` is fine; `~/.claude/`, `~/.codex/`, etc. are not).
-- Capture only the minimum needed for session resume — usually a session id and `terminal_type`, plus lifecycle status where the TUI exposes it (Claude Code does via hooks; codex does not).
-- Fall through to the real binary unchanged when outside a c11 terminal or when the c11 socket is unreachable.
-
-`Resources/bin/claude` is the reference implementation. New TUIs (codex, opencode, kimi, …) may add equivalent wrappers under the same constraints.
-
-Consequences:
-
-- **`c11 install <tui>` remains rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The wrapper pattern is the upper bound on what c11 reaches for; persistent writes to tenant config are still off-limits. An earlier Module 4 implementation and its spec doc were removed in C11-17; do not revive that work.
-- **Skill-driven self-reporting is still the standard pattern** for status/lifecycle telemetry. Agents that read the c11 skill learn to call `c11 set-metadata` / `c11 set-status` from their own lifecycle. The `cmux` CLI is a compat alias that dispatches to the same binary. The session-resume wrappers do not replace this — they handle only the resume capture path that the skill cannot, because they have to run *before* the agent process exists.
-- **The skill file is the only outgoing touch for behavior.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
-
-When in doubt: c11's job stops at the edge of its tabs, save for the narrow session-resume rail above. What happens inside an agent's process is the agent's business.
-
-## Default workflow for Lattice tickets: lattice-orchestrator
-
-When the operator hands you a Lattice ticket to execute (or asks to "run", "delegate", "walk through" a ticket), the default is the **Lattice Orchestrator Workflow**, shipped in this repo at `skills/lattice-orchestrator/SKILL.md` and exposed as an installable skill via c11's `skills/MANIFEST.json`. Do not attack the ticket inline from the orchestrator tab.
-
-Why this is the default here:
-- c11 tickets routinely involve typing-latency hot paths, tagged builds, localization passes, and submodule discipline. One worktree per delegator carves blast-radius cleanly so build artifacts and submodule state cannot bleed across parallel work.
-- Multi-phase work (plan → implement → review → fix → open PR) is hard to keep coherent in a single chat. A delegator tab per ticket plus Lattice-as-comms-bus gives every reader (operator, future agent, retro-AAR) a clean trail.
-- A master validator singleton audits global build/test/PR state independent of any one delegator.
-
-Skip the pattern only when the ticket is a one-line text edit, a trivially mechanical change with no review surface, or the operator explicitly says "just do it inline." When in doubt, default to the skill.
-
-## Local dev
-
-See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` build-and-launch, Release variants, the debug event log, tag hygiene, and the tagged-build reporting format.
-
-The one-liner from a delegator checkout: `./scripts/remote-build.sh --tag <your-branch-slug>` builds on Atlas and retrieves the app without launching. Use `launch-tagged-automation.sh <tag> --qa fresh` only on an authorized validation machine (Atlas for the 1.0 run). The remote route uses two Atlas slots, reducing admission to one after load stays above 40 for 60 s. Hyperion retains its single-build lock. On Atlas, existing `reload.sh` / `reloads.sh` also support `--no-launch`. Never `open` an untagged `c11 DEV.app`.
-
-**Build admission is mandatory.** Hyperion keeps one c11 build at a time through `scripts/with-build-lock.sh`. The Atlas remote route admits two builds, reducing new admission to one after load stays above 40 for 60 seconds; same-tag requests always serialize. Do not run another Atlas build outside that route while its slots are active. Uncontrolled concurrent xcodebuilds caused load 250 and a 35-minute stalled compile (2026-09-11). Every local entry point (`reload.sh`, `reloads.sh`, `reloadp.sh`, `test-unit-local.sh`, `test-unit.sh`) uses the existing lock, with dead-owner takeover and exit 75 after 90 minutes. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` is for single-tenant CI runners only.
-
-**QA / automation launch — ALWAYS suppress the startup dialogs when an agent launches a dev build.** A normal launch blocks on two modals before the GUI is usable: the Agent Skills install/update sheet and the "Resume previous session?" picker. Any agent launching a tagged/dev build to validate or automate **must** turn these off — launching bare leaves both dialogs in the way and stalls coordinate-driven UI checks (a real time sink to avoid). Set `C11_QA_LAUNCH`: `fresh` (or any non-`resume` value) starts clean, `resume` silently restores the prior session, unset is normal interactive behavior. Read per-launch, never persisted. Prefer `./scripts/launch-tagged-automation.sh <tag> --qa [fresh|resume]`, which sets it for you. Note `reload.sh --tag` builds **and** launches but does NOT set the flag, so for a validation pass either launch through `launch-tagged-automation.sh --qa` or export `C11_QA_LAUNCH` before the app starts. Lives in `Sources/QALaunchPolicy.swift`; full table in `skills/c11-hotload/SKILL.md`.
-
-## Diagnostics
-
-- **Portal lifecycle (C11-18):** launch c11 with `C11_PORTAL_DEBUG=1` to write structured `bind`/`detach`/`sync.skip.orphan`/`sync.result`/`orphan.hide`/`geom.external` events to `/tmp/c11-portal.log` (override path with `C11_PORTAL_LOG`). The log truncates on first call after process start; one repro run per file. Drive churn with `scripts/repro-c11-18.sh [iterations]` and attach the log range covering the artifact to the C11-18 ticket.
+**Focus.** Socket/CLI commands never steal macOS focus: no app activation, no window raising. Only explicit focus-intent commands mutate in-app selection (`window.focus`, `workspace.select/next/previous/last`, `area.focus`, `area.last`, `tab.focus`, browser focus commands, and v1 equivalents). Every other command preserves the operator's focus while applying its change.
 
 ## Pitfalls
 
-- **`dlog` is DEBUG-only.** It's bonsplit's `DebugEventLog` free function, defined inside `#if DEBUG`. Every call site must be `#if DEBUG`-gated or the Release configuration fails to compile — and CI's `build` job compiles Debug, so an ungated `dlog` sails through PR CI and only breaks at release-staging time (v0.51.0 staging caught four of these from PR #95). Gate the logging, not the surrounding logic.
-- **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.stage11.c11.tabtransfer`, `com.stage11.c11.sidebar-tab-reorder`).
-- **`runModal()` on any path an agent can reach wedges the whole app.** `NSAlert.runModal()` spins a nested run loop on main and blocks every terminal, area, and agent until a human dismisses it, and socket commands run their work through `v2MainSync`, so the modal loop ends up inside a `DispatchQueue.main.sync`. It is fine for an alert the operator just triggered from a menu or button; it is a hang bug anywhere else (C11-204: the browser insecure-HTTP prompt held main for up to 6.8 hours). For browser modals use `browserPresentModalAlert` in `Sources/Tabs/BrowserTab.swift`, which sheets onto a usable window and applies a safe default when there is none.
-- **A loop on a long-lived thread must drain an `autoreleasepool` per iteration.** A `Thread`'s root pool only drains when the thread exits, so every autoreleased object its Foundation calls leave behind (`JSONSerialization` buffers, bridged strings, `FileManager`) stays alive until then, and `leaks` won't flag it because the pool still references it all. c11's long-lived threads are the socket accept loop, each per-connection `handleClient` thread (clients can hold a connection for days), and the hang-monitor watchdog; any new one needs the same drain. C11-211: one held socket connection pinned ~3 GB/day of JSON buffers.
-- Do not add an app-level display link or manual `ghostty_surface_draw` loop; rely on Ghostty wakeups/renderer to avoid typing lag.
-- **Typing-latency-sensitive paths** (read carefully before touching these areas):
-  - `WindowTerminalHostView.hitTest()` in `TerminalWindowPortal.swift`: called on every event including keyboard. All divider/sidebar/drag routing is gated to pointer events only. Do not add work outside the `isPointerEvent` guard.
-  - `WorkspaceRowView` in `ContentView.swift`: uses `Equatable` conformance + `.equatable()` to skip body re-evaluation during typing. Do not add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` properties without updating the `==` function. Do not remove `.equatable()` from the ForEach call site. Do not read `workspaceManager` or `notificationStore` in the body; use the precomputed `let` parameters instead.
-  - `TerminalSurface.forceRefresh()` in `GhosttyTerminalView.swift`: called on every keystroke. Do not add allocations, file I/O, or formatting here.
-- **Terminal find layering contract:** `TabSearchOverlay` must be mounted from `GhosttySurfaceScrollView` in `Sources/GhosttyTerminalView.swift` (AppKit portal layer), not from SwiftUI panel containers such as `Sources/Tabs/TerminalTabView.swift`. Portal-hosted terminal views can sit above SwiftUI during split/workspace churn.
-- **Submodule safety:** When modifying a submodule (ghostty, vendor/bonsplit, etc.), always push the submodule commit to its remote `main` branch BEFORE committing the updated pointer in the parent repo. Never commit on a detached HEAD or temporary branch — the commit will be orphaned and lost. Verify with: `cd <submodule> && git merge-base --is-ancestor HEAD origin/main`.
-- **A fresh `git worktree add` cannot build until you provision it.** A new worktree has neither the submodules nor the prebuilt `GhosttyKit.xcframework` symlink, so xcodebuild fails in sequence with "Could not resolve package dependencies" (bonsplit), "Ghostty submodule is missing", then "no XCFramework found" — none of which are code problems. Before the first build in any new worktree: `git submodule update --init --recursive ghostty vendor/bonsplit`, then link the SHA-keyed cache entry: `GHOSTTY_SHA="$(git -C ghostty rev-parse HEAD)"; GHOSTTYKIT_CACHE_ROOT="${CMUX_GHOSTTYKIT_CACHE_DIR:-$HOME/.cache/cmux/ghosttykit}"; ln -s "$GHOSTTYKIT_CACHE_ROOT/$GHOSTTY_SHA/GhosttyKit.xcframework" GhosttyKit.xcframework`. The local build entry points verify and repair this link before xcodebuild, so a missing cache entry is fetched when its checksum is pinned. Both are gitignored, so neither dirties the branch. (Per-delegator worktrees in the orchestrator workflow inherit this — provision before building, not after the first red.)
-- **pbxproj edits via the `xcodeproj` Ruby gem normalize formatting on save** (3-tab → 2-tab indent, reordered `PBXBuildFile` entries, re-issued some object IDs). A "small" semantic edit can produce a multi-thousand-line diff; line-by-line review is not the right gate. Reviewers of future pbxproj-touching tickets should expect the diff bloat and gate on `xcodebuild -list` + file-membership counts + `xcodebuild -showBuildSettings` spot-checks instead. Don't fight the gem by hand-restoring whitespace; that just compounds churn on the next save.
-- **No c11 on this machine can open a terminal while the Mac's screen is locked.** Symptom: every new terminal tab (tab, split, `new-tab`, `launch-agent`) stays unattached, and the ghostty log shows `embedded_window: error initializing surface err=error.OutOfMemory` from `ghostty_surface_new`, in production c11 and in every tagged DEV build alike. RAM, file descriptors, process and thread counts, Metal, and IOSurface all look healthy from a shell, so do not spend time ruling them out. Cause: with the screen locked, WindowServer refuses the GPU-backed surface the renderer needs and ghostty reports the refusal as an allocation failure. Recovery: unlock the screen; surface creation resumes at once and queued `send` payloads flush on attach. If a delegator's tagged-build validation hits this, park it and ask the operator to unlock; do not reboot or reset anything. (C11-238 run, 2026-09-26.)
-- **c11 CLI socket can go unreachable while the prod app is still alive.** Symptom: every `c11 <cmd>` errors with `Socket not found at ~/Library/Application Support/c11/c11.sock`, but the c11.app process is still running and the macOS UI / areas / agents are fully interactive. `lsof` shows the process is still bound to the path; the file has been unlinked from the filesystem. **Recovery (non-destructive):** Cmd+Shift+P → run **"Restart CLI Listener"** from the command palette. Invokes `AppDelegate.restartSocketListener(_:)` which stops + re-binds the socket without touching `TabManager`, workspaces, areas, or PTYs. **Root cause (C11-105):** `TerminalControllerSocketSecurityTests.swift` was a member of the `c11LogicTests` target (despite living in `c11Tests/` on disk). The test's `setUp` calls `TerminalController.shared.stop()`, and `TerminalController.socketPath` was default-initialized to `SocketControlSettings.stableDefaultSocketPath` — so any local `xcodebuild -scheme c11-logic test` run would `unlink()` the prod c11's bind dentry while its FD stayed live in-kernel. The fix moves the test back into `c11Tests`, empties the field's default, and gates `stop()`'s unlink on a non-empty path. The kqueue diagnostic at `tools/socket-watcher/` + `docs/c11-socket-unlink-diagnostic.md` remains as a canary for any future unlink source.
+- **Typing-latency hot paths.** Read before touching:
+  - `WindowTerminalHostView.hitTest()` (`TerminalWindowPortal.swift`) runs on every event, keyboard included. Divider/sidebar/drag routing is gated to pointer events; add nothing outside the `isPointerEvent` guard.
+  - `WorkspaceRowView` (`ContentView.swift`, the sidebar row) skips re-evaluation via `Equatable` + `.equatable()`. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` without updating `==`; don't remove `.equatable()` at the `ForEach`; don't read `workspaceManager` or `notificationStore` in the body (use the precomputed `let`s).
+  - `TerminalSurface.forceRefresh()` (`GhosttyTerminalView.swift`) runs per keystroke: no allocations, file I/O, or formatting.
+  - No app-level display link or manual `ghostty_surface_draw` loop; rely on Ghostty's renderer wakeups.
+- **`dlog` is DEBUG-only** (bonsplit's `DebugEventLog`). Gate every call with `#if DEBUG` (the logging, not the surrounding logic); CI's `build` job compiles Debug, so an ungated call only breaks at release staging.
+- **`runModal()` on any agent-reachable path wedges the app.** Socket work runs through `v2MainSync`, so a nested modal loop blocks every terminal until a human clicks (C11-204: 6.8 hours). Fine only right after an operator's menu or button action. Browser modals use `browserPresentModalAlert` (`Sources/Tabs/BrowserTab.swift`).
+- **Loops on long-lived threads drain an `autoreleasepool` per iteration.** A thread's root pool drains only at exit, and `leaks` won't flag what it holds. Applies to the socket accept loop, each per-connection `handleClient` thread, the hang-monitor watchdog, and any new one (C11-211: about 3 GB/day).
+- **Terminal find overlay** (`TabSearchOverlay`) mounts from `GhosttySurfaceScrollView` (AppKit portal layer), never from SwiftUI containers like `Sources/Tabs/TerminalTabView.swift`; portal-hosted terminals can sit above SwiftUI during split churn.
+- **Custom drag-and-drop UTTypes** are declared in `Resources/Info.plist` under `UTExportedTypeDeclarations`.
+- **Submodule commits are pushed to the Stage 11 fork's `main` first**, then the parent pointer. Never commit on a detached HEAD. For `vendor/bonsplit` verify with `merge-base --is-ancestor HEAD origin/main`; for `ghostty`, against `stage11/main` (its `origin` is manaflow-ai).
+- **pbxproj edits via the `xcodeproj` gem reformat the whole file.** Review them with `xcodebuild -list`, file-membership counts, and `-showBuildSettings` spot-checks, not line diffs. Don't hand-restore whitespace.
+- **A locked screen blocks every new terminal** in every c11 build: tabs stay unattached and the ghostty log shows `error initializing surface err=error.OutOfMemory`. It is WindowServer refusing the GPU surface, not memory. Park the work and ask Atin to unlock; queued sends flush on attach. Don't reboot or reset anything.
+- **CLI says `Socket not found` while c11 is still running:** the socket file was unlinked under a live listener. Run **Restart CLI Listener** from the command palette (Cmd+Shift+P); it rebinds without touching workspaces or PTYs. `tools/socket-watcher/` and `docs/c11-socket-unlink-diagnostic.md` catch any new unlink source.
+- **Portal lifecycle debugging:** `C11_PORTAL_DEBUG=1` logs bind/detach/sync events to `/tmp/c11-portal.log` (override with `C11_PORTAL_LOG`; truncated per process). Drive churn with `scripts/repro-c11-18.sh`.
 
 ## Localization
 
-c11 ships in English plus six translations: Japanese (ja), Ukrainian (uk), Korean (ko), Simplified Chinese (zh-Hans), Traditional Chinese (zh-Hant), and Russian (ru). All strings live in `Resources/Localizable.xcstrings`.
+English plus ja, uk, ko, zh-Hans, zh-Hant, ru, all in `Resources/Localizable.xcstrings`.
 
-- **Write English only.** The `defaultValue:` in `String(localized:)` is the source of truth. Don't hand-author other languages in product code — that's a separate pass.
-- **All user-facing strings must be localized at the call site.** Use `String(localized: "key.name", defaultValue: "English text")` everywhere — labels, buttons, menus, alerts, tooltips, error messages. No bare string literals in SwiftUI `Text()`, `Button()`, alert titles, etc.
-- **Delegate translation to a sub-agent in a new c11 tab.** After adding or changing English strings, spawn a translator in a fresh c11 area to sync `Localizable.xcstrings` for the other six locales. Point it at the new/changed English values; it reads the xcstrings, emits the six translations, writes back.
-- **Parallelize when there's a lot to translate.** For a handful of strings, one sub-agent is fine. For a larger batch, spawn one sub-agent per locale — six in parallel — so the translation pass doesn't gate the next piece of work.
-- **Validate the edited xcstrings with `jq`, not `plutil`.** `plutil -lint Resources/Localizable.xcstrings` fails with `Unexpected character { at line 1` — it dispatches on the file extension and tries to parse the JSON as a plist. That is a tooling artifact, not a corrupt file, so don't chase it. `jq . Resources/Localizable.xcstrings > /dev/null` is the real well-formedness check. Also assert that every interpolation token (`%@`, `%lld`, …) present in the English value survives in all six translations — a dropped token is a crash at format time, not a cosmetic bug.
+- Every user-facing string is localized at the call site: `String(localized: "key.name", defaultValue: "English text")`. No bare literals in `Text()`, `Button()`, alerts, menus, tooltips, or errors.
+- Write English only. After adding or changing strings, hand the translation to a sub-agent (one per locale for a large batch).
+- Validate with `jq . Resources/Localizable.xcstrings`, not `plutil` (which misparses JSON by extension). Check every interpolation token (`%@`, `%lld`, …) survives in all six locales; a dropped token crashes at format time.
 
-## Test quality policy
+## Ghostty and GhosttyKit
 
-- Do not add tests that only verify source code text, method signatures, AST fragments, or grep-style patterns.
-- Do not add tests that read checked-in metadata or project files such as `Resources/Info.plist`, `project.pbxproj`, `.xcconfig`, or source files only to assert that a key, string, plist entry, or snippet exists.
-- Tests must verify observable runtime behavior through executable paths (unit/integration/e2e/CLI), not implementation shape.
-- For metadata changes, prefer verifying the built app bundle or the runtime behavior that depends on that metadata, not the checked-in source file.
-- If a behavior cannot be exercised end-to-end yet, add a small runtime seam or harness first, then test through that seam.
-- If no meaningful behavioral or artifact-level test is practical, skip the fake regression test and state that explicitly.
+Remotes in `ghostty/`: `stage11` = our fork (`Stage-11-Agentics/ghostty`, the only one we push to), `origin` = manaflow-ai (fetch only, never push), `upstream` = ghostty-org. Commit Ghostty changes on a branch, push to `stage11`, then bump the parent pointer. To sync, fetch `origin`, merge into `main`, push `stage11 main`. Fork changes and conflict notes go in `docs/ghostty-fork.md`; keep it current.
 
-## Testing policy
+- **A ghostty bump needs a checksum** in `scripts/ghosttykit-checksums.txt`; the `build-ghosttykit` workflow commits it. Run 1 shows `build`, `workflow-guard-tests`, and `compat-tests` red until that lands. Expected; check whether `build-ghosttykit` is still running before treating red as real.
+- **Run 2 can stall in `action_required`** because the checksum commit is bot-authored. Approve it:
 
-c11 has two unit-test targets. The split is the whole point of C11-27.
-
-- **`c11LogicTests` (scheme: `c11-logic`)** — logic-only. No Host Application, no DEV.app launch. **Safe to run locally** for fast iteration:
-
-  ```
-  xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
-    -destination "platform=macOS" test
+  ```bash
+  for id in $(gh run list --branch <branch> --limit 5 --json databaseId,conclusion --jq '.[] | select(.conclusion=="action_required") | .databaseId'); do
+    gh api -X POST repos/Stage-11-Agentics/c11/actions/runs/$id/approve
+  done
   ```
 
-  Expected wall time on a warm cache: around 30 seconds, dominated by `xcodebuild`'s ~10–15 s of inherent overhead rather than test execution (the test phase itself is ~5–10 s for 74 tests). Compare to the host scheme's ~35 s, where most of the gap is the DEV.app launch. **First invocation after a clean checkout pays the c11 app build cost** (multi-minute) because `c11-logic` depends on the `c11` target — Strategy B needs `c11.debug.dylib` available for the test bundle's `BUNDLE_LOADER` + rpath. Subsequent warm-build runs are ~30 s. Use this for any iteration on Mailbox, Theme, Workspace snapshot, Health parser, CLI runtime, persistence, and parser code.
-
-  **Local caveat: tests that construct a `Workspace`/`TabManager` (e.g. `NewWorkspaceTitleTests`) can crash the bare xctest runner locally** with `Fatal error: Unexpectedly found nil while implicitly unwrapping an Optional value` in `GhosttyTerminalView.swift` (`NSApp` is nil without a host app). The same tests pass in CI. Don't diagnose this locally — narrow your `-only-testing:` to pure-logic classes and let CI cover the workspace-constructing ones.
-
-- **`c11Tests` (scheme: `c11-unit`)** — host-required. Spawns a `c11 DEV.app` XCTest host whose main thread is monopolized for ~22 s and whose window beachballs until the run completes. The host previously stomped the operator's running c11 by binding (and on teardown, unlinking) `/tmp/c11-debug.sock`; C11-99 Area B added a per-PID socket guard in `SocketControlSettings.socketPath()` keyed on `XCTestConfigurationFilePath`, plus a `C11_TAG=local-xctest` env var on the scheme's TestAction, plus a `scripts/test-unit-local.sh` wrapper that exports a per-PID `C11_SOCKET_PATH`. **Use `scripts/test-unit-local.sh` for local c11-unit iteration** — it's safe to run with `/Applications/c11.app` and a `c11 DEV.app` already running. CI still drives the full host-bound suite via `ci.yml`. The `c11-unit` scheme builds both targets but its TestAction runs both `c11Tests` and `c11LogicTests` sequentially in one invocation.
-
-  ```
-  scripts/test-unit-local.sh                                             # full c11-unit
-  scripts/test-unit-local.sh -only-testing:c11Tests/<Class>/<test>       # narrow slice
-  ```
-
-  Schemes that build c11-unit (or `c11-ci`) without the `test` action are safe — they only compile.
-
-- **Python socket tests (`tests_v2/`)** — connect to a running c11 over its socket. Live runs go through `scripts/sandbox-tests-v2.sh` inside the guest from `scripts/sandbox-up.sh`, never against the operator's session. The suite is plain `python3` scripts, not pytest. The runner sets `C11_SOCKET`, `C11_SOCKET_PATH`, and `C11_CLI` to that guest.
-
-- **E2E / UI tests** — trigger via `gh workflow run test-e2e.yml`. Never run locally.
-
-- **Never `open` an untagged `c11 DEV.app`** from DerivedData. It conflicts with the user's running debug instance.
-
-- **`build-for-testing` compiles tests; it does not run them.** A green `xcodebuild build-for-testing` proves the test target *links*, not that any assertion passes — a logic regression sails through it and only surfaces in CI's `build` gate (which runs `test`). To actually exercise logic locally, run the `test` action on the safe `c11-logic` scheme, narrowed for speed: `xcodebuild -scheme c11-logic ... test -only-testing:c11LogicTests/<Class>`. Don't report a fix "verified" off `build-for-testing` alone. (Also: never trust a trailing `grep`'s exit code as the build result — parse the log for `** TEST BUILD SUCCEEDED/FAILED **` / `** TEST SUCCEEDED/FAILED **`.)
-
-**Rule of thumb:** if you're touching parsers, snapshots, persistence, or any pure model code, `c11-logic` is your local loop. If you're touching window/view/event/IME code, your iteration loop is `xcodebuild build` + a tagged reload (`./scripts/reload.sh --tag <tag>`), and tests go to CI.
-
-## Socket command threading policy
-
-- Do not use `DispatchQueue.main.sync` for high-frequency socket telemetry commands (`report_*`, `ports_kick`, status/progress/log metadata updates).
-- For telemetry hot paths:
-  - Parse and validate arguments off-main.
-  - Dedupe/coalesce off-main first.
-  - Schedule minimal UI/model mutation with `DispatchQueue.main.async` only when needed.
-- Commands that directly manipulate AppKit/Ghostty UI state (focus/select/open/close/send key/input, list/current queries requiring exact synchronous snapshot) are allowed to run on main actor.
-- If adding a new socket command, default to off-main handling; require an explicit reason in code comments when main-thread execution is necessary.
-
-## Socket focus policy
-
-- Socket/CLI commands must not steal macOS app focus (no app activation/window raising side effects).
-- Only explicit focus-intent commands may mutate in-app focus/selection (`window.focus`, `workspace.select/next/previous/last`, `tab.focus`, `area.focus/last`, browser focus commands, and v1 focus equivalents).
-- All non-focus commands should preserve current user focus context while still applying data/model changes.
-
-## Ghostty submodule workflow
-
-Ghostty changes must be committed in the `ghostty` submodule and pushed to the `Stage-11-Agentics/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
-
-```bash
-cd ghostty
-git remote -v  # origin = upstream (manaflow-ai/ghostty), stage11 = fork (Stage-11-Agentics/ghostty)
-git checkout -b <branch>
-git add <files>
-git commit -m "..."
-git push stage11 <branch>
-```
-
-To keep the fork up to date with upstream:
-
-```bash
-cd ghostty
-git fetch origin
-git checkout main
-git merge origin/main
-git push stage11 main
-```
-
-Then update the parent repo with the new submodule SHA:
-
-```bash
-cd ..
-git add ghostty
-git commit -m "Update ghostty submodule"
-```
-
-## GhosttyKit xcframework and checksums
-
-When the ghostty submodule SHA changes, `scripts/ghosttykit-checksums.txt` must have a matching entry or CI fails across `build`, `workflow-guard-tests`, and `compat-tests`. The entry is auto-generated by the `build-ghosttykit` workflow — you don't add it manually.
-
-**Expected CI pattern after a ghostty bump:** run 1 will show the three guard jobs red (they fire before the 10-minute Zig build finishes). After `build-ghosttykit` completes, it downloads or uses the just-built tarball, computes the SHA256, and pushes the checksum commit. Run 2 (triggered by that push) goes fully green. Run 1 red is expected — check whether `build-ghosttykit` is still in progress before treating it as a real failure.
-
-**Run 2 can sit in `action_required` instead of starting.** The checksum commit is authored by `github-actions[bot]`, and GitHub holds the PR workflows it triggers for approval; `gh pr checks` then reports nothing and `gh run list --branch <branch>` shows every workflow as `completed action_required`. Approve them and they queue immediately:
-
-```bash
-for id in $(gh run list --branch <branch> --limit 5 --json databaseId,conclusion --jq '.[] | select(.conclusion=="action_required") | .databaseId'); do
-  gh api -X POST repos/Stage-11-Agentics/c11/actions/runs/$id/approve
-done
-```
-
-(C11-212, 2026-09-11: run 2 waited ~15 minutes in that state before anyone noticed.)
-
-**`GHOSTTY_RELEASE_TOKEN` is not configured on this fork.** Any workflow step using that secret will get an empty `GH_TOKEN` and fail with exit code 4. xcframework releases are published to `Stage-11-Agentics/c11` using `GITHUB_TOKEN` with `permissions: contents: write`. If you copy a workflow from upstream that references `GHOSTTY_RELEASE_TOKEN`, replace it.
-
-**Artifact releases must never hold the `latest` slot.** Sparkle's feed URL is `https://github.com/Stage-11-Agentics/c11/releases/latest/download/appcast.xml`, so whichever release GitHub calls *latest* must be a real versioned release carrying an `appcast.xml` asset. Any workflow that publishes a build artifact as a GitHub release (`xcframework-*`, nightlies, anything future) has to pass `--prerelease --latest=false` (or `prerelease: true` / `make_latest: false` for `action-gh-release`). Getting this wrong 404s the feed and every shipped c11 reports `SUSparkleErrorDomain(2001)` on update check, with no other symptom. Quick check: `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` should always print a `v*` tag.
-
-**Workflows that commit back to the branch must use `ref: ${{ github.head_ref || github.ref_name }}`** on their `actions/checkout` step. Without it, Actions checks out a detached merge commit and `git push` fails with exit 128.
-
-## Release
-
-See `skills/release/SKILL.md`. Invoke with `/release`.
+- **`GHOSTTY_RELEASE_TOKEN` doesn't exist on this fork.** Workflows publish with `GITHUB_TOKEN` and `permissions: contents: write`; replace the secret in anything copied from upstream.
+- **Artifact releases never take the `latest` slot.** Sparkle reads `releases/latest/download/appcast.xml`; an `xcframework-*` or nightly release marked latest 404s the feed and every shipped c11 reports `SUSparkleErrorDomain(2001)`. Publish with `--prerelease --latest=false` (`prerelease: true` / `make_latest: false`). Check: `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints a `v*` tag.
+- **Workflows that commit back** use `ref: ${{ github.head_ref || github.ref_name }}` on `actions/checkout`, or the push fails with exit 128.

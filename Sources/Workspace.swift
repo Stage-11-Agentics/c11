@@ -5648,6 +5648,10 @@ final class Workspace: Identifiable, ObservableObject {
             guard let self else { return }
             TabRailTipCenter.shared.noteSheet(workspace: self, paneId: paneId, open: open)
         }
+        bonsplitController.onCountCellTapped = { [weak self] paneId in
+            guard let self else { return false }
+            return TabRailTipCenter.shared.performShowListFromCountCell(workspace: self, paneId: paneId)
+        }
 
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeBonsplitTabIds = bonsplitController.allTabIds

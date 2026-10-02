@@ -129,7 +129,7 @@ struct AgentModelDetectionResult: Equatable, Sendable {
     let coverage: TranscriptCoverage
 }
 
-private struct GrokPendingTurn: Equatable {
+struct GrokPendingTurn: Equatable {
     let turnID: String
     let occurredAt: Date?
 }
@@ -282,7 +282,7 @@ struct AgentModelProbe: Sendable {
         if state.inode != 0, (state.inode != inode || size < state.offset) {
             state.offset = 0
             state.model = nil
-            resetLifecycleState(&state)
+            Self.resetLifecycleState(&state)
         }
         state.inode = inode
 
@@ -316,7 +316,7 @@ struct AgentModelProbe: Sendable {
             let (lines, consumed, leadingSkipped) = Self.completeLines(in: data, droppingLeadingPartial: start > 0)
             state.model = nil
             state.signals = TranscriptSignals()
-            resetLifecycleState(&state, preserveCoverage: true)
+            Self.resetLifecycleState(&state, preserveCoverage: true)
             var candidateLifecycle: [TranscriptLifecycleObservation] = []
             state.transcriptIdentityInvalid = false
             state.transcriptIdentityVerified = false
@@ -334,7 +334,7 @@ struct AgentModelProbe: Sendable {
                 }
                 lifecycle.append(contentsOf: candidateLifecycle)
                 if start > 0 {
-                    markCoverageGap(
+                    Self.markCoverageGap(
                         skippedBytes: start + UInt64(leadingSkipped),
                         state: &state,
                         coverage: &coverage
@@ -388,7 +388,7 @@ struct AgentModelProbe: Sendable {
         guard let data = readRange(handle, from: start, to: size) else { return }
         let (lines, consumed, leadingSkipped) = Self.completeLines(in: data, droppingLeadingPartial: dropLeading)
         if dropLeading {
-            markCoverageGap(
+            Self.markCoverageGap(
                 skippedBytes: (start - state.offset) + UInt64(leadingSkipped),
                 state: &state,
                 coverage: &coverage

@@ -499,18 +499,49 @@ enum MessagesPageBuilder {
     }
 }
 
+struct MessagesPageEventLogCache {
+    fileprivate var eventsByURL: [URL: [MessagesPageEvent]] = [:]
+    fileprivate var signatures: [URL: MessagesPageEventLogSignature] = [:]
+}
+
+fileprivate struct MessagesPageEventLogSignature: Equatable {
+    let fileSize: Int
+    let modificationDate: Date?
+}
+
 enum MessagesPageSource {
     private static let sendEventMarker = Data(#""type":"tab.input_sent""#.utf8)
     private static let mailboxEventMarker = Data(#""type":"mailbox.""#.utf8)
 
     static func load(stateURL: URL, fileManager: FileManager = .default) -> MessagesPageSourceData {
+        var eventLogCache = MessagesPageEventLogCache()
+        return load(
+            stateURL: stateURL,
+            fileManager: fileManager,
+            eventLogCache: &eventLogCache
+        )
+    }
+
+    static func load(
+        stateURL: URL,
+        fileManager: FileManager = .default,
+        eventLogCache: inout MessagesPageEventLogCache
+    ) -> MessagesPageSourceData {
         MessagesPageSourceData(
-            events: readEvents(stateURL: stateURL, fileManager: fileManager),
+            events: readEvents(
+                stateURL: stateURL,
+                fileManager: fileManager,
+                eventLogCache: &eventLogCache
+            ),
             mailboxArtifacts: readMailboxArtifacts(stateURL: stateURL, fileManager: fileManager)
         )
     }
 
-    private static func readEvents(stateURL: URL, fileManager: FileManager) -> [MessagesPageEvent] {
+    private static func readEvents(
+        stateURL: URL,
+        fileManager: FileManager,
+        eventLogCache: inout MessagesPageEventLogCache
+    ) -> [MessagesPageEvent] {
         let directory = EventLogLayout.eventsDirectoryURL(state: stateURL)
         let urls = ((try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
             .filter { url in
@@ -520,16 +551,39 @@ enum MessagesPageSource {
             }
             .sorted { $0.path < $1.path }
 
+        let currentURLs = Set(urls)
+        eventLogCache.eventsByURL = eventLogCache.eventsByURL.filter { currentURLs.contains($0.key) }
+        eventLogCache.signatures = eventLogCache.signatures.filter { currentURLs.contains($0.key) }
+
         var events: [MessagesPageEvent] = []
         for url in urls {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let signature = MessagesPageEventLogSignature(
+                fileSize: values?.fileSize ?? -1,
+                modificationDate: values?.contentModificationDate
+            )
+            if eventLogCache.signatures[url] == signature,
+               let cachedEvents = eventLogCache.eventsByURL[url] {
+                events.append(contentsOf: cachedEvents)
+                continue
+            }
+
+            var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? Data(contentsOf: url),
                   data.range(of: sendEventMarker) != nil || data.range(of: mailboxEventMarker) != nil,
-                  let text = String(data: data, encoding: .utf8) else { continue }
+                  let text = String(data: data, encoding: .utf8) else {
+                eventLogCache.signatures[url] = signature
+                eventLogCache.eventsByURL[url] = []
+                continue
+            }
             for line in text.split(whereSeparator: \.isNewline) {
                 if let event = MessagesPageEvent(line: String(line)) {
-                    events.append(event)
+                    parsedEvents.append(event)
                 }
             }
+            eventLogCache.signatures[url] = signature
+            eventLogCache.eventsByURL[url] = parsedEvents
+            events.append(contentsOf: parsedEvents)
         }
         return events
     }

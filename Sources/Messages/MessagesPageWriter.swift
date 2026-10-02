@@ -16,6 +16,10 @@ final class MessagesPageWriter {
     private var eventObserver: NSObjectProtocol?
     private var started = false
     private var generation: UInt64 = 0
+    /// Queue-confined cache of parsed event-log files. Startup fills it from
+    /// the full current + rolled log set; debounced live writes only reread
+    /// files whose size or modification date changed.
+    private var eventLogCache = MessagesPageEventLogCache()
 
     init(
         stateURL: URL? = nil,
@@ -132,7 +136,10 @@ final class MessagesPageWriter {
     }
 
     private func rebuild(stateURL: URL) throws {
-        let source = MessagesPageSource.load(stateURL: stateURL)
+        let source = MessagesPageSource.load(
+            stateURL: stateURL,
+            eventLogCache: &eventLogCache
+        )
         let snapshot = MessagesPageBuilder.build(
             events: source.events,
             mailboxArtifacts: source.mailboxArtifacts

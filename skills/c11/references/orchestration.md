@@ -304,9 +304,10 @@ Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`,
 
 There are two deliberate paths between agent tabs:
 
-- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn. This is the right tool for a nudge, a short brief, or an instruction that should appear in the recipient's working tab. A PTY poke is transient, so do not make it the only completion or blocker record.
-- **Use `c11 mailbox send` for durable coordination.** The envelope and body are recorded and remain inspectable. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent receives a mailbox delivery as a turn; a busy agent receives it at its next turn boundary. Each recipient should declare a stable `mailbox.address` during orientation before peers address it.
-- **Use `c11 messages view` for the recorded timeline.** `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a tab.
+- **Use `c11 send` for a direct poke.** It types into the target PTY and submits one turn, and c11 records the full text as `tab.input_sent`. Use it for a nudge, short brief, or immediate instruction. Because it is a PTY action rather than a durable mailbox report, pair it with mailbox completion/blocker reporting when the exchange must survive the tab.
+- **Use `c11 mailbox send` for durable coordination.** The envelope and body remain inspectable through `mailbox.accepted` / `mailbox.delivered`, whose delivery marker is `via: push|drain|inbox`. Use mailbox messages for requests, handoffs, completion reports, and recoverable blockers. A waiting agent receives a new turn; a busy agent receives mail at its turn boundary. At orientation, declare `mailbox.address` and set `mailbox.delivery` to `stdin` when the recipient is an interactive agent tab.
+- **Push is agent-only.** c11 verifies that the recipient owns its foreground terminal and is using raw-mode interactive input before typing. It never pushes into a plain shell, one-shot command, or other program; failed pushes remain in the inbox. Claude and Codex drain at turn boundaries through their wrapper/hooks, while Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit floor.
+- **Use `c11 messages view` for the recorded timeline.** It opens the live traffic page in a c11 browser tab without taking focus. `c11 mailbox view` is the mailbox alias. Reach for either when you need to inspect the durable exchange, not merely the text currently visible in a tab.
 
 ## Agent-to-agent communication
 

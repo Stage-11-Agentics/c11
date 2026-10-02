@@ -1457,7 +1457,13 @@ final class SocketClient {
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
         var params = params
-        if params["caller_tab_id"] == nil {
+        // Attribution fallback belongs to selection routes. Unrelated protocols
+        // (notably the closed journal envelope) must keep their exact parameters.
+        if params["caller_tab_id"] == nil,
+           ["workspace.select", "workspace.next", "workspace.previous", "workspace.last",
+            "workspace.close", "workspace.move_to_window", "workspace.group.focus",
+            "browser.focus_webview", "history.back", "history.forward", "feed.open",
+            "snapshot.restore", "snapshot.restore_set", "config.launch", "window.create"].contains(method) {
             let env = ProcessInfo.processInfo.environment
             if let caller = env["C11_TAB_ID"] ?? env["CMUX_SURFACE_ID"], UUID(uuidString: caller) != nil {
                 params["caller_tab_id"] = caller

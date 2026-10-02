@@ -8,6 +8,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=sandbox-common.sh
 source "$SCRIPT_DIR/sandbox-common.sh"
 
+# Started with a signal ignored (a background job of a non-interactive shell ignores SIGINT,
+# `nohup` ignores SIGHUP), bash cannot trap it: a signal ignored on entry stays ignored, and
+# Ctrl-C or kill -INT during agent staging would leave a credential-bearing clone running.
+# Re-exec once with INT, TERM and HUP at their defaults, so the staging trap below sees them.
+if [[ -z "${C11_SANDBOX_SIGNALS_RESET:-}" ]]; then
+  export C11_SANDBOX_SIGNALS_RESET=1
+  exec /usr/bin/python3 -c 'import os, signal, sys
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal.SIG_DFL)
+os.execv("/bin/bash", ["/bin/bash"] + sys.argv[1:])' "$0" "$@"
+fi
+
 usage() {
   cat <<'EOF'
 Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]

@@ -61,7 +61,7 @@ def main():
             env[key] = proxy_path
 
         def run(*arguments, accepted=True):
-            result = subprocess.run([cli, "--socket", proxy_path, "--json", *arguments],
+            result = subprocess.run([cli, "--socket", proxy_path, "--json", "--id-format", "uuids", *arguments],
                                     env=env, text=True, capture_output=True, timeout=10)
             if accepted:
                 assert result.returncode == 0, (arguments, result.stderr)
@@ -172,7 +172,12 @@ def main():
             print("PASS: non-terminal, layout and invalid-type CLI/RPC rejections are atomic")
 
             replacement, marker = command("replacement")
-            payload = client._call("workspace.create", {"title": "C11-280 replacement fixture", "initial_command": replacement})
+            # A custom non-shell stdin consumer keeps its viewport observable
+            # until cleanup; an exited one-shot command may close its workspace.
+            payload = client._call("workspace.create", {
+                "title": "C11-280 replacement fixture",
+                "initial_command": replacement + "; exec /bin/cat"
+            })
             replacement_ws = own(payload)
             replacement_tab = tab_of(payload, replacement_ws)
             wait_output(replacement_ws, replacement_tab, marker)

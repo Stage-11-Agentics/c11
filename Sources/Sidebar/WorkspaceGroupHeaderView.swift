@@ -322,7 +322,12 @@ struct WorkspaceGroupNameEditor: View {
             fieldFocused = true
         }
         .onExitCommand(perform: onDismiss)
-        .onDisappear { capturedFocus?.restore() }
+        .onDisappear {
+            // SwiftUI may reuse the popover state on the next presentation.
+            // Reset so onAppear requests a fresh field-focus transition.
+            fieldFocused = false
+            capturedFocus?.restore()
+        }
     }
 
     private func submit() {
@@ -382,7 +387,10 @@ private struct WorkspaceGroupIconEditor: View {
         .frame(width: 320)
         .onAppear { draft = initialIcon ?? ""; fieldFocused = true }
         .onExitCommand(perform: onDismiss)
-        .onDisappear { focusTarget?.restore() }
+        .onDisappear {
+            fieldFocused = false
+            focusTarget?.restore()
+        }
     }
 
     private func submit() {

@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shlex
 import signal
+import socket
 import subprocess
 import time
 import uuid
@@ -57,11 +58,26 @@ def main():
 
     with cmux(target) as client:
         def read():
-            return client._call('tab.read_selection', {'workspace_id': state['workspace'], 'tab_id': state['tab']})
+            # Preserve UTF-8 across recv boundaries; the legacy helper decodes
+            # each chunk separately and can corrupt large Unicode responses.
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(10)
+                connection.connect(target)
+                request = {'id': 1, 'method': 'tab.read_selection', 'params':
+                           {'workspace_id': state['workspace'], 'tab_id': state['tab']}}
+                connection.sendall((json.dumps(request)+'\n').encode())
+                chunks = bytearray()
+                while b'\n' not in chunks:
+                    chunk = connection.recv(65536)
+                    assert chunk, 'socket closed before complete response'
+                    chunks.extend(chunk)
+                response = json.loads(chunks)
+                assert response['ok'], response.get('error')
+                return response['result']
 
         def parity(value):
             assert value['kind'] == 'terminal'
-            assert base64.b64decode(value['base64']) == value['text'].encode('utf-8'), value
+            assert base64.b64decode(value['base64']) == value['text'].encode('utf-8'), 'selection text/base64 mismatch'
 
         def screen():
             return client._call('tab.read_text', {'workspace_id': state['workspace'], 'tab_id': state['tab']})['text']
@@ -149,7 +165,7 @@ def main():
             print('PASS: twenty real mouse select/read/read/CLI/clear cycles; word byte parity; process remains live')
 
         elif args.phase == 'large':
-            body = "import sys;sys.stdout.write('\\033[H\\033[2J\\033[3J');sys.stdout.write(''.join('%06d '%i+'界'*80+'\\n' for i in range(20000)));sys.stdout.write('LARGE_SELECTION_READY\\n');sys.stdout.flush()"
+            body = "import sys;sys.stdout.write('\\033[H\\033[2J\\033[3J');sys.stdout.write(''.join('%06d '%i+('a'+'\\u0301'*8)*80+'\\n' for i in range(20000)));sys.stdout.write('LARGE_SELECTION_READY\\n');sys.stdout.flush()"
             send('python3 -c ' + shlex.quote(body))
             wait_marker('LARGE_SELECTION_READY')
             ui('check'); ui('key', 'a', 'cmd')

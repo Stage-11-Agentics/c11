@@ -571,7 +571,7 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.
-- **"Tab is not a terminal"** — you used `--tab` without `--workspace`. Always pass both when targeting remote tabs.
+- **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal tab. Find the browser tab ref with `c11 tree` and pass `--tab <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged tab.
 - **Tab doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
@@ -580,7 +580,7 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 
 ## Notes
 
-- c11 is a **local** multiplexer — not a remote session manager. For SSH work, install tmux on the remote.
+- `c11 ssh <host>` opens a remote shell and a local SSH proxy so browser traffic can egress from that host. Commands inside that shell do not run on the Mac. `c11 ping` there prints "c11 commands are not available over c11 ssh in this version" and does not return `pong`. Use the local CLI. See the SSH section in SKILL.md.
 - Socket access modes: disabled, c11-spawned processes only (`c11Only`), or all local processes. Check with `c11 capabilities`.
 
 ## New Workspace recents and pins

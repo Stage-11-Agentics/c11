@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "createdAt": 1,
+  "windows": [
+    {
+      "frame": {"x": 50, "y": 50, "width": 1120, "height": 840},
+      "tabManager": {
+        "selectedWorkspaceIndex": 0,
+        "workspaces": [
+          {
+            "id": "00000000-0000-0000-0000-000000002610",
+            "processTitle": "C11-261 pre-group fixture",
+            "isPinned": false,
+            "currentDirectory": "/tmp/c11-groups-fixture",
+            "focusedPanelId": "00000000-0000-0000-0000-000000002611",
+            "panels": [
+              {
+                "id": "00000000-0000-0000-0000-000000002611",
+                "type": "terminal",
+                "title": "Pre-group terminal",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {"workingDirectory": "/tmp/c11-groups-fixture"},
+                "metadata": {"fixture": "c11-261-pre-group"}
+              }
+            ],
+            "statusEntries": [],
+            "logEntries": [],
+            "layout": {
+              "type": "pane",
+              "pane": {
+                "panelIds": ["00000000-0000-0000-0000-000000002611"],
+                "selectedPanelId": "00000000-0000-0000-0000-000000002611"
+              }
+            }
+          }
+        ]
+      },
+      "sidebar": {"isVisible": true, "selection": "tabs", "width": 200}
+    }
+  ]
+}

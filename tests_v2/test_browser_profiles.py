@@ -100,14 +100,15 @@ def _expect_socket_profile_failure_without_tab(
     method: str,
     params: dict[str, Any],
     workspace_id: str,
+    expected: str = "invalid_params",
 ) -> None:
     before = _tab_ids(c, workspace_id)
     try:
         c._call(method, params)
     except cmuxError as exc:
-        _must("invalid_params" in str(exc), f"Expected invalid_params for {method} {params}, got: {exc}")
+        _must(expected in str(exc), f"Expected {expected} for {method} {params}, got: {exc}")
     else:
-        raise cmuxError(f"Expected invalid_params for {method} with explicit profile {params.get('profile')!r}")
+        raise cmuxError(f"Expected {expected} for {method} with explicit profile {params.get('profile')!r}")
     after = _tab_ids(c, workspace_id)
     _must(after == before, f"Invalid socket profile selection created a tab for {method}: {before} -> {after}")
 
@@ -127,6 +128,13 @@ def _assert_invalid_profile_selection(c: cmux, cli: str, workspace_id: str) -> N
                 {**base, "workspace_id": workspace_id, "profile": value},
                 workspace_id,
             )
+        _expect_socket_profile_failure_without_tab(
+            c,
+            method,
+            {**base, "workspace_id": workspace_id, "profile": "does-not-exist"},
+            workspace_id,
+            expected="not_found",
+        )
 
     cli_endpoints = (
         ["browser", "open", "https://example.com", "--workspace", workspace_id],

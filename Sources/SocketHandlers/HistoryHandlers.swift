@@ -8,27 +8,32 @@ extension TerminalController {
         guard let limit = FocusHistoryLimit.parse(params["limit"]) else {
             return .err(code: "invalid_params", message: FocusHistoryLimit.error, data: nil)
         }
-        return v2MainSync {
-            MainActor.assumeIsolated {
-                let store = FocusHistoryStore.shared
-                store.reconcile()
-                v2RefreshKnownRefs()
-                let snapshot = store.snapshot()
-                let start = max(0, snapshot.entries.count - limit)
-                let rows = snapshot.entries.enumerated().dropFirst(start).compactMap { offset, entry in
-                    v2HistoryEntry(entry, current: offset == snapshot.index)
-                }
-                return .ok([
-                    "threshold_seconds": store.model.threshold,
-                    "cap": FocusHistoryModel.cap,
-                    "total": snapshot.entries.count,
-                    "position": v2OrNull(snapshot.index),
-                    "back_count": snapshot.index ?? 0,
-                    "forward_count": snapshot.index.map { snapshot.entries.count - $0 - 1 } ?? 0,
-                    "entries": rows
-                ])
-            }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { v2HistorySnapshot(limit: limit) }
         }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { v2HistorySnapshot(limit: limit) }
+        }
+    }
+
+    private func v2HistorySnapshot(limit: Int) -> V2CallResult {
+        let store = FocusHistoryStore.shared
+        store.reconcile()
+        v2RefreshKnownRefs()
+        let snapshot = store.snapshot()
+        let start = max(0, snapshot.entries.count - limit)
+        let rows = snapshot.entries.enumerated().dropFirst(start).compactMap { offset, entry in
+            v2HistoryEntry(entry, current: offset == snapshot.index)
+        }
+        return .ok([
+            "threshold_seconds": store.model.threshold,
+            "cap": FocusHistoryModel.cap,
+            "total": snapshot.entries.count,
+            "position": v2OrNull(snapshot.index),
+            "back_count": snapshot.index ?? 0,
+            "forward_count": snapshot.index.map { snapshot.entries.count - $0 - 1 } ?? 0,
+            "entries": rows
+        ])
     }
 
     func v2DispatchHistory(_ method: String, id: Any?, params: [String: Any]) -> String {

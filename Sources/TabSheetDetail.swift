@@ -52,6 +52,14 @@ enum TabSheetDetailBuilder {
         var tokens: Int?
         /// The turn's end: the last agent event, used once the agent is no longer working.
         var lastAgentEventAt: Date?
+        /// When set, the turn clock ends here even if the displayed activity is still running.
+        var turnEndedAt: Date? = nil
+        /// Journal phase clock. When `journalPhaseSinceApplies` is true, `nil` stays nil
+        /// and does not fall back to the last activity time.
+        var journalPhaseSinceApplies: Bool = false
+        var journalPhaseSince: Date? = nil
+        /// Existing unconfirmed-evidence qualification, appended to the subtitle.
+        var evidenceNote: String? = nil
         var now: Date = Date()
         var locale: Locale = TabSheetClockText.appLocale
     }
@@ -68,7 +76,14 @@ enum TabSheetDetailBuilder {
             texts["seen"] = String(localized: "tabSheet.clock.seenNow", defaultValue: "now")
         }
         if let start = input.turnStartedAt {
-            let end = input.activity == .running ? input.now : (input.lastAgentEventAt ?? input.now)
+            let end: Date
+            if let turnEndedAt = input.turnEndedAt {
+                end = turnEndedAt
+            } else if input.activity == .running {
+                end = input.now
+            } else {
+                end = input.lastAgentEventAt ?? input.now
+            }
             texts["turn"] = TabSheetClockText.duration(end.timeIntervalSince(start), locale: input.locale)
             if let tools = input.turnToolCalls { texts["tools"] = String(tools) }
         }
@@ -93,7 +108,9 @@ enum TabSheetDetailBuilder {
                 enteredAt: input.stateEnteredAt,
                 stateStartedAt: input.stateStartedAt,
                 flagRaisedAt: input.flagRaisedAt,
-                lastActivityAt: input.lastActivityAt
+                lastActivityAt: input.lastActivityAt,
+                journalPhaseSinceApplies: input.journalPhaseSinceApplies,
+                journalPhaseSince: input.journalPhaseSince
             ),
             clocks: clocks,
             clockTexts: texts
@@ -140,16 +157,21 @@ enum TabSheetDetailBuilder {
     /// The description flattened to one line; else the kind's own locator: cwd
     /// for a shell, host for a browser, path for markdown.
     static func subtitle(_ input: Inputs) -> String? {
-        if let description = oneLine(input.description) { return description }
-        switch input.panelType {
-        case .terminal:
-            return abbreviatedPath(input.directory)
-        case .browser:
-            guard let url = input.browserURL else { return nil }
-            return url.host ?? url.absoluteString
-        case .markdown:
-            return abbreviatedPath(input.markdownPath)
+        let base: String?
+        if let description = oneLine(input.description) { base = description }
+        else {
+            switch input.panelType {
+            case .terminal:
+                base = abbreviatedPath(input.directory)
+            case .browser:
+                base = input.browserURL.flatMap { $0.host ?? $0.absoluteString }
+            case .markdown:
+                base = abbreviatedPath(input.markdownPath)
+            }
         }
+        guard let note = oneLine(input.evidenceNote) else { return base }
+        guard let base else { return note }
+        return "\(base) · \(note)"
     }
 
     /// The state word and how long the state has held. Waiting counts from the
@@ -163,11 +185,21 @@ enum TabSheetDetailBuilder {
         enteredAt: Date?,
         stateStartedAt: Date?,
         flagRaisedAt: Date?,
-        lastActivityAt: Date? = nil
+        lastActivityAt: Date? = nil,
+        journalPhaseSinceApplies: Bool = false,
+        journalPhaseSince: Date? = nil
     ) -> BonsplitTabDetail.Status? {
         guard let activity else { return nil }
         if isFlagged {
             return .init(kind: .flagged, since: flagRaisedAt ?? enteredAt)
+        }
+        if journalPhaseSinceApplies {
+            switch activity {
+            case .running: return .init(kind: .working, since: journalPhaseSince)
+            case .idle: return .init(kind: .idle, since: journalPhaseSince)
+            case .waiting: return .init(kind: .waiting, since: journalPhaseSince)
+            case .cold: break
+            }
         }
         switch activity {
         case .running: return .init(kind: .working, since: enteredAt ?? lastActivityAt)
@@ -324,6 +356,26 @@ extension Workspace {
         let signals = tabSheetSignals(panel: panel, panelId: panelId, terminalKind: terminalKind)
         let legacyActivityAt = help?.lastActivityAt
             ?? TabActivityTracker.shared.lastActivity(for: panelId.uuidString)
+        let journal = JournalCoordinator.shared.snapshot(tabID: panelId)
+        let sheetActivity: AgentRoster.SheetActivity
+        if activity == .running { sheetActivity = .running }
+        else if activity == .idle { sheetActivity = .idle }
+        else if activity == .waiting { sheetActivity = .waiting }
+        else { sheetActivity = .other }
+        let clock = journal.map {
+            AgentRoster.sheetClock(phase: $0.phase, activity: sheetActivity, flagged: attention.isFlagged,
+                                   historical: $0.isHistorical, sinceMs: $0.sinceMs)
+        }
+        let managedTurn: Date? = {
+            guard let journal, journal.turnID != nil else { return nil }
+            guard let ms = JournalCoordinator.shared.cachedTurnStartedMs(tabID: panelId) else { return nil }
+            return Date(timeIntervalSince1970: Double(ms) / 1000)
+        }()
+        let turnEndedAt: Date? = {
+            guard let journal, journal.turnID != nil else { return nil }
+            guard journal.isHistorical || activity != .running else { return nil }
+            return Date(timeIntervalSince1970: Double(journal.observedAtMs) / 1000)
+        }()
         return TabSheetDetailBuilder.build(.init(
             panelType: panel.panelType,
             title: fullTitle,
@@ -345,10 +397,16 @@ extension Workspace {
             touchedAt: signals.touchedAt,
             seenAt: TabSeenTracker.shared.storedLastSeenAt(panelId: panelId),
             isBeingSeen: TabSeenTracker.shared.isBeingSeen(panelId: panelId),
-            turnStartedAt: signals.turnStartedAt,
+            turnStartedAt: journal != nil ? managedTurn : signals.turnStartedAt,
             turnToolCalls: signals.turnToolCalls,
             tokens: signals.tokens,
-            lastAgentEventAt: signals.lastAgentEventAt
+            lastAgentEventAt: signals.lastAgentEventAt,
+            turnEndedAt: turnEndedAt,
+            journalPhaseSinceApplies: clock?.applies ?? false,
+            journalPhaseSince: clock?.since,
+            evidenceNote: journal?.isHistorical == true
+                ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
+                : nil
         ))
     }
 

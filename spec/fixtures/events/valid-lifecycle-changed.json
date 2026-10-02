@@ -1,0 +1,16 @@
+{
+  "seq": 12,
+  "ts": "2026-10-02T03:00:00.000Z",
+  "type": "lifecycle.changed",
+  "instance": "com.stage11.c11-231-12345",
+  "v": 1,
+  "workspace": "9b2d4e6a-1c3f-4a5b-8d7e-2f0a1b3c4d5e",
+  "surface": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "payload": {
+    "tab": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+    "agent": "claude-code",
+    "from": "working",
+    "to": "blocked",
+    "reason": "question"
+  }
+}

@@ -313,8 +313,10 @@ class Probe:
         self.window_id = topology['windows'][0]['kCGWindowNumber']
         screen = topology['displays'][0]
         window = topology['windows'][0]['kCGWindowBounds']
-        self.check(0 <= window['X'] < screen['width'] and 0 <= window['Y'] < screen['height'],
-                   'Tagged window is on the verified single guest display')
+        self.check(window['X'] >= 0 and window['Y'] >= 0
+                   and window['X'] + window['Width'] <= screen['width']
+                   and window['Y'] + window['Height'] <= screen['height'],
+                   'Entire tagged window fits on the verified single guest display')
         # All display/PID/window checks precede preferences and GUI activation.
         self.safe = True
         self.preference('showMenuBarExtra', True)

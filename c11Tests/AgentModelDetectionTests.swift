@@ -216,7 +216,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"timestamp":"2026-01-01T09:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","output":"SENTINEL"}}
         {"timestamp":"2026-01-01T09:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"root-1","last_agent_message":"SENTINEL"}}
         """
-        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        try place(Data((lines + "\n").utf8), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         let first = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
         XCTAssertEqual(first.lifecycle.map(\.nativeEvent), ["turn.started", "turn.completed"])
@@ -239,7 +239,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"timestamp":"2026-01-01T09:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":"SENTINEL"}}
         {"timestamp":"2026-01-01T09:00:05.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"root-1"}}
         """
-        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        try place(Data((lines + "\n").utf8), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
         XCTAssertEqual(result.lifecycle.map(\.nativeEvent), ["turn.started", "turn.interrupted"])
@@ -255,7 +255,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"timestamp":"2026-01-01T09:00:01.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","output":"SENTINEL"}}
         {"timestamp":"2026-01-01T09:00:02.000Z","type":"event_msg","payload":{"type":"phase_changed","phase":"working"}}
         """
-        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        try place(Data((lines + "\n").utf8), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
         XCTAssertTrue(result.lifecycle.isEmpty)
@@ -306,7 +306,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"type":"turn_started","ts":"2026-01-01T06:10:00.123456Z","turn_number":42,"session_id":"\(sessionID)","session_relationship":"primary"}
         {"type":"phase_changed","ts":"2026-01-01T06:10:01.000Z","phase":"working"}
         """
-        let url = try place(Data(events.utf8), at: "\(dir)/events.jsonl")
+        let url = try place(Data((events + "\n").utf8), at: "\(dir)/events.jsonl")
         let r = ref("grok", id: sessionID,
                    payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
         var state = ModelTailState()
@@ -331,7 +331,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"type":"turn_ended","ts":"2026-01-01T06:20:02.000Z","outcome":"completed"}
         {"type":"phase_changed","ts":"2026-01-01T06:20:03.000Z","phase":"working"}
         """
-        let url = try place(Data(events.utf8), at: "\(dir)/events.jsonl")
+        let url = try place(Data((events + "\n").utf8), at: "\(dir)/events.jsonl")
         let r = ref("grok", id: sessionID,
                    payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
         var state = ModelTailState()
@@ -367,7 +367,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"timestamp":"2026-01-01T09:00:00.500Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
         {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
         """
-        let url = try place(Data(prefix.utf8), at: path)
+        let url = try place(Data((prefix + "\n").utf8), at: path)
         let r = ref("codex", id: id)
         var state = ModelTailState()
         XCTAssertEqual(probe.detectWithObservations(kind: "codex", ref: r, state: &state).lifecycle.map(\.nativeEvent), ["turn.started"])
@@ -389,7 +389,7 @@ final class AgentModelDetectionTests: XCTestCase {
         {"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
         {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
         """
-        try place(Data(lines.utf8), at: codexPath(id: id, date: now))
+        try place(Data((lines + "\n").utf8), at: codexPath(id: id, date: now))
         var state = ModelTailState()
         let result = probe.detectWithObservations(kind: "codex", ref: ref("codex", id: id), state: &state)
         XCTAssertTrue(result.lifecycle.isEmpty)

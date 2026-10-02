@@ -157,7 +157,7 @@ quit_tagged() {
 
 tagged_pids() {
   /bin/ps -axo pid=,command= | /usr/bin/awk -v target="$APP/Contents/MacOS/c11" \
-    'index($0, target) { print $1 }'
+    '{ command = $0; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", command); if (command == target) print $1 }'
 }
 
 launch_tagged() {

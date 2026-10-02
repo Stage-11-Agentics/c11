@@ -212,6 +212,7 @@ jobs:
           test -x "$CLI_BINARY"
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
 
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh

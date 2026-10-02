@@ -490,6 +490,44 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(SessionPersistenceStore.load(fileURL: snapshotURL))
     }
 
+    func testLoadRejectsSnapshotContainingOnlyEmptyWindows() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-empty-windows-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let snapshotURL = root.appendingPathComponent("session.json")
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        snapshot.windows[0].workspaceManager.workspaces = []
+        snapshot.windows.append(snapshot.windows[0])
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+        let savedData = try Data(contentsOf: snapshotURL)
+
+        XCTAssertNil(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), savedData, "Loading must not rewrite session history")
+    }
+
+    func testLoadDropsEmptyWindowsAndPreservesValidWindowsInOrder() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-mixed-windows-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let snapshotURL = root.appendingPathComponent("session.json")
+        var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+        let first = snapshot.windows[0]
+        let second = makeSnapshot(version: SessionSnapshotSchema.currentVersion).windows[0]
+        var empty = first
+        empty.workspaceManager.workspaces = []
+        snapshot.windows = [empty, first, empty, second, empty]
+        XCTAssertTrue(SessionPersistenceStore.save(snapshot, fileURL: snapshotURL))
+        let savedData = try Data(contentsOf: snapshotURL)
+
+        let loaded = try XCTUnwrap(SessionPersistenceStore.load(fileURL: snapshotURL))
+        var expected = snapshot
+        expected.windows = [first, second]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(try encoder.encode(loaded), try encoder.encode(expected))
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), savedData, "Loading must not rewrite session history")
+    }
+
     func testDefaultSnapshotPathSanitizesBundleIdentifier() {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-tests-\(UUID().uuidString)", isDirectory: true)
@@ -1767,6 +1805,19 @@ final class SocketClientCommandLoopTests: XCTestCase {
         XCTAssertEqual(readLine(), "echo:two")
         send("ee\n")
         XCTAssertEqual(readLine(), "echo:three")
+
+        closeClientAndWaitForLoopExit()
+    }
+
+    func testMultibyteUTF8AcrossReadBoundariesAndMultipleFrames() {
+        startLoop { "echo:\($0)" }
+
+        // The 4095-byte read ceiling bisects the first three-byte character;
+        // subsequent boundaries fall inside the repeated multibyte payload.
+        let body = String(repeating: "a", count: 4094) + String(repeating: "界🙂é", count: 4096)
+        send(body + "\nnext\n")
+        XCTAssertEqual(readLine(), "echo:" + body)
+        XCTAssertEqual(readLine(), "echo:next")
 
         closeClientAndWaitForLoopExit()
     }

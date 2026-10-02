@@ -8,6 +8,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Environment variables](#environment-variables)
 - [Discovery & state](#discovery--state)
 - [Workspaces, areas, tabs](#workspaces-areas-tabs)
+- [Workspace groups and batch order](#workspace-groups-and-batch-order)
 - [Tab initialization quirk](#tab-initialization-quirk)
 - [Reading & sending](#reading--sending)
 - [Live messages page](#live-messages-page)
@@ -47,6 +48,10 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
+Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
+
+Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.
@@ -64,6 +69,23 @@ Auto-exported into every c11 tab child process.
 | `C11_AGENT_TASK` | Declared agent task ID |
 
 ## Discovery & state
+
+During initial session restoration, graph-dependent socket requests return
+v2 `error.code: "not_ready"` (v1: `ERROR: not_ready: ...`). Retry this condition
+with a short delay and a bounded deadline; it is not a successful empty tree.
+The listener starts before restored terminals. `ping` stays available for
+wrapper connectivity checks, but a successful ping does not mean restoration
+has finished. `system.ping`, `system.capabilities`, `system.brand`, and
+`auth.login` also remain available. Once `tree --all` succeeds, the initial
+restored window graph is installed and UUID-targeted commands can proceed.
+The bundled shells' UUID-scoped `report_tty` and `report_shell_state` reports
+are accepted and coalesced during restoration, then applied to the completed
+graph. Their `OK` means the report was retained; it does not bypass readiness
+for commands that read or manipulate tabs.
+
+Refs are registered when windows, workspaces, areas, and tabs are created.
+Steady commands do not rebuild the global ref table. A closed ref is never
+reassigned to another object during the process lifetime.
 
 ```bash
 c11 identify                         # JSON: caller/focused refs + each workspace's root_directory
@@ -143,9 +165,9 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # (default: the picker's last layout). No agent is launched unless --agent. Does not steal focus.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
-c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
-c11 new-area [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
-c11 new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
+c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
+c11 new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
+c11 new-tab [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
@@ -220,6 +242,8 @@ c11 close-tab [--tab <id|ref>]      # Close a tab (defaults to caller's)
 c11 close-workspace --workspace <id|ref>    # Close entire workspace
 ```
 
+For these four create commands, `--command` queues literal text plus Return into the new terminal shell through Ghostty startup input. It keeps the shell alive and reports `initial_input: queued`, which does not mean the command finished. Blank input is omitted. Browser/markdown tabs and areas reject nonblank `--command`; `new-workspace --layout` also rejects it before creating anything. `initial_command` remains a separate shell-replacement RPC field. Queued input is consumed at native creation and is not saved or replayed during restore.
+
 ### `new-split` vs `new-area` vs `new-tab`
 
 - **`new-split`** — creates a new **area** by splitting an existing one. Always terminal.
@@ -274,17 +298,138 @@ CALLER_AREA=$(c11 identify --tab "$C11_TAB_ID" | grep -o '"area_ref" : "area:[0-
 c11 new-tab --type terminal --area "$CALLER_AREA"
 ```
 
-## Tab initialization quirk
+## Workspace groups and batch order
 
-Tabs are lazily initialized — no PTY until they have non-zero screen bounds. Tabs created in a non-visible workspace are inert until shown.
-
-Workaround: after creating in a hidden workspace, select it briefly so SwiftUI runs the layout pass:
+All commands below accept `--window <window-ref|uuid>` and `--json`. Omitted window
+uses the caller's window, or the current window outside a c11 terminal. Group
+selectors are UUIDs or ephemeral `workspace_group:N` refs, never names or indexes.
+UUIDs survive restore; ref ordinals carry no persistence promise. Use
+`c11 --id-format both workspace-group list --json` to retain both IDs and refs.
 
 ```bash
-c11 select-workspace --workspace workspace:N
-sleep 2
-# now the tab has real bounds and accepts input
+c11 workspace-group list --json
+c11 workspace-group create --name "Backend" --json
+c11 workspace-group rename --group workspace_group:1 --name "Services"
+c11 workspace-group add --group workspace_group:1 --workspaces workspace:2,workspace:3
+c11 workspace-group remove --group workspace_group:1 --workspaces workspace:3
+c11 workspace-group move --workspace workspace:2 --to-group workspace_group:2
+c11 workspace-group move --workspace workspace:2 --to-group none
+c11 workspace-group move --workspace workspace:3 --to-group workspace_group:2 --before workspace:2
+c11 workspace-group move --group workspace_group:2 --before workspace_group:1
+c11 workspace-group move --group workspace_group:2 --after workspace_group:1
+c11 workspace-group move --group workspace_group:2 --index 0
+c11 workspace-group set-color --group workspace_group:1 --color '#7C3AED'
+c11 workspace-group set-color --group workspace_group:1 --clear
+c11 workspace-group set-icon --group workspace_group:1 --icon server.rack
+c11 workspace-group set-icon --group workspace_group:1 --clear
+c11 workspace-group collapse --group workspace_group:1
+c11 workspace-group expand --group workspace_group:1
+c11 workspace-group pin --group workspace_group:1
+c11 workspace-group unpin --group workspace_group:1
+c11 workspace-group focus --group workspace_group:1
+c11 workspace-group delete --group workspace_group:1
+c11 workspace-group ungroup --group workspace_group:2
+c11 reorder-workspaces --order workspace:3,workspace:1 --dry-run --json
+c11 reorder-workspaces --order workspace:3,workspace:1 --json
 ```
+
+Examples illustrate individual verbs against an existing fixture; substitute live
+handles from `list-workspaces` and `workspace-group list`.
+
+- Creating a group creates no workspace or terminal. Empty groups survive last-member
+  removal and close. New workspaces start ungrouped; folders never nest.
+- `add` accepts only ungrouped workspaces. Entire input arrays validate before mutation:
+  duplicates, unknown IDs, already-grouped workspaces and wrong-window IDs fail without
+  a partial change. `remove` requires membership in the named group. Use `move` for a
+  transfer; a relative workspace must belong to the destination. Without `--before`
+  or `--after`, member moves append within the destination's member pin segment.
+- `delete` and `ungroup` both remove the folder record and detach its members, preserving
+  canonical workspace order, pins, tabs and live processes. They never close members.
+- Group pin controls its root position; member pin controls its position inside the
+  group. Neither toggles the other. Group moves clamp within the group's pin segment.
+  Root display order is pinned groups, pinned ungrouped workspaces, unpinned groups,
+  unpinned ungrouped workspaces. Members follow the canonical flat workspace order.
+- Only group `focus` may change selection: keep the selected member, otherwise select
+  the first member and expand the group. Empty groups return `empty_group`. No group
+  command activates or raises a macOS window; other verbs preserve selection and focus.
+- Cross-window group operations fail with `wrong_window`. Moving a workspace to another
+  window with `move-workspace-to-window` clears membership and keeps the source folder.
+- `--order` is a nonempty partial priority list. The result is requested pinned,
+  remaining pinned, requested unpinned, remaining unpinned, preserving untouched relative
+  order. Group membership/order and selection are unchanged. Apply publishes one final
+  order. Dry-run is advisory against the current snapshot, not a stale-plan token.
+
+Socket methods are `workspace.group.<verb>` with underscores (`set_color`, `set_icon`),
+and `workspace.reorder_batch`. Parameters: `window_id`; `group_id`; `workspace_ids`
+for add/remove; `workspace_id` and `to_group_id` (null clears) for member move;
+`before_id`/`after_id`/`index` for placement; `name`, `color`, `icon` (null clears a
+property); and `ordered_workspace_ids`, `dry_run` for batch reorder. Text/property
+input is validated; names are trimmed and nonempty, colors normalized hex, icons
+renderable SF Symbols (display fallback `folder.fill`).
+
+Group list returns `workspace_groups` records with `id`, `ref`, `name`, `color`,
+`icon`, `is_collapsed`, `is_pinned`, `member_workspace_ids`, and `member_count`.
+Tree JSON keeps `windows[].workspaces` flat and complete even for collapsed folders,
+adds window `workspace_groups`, and workspace `group_id` (null when ungrouped).
+Text trees show each workspace once under its folder or the window, retain empty
+headers, and mark collapsed groups while still showing members for inspection.
+Older apps keep a flat tree; unsupported group commands fail clearly.
+
+Batch responses contain `window_id`, `dry_run`, `changed`, `final_workspace_ids` and
+per-request from/to indexes. A changed apply emits one `workspace.reordered` event
+with the window and final workspace UUID order; errors, dry-runs and no-ops emit none.
+Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_grouped`,
+`not_member`, `group_not_found`, `workspace_not_found`, `wrong_window`, and `empty_group`.
+
+### Sidebar folder controls and attention
+
+A folder header has a chevron, icon, name, pin marker and menu, followed by fixed
+slots for member, flag, waiting and unread counts. A long name truncates with its
+full text in the tooltip. Count slots keep their width at zero and cap visually
+at `99+`; accessibility labels and tooltips retain the exact count.
+
+- Click the chevron to collapse or expand. Collapse hides sidebar member rows
+  only: the selected workspace and its live terminal remain active, and numeric
+  workspace shortcuts still use the canonical flat order. A header is highlighted
+  when it contains the selected workspace, including while collapsed. Click its
+  name to focus the current member or first member. Empty folders stay empty.
+- New Group in the sidebar menu opens a name editor and creates an empty folder.
+  The header menu offers Rename Group, Color, Icon, Pin/Unpin Group, Ungroup and
+  Delete Group. Name/icon editors commit with Save and dismiss with Cancel/Escape;
+  empty names and invalid SF Symbols cannot commit, and validation errors stay in
+  the editor. Color uses the
+  existing palette; Clear Color and Clear Icon restore the defaults. An absent or
+  unavailable symbol displays `folder.fill`.
+- Ungroup and Delete Group both leave all members running as ungrouped workspaces.
+  Closing the first or last member never promotes another member into a header
+  and never deletes the folder. Group and member pins remain independent.
+- A workspace's Move to Group menu provides the same membership choices as drag,
+  including Ungrouped. Dropping on a header joins that group at the end of the
+  member's pin segment, including empty/collapsed groups, without expanding it.
+  Dropping on member edges places the dragged workspace in that member's group.
+  The Ungrouped lane remains available during a workspace drag even when no
+  ungrouped rows exist. Dragging a header reorders the whole folder among groups.
+  Pin boundaries clamp placement; they never silently change a pin. The preview
+  describes the final clamped placement. A closed source, deleted target, foreign
+  payload, cancellation or outside drop cannot partially transfer/reorder a member.
+  Shift-click selects visible workspace rows only, excluding collapsed members.
+- Attention includes every member tab, including collapsed/offscreen members.
+  Flags count plain terminals and suppressed tabs as well as agents. Any flag
+  makes the visible group signal violet; clearing the last flag restores ordinary
+  tint. Waiting counts only resolved waiting tabs that are not suppressed. Unread
+  counts workspace notification records exactly once, including workspace-scoped
+  records; it does not manufacture a waiting tab. Transferring a member transfers
+  its contribution to the destination header. Badge changes do not select a
+  workspace, mount hidden members, or take terminal focus.
+
+The sidebar omits collapsed member rows; `tree` intentionally includes them for
+inspection. Socket list/tree/metadata reads are model oracles, not proof that the
+header rendered, a pointer drop succeeded, or the terminal retained responder
+focus. Maintainer validation must exercise those paths in the actual tagged app.
+
+## Tab initialization quirk
+
+Terminals start lazily. `send` and `read-screen` request a runtime even in a hidden workspace, so selecting the workspace is not a prerequisite. If a send's runtime still cannot attach, its text waits in the pending queue and the result reports `queued: true`, `delivered: false`. Showing the tab lets queued input flush when the runtime attaches.
 
 ## Reading & sending
 
@@ -309,6 +454,18 @@ c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one t
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
 
+**Raw text and stdin:** `c11 send --raw --tab <uuid|ref> '<text>'` skips escape rewriting and preserves leading, interior and trailing newline content. `c11 paste` is `send --raw`; when text is omitted it reads UTF-8 stdin. `c11 send -` explicitly reads stdin (add `--raw` for literal escape handling). A lone `-` takes no other text. Default `send` still decodes literal `\n` and `\r` to Return, `\t` to Tab, and treats trailing newlines as a request to submit. Raw/paste mode requires the connected server to advertise `send.raw`; older servers are rejected before sending text.
+
+```bash
+c11 send --tab tab:2 --raw --no-submit 'printf %s \n'
+printf 'line1\nline2\n' | c11 paste --tab tab:2 --no-submit
+c11 send --tab tab:2 --no-submit -- --literal-flag-text
+```
+
+`--no-submit` suppresses c11's additional Return in raw/paste mode, including input ending in a newline. It does not change how the recipient handles newline content: bracketed-paste-aware composers keep it as a draft, while an unbracketed shell or program can treat those newlines as input/commands. Arbitrary C0 control bytes still use the key path; raw is literal escape/newline handling, not a byte-exact control-byte transport. Unknown `--flags` before `--` are errors (including `--text`); flags after `--` are literal text. `send-tab` accepts the same modes with an explicit `--tab`.
+
+**Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
+
 **Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still targets that workspace's focused area — you named a target, just a coarser one.
@@ -320,6 +477,8 @@ Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still 
 - Navigation: `home`, `end`, `pageup`, `pagedown`
 - Function keys: `f1`–`f12`
 - Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
+
+`ctrl-c`, `ctrl-d`, `ctrl-z`, and `ctrl-<letter>` are real key events, so a Kitty TUI such as Claude Code or Codex can be interrupted; pass one key per call, a second key is an error, and send the next key in a second call.
 
 ## Live messages page
 
@@ -445,29 +604,51 @@ c11 trigger-flash [--tab <id|ref>]     # Visual flash on a tab
 
 Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 
-## Skill + Plugin Installation (`c11 skill install`)
+Claude lifecycle hooks clear only their originating tab's notices. Unknown tab
+attribution preserves existing notices. Bypass AskUserQuestion and ExitPlanMode
+enter waiting from PreToolUse. ExitPlanMode also enters waiting in plan mode,
+which Claude reports after a bypass-started session enters plan mode. A follow-up
+Notification replaces that tab's item.
+Flags appear separately in the enabled menu-bar extra, including suppressed
+flags; routine clear/read controls do not lower them.
 
-`c11 skill install --tool <tui>` copies the c11 skill bundle (and for OpenCode, a notification plugin) into the TUI's config directories. Human-run, consent-gated, reversible.
+The configured Notification Command receives `C11_NOTIFICATION_WORKSPACE_ID`,
+`C11_NOTIFICATION_TAB_ID`, and `C11_NOTIFICATION_KIND` (`routine` or `flag`),
+plus identical `CMUX_NOTIFICATION_*` aliases. Workspace-only notices export an
+empty tab ID. Existing CMUX title/subtitle/body fields remain available. Delivery
+requires authorization and successful macOS banner scheduling.
+
+## Skill Installation (`c11 skill install`)
+
+`c11 skill install --tool <tui>` copies the c11 skill bundle into the TUI's skills directory. Human-run, consent-gated, reversible.
 
 ```bash
 c11 skill install --tool claude        # Skills → ~/.claude/skills/
-c11 skill install --tool opencode      # Skills → ~/.opencode/skills/ + plugin → ~/.config/opencode/plugins/
+c11 skill install --tool opencode      # Skills → ~/.config/opencode/skills/
 c11 skill install --tool codex         # Skills → ~/.codex/skills/
 c11 skill install --tool kimi          # Skills → ~/.kimi/skills/
 c11 skill status [--json]              # Detection + install state for all tools
 c11 skill install --tool opencode --dry-run   # Show what would be written
-c11 skill remove --tool opencode       # Reverses install (skills + plugins)
+c11 skill remove --tool opencode       # Removes c11-installed skills only
 ```
 
-For OpenCode, the installer also copies a bundled plugin (`c11-notify.js`) into `~/.config/opencode/plugins/`. The plugin bridges `session.idle`, `permission.asked`, `session.error`, and `session.status` events into c11 notifications and sidebar status updates — giving OpenCode the same "blue ring + tab highlight + Cmd+Shift+U" workflow as Claude Code. OpenCode auto-loads plugins from that directory at startup; no `opencode.json` edit is required.
+OpenCode's bundled PATH wrapper loads the notification/status plugin per process
+inside a live c11 terminal. It uses a free `OPENCODE_CONFIG_CONTENT` slot, or
+`OPENCODE_CONFIG=/dev/fd/3` while preserving existing inline content. If both
+slots are occupied, both remain unchanged and bundled-plugin injection is skipped.
+Skill installation/removal never touches `~/.config/opencode/plugins/`. Older
+copied plugins and sidecars remain for operator inspection and backup; the operator
+may manually retire them. An old copy can still load alongside the runtime plugin.
 
 > **Historical note:** `c11 install <tui>` (without the `skill` subcommand) is not a real command — it was aspirational in earlier docs. The actual install path is `c11 skill install --tool <tui>`.
 
 ## Troubleshooting
 
+**Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
+
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.
-- **"Tab is not a terminal"** — you used `--tab` without `--workspace`. Always pass both when targeting remote tabs.
+- **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal tab. Find the browser tab ref with `c11 tree` and pass `--tab <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged tab.
 - **Tab doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
@@ -476,7 +657,7 @@ For OpenCode, the installer also copies a bundled plugin (`c11-notify.js`) into 
 
 ## Notes
 
-- c11 is a **local** multiplexer — not a remote session manager. For SSH work, install tmux on the remote.
+- `c11 ssh <host>` opens a remote shell and a local SSH proxy so browser traffic can egress from that host. Commands inside that shell do not run on the Mac. `c11 ping` there prints "c11 commands are not available over c11 ssh in this version" and does not return `pong`. Use the local CLI. See the SSH section in SKILL.md.
 - Socket access modes: disabled, c11-spawned processes only (`c11Only`), or all local processes. Check with `c11 capabilities`.
 
 ## New Workspace recents and pins

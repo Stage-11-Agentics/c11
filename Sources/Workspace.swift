@@ -249,6 +249,7 @@ extension Workspace {
             stableDefaultTitle: stableDefaultTitle,
             customColor: customColor,
             isPinned: isPinned,
+            groupId: groupId,
             currentDirectory: currentDirectory,
             rootDirectory: rootDirectory,
             rootAdoptionArmed: rootAdoptionArmed,
@@ -318,6 +319,7 @@ extension Workspace {
         setCustomTitle(snapshot.customTitle)
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
+        groupId = snapshot.groupId
         metadata = snapshot.metadata ?? [:]
 
         // Tier 1 Phase 3: restore `statusEntries` from the snapshot, stamping
@@ -339,7 +341,7 @@ extension Workspace {
                 staleFromRestart: true
             )
         }
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries = snapshot.logEntries.map { entry in
             SidebarLogEntry(
                 message: entry.message,
@@ -4754,6 +4756,7 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var title: String
     @Published var customTitle: String?
     @Published var isPinned: Bool = false
+    @Published var groupId: UUID? = nil
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
     /// Stable project-level cwd. Every new terminal surface in the workspace
@@ -5038,6 +5041,31 @@ final class Workspace: Identifiable, ObservableObject {
     /// PIDs associated with agent status entries (e.g. claude_code), keyed by status key.
     /// Used for stale-session detection: if the PID is dead, the status entry is cleared.
     var agentPIDs: [String: pid_t] = [:]
+    /// Runtime-only attribution for the currently registered PID. Unknown
+    /// attribution must never clear a sibling tab's attention.
+    private var agentPIDTabs: [String: (pid: pid_t, tabId: UUID)] = [:]
+
+    func registerAgentPID(_ pid: pid_t, key: String, tabId: UUID?) {
+        agentPIDs[key] = pid
+        if let tabId, panels[tabId] != nil {
+            agentPIDTabs[key] = (pid, tabId)
+        } else {
+            agentPIDTabs.removeValue(forKey: key)
+        }
+    }
+
+    @discardableResult
+    func removeAgentPID(key: String) -> UUID? {
+        let pid = agentPIDs.removeValue(forKey: key)
+        let association = agentPIDTabs.removeValue(forKey: key)
+        guard let association, association.pid == pid else { return nil }
+        return association.tabId
+    }
+
+    func clearAgentPIDs() {
+        agentPIDs.removeAll()
+        agentPIDTabs.removeAll()
+    }
     private var restoredTerminalScrollbackByTabId: [UUID: String] = [:]
 
     private static func isProxyOnlyRemoteError(_ detail: String) -> Bool {
@@ -5438,6 +5466,7 @@ final class Workspace: Identifiable, ObservableObject {
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:]
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
@@ -5565,6 +5594,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,
             portOrdinal: portOrdinal,
             initialCommand: initialTerminalCommand,
+            initialInput: initialTerminalInput,
             initialEnvironmentOverrides: initialTerminalEnvironment
         )
         panels[terminalTab.id] = terminalTab
@@ -5604,6 +5634,11 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
+        // The initial root area predates delegate installation. Later areas
+        // are registered by didSplitPane, including session/blueprint restore.
+        for paneId in bonsplitController.allPaneIds {
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
+        }
 
         // Ensure bonsplit has a focused pane and our didSelectTab handler runs for the
         // initial terminal. bonsplit's createTab selects internally but does not emit
@@ -5693,6 +5728,9 @@ final class Workspace: Identifiable, ObservableObject {
         guard newIds != lastKnownTabIds else { return }
         for createdId in newIds.subtracting(lastKnownTabIds) {
             guard let panel = newTabs[createdId] else { continue }
+            // This callback runs in @Published.willSet. Register the supplied
+            // new tab directly; self.panels still contains the old collection.
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
             EventEmitter.shared.emitSurfaceCreated(
                 workspace: id,
                 surface: createdId,
@@ -7326,7 +7364,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func resetSidebarContext(reason: String = "unspecified") {
         statusEntries.removeAll()
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries.removeAll()
         progress = nil
         gitBranch = nil
@@ -8557,7 +8595,8 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         focus: Bool = true,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        initialInput: String? = nil
     ) -> TerminalTab? {
         guard let paneId = paneIdForTab(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
@@ -8580,7 +8619,8 @@ final class Workspace: Identifiable, ObservableObject {
             configTemplate: inheritedConfig,
             workingDirectory: splitWorkingDirectory,
             portOrdinal: portOrdinal,
-            initialCommand: remoteTerminalStartupCommand
+            initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput
         )
         panels[newTab.id] = newTab
         tabTitles[newTab.id] = newTab.displayTitle
@@ -8653,6 +8693,7 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         focus: Bool? = nil,
         workingDirectory: String? = nil,
+        initialInput: String? = nil,
         startupEnvironment: [String: String] = [:],
         panelId: UUID? = nil,
         createdAt: Date? = Date()
@@ -8682,6 +8723,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: resolvedWorkingDirectory,
             portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput,
             additionalEnvironment: startupEnvironment
         )
         panels[newTab.id] = newTab
@@ -12267,6 +12309,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: newPane.id)
 #if DEBUG
         let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),

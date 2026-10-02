@@ -15,7 +15,7 @@ if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
   exit 1
 fi
 
-SPARKLE_VERSION="${SPARKLE_VERSION:-2.8.1}"
+SPARKLE_VERSION="${SPARKLE_VERSION:-2.9.3}"
 # Defaults reflect the c11 fork's release path. release.yml + nightly.yml
 # both override these explicitly with the same URLs; the defaults guard
 # against a human regenerating an appcast locally and silently writing

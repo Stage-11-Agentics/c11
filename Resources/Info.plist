@@ -159,6 +159,16 @@
 			</array>
 		</dict>
 		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.stage11.c11.sidebar-group-reorder</string>
+			<key>UTTypeDescription</key>
+			<string>c11 Group Reorder</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
 			<!-- Declared by upstream Bonsplit in
 			     vendor/bonsplit/Sources/Bonsplit/Internal/Models/TabItem.swift:8
 			     via UTType(exportedAs:). Mirrored here so it has an

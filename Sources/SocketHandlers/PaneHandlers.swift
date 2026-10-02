@@ -184,6 +184,10 @@ extension TerminalController {
 
         let panelType = v2PanelType(params, "type") ?? .terminal
         if let denial = v2SurfaceTypeDenial(panelType) { return denial }
+        var initialInput: String?
+        if let error = v2ResolveCreateInitialInput(params: params, panelType: panelType.rawValue, resolved: &initialInput) {
+            return error
+        }
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
@@ -249,7 +253,7 @@ extension TerminalController {
                 case .markdown:
                     newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
-                    newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride)?.id
+                    newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
                 }
 
             case .split(let actualDirection, _, let warning):
@@ -263,7 +267,7 @@ extension TerminalController {
                 case .markdown:
                     newPanelId = ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                 case .terminal:
-                    newPanelId = ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride)?.id
+                    newPanelId = ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
                 }
             }
 
@@ -288,6 +292,7 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: createdPanelId),
                 "type": panelType.rawValue
             ]
+            if initialInput != nil { ok["initial_input"] = "queued" }
             self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
             result = .ok(ok)
         }) != nil else {

@@ -507,7 +507,21 @@ enum NotificationSoundSettings {
         qos: .utility
     )
 
-    static func runCustomCommand(title: String, subtitle: String, body: String, defaults: UserDefaults = .standard) {
+    enum CommandKind: String {
+        case routine
+        case flag
+    }
+
+    static func runCustomCommand(
+        title: String,
+        subtitle: String,
+        body: String,
+        workspaceId: UUID? = nil,
+        surfaceId: UUID? = nil,
+        kind: CommandKind = .routine,
+        defaults: UserDefaults = .standard,
+        environment: [String: String]? = nil
+    ) {
         let command = (defaults.string(forKey: customCommandKey) ?? defaultCustomCommand)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else { return }
@@ -515,10 +529,17 @@ enum NotificationSoundSettings {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = ["-c", command]
-            var env = ProcessInfo.processInfo.environment
+            var env = environment ?? ProcessInfo.processInfo.environment
             env["CMUX_NOTIFICATION_TITLE"] = title
             env["CMUX_NOTIFICATION_SUBTITLE"] = subtitle
             env["CMUX_NOTIFICATION_BODY"] = body
+            // Always overwrite attribution, including absent IDs: a command
+            // must never inherit the tab that happened to launch the app.
+            for prefix in ["C11", "CMUX"] {
+                env["\(prefix)_NOTIFICATION_WORKSPACE_ID"] = workspaceId?.uuidString ?? ""
+                env["\(prefix)_NOTIFICATION_TAB_ID"] = surfaceId?.uuidString ?? ""
+                env["\(prefix)_NOTIFICATION_KIND"] = kind.rawValue
+            }
             process.environment = env
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
@@ -769,6 +790,11 @@ final class TerminalNotificationStore: ObservableObject {
         ((_ notification: TerminalNotification, _ completion: @escaping (Error?) -> Void) -> Void)?
     private var directFlagCustomCommandHandlerForTesting:
         ((_ notification: TerminalNotification) -> Void)?
+    private var routineAuthorizationHandlerForTesting:
+        ((_ completion: @escaping (Bool) -> Void) -> Void)?
+    private var routineAddHandlerForTesting:
+        ((_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) -> Void)?
+    private var customCommandDefaultsForTesting: UserDefaults?
 #endif
     private var indexes = NotificationIndexes()
 
@@ -918,6 +944,12 @@ final class TerminalNotificationStore: ObservableObject {
 
     func unreadCount(forWorkspaceId workspaceId: UUID) -> Int {
         indexes.unreadCountByWorkspaceId[workspaceId] ?? 0
+    }
+
+    /// All unread history for this workspace, including suppressed and workspace-scoped entries.
+    /// Signal-eligible demand remains available through unreadCount(forWorkspaceId:).
+    func rawUnreadCount(forWorkspaceId workspaceId: UUID) -> Int {
+        indexes.rawUnreadCountByWorkspaceId[workspaceId] ?? 0
     }
 
     func hasUnreadNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
@@ -1269,8 +1301,9 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     private func scheduleUserNotification(_ notification: TerminalNotification) {
-        ensureAuthorization(origin: .notificationDelivery) { [weak self] authorized in
-            guard let self, authorized, let center = self.center else { return }
+        let commandDefaults = notificationCustomCommandDefaults
+        requestRoutineAuthorization { [weak self] authorized in
+            guard let self, authorized else { return }
 
             let content = UNMutableNotificationContent()
             let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -1295,18 +1328,56 @@ final class TerminalNotificationStore: ObservableObject {
                 trigger: nil
             )
 
-            center.add(request) { error in
+            self.addRoutineNotification(request) { error in
                 if let error {
                     NSLog("Failed to schedule notification: \(error)")
                 } else {
                     NotificationSoundSettings.runCustomCommand(
                         title: content.title,
                         subtitle: content.subtitle,
-                        body: content.body
+                        body: content.body,
+                        workspaceId: notification.workspaceId,
+                        surfaceId: notification.surfaceId,
+                        kind: .routine,
+                        defaults: commandDefaults
                     )
                 }
             }
         }
+    }
+
+    private var notificationCustomCommandDefaults: UserDefaults {
+#if DEBUG
+        if let defaults = customCommandDefaultsForTesting { return defaults }
+#endif
+        return .standard
+    }
+
+    private func requestRoutineAuthorization(_ completion: @escaping (Bool) -> Void) {
+#if DEBUG
+        if let handler = routineAuthorizationHandlerForTesting {
+            handler(completion)
+            return
+        }
+#endif
+        ensureAuthorization(origin: .notificationDelivery, completion)
+    }
+
+    private func addRoutineNotification(
+        _ request: UNNotificationRequest,
+        completion: @escaping (Error?) -> Void
+    ) {
+#if DEBUG
+        if let handler = routineAddHandlerForTesting {
+            handler(request, completion)
+            return
+        }
+#endif
+        guard let center else {
+            completion(NSError(domain: "com.stage11.c11.notifications", code: 1))
+            return
+        }
+        center.add(request, withCompletionHandler: completion)
     }
 
     /// Direct flag delivery has a separate generation guard from routine
@@ -1406,7 +1477,11 @@ final class TerminalNotificationStore: ObservableObject {
         NotificationSoundSettings.runCustomCommand(
             title: notification.title,
             subtitle: notification.subtitle,
-            body: notification.body
+            body: notification.body,
+            workspaceId: notification.workspaceId,
+            surfaceId: notification.surfaceId,
+            kind: .flag,
+            defaults: notificationCustomCommandDefaults
         )
     }
 
@@ -1612,6 +1687,26 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
 #if DEBUG
+    static func makeForNotificationCommandTesting() -> TerminalNotificationStore {
+        TerminalNotificationStore(systemNotificationsEnabled: false)
+    }
+
+    func configureRoutineNotificationDeliveryHooksForTesting(
+        authorization: @escaping (_ completion: @escaping (Bool) -> Void) -> Void,
+        add: @escaping (_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) -> Void
+    ) {
+        routineAuthorizationHandlerForTesting = authorization
+        routineAddHandlerForTesting = add
+    }
+
+    func configureNotificationCustomCommandDefaultsForTesting(_ defaults: UserDefaults) {
+        customCommandDefaultsForTesting = defaults
+    }
+
+    func scheduleUserNotificationForTesting(_ notification: TerminalNotification) {
+        scheduleUserNotification(notification)
+    }
+
     func configureNotificationSettingsPromptHooksForTesting(
         windowProvider: @escaping () -> NSWindow?,
         alertFactory: @escaping () -> NSAlert,

@@ -191,8 +191,8 @@ class RPC:
         self.app = Path(args.app).resolve(strict=True)
         self.cli = Path(args.cli).resolve(strict=True)
         if args.local_tagged:
-            if args.tag not in ("c11-294-base", "c11-294-ghostty"):
-                raise RuntimeError("local mode is restricted to the two authorized C11-294 tags")
+            if args.tag not in ("c11-294-base", "c11-294-ghostty", "c11-302-baseline", "c11-302-wakeups"):
+                raise RuntimeError("local mode is restricted to the authorized C11-294/C11-302 tags")
             if self.app.name != "c11 DEV " + args.tag + ".app":
                 raise RuntimeError("local app filename does not match the exact authorized tag")
             if args.tag == "c11-294-base" and not args.comparison_only:
@@ -311,8 +311,10 @@ def controller(args):
               "workload": {"streams": args.streams, "hz_per_stream": 20, "samples": args.samples,
                            "sample_pause_seconds": args.sample_pause, "min_sample_seconds": args.min_sample_seconds,
                            "measure_switches": args.measure_switches,
-                           "launch": "workspace-initial-command", "workspaces_per_stream": 1},
-              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 2,
+                           "launch": "workspace-initial-command", "workspaces_per_stream": 1,
+                           "stream_warmup_seconds": 5},
+              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 10,
+                         "ui_readiness_stable_seconds": .5,
                          "shutdown_close_ms": 500, "shutdown_seconds": 18},
               "not_proven": ["physical hardware keyboard latency", "app tick durations/message counts",
                              "visible workspace switch latency", "actual autosave count or unchanged geometry mutation count",
@@ -372,13 +374,14 @@ def controller(args):
         # Observe convergence only: never refocus or retry input to make a
         # measurement pass. Focus setup time is separate from input latency.
         began = shared_ns()
-        until = time.monotonic() + 2
+        until = time.monotonic() + 10
+        stable_since = None
         observations = []
         required = ("inWindow", "isFirstResponder", "desiredFocus", "appIsActive", "windowIsKey", "isActive")
         while time.monotonic() < until:
             observation = {"observed_ns": shared_ns()}
             try:
-                stats = call("debug.terminal.render_stats", params(pair), timeout=max(.01, until - time.monotonic()))["stats"]
+                stats = call("debug.terminal.render_stats", params(pair), timeout=min(4, max(.01, until - time.monotonic())))["stats"]
                 observation["stats"] = stats
                 ready = (str(stats.get("panelId", "")).lower() == pair[1].lower()
                          and all(stats.get(field) is True for field in required))
@@ -387,8 +390,15 @@ def controller(args):
                 observations.append(observation)
                 break
             observations.append(observation)
+            now = time.monotonic()
             if ready:
-                return {"ready": True, "elapsed_ms": (shared_ns() - began) / 1e6, "observations": observations}
+                if stable_since is None:
+                    stable_since = now
+                if now - stable_since >= .5 and now <= until:
+                    return {"ready": True, "elapsed_ms": (shared_ns() - began) / 1e6,
+                            "stable_ms": (now - stable_since) * 1000, "observations": observations}
+            else:
+                stable_since = None
             time.sleep(.02)
         return {"ready": False, "elapsed_ms": (shared_ns() - began) / 1e6, "observations": observations}
     def miss_snapshot(pair, directory, token):
@@ -464,6 +474,13 @@ def controller(args):
             if stream_ws is None:
                 stream_ws = pair[0]
             stream_identities.append(identity)
+        # Worker readiness precedes SwiftUI's sequential background mount/prime
+        # completion. Keep streams running while that setup work settles; no
+        # measured input or focus repair occurs during this fixed warmup.
+        warmup_started = time.monotonic()
+        time.sleep(5)
+        result["setup"] = {"stream_warmup_actual_ms": (time.monotonic() - warmup_started) * 1000}
+        save(out / "result.json", result)
         probe_pair, probe_dir, _ = launch("probe", "probe")
         call("workspace.select", {"workspace_id": probe_pair[0]})
         call("tab.focus", params(probe_pair))

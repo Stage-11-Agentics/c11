@@ -276,7 +276,11 @@ def main() -> int:
     receipts = fx.receipts()
     check(len(receipts) == 1 and "tab_id" not in receipts[0] and sorted(fx.receipt_ids()) == sorted(ids),
           "recv --tab <name>: receipt carries no tab_id rather than the caller's", json.dumps(receipts))
-    check(rec.requests == [], "plain drain: no socket request", str(rec.requests[:2]))
+    # `--tab <name>` resolves the name to its tab's UUID inbox through
+    # `mailbox.resolve` (C5) before anything is claimed; the delivery itself is
+    # recorded only through the receipt spool, never over the socket.
+    reporting = [r for r in rec.requests if r.get("method") not in ("system.capabilities", "mailbox.resolve")]
+    check(reporting == [], "plain drain: no delivery reported over the socket", str(reporting[:2]))
     rec.close()
     fx.cleanup()
 

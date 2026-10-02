@@ -98,7 +98,17 @@ mkdir -p "\$dest"
 unset C11_FIXTURE_B64
 # Controller and terminal workers run on the same guest monotonic clock.
 # Hard external deadline: children independently expire after <=180 seconds.
-/usr/bin/python3 - "\$dest/runtime-fixture.py" "\$SANDBOX_RUN_ID" "\$SANDBOX_SOCKET" "\$SANDBOX_CLI" "\$SANDBOX_GUEST_APP" <<'PY'
+# Enter the guest's Aqua audit session, then drop root before running the
+# controller and its PID-scoped CGEvent helper (the sandbox-exec.sh pattern).
+# Pass sandbox metadata as explicit arguments; do not inherit C11/CMUX state.
+fixture_uid="\$(id -u)"
+fixture_user="\$(id -un)"
+/usr/bin/sudo -n /bin/launchctl asuser "\$fixture_uid" \
+  /usr/bin/sudo -n -u "\$fixture_user" /usr/bin/env -i \
+  HOME="\$HOME" USER="\$fixture_user" LOGNAME="\$fixture_user" \
+  PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+  TMPDIR="\${TMPDIR:-/tmp}" \
+  /usr/bin/python3 - "\$dest/runtime-fixture.py" "\$SANDBOX_RUN_ID" "\$SANDBOX_SOCKET" "\$SANDBOX_CLI" "\$SANDBOX_GUEST_APP" <<'PY'
 import base64, json, os, signal, subprocess, sys
 script, run_id, sock, cli, app = sys.argv[1:]
 out = '/Volumes/My Shared Files/out/ghostty-runtime-$label'

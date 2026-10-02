@@ -3558,6 +3558,35 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         XCTAssertFalse(tab.shouldPersistScrollbackForSessionSnapshot())
     }
 
+    func testInheritedDefaultFontStillFollowsOperatorConfigChanges() async throws {
+        let appConfig = try XCTUnwrap(GhosttyApp.shared.config)
+        var defaultPoints: Float = 0
+        let key = "font-size"
+        XCTAssertTrue(ghostty_config_get(appConfig, &defaultPoints, key, UInt(key.utf8.count)))
+        XCTAssertGreaterThan(defaultPoints, 0)
+        var template = ghostty_surface_config_new()
+        template.font_size = defaultPoints
+        let surface = makeSurface(config: template)
+        defer { surface.teardownSurface() }
+        surface.requestBackgroundSurfaceStartIfNeeded()
+        await nextMainTurn()
+        let native = try XCTUnwrap(surface.surface)
+        let beforeReload = ghostty_surface_size(native)
+        XCTAssertGreaterThan(beforeReload.cell_height_px, 0)
+
+        let configFile = FileManager.default.temporaryDirectory.appendingPathComponent("c11-font-\(UUID().uuidString).ghostty")
+        try "font-size = \(defaultPoints + 8)\n".write(to: configFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: configFile) }
+        let changedConfig = try XCTUnwrap(ghostty_config_new())
+        defer { ghostty_config_free(changedConfig) }
+        configFile.path.withCString { ghostty_config_load_file(changedConfig, $0) }
+        ghostty_config_finalize(changedConfig)
+        ghostty_surface_update_config(native, changedConfig)
+        let afterReload = ghostty_surface_size(native)
+        XCTAssertGreaterThan(afterReload.cell_height_px, beforeReload.cell_height_px,
+                             "Inheriting the configured default must not pin that font size")
+    }
+
     func testInheritedConfigOwnsFreedBuffersUntilNativeCreate() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-config-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -3594,6 +3623,27 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
                        directory.resolvingSymlinksInPath().path)
         let tab = TerminalTab(workspaceId: surface.workspaceId, surface: surface)
         XCTAssertTrue(tab.shouldPersistScrollbackForSessionSnapshot(), "The live sleep command is eligible")
-        XCTAssertEqual(try XCTUnwrap(cmuxCurrentSurfaceFontSizePoints(native)), 19, accuracy: 0.1)
+        // Native setFontSize updates the core scalar immediately but delivers the
+        // font grid to the renderer asynchronously. quicklook_font (the accessor
+        // behind cmuxCurrentSurfaceFontSizePoints) reads that renderer-owned grid.
+        // Ready guarantees focus/input flush, not completion of a render turn.
+        let fontDeadline = ProcessInfo.processInfo.systemUptime + 2
+        var observedFontPoints = cmuxCurrentSurfaceFontSizePoints(native)
+        while observedFontPoints.map({ abs($0 - 19) > 0.1 }) ?? true,
+              ProcessInfo.processInfo.systemUptime < fontDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            observedFontPoints = cmuxCurrentSurfaceFontSizePoints(native)
+        }
+        XCTAssertEqual(try XCTUnwrap(observedFontPoints), 19, accuracy: 0.1)
+
+        // Appearance changes reload config after creation. The synchronous core
+        // cell metrics must retain inherited zoom even when the renderer was
+        // already showing the requested size before that reload.
+        let beforeReload = ghostty_surface_size(native)
+        XCTAssertGreaterThan(beforeReload.cell_height_px, 0)
+        ghostty_surface_update_config(native, try XCTUnwrap(GhosttyApp.shared.config))
+        let afterReload = ghostty_surface_size(native)
+        XCTAssertEqual(afterReload.cell_width_px, beforeReload.cell_width_px)
+        XCTAssertEqual(afterReload.cell_height_px, beforeReload.cell_height_px)
     }
 }

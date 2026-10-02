@@ -1656,12 +1656,18 @@ class TerminalController {
     nonisolated static func writeSocketResponse(_ response: String, to socket: Int32) -> Bool {
         let deadline = DispatchTime.now() + .seconds(5)
         let payload = Array((response + "\n").utf8)
-        return payload.withUnsafeBytes { bytes in
+        // Darwin's sosendcheck tests SS_NBIO for buffer-space waits;
+        // MSG_DONTWAIT alone only prevents waiting for the send-buffer lock.
+        // This connection thread exclusively owns the descriptor, so temporarily
+        // changing its mode cannot race another reader/writer.
+        let originalFlags = fcntl(socket, F_GETFL)
+        guard originalFlags >= 0,
+              fcntl(socket, F_SETFL, originalFlags | O_NONBLOCK) == 0 else { return false }
+        let succeeded = payload.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
                 guard DispatchTime.now() < deadline else { return false }
-                // Per-call nonblocking mode leaves the connection's blocking
-                // read behavior intact. Partial progress never resets the budget.
+                // Partial progress never resets the budget.
                 let written = send(socket, bytes.baseAddress!.advanced(by: offset),
                                    bytes.count - offset, MSG_DONTWAIT)
                 if written > 0 {
@@ -1687,6 +1693,10 @@ class TerminalController {
             }
             return true
         }
+        // Restore blocking reads before serving another command. Failure to
+        // restore also ends the connection, even if the entire frame was sent.
+        let restored = fcntl(socket, F_SETFL, originalFlags) == 0
+        return succeeded && restored
     }
 
     private func passwordAuthRequiredResponse(for command: String) -> String {

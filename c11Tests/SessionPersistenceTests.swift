@@ -14,7 +14,9 @@ final class WindowGeometryPersistenceTests: XCTestCase {
         var geometryRemovals = 0
 
         override func set(_ value: Any?, forKey defaultName: String) {
-            if defaultName == WindowGeometryPersistenceStore.defaultsKey {
+            // Foundation may implement removeObject through set(nil); count
+            // that only in geometryRemovals, not as another data write.
+            if value != nil, defaultName == WindowGeometryPersistenceStore.defaultsKey {
                 geometrySets += 1
             }
             super.set(value, forKey: defaultName)
@@ -1774,9 +1776,11 @@ final class SocketClientCommandLoopTests: XCTestCase {
 /// mocked short-write sequence. No app or live CLI listener is involved.
 final class SocketResponseWriteTests: XCTestCase {
     private var fds: [Int32] = [-1, -1]
+    private var activeWriter: WriterState?
 
     private final class WriterState: @unchecked Sendable {
         let lock = NSLock()
+        let completion = DispatchGroup()
         var thread: pthread_t?
         var succeeded = false
         var elapsed: TimeInterval = 0
@@ -1800,15 +1804,41 @@ final class SocketResponseWriteTests: XCTestCase {
     }
 
     override func tearDown() {
+        guard stopWriter() else {
+            // Never recycle a descriptor while an unjoined writer might still
+            // use it. This failure intentionally leaks this pair until exit.
+            fds = [-1, -1]
+            super.tearDown()
+            return
+        }
         for fd in fds where fd >= 0 { close(fd) }
         super.tearDown()
     }
 
+    @discardableResult
+    private func stopWriter() -> Bool {
+        guard let state = activeWriter else { return true }
+        if state.completion.wait(timeout: .now()) != .success {
+            // Shut down the writer endpoint itself, not just the reader: a
+            // kernel send blocked for space must be woken before descriptors close.
+            for fd in fds where fd >= 0 { shutdown(fd, SHUT_RDWR) }
+            guard state.completion.wait(timeout: .now() + .seconds(2)) == .success else {
+                XCTFail("socket writer did not exit after cancellation; descriptors retained")
+                return false
+            }
+        }
+        activeWriter = nil
+        return true
+    }
+
     private func startWriter(_ response: String) -> (WriterState, XCTestExpectation) {
         let state = WriterState()
+        activeWriter = state
+        state.completion.enter()
         let done = expectation(description: "socket writer finishes")
         let server = fds[1]
         Thread.detachNewThread {
+            defer { state.completion.leave() }
             state.lock.lock()
             state.thread = pthread_self()
             state.lock.unlock()
@@ -1846,7 +1876,7 @@ final class SocketResponseWriteTests: XCTestCase {
             if delay > 0 { usleep(delay) }
         }
         XCTFail("client did not reach EOF within the test deadline")
-        shutdown(fds[0], SHUT_RDWR)
+        stopWriter()
         return received
     }
 
@@ -1857,6 +1887,7 @@ final class SocketResponseWriteTests: XCTestCase {
         wait(for: [done], timeout: 2)
         XCTAssertTrue(state.read().1)
         XCTAssertEqual(received, Data((response + "\n").utf8))
+        XCTAssertEqual(fcntl(fds[1], F_GETFL) & O_NONBLOCK, 0, "writer did not restore blocking reads")
     }
 
     func testIncrementalProgressDoesNotRestartFiveSecondDeadline() {
@@ -1871,6 +1902,7 @@ final class SocketResponseWriteTests: XCTestCase {
         XCTAssertGreaterThan(received.count, 8192, "reader must permit repeated partial progress")
         XCTAssertLessThan(received.count, response.utf8.count)
         XCTAssertFalse(received.contains(UInt8(ascii: "\n")))
+        XCTAssertEqual(fcntl(fds[1], F_GETFL) & O_NONBLOCK, 0, "failed writer did not restore blocking reads")
     }
 
     func testPeerCloseReturnsFailureWithoutSIGPIPE() {

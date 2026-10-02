@@ -33,9 +33,15 @@ enum WindowGeometryPersistenceStore {
         if let data {
             guard defaults.data(forKey: defaultsKey) != data else { return }
             defaults.set(data, forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.write bytes=\(data.count)")
+#endif
         } else {
             guard defaults.object(forKey: defaultsKey) != nil else { return }
             defaults.removeObject(forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.remove")
+#endif
         }
     }
 }

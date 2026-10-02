@@ -1753,6 +1753,14 @@ class GhosttyApp {
         return enabled
     }
 
+    fileprivate func configuredFontSizePoints() -> Float? {
+        guard let config else { return nil }
+        var points: Float = 0
+        let key = "font-size"
+        guard ghostty_config_get(config, &points, key, UInt(key.utf8.count)), points > 0 else { return nil }
+        return points
+    }
+
     fileprivate func shellIntegrationMode() -> String {
         guard let config else { return "detect" }
         var value: UnsafePointer<Int8>?
@@ -3815,18 +3823,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
             lastYScale = scaleFactors.y
         }
 
-        // Some GhosttyKit builds can drop inherited font_size during post-create
-        // config/scale reconciliation. If runtime points don't match the inherited
-        // template points, re-apply via binding action so all creation paths
-        // (new surface, split, new workspace) preserve zoom from the source terminal.
+        // Native creation sets points without marking font_size_adjusted. Preserve
+        // inherited zoom across appearance/config reloads, but leave default-sized
+        // terminals eligible for later operator font-size configuration changes.
+        // Compare to config, not quicklook's asynchronously updated renderer grid.
         if let inheritedFontPoints = configTemplate?.scalars.font_size,
            inheritedFontPoints > 0 {
-            let currentFontPoints = cmuxCurrentSurfaceFontSizePoints(createdSurface)
-            let shouldReapply = {
-                guard let currentFontPoints else { return true }
-                return abs(currentFontPoints - inheritedFontPoints) > 0.05
-            }()
-            if shouldReapply {
+            let configuredFontPoints = GhosttyApp.shared.configuredFontSizePoints()
+            let isInheritedZoom = configuredFontPoints.map { abs($0 - inheritedFontPoints) > 0.05 } ?? true
+            if isInheritedZoom {
                 let action = String(format: "set_font_size:%.3f", inheritedFontPoints)
                 _ = performBindingAction(action)
             }

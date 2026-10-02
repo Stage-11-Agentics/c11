@@ -126,20 +126,50 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertTrue(result.claimed[0].framed.contains("&lt;/c11-msg&gt;"))
     }
 
-    func testWorkspaceHasPendingMailSeesAnyInboxRoot() throws {
-        let root = inbox.deletingLastPathComponent()
-        XCTAssertFalse(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
+    func testMixedSizesNeverDeliverNewerMailAheadOfOlder() throws {
+        // A and B are 4 KB each; C is small. A fits, B would overflow the
+        // budget, so the drain stops at B: C must not overtake it.
+        try deliver(id: idA, body: String(repeating: "a", count: 4_000))
+        try deliver(id: idB, body: String(repeating: "b", count: 4_000))
+        try deliver(id: idC, body: "small")
+        let result = MailboxDrain.claimPending(inbox: inbox, budget: 8_000)
+        XCTAssertEqual(result.claimed.map(\.id), [idA])
+        XCTAssertEqual(result.remaining, 2)
+        XCTAssertEqual(names(in: inbox), ["\(idB).msg", "\(idC).msg"])
 
-        // Outbox, processing and _read/ history are not pending mail.
-        for name in ["_outbox", "_processing"] {
-            let dir = root.appendingPathComponent(name, isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try Data("{}".utf8).write(to: dir.appendingPathComponent("\(idB).msg"))
+        // The next boundary continues in order.
+        let next = MailboxDrain.claimPending(inbox: inbox, budget: 8_000)
+        XCTAssertEqual(next.claimed.map(\.id), [idB, idC])
+    }
+
+    func testFailedHandOverReturnsThatEnvelopeAndClaimsNothingAfterIt() throws {
+        try deliver(id: idA)
+        try deliver(id: idB)
+        try deliver(id: idC)
+        var offered: [String] = []
+        let result = MailboxDrain.claimPending(inbox: inbox) { message in
+            offered.append(message.id)
+            return message.id == self.idA   // the write of B fails
         }
-        let entry = try deliver(id: idA)
-        XCTAssertTrue(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
-        XCTAssertNotNil(MailboxDrain.claim(entry))
-        XCTAssertFalse(MailboxDrain.workspaceHasPendingMail(mailboxesRoot: root))
+        XCTAssertEqual(offered, [idA, idB])
+        XCTAssertEqual(result.claimed.map(\.id), [idA])
+        XCTAssertEqual(result.remaining, 2)
+        XCTAssertEqual(names(in: inbox), ["\(idB).msg", "\(idC).msg"])
+        XCTAssertEqual(names(in: MailboxDrain.readURL(inbox: inbox)), ["\(idA).msg"])
+    }
+
+    func testClaimedMessageCarriesTheEnvelopeRecipient() throws {
+        try deliver(id: idA)
+        XCTAssertEqual(MailboxDrain.claimPending(inbox: inbox).claimed.first?.recipient, "watcher")
+    }
+
+    func testTabInboxIsTheLowercasedTabUUID() throws {
+        let tab = UUID(uuidString: "B3A3DFEF-0A83-4887-BBE9-FDE27516A3B5")!
+        let root = URL(fileURLWithPath: "/tmp/m", isDirectory: true)
+        XCTAssertEqual(
+            MailboxDrain.tabInboxURL(mailboxesRoot: root, tabId: tab).path,
+            "/tmp/m/b3a3dfef-0a83-4887-bbe9-fde27516a3b5"
+        )
     }
 
     // MARK: - Framing
@@ -199,17 +229,30 @@ final class MailboxDrainTests: XCTestCase {
 
     func testStopDrainsOnlyOutsideAStopHookContinuation() {
         for format in MailboxHookFormat.allCases {
-            XCTAssertTrue(MailboxHookOutput.shouldDrain(format: format, input: .init(event: .stop)))
+            let turnEnd = MailboxHookInput(event: .stop, stopReason: "end_turn")
+            XCTAssertTrue(MailboxHookOutput.shouldDrain(format: format, input: turnEnd))
             XCTAssertFalse(
-                MailboxHookOutput.shouldDrain(format: format, input: .init(event: .stop, stopHookActive: true)),
+                MailboxHookOutput.shouldDrain(
+                    format: format,
+                    input: .init(event: .stop, stopHookActive: true, stopReason: "end_turn")
+                ),
                 "\(format) must not drain on a continuation stop"
             )
         }
+        // Claude and Codex send no reason on Stop.
+        XCTAssertTrue(MailboxHookOutput.shouldDrain(format: .claude, input: .init(event: .stop)))
+        XCTAssertTrue(MailboxHookOutput.shouldDrain(format: .codex, input: .init(event: .stop)))
     }
 
     func testGrokDrainsOnlyAtTurnEndStop() {
         XCTAssertTrue(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .stop, stopReason: "end_turn")))
         XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .stop, stopReason: "shutdown")))
+        XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .stop)), "missing reason")
+        XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .stop, stopReason: "END_TURN")))
+        XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .stop, stopReason: "")))
+        // A non-string reason parses as missing.
+        let malformed = MailboxHookInput.parse(Data(#"{"hookEventName":"stop","reason":7}"#.utf8))
+        XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: malformed))
         // Grok discards an allowing UserPromptSubmit hook's output.
         XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .promptSubmit)))
     }

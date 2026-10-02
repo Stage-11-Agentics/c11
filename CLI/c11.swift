@@ -16794,8 +16794,7 @@ struct CMUXCLI {
             if subcommand == "stop",
                let drain = prepareMailboxHookDrain(
                    format: .claude,
-                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput),
-                   client: client
+                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput)
                ),
                deliverMailboxHookDrain(drain, client: client) {
                 telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
@@ -16883,8 +16882,7 @@ struct CMUXCLI {
             // prints only the mailbox JSON, and only when mail is waiting.
             if let drain = prepareMailboxHookDrain(
                 format: .claude,
-                input: claudeMailboxHookInput(event: .promptSubmit, parsedInput: parsedInput),
-                client: client
+                input: claudeMailboxHookInput(event: .promptSubmit, parsedInput: parsedInput)
             ) {
                 deliverMailboxHookDrain(drain, client: client)
             }
@@ -19026,18 +19024,34 @@ extension CMUXCLI {
             return
         }
 
-        // C11-257 C3: claim each envelope into `_read/` before printing it;
-        // an envelope another consumer already took is skipped.
-        let claimed = MailboxDrain.claimPending(inbox: inboxURL).claimed
-        for message in claimed {
-            print(message.text)
-        }
+        // C11-257 C3: claim one envelope, write it, then the next. A failed
+        // write (closed pipe, full disk) puts that envelope back and stops, so
+        // nothing reaches `_read/` unless it reached stdout.
+        signal(SIGPIPE, SIG_IGN)
+        let claimed = MailboxDrain.claimPending(inbox: inboxURL) { message in
+            Self.writeStdout(message.text + "\n")
+        }.claimed
+        // `--tab <name>` drains someone else's inbox; its tab UUID is unknown
+        // here, so the event carries no surface rather than the caller's.
+        let recipientTabId = surfaceOverride == nil
+            ? Self.callerTabEnv().flatMap(UUID.init(uuidString:))
+            : surfaceOverride.flatMap(UUID.init(uuidString:))
         reportMailboxDrained(
             client: client,
             workspaceId: workspaceId,
-            recipient: tabName,
-            ids: claimed.map(\.id)
+            recipientTabId: recipientTabId,
+            deliveries: claimed.map { ($0.id, tabName) }
         )
+    }
+
+    /// Checked stdout write: false when the bytes could not be written.
+    private static func writeStdout(_ text: String) -> Bool {
+        do {
+            try FileHandle.standardOutput.write(contentsOf: Data(text.utf8))
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - recv --hook-format (turn-boundary drain)
@@ -19047,7 +19061,7 @@ extension CMUXCLI {
         let json: String
         let claimed: [MailboxDrain.ClaimedMessage]
         let workspaceId: UUID
-        let recipient: String
+        let tabId: UUID
     }
 
     /// `c11 mailbox recv --drain --hook-format claude|codex|grok [--event
@@ -19065,7 +19079,7 @@ extension CMUXCLI {
         if let rawEvent = optionValue(subArgs, name: "--event") {
             input.event = MailboxHookEvent(name: rawEvent)
         }
-        guard let drain = prepareMailboxHookDrain(format: format, input: input, client: client) else {
+        guard let drain = prepareMailboxHookDrain(format: format, input: input) else {
             return
         }
         deliverMailboxHookDrain(drain, client: client)
@@ -19074,35 +19088,29 @@ extension CMUXCLI {
     /// Claims the caller's pending mail for a hook, within the context budget.
     /// Returns nil (and claims nothing) when this event may not drain or the
     /// inbox is empty.
+    ///
+    /// The inbox is the caller's C5 directory, `<mailboxes>/<C11_TAB_ID>/`,
+    /// computed from the environment alone: no socket call happens before the
+    /// claim, so an empty inbox answers in a few milliseconds however much
+    /// mail sits in sibling inboxes. Title-keyed inboxes from older builds are
+    /// left to an explicit `c11 mailbox recv --drain`.
     private func prepareMailboxHookDrain(
         format: MailboxHookFormat,
-        input: MailboxHookInput,
-        client: SocketClient
+        input: MailboxHookInput
     ) -> MailboxHookDrain? {
         let env = ProcessInfo.processInfo.environment
         guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
               let event = input.event,
-              MailboxHookOutput.shouldDrain(format: format, input: input) else {
+              MailboxHookOutput.shouldDrain(format: format, input: input),
+              let workspaceId = (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+              let tabId = Self.callerTabEnv(env).flatMap(UUID.init(uuidString:)),
+              let stateURL = try? MailboxLayout.defaultStateURL() else {
             return nil
         }
-        // Fast path: no pending mail anywhere in the workspace means no socket
-        // round-trip to resolve the caller's inbox.
-        if let workspaceId = (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
-           let stateURL = try? MailboxLayout.defaultStateURL(),
-           !MailboxDrain.workspaceHasPendingMail(
-               mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId)
-           ) {
-            return nil
-        }
-        guard let caller = try? resolveMailboxCaller(client: client, fromOverride: nil, surfaceOverride: nil),
-              let stateURL = try? MailboxLayout.defaultStateURL(),
-              let inboxURL = try? MailboxLayout.inboxURL(
-                  state: stateURL,
-                  workspaceId: caller.workspaceId,
-                  tabName: caller.tabName
-              ) else {
-            return nil
-        }
+        let inboxURL = MailboxDrain.tabInboxURL(
+            mailboxesRoot: MailboxLayout.mailboxesRoot(state: stateURL, workspaceId: workspaceId),
+            tabId: tabId
+        )
         let (claimed, remaining) = MailboxDrain.claimPending(
             inbox: inboxURL,
             budget: MailboxHookOutput.contextBudget
@@ -19114,12 +19122,7 @@ extension CMUXCLI {
             claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return nil
         }
-        return MailboxHookDrain(
-            json: json,
-            claimed: claimed,
-            workspaceId: caller.workspaceId,
-            recipient: caller.tabName
-        )
+        return MailboxHookDrain(json: json, claimed: claimed, workspaceId: workspaceId, tabId: tabId)
     }
 
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
@@ -19127,40 +19130,50 @@ extension CMUXCLI {
     /// `mailbox.delivered` with `via: "drain"`. Returns whether it delivered.
     @discardableResult
     private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
-        do {
-            try FileHandle.standardOutput.write(contentsOf: Data((drain.json + "\n").utf8))
-        } catch {
+        signal(SIGPIPE, SIG_IGN)
+        guard Self.writeStdout(drain.json + "\n") else {
             drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return false
         }
         reportMailboxDrained(
             client: client,
             workspaceId: drain.workspaceId,
-            recipient: drain.recipient,
-            ids: drain.claimed.map(\.id)
+            recipientTabId: drain.tabId,
+            deliveries: drain.claimed.map { ($0.id, $0.recipient ?? drain.tabId.uuidString.lowercased()) }
         )
         return true
     }
 
-    /// Best effort: the envelopes are already delivered, so an unreachable
-    /// socket only costs the `mailbox.delivered` events.
+    /// Ceiling on the post-delivery report. The envelopes are already claimed
+    /// and their text already written, so the report must never hold the hook
+    /// process near the harness's own deadline (Claude and Codex kill a hook
+    /// at 10 s and then discard its stdout). Two bounded round-trips at most:
+    /// the capability probe and the report itself.
+    static let mailboxReportDeadlineSeconds: TimeInterval = 0.5
+
+    /// Best effort: an unreachable or stalled socket only costs the
+    /// `mailbox.delivered` events. `recipientTabId` nil omits `tab_id`, so an
+    /// unknown recipient is never attributed to the caller.
     private func reportMailboxDrained(
         client: SocketClient,
         workspaceId: UUID,
-        recipient: String,
-        ids: [String]
+        recipientTabId: UUID?,
+        deliveries: [(id: String, recipient: String)]
     ) {
-        guard !ids.isEmpty else { return }
+        guard !deliveries.isEmpty else { return }
         var params: [String: Any] = [
             "workspace_id": workspaceId.uuidString,
-            "recipient": recipient,
-            "ids": ids,
+            "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] },
             "via": "drain"
         ]
-        if let tabId = Self.callerTabEnv(), UUID(uuidString: tabId) != nil {
-            params["tab_id"] = tabId
+        if let recipientTabId {
+            params["tab_id"] = recipientTabId.uuidString
         }
-        _ = try? client.sendV2(method: "mailbox.report_delivered", params: params)
+        _ = try? client.sendV2(
+            method: "mailbox.report_delivered",
+            params: params,
+            deadline: .custom(Self.mailboxReportDeadlineSeconds)
+        )
     }
 
     // MARK: - trace

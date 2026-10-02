@@ -637,7 +637,7 @@ def automated(client: cmux, state_path: Path, out: Path, lifecycle_timeout: floa
         def a5() -> tuple[list[str], list[str]]:
             before = workspace_snapshot(client, state["window_id"])
             move_workspace(client, state, "g60-w38", None, before="g60-w29")
-            move_workspace(client, state, "g60-w01", None, after="g60-w14")
+            move_workspace(client, state, "g60-w01", None, after="g60-w39")
             interim = workspace_snapshot(client, state["window_id"])
             require(interim["workspaces"][workspace_id(state, "g60-w29")]["pinned"], "w29 pin changed")
             require(interim["workspaces"][workspace_id(state, "g60-w01")]["pinned"], "w01 pin changed")

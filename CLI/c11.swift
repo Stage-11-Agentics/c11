@@ -1975,6 +1975,16 @@ struct CMUXCLI {
             )
         }
 
+        // Resize has a command-local target and validates before discovery,
+        // connection, authentication or the legacy global-window focus prelude.
+        let resizeArguments: (window: String, width: Double?, height: Double?)?
+        if command == "resize-window", !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+            guard windowId == nil else { throw resizeWindowUsageError() }
+            resizeArguments = try parseResizeWindowArguments(commandArgs)
+        } else {
+            resizeArguments = nil
+        }
+
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -2374,6 +2384,17 @@ struct CMUXCLI {
             }
             let response = try sendV1Command("close_window \(target)", client: client)
             print(response)
+
+        case "resize-window":
+            guard let arguments = resizeArguments else { throw resizeWindowUsageError() }
+            var params: [String: Any] = [:]
+            params["window_id"] = try normalizeWindowHandle(arguments.window, client: client)
+            if let width = arguments.width { params["width"] = width }
+            if let height = arguments.height { params["height"] = height }
+            let response = try CapabilityFeatures.current.dispatch(.windowResize) {
+                try client.sendV2(method: "window.resize", params: params)
+            }
+            print(jsonString(formatIDs(response, mode: idFormat)))
 
         case "move-workspace-to-window":
             guard let workspaceRaw = optionValue(commandArgs, name: "--workspace") else {
@@ -9596,6 +9617,16 @@ struct CMUXCLI {
               c11 focus-window --window 0
               c11 focus-window --window window:1
             """
+        case "resize-window":
+            return """
+            Usage: c11 resize-window --window <id|ref|index> <width> <height>
+
+            Set a window's frame while preserving its top-left, without focusing it.
+            Use - to keep one edge, or - - to read the current frame.
+            Sizes clamp to the window minimum and its screen's visible size.
+            Fullscreen windows are refused. The result is JSON.
+            """
+
         case "close-window":
             return """
             Usage: c11 close-window --window <id|ref|index>
@@ -12921,6 +12952,29 @@ struct CMUXCLI {
             remaining.append(arg)
         }
         return (values, remaining)
+    }
+
+    private func resizeWindowUsageError() -> CLIError {
+        CLIError(message: String(localized: "cli.resize_window.usage", defaultValue: "resize-window requires --window <id> <width> <height>. Use - to keep an edge."))
+    }
+
+    private func parseResizeWindowArguments(_ args: [String]) throws -> (window: String, width: Double?, height: Double?) {
+        try rejectEmptyTargetFlags(args)
+        let (window, rest) = parseOption(args, name: "--window")
+        var dimensions = rest
+        if dimensions.first == "--" { dimensions.removeFirst() }
+        guard args.filter({ $0 == "--window" }).count == 1,
+              let window, !window.hasPrefix("--"), dimensions.count == 2 else {
+            throw resizeWindowUsageError()
+        }
+        func number(_ token: String) throws -> Double? {
+            if token == "-" { return nil }
+            guard let value = Double(token), value.isFinite else {
+                throw CLIError(message: String(format: String(localized: "cli.resize_window.bad_size", defaultValue: "'%@' is not a width or height. Pass a number or -."), token))
+            }
+            return value
+        }
+        return (window, try number(dimensions[0]), try number(dimensions[1]))
     }
 
     private func optionValue(_ args: [String], name: String) -> String? {
@@ -19355,6 +19409,7 @@ struct CMUXCLI {
           new-window
           focus-window --window <id>
           close-window --window <id>
+          resize-window --window <id> <width|-> <height|->
           move-workspace-to-window --workspace <id|ref> --window <id|ref>
           reorder-workspace --workspace <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>) [--window <id|ref|index>]
           workspace-group <verb> [--window <id|ref>] [--json]   (folders; see --help)

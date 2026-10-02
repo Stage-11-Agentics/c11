@@ -204,7 +204,7 @@ If you resolve a conflict, update this doc with what changed.
 
 ### 11) C11-294 terminal patch set
 
-The engine tip is `37348b05c` on the Stage 11 fork's `main`. The parent
+The engine tip is `5830d1976` on the Stage 11 fork's `main`. The parent
 gitlink refers to that published commit. Product validation and parent PR state
 are tracked on C11-294; this section records the engine integration.
 
@@ -214,6 +214,9 @@ are tracked on C11-294; this section records the engine integration.
   ordered publications use a FIFO spill on saturation; focus and visibility use
   independent atomic latest-value slots. App and renderer drains process a
   snapshot of their starting count and retain a wake for any remaining work.
+  The ring deliberately remains 64 slots rather than taking H-A's proposed
+  mailbox enlargement: cancellation breaks the join cycle, and the unchanged
+  capacity keeps the saturation fixture meaningful.
 - Paste fences and payload enter IO as one owned message (`f27772d10963`). Write
   request and buffer ownership travel together through out-of-order completion
   (`e0ef934f7360`). Selection replacement no longer compares released pins
@@ -227,6 +230,11 @@ are tracked on C11-294; this section records the engine integration.
   before its grace interval expires. Cancellation joins the reader before the
   owned PTY master closes, allowing macOS login to observe hangup. Shutdown is
   idempotent so IO thread exit and final deinit share one signal/reap budget.
+  Cancelled POSIX teardown transfers copied process IDs and timeout values to
+  a detached reaper, so the IO join does not park main for that budget. No
+  surface, command, or PTY storage escapes. Synchronous helpers remain for
+  startup cleanup and tests; a thread-spawn failure is logged and falls back
+  to bounded synchronous cleanup rather than abandoning a waitable child.
 - Two additive C exports, `ghostty_surface_try_read_text` and
   `ghostty_surface_try_read_selection`, attempt the renderer mutex once. Statuses
   are OK=0, BUSY=1, INVALID_SELECTION=2, FAILED=3, NO_SELECTION=4. Non-OK results

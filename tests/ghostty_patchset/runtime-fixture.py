@@ -306,7 +306,8 @@ def controller(args):
               "clock_verification": clock_evidence,
               "workload": {"streams": args.streams, "hz_per_stream": 20, "samples": args.samples,
                            "launch": "workspace-initial-command", "workspaces_per_stream": 1},
-              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 2, "shutdown_seconds": 18},
+              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 2,
+                         "shutdown_close_ms": 500, "shutdown_seconds": 18},
               "not_proven": ["physical hardware keyboard latency", "app tick durations/message counts",
                              "GPU current frame or cursor visibility", "computer-use hide/show",
                              "B072 backend WouldBlock attribution", "completion-order injection",
@@ -517,19 +518,48 @@ def controller(args):
             raise RuntimeError("paste bytes/fences or concurrent terminal reply evidence failed")
         # Full shutdown case matrix remains native-fixture work; these exercise real tabs.
         result["shutdown"] = []
-        for mode in ("graceful", "ignore-hup", "ignore-both", "detached"):
+        for case_index, mode in enumerate(("graceful", "ignore-hup", "ignore-both", "detached")):
             pair, directory, identity = launch("shutdown-" + mode, "shutdown-" + mode)
+            record = {"mode": mode, "child": identity, "complete": False}
+            result["shutdown"].append(record)
+            save(out / "result.json", result)
             start = time.monotonic()
             # A fixture workspace contains its sole terminal; tab.close
             # deliberately rejects closing the last tab in an area.
             call("workspace.close", {"workspace_id": pair[0]}, timeout=20)
+            close_return_ns = shared_ns()
+            record["close_ms"] = (time.monotonic() - start) * 1000
             workspaces.remove(pair[0])
+            save(out / "result.json", result)
+            if record["close_ms"] > 500:
+                raise RuntimeError("workspace close exceeded 500 ms main responsiveness ceiling: " + mode)
+
+            # The probe terminal is already running and selected. Do not wait
+            # for the old child to exit or repair focus before exercising it.
+            record["child_alive_before_probe"] = ps(identity["pid"], "lstart") == identity["started"]
+            probe_started = time.monotonic()
+            survivor = probe(probe_pair, probe_dir, args.samples + 1 + case_index)
+            record["survivor_probe"] = survivor
+            record["survivor_roundtrip_ms"] = (time.monotonic() - probe_started) * 1000
+            record["child_alive_after_probe"] = ps(identity["pid"], "lstart") == identity["started"]
+            if not survivor.get("missed"):
+                record["close_to_survivor_ack_ms"] = (survivor["timing_ns"]["pty_received"] - close_return_ns) / 1e6
+            save(out / "result.json", result)
+            if survivor.get("missed"):
+                raise RuntimeError("surviving terminal unresponsive after close: " + mode)
+            if mode in ("ignore-hup", "ignore-both") and not (
+                    record["child_alive_before_probe"] and record["child_alive_after_probe"]):
+                raise RuntimeError("survivor ACK did not overlap the ignored-HUP child's grace period: " + mode)
+
             while ps(identity["pid"], "lstart") == identity["started"]:
                 if time.monotonic() - start > 18:
                     raise TimeoutError("owned child still exists after shutdown budget: " + mode)
                 time.sleep(.02)
-            record = {"mode": mode, "elapsed_ms": (time.monotonic() - start) * 1000,
-                      "child": identity, "hup_observed": (directory / "hup-observed").exists()}
+            record["reap_ms"] = (time.monotonic() - start) * 1000
+            record["hup_observed"] = (directory / "hup-observed").exists()
+            save(out / "result.json", result)
+            if record["reap_ms"] > 18000:
+                raise TimeoutError("child disappearance exceeded 18 seconds from close request: " + mode)
             if mode == "graceful" and not record["hup_observed"]:
                 raise RuntimeError("graceful child did not observe HUP")
             if mode == "detached":
@@ -540,7 +570,11 @@ def controller(args):
                 record["detached_kept_alive"] = alive
                 if not alive:
                     raise RuntimeError("detached keep sentinel was killed")
-            result["shutdown"].append(record)
+            record["stream_workers_alive"] = all(ps(item["pid"], "lstart") == item["started"] for item in stream_identities)
+            if not record["stream_workers_alive"]:
+                raise RuntimeError("streaming workload exited during shutdown case: " + mode)
+            record["complete"] = True
+            save(out / "result.json", result)
         if result["responsiveness"]["missed"]:
             raise RuntimeError("responsiveness probes missed; retain distribution for orchestrator verdict")
         result["status"] = "PASS_FOR_REPORTED_SCENARIOS"

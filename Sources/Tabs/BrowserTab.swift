@@ -3510,6 +3510,24 @@ final class BrowserTab: TabContent, ObservableObject {
                 self.webView.underPageBackgroundColor = GhosttyBackgroundTheme.color(from: notification)
             }
             .store(in: &webViewCancellables)
+
+        // App quit does not call TabContent.close(), and the main window can
+        // lose its host before ARC releases the tab. Close the inspector while
+        // its view is attached, preserving visibility intent for the snapshot.
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.willCloseNotification))
+            .sink { [weak self, weak webView] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let webView,
+                          self.isCurrentWebView(webView, instanceID: observedWebViewInstanceID) else { return }
+                    if notification.name == NSWindow.willCloseNotification {
+                        guard let closingWindow = notification.object as? NSWindow,
+                              webView.window === closingWindow else { return }
+                    }
+                    self.prepareForHostTeardown()
+                }
+            }
+            .store(in: &webViewCancellables)
     }
 
     private var webContentReplacementGate = WebContentReplacementGate()
@@ -3689,15 +3707,11 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
     func close() {
-        isClosed = true
-        webContentReplacementGate.invalidate()
-        shutdownDeveloperTools(in: webView)
+        prepareForHostTeardown()
         preferredDeveloperToolsVisible = false
         // Ensure we don't keep a hidden WKWebView (or its content view) as first responder while
         // bonsplit/SwiftUI reshuffles views during close.
         unfocus()
-
-        closeOwnedPopups()
 
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -3717,6 +3731,14 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
     // MARK: - Popup window management
+
+    private func prepareForHostTeardown() {
+        guard !isClosed else { return }
+        isClosed = true
+        webContentReplacementGate.invalidate()
+        shutdownDeveloperTools(in: webView)
+        closeOwnedPopups()
+    }
 
     private func closeOwnedPopups() {
         // Closing a popup unregisters itself, so iterate a snapshot.

@@ -1941,6 +1941,30 @@ final class BrowserLifecycleRegressionTests: XCTestCase {
         oldWebView.cmuxSetUnitTestInspector(nil)
     }
 
+    func testOwningWindowTeardownClosesInspectorAndInvalidatesQueuedRecovery() async {
+        installCmuxUnitTestInspectorOverride()
+        let panel = BrowserTab(workspaceId: UUID())
+        defer { panel.close() }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let oldWebView = panel.webView
+        window.contentView?.addSubview(oldWebView)
+        let inspector = InspectorProbe()
+        oldWebView.cmuxSetUnitTestInspector(inspector)
+        inspector.onClose = { XCTAssertTrue(oldWebView.window === window) }
+        panel.debugSimulateWebContentProcessTermination()
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+        XCTAssertEqual(inspector.closeCount, 1)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertTrue(panel.webView === oldWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 0)
+        oldWebView.cmuxSetUnitTestInspector(nil)
+        window.close()
+    }
+
     func testDownloadRedirectRepeatedAndCaseVariedKeysUseFirstValue() {
         let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
         let first = "https://example.com/first.png"

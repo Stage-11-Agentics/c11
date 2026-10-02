@@ -6432,6 +6432,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mainWindowCloseGuards.removeValue(forKey: ObjectIdentifier(window))
     }
 
+#if DEBUG
+    func debugHasMainWindowCloseGuard(for window: NSWindow) -> Bool {
+        mainWindowCloseGuards[ObjectIdentifier(window)] != nil
+    }
+#endif
+
     @objc private func mainWindowCloseButtonPressed(_ sender: NSButton) {
         guard let window = sender.window else { return }
         if isTerminatingApp || mainWindowsClosingWithoutPrompt.contains(ObjectIdentifier(window)) {

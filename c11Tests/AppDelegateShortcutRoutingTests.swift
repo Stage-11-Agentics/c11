@@ -693,7 +693,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             XCTFail("Expected test window")
             return
         }
-        XCTAssertNotNil(targetWindow.delegate, "The main window must have its close guard installed")
+        XCTAssertTrue(
+            appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+            "The main window must have its close guard installed"
+        )
 
         // NSWindow posts this before it calls its delegate. The AppDelegate
         // observer unregisters the context during that notification; the
@@ -705,9 +708,9 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             queue: nil
         ) { _ in
             MainActor.assumeIsolated {
-                XCTAssertNotNil(
-                    targetWindow.delegate,
-                    "Unregistering the window must not release the close guard before windowWillClose"
+                XCTAssertTrue(
+                    appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+                    "Unregistering the window must retain the close guard through willCloseNotification"
                 )
                 willCloseObserved.fulfill()
             }
@@ -716,7 +719,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         closeWindow(withId: windowId)
         wait(for: [willCloseObserved], timeout: 0)
-        XCTAssertNil(targetWindow.delegate, "windowWillClose must release the guard after its final callback")
+        XCTAssertFalse(
+            appDelegate.debugHasMainWindowCloseGuard(for: targetWindow),
+            "windowWillClose must release the guard after its final callback"
+        )
     }
 
     func testCmdWClosesWindowWhenClosingLastSurfaceInLastWorkspace() {

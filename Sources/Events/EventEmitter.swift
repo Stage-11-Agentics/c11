@@ -186,7 +186,8 @@ final class EventEmitter {
         targetTitle: String,
         kind: String,
         text: String,
-        submitted: Bool
+        submitted: Bool,
+        queued: Bool = false
     ) -> [String: Any] {
         let recorded = recordedText(text)
         var payload: [String: Any] = [
@@ -201,6 +202,9 @@ final class EventEmitter {
         if recorded.truncated {
             payload["truncated"] = true
         }
+        if queued {
+            payload["queued"] = true
+        }
         return payload
     }
 
@@ -213,7 +217,8 @@ final class EventEmitter {
         targetTitle: String,
         kind: String,
         text: String,
-        submitted: Bool
+        submitted: Bool,
+        queued: Bool = false
     ) -> Bool {
         emit(
             .tabInputSent,
@@ -225,7 +230,8 @@ final class EventEmitter {
                 targetTitle: targetTitle,
                 kind: kind,
                 text: text,
-                submitted: submitted
+                submitted: submitted,
+                queued: queued
             )
         )
     }
@@ -392,10 +398,11 @@ final class EventEmitter {
     }
 
     private static func recordedText(_ text: String) -> (value: String, bytes: Int, truncated: Bool) {
-        let utf8 = Array(text.utf8)
-        guard utf8.count > maxRecordedTextBytes else {
-            return (text, utf8.count, false)
+        let byteCount = text.utf8.count
+        guard byteCount > maxRecordedTextBytes else {
+            return (text, byteCount, false)
         }
+        let utf8 = Array(text.utf8)
 
         var end = maxRecordedTextBytes
         while end > 0, end < utf8.count, (utf8[end] & 0xC0) == 0x80 {
@@ -403,7 +410,7 @@ final class EventEmitter {
         }
         return (
             String(decoding: utf8.prefix(end), as: UTF8.self),
-            utf8.count,
+            byteCount,
             true
         )
     }

@@ -263,6 +263,21 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(keyPayload?["text"] as? String, "enter")
     }
 
+    func testTabInputPayloadRecordsQueuedAndSubmitState() {
+        let payload = EventEmitter.tabInputPayload(
+            callerTabId: UUID(),
+            callerTitle: "caller",
+            targetTitle: "target",
+            kind: "text",
+            text: "partial line",
+            submitted: false,
+            queued: true
+        )
+
+        XCTAssertEqual(payload["submitted"] as? Bool, false)
+        XCTAssertEqual(payload["queued"] as? Bool, true)
+    }
+
     func testTabInputPayloadTruncatesBodyAtUTF8Boundary() {
         let text = "a" + String(repeating: "🙂", count: 100_000)
         let payload = EventEmitter.tabInputPayload(

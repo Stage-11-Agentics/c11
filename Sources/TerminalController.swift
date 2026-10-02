@@ -3267,22 +3267,19 @@ class TerminalController {
             callerTabId = nil
         } else {
             let trimmedCaller = rawCaller!.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedCaller.isEmpty, let parsedCaller = UUID(uuidString: trimmedCaller) else {
-                return .err(.err(code: "invalid_params", message: "caller_tab_id must be a UUID", data: nil))
-            }
-            callerTabId = parsedCaller
+            callerTabId = UUID(uuidString: trimmedCaller)
         }
 
         let callerTitle: String?
         if let callerTabId {
-            guard let caller = AppDelegate.shared?.workspaceContainingPanel(
+            let caller = AppDelegate.shared?.workspaceContainingPanel(
                 panelId: callerTabId,
                 preferredWorkspaceId: nil
-            ) else {
-                return .err(.err(code: "caller_surface_not_found", message: "Calling tab not found", data: nil))
-            }
-            callerTitle = caller.workspace.tabTitle(panelId: callerTabId)
-                ?? caller.workspace.panels[callerTabId]?.displayTitle
+            )
+            callerTitle = caller.map {
+                $0.workspace.tabTitle(panelId: callerTabId)
+                    ?? $0.workspace.panels[callerTabId]?.displayTitle
+            } ?? nil
         } else {
             callerTitle = nil
         }
@@ -3320,6 +3317,11 @@ class TerminalController {
         let workspaceId: UUID
         let surfaceId: UUID
         let targetTitle: String
+    }
+
+    nonisolated static func namedKeySubmits(_ keyName: String) -> Bool {
+        let normalized = keyName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "enter" || normalized == "return"
     }
 
     enum LegacyTabSendTargetOutcome {
@@ -3454,7 +3456,9 @@ class TerminalController {
                     targetTitle: resolved.targetTitle,
                     kind: eventKind,
                     text: eventText,
-                    submitted: true
+                    submitted: eventKind == "text"
+                        ? eventText.contains("\r")
+                        : Self.namedKeySubmits(eventText)
                 )
             }
             return result

@@ -23,9 +23,9 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude --dangerously-skip-permissions",
             cwd: nil,
-            prompt: "do the thing"
+            promptFilePath: "/tmp/owned prompt.txt"
         )
-        XCTAssertEqual(plan.launchLine, "claude --dangerously-skip-permissions 'do the thing'")
+        XCTAssertEqual(plan.launchLine, "claude --dangerously-skip-permissions 'Read the file at /tmp/owned prompt.txt and follow it exactly.'")
         XCTAssertNil(plan.delayedPrompt, "claude prompt rides the launch line, not a delayed send")
     }
 
@@ -34,9 +34,9 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude",
             cwd: "/tmp/work dir",
-            prompt: "hi"
+            promptFilePath: "/tmp/owned prompt.txt"
         )
-        XCTAssertEqual(plan.launchLine, "cd '/tmp/work dir' && claude 'hi'")
+        XCTAssertEqual(plan.launchLine, "cd '/tmp/work dir' && claude 'Read the file at /tmp/owned prompt.txt and follow it exactly.'")
         XCTAssertNil(plan.delayedPrompt)
     }
 
@@ -45,10 +45,10 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude",
             cwd: nil,
-            prompt: "it's done"
+            promptFilePath: "/tmp/owned prompt.txt"
         )
         // shellQuote wraps in single quotes and escapes embedded ' via '\'' .
-        XCTAssertEqual(plan.launchLine, "claude 'it'\\''s done'")
+        XCTAssertEqual(plan.launchLine, "claude 'Read the file at /tmp/owned prompt.txt and follow it exactly.'")
         XCTAssertNil(plan.delayedPrompt)
     }
 
@@ -57,7 +57,7 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude",
             cwd: nil,
-            prompt: nil
+            promptFilePath: nil
         )
         XCTAssertEqual(plan.launchLine, "claude")
         XCTAssertNil(plan.delayedPrompt)
@@ -68,7 +68,7 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude",
             cwd: nil,
-            prompt: "   \n  "
+            promptFilePath: nil
         )
         XCTAssertEqual(plan.launchLine, "claude", "blank prompt must not append an empty quoted positional")
         XCTAssertNil(plan.delayedPrompt)
@@ -81,10 +81,10 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .codex,
             bareCommand: "codex --yolo",
             cwd: nil,
-            prompt: "review PR #42"
+            promptFilePath: "/tmp/owned prompt.txt"
         )
         XCTAssertEqual(plan.launchLine, "codex --yolo", "codex cannot accept a positional prompt; line is bare")
-        XCTAssertEqual(plan.delayedPrompt, "review PR #42")
+        XCTAssertEqual(plan.delayedPrompt, "Read the file at /tmp/owned prompt.txt and follow it exactly.")
     }
 
     func testCodexWithCwdAndPromptPrefixesCdAndDefersTrimmedPrompt() {
@@ -92,10 +92,10 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .codex,
             bareCommand: "codex",
             cwd: "/repo",
-            prompt: "  go  "
+            promptFilePath: "/tmp/owned prompt.txt"
         )
         XCTAssertEqual(plan.launchLine, "cd '/repo' && codex")
-        XCTAssertEqual(plan.delayedPrompt, "go", "delayed prompt is trimmed before delivery")
+        XCTAssertEqual(plan.delayedPrompt, "Read the file at /tmp/owned prompt.txt and follow it exactly.", "delayed prompt is trimmed before delivery")
     }
 
     func testOpencodeWithoutPromptHasNoDelayedPrompt() {
@@ -103,7 +103,7 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .opencode,
             bareCommand: "opencode",
             cwd: nil,
-            prompt: nil
+            promptFilePath: nil
         )
         XCTAssertEqual(plan.launchLine, "opencode")
         XCTAssertNil(plan.delayedPrompt)
@@ -114,7 +114,7 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .kimi,
             bareCommand: "kimi",
             cwd: nil,
-            prompt: "  "
+            promptFilePath: nil
         )
         XCTAssertEqual(plan.launchLine, "kimi")
         XCTAssertNil(plan.delayedPrompt, "a blank prompt must not schedule a delayed empty send")
@@ -127,7 +127,7 @@ final class DefaultAgentLaunchCompositionTests: XCTestCase {
             agent: .claudeCode,
             bareCommand: "claude",
             cwd: "   ",
-            prompt: nil
+            promptFilePath: nil
         )
         XCTAssertEqual(plan.launchLine, "claude", "blank cwd must not emit a `cd  &&` prefix")
     }

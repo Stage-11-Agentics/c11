@@ -285,8 +285,25 @@ _cmux_kill_process_tree() {
     kill "-$signal" "$pid" >/dev/null 2>&1 || true
 }
 
+# A pid alone can be reused after the shell exits. Keep its start time too.
+_cmux_parent_shell_lstart() {
+    local started
+    started="$(ps -o lstart= -p "$1" 2>/dev/null)" || return 1
+    started="${started#"${started%%[![:space:]]*}"}"
+    started="${started%"${started##*[![:space:]]}"}"
+    [[ -n "$started" ]] || return 1
+    printf '%s\n' "$started"
+}
+
+_cmux_parent_shell_alive() {
+    [[ -n "${2:-}" && "$(_cmux_parent_shell_lstart "$1")" == "$2" ]]
+}
+
 _cmux_run_pr_probe_with_timeout() {
     local repo_path="$1"
+    local parent_pid="$2"
+    local parent_lstart="$3"
+    local probe_result=1
     local probe_pid=""
     local started_at=$SECONDS
     local now=$started_at
@@ -299,21 +316,33 @@ _cmux_run_pr_probe_with_timeout() {
     while kill -0 "$probe_pid" >/dev/null 2>&1; do
         sleep 1
         now=$SECONDS
-        if (( _CMUX_ASYNC_JOB_TIMEOUT > 0 )) && (( now - started_at >= _CMUX_ASYNC_JOB_TIMEOUT )); then
+        if ! _cmux_parent_shell_alive "$parent_pid" "$parent_lstart"; then
+            probe_result=2
+        elif (( _CMUX_ASYNC_JOB_TIMEOUT > 0 )) && (( now - started_at >= _CMUX_ASYNC_JOB_TIMEOUT )); then
+            probe_result=1
+        else
+            continue
+        fi
+        if (( probe_result == 2 )); then
+            # Like preexec cleanup, stop this helper tree outright. TERM could
+            # orphan a signal-ignoring child when the probe's shell dies first.
+            _cmux_kill_process_tree "$probe_pid" KILL
+        else
             _cmux_kill_process_tree "$probe_pid" TERM
             sleep 0.2
             if kill -0 "$probe_pid" >/dev/null 2>&1; then
                 _cmux_kill_process_tree "$probe_pid" KILL
                 sleep 0.2
             fi
-            if ! kill -0 "$probe_pid" >/dev/null 2>&1; then
-                wait "$probe_pid" >/dev/null 2>&1 || true
-            fi
-            return 1
         fi
+        if ! kill -0 "$probe_pid" >/dev/null 2>&1; then
+            wait "$probe_pid" >/dev/null 2>&1 || true
+        fi
+        return "$probe_result"
     done
 
-    wait "$probe_pid"
+    # Reserve 2 for parent loss; a probe's own failure must keep polling.
+    wait "$probe_pid" || return 1
 }
 
 _cmux_stop_pr_poll_loop() {
@@ -333,6 +362,7 @@ _cmux_start_pr_poll_loop() {
     local watch_pwd="${1:-$PWD}"
     local force_restart="${2:-0}"
     local watch_shell_pid="$$"
+    local watch_shell_lstart
     local interval="${_CMUX_PR_POLL_INTERVAL:-45}"
 
     if [[ "$force_restart" != "1" && "$watch_pwd" == "$_CMUX_PR_POLL_PWD" && -n "$_CMUX_PR_POLL_PID" ]] \
@@ -342,12 +372,20 @@ _cmux_start_pr_poll_loop() {
 
     _cmux_stop_pr_poll_loop
     _CMUX_PR_POLL_PWD="$watch_pwd"
+    watch_shell_lstart="$(_cmux_parent_shell_lstart "$watch_shell_pid")" || return 0
 
     {
-        while :; do
-            kill -0 "$watch_shell_pid" 2>/dev/null || break
-            _cmux_run_pr_probe_with_timeout "$watch_pwd" || true
-            sleep "$interval"
+        local probe_result slept
+        while _cmux_parent_shell_alive "$watch_shell_pid" "$watch_shell_lstart"; do
+            probe_result=0
+            _cmux_run_pr_probe_with_timeout "$watch_pwd" "$watch_shell_pid" "$watch_shell_lstart" || probe_result=$?
+            (( probe_result == 2 )) && break
+            slept=0
+            while (( slept < interval )); do
+                sleep 1
+                _cmux_parent_shell_alive "$watch_shell_pid" "$watch_shell_lstart" || break 2
+                (( slept += 1 ))
+            done
         done
     } >/dev/null 2>&1 &
     _CMUX_PR_POLL_PID=$!
@@ -447,7 +485,7 @@ _cmux_prompt_command() {
         fi
     fi
 
-    # Git branch/dirty can change without a directory change (e.g. `git checkout`),
+    # Git branch can change without a directory change (e.g. `git checkout`),
     # so update on every prompt (still async + de-duped by the running-job check).
     # When pwd changes (cd into a different repo), kill the old probe and start fresh
     # so the sidebar picks up the new branch immediately.
@@ -463,13 +501,10 @@ _cmux_prompt_command() {
         _CMUX_GIT_LAST_PWD="$pwd"
         _CMUX_GIT_LAST_RUN=$now
         {
-            local branch dirty_opt=""
+            local branch
             branch=$(git branch --show-current 2>/dev/null)
             if [[ -n "$branch" ]]; then
-                local first
-                first=$(git status --porcelain -uno 2>/dev/null | head -1)
-                [[ -n "$first" ]] && dirty_opt="--status=dirty"
-                _cmux_send "report_git_branch $branch $dirty_opt --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+                _cmux_send "report_git_branch $branch --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
             else
                 _cmux_send "clear_git_branch --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
             fi

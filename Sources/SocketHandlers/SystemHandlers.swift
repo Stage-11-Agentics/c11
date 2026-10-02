@@ -73,6 +73,23 @@ extension TerminalController {
             "workspace.close",
             "workspace.move_to_window",
             "workspace.reorder",
+            "workspace.reorder_batch",
+            "workspace.group.list",
+            "workspace.group.create",
+            "workspace.group.rename",
+            "workspace.group.delete",
+            "workspace.group.ungroup",
+            "workspace.group.add",
+            "workspace.group.remove",
+            "workspace.group.move",
+            "workspace.group.collapse",
+            "workspace.group.expand",
+            "workspace.group.pin",
+            "workspace.group.unpin",
+            "workspace.group.set_color",
+            "workspace.group.set_icon",
+            "workspace.group.focus",
+
             "workspace.rename",
             "workspace.set_root",
             "workspace.get_root",
@@ -294,7 +311,10 @@ extension TerminalController {
             "version": 2,
             "socket_path": socketPath,
             "access_mode": accessMode.rawValue,
-            "methods": methods.sorted()
+            "methods": methods.sorted(),
+            "features_version": CapabilityFeatures.schemaVersion,
+            "features": CapabilityFeatures.current.payload,
+            "server": C11BuildIdentity(info: Bundle.main.infoDictionary ?? [:]).payload
         ]
     }
 

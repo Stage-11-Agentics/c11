@@ -65,54 +65,27 @@ enum CwdParamResolution {
     }
 }
 
-/// Pure composition for `default-agent launch --in-surface`'s shell line and
-/// prompt-delivery decision.
-///
-/// `launchInExistingSurface` types a single composed line into an existing
-/// terminal's PTY: an optional `cd <cwd> &&` prefix, the agent's bare launcher,
-/// and — for claude-code only — the prompt as a single-quoted positional. For
-/// every other TUI the prompt cannot ride the launch line (those agents don't
-/// accept a positional prompt) so it is delivered after the agent has booted via
-/// a second, delayed `sendText`. This enum captures that decision free of any
-/// TerminalController/AppKit state so it is exercisable from `c11LogicTests`.
+/// Existing-tab launch composition. Bodies are staged by the worker; the
+/// legacy non-Claude post-boot rail now carries only a short file instruction.
 enum DefaultAgentLaunchComposition: Equatable {
-    /// The shell line to type+submit into the surface immediately, plus the
-    /// prompt (if any) that must be delivered after the agent boots.
-    struct Plan: Equatable {
-        /// The composed `[cd <cwd> && ]<launcher>[ '<prompt>']` line.
-        let launchLine: String
-        /// When non-nil, the prompt to deliver via a delayed post-launch
-        /// sendText (non-claude agents). nil means the prompt (if any) already
-        /// rode the launch line, or there was no prompt.
-        let delayedPrompt: String?
-    }
+    typealias Plan = LaunchPromptDelivery.Plan
 
-    /// Compose the launch plan.
-    ///
-    /// - `agent`: the resolved agent type — only claude-code accepts a positional prompt.
-    /// - `bareCommand`: the agent's launcher command (already resolved from config).
-    /// - `cwd`: optional working directory; when non-empty a `cd <quoted> &&` prefix is prepended.
-    /// - `prompt`: optional initial prompt.
     static func plan(
         agent: AgentType,
         bareCommand: String,
         cwd: String?,
-        prompt: String?
+        promptFilePath: String?
     ) -> Plan {
         var line = ""
         if let cwd, !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             line += "cd \(DefaultAgentResolver.shellQuote(cwd)) && "
         }
-        let trimmedPrompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasPrompt = (trimmedPrompt?.isEmpty == false)
-        if agent == .claudeCode, let trimmedPrompt, hasPrompt {
-            line += "\(bareCommand) \(DefaultAgentResolver.shellQuote(trimmedPrompt))"
-            return Plan(launchLine: line, delayedPrompt: nil)
-        }
         line += bareCommand
-        // Non-claude agents: prompt rides a separate post-ready sendText.
-        let delayed = (hasPrompt ? trimmedPrompt : nil)
-        return Plan(launchLine: line, delayedPrompt: delayed)
+        return LaunchPromptDelivery.compose(
+            command: line,
+            delivery: agent == .claudeCode ? .positional : .postBoot,
+            promptFilePath: promptFilePath
+        )
     }
 }
 
@@ -252,6 +225,7 @@ class TerminalController {
     static let focusIntentV2Methods: Set<String> = [
         "window.focus",
         "workspace.select",
+        "workspace.group.focus",
         "workspace.next",
         "workspace.previous",
         "workspace.last",
@@ -278,6 +252,7 @@ class TerminalController {
     enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
+        case workspaceGroup = "workspace_group"
         case pane = "area"
         case surface = "tab"
     }
@@ -2084,6 +2059,23 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
+        // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
+        "workspace.reorder_batch",
+        "workspace.group.list",
+        "workspace.group.create",
+        "workspace.group.rename",
+        "workspace.group.delete",
+        "workspace.group.ungroup",
+        "workspace.group.add",
+        "workspace.group.remove",
+        "workspace.group.move",
+        "workspace.group.collapse",
+        "workspace.group.expand",
+        "workspace.group.pin",
+        "workspace.group.unpin",
+        "workspace.group.set_color",
+        "workspace.group.set_icon",
+        "workspace.group.focus",
         "history.list",
         "tab.send_text",
         "tab.send_key",
@@ -2135,6 +2127,7 @@ class TerminalController {
     // bash) always include explicit IDs so the prompt-frequency telemetry
     // hits the fast path; only ad-hoc CLI invocations land on the slow path.
     nonisolated static let socketWorkerV1Commands: Set<String> = [
+        "clear_notifications",
         "report_pwd",
         "report_shell_state",
         "report_agent_activity",
@@ -2170,7 +2163,6 @@ class TerminalController {
     // while the run loop drains status writes cooperatively.
     nonisolated static let asyncAckV1Commands: Set<String> = [
         "set_status",
-        "clear_notifications",
         "set_agent_pid",
         "notify_target",
     ]
@@ -2240,6 +2232,7 @@ class TerminalController {
             "workspace_count": workspaceNodes.count,
             "selected_workspace_id": v2OrNull(summary.selectedWorkspaceId?.uuidString),
             "selected_workspace_ref": v2Ref(kind: .workspace, uuid: summary.selectedWorkspaceId),
+            "workspace_groups": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map { v2WorkspaceGroupRecords($0) } ?? [],
             "workspaces": workspaceNodes
         ]
     }
@@ -2406,6 +2399,7 @@ class TerminalController {
             "title": workspace.title,
             "selected": selected,
             "pinned": workspace.isPinned,
+            "group_id": v2OrNull(workspace.groupId?.uuidString),
             "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
             "areas": panes,
@@ -2663,6 +2657,9 @@ class TerminalController {
         for item in windows {
             _ = v2EnsureHandleRef(kind: .window, uuid: item.windowId)
             if let tm = app.workspaceManagerFor(windowId: item.windowId) {
+                for group in tm.workspaceGroups {
+                    _ = v2EnsureHandleRef(kind: .workspaceGroup, uuid: group.id)
+                }
                 for ws in tm.workspaces {
                     _ = v2EnsureHandleRef(kind: .workspace, uuid: ws.id)
                     for paneId in ws.bonsplitController.allPaneIds {
@@ -5883,7 +5880,15 @@ class TerminalController {
         let parsed = parseOptions(trimmed)
         guard let tabOption = parsed.options["tab"],
               !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "ERROR: Usage: clear_notifications [--tab=X]"
+            return "ERROR: Usage: clear_notifications [--tab=X [--panel=Y]]"
+        }
+        let rawPanel = parsed.options["panel"] ?? parsed.options["surface"]
+        let panelId: UUID?
+        if let rawPanel {
+            guard let id = UUID(uuidString: rawPanel) else { return "ERROR: Invalid originating tab" }
+            panelId = id
+        } else {
+            panelId = nil
         }
         var workspaceId: UUID?
         v2MainSync {
@@ -5894,10 +5899,20 @@ class TerminalController {
         guard let workspaceId else {
             return "ERROR: Tab not found"
         }
+        var result = "OK"
         v2MainSync {
-            TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            if let panelId {
+                guard let workspace = workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else {
+                    result = "ERROR: Tab not found"
+                    return
+                }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            } else {
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId)
+            }
         }
-        return "OK"
+        return result
     }
 
     func setAppFocusOverride(_ arg: String) -> String {
@@ -8002,7 +8017,7 @@ class TerminalController {
         return (nil, error)
     }
 
-    private func workspaceForSidebarMutation(id: UUID) -> Workspace? {
+    func workspaceForSidebarMutation(id: UUID) -> Workspace? {
         if let workspace = workspaceManager?.workspaces.first(where: { $0.id == id }) {
             return workspace
         }
@@ -8189,7 +8204,7 @@ class TerminalController {
                 }
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
-                    workspace.agentPIDs[key] = pidValue
+                    workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
                 }
                 return
             }
@@ -8204,7 +8219,7 @@ class TerminalController {
                 timestamp: Date()
             )
             if let pidValue {
-                workspace.agentPIDs[key] = pidValue
+                workspace.registerAgentPID(pidValue, key: key, tabId: explicitSurfaceId)
             }
         }
         return "OK"
@@ -8225,13 +8240,13 @@ class TerminalController {
             if workspace.statusEntries.removeValue(forKey: key) == nil {
                 result = "OK (key not found)"
             }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return result
     }
 
     /// Register an agent PID for stale-session detection without setting a visible status entry.
-    /// Usage: set_agent_pid <key> <pid> [--tab=<id>]
+    /// Usage: set_agent_pid <key> <pid> [--tab=<workspace>] [--panel=<tab>]
     func setAgentPID(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2,
@@ -8243,9 +8258,11 @@ class TerminalController {
         guard let targetWorkspaceId = workspaceResolution.workspaceId else {
             return workspaceResolution.error ?? "ERROR: No tab selected"
         }
+        let explicitSurfaceId = normalizedOptionValue(parsed.options["panel"] ?? parsed.options["surface"])
+            .flatMap { UUID(uuidString: $0) }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs[key] = pid
+            workspace.registerAgentPID(pid, key: key, tabId: explicitSurfaceId)
         }
         return "OK"
     }
@@ -8264,7 +8281,7 @@ class TerminalController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, let workspace = self.workspaceForSidebarMutation(id: targetWorkspaceId) else { return }
-            workspace.agentPIDs.removeValue(forKey: key)
+            workspace.removeAgentPID(key: key)
         }
         return "OK"
     }
@@ -9545,8 +9562,14 @@ class TerminalController {
         }
     }
 
+    /// Launch-only main snapshots; callers perform all file I/O on their worker.
+    private nonisolated func legacyAgentLaunchMainSync<T>(_ body: @MainActor () -> T) -> T {
+        if Thread.isMainThread { return MainActor.assumeIsolated { body() } }
+        return DispatchQueue.main.sync { MainActor.assumeIsolated { body() } }
+    }
+
     /// Parses launch flags and dispatches to the A-button or in-surface path.
-    private func defaultAgentLaunch(tokens: [String]) -> String {
+    nonisolated func defaultAgentLaunch(tokens: [String]) -> String {
         var explicitAgent: AgentType? = nil
         var paneArg: String? = nil
         var inSurfaceArg: String? = nil
@@ -9590,7 +9613,7 @@ class TerminalController {
                 guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
                     return nil
                 }
-                return contents.trimmingCharacters(in: .whitespacesAndNewlines)
+                return contents
             }
             return nil
         }()
@@ -9638,8 +9661,8 @@ class TerminalController {
         } else {
             // A-button mimic: create a new surface in a pane. Prompt args are
             // ignored on this path (the operator's configured initial prompt
-            // still flows via launchAgentSurface's existing pre-baking).
-            guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
+            // still flows via launchAgentSurface's file delivery).
+            guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else { return "ERROR: TabManager not available" }
             // An explicit --cwd wins over the workspace root, validated like
             // every other socket cwd so a bad path errors instead of landing
             // somewhere else.
@@ -9653,7 +9676,7 @@ class TerminalController {
                 return "ERROR: \(message)"
             }
             var result = "ERROR: Failed to launch agent"
-            v2MainSync {
+            legacyAgentLaunchMainSync {
                 guard let workspaceId = workspaceManager.selectedWorkspaceId,
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
@@ -9694,20 +9717,20 @@ class TerminalController {
     /// Resolve config lookup provenance for `default-agent launch --in-surface`.
     /// This is deliberately memory-only; project-config filesystem I/O remains
     /// outside the main-thread snapshot.
-    private func existingSurfaceLaunchCwd(
+    private nonisolated func existingSurfaceLaunchCwd(
         surfaceArg: String,
         explicitCwd: String?
     ) -> (cwd: String?, error: String?) {
         guard let surfaceId = UUID(uuidString: surfaceArg) else {
             return (nil, "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)")
         }
-        guard let workspaceManager = workspaceManager else {
+        guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else {
             return (nil, "ERROR: TabManager not available")
         }
 
         var foundSurface = false
         var targetSurfaceCwd: String?
-        v2MainSync {
+        legacyAgentLaunchMainSync {
             for workspace in workspaceManager.workspaces where workspace.terminalPanel(for: surfaceId) != nil {
                 foundSurface = true
                 targetSurfaceCwd = workspace.inheritedCwdForAgentLaunch(callerTabId: surfaceId)
@@ -9738,7 +9761,7 @@ class TerminalController {
     /// `OK` while the surface's ghostty PTY was still `nil` (`tty: null`). The
     /// success envelope is only returned once the line has actually been delivered
     /// (or durably queued for flush-on-attach via `sendSubmitFormText`).
-    private func launchInExistingSurface(
+    private nonisolated func launchInExistingSurface(
         surfaceArg: String,
         agent: AgentType,
         bareCommand: String,
@@ -9748,22 +9771,32 @@ class TerminalController {
         guard let surfaceId = UUID(uuidString: surfaceArg) else {
             return "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)"
         }
-        guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
+        guard let workspaceManager = legacyAgentLaunchMainSync({ self.workspaceManager }) else { return "ERROR: TabManager not available" }
 
+        let stagedPrompt: LaunchPromptStore.StagedPrompt?
+        do {
+            if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                stagedPrompt = try LaunchPromptStore.shared.stage(prompt: prompt)
+            } else {
+                stagedPrompt = nil
+            }
+        } catch {
+            return "ERROR: could not stage the launch prompt"
+        }
         let composed = DefaultAgentLaunchComposition.plan(
             agent: agent,
             bareCommand: bareCommand,
             cwd: cwd,
-            prompt: prompt
+            promptFilePath: stagedPrompt?.url.path
         )
 
         var result = "ERROR: surface not found: \(surfaceId.uuidString)"
-        v2MainSync {
+        legacyAgentLaunchMainSync {
             // Resolve the ref → panel exactly like send does. v2RefreshKnownRefs()
             // guarantees a just-minted `surface:N` handle (e.g. from `new-split`
             // moments earlier) is already in the resolution map, so launch no
             // longer races behind send for a brand-new surface.
-            v2RefreshKnownRefs()
+            self.v2RefreshKnownRefs()
 
             var targetTab: TerminalTab?
             for workspace in workspaceManager.workspaces {
@@ -9773,6 +9806,14 @@ class TerminalController {
                 }
             }
             guard let panel = targetTab else { return }
+            do {
+                if let stagedPrompt {
+                    try LaunchPromptStore.shared.retain(stagedPrompt, owner: panel.launchPromptOwner)
+                }
+            } catch {
+                result = "ERROR: could not bind the launch prompt to the target tab"
+                return
+            }
 
             // A freshly-split or background surface may not have attached its
             // ghostty PTY yet (the `tty: null` symptom). Kick the background
@@ -9788,18 +9829,14 @@ class TerminalController {
             // sequence — required for shell line discipline and TUI raw-mode
             // handlers to execute. Falls back to a flush-time submit if the
             // surface is not yet attached to a window.
-            panel.surface.sendSubmitFormText(composed.launchLine)
-            if let delayedPrompt = composed.delayedPrompt {
-                // Post-ready delivery. Fixed 2500ms delay: long enough for
-                // codex/opencode/kimi to boot to a prompt on a typical machine,
-                // short enough not to feel sluggish. Readiness detection (poll
-                // for prompt-string-visible) is a v2 follow-up.
-                let delay: DispatchTimeInterval = .milliseconds(2500)
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
-                    panel?.surface.sendSubmitFormText(delayedPrompt)
-                }
+            panel.submitLaunchPlan(composed) { [weak workspaceManager, weak panel] in
+                guard let workspaceManager, let panel else { return false }
+                return workspaceManager.workspaces.contains { $0.terminalPanel(for: panel.id) === panel }
             }
             result = "OK"
+        }
+        if result.hasPrefix("ERROR"), let stagedPrompt {
+            LaunchPromptStore.shared.discard(stagedPrompt)
         }
         return result
     }

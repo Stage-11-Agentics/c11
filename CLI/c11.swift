@@ -3021,6 +3021,30 @@ struct CMUXCLI {
                 print(response)
             }
 
+        case "read-selection":
+            let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (tabRaw, trailing) = parseOption(rem0, name: "--surface")
+            guard trailing.isEmpty else {
+                throw CLIError(message: String(format: String(localized: "cli.read_selection.arguments", defaultValue: "read-selection: unexpected arguments: %@"), trailing.joined(separator: " ")))
+            }
+            let wsArg = try requireNonEmptyHandle(wsRaw, flag: "--workspace", command: "read-selection")
+            let tabArg = try requireNonEmptyHandle(tabRaw, flag: "--tab", command: "read-selection")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = tabArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
+            var params: [String: Any] = [:]
+            let wsID = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            if let wsID { params["workspace_id"] = wsID }
+            let tabID = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsID)
+            if let tabID { params["tab_id"] = tabID }
+            let payload = try client.sendV2(method: "tab.read_selection", params: params)
+            if jsonOutput {
+                print(jsonString(payload))
+            } else if payload["has_selection"] as? Bool == true {
+                print((payload["text"] as? String) ?? "")
+            } else {
+                print(String(localized: "cli.read_selection.none", defaultValue: "No selection."))
+            }
+
         case "read-screen":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
@@ -10181,6 +10205,17 @@ struct CMUXCLI {
             Flags:
               -p, --print   Print to stdout only
             """
+        case "read-selection":
+            return String(localized: "cli.read_selection.help", defaultValue: """
+            Usage: c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]
+
+            Read a terminal's current selection without changing it.
+            --json returns has_selection, text, base64, kind and truncated.
+            No selection succeeds. Browser and markdown tabs are unsupported.
+            Response is capped at 1 MiB on a UTF-8 boundary. A busy renderer
+            returns busy; the caller wait is five seconds. Native capture and
+            formatting remain on main; their allocation and time are not bounded.
+            """)
         case "read-screen":
             return """
             Usage: c11 read-screen [flags]
@@ -18642,6 +18677,7 @@ struct CMUXCLI {
           get-workspace-root [--workspace <id|ref>] [--json]
           rename-window [--workspace <id|ref>] <title>
           current-workspace
+          read-selection [--workspace <id|ref>] [--tab <id|ref>]
           read-screen [--workspace <id|ref>] [--tab <id|ref>] [--scrollback] [--lines <n>]
           send [--workspace <id|ref>] [--tab <id|ref>] <text>
           send-key [--workspace <id|ref>] [--tab <id|ref>] <key>

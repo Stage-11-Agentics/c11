@@ -5,6 +5,11 @@ import Foundation
 import Bonsplit
 import WebKit
 
+private enum TerminalSelectionCapture {
+    case success(bytes: Data, originalCount: Int, hasSelection: Bool, routing: [String: Any])
+    case failure(TerminalController.V2CallResult)
+}
+
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 extension TerminalController {
@@ -1181,6 +1186,121 @@ extension TerminalController {
         }
         semaphore.wait()
         return result
+    }
+
+    /// Surface teardown is serialized on main, so try-lock native capture and
+    /// its exactly-once free stay in one main turn. Native formatting after the
+    /// lock is acquired is synchronous and unbounded; only the copy is capped.
+    nonisolated func v2SurfaceReadSelection(params: [String: Any]) -> V2CallResult {
+        guard CapabilityFeatures.current.supports(.terminalSelection) else {
+            return .err(code: "not_supported", message: String(localized: "socket.read_selection.unsupported", defaultValue: "Terminal selection reading is unavailable."), data: nil)
+        }
+        let operation = SelectionReadOperation<TerminalSelectionCapture>()
+        let started = DispatchTime.now().uptimeNanoseconds
+        Task { @MainActor in
+            guard operation.beginCapture() else { return }
+            let captureStarted = DispatchTime.now().uptimeNanoseconds
+            func fail(_ code: String, _ message: String) {
+                operation.complete(.failure(.err(code: code, message: message, data: nil)))
+            }
+            v2RefreshKnownRefs()
+            for key in ["window_id", "workspace_id", "surface_id"] where params[key] != nil {
+                guard let raw = params[key] as? String, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      let uuid = v2UUID(params, key) else {
+                    fail("invalid_params", String(format: String(localized: "socket.read_selection.invalid_target", defaultValue: "Invalid or unavailable target: %@."), LegacyWireAliases.displayKey(key)))
+                    return
+                }
+                let live: Bool
+                switch key {
+                case "window_id": live = AppDelegate.shared?.workspaceManagerFor(windowId: uuid) != nil
+                case "workspace_id": live = AppDelegate.shared?.workspaceManagerFor(workspaceId: uuid) != nil
+                default: live = AppDelegate.shared?.locateSurface(surfaceId: uuid) != nil
+                }
+                guard live else {
+                    fail("not_found", String(format: String(localized: "socket.read_selection.invalid_target", defaultValue: "Invalid or unavailable target: %@."), LegacyWireAliases.displayKey(key)))
+                    return
+                }
+            }
+            guard let manager = v2ResolveWorkspaceManager(params: params),
+                  let workspace = v2ResolveWorkspace(params: params, workspaceManager: manager),
+                  let tabID = v2UUID(params, "surface_id") ?? workspace.focusedPanelId,
+                  let tab = workspace.panels[tabID] else {
+                fail("not_found", String(localized: "socket.terminalRead.not_found", defaultValue: "Terminal tab not found."))
+                return
+            }
+            guard let terminal = tab as? TerminalTab else {
+                fail("invalid_params", String(localized: "socket.error.tab_not_terminal", defaultValue: "Tab is not a terminal."))
+                return
+            }
+            // Resolve and fetch the live surface here, not on the worker or in
+            // an earlier callback. A queued close/replacement cannot leak a ptr.
+            guard manager.workspaces.contains(where: { $0 === workspace }),
+                  workspace.terminalPanel(for: tabID) === terminal,
+                  let surface = terminal.surface.surface else {
+                fail("not_ready", String(localized: "socket.terminalRead.unavailable", defaultValue: "Terminal surface is not ready."))
+                return
+            }
+            let windowID = v2ResolveWindowId(workspaceManager: manager)
+            let routing: [String: Any] = [
+                "workspace_id": workspace.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
+                "surface_id": tabID.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: tabID),
+                "window_id": v2OrNull(windowID?.uuidString), "window_ref": v2Ref(kind: .window, uuid: windowID)
+            ]
+            var native = ghostty_text_s()
+            let nativeStarted = DispatchTime.now().uptimeNanoseconds
+            let status = ghostty_surface_try_read_selection(surface, &native)
+            let nativeEnded = DispatchTime.now().uptimeNanoseconds
+            var bytes = Data()
+            var originalCount = 0
+            switch status {
+            case GHOSTTY_TEXT_READ_OK:
+                // Only OK transfers ownership; every OK exit frees on main,
+                // including timeout while native formatting is already running.
+                defer { ghostty_surface_free_text(surface, &native) }
+                originalCount = Int(native.text_len)
+                if originalCount > 0 {
+                    guard let pointer = native.text else {
+                        fail("internal_error", String(localized: "socket.terminalRead.failed", defaultValue: "Failed to read terminal selection."))
+                        return
+                    }
+                    bytes = Data(bytes: pointer, count: min(originalCount, SelectionRead.byteLimit))
+                }
+            case GHOSTTY_TEXT_READ_NO_SELECTION:
+                break
+            case GHOSTTY_TEXT_READ_BUSY:
+                fail("busy", String(localized: "socket.terminalRead.busy", defaultValue: "Terminal renderer is busy; retry."))
+                return
+            default:
+                fail("internal_error", String(localized: "socket.terminalRead.failed", defaultValue: "Failed to read terminal selection."))
+                return
+            }
+            let copied = DispatchTime.now().uptimeNanoseconds
+            operation.complete(.success(bytes: bytes, originalCount: originalCount,
+                hasSelection: status == GHOSTTY_TEXT_READ_OK, routing: routing))
+            #if DEBUG
+            dlog("selection.read queue_ms=\(Double(captureStarted - started) / 1e6) native_ms=\(Double(nativeEnded - nativeStarted) / 1e6) copy_free_ms=\(Double(copied - nativeEnded) / 1e6) original_bytes=\(originalCount) copied_bytes=\(bytes.count)")
+            #endif
+        }
+        func timeout() -> V2CallResult {
+            .err(code: "timeout", message: String(localized: "socket.terminalRead.timeout", defaultValue: "Terminal read timed out."), data: nil)
+        }
+        guard let capture = operation.wait() else { return timeout() }
+        switch capture {
+        case .failure(let error): return operation.canPublish ? error : timeout()
+        case .success(let bytes, let originalCount, let hasSelection, var routing):
+            let encodeStarted = DispatchTime.now().uptimeNanoseconds
+            let clipped = SelectionRead.utf8Prefix(bytes, originalCount: originalCount)
+            routing["has_selection"] = hasSelection
+            routing["kind"] = "terminal"
+            routing["text"] = String(decoding: clipped.data, as: UTF8.self)
+            routing["base64"] = clipped.data.base64EncodedString()
+            routing["truncated"] = clipped.truncated
+            #if DEBUG
+            dlog("selection.read encode_ms=\(Double(DispatchTime.now().uptimeNanoseconds - encodeStarted) / 1e6) isMain=\(Thread.isMainThread)")
+            #endif
+            guard operation.canPublish else { return timeout() }
+            return .ok(routing)
+        }
     }
 
     // C11-296: resolve on main, demand-start and wait on the socket worker,

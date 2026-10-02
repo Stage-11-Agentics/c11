@@ -238,3 +238,7 @@ It installs as a **one-time copy** under `~/.claude/skills/c11/`; the app does n
 If `c11` on PATH isn't the active bundle's CLI, run `c11 doctor` (`--json` for machine-readable). It reports the bundled CLI path, how `c11` resolves on PATH, and a `status` of `ok | mismatch | missing | no_bundle`.
 
 Working Lattice tickets inside c11? Also load the `lattice` skill for the integration patterns.
+
+### Read a terminal selection
+
+Use `c11 read-selection --tab tab:2 --json` to read what the operator highlighted, without changing the selection. No selection is a successful empty result; browser/markdown tabs are unsupported. Discovery feature: `read_selection.terminal` version 1. Response cap: 1 MiB on a UTF-8 boundary; `truncated` reports clipping. Retry `busy` later; worker wait is limited to five seconds. Native capture/formatting/allocation and copy/free stay on main, so that wait limit is not a native time/allocation bound. See [API reference](references/api.md#terminal-selection).

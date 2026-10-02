@@ -48,6 +48,14 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
+## Terminal selection
+
+`c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]` reads the terminal selection without clearing or changing it. Omitted targets use the caller context like `read-screen`; empty or stale explicit targets fail. `--json` returns `has_selection`, `kind: terminal`, `text`, `base64`, `truncated` and routing handles. Without a selection it succeeds with empty text/base64 and `has_selection: false`; human output says `No selection.` Browser and markdown tabs return an error.
+
+Socket method: `tab.read_selection`. Discover `read_selection.terminal` version 1 before depending on it. The response is capped at 1 MiB, clipped to a complete UTF-8 scalar; base64 represents the same bytes as text. `busy` means the renderer lock was unavailable; retry later. A single five-second deadline bounds the worker's wait, including queued capture and worker encoding. Abandoned queued work skips capture; an already-running capture cleans up without publishing a late result.
+
+Native try-lock capture, formatting/allocation and the capped byte copy/free remain on main for surface lifetime safety. Only UTF-8 clipping, text/base64 encoding and response assembly run off main. The response cap and caller deadline do **not** bound native allocation or formatting time after the lock is acquired.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.

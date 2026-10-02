@@ -96,7 +96,8 @@ final class BrowserAwaitPolicyTests: XCTestCase {
 
         XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
         XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
-        XCTAssertFalse(filter.matches(makeCookie(domain: "app.example.com", path: "/account", secure: true)))
+        XCTAssertTrue(filter.matches(makeCookie(domain: "app.example.com", path: "/account", secure: true)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "deep.app.example.com", path: "/account", secure: true)))
         XCTAssertFalse(filter.matches(makeCookie(domain: "notexample.com", path: "/account", secure: true)))
         XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/accounts", secure: true)))
         XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))

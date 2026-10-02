@@ -352,29 +352,30 @@ Files are sorted lexicographically by ULID, which gives you near-chronological o
 
 ### Turn-boundary drain (harness hooks)
 
-An agent that is busy when mail arrives sees it at its next turn boundary, through its harness's own hooks. Nothing to call by hand; c11's launch wrappers wire this up inside c11 tabs.
+An agent that is busy when mail arrives sees it when its turn ends, through its harness's Stop hook: the stop is blocked with the messages as the reason, and the agent takes them as its own next turn. Nothing to call by hand; c11's launch wrappers wire this up inside c11 tabs.
 
-| Harness | Prompt submit | Stop | How c11 wires it |
-|---|---|---|---|
-| Claude Code | messages added as context to the turn that starts | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook prompt-submit` / `stop` hooks `Resources/bin/claude` already injects via `--settings` |
-| Codex | same | same (Codex turns the block into a continuation prompt) | `Resources/bin/codex` passes the hooks and their trust hash as `-c` session flags, per launch; nothing is written under `~/.codex` |
-| Grok Build | no (Grok discards an allowing UserPromptSubmit hook's output) | same, on `reason: "end_turn"` only | no per-launch hook path in the Grok TUI; Grok mail relies on stdin push until a wiring is chosen |
+Mail is never drained at prompt submit. Added to a turn the operator just started, an agent treats it as non-operator input and does not act on it. So when the operator submits a draft while mail is waiting, the draft's turn runs first and the mail follows as its own turn right after.
+
+| Harness | Stop | How c11 wires it |
+|---|---|---|
+| Claude Code | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
+| Codex | same (Codex turns the block into a continuation prompt) | `Resources/bin/codex` passes the Stop hook and its trust hash as `-c` session flags, per launch; nothing is written under `~/.codex` |
+| Grok Build | same, on `reason: "end_turn"` only | no per-launch hook path in the Grok TUI; Grok mail relies on stdin push |
 
 The hook command is:
 
 ```bash
-c11 mailbox recv --drain --hook-format claude|codex|grok [--event prompt-submit|stop]
+c11 mailbox recv --drain --hook-format claude|codex|grok [--event stop]
 ```
 
-It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail:
+It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail at a Stop:
 
 ```json
-{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}}
 {"decision":"block","reason":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}
 ```
 
 - **Which inbox.** The hook reads the caller's own inbox, `mailboxes/<tab-uuid>/` (the lowercased `C11_TAB_ID`), straight from the environment: no socket call happens before it claims, so an empty inbox answers in a few milliseconds however much mail sits in other tabs' inboxes. A tab moved to another workspace keeps its old `C11_WORKSPACE_ID`; the hook also looks for `workspaces/*/mailboxes/<tab-uuid>/` on disk (rescanned at most every 5 minutes), so the moved tab's mail is still drained. A title-keyed inbox left by an older build is not read by the hook; drain it once with `c11 mailbox recv --drain`.
-- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness. A hook process older than 6 seconds claims nothing (its mail waits for the next boundary). Every socket request a hook process makes before its claim (auth included) stops at that 6-second cutoff. After a claim, the hook writes its JSON and one delivery receipt file, then exits: no socket I/O, so a stalled c11 can never push a claimed message past the harness's 10-second hook timeout.
+- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness. A hook process older than 6 seconds claims nothing (its mail waits for the next boundary). Every socket request a hook process makes (auth included, and `claude-hook prompt-submit`'s own status calls) stops at that 6-second cutoff. After a claim, the hook writes its JSON and one delivery receipt file, then exits: no socket I/O, so a stalled c11 can never push a claimed message past the harness's 10-second hook timeout.
 - **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and blocks only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
 - **Budget and order.** One hook delivers at most about 8,000 characters of framed messages, always whole and always oldest first: it stops at the first message that does not fit (the oldest is always taken), so newer mail never overtakes older mail. The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
 - **Opt out:** `C11_MAILBOX_HOOK_DRAIN=0` in the environment disables the hook drain for that process; plain `recv` is unaffected.

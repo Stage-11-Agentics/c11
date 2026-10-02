@@ -63,10 +63,24 @@ c11 set-metadata mailbox.delivery stdin   # opt in to PTY injection
 # The framed block lands in the PTY the next time builder sends. An agent at
 # its prompt gets it as a new turn at once; mid-turn, it lands when the turn
 # ends (see "When the push lands" below).
-c11 mailbox recv --drain                   # robust floor: pull at turn boundaries
+c11 mailbox recv --drain                   # pull now (agents also get mail at turn boundaries via hooks)
 ```
 
 If `mailbox.delivery` is not set on the recipient, the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With `stdin` set, push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
+
+## Live messages page
+
+Open the local, self-contained view of both explicit `c11 send` traffic and mailbox traffic:
+
+```bash
+c11 messages view
+# compatibility alias:
+c11 mailbox view
+```
+
+c11 production writes the page to `~/Library/Application Support/c11/messages/messages.html`. A tagged or otherwise non-production bundle uses the same private directory with a bundle-keyed filename such as `messages-com.stage11.c11.debug.da8.html`, so it cannot overwrite the production page; XCTest hosts do not write a page. `messages view` opens or reuses a c11 browser tab for that file in the caller's workspace without stealing focus. The page reloads after a debounced event-log rebuild, and c11 rebuilds it from the retained event log and mailbox files when the app starts, so it remains useful across relaunches. It does not start a localhost server; the messages directory is mode `0700` and the page is mode `0600`.
+
+The page has one timeline for both channels, a sender/recipient connection summary, per-mailbox lifecycle details, delivery health, and full message bodies. Search and filters cover workspace, agent, date, and channel. A queued send is shown as queued, a send is submitted only when its wire event says `submitted: true`, and an unknown `caller_title: null` is shown as an unknown caller (or its stable caller tab id). On rebuild, c11 supplements the current and rolled event logs with undrained inbox files, recipient `_read/` history, and root or nested `_rejected/` envelopes so older bodies survive log rotation. Agent-written fields are inserted as text in the browser page, the embedded JSON is protected against `</script>` breakout, and the page's CSP disallows network access.
 
 ---
 
@@ -222,8 +236,8 @@ sequenceDiagram
         Note over Agent: Inbox file sits until drained
     end
     Note over Agent: pull at every turn boundary — the robust floor
-    Agent->>Inbox: c11 mailbox recv --drain
-    Inbox-->>Agent: prints each .msg not yet claimed by a push
+    Agent->>Inbox: c11 mailbox recv --drain (or a turn-boundary hook)
+    Inbox-->>Agent: claims each .msg not yet claimed by a push into _read/, then prints it
 ```
 
 ### When the framed block arrives in your PTY
@@ -297,12 +311,48 @@ Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mai
 ### Explicit inbox drain
 
 ```bash
-c11 mailbox recv --drain    # default: list, print, unlink
+c11 mailbox recv --drain    # default: print each message, move it to _read/
 c11 mailbox recv --peek     # list + print only, leave files in place
 c11 mailbox recv --tab watcher --drain   # drain on someone else's behalf
 ```
 
-Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the tab's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. `c11 mailbox inbox-dir` prints the UUID-keyed path.
+Files are sorted lexicographically by ULID, which gives you near-chronological order across a single sender. `recv` reads the tab's UUID-keyed inbox and, when one exists, the title-keyed inbox an older c11 build wrote, so mail from before the change is not stranded. Both inboxes are merged into one ULID order, for `--peek` and `--drain` alike. `c11 mailbox inbox-dir` prints the UUID-keyed path.
+
+`recv --drain` writes each message before it claims the next; if stdout fails (a closed pipe), that message goes back to the inbox and nothing after it is taken. Draining another tab with `--tab <name>` records the delivery under that tab's UUID when the name resolves to one live tab, and without a tab id otherwise, never under the caller's.
+
+**Consuming is a claim, not a delete.** Every consumer (`recv --drain`, a turn-boundary hook, the stdin push) renames `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* it prints or types the message. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope reaches the agent once. A consumer whose injection fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery.
+
+**Recording drain deliveries.** A drain (`recv --drain` or a hook) never tells c11 over the socket what it delivered. It writes receipts atomically into `mailboxes/_receipts/<ULID>.receipt` of the workspace whose inbox held the mail, splitting a large batch so each receipt stays within 512 deliveries and 64 KB. The app watches every live workspace's spool, turns each delivery into a `mailbox.delivered` event with `via: "drain"` (surface = the recipient tab), and deletes the receipt; at launch it also sweeps every workspace's spool. So a paused, quit or crashed c11 records the delivery when it next runs, exactly once: duplicates are skipped, and a receipt left by a run that died after recording it is checked against the event logs first. Every delivery is recorded under a globally unique ULID: the envelope's own, or for a file dropped into an inbox by hand (`0note.msg`) a fresh ULID it is claimed under, so its body is at `_read/<ULID>.msg`. A file that is not a receipt goes to `_receipts/_rejected/`; inside a receipt, an invalid entry is dropped and listed in `_rejected/<receipt>.dropped` while the valid ones are recorded.
+
+### Turn-boundary drain (harness hooks)
+
+An agent that is busy when mail arrives sees it when its turn ends, through its harness's Stop hook: the stop is blocked with the messages as the reason, and the agent takes them as its own next turn. Nothing to call by hand; c11's launch wrappers wire this up inside c11 tabs.
+
+Mail is never drained at prompt submit. Added to a turn the operator just started, an agent treats it as non-operator input and does not act on it. So when the operator submits a draft while mail is waiting, the draft's turn runs first and the mail follows as its own turn right after.
+
+| Harness | Stop | How c11 wires it |
+|---|---|---|
+| Claude Code | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
+| Codex | same (Codex turns the block into a continuation prompt) | `Resources/bin/codex` passes the Stop hook and its trust hash as `-c` session flags, per launch; nothing is written under `~/.codex` |
+| Grok Build | same, on `reason: "end_turn"` only | no per-launch hook path in the Grok TUI; Grok mail relies on stdin push |
+
+The hook command is:
+
+```bash
+c11 mailbox recv --drain --hook-format claude|codex|grok [--event stop]
+```
+
+It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail at a Stop:
+
+```json
+{"decision":"block","reason":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}
+```
+
+- **Which inbox.** The hook reads the caller's own inbox, `mailboxes/<tab-uuid>/` (the lowercased `C11_TAB_ID`), straight from the environment: no socket call happens before it claims, so an empty inbox answers in a few milliseconds however much mail sits in other tabs' inboxes. A tab moved to another workspace keeps its old `C11_WORKSPACE_ID`; the hook also looks for `workspaces/*/mailboxes/<tab-uuid>/` on disk (rescanned at most every 5 minutes), so the moved tab's mail is still drained. A title-keyed inbox left by an older build is not read by the hook; drain it once with `c11 mailbox recv --drain`.
+- **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness. A hook process older than 6 seconds claims nothing (its mail waits for the next boundary). Every socket request a hook process makes (auth included, and `claude-hook prompt-submit`'s own status calls) stops at that 6-second cutoff. After a claim, the hook writes its JSON and one delivery receipt file, then exits: no socket I/O, so a stalled c11 can never push a claimed message past the harness's 10-second hook timeout.
+- **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and blocks only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
+- **Budget and order.** One hook delivers at most about 8,000 characters of framed messages, always whole and always oldest first: it stops at the first message that does not fit (the oldest is always taken), so newer mail never overtakes older mail. The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
+- **Opt out:** `C11_MAILBOX_HOOK_DRAIN=0` in the environment disables the hook drain for that process; plain `recv` is unaffected.
 
 ### Exact PTY frame shape
 

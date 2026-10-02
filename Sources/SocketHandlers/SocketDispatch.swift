@@ -1038,7 +1038,7 @@ extension TerminalController {
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
         if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
-        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
+        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("mailbox.") || method == "messages.view" { return v2DispatchMisc(method, id: id, params: params) }
         return nil
     }
 

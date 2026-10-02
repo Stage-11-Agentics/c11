@@ -2564,6 +2564,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // recreates workspaces/surfaces — so surface.created and the
         // log.opened marker land from the first instant (amendment K).
         EventEmitter.shared.start()
+        // C11-257 D: keep the local, self-contained messages page current.
+        // The writer rebuilds off-main and starts from the existing event and
+        // mailbox history before listening for new message events. XCTest
+        // hosts intentionally do not write the operator's shared page.
+        if !MessagesPageWriter.isRunningUnderXCTest() {
+            MessagesPageWriter.shared.start()
+        }
         if let resolvedResumeRecoveryMode {
             recordResolvedResumeRecoveryMode(resolvedResumeRecoveryMode)
         }

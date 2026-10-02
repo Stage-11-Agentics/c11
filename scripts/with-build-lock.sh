@@ -37,6 +37,19 @@ LABEL="${C11_BUILD_LOCK_LABEL:-${C11_TAG:-$(basename "$PWD")}}"
 
 read_meta() { cat "$LOCK_DIR/$1" 2>/dev/null || true; }
 
+# Only the Atlas slot scheduler enables reentrancy. Ordinary local invocations
+# retain the single-lock behavior. Verify that the recorded owner is an ancestor.
+if [[ -n "${C11_ATLAS_BUILD_SLOT:-}" && -n "${C11_ATLAS_LOCK_OWNER:-}" &&
+      "$(read_meta pid)" == "$C11_ATLAS_LOCK_OWNER" ]]; then
+  ancestor="$PPID"
+  while [[ "$ancestor" =~ ^[0-9]+$ && "$ancestor" -gt 1 ]]; do
+    if [[ "$ancestor" == "$C11_ATLAS_LOCK_OWNER" ]]; then
+      exec "$@"
+    fi
+    ancestor="$(ps -o ppid= -p "$ancestor" | tr -d ' ')"
+  done
+fi
+
 start=$(date +%s)
 last_report=0
 while ! mkdir "$LOCK_DIR" 2>/dev/null; do
@@ -60,6 +73,9 @@ while ! mkdir "$LOCK_DIR" 2>/dev/null; do
 done
 
 echo "$$" > "$LOCK_DIR/pid"
+if [[ -n "${C11_ATLAS_BUILD_SLOT:-}" ]]; then
+  export C11_ATLAS_LOCK_OWNER="$$"
+fi
 echo "$LABEL" > "$LOCK_DIR/label"
 date '+%Y-%m-%dT%H:%M:%S' > "$LOCK_DIR/since"
 trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM HUP

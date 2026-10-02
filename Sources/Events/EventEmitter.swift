@@ -85,6 +85,14 @@ final class EventEmitter {
         lock.unlock()
     }
 
+    /// Whether emits currently reach a log (false before `start()`, when
+    /// disabled, and under XCTest without an injected log).
+    var isRecording: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return enabled && log != nil
+    }
+
     /// Flush the underlying log (tests / shutdown).
     func flush() {
         currentLog()?.flush()

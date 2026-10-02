@@ -237,6 +237,19 @@ def run(*args):
     except Exception:
         return ""
 
+source_head = run("git", "-C", root, "rev-parse", "HEAD")
+bundle_info = json.loads(run("/usr/bin/plutil", "-convert", "json", "-o", "-", str(Path(app) / "Contents/Info.plist")) or "{}")
+running_identity = json.loads(run(cli, "--socket", socket_path, "--json", "capabilities") or "{}")
+if not running_identity and Path(path).is_file():
+    previous = json.loads(Path(path).read_text())
+    if previous.get("source", {}).get("head") == source_head:
+        running_identity = previous.get("candidate", {}).get("running_build_identity", {})
+bundle_commit = bundle_info.get("C11Commit") or bundle_info.get("CMUXCommit")
+server_commit = (running_identity.get("server") or {}).get("commit")
+if status == "automated_complete":
+    for name, commit in (("bundle", bundle_commit), ("running server", server_commit)):
+        if not commit or not source_head.startswith(commit):
+            raise SystemExit(f"{name} build commit {commit!r} differs from source {source_head}")
 manifest = {
     "schema": "c11-261-signoff-v1",
     "ticket": "C11-261",
@@ -253,7 +266,7 @@ manifest = {
     },
     "source": {
         "root": root,
-        "head": run("git", "-C", root, "rev-parse", "HEAD"),
+        "head": source_head,
         "origin_main": run("git", "-C", root, "rev-parse", "origin/main"),
         "worktree_status": run("git", "-C", root, "status", "--short"),
     },
@@ -265,8 +278,8 @@ manifest = {
         "artifact_sha256": {relative: hashlib.sha256((Path(app) / relative).read_bytes()).hexdigest()
                             for relative in ("Contents/MacOS/c11", "Contents/MacOS/c11.debug.dylib", "Contents/Resources/bin/c11")
                             if (Path(app) / relative).is_file()},
-        "bundle_info": run("/usr/bin/plutil", "-convert", "json", "-o", "-", str(Path(app) / "Contents/Info.plist")),
-        "running_build_identity": run(cli, "--socket", socket_path, "--json", "capabilities"),
+        "bundle_info": bundle_info,
+        "running_build_identity": running_identity,
         "socket": socket_path,
         "socket_is_production": socket_path == os.path.expanduser("~/Library/Application Support/c11/c11.sock"),
     },

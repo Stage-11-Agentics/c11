@@ -370,9 +370,9 @@ final class TerminalTab: TabContent, ObservableObject {
     }
 
     func shouldPersistScrollbackForSessionSnapshot() -> Bool {
-        // Session restore only replays terminal output into a fresh shell. If Ghostty
-        // says we are not safely at a prompt, replaying that state later is misleading.
-        !surface.needsConfirmClose()
+        // Autosave asks only whether the child is live. Operator close confirmation
+        // is a separate prompt-state query and may acquire the renderer lock.
+        surface.hasLiveProcess()
     }
 
     func triggerFlash() {

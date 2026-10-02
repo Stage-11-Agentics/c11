@@ -1051,6 +1051,9 @@ enum SocketDeadline {
 }
 
 final class SocketClient {
+    /// A validated global CLI scope. Propagate it to routing requests, including
+    /// helper lookups, without changing the app's key window or caller identity.
+    var scopedWindow: String?
     // Stable string used at both the throw site and the catch site in sendV2.
     // Extracting it prevents the catch clause from silently missing the timeout
     // if the throw-site message is ever edited.
@@ -1058,6 +1061,7 @@ final class SocketClient {
 
     private let path: String
     private var socketFD: Int32 = -1
+    var usesSingleLineResponses = false
 
     // Default deadline: 10 s, tunable via env. Dual-read: C11_* primary, CMUX_* compat.
     // Legacy CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC (seconds) honoured for backward compat.
@@ -1163,6 +1167,7 @@ final class SocketClient {
             data.append(buffer, count: count)
             if data.contains(UInt8(0x0A)) {
                 sawNewline = true
+                if usesSingleLineResponses { break }
             }
         }
 
@@ -1203,13 +1208,28 @@ final class SocketClient {
             }
         }
 
+        let flags = fcntl(socketFD, F_GETFL)
+        if Self.processDeadline != nil { _ = fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) }
         let result = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
                 Darwin.connect(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         if result == 0 {
+            _ = fcntl(socketFD, F_SETFL, flags)
             return
+        }
+        if let deadline = Self.processDeadline, errno == EINPROGRESS {
+            var descriptor = pollfd(fd: socketFD, events: Int16(POLLOUT), revents: 0)
+            let wait = Int32(max(0, min(250, deadline.timeIntervalSinceNow * 1000)))
+            if poll(&descriptor, 1, wait) > 0 {
+                var socketError: Int32 = 0
+                var size = socklen_t(MemoryLayout<Int32>.size)
+                if getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &size) == 0, socketError == 0 {
+                    _ = fcntl(socketFD, F_SETFL, flags)
+                    return
+                }
+            }
         }
 
         let connectErrno = errno
@@ -1385,6 +1405,29 @@ final class SocketClient {
     }
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        var params = params
+        if let scopedWindow, params["window_id"] == nil,
+           method.hasPrefix("workspace.") || (method.hasPrefix("tab.") && method != "tab.move") || method.hasPrefix("area.")
+            || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
+            || ["system.identify", "system.tree", "agent.launch", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
+            params["window_id"] = scopedWindow
+        }
+        if let scopedWindow, ["tab.move", "tab.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress"].contains(method) {
+            // tab.move treats window_id as a destination, so its global scope
+            // is source admission rather than a synthesized destination.
+            if method == "tab.move", let destination = params["window_id"] as? String {
+                var sourceParams: [String: Any] = [:]
+                if let tab = params["tab_id"] { sourceParams["tab_id"] = tab }
+                try validateScopedTargets(sourceParams, window: scopedWindow, deadline: deadline)
+                var destinationParams = params
+                destinationParams.removeValue(forKey: "tab_id")
+                try validateScopedTargets(destinationParams, window: destination, deadline: deadline)
+            } else {
+                // These older handlers locate targets globally. Validate their
+                // membership before allowing a window-scoped mutation.
+                try validateScopedTargets(params, window: scopedWindow, deadline: deadline)
+            }
+        }
         if method == "system.capabilities" {
             return try sendV2Raw(method: method, params: params, deadline: deadline)
         }
@@ -1399,6 +1442,40 @@ final class SocketClient {
             return CLIVersionSkew.modernResult(legacyResult)
         }
         return try sendV2Raw(method: method, params: params, deadline: deadline)
+    }
+
+    private func validateScopedTargets(_ params: [String: Any], window: String, deadline: SocketDeadline) throws {
+        let payload = try sendV2(method: "workspace.list", params: ["window_id": window], deadline: deadline)
+        let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
+        func matches(_ item: [String: Any], _ value: String) -> Bool {
+            [item["id"] as? String, item["ref"] as? String].compactMap { $0 }
+                .contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+        }
+        if let value = (params["workspace_id"] ?? params["workspace"]) as? String, !workspaces.contains(where: { matches($0, value) }) {
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceNotFound", defaultValue: "Workspace not found in scoped window"))
+        }
+        var tabs: [[String: Any]] = []
+        var areas: [[String: Any]] = []
+        for workspace in workspaces {
+            guard let id = workspace["id"] as? String else { continue }
+            let route: [String: Any] = ["window_id": window, "workspace_id": id]
+            let listed = try sendV2(method: "tab.list", params: route, deadline: deadline)
+            tabs += listed["tabs"] as? [[String: Any]] ?? []
+            if params["area_id"] != nil || params["target_area_id"] != nil || params["pane"] != nil {
+                let listedAreas = try sendV2(method: "area.list", params: route, deadline: deadline)
+                areas += listedAreas["areas"] as? [[String: Any]] ?? []
+            }
+        }
+        for key in ["tab_id", "before_tab_id", "after_tab_id"] {
+            if let value = params[key] as? String, !tabs.contains(where: { matches($0, value) }) {
+                throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.tabNotFound", defaultValue: "Tab not found in scoped window"))
+            }
+        }
+        for key in ["area_id", "target_area_id", "pane"] {
+            if let value = params[key] as? String, !areas.contains(where: { matches($0, value) }) {
+                throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.areaNotFound", defaultValue: "Area not found in scoped window"))
+            }
+        }
     }
 
     private func sendV2Raw(
@@ -1792,11 +1869,35 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        let isSendText = ["send", "send-tab", "paste"].contains(command)
+        let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
+            .contains(where: { $0 == "--help" || $0 == "-h" })
+        let sendInput: SendTextParse?
+        if isSendText && !sendWantsHelp {
+            sendInput = try SendTextParse.parse(commandArgs, paste: command == "paste")
+            jsonOutput = jsonOutput || sendInput?.json == true
+        } else {
+            sendInput = nil
+        }
         // Guide (including its help) is bundled, offline content. Socket
         // discovery probes listeners, so return before resolving any path.
         if command == "guide" {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
+        }
+        var rpcCall: (method: String, params: [String: Any])?
+        if command == "rpc" {
+            if commandArgs == ["--help"] || commandArgs == ["-h"] {
+                _ = dispatchSubcommandHelp(command: command, commandArgs: commandArgs)
+                return
+            }
+            do {
+                rpcCall = try CapabilityFeatures.current.dispatch(.rpc) {
+                    try RpcCommand.parse(commandArgs)
+                }
+            } catch let error as RpcCommand.ValidationError {
+                throw CLIError(message: error.description)
+            }
         }
         // Remove the literal command value before inspecting create flags. A
         // body such as "--layout" is input, not another CLI option.
@@ -1837,6 +1938,11 @@ struct CMUXCLI {
             environment: processEnv
         )
 
+        if command == "agent-event" {
+            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath, explicitPassword: socketPasswordArg)
+            return
+        }
+
         if command == "version" {
             print(versionSummary())
             return
@@ -1859,8 +1965,10 @@ struct CMUXCLI {
 
         // Check for --help/-h on subcommands before connecting to the socket,
         // so help text is available even when cmux is not running.
-        if command != "__tmux-compat",
+        if command != "rpc",
+           command != "__tmux-compat",
            command != "claude-teams",
+           (!isSendText || sendWantsHelp),
            (createArgs.contains("--help") || createArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return
@@ -1967,6 +2075,21 @@ struct CMUXCLI {
             return
         }
 
+        // Capture the original event identity before any socket operation. Offline retry
+        // and online append use this same structural draft, never raw hook input.
+        let journalHookInput: String? = command == "claude-hook"
+            ? String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) : nil
+        let journalHookObject = journalHookInput.flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let journalHookArgs = Array(commandArgs.dropFirst())
+        let journalWorkspace = optionValue(journalHookArgs, name: "--workspace") ?? processEnv["CMUX_WORKSPACE_ID"] ?? processEnv["C11_WORKSPACE_ID"]
+        let journalTab = optionValue(journalHookArgs, name: "--surface")
+            ?? (optionValue(journalHookArgs, name: "--workspace") == nil ? Self.callerTabEnv() : nil)
+        let journalHookDraft = journalHookObject.flatMap {
+            JournalCommand.claudeDraft(subcommand: commandArgs.first ?? "", input: $0,
+                tabID: journalTab.flatMap(UUID.init(uuidString:)), workspaceID: journalWorkspace.flatMap(UUID.init(uuidString:)))
+        }
+
         // C11-308 / cmux #15980: reject a sequence before authentication or
         // --window routing can send anything to the app. The command arms
         // retain their target validation and command-specific missing-key text.
@@ -1983,7 +2106,7 @@ struct CMUXCLI {
 
         // Admission and advertised support share the feature registry. The
         // send handlers below still enforce the explicit-tab contract.
-        if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
+        if ["send", "paste", "send-key", "send-tab", "send-key-tab"].contains(command) {
             try CapabilityFeatures.current.dispatch(.explicitTab) {}
         }
         let client = SocketClient(path: resolvedSocketPath)
@@ -2014,6 +2137,9 @@ struct CMUXCLI {
             ]
         )
         do {
+            let previousDeadline = SocketClient.processDeadline
+            defer { SocketClient.processDeadline = previousDeadline }
+            if command == "claude-hook" { SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(0.250)) }
             try client.connect()
             cliTelemetry.breadcrumb("socket.connect.success", data: ["path": resolvedSocketPath])
         } catch {
@@ -2026,6 +2152,7 @@ struct CMUXCLI {
             if command == "claude-hook",
                let cliError = error as? CLIError,
                isAdvisoryHookConnectivityError(cliError) {
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
                 return
             }
@@ -2054,10 +2181,15 @@ struct CMUXCLI {
             return
         }
 
-        // If the user explicitly targets a window, focus it first so commands route correctly.
-        if let windowId, command != "workspace-group", command != "reorder-workspaces" {
-            let normalizedWindow = try normalizeWindowHandle(windowId, client: client) ?? windowId
-            _ = try client.sendV2(method: "window.focus", params: ["window_id": normalizedWindow])
+        // A routing flag is not a focus command. Resolve once, then carry the
+        // selected window on requests and their ref-resolution lookups.
+        if let rawWindow = windowId {
+            windowId = try CapabilityFeatures.current.dispatch(.windowRouteWithoutFocus) {
+                try resolveScopedWindow(rawWindow, client: client)
+            }
+            if command != "browser", command != "markdown" {
+                client.scopedWindow = windowId
+            }
         }
 
         switch command {
@@ -2072,6 +2204,13 @@ struct CMUXCLI {
             let server = response["server"] as? [String: Any]
             response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
+
+        case "rpc":
+            guard let rpcCall else { preconditionFailure("rpc must be parsed before connect") }
+            let response = try CapabilityFeatures.current.dispatch(.rpc) {
+                try client.sendV2(method: rpcCall.method, params: rpcCall.params)
+            }
+            print(jsonString(response))
 
         case "brand":
             let response = try client.sendV2(method: "system.brand")
@@ -2726,7 +2865,15 @@ struct CMUXCLI {
             guard cfgSub == "launch" else {
                 throw CLIError(message: "config: '\(cfgSub)' should have been handled app-down; this is a bug")
             }
-            let (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            var (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            if client.scopedWindow != nil {
+                if let workspace = cfgParams["workspace"] as? String {
+                    cfgParams["workspace"] = try resolveWorkspaceId(workspace, client: client)
+                }
+                if let pane = cfgParams["pane"] as? String {
+                    cfgParams["pane"] = try normalizePaneHandle(pane, client: client, workspaceHandle: cfgParams["workspace"] as? String)
+                }
+            }
             let cfgPayload = try client.sendV2(method: "config.launch", params: cfgParams)
             let cfgJSONOut = jsonOutput || cfgJSON
             printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
@@ -2833,14 +2980,22 @@ struct CMUXCLI {
             guard let surface else {
                 throw CLIError(message: "drag-tab-to-split requires --tab <id|index>")
             }
-            guard let direction = rem1.first else {
+            let (_, directionArgs) = parseOption(rem1, name: "--workspace")
+            guard let direction = directionArgs.first else {
                 throw CLIError(message: "drag-tab-to-split requires a direction")
             }
-            let response = try sendV1Command("drag_surface_to_split \(surface) \(direction)", client: client)
+            let scopedWorkspace = client.scopedWindow != nil
+                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
+            let target = try scopedWorkspace.map { try resolveSurfaceId(surface, workspaceId: $0, client: client) } ?? surface
+            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
+            let response = try sendV1Command("drag_surface_to_split \(target) \(direction)\(scope)", client: client)
             print(response)
 
         case "refresh-tabs":
-            let response = try sendV1Command("refresh_surfaces", client: client)
+            let scopedWorkspace = client.scopedWindow != nil
+                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
+            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
+            let response = try sendV1Command("refresh_surfaces\(scope)", client: client)
             print(response)
 
         case "tab-health":
@@ -3035,11 +3190,39 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: rootJSONOut, idFormat: idFormat, fallbackText: fallbackText)
 
         case "current-workspace":
-            let response = try sendV1Command("current_workspace", client: client)
+            let response = client.scopedWindow != nil
+                ? try resolveWorkspaceId(nil, client: client)
+                : try sendV1Command("current_workspace", client: client)
             if jsonOutput {
                 print(jsonString(["workspace_id": response]))
             } else {
                 print(response)
+            }
+
+        case "read-selection":
+            let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (tabRaw, rem1) = parseOption(rem0, name: "--surface")
+            let selectionJSONOut = jsonOutput || rem1.contains("--json")
+            let trailing = rem1.filter { $0 != "--json" }
+            guard trailing.isEmpty else {
+                throw CLIError(message: String(format: String(localized: "cli.read_selection.arguments", defaultValue: "read-selection: unexpected arguments: %@"), trailing.joined(separator: " ")))
+            }
+            let wsArg = try requireNonEmptyHandle(wsRaw, flag: "--workspace", command: "read-selection")
+            let tabArg = try requireNonEmptyHandle(tabRaw, flag: "--tab", command: "read-selection")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = tabArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
+            var params: [String: Any] = [:]
+            let wsID = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            if let wsID { params["workspace_id"] = wsID }
+            let tabID = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsID)
+            if let tabID { params["tab_id"] = tabID }
+            let payload = try client.sendV2(method: "tab.read_selection", params: params)
+            if selectionJSONOut {
+                print(jsonString(payload))
+            } else if payload["has_selection"] as? Bool == true {
+                print((payload["text"] as? String) ?? "")
+            } else {
+                print(String(localized: "cli.read_selection.none", defaultValue: "No selection."))
             }
 
         case "read-screen":
@@ -3079,26 +3262,23 @@ struct CMUXCLI {
                 print((payload["text"] as? String) ?? "")
             }
 
-        case "send":
-            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
-            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send")
-            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send")
-            let envSurface = Self.callerTabEnv()
+        case "send", "send-tab", "paste":
+            guard let parsed = sendInput else { throw CLIError(message: "send requires text") }
+            let wsArg = try requireNonEmptyHandle(parsed.workspace, flag: "--workspace", command: command)
+            let tabArg = try requireNonEmptyHandle(parsed.tab, flag: "--tab", command: command)
+            let envTab = Self.callerTabEnv()
             let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
-            // Require explicit surface targeting. Shell-integrated callers inside a c11
-            // surface have CMUX_SURFACE_ID set automatically. External callers must pass
-            // --surface. The windowId path is excluded: --window without --surface still
-            // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
-            guard sfArg != nil || envSurface != nil else {
+            let surfaceArg = tabArg ?? (wsArg == nil && windowId == nil ? envTab : nil)
+            // Admit only the effective target after caller-env suppression.
+            // send-tab additionally requires its explicit flag, even unscoped.
+            guard surfaceArg != nil && (command != "send-tab" || tabArg != nil) else {
                 throw CLIError(message: "send requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
-            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
-            guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
-            let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text, "submit": !noSubmit]
+            if parsed.raw { try requireRawSendSupport(client: client) }
+            let stdin = parsed.input == .stdin ? FileHandle.standardInput.readDataToEndOfFile() : Data()
+            let text = try parsed.text(stdin: stdin)
+            var params: [String: Any] = ["text": text, "submit": parsed.submit]
+            if parsed.raw { params["preserve_newlines"] = true }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -3124,7 +3304,7 @@ struct CMUXCLI {
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting (same policy as send).
             // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
-            guard sfArg != nil || envSurface != nil else {
+            guard surfaceArg != nil else {
                 throw CLIError(message: "send-key requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -3144,34 +3324,6 @@ struct CMUXCLI {
             }
             let payload = try client.sendV2(method: "tab.send_key", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
-
-        case "send-tab":
-            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
-            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-tab")
-            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
-            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-tab") else {
-                throw CLIError(message: "send-tab requires --tab")
-            }
-            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
-            guard !rawText.isEmpty else { throw CLIError(message: "send-tab requires text") }
-            let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text, "submit": !noSubmit]
-            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
-            if let wsId { params["workspace_id"] = wsId }
-            let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
-            if let sfId { params["tab_id"] = sfId }
-            if let callerTabId = try? resolveCallingSurface(environment: ProcessInfo.processInfo.environment) {
-                params["caller_tab_id"] = callerTabId
-            }
-            let payload = try client.sendV2(method: "tab.send_text", params: params)
-            printV2Payload(
-                payload,
-                jsonOutput: jsonOutput,
-                idFormat: idFormat,
-                fallbackText: sendTextSummary(payload, idFormat: idFormat)
-            )
 
         case "send-key-tab":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
@@ -3255,8 +3407,10 @@ struct CMUXCLI {
             if let wsFlag = optionValue(commandArgs, name: "--workspace") {
                 let wsId = try resolveWorkspaceId(wsFlag, client: client)
                 socketCmd += " --tab=\(wsId)"
-            } else if windowId == nil,
-                      let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+            } else if windowId != nil {
+                let wsId = try resolveWorkspaceId(nil, client: client)
+                socketCmd += " --tab=\(wsId)"
+            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
                       let wsId = try? resolveWorkspaceId(envWs, client: client) {
                 socketCmd += " --tab=\(wsId)"
             }
@@ -3344,7 +3498,7 @@ struct CMUXCLI {
                     if let ws = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
                         params["workspace_id"] = ws
                     }
-                } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+                } else if windowId == nil, let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
                           let ws = try normalizeWorkspaceHandle(envWs, client: client) {
                     params["workspace_id"] = ws
                 }
@@ -3478,7 +3632,7 @@ struct CMUXCLI {
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
-                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry)
+                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft)
                 cliTelemetry.breadcrumb("claude-hook.completed")
             } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
                 // claude-hook is advisory — it signals c11 about Claude Code
@@ -4391,7 +4545,7 @@ struct CMUXCLI {
             // currently has selected. Only when the CLI is invoked
             // outside a c11 surface (no env) do we fall back to
             // `workspace.current`.
-            let callerWs = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
+            let callerWs = client.scopedWindow == nil ? (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]) : nil
             if let trimmed = callerWs?.trimmingCharacters(in: .whitespacesAndNewlines),
                !trimmed.isEmpty,
                UUID(uuidString: trimmed) != nil {
@@ -5297,12 +5451,32 @@ struct CMUXCLI {
         throw CLIError(message: "Window index not found")
     }
 
+    private func resolveScopedWindow(_ raw: String, client: SocketClient) throws -> String {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let listed = try client.sendV2(method: "window.list")
+        let windows = listed["windows"] as? [[String: Any]] ?? []
+        for window in windows {
+            let id = window["id"] as? String
+            let ref = window["ref"] as? String
+            if !token.isEmpty,
+               id?.caseInsensitiveCompare(token) == .orderedSame
+                || ref?.caseInsensitiveCompare(token) == .orderedSame
+                || (Int(token) != nil && intFromAny(window["index"]) == Int(token)),
+               let handle = id ?? ref {
+                return handle
+            }
+        }
+        throw CLIError(message: String(format:
+            String(localized: "cli.window.unknown", defaultValue: "Unknown window '%@'."), raw))
+    }
+
     private func normalizeWorkspaceHandle(
         _ raw: String?,
         client: SocketClient,
         windowHandle: String? = nil,
         allowCurrent: Bool = false
     ) throws -> String? {
+        let windowHandle = windowHandle ?? client.scopedWindow
         guard let raw else {
             if !allowCurrent { return nil }
             let current = try client.sendV2(method: "workspace.current")
@@ -5395,10 +5569,31 @@ struct CMUXCLI {
     /// Say so when the target had no PTY yet and the payload is waiting to flush
     /// on attach — that is the one case where the send has *not* reached anyone.
     private func sendTextSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
-        let base = v2OKSummary(payload, idFormat: idFormat)
-        let queued = (payload["queued"] as? Bool) ?? false
-        guard queued else { return base }
-        return base + " queued=1 (tab not attached yet; payload flushes on attach)"
+        let status = SendTextDelivery.summary(
+            queued: (payload["queued"] as? Bool) ?? false,
+            submitted: (payload["submitted"] as? Bool) ?? false
+        )
+        return v2OKSummary(payload, idFormat: idFormat) + " " + status
+    }
+
+    private func requireRawSendSupport(client: SocketClient) throws {
+        let unavailable = CLIError(message: String(
+            localized: "cli.send.raw_unavailable",
+            defaultValue: "This server does not support raw/paste delivery. Use a build advertising send.raw."
+        ))
+        guard CapabilityFeatures.current.supports(.rawSend) else { throw unavailable }
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(method: "system.capabilities")
+        } catch let error as CLIError where error.message.contains("method_not_found") {
+            throw unavailable
+        }
+        let supported = (payload["features"] as? [[String: Any]])?.contains {
+            $0["id"] as? String == CapabilityFeatures.ID.rawSend.rawValue && ($0["version"] as? Int ?? 0) >= 1
+        } ?? false
+        guard supported else {
+            throw unavailable
+        }
     }
 
     /// An exported-but-empty env var is not a target. Treat it as unset so the
@@ -6329,8 +6524,8 @@ struct CMUXCLI {
             throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: c11 clear-metadata --key title")
         }
 
-        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
-        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let surfaceRaw = surfaceOpt ?? (client.scopedWindow == nil ? Self.callerTabEnv() : nil)
+        let workspaceRaw = workspaceOpt ?? (client.scopedWindow == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
 
         let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
@@ -6382,8 +6577,8 @@ struct CMUXCLI {
             throw CLIError(message: "get-titlebar-state: unknown flag '\(unknown)'")
         }
 
-        let surfaceRaw = surfaceOpt ?? Self.callerTabEnv()
-        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let surfaceRaw = surfaceOpt ?? (client.scopedWindow == nil ? Self.callerTabEnv() : nil)
+        let workspaceRaw = workspaceOpt ?? (client.scopedWindow == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
         let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
 
@@ -8804,6 +8999,21 @@ struct CMUXCLI {
         if let raw, raw.isEmpty {
             throw CLIError(message: "--workspace received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
         }
+        if let raw, client.scopedWindow != nil {
+            let listed = try client.sendV2(method: "workspace.list")
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            for item in items {
+                let id = item["id"] as? String
+                let ref = item["ref"] as? String
+                if id?.caseInsensitiveCompare(raw) == .orderedSame
+                    || ref.map(Self.canonicalHandle) == Self.canonicalHandle(raw)
+                    || (Int(raw) != nil && intFromAny(item["index"]) == Int(raw)),
+                   let id {
+                    return id
+                }
+            }
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceNotFound", defaultValue: "Workspace not found in scoped window") + ": \(raw)")
+        }
         if let raw, isUUID(raw) {
             return raw
         }
@@ -8843,7 +9053,17 @@ struct CMUXCLI {
         if let raw, raw.isEmpty {
             throw CLIError(message: "--tab received an empty value (likely from an unset shell variable, e.g. $C11_TAB_ID). Pass a real ref or omit the flag.")
         }
+        if let raw, client.scopedWindow != nil, !isUUID(raw), !isHandleRef(raw), Int(raw) == nil {
+            throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceTabNotFound", defaultValue: "Tab not found in scoped workspace") + ": \(raw)")
+        }
         if let raw, isUUID(raw) {
+            if client.scopedWindow != nil {
+                let listed = try client.sendV2(method: "tab.list", params: ["workspace_id": workspaceId])
+                let items = listed["tabs"] as? [[String: Any]] ?? []
+                guard items.contains(where: { ($0["id"] as? String)?.caseInsensitiveCompare(raw) == .orderedSame }) else {
+                    throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceTabNotFound", defaultValue: "Tab not found in scoped workspace"))
+                }
+            }
             return raw
         }
         if let raw, isHandleRef(raw) {
@@ -8970,6 +9190,14 @@ struct CMUXCLI {
 
             Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
             sha_match is null when either build has no commit stamp.
+            """
+        case "rpc":
+            return """
+            Usage: c11 rpc <method> [json] [--json]
+
+            Call one local socket method and print its result as JSON.
+            Params must be a JSON object. Prefer a friendly command when available.
+            Remote commands over c11 ssh remain unavailable.
             """
         case "guide":
             return """
@@ -10212,6 +10440,17 @@ struct CMUXCLI {
             Flags:
               -p, --print   Print to stdout only
             """
+        case "read-selection":
+            return String(localized: "cli.read_selection.help", defaultValue: """
+            Usage: c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]
+
+            Read a terminal's current selection without changing it.
+            --json returns has_selection, text, base64, kind and truncated.
+            No selection succeeds. Browser and markdown tabs are unsupported.
+            Response is capped at 1 MiB on a UTF-8 boundary. A busy renderer
+            returns busy; the caller wait is five seconds. Native capture and
+            formatting remain on main; their allocation and time are not bounded.
+            """)
         case "read-screen":
             return """
             Usage: c11 read-screen [flags]
@@ -10228,20 +10467,28 @@ struct CMUXCLI {
               c11 read-screen
               c11 read-screen --tab tab:2 --scrollback --lines 200
             """
-        case "send":
-            return """
-            Usage: c11 send [flags] [--] <text>
+        case "send", "send-tab", "paste":
+            return String(localized: "cli.send.help", defaultValue: """
+            Usage: c11 \(command) [flags] [--] <text | ->
 
-            Send text to a terminal tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
+            Send text to a terminal tab. paste is an alias for send --raw;
+            paste with no text reads stdin. send - reads stdin explicitly.
+            Default send decodes \\n and \\r as Return, \\t as Tab.
+            --raw preserves literal escapes and newline content.
+            For raw/paste, --no-submit suppresses c11's additional Return.
+            Default send still treats a trailing newline as submit. Newline content
+            can execute in a program that does not use bracketed paste.
+            Unknown --flags are errors before --; use -- for literal flag text.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --tab <id|ref>     Target tab (default: $C11_TAB_ID)
+              --workspace <id|ref>   Target workspace (default: caller workspace)
+              --tab <id|ref>         Target tab (required for send-tab)
+              --raw                 Literal escape/newline handling (send.raw required)
+              --no-submit           Do not schedule an additional Return
+              --json                Report delivered, queued and submitted booleans
 
-            Example:
-              c11 send "echo hello"
-              c11 send --tab tab:2 "ls -la\\n"
-            """
+            Delivery reports PTY input or queueing, never agent acknowledgment.
+            """)
         case "send-key":
             return """
             Usage: c11 send-key [flags] [--] <key>
@@ -10256,19 +10503,6 @@ struct CMUXCLI {
             Example:
               c11 send-key enter
               c11 send-key --tab tab:2 ctrl+c
-            """
-        case "send-tab":
-            return """
-            Usage: c11 send-tab --tab <id|ref> [flags] [--] <text>
-
-            Send text to a specific tab. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
-
-            Flags:
-              --tab <id|ref>       Target tab (required)
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
-
-            Example:
-              c11 send-tab --tab tab:2 "echo hello\\n"
             """
         case "send-key-tab":
             return """
@@ -12762,8 +12996,31 @@ struct CMUXCLI {
         // first match across the fleet is the target. An explicit `--workspace`
         // (or `CMUX_WORKSPACE_ID` in the caller's env) scopes the search when
         // provided, matching how send narrows resolution.
+        var launchWorkspace: String? = nil
         var inSurfaceUUID: String? = nil
-        if let raw = inSurfaceRaw {
+        if client.scopedWindow != nil {
+            let explicitWorkspace = optionValue(commandArgs, name: "--workspace")
+            launchWorkspace = try resolveWorkspaceId(explicitWorkspace, client: client)
+            if let raw = inSurfaceRaw {
+                // UUIDs and refs can name a tab in a nonselected workspace
+                // within the scoped window. Numeric indexes stay workspace-local.
+                if explicitWorkspace == nil && Int(raw) == nil {
+                    let listed = try client.sendV2(method: "workspace.list")
+                    for workspace in listed["workspaces"] as? [[String: Any]] ?? [] {
+                        guard let id = workspace["id"] as? String else { continue }
+                        let tabs = try client.sendV2(method: "tab.list", params: ["workspace_id": id])
+                        if (tabs["tabs"] as? [[String: Any]] ?? []).contains(where: {
+                            ($0["id"] as? String)?.caseInsensitiveCompare(raw) == .orderedSame
+                                || ($0["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw)
+                        }) {
+                            launchWorkspace = id
+                            break
+                        }
+                    }
+                }
+                inSurfaceUUID = try resolveSurfaceId(raw, workspaceId: launchWorkspace!, client: client)
+            }
+        } else if let raw = inSurfaceRaw {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if isUUID(trimmed) {
                 inSurfaceUUID = trimmed
@@ -12812,6 +13069,7 @@ struct CMUXCLI {
         // Compose v1 command. Multi-word values get quoted so tokenizeArgs
         // on the server reconstructs them as single tokens.
         var parts: [String] = ["default_agent", "launch"]
+        if let launchWorkspace { parts.append("--workspace"); parts.append(launchWorkspace) }
         if let agentArg { parts.append("--agent"); parts.append(agentArg) }
         if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
         if let paneArg { parts.append("--pane"); parts.append(paneArg) }
@@ -14343,7 +14601,7 @@ struct CMUXCLI {
             if trimmed.lowercased().hasPrefix("workspace:") {
                 asWorkspace = try resolveWorkspaceId(trimmed, client: client)
             } else if isUUID(trimmed), try isWorkspaceUUID(trimmed, client: client) {
-                asWorkspace = trimmed
+                asWorkspace = try resolveWorkspaceId(trimmed, client: client)
             } else if Int(trimmed) != nil {
                 throw CLIError(message: "ambiguous --tab \(trimmed): use --workspace \(trimmed) or tab:\(trimmed)")
             }
@@ -14358,6 +14616,13 @@ struct CMUXCLI {
         if !resolvedExplicitWorkspace,
            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride) {
             let workspaceId = try resolveWorkspaceId(workspaceArg, client: client)
+            insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
+            resolvedWorkspaceId = workspaceId
+        }
+        if !resolvedExplicitWorkspace, resolvedWorkspaceId == nil, windowOverride != nil {
+            // v1 sidebar commands have no window parameter; carry the scoped
+            // window's selected workspace explicitly instead of ambient focus.
+            let workspaceId = try resolveWorkspaceId(nil, client: client)
             insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
             resolvedWorkspaceId = workspaceId
         }
@@ -14800,17 +15065,31 @@ struct CMUXCLI {
             "all_windows": options.scope == .all
         ]
         if let workspaceRaw = options.workspaceHandle {
-            guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
+            guard let workspaceHandle = client.scopedWindow != nil
+                ? try resolveWorkspaceId(workspaceRaw, client: client)
+                : try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
                 throw CLIError(message: "Invalid workspace handle")
             }
             params["workspace_id"] = workspaceHandle
+        } else if client.scopedWindow != nil, options.scope == .workspace {
+            params["workspace_id"] = try resolveWorkspaceId(nil, client: client)
         }
         if let caller = treeCallerContextFromEnvironment() {
             params["caller"] = caller
         }
 
         do {
-            let payload = try client.sendV2(method: "system.tree", params: params)
+            var payload = try client.sendV2(method: "system.tree", params: params)
+            if let scopedWindow = client.scopedWindow {
+                let nodes = payload["windows"] as? [[String: Any]] ?? []
+                let scopedNodes = nodes.filter { treeItemMatchesHandle($0, handle: scopedWindow) }
+                if scopedNodes.isEmpty {
+                    // Older system.tree implementations ignore window_id and
+                    // snapshot ambient focus. Resolve the target's nodes here.
+                    return try buildLegacyTreePayload(options: options, params: params, client: client)
+                }
+                payload["windows"] = scopedNodes
+            }
             return treePayloadWithMarkers(payload)
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
             // Back-compat fallback for older servers that don't support system.tree.
@@ -14850,7 +15129,9 @@ struct CMUXCLI {
         let allWindows = windowsPayload["windows"] as? [[String: Any]] ?? []
 
         if let workspaceRaw = options.workspaceHandle {
-            guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
+            guard let workspaceHandle = client.scopedWindow != nil
+                ? try resolveWorkspaceId(workspaceRaw, client: client)
+                : try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
                 throw CLIError(message: "Invalid workspace handle")
             }
 
@@ -14859,7 +15140,10 @@ struct CMUXCLI {
             let window = allWindows.first(where: { treeItemMatchesHandle($0, handle: workspaceWindowHandle) })
                 ?? treeFallbackWindow(from: workspaceListPayload)
 
-            let workspaces = workspaceListPayload["workspaces"] as? [[String: Any]] ?? []
+            // workspace.list enumerates the manager; workspace_id selects its
+            // owner, not an individual row. Filter the explicit tree target.
+            let workspaces = (workspaceListPayload["workspaces"] as? [[String: Any]] ?? [])
+                .filter { treeItemMatchesHandle($0, handle: workspaceHandle) }
             if workspaces.isEmpty {
                 throw CLIError(message: "Workspace not found")
             }
@@ -14875,7 +15159,9 @@ struct CMUXCLI {
         }
 
         let targetWindows: [[String: Any]]
-        if options.scope == .all {
+        if let scopedWindow = client.scopedWindow {
+            targetWindows = allWindows.filter { treeItemMatchesHandle($0, handle: scopedWindow) }
+        } else if options.scope == .all {
             targetWindows = allWindows
         } else if let currentWindowHandle = activePath.windowHandle {
             let currentOnly = allWindows.filter { treeItemMatchesHandle($0, handle: currentWindowHandle) }
@@ -14887,6 +15173,7 @@ struct CMUXCLI {
         return try targetWindows.map {
             try buildTreeWindowNode(
                 window: $0,
+                selectedWorkspaceOnly: client.scopedWindow != nil && options.scope == .workspace,
                 activePath: activePath,
                 client: client
             )
@@ -14910,6 +15197,7 @@ struct CMUXCLI {
 
     private func buildTreeWindowNode(
         window: [String: Any],
+        selectedWorkspaceOnly: Bool,
         activePath: TreePath,
         client: SocketClient
     ) throws -> [String: Any] {
@@ -14918,7 +15206,10 @@ struct CMUXCLI {
             workspaceParams["window_id"] = windowHandle
         }
         let workspacePayload = try client.sendV2(method: "workspace.list", params: workspaceParams)
-        let workspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
+        let listedWorkspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
+        let workspaces = selectedWorkspaceOnly
+            ? listedWorkspaces.filter { ($0["selected"] as? Bool) == true }
+            : listedWorkspaces
         let workspaceNodes = try workspaces.map { try buildTreeWorkspaceNode(workspace: $0, activePath: activePath, client: client) }
         var windowNode = window
         let isActiveWindow = treeItemMatchesHandle(windowNode, handle: activePath.windowHandle)
@@ -17337,6 +17628,18 @@ struct CMUXCLI {
               UUID(uuidString: surfaceId) != nil else {
             throw CLIError(message: "\(commandName) requires a c11 tab id")
         }
+        if let native = optionValue(commandArgs, name: "--native-event"), ["agent_start", "agent_settled"].contains(native) {
+            let ref = try? client.sendV2(method: "conversation.get", params: ["tab_id": surfaceId])
+            let active = (ref?["active"] as? [String: Any]) ?? ((ref?["conversation"] as? [String: Any])?["active"] as? [String: Any])
+            let sessionID = (active?["kind"] as? String) == "pi" ? active?["id"] as? String : nil
+            let draft = JournalDraft(kind: native == "agent_start" ? .turnStarted : .turnCompleted,
+                emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000), tabID: UUID(uuidString: surfaceId),
+                workspaceID: UUID(uuidString: workspaceId), sessionID: sessionID, agentKind: "pi",
+                source: .plugin, adapter: .piPlugin, nativeEvent: native)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            if case .unsupported = delivery { /* Explicit older-app compatibility. */ }
+            else if sessionID != nil { print("OK"); return }
+        }
         let response = try sendV1Command(
             "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)\(Self.agentLifecycleReportOptions())",
             client: client
@@ -17347,14 +17650,15 @@ struct CMUXCLI {
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLISocketSentryTelemetry,
+        rawInput: String,
+        journalDraft: JournalDraft?
     ) throws {
         let subcommand = commandArgs.first?.lowercased() ?? "help"
         let hookArgs = Array(commandArgs.dropFirst())
         let hookWsFlag = optionValue(hookArgs, name: "--workspace")
         let workspaceArg = hookWsFlag ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let surfaceArg = optionValue(hookArgs, name: "--surface") ?? (hookWsFlag == nil ? Self.callerTabEnv() : nil)
-        let rawInput = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
         // C11-24 diagnostic: when CMUX_HOOK_DEBUG_PATH is set, dump the
         // raw stdin JSON to that path before parsing. Used to verify the
         // exact shape of the SessionStart payload Claude Code emits when
@@ -17378,6 +17682,25 @@ struct CMUXCLI {
             ]
         )
         let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
+        var journalDelivery: JournalCommand.Delivery?
+        func appendJournal(workspaceId: String, surfaceId: String) -> Bool {
+            if let journalDelivery { if case .unsupported = journalDelivery { return false }; return true }
+            guard var draft = journalDraft else { return true }
+            draft.tabID = UUID(uuidString: surfaceId)
+            draft.workspaceID = UUID(uuidString: workspaceId)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            journalDelivery = delivery
+            if case .unsupported = delivery { return false }
+            return true
+        }
+        func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
+                                 activity: String, fromNotification: Bool = false) throws {
+            if !appendJournal(workspaceId: workspaceId, surfaceId: surfaceId) {
+                try self.reportAgentActivity(client: client, workspaceId: workspaceId, surfaceId: surfaceId,
+                                             activity: activity, fromNotification: fromNotification)
+            }
+        }
+
 
         switch subcommand {
         case "session-start", "active":
@@ -17388,17 +17711,6 @@ struct CMUXCLI {
                 workspaceId: workspaceId,
                 client: client
             )
-            // A fresh, resumed or cleared session rests at its prompt. A
-            // `compact` SessionStart fires mid-turn after auto-compaction, so
-            // it must not claim the agent is idle.
-            if (parsedInput.object?["source"] as? String) != "compact" {
-                _ = try? reportAgentActivity(
-                    client: client,
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    activity: "idle"
-                )
-            }
             let claudePid: Int? = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_CLAUDE_PID"]?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -17446,6 +17758,18 @@ struct CMUXCLI {
                     }
                 }
             }
+            // A fresh, resumed or cleared session rests at its prompt. A
+            // `compact` SessionStart fires mid-turn after auto-compaction, so
+            // it must not claim the agent is idle.
+            if (parsedInput.object?["source"] as? String) != "compact" {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    activity: "idle"
+                )
+            }
+            _ = appendJournal(workspaceId: workspaceId, surfaceId: surfaceId)
             // Register PID for stale-session detection and OSC suppression,
             // but don't set a visible status. "Running" only appears when the
             // user submits a prompt (UserPromptSubmit) or Claude starts working
@@ -17663,6 +17987,7 @@ struct CMUXCLI {
                 print("OK")
                 return
             }
+            _ = appendJournal(workspaceId: cleanupWorkspace, surfaceId: cleanupSurface)
             let consumedSession = try? sessionStore.consume(
                 sessionId: parsedInput.sessionId,
                 workspaceId: cleanupWorkspace,
@@ -17729,8 +18054,8 @@ struct CMUXCLI {
             }
             print("OK")
 
-        case "pre-tool-use":
-            telemetry.breadcrumb("claude-hook.pre-tool-use")
+        case "pre-tool-use", "post-tool-use":
+            telemetry.breadcrumb("claude-hook.\(subcommand)")
             // Clears "Needs input" status and notification when Claude resumes work
             // (e.g. after permission grant). Runs async so it doesn't block tool execution.
             var workspaceId = fallbackWorkspaceId
@@ -17748,12 +18073,16 @@ struct CMUXCLI {
                 preferredSurface, workspaceId: workspaceId, client: client
             )
             let toolName = parsedInput.object?["tool_name"] as? String
+            if subcommand == "post-tool-use", toolName != "AskUserQuestion", toolName != "ExitPlanMode" {
+                print("OK")
+                return
+            }
             let permissionMode = parsedInput.object?["permission_mode"] as? String
             let bypass = permissionMode == "bypassPermissions"
             // A bypass-started session emits ExitPlanMode in plan mode while
             // its approval UI waits. The native trace has no Notification edge.
             let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
-            if toolName == "AskUserQuestion" || planApproval {
+            if subcommand == "pre-tool-use" && (toolName == "AskUserQuestion" || planApproval) {
                 let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
                 let body: String
                 if toolName == "ExitPlanMode" {
@@ -17812,7 +18141,7 @@ struct CMUXCLI {
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--tab <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 
@@ -18642,6 +18971,7 @@ struct CMUXCLI {
           version
           guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
+          rpc <method> [json] [--json]
           brand [--json]
           history [list] [--json] [--limit <1...200>]
           history back [--json]
@@ -18697,15 +19027,18 @@ struct CMUXCLI {
           get-workspace-root [--workspace <id|ref>] [--json]
           rename-window [--workspace <id|ref>] <title>
           current-workspace
+          read-selection [--workspace <id|ref>] [--tab <id|ref>]
           read-screen [--workspace <id|ref>] [--tab <id|ref>] [--scrollback] [--lines <n>]
-          send [--workspace <id|ref>] [--tab <id|ref>] <text>
+          send [--workspace <id|ref>] [--tab <id|ref>] [--raw] [--no-submit] <text | ->
+          paste [--workspace <id|ref>] [--tab <id|ref>] [--no-submit] [text | -]
           send-key [--workspace <id|ref>] [--tab <id|ref>] <key>
-          send-tab --tab <id|ref> [--workspace <id|ref>] <text>
+          send-tab --tab <id|ref> [--workspace <id|ref>] [--raw] [--no-submit] <text | ->
           send-key-tab --tab <id|ref> [--workspace <id|ref>] <key>
           notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--tab <id|ref>]
           area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
           list-notifications
           clear-notifications
+          agent-event append --stdin
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--tab <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-tab <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}

@@ -48,6 +48,18 @@ c11 read-screen --workspace workspace:2 --tab tab:3 --lines 50
 
 Most commands default to the caller's context via env vars — no flags needed when targeting your own tab.
 
+Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
+
+## Terminal selection
+
+`c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]` reads the terminal selection without clearing or changing it. Omitted targets use the caller context like `read-screen`; empty or stale explicit targets fail. `--json` returns `has_selection`, `kind: terminal`, `text`, `base64`, `truncated` and routing handles. Without a selection it succeeds with empty text/base64 and `has_selection: false`; human output says `No selection.` Browser and markdown tabs return an error.
+
+Socket method: `tab.read_selection`. Discover `read_selection.terminal` version 1 before depending on it. The response is capped at 1 MiB, clipped to a complete UTF-8 scalar; base64 represents the same bytes as text. `busy` means the renderer lock was unavailable; retry later. A single five-second deadline bounds the worker's wait, including queued capture and worker encoding. Abandoned queued work skips capture; an already-running capture cleans up without publishing a late result.
+
+Native try-lock capture, formatting/allocation and the capped byte copy/free remain on main for surface lifetime safety. Only UTF-8 clipping, text/base64 encoding and response assembly run off main. The response cap and caller deadline do **not** bound native allocation or formatting time after the lock is acquired.
+
+Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.
@@ -377,17 +389,55 @@ with the window and final workspace UUID order; errors, dry-runs and no-ops emit
 Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_grouped`,
 `not_member`, `group_not_found`, `workspace_not_found`, `wrong_window`, and `empty_group`.
 
+### Sidebar folder controls and attention
+
+A folder header has a chevron, icon, name, pin marker and menu, followed by fixed
+slots for member, flag, waiting and unread counts. A long name truncates with its
+full text in the tooltip. Count slots keep their width at zero and cap visually
+at `99+`; accessibility labels and tooltips retain the exact count.
+
+- Click the chevron to collapse or expand. Collapse hides sidebar member rows
+  only: the selected workspace and its live terminal remain active, and numeric
+  workspace shortcuts still use the canonical flat order. A header is highlighted
+  when it contains the selected workspace, including while collapsed. Click its
+  name to focus the current member or first member. Empty folders stay empty.
+- New Group in the sidebar menu opens a name editor and creates an empty folder.
+  The header menu offers Rename Group, Color, Icon, Pin/Unpin Group, Ungroup and
+  Delete Group. Name/icon editors commit with Save and dismiss with Cancel/Escape;
+  empty names and invalid SF Symbols cannot commit, and validation errors stay in
+  the editor. Color uses the
+  existing palette; Clear Color and Clear Icon restore the defaults. An absent or
+  unavailable symbol displays `folder.fill`.
+- Ungroup and Delete Group both leave all members running as ungrouped workspaces.
+  Closing the first or last member never promotes another member into a header
+  and never deletes the folder. Group and member pins remain independent.
+- A workspace's Move to Group menu provides the same membership choices as drag,
+  including Ungrouped. Dropping on a header joins that group at the end of the
+  member's pin segment, including empty/collapsed groups, without expanding it.
+  Dropping on member edges places the dragged workspace in that member's group.
+  The Ungrouped lane remains available during a workspace drag even when no
+  ungrouped rows exist. Dragging a header reorders the whole folder among groups.
+  Pin boundaries clamp placement; they never silently change a pin. The preview
+  describes the final clamped placement. A closed source, deleted target, foreign
+  payload, cancellation or outside drop cannot partially transfer/reorder a member.
+  Shift-click selects visible workspace rows only, excluding collapsed members.
+- Attention includes every member tab, including collapsed/offscreen members.
+  Flags count plain terminals and suppressed tabs as well as agents. Any flag
+  makes the visible group signal violet; clearing the last flag restores ordinary
+  tint. Waiting counts only resolved waiting tabs that are not suppressed. Unread
+  counts workspace notification records exactly once, including workspace-scoped
+  records; it does not manufacture a waiting tab. Transferring a member transfers
+  its contribution to the destination header. Badge changes do not select a
+  workspace, mount hidden members, or take terminal focus.
+
+The sidebar omits collapsed member rows; `tree` intentionally includes them for
+inspection. Socket list/tree/metadata reads are model oracles, not proof that the
+header rendered, a pointer drop succeeded, or the terminal retained responder
+focus. Maintainer validation must exercise those paths in the actual tagged app.
+
 ## Tab initialization quirk
 
-Tabs are lazily initialized — no PTY until they have non-zero screen bounds. Tabs created in a non-visible workspace are inert until shown.
-
-Workaround: after creating in a hidden workspace, select it briefly so SwiftUI runs the layout pass:
-
-```bash
-c11 select-workspace --workspace workspace:N
-sleep 2
-# now the tab has real bounds and accepts input
-```
+Terminals start lazily. `send` and `read-screen` request a runtime even in a hidden workspace, so selecting the workspace is not a prerequisite. If a send's runtime still cannot attach, its text waits in the pending queue and the result reports `queued: true`, `delivered: false`. Showing the tab lets queued input flush when the runtime attaches.
 
 ## Reading & sending
 
@@ -404,7 +454,7 @@ c11 send --workspace workspace:2 --tab tab:3 "ls"
 c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
 ```
 
-`read-screen` requests startup for a cold terminal without focusing it and allows the same two-second startup wait as `send`. A successful read can be empty before the shell prints its prompt; retry the read if you need that output. An unavailable terminal returns an error after the startup wait.
+`read-screen` requests startup for a cold terminal without focusing it and allows the same two-second startup wait as `send`. A successful read can be empty before the shell prints its prompt; retry the read if you need that output. An unavailable terminal returns an error after the startup wait. The read has one five-second caller deadline, including main-queue scheduling and startup. A contended terminal text lock returns a typed `busy` error immediately; retry the read later. A `timeout` ends the caller wait, but cannot interrupt native text formatting or copying already running on main. Swift text decoding, scrollback merging, line selection and base64 encoding run off main.
 
 **Text after `❯` on an idle Claude Code screen is usually not the operator's.** When an agent ends its turn on a question, Claude Code ghosts a suggested reply into the input line ("one yes, two no", "yes, proceed"). `read-screen` returns that ghost text exactly like typed text. Treat an unsent line on an idle prompt as auto-suggest, never as an answer the operator drafted: do not press Enter on it, do not relay it, and do not report it as "typed but unsent". Only a submitted turn (the text echoed above the prompt, followed by the agent's response) is operator input.
 
@@ -412,7 +462,19 @@ c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one t
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
 
-**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
+**Raw text and stdin:** `c11 send --raw --tab <uuid|ref> '<text>'` skips escape rewriting and preserves leading, interior and trailing newline content. `c11 paste` is `send --raw`; when text is omitted it reads UTF-8 stdin. `c11 send -` explicitly reads stdin (add `--raw` for literal escape handling). A lone `-` takes no other text. Default `send` still decodes literal `\n` and `\r` to Return, `\t` to Tab, and treats trailing newlines as a request to submit. Raw/paste mode requires the connected server to advertise `send.raw`; older servers are rejected before sending text.
+
+```bash
+c11 send --tab tab:2 --raw --no-submit 'printf %s \n'
+printf 'line1\nline2\n' | c11 paste --tab tab:2 --no-submit
+c11 send --tab tab:2 --no-submit -- --literal-flag-text
+```
+
+`--no-submit` suppresses c11's additional Return in raw/paste mode, including input ending in a newline. It does not change how the recipient handles newline content: bracketed-paste-aware composers keep it as a draft, while an unbracketed shell or program can treat those newlines as input/commands. Arbitrary C0 control bytes still use the key path; raw is literal escape/newline handling, not a byte-exact control-byte transport. Unknown `--flags` before `--` are errors (including `--text`); flags after `--` are literal text. `send-tab` accepts the same modes with an explicit `--tab`.
+
+**Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
+
+**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still targets that workspace's focused area — you named a target, just a coarser one.
 
@@ -590,6 +652,8 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 
 ## Troubleshooting
 
+**Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
+
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.
 - **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.
@@ -684,3 +748,63 @@ Bind available chords, or Delete while recording to clear a history binding.
 Browser Cmd+[ / Cmd+] remain browser navigation and cannot be recorded for history.
 The threshold is read at startup from UserDefaults `focusHistory.dwellSeconds`
 (default 1.0; clamped to 0.2...30 seconds); it has no Settings row.
+
+## Structural lifecycle append
+
+`c11 agent-event append --stdin` accepts one JSON draft of at most 4096 bytes.
+Socket spelling: `agent.event.append`, with `params: {"event": <draft>}`.
+This is an adapter interface. Ordinary agents continue using the operating
+skill's status primitives; do not infer lifecycle events from terminal text.
+
+Required fields are `schema_version: 1`, a UUID `event_id`, a supported `agent.*`
+`kind`, integer `emitted_at_ms`, `agent_kind`, `source`, and `adapter`.
+`tab_id` and `workspace_id` are UUIDs, both supplied or both null. `session_id`
+must match the already captured exact conversation. Unknown ownership is
+recorded as unattributed and cannot change a tab. Child evidence cannot finish
+its parent. No focused-tab or cwd fallback exists.
+
+Registered adapters fix their source and confidence: `claude_hook` and
+`codex_notify` use `hook`; `opencode_plugin` and `pi_plugin` use `plugin`;
+`codex_transcript` and `grok_transcript` use `transcript`. `c11` is reserved for
+specific control observations. A caller cannot set a confidence integer.
+
+Optional structural fields include `turn_id`, `request_id`, `parent_session_id`,
+`is_child`, `occurred_at_ms`, `time_quality`, `native_event`, `adapter_version`,
+`tool_class`, `reason_code`, `signal`, and `resolution`. Unknown keys and
+free-form payloads are rejected. Never send a prompt, command, arguments,
+question, plan, output, cwd, notification body, or raw error text. Missing native
+time/IDs remain null; CLI invocation time is not native occurrence evidence.
+
+After SQLite commit, the response is:
+
+```json
+{"event_id":"11111111-1111-4111-8111-111111111111","sequence":42,"committed_at_ms":1790899200000,"replayed":false,"projection_effect":"applied"}
+```
+
+The receipt promises a local commit; repaint is asynchronous. Keep the same
+`event_id` and normalized draft for an ambiguous retry. Identical retries return
+the original sequence with `replayed:true`; changed content returns
+`idempotency_conflict`. A committed stale/advisory event is not an applied state
+transition. Receipt dedupe lasts at least 24 hours after commit, subject to the
+explicit operator clear operation when available.
+
+Delivery has a 250 ms budget, followed by a bounded best-effort spool attempt
+inside the current c11 bundle namespace. `{"spooled":true}` means pending
+delivery, not a committed receipt. Full, locked or unwritable storage can lose
+unacknowledged events. Unknown bundle identity never falls back to production
+storage. Tagged builds have separate namespaces. Only an explicit unsupported
+method response permits a producer's legacy activity fallback; a timeout does
+not.
+
+`tab.get_metadata` exposes a read-only `journal` object with phase, reason,
+confirmation, connection, health, freshness, sequence and coverage. Reading it
+never opens SQLite. Missing exact ownership returns unknown/unconfirmed.
+
+The socket envelope optionally accepts an integer `interactive_pid` beside
+`event`, for existing native interactive hooks. The PID is transport-only; it
+is absent from draft bytes, the journal and spool. Only a fresh committed native
+turn boundary may open the existing mailbox prompt gate.
+
+See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
+restart confirmation, and retention. Query/export and broader provider hooks
+are separate consumers of this append seam.

@@ -38,6 +38,12 @@ def main() -> None:
         def handle(self) -> None:
             for raw in self.rfile:
                 command = raw.decode().strip()
+                # A machine may have a saved local socket password. Accept the
+                # normal handshake without retaining credential bytes in evidence.
+                if command.startswith("auth "):
+                    self.wfile.write(b"OK\n")
+                    self.wfile.flush()
+                    continue
                 commands.append(command)
                 if command.startswith(("report_agent_activity ", "notify_target ", "set_status ")):
                     self.wfile.write(b"OK\n")

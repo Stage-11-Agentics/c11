@@ -68,7 +68,7 @@ done
         )
 
         make_executable(
-            wrapper_dir / "cmux",
+            wrapper_dir / "c11",
             """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s timeout=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" >> "$FAKE_CMUX_LOG"
@@ -91,6 +91,7 @@ exit 0
             test_socket.bind(socket_path)
 
         env = os.environ.copy()
+        env["TMPDIR"] = str(tmp)
         env["PATH"] = f"{wrapper_dir}:{real_dir}:/usr/bin:/bin"
         env["CMUX_SURFACE_ID"] = "surface:test"
         env["CMUX_SOCKET_PATH"] = socket_path
@@ -115,7 +116,15 @@ exit 0
 
         claudecode_lines = read_lines(real_claudecode_log)
         claudecode_value = claudecode_lines[0] if claudecode_lines else ""
-        return proc.returncode, read_lines(real_args_log), read_lines(cmux_log), proc.stderr.strip(), claudecode_value
+        real_argv = read_lines(real_args_log)
+        # Capture the actual per-launch settings payload before the isolated
+        # temporary directory is removed. The wrapper now passes a file path.
+        if "--settings" in real_argv:
+            settings_index = real_argv.index("--settings") + 1
+            settings_arg = real_argv[settings_index]
+            if not settings_arg.startswith("{"):
+                real_argv[settings_index] = Path(settings_arg).read_text(encoding="utf-8")
+        return proc.returncode, real_argv, read_lines(cmux_log), proc.stderr.strip(), claudecode_value
 
 
 def expect(condition: bool, message: str, failures: list[str]) -> None:
@@ -139,7 +148,7 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
 
     settings = parse_settings_arg(real_argv)
     hooks = settings.get("hooks", {})
-    expected_hooks = {"SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse"}
+    expected_hooks = {"SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
     expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {hooks.keys()}, expected {expected_hooks}", failures)
     # PreToolUse should be async to avoid blocking tool execution
     pre_tool_use_hooks = hooks.get("PreToolUse", [{}])[0].get("hooks", [{}])
@@ -148,6 +157,11 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
         f"PreToolUse hook should have async:true, got {pre_tool_use_hooks}",
         failures,
     )
+    post = hooks.get("PostToolUse", [{}])[0]
+    expect(post.get("matcher") == "AskUserQuestion|ExitPlanMode",
+           "PostToolUse must subscribe only to the two blocking tools", failures)
+    expect(post.get("hooks", [{}])[0].get("command") == "c11 claude-hook post-tool-use",
+           "PostToolUse must deliver the resolution callback", failures)
     # SessionEnd should have a short timeout (session is exiting)
     session_end_hooks = hooks.get("SessionEnd", [{}])[0].get("hooks", [{}])
     expect(

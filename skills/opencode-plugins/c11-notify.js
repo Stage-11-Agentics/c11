@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+
 // c11-notify.js — c11 notification + status bridge for OpenCode.
 //
 // Runtime-loaded by c11's PATH-scoped OpenCode wrapper. Older c11 installs
@@ -46,12 +49,34 @@ export const C11NotifyPlugin = async ({ $ }) => {
     return undefined;
   };
 
-  const reportActivity = (activity) => c11(["agent-hook", activity]);
+  // Structural append shares the CLI's 250 ms delivery/spool budget. Bodies,
+  // directories and process provenance never enter this event.
+  const append = async (kind, nativeEvent, sessionID, extra = {}, legacyActivity) => {
+    const tab = process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
+    const workspace = process.env.C11_WORKSPACE_ID || process.env.CMUX_WORKSPACE_ID;
+    const draft = {
+      schema_version: 1, event_id: randomUUID(), kind, emitted_at_ms: Date.now(),
+      tab_id: tab && workspace ? tab : null, workspace_id: tab && workspace ? workspace : null,
+      session_id: sessionID || null, agent_kind: "opencode", source: "plugin",
+      adapter: "opencode_plugin", native_event: nativeEvent, ...extra,
+    };
+    const unsupported = await new Promise((resolve) => {
+      const child = spawn(c11Bin, ["agent-event", "append", "--stdin"], { stdio: ["pipe", "ignore", "pipe"] });
+      let error = "";
+      const timer = setTimeout(() => { child.kill(); resolve(false); }, 750);
+      child.stderr.on("data", (chunk) => { if (error.length < 4096) error += chunk.toString(); });
+      child.on("error", () => { clearTimeout(timer); resolve(false); });
+      child.on("close", () => { clearTimeout(timer); resolve(error.includes("method_not_found")); });
+      child.stdin.on("error", () => {});
+      child.stdin.end(JSON.stringify(draft));
+    });
+    if (unsupported && legacyActivity) await c11(["agent-hook", legacyActivity]);
+  };
 
   return {
     "chat.message": async ({ sessionID }) => {
       if (!sessionID || !childSessions.has(sessionID)) {
-        await reportActivity("working");
+        await append("agent.turn.started", "chat.message", sessionID, {}, "working");
       }
     },
     event: async ({ event }) => {
@@ -86,11 +111,12 @@ export const C11NotifyPlugin = async ({ $ }) => {
               args.push("--cwd", info.directory);
             }
             await c11(args);
+            await append("agent.session.started", "session.created", info.id);
           }
           break;
         }
         case "session.idle":
-          await reportActivity("idle");
+          await append("agent.turn.completed", event.type, sessionID, {}, "idle");
           await notify("OpenCode", "Waiting for input");
           await c11(["set-metadata", "--key", "status", "--value", "idle"]);
           break;
@@ -100,17 +126,19 @@ export const C11NotifyPlugin = async ({ $ }) => {
             await c11(["set-metadata", "--key", "status", "--value", status]);
           }
           if (status === "idle") {
-            await reportActivity("idle");
+            await append("agent.turn.completed", event.type, sessionID, {}, "idle");
           } else if (status === "busy" || status === "retry") {
-            await reportActivity("working");
+            await append("agent.state.changed", event.type, sessionID, { signal: "tool_activity" }, "working");
           }
           break;
         }
         case "permission.asked":
+          await append("agent.approval.requested", event.type, sessionID, { request_id: typeof properties.id === "string" ? properties.id : null });
           await notify("OpenCode", "Approval needed", "Permission");
           await c11(["set-metadata", "--key", "status", "--value", "Needs input"]);
           break;
         case "session.error":
+          await append("agent.error.reported", event.type, sessionID, { reason_code: "session_failure" });
           await notify("OpenCode", "Session error", "Error");
           break;
       }

@@ -202,6 +202,10 @@ struct cmuxApp: App {
             Self.terminateForMissingLaunchTag()
         }
 
+        // A duplicate must leave before creating the launch workspace or
+        // touching the shared session, shutdown sentinel or control socket.
+        AppDelegate.yieldToRunningInstanceIfNeeded()
+
         Self.configureGhosttyEnvironment()
 
         // Apply saved language preference before any UI loads
@@ -441,7 +445,7 @@ struct cmuxApp: App {
                 splitCommandButton(title: String(localized: "menu.notifications.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: jumpToUnreadMenuShortcut) {
                     appDelegate.jumpToLatestUnread()
                 }
-                .disabled(!snapshot.hasUnreadNotifications)
+                .disabled(!snapshot.hasUnreadNotifications && snapshot.flags.isEmpty && !appDelegate.hasJournalAttention)
 
                 Button(String(localized: "menu.notifications.markAllRead", defaultValue: "Mark All Read")) {
                     notificationStore.markAllRead()

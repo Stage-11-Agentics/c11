@@ -52,6 +52,7 @@ extension TerminalController {
 
     private func v2Capabilities() -> [String: Any] {
         var methods: [String] = [
+            "agent.event.append",
             "system.ping",
             "system.capabilities",
             "system.identify",
@@ -269,6 +270,7 @@ extension TerminalController {
             "debug.shortcut.simulate",
             "debug.type",
             "debug.terminal.operator_keys",
+            "debug.terminal.runtime_start_hold",
             "debug.app.activate",
             "debug.command_palette.toggle",
             "debug.command_palette.rename_tab.open",
@@ -308,6 +310,10 @@ extension TerminalController {
             "debug.session.round_trip_workspaces",
         ])
 #endif
+
+        if CapabilityFeatures.current.supports(.terminalSelection) {
+            methods.append("tab.read_selection")
+        }
 
         return [
             "protocol": "cmux-socket",

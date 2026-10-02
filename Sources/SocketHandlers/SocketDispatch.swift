@@ -75,6 +75,11 @@ extension TerminalController {
             return nil
         }
 
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
+            return v2Error(id: request.id, code: rejection.code, message: rejection.message)
+        }
+
         return withSocketCommandPolicy(commandKey: request.method, isV2: true) {
             socketWorkerV2Response(request)
         }
@@ -98,6 +103,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
+        case "agent.event.append":
+            return v2Result(id: request.id, v2JournalAppend(params: request.params))
+        case "tab.read_selection":
+            return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
         case "tab.read_text":
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
         case "tab.clear_history":
@@ -986,7 +995,7 @@ extension TerminalController {
             return reloadConfig(args)
 
         case "refresh_surfaces":
-            return refreshSurfaces()
+            return refreshSurfaces(args)
 
             case "surface_health":
                 return surfaceHealth(args)
@@ -1025,6 +1034,11 @@ extension TerminalController {
         // C11-248: resolve old method/param spellings once, here.
         let method = LegacyWireAliases.canonicalMethod(rawMethod)
         let params = LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
+
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(params) {
+            return v2Error(id: id, code: rejection.code, message: rejection.message)
+        }
 
         // C11-26: Methods on the socket-worker policy must be dispatched via
         // socketWorkerV2Response (off main); reaching processV2Command for one of

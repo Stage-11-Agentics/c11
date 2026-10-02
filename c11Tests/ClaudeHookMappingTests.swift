@@ -76,7 +76,7 @@ final class ClaudeHookMappingTests: XCTestCase {
             let resolved = try owned("post-tool-use", base(tool: tool, request: request), tab: tabA)
             let working = try XCTUnwrap(JournalTestData.fold(blocked, resolved, seq: 3).snapshot)
             XCTAssertEqual(working.phase, .working)
-            XCTAssertEqual(working.reason, nil)
+            XCTAssertNil(working.reason)
         }
     }
 

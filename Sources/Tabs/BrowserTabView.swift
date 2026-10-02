@@ -6168,9 +6168,6 @@ struct WebViewRepresentable: NSViewRepresentable {
             panel.noteDeveloperToolsHostAttached()
             panel.restoreDeveloperToolsAfterAttachIfNeeded()
             webView.needsLayout = true
-            webView.layoutSubtreeIfNeeded()
-            slotView.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
             host.normalizeHostedInspectorLayoutIfNeeded(reason: "localInline.update.immediate")
             host.scheduleHostedInspectorDividerReapply(reason: "localInline.update.sync")
             DispatchQueue.main.async { [weak host, weak webView] in

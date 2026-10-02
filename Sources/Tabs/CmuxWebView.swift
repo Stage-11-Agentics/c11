@@ -581,7 +581,10 @@ final class CmuxWebView: WKWebView {
         guard let host = url.host?.lowercased(), host.contains("google.") else { return nil }
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let queryItems = comps.queryItems else { return nil }
-        let map = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name.lowercased(), $0.value ?? "") })
+        let map = Dictionary(
+            queryItems.map { ($0.name.lowercased(), $0.value ?? "") },
+            uniquingKeysWith: { first, _ in first }
+        )
         let candidates = ["imgurl", "mediaurl", "url", "q"]
         for key in candidates {
             guard let raw = map[key], !raw.isEmpty,
@@ -603,7 +606,7 @@ final class CmuxWebView: WKWebView {
         return nil
     }
 
-    private func normalizedLinkedDownloadURL(_ url: URL) -> URL {
+    func normalizedLinkedDownloadURL(_ url: URL) -> URL {
         resolveGoogleRedirectURL(url) ?? url
     }
 

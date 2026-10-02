@@ -1720,29 +1720,85 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertTrue(panel.canGoForward)
     }
 
-    func testWebViewReplacementAfterProcessTerminationUpdatesInstanceIdentity() {
+    private func nextMainTurn() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    func testWebViewReplacementAfterProcessTerminationUpdatesInstanceIdentity() async {
         let panel = BrowserTab(
             workspaceId: UUID(),
             initialURL: URL(string: "https://example.com")
         )
         let oldWebView = panel.webView
         let oldInstanceID = panel.webViewInstanceID
+        defer { panel.close() }
 
-        panel.debugSimulateWebContentProcessTermination()
+        // Exercise the actual WebKit delegate wire, not just the debug hook.
+        panel.webView.navigationDelegate?.webViewWebContentProcessDidTerminate?(oldWebView)
+        XCTAssertTrue(panel.webView === oldWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 0)
+        await nextMainTurn()
 
         XCTAssertFalse(panel.webView === oldWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 1)
         XCTAssertNotEqual(panel.webViewInstanceID, oldInstanceID)
         XCTAssertNotNil(panel.webView.navigationDelegate)
         XCTAssertNotNil(panel.webView.uiDelegate)
     }
 
-    func testWebViewReplacementPreservesEmptyNewTabRenderState() {
+    func testWebViewReplacementPreservesEmptyNewTabRenderState() async {
         let panel = BrowserTab(workspaceId: UUID())
+        defer { panel.close() }
         XCTAssertFalse(panel.shouldRenderWebView)
 
         panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
 
         XCTAssertFalse(panel.shouldRenderWebView)
+    }
+
+    func testDuplicateTerminationSchedulesOneReplacementAndIgnoresStaleView() async {
+        let panel = BrowserTab(workspaceId: UUID())
+        defer { panel.close() }
+        let oldWebView = panel.webView
+        let delegate = oldWebView.navigationDelegate
+        XCTAssertTrue(panel.debugSimulateWebContentProcessTermination())
+        XCTAssertFalse(panel.debugSimulateWebContentProcessTermination())
+        XCTAssertTrue(panel.webView === oldWebView)
+        await nextMainTurn()
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 1)
+        delegate?.webViewWebContentProcessDidTerminate?(oldWebView)
+        await nextMainTurn()
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 1)
+    }
+
+    func testClosingBeforeQueuedTerminationDoesNotReplaceView() async {
+        let panel = BrowserTab(workspaceId: UUID())
+        let oldWebView = panel.webView
+        panel.debugSimulateWebContentProcessTermination()
+        panel.close()
+        await nextMainTurn()
+        XCTAssertTrue(panel.webView === oldWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 0)
+        XCTAssertFalse(panel.debugSimulateWebContentProcessTermination())
+    }
+
+    func testRepeatedBlankPageTerminationIsBounded() async {
+        let panel = BrowserTab(workspaceId: UUID())
+        defer { panel.close() }
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        XCTAssertTrue(panel.shouldRenderWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
+        let errorWebView = panel.webView
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        XCTAssertTrue(panel.webView === errorWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
     }
 
     func testResetSidebarContextClearsBrowserPanelsIntoNewTabState() throws {
@@ -1829,6 +1885,97 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
 
 }
 
+
+@MainActor
+final class BrowserLifecycleRegressionTests: XCTestCase {
+    private final class InspectorProbe: NSObject {
+        var onClose: (() -> Void)?
+        private(set) var closeCount = 0
+        private(set) var showCount = 0
+        private var visible = true
+        @objc func isVisible() -> Bool { visible }
+        @objc func isAttached() -> Bool { true }
+        @objc func show() { showCount += 1; visible = true }
+        @objc func close() { closeCount += 1; onClose?(); visible = false }
+    }
+
+    func testCloseShutsInspectorBeforeDelegatesAndCancelsQueuedReopen() async {
+        installCmuxUnitTestInspectorOverride()
+        let panel = BrowserTab(workspaceId: UUID())
+        let inspector = InspectorProbe()
+        panel.webView.cmuxSetUnitTestInspector(inspector)
+        inspector.onClose = { XCTAssertNotNil(panel.webView.navigationDelegate) }
+        XCTAssertTrue(panel.hideDeveloperTools())
+        // The show intent queues behind the hide transition; close must cancel it.
+        XCTAssertTrue(panel.showDeveloperTools())
+        let closeCount = inspector.closeCount
+        panel.close()
+        XCTAssertEqual(inspector.closeCount, closeCount + 1)
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(inspector.showCount, 0)
+        XCTAssertNil(panel.webView.navigationDelegate)
+        panel.webView.cmuxSetUnitTestInspector(nil)
+    }
+
+    func testReplacementClosesOldInspectorBeforeDetachingView() async {
+        installCmuxUnitTestInspectorOverride()
+        let panel = BrowserTab(workspaceId: UUID())
+        defer { panel.close() }
+        let oldWebView = panel.webView
+        let host = NSView()
+        host.addSubview(oldWebView)
+        let inspector = InspectorProbe()
+        oldWebView.cmuxSetUnitTestInspector(inspector)
+        inspector.onClose = {
+            XCTAssertTrue(panel.webView === oldWebView)
+            XCTAssertTrue(oldWebView.superview === host)
+            XCTAssertNotNil(oldWebView.navigationDelegate)
+        }
+        panel.debugSimulateWebContentProcessTermination()
+        XCTAssertEqual(inspector.closeCount, 0)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(inspector.closeCount, 1)
+        XCTAssertFalse(panel.webView === oldWebView)
+        oldWebView.cmuxSetUnitTestInspector(nil)
+    }
+
+    func testDownloadRedirectRepeatedAndCaseVariedKeysUseFirstValue() {
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let first = "https://example.com/first.png"
+        let second = "https://example.com/second.png"
+        for keys in [["imgurl"], ["imgurl", "imgurl"], ["IMGURL", "imgurl"]] {
+            var components = URLComponents(string: "https://www.google.com/imgres")!
+            components.queryItems = keys.enumerated().map {
+                URLQueryItem(name: $0.element, value: $0.offset == 0 ? first : second)
+            }
+            XCTAssertEqual(webView.normalizedLinkedDownloadURL(components.url!).absoluteString, first)
+        }
+        let ordinary = URL(string: "https://example.com/image.png")!
+        XCTAssertEqual(webView.normalizedLinkedDownloadURL(ordinary), ordinary)
+    }
+
+    func testPopupWithoutControllerCancelsInsecureNavigationExactlyOnce() {
+        let delegate = PopupNavigationDelegate()
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        var decisions: [WKNavigationActionPolicy] = []
+        delegate.decidePolicy(
+            for: URL(string: "http://c11-popup-fixture.invalid"), isMainFrame: true, in: webView
+        ) { decisions.append($0) }
+        XCTAssertEqual(decisions, [.cancel])
+    }
+
+    func testOrdinaryPopupNavigationAllowsExactlyOnce() {
+        let delegate = PopupNavigationDelegate()
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        for url in [URL(string: "https://example.com"), nil] {
+            var decisions: [WKNavigationActionPolicy] = []
+            delegate.decidePolicy(for: url, isMainFrame: true, in: webView) { decisions.append($0) }
+            XCTAssertEqual(decisions, [.allow])
+        }
+    }
+}
 
 @MainActor
 final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {

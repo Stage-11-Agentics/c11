@@ -90,6 +90,16 @@ c11 browser <tab> screenshot
 c11 browser <tab> download wait --timeout-ms 10000
 ```
 
+## Maintainer Crash Recovery Probe (DEBUG only)
+
+On a tagged QA build, call the socket method
+`debug.browser.simulate_web_content_termination` with the browser's `workspace_id`
+and `tab_id`. `scheduled: true` means recovery was queued; wait for the next
+main turn and page load before inspecting the URL or taking a snapshot. Duplicate
+calls while pending return `scheduled: false`. For the same URL within ten seconds,
+the first termination restores the URL, the second shows the existing error page,
+and further terminations do not create another view. Use synthetic pages only.
+
 ## Agent Reliability Tips
 
 - Use `--snapshot-after` on mutating actions to return a fresh post-action snapshot.

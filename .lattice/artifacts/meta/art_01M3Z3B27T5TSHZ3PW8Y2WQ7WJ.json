@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:01:56Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3B27T5TSHZ3PW8Y2WQ7WJ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z3B27T5TSHZ3PW8Y2WQ7WJ.md",
+    "size_bytes": 21590
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding interleaving protocol012 actual stable text scroll calibration",
+  "token_usage": null,
+  "type": "file"
+}

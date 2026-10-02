@@ -1621,6 +1621,12 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
         XCTAssertEqual(manager.selectedWorkspaceId, original)
         XCTAssertEqual(publications, 0)
         XCTAssertEqual(context.blockedTarget, target.id)
+        SocketCommandContext.withContext(context) {
+            manager.selectNextWorkspace()
+            manager.selectPreviousWorkspace()
+        }
+        XCTAssertFalse(manager.isWorkspaceCycleHot)
+        XCTAssertEqual(publications, 0)
         manager.selectWorkspace(target, cause: "sidebar")
         XCTAssertEqual(manager.selectedWorkspaceId, target.id)
         XCTAssertEqual(publications, 1)

@@ -117,6 +117,8 @@ def main():
     output = Path("/tmp/c11-323-agent-proof.json")
     output.unlink(missing_ok=True)
     identity = Path("/tmp/c11-323-guest-identity")
+    identity.unlink(missing_ok=True)
+    identity.with_suffix(".pub").unlink(missing_ok=True)
     subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(identity)], check=True)
     authorized = Path.home() / ".ssh/authorized_keys"
     authorized.parent.mkdir(mode=0o700, exist_ok=True)

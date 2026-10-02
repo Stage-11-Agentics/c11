@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11-279 tagged/sandbox socket proof; never run on the operator's session.
 
-Requires an explicit C11_SOCKET_PATH or C11_SOCKET from the guest/tagged build.
+Requires an explicit C11_279_SOCKET from the guest/tagged build.
 Creates one disposable workspace, verifies rejection on worker and main-actor
 commands, proves a listed alias delivers, then closes the workspace.
 """
@@ -31,7 +31,7 @@ def reject(client, method, params, key, canonical):
 
 
 def main():
-    socket_path = os.environ.get("C11_SOCKET_PATH") or os.environ["C11_SOCKET"]
+    socket_path = os.environ["C11_279_SOCKET"]
     workspace = None
     with cmux(socket_path) as client:
         try:

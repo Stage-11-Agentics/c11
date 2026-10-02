@@ -335,6 +335,25 @@ final class FocusHistoryModelTests: XCTestCase {
         XCTAssertEqual(decoded.focusHistory, history)
     }
 
+    @MainActor
+    func testResumeSelectionPreservesHistoryForUUIDPruningAfterRestore() throws {
+        let workspaceSnapshot = SessionWorkspaceSnapshot(
+            id: workspace, processTitle: "Example", customTitle: nil,
+            customColor: nil, isPinned: false, currentDirectory: "/tmp",
+            focusedPanelId: a,
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: [a], selectedPanelId: a)),
+            panels: [], statusEntries: [], logEntries: [], progress: nil,
+            gitBranch: nil, metadata: nil)
+        let window = SessionWindowSnapshot(
+            frame: nil, display: nil,
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: 0, workspaces: [workspaceSnapshot]),
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240))
+        let history = recorded([a, b]).snapshot()
+        let app = AppSessionSnapshot(version: 1, createdAt: 0, windows: [window], focusHistory: history)
+        let filtered = try XCTUnwrap(LaunchResumePicker.filtered(snapshot: app, keep: [workspace]))
+        XCTAssertEqual(filtered.focusHistory, history)
+    }
+
     func testRestoreOversizedSnapshotRetainsNewestRowsAndAdjustsCursor() {
         let panels = (0..<(FocusHistoryModel.cap + 10)).map { _ in UUID() }
         let rows = panels.enumerated().map { entry($0.element, at: Double($0.offset * 2)) }

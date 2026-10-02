@@ -146,10 +146,13 @@ def main():
                 watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("kind") == "question" for item in value.get("rows", [])))
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                     "kind": "agent.state.changed", "signal": "tool_activity", "native_event": "PreToolUse"}})
+                client._call("notification.create_for_tab", {"workspace_id": ask_workspace, "tab_id": ask_tab,
+                    "title": "Synthetic telemetry", "body": "Unrelated update"})
                 assert any(item.get("tab_id") == ask_tab for item in client._call("feed.list")["rows"])
                 client._call("agent.event.append", {"event": {**draft, "event_id": str(uuid.uuid4()),
                     "kind": "agent.attention.resolved", "resolution": "resumed", "native_event": "PostToolUse"}})
                 watch.until(lambda value: "rows" in value and not any(item.get("tab_id") == ask_tab for item in value["rows"]))
+                assert client.identify().get("focused") == before, "feed watch lifecycle updates moved focus"
                 client._call("flag.raise", {"surface_id": ask_tab, "reason": "closure", "by": "operator"})
                 watch.until(lambda value: any(item.get("tab_id") == ask_tab and item.get("flag") for item in value.get("rows", [])))
                 client._call("tab.close", {"workspace_id": ask_workspace, "tab_id": ask_tab})

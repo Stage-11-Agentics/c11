@@ -3629,6 +3629,10 @@ final class BrowserTab: TabContent, ObservableObject {
         webViewInstanceID = UUID()
         webView = replacement
         shouldRenderWebView = wasRenderable
+        isLoading = false
+        estimatedProgress = 0
+        nativeCanGoBack = false
+        nativeCanGoForward = false
 
         bindWebView(replacement)
         applyBrowserThemeModeIfNeeded()

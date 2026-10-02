@@ -80,15 +80,29 @@ unset C11_AGENT_INTERACTIVE_PID
 
 # Find the real codex binary, skipping our own directory.
 find_real_codex() {
-    local self_dir
+    local self_dir d candidate
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     local IFS=:
     for d in $PATH; do
         [[ "$d" == "$self_dir" ]] && continue
-        [[ -x "$d/codex" ]] && printf '%s' "$d/codex" && return 0
+        candidate="$d/codex"
+        [[ -x "$candidate" ]] || continue
+        if LC_ALL=C head -c 512 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# c11 codex wrapper'; then
+            continue
+        fi
+        printf '%s' "$candidate"
+        return 0
     done
     return 1
 }
+
+# The real CLI inherits this marker. If it starts a child through PATH, bypass
+# c11 hooks and forward directly to a non-wrapper binary instead of nesting.
+if [[ -n "${C11_CODEX_WRAPPER_REENTRY:-}" ]]; then
+    REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
+    unset C11_CODEX_WRAPPER_REENTRY
+    exec "$REAL_CODEX" "$@"
+fi
 
 # Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
 c11_socket_available() {
@@ -116,7 +130,7 @@ fi
 
 if [[ "$IN_C11" == "0" || "${CMUX_CODEX_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
     REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
-    exec "$REAL_CODEX" "$@"
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"
 fi
 
 REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
@@ -130,7 +144,7 @@ REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; 
 # codex session).
 case "${1:-}" in
     exec|e|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
-        exec "$REAL_CODEX" "$@"
+        C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"
         ;;
 esac
 
@@ -249,6 +263,6 @@ if [[ -n "$codex_notify_config" ]]; then
     # that probe proves that a bypass trusts only c11-owned hooks, keep the
     # process rail to notify alone: no --enable hooks, hooks.* config, or
     # --dangerously-bypass-hook-trust.
-    exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
 fi
-exec "$REAL_CODEX" "$@"
+C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"

@@ -3521,7 +3521,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
         defer {
-            if !isRunningUnderXCTestCached { JournalCoordinator.shared.start(onProjection: TabLivenessDeriver.onJournalProjection) }
+            if !isRunningUnderXCTestCached {
+                JournalCoordinator.shared.start { tab, snap, boundary in
+                    TabLivenessDeriver.onJournalProjection(tabID: tab, snapshot: snap, boundary: boundary)
+                    FeedProjectionBridge.shared.noteJournal(tabID: tab, snapshot: snap)
+                }
+                // This startup path runs on main. Seed flags that already exist; later publishes hop off main.
+                MainActor.assumeIsolated {
+                    FeedProjectionBridge.shared.replaceAttention(Array(TabAttentionIndex.shared.snapshots.values))
+                }
+            }
         }
         // C11-131: this can run before `applicationDidFinishLaunching` under
         // the SwiftUI lifecycle (configure → prepare is view-driven). Arm the

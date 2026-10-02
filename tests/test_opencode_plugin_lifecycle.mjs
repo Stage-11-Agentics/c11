@@ -42,6 +42,7 @@ try {
   await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_root" } } });
   assert.equal(events().at(-1).kind, "agent.turn.completed");
   assert(!calls.some(({ args }) => args[0] === "agent-hook"), "append and legacy must not both write activity");
+  assert(calls.some(({ args }) => args[0] === "rpc" && args[1] === "feed.note_display" && String(args[2]).includes("PRIVATE-SENTINEL")));
   assert(!readFileSync(log, "utf8").includes("PRIVATE-SENTINEL"));
   assert(!readFileSync(log, "utf8").includes("/synthetic"));
   assert.equal(new Set(events().map(event => event.event_id)).size, events().length);

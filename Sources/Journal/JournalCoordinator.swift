@@ -22,7 +22,13 @@ final class JournalCoordinator: @unchecked Sendable {
         if changed { refreshOwners([tabID]) }
     }
     func remove(tabID: UUID) {
-        lock.lock(); targets.removeValue(forKey: tabID); snapshots.removeValue(forKey: tabID); lock.unlock()
+        lock.lock()
+        targets.removeValue(forKey: tabID)
+        let hadProjection = snapshots.removeValue(forKey: tabID) != nil
+        let callback = sink
+        lock.unlock()
+        // A removed tab is a real close. The sink queues its own work and does not wait on UI.
+        if hadProjection { callback?(tabID, nil, nil) }
     }
     /// Called synchronously by the existing conversation actor after a real identity change.
     /// Snapshot readers never wait on that actor, including the typing/notification paths.
@@ -138,7 +144,10 @@ final class JournalCoordinator: @unchecked Sendable {
             let result = try storage().append(draft: draft, context: JournalContext(eligible: eligible, historical: historical, modelID: model))
             if let changed = result.changedSnapshot {
                 let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
-                startupQueue.async { [self] in publish(changed, boundary: boundary) }
+                // Publish before the receipt returns. The display note follows this receipt on the
+                // same caller, and a queued publish drops that note. The sink only enqueues its own
+                // work; this does not wait on the UI.
+                publish(changed, boundary: boundary)
             }
             lock.lock(); storageError = nil; lock.unlock()
             return result

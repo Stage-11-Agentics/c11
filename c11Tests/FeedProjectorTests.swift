@@ -1,0 +1,394 @@
+import XCTest
+
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
+// C11-264. Question/plan/permission rows follow the claude-bypass-ask PreToolUse shape
+// (blocked + request id, source hook). Prompt text is the synthetic sentinel used only
+// on the live note, never in the journal fold. Approval Stop follows the same-turn
+// Claude hook rule already covered by JournalReducerTests.
+final class FeedProjectorTests: XCTestCase {
+    private let sentinel = "SYNTHETIC-PROMPT-264"
+    private let otherTab = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+    private let laterWorkspace = UUID(uuidString: "00000000-0000-0000-0000-000000000009")!
+
+    private func blocked(_ kind: JournalKind, request: String, tab: UUID = JournalTestData.tab, workspace: UUID = JournalTestData.workspace, seq: Int64 = 1) throws -> JournalSnapshot {
+        var draft = JournalTestData.draft(kind)
+        draft.requestID = request
+        draft.tabID = tab
+        draft.workspaceID = workspace
+        return try XCTUnwrap(JournalTestData.fold(nil, draft, seq: seq).snapshot)
+    }
+
+    private func project(_ rows: [JournalSnapshot], attention: [FeedAttentionFact] = [], notes: [UUID: [String: FeedDisplayNote]] = [:], scope: FeedScope) -> [FeedRow] {
+        FeedProjector.project(journalRows: rows, attention: attention, notes: notes, scope: scope)
+    }
+
+    private func jsonData(_ object: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private func flag(tab: UUID = JournalTestData.tab, workspace: UUID = JournalTestData.workspace, suppressed: Bool = false) -> FeedAttentionFact {
+        FeedAttentionFact(workspaceID: workspace, tabID: tab, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerTabID: otherTab, suppressed: suppressed)
+    }
+
+    // claude-bypass-ask: question, plan, and permission are typed rows; other blocked reasons are not.
+    func testTypedAsksUseJournalFactsAndLeaveUnknownOptionsNull() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let plan = try blocked(.planReviewRequested, request: "plan-1", tab: otherTab)
+        let permission = try blocked(.approvalRequested, request: "perm-1", tab: UUID(uuidString: "00000000-0000-0000-0000-000000000007")!)
+        for (snapshot, kind) in [(question, FeedKind.question), (plan, .plan), (permission, .permission)] {
+            let row = try XCTUnwrap(project([snapshot], scope: .attention).first { $0.tabID == snapshot.owner.tabID })
+            XCTAssertEqual(row.kind, kind)
+            XCTAssertEqual(row.workspaceID, snapshot.workspaceID)
+            XCTAssertEqual(row.source, "hook")
+            XCTAssertEqual(row.sourceRank, 60)
+            XCTAssertEqual(row.openedAtMs, snapshot.sinceMs)
+            XCTAssertEqual(row.openedAtMs, 10_001)
+            XCTAssertEqual(row.state, "open")
+            XCTAssertEqual(row.confirmation, "confirmed")
+            XCTAssertEqual(row.blocking, true)
+            XCTAssertNil(row.options)
+            XCTAssertFalse(row.promptAvailable)
+        }
+        var unknown = question
+        for reason in [JournalReason.observation, .toolFailure, nil] {
+            unknown.reason = reason
+            XCTAssertNil(FeedProjector.blockingKind(unknown))
+            XCTAssertTrue(project([unknown], scope: .all).isEmpty)
+        }
+        var undated = question
+        undated.sinceMs = 0
+        XCTAssertNil(project([undated], scope: .attention).first?.openedAtMs)
+    }
+
+    func testTurnEndIsScopeAllOnlyAndSortsByWorkspaceThenTab() throws {
+        var start = JournalTestData.draft(.turnStarted)
+        start.turnID = "turn-1"
+        let working = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)
+        var stop = JournalTestData.draft(.turnCompleted)
+        stop.turnID = "turn-1"
+        let ended = try XCTUnwrap(JournalTestData.fold(working, stop, seq: 2).snapshot)
+        XCTAssertTrue(FeedProjector.isTurnEnd(ended))
+        XCTAssertTrue(project([ended], scope: .attention).isEmpty)
+        let row = try XCTUnwrap(project([ended], scope: .all).first)
+        XCTAssertEqual(row.kind, .turnEnd)
+        XCTAssertNil(row.state)
+        XCTAssertEqual(row.blocking, false)
+        XCTAssertEqual(row.openedAtMs, ended.sinceMs)
+
+        let early = try blocked(.questionRequested, request: "early")
+        let late = try blocked(.questionRequested, request: "late", tab: otherTab, workspace: laterWorkspace)
+        let sorted = project([late, early], scope: .attention)
+        XCTAssertEqual(sorted.map(\.workspaceID), [JournalTestData.workspace, laterWorkspace])
+    }
+
+    // Prompt joins the live row and is absent from the journal database opened in the same test.
+    func testPromptAppearsOnlyOnTheJoinedNote() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let note = FeedDisplayNote(eventID: UUID(), requestID: "ask-1", prompt: sentinel, options: ["one"])
+        let row = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["ask-1": note]], scope: .attention).first)
+        XCTAssertEqual(row.prompt, sentinel)
+        XCTAssertEqual(row.options, ["one"])
+        XCTAssertTrue(row.promptAvailable)
+        let encoded = try jsonData(row.jsonObject())
+        XCTAssertTrue(encoded.range(of: Data(sentinel.utf8)) != nil)
+
+        let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("feed-264-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { 1_000 })
+        var draft = JournalTestData.draft(.questionRequested)
+        draft.requestID = "ask-1"
+        _ = try store.append(draft: draft, context: JournalContext(eligible: true))
+        let needle = Data(sentinel.utf8)
+        for name in ["lifecycle.sqlite3", "lifecycle.sqlite3-wal", "lifecycle.sqlite3-shm"] {
+            let url = directory.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            XCTAssertNil(try Data(contentsOf: url).range(of: needle), name)
+        }
+    }
+
+    // Flag plus question is one row. A sibling working fold and same-tab tool activity leave it open.
+    func testFlagAndSiblingActivityKeepTheOpenQuestion() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let row = try XCTUnwrap(project([question], attention: [flag()], scope: .attention).first)
+        XCTAssertEqual(row.kind, .question)
+        XCTAssertEqual(row.state, "open")
+        XCTAssertEqual(row.flag?.reason, "synthetic-flag")
+        XCTAssertEqual(row.flag?.raisedAtMs, 50)
+        XCTAssertEqual(row.flag?.callerTabID, otherTab)
+
+        var sibling = JournalTestData.draft(.turnStarted)
+        sibling.tabID = otherTab
+        sibling.workspaceID = laterWorkspace
+        let working = try XCTUnwrap(JournalTestData.fold(nil, sibling, seq: 1).snapshot)
+        var tool = JournalTestData.draft(.stateChanged)
+        tool.signal = .toolActivity
+        let afterTool = JournalTestData.fold(question, tool, seq: 2)
+        XCTAssertEqual(afterTool.snapshot?.phase, .blocked)
+        XCTAssertEqual(afterTool.snapshot?.requestID, "ask-1")
+        let rows = project([afterTool.snapshot!, working], attention: [flag()], scope: .attention)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].state, "open")
+        XCTAssertEqual(rows[0].tabID, question.owner.tabID)
+    }
+
+    func testTrackerEmitsOneOpenThenReplacementAndResolution() throws {
+        let question = try blocked(.questionRequested, request: "ask-a")
+        var tracker = FeedAskTracker()
+        let opened = tracker.consume(tabID: question.owner.tabID, snapshot: question)
+        XCTAssertEqual(opened.map(\.action), [.opened])
+        XCTAssertEqual(opened[0].kind, "question")
+        XCTAssertEqual(opened[0].state, "open")
+        XCTAssertNil(opened[0].resolution)
+        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: question), [])
+
+        var again = JournalTestData.draft(.questionRequested)
+        again.requestID = "ask-a"
+        let duplicate = JournalTestData.fold(question, again, seq: 2)
+        XCTAssertEqual(duplicate.effect, .duplicateEvidence)
+        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: duplicate.snapshot), [])
+
+        var replacement = JournalTestData.draft(.questionRequested)
+        replacement.requestID = "ask-b"
+        let replaced = try XCTUnwrap(JournalTestData.fold(question, replacement, seq: 3).snapshot)
+        let swapped = tracker.consume(tabID: question.owner.tabID, snapshot: replaced)
+        XCTAssertEqual(swapped.map(\.action), [.closed, .opened])
+        XCTAssertEqual(swapped[0].requestID, "ask-a")
+        XCTAssertNil(swapped[0].resolution)
+        XCTAssertEqual(swapped[1].requestID, "ask-b")
+        let swappedBytes = try jsonData(swapped[0].jsonObject()) + jsonData(swapped[1].jsonObject())
+        XCTAssertNil(swappedBytes.range(of: Data(sentinel.utf8)))
+        XCTAssertNil(swappedBytes.range(of: Data("options".utf8)))
+
+        func resolve(_ resolution: JournalResolution, seq: Int64) throws -> JournalSnapshot {
+            var draft = JournalTestData.draft(.attentionResolved)
+            draft.requestID = "ask-b"
+            draft.resolution = resolution
+            return try XCTUnwrap(JournalTestData.fold(replaced, draft, seq: seq).snapshot)
+        }
+        let resumed = try resolve(.resumed, seq: 4)
+        XCTAssertEqual(FeedProjector.resolution(after: resumed), "resumed")
+        let resumedEvents = tracker.consume(tabID: question.owner.tabID, snapshot: resumed)
+        XCTAssertEqual(resumedEvents.map(\.resolution), ["resumed"])
+
+        let reopened = try blocked(.planReviewRequested, request: "plan-1", seq: 5)
+        _ = tracker.consume(tabID: reopened.owner.tabID, snapshot: reopened)
+        var cancel = JournalTestData.draft(.attentionResolved)
+        cancel.requestID = "plan-1"
+        cancel.resolution = .cancelled
+        let cancelled = try XCTUnwrap(JournalTestData.fold(reopened, cancel, seq: 6).snapshot)
+        XCTAssertEqual(tracker.consume(tabID: reopened.owner.tabID, snapshot: cancelled).first?.resolution, "cancelled")
+
+        let third = try blocked(.approvalRequested, request: "perm-1", seq: 7)
+        _ = tracker.consume(tabID: third.owner.tabID, snapshot: third)
+        var unknown = JournalTestData.draft(.attentionResolved)
+        unknown.requestID = "perm-1"
+        unknown.resolution = .unknown
+        let foldedUnknown = try XCTUnwrap(JournalTestData.fold(third, unknown, seq: 8).snapshot)
+        XCTAssertEqual(FeedProjector.resolution(after: foldedUnknown), "unknown")
+        XCTAssertEqual(tracker.consume(tabID: third.owner.tabID, snapshot: foldedUnknown).first?.resolution, "unknown")
+    }
+
+    func testReplaySuppressionAndStaleSnapshotsDoNotEmitFalseCloses() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        var tracker = FeedAskTracker()
+        let restored = JournalReplayPolicy.restored(question)
+        XCTAssertEqual(restored.confirmation, .unconfirmed)
+        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: restored), [])
+        XCTAssertEqual(tracker.consume(tabID: question.owner.tabID, snapshot: question), [])
+
+        var fresh = FeedAskTracker()
+        _ = fresh.consume(tabID: question.owner.tabID, snapshot: question)
+        var stale = question
+        stale.lastSequence = 0
+        XCTAssertEqual(fresh.consume(tabID: question.owner.tabID, snapshot: stale), [])
+        let gone = fresh.consume(tabID: question.owner.tabID, snapshot: nil)
+        XCTAssertEqual(gone.map(\.action), [.closed])
+        XCTAssertNil(gone[0].resolution)
+
+        let suppressed = project([question], attention: [FeedAttentionFact(
+            workspaceID: JournalTestData.workspace, tabID: question.owner.tabID,
+            flagReason: nil, flagRaisedAtMs: nil, flagCallerTabID: nil, suppressed: true
+        )], scope: .attention)
+        XCTAssertTrue(suppressed.isEmpty)
+        XCTAssertEqual(fresh.consume(tabID: question.owner.tabID, snapshot: nil).count, 0)
+    }
+
+    func testClaudeApprovalStopClosesWithoutCancelledResolution() throws {
+        var approval = JournalTestData.draft(.approvalRequested)
+        approval.requestID = "perm-1"
+        approval.turnID = "approval-turn"
+        let blockedApproval = try XCTUnwrap(JournalTestData.fold(nil, approval, seq: 1).snapshot)
+        var stop = JournalTestData.draft(.turnCompleted)
+        stop.turnID = "approval-turn"
+        let completed = try XCTUnwrap(JournalTestData.fold(blockedApproval, stop, seq: 2).snapshot)
+        XCTAssertEqual(completed.phase, .idle)
+        XCTAssertEqual(completed.turnOutcome, "completed")
+        XCTAssertNil(FeedProjector.resolution(after: completed))
+        var tracker = FeedAskTracker()
+        _ = tracker.consume(tabID: blockedApproval.owner.tabID, snapshot: blockedApproval)
+        let closed = tracker.consume(tabID: blockedApproval.owner.tabID, snapshot: completed)
+        XCTAssertEqual(closed.map(\.action), [.closed])
+        XCTAssertNil(closed[0].resolution)
+        let bytes = try jsonData(closed[0].jsonObject())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        XCTAssertTrue(object["resolution"] is NSNull)
+    }
+
+    func testSuppressionAndConfirmationFilterRowsWithoutASecondProjector() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let suppressedOnly = FeedAttentionFact(workspaceID: JournalTestData.workspace, tabID: question.owner.tabID, flagReason: nil, flagRaisedAtMs: nil, flagCallerTabID: nil, suppressed: true)
+        XCTAssertTrue(project([question], attention: [suppressedOnly], scope: .attention).isEmpty)
+        XCTAssertTrue(project([question], attention: [suppressedOnly], scope: .all).isEmpty)
+        let kept = try XCTUnwrap(project([question], attention: [flag(suppressed: true)], scope: .attention).first)
+        XCTAssertEqual(kept.kind, .question)
+        XCTAssertNotNil(kept.flag)
+
+        var start = JournalTestData.draft(.turnStarted)
+        start.turnID = "turn-1"
+        let working = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)
+        var stop = JournalTestData.draft(.turnCompleted)
+        stop.turnID = "turn-1"
+        let ended = try XCTUnwrap(JournalTestData.fold(working, stop, seq: 2).snapshot)
+        let attentionFlag = try XCTUnwrap(project([ended], attention: [flag()], scope: .attention).first)
+        XCTAssertNil(attentionFlag.kind)
+        XCTAssertNil(attentionFlag.state)
+        XCTAssertNil(attentionFlag.openedAtMs)
+        XCTAssertNil(attentionFlag.source)
+        XCTAssertNil(attentionFlag.confirmation)
+        XCTAssertNil(attentionFlag.blocking)
+        XCTAssertEqual(attentionFlag.flag?.reason, "synthetic-flag")
+        let all = try XCTUnwrap(project([ended], attention: [flag()], scope: .all).first)
+        XCTAssertEqual(all.kind, .turnEnd)
+        XCTAssertNotNil(all.flag)
+        let suppressedEnd = try XCTUnwrap(project([ended], attention: [flag(suppressed: true)], scope: .all).first)
+        XCTAssertNil(suppressedEnd.kind)
+        XCTAssertNotNil(suppressedEnd.flag)
+        XCTAssertNil(project([ended], attention: [flag(suppressed: true)], scope: .attention).first?.kind)
+
+        let restored = JournalReplayPolicy.restored(question)
+        let replay = try XCTUnwrap(project([restored], scope: .attention).first)
+        XCTAssertEqual(replay.confirmation, "unconfirmed")
+        XCTAssertFalse(replay.promptAvailable)
+
+        let emptyNote = FeedDisplayNote(eventID: UUID(), requestID: "ask-1", prompt: nil, options: [])
+        let joined = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["ask-1": emptyNote]], scope: .attention).first)
+        XCTAssertTrue(joined.promptAvailable)
+        XCTAssertNil(joined.prompt)
+        XCTAssertEqual(joined.options, [])
+        let wrong = FeedDisplayNote(eventID: UUID(), requestID: "other", prompt: sentinel, options: ["x"])
+        let missed = try XCTUnwrap(project([question], notes: [question.owner.tabID: ["other": wrong]], scope: .attention).first)
+        XCTAssertFalse(missed.promptAvailable)
+        XCTAssertNil(missed.prompt)
+
+        let encoded = try jsonData(attentionFlag.jsonObject())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in ["kind", "state", "opened_at_ms", "source", "confirmation", "blocking"] {
+            XCTAssertTrue(object[key] is NSNull, key)
+        }
+        XCTAssertNotNil(object["flag"] as? [String: Any])
+    }
+
+    func testDisplayCacheHonorsCountBytesAndOversize() throws {
+        let cache = AskDisplayCache()
+        let tab = JournalTestData.tab
+        func maxNote(request: String, event: UUID = UUID()) -> FeedDisplayNote {
+            FeedDisplayNote(eventID: event, requestID: request, prompt: String(repeating: "p", count: 1024),
+                            options: Array(repeating: String(repeating: "l", count: 128), count: 12))
+        }
+        for index in 0..<204 {
+            try cache.store(tabID: tab, note: maxNote(request: "r\(index)"))
+        }
+        XCTAssertEqual(cache.count, 204)
+        XCTAssertEqual(cache.accountedBytes, 204 * 2560)
+        XCTAssertThrowsError(try cache.store(tabID: tab, note: maxNote(request: "overflow"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
+        XCTAssertEqual(cache.count, 204)
+
+        let zero = UUID()
+        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: zero, requestID: "slack", prompt: nil, options: []))
+        XCTAssertEqual(cache.count, 205)
+        XCTAssertEqual(cache.accountedBytes, 204 * 2560)
+        XCTAssertThrowsError(try cache.store(tabID: tab, note: maxNote(request: "slack"))) { XCTAssertEqual($0 as? FeedNoteError, .overflow) }
+        XCTAssertEqual(cache.note(tabID: tab, requestID: "slack")?.eventID, zero)
+
+        let repeated = UUID()
+        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "0123456789", options: nil))
+        let before = cache.accountedBytes
+        try cache.store(tabID: tab, note: FeedDisplayNote(eventID: repeated, requestID: "repeat", prompt: "abcd", options: nil))
+        XCTAssertEqual(cache.accountedBytes, before - 6)
+        XCTAssertEqual(cache.note(tabID: tab, requestID: "repeat")?.prompt, "abcd")
+
+        let fresh = AskDisplayCache()
+        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "big", prompt: String(repeating: "p", count: 1025), options: nil))) {
+            XCTAssertEqual($0 as? FeedNoteError, .oversize)
+        }
+        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "many", prompt: nil, options: Array(repeating: "a", count: 13)))) {
+            XCTAssertEqual($0 as? FeedNoteError, .oversize)
+        }
+        XCTAssertThrowsError(try fresh.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "long", prompt: nil, options: [String(repeating: "x", count: 129)]))) {
+            XCTAssertEqual($0 as? FeedNoteError, .oversize)
+        }
+        XCTAssertEqual(fresh.count, 0)
+
+        let counted = AskDisplayCache()
+        for index in 0..<256 {
+            try counted.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "z\(index)", prompt: nil, options: []))
+        }
+        XCTAssertThrowsError(try counted.store(tabID: tab, note: FeedDisplayNote(eventID: UUID(), requestID: "z256", prompt: nil, options: []))) {
+            XCTAssertEqual($0 as? FeedNoteError, .overflow)
+        }
+        XCTAssertEqual(counted.count, 256)
+        XCTAssertEqual(counted.accountedBytes, 0)
+    }
+
+    func testExtractorBoundsPromptAndLabels() {
+        let prompt = String(repeating: "é", count: 600)
+        let labels = (0..<20).map { _ in String(repeating: "x", count: 200) }
+        let object: [String: Any] = ["tool_input": ["questions": [[
+            "question": prompt,
+            "options": labels.map { ["label": $0] },
+        ]]]]
+        let bounded = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: object)
+        XCTAssertLessThanOrEqual(bounded.prompt?.utf8.count ?? 0, 1024)
+        XCTAssertEqual(bounded.options?.count, 12)
+        XCTAssertTrue(bounded.options?.allSatisfy { $0.utf8.count <= 128 } == true)
+        XCTAssertEqual(FeedNoteLimits.prefix("é", maxBytes: 1), "")
+
+        let missing = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: ["tool_input": ["questions": [["question": "Which?"]]]])
+        XCTAssertEqual(missing.prompt, "Which?")
+        XCTAssertNil(missing.options)
+        let empty = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: ["tool_input": ["questions": [["header": "Pick", "options": [String]()]]]])
+        XCTAssertEqual(empty.prompt, "Pick")
+        XCTAssertEqual(empty.options, [])
+        let plan = FeedDisplayExtract.claude(toolName: "ExitPlanMode", object: ["tool_input": ["plan": "ship the feed"]])
+        XCTAssertEqual(plan.prompt, "ship the feed")
+        XCTAssertNil(plan.options)
+        let blank = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: ["tool_input": ["questions": [["question": "", "header": ""]]]])
+        XCTAssertNil(blank.prompt)
+        XCTAssertNil(blank.options)
+        XCTAssertNotEqual(blank.prompt, "Asking a question")
+    }
+
+    func testWatchParserHoldsPartialLinesAndMarksGapsBeforeFiltering() {
+        var parser = FeedWatchParser()
+        XCTAssertEqual(parser.consume("{\"seq\":1,\"type\":\"log.opened\"}\n"), [.followedEvent("log.opened")])
+        XCTAssertEqual(parser.consume("{\"seq\":2,\"type\":\"surface.created\"}\n"), [])
+        XCTAssertEqual(parser.lastSeq, 2)
+        XCTAssertEqual(parser.consume("{\"seq\":4,\"type\":\"surface.created\"}\n"), [.continuityUnavailable])
+        var dropped = FeedWatchParser()
+        _ = dropped.consume("{\"seq\":1,\"type\":\"ask.opened\"}\n")
+        XCTAssertEqual(dropped.consume("{\"seq\":2,\"type\":\"log.dropped\"}\n"), [.continuityUnavailable])
+        var restarted = FeedWatchParser()
+        _ = restarted.consume("{\"seq\":1,\"type\":\"ask.opened\"}\n")
+        XCTAssertEqual(restarted.consume("{\"seq\":2,\"type\":\"log.opened\"}\n"), [.continuityUnavailable])
+        XCTAssertEqual(restarted.consume("{\"seq\":1,\"type\":\"ask.closed\"}\n"), [.continuityUnavailable])
+        var partial = FeedWatchParser()
+        XCTAssertEqual(partial.consume("{\"seq\":1,\"type\":\"ask.opened\""), [])
+        XCTAssertEqual(partial.consume("}\n{\"seq\":2,\"type\":\"flag.raised\"}\n"), [.followedEvent("ask.opened"), .followedEvent("flag.raised")])
+    }
+}

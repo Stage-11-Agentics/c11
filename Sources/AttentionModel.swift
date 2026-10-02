@@ -462,5 +462,7 @@ final class TabAttentionService {
         AppDelegate.shared?.workspaceManagerFor(workspaceId: snapshot.workspaceId)?
             .workspaces.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
+        // Copy the snapshot off main. Do not project the feed row here.
+        FeedProjectionBridge.shared.noteAttention(snapshot)
     }
 }

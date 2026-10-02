@@ -3359,6 +3359,16 @@ struct CMUXCLI {
             let payload = try client.sendV2(method: method, params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
+        case "feed":
+            try FeedCommand.run(
+                arguments: commandArgs,
+                jsonOutput: jsonOutput,
+                client: client,
+                defaultWorkspace: { workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId) },
+                resolveWorkspace: { raw in try normalizeWorkspaceHandle(raw, client: client) },
+                resolveTab: { raw, ws in try normalizeSurfaceHandle(raw, client: client, workspaceHandle: ws) }
+            )
+
         case "list-notifications":
             let response = try sendV1Command("list_notifications", client: client)
             if jsonOutput {
@@ -10533,6 +10543,8 @@ struct CMUXCLI {
               c11 area-confirm --tab tab:1 --title "Deploy to prod?" --destructive
               c11 area-confirm --tab $C11_TAB_ID --title "Continue?" --timeout 60
             """
+        case "feed":
+            return FeedCommand.usageText
         case "list-notifications":
             return """
             Usage: c11 list-notifications
@@ -18029,33 +18041,67 @@ struct CMUXCLI {
             // its approval UI waits. The native trace has no Notification edge.
             let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
             if subcommand == "pre-tool-use" && (toolName == "AskUserQuestion" || planApproval) {
-                let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
-                let body: String
-                if toolName == "ExitPlanMode" {
-                    body = String(localized: "claudeHook.planApproval", defaultValue: "Plan approval needed")
-                } else {
-                    body = describeAskUserQuestion(parsedInput.object)
-                        ?? String(localized: "claudeHook.waitingForInput", defaultValue: "Waiting for input")
-                }
-                if let sessionId = parsedInput.sessionId {
-                    try? sessionStore.upsert(
-                        sessionId: sessionId, workspaceId: workspaceId, surfaceId: resolvedSurface,
-                        cwd: parsedInput.cwd, lastSubtitle: subtitle, lastBody: body
-                    )
-                }
-                _ = try? reportAgentActivity(
-                    client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
-                    activity: "idle", fromNotification: true
-                )
-                if bypass || planApproval {
-                    let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
-                    _ = try sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
-                    try setClaudeStatus(
+                // Append and the display note share one 250 ms budget. A missed note is not retried.
+                let budgetEnd = Date().addingTimeInterval(0.250)
+                let supported = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
+                let managed = supported && journalDraft != nil
+                if !managed {
+                    let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
+                    let body: String
+                    if toolName == "ExitPlanMode" {
+                        body = String(localized: "claudeHook.planApproval", defaultValue: "Plan approval needed")
+                    } else {
+                        body = describeAskUserQuestion(parsedInput.object)
+                            ?? String(localized: "claudeHook.waitingForInput", defaultValue: "Waiting for input")
+                    }
+                    if let sessionId = parsedInput.sessionId {
+                        try? sessionStore.upsert(
+                            sessionId: sessionId, workspaceId: workspaceId, surfaceId: resolvedSurface,
+                            cwd: parsedInput.cwd, lastSubtitle: subtitle, lastBody: body
+                        )
+                    }
+                    _ = try? reportAgentActivity(
                         client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
-                        value: "Needs input", icon: "bell.fill", color: "#4C8DFF", pid: claudePid
+                        activity: "idle", fromNotification: true
                     )
+                    if bypass || planApproval {
+                        let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
+                        _ = try sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                        try setClaudeStatus(
+                            client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
+                            value: "Needs input", icon: "bell.fill", color: "#4C8DFF", pid: claudePid
+                        )
+                    }
+                } else {
+                    if case .committed(let receipt) = journalDelivery, let eventID = receipt["event_id"] as? String {
+                        let extracted = FeedDisplayExtract.claude(toolName: toolName, object: parsedInput.object)
+                        let remaining = budgetEnd.timeIntervalSinceNow
+                        if remaining > 0 {
+                            FeedCommand.sendDisplayNote(
+                                client: client,
+                                workspaceID: workspaceId,
+                                tabID: resolvedSurface,
+                                sessionID: parsedInput.sessionId ?? journalDraft?.sessionID,
+                                eventID: eventID,
+                                requestID: journalDraft?.requestID,
+                                prompt: extracted.prompt,
+                                options: extracted.options,
+                                deadline: remaining
+                            )
+                        }
+                    }
+                    if bypass || planApproval {
+                        try setClaudeStatus(
+                            client: client,
+                            workspaceId: workspaceId,
+                            surfaceId: resolvedSurface,
+                            value: "Needs input",
+                            icon: "bell.fill",
+                            color: "#4C8DFF",
+                            pid: claudePid
+                        )
+                    }
                 }
-                // Normal-mode AskUserQuestion retains the Notification route.
                 print("OK")
                 return
             }
@@ -18982,6 +19028,9 @@ struct CMUXCLI {
           notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--tab <id|ref>]
           area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
           list-notifications
+          feed list [--json] [--scope attention|all]
+          feed open <tab> [--workspace <id|ref>] [--json]
+          feed watch [--json] [--scope attention|all]
           clear-notifications
           agent-event append --stdin
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]

@@ -8440,6 +8440,10 @@ struct WorkspaceSidebar: View {
     @StateObject private var dragAutoScrollController = SidebarDragAutoScrollController()
     @StateObject private var dragFailsafeMonitor = SidebarDragFailsafeMonitor()
     @StateObject private var horizontalScrollMonitor = SidebarHorizontalScrollWorkspaceMonitor()
+    @StateObject private var groupCoordinator = WorkspaceGroupSidebarCoordinator()
+    @State private var showingNewGroup = false
+    @State private var newGroupFocusTarget: WorkspaceGroupEditorFocusTarget?
+    @State private var draggedGroupId: UUID?
     @State private var draggedWorkspaceId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
@@ -8540,8 +8544,7 @@ struct WorkspaceSidebar: View {
     }
 
     var body: some View {
-        let workspaceCount = workspaceManager.workspaces.count
-        let canCloseWorkspace = workspaceCount > 1
+        let workspacesById = Dictionary(uniqueKeysWithValues: workspaceManager.workspaces.map { ($0.id, $0) })
         // Compute chrome-scale tokens once per parent eval. Threaded as a
         // precomputed `let` to TabItemView so its typing-latency hot-path
         // == comparison stays a single multiplier compare. (C11-6)
@@ -8564,155 +8567,26 @@ struct WorkspaceSidebar: View {
                         Spacer()
                             .frame(height: trafficLightPadding + firstRowTopInset)
 
+                        groupControls
+
                         LazyVStack(spacing: tabRowSpacing) {
-                            ForEach(Array(workspaceManager.workspaces.enumerated()), id: \.element.id) { index, ws in
-                                let selectedContextIds: Set<UUID> = selectedWorkspaceIds.contains(ws.id) ? selectedWorkspaceIds : [ws.id]
-                                let contextTargetIds = workspaceManager.workspaces.compactMap { workspace in
-                                    selectedContextIds.contains(workspace.id) ? workspace.id : nil
-                                }
-                                let remoteContextMenuTargets = workspaceManager.workspaces.filter { workspace in
-                                    contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
-                                }
-                                let isActive = workspaceManager.selectedWorkspaceId == ws.id
-                                let isMultiSelected = selectedWorkspaceIds.contains(ws.id)
-                                let themedColors = themedSidebarWorkspaceColors(
-                                    workspace: ws,
-                                    isActive: isActive,
-                                    isMultiSelected: isMultiSelected
-                                )
-                                // C11-104 v2: precompute worktree+branch
-                                // chips for the focused surface. Reads the
-                                // resolver output directly from the
-                                // workspace's `panelGitContexts` (populated
-                                // by the off-main probe in TabManager).
-                                // Branch chip's dirty marker comes from the
-                                // existing `panelGitBranches[surfaceId].isDirty`
-                                // signal so the legacy UX is preserved.
-                                let worktreeChipRows: [WorktreeChipRow] = {
-                                    guard sidebarShowBranchDirectory,
-                                          let focusedId = ws.focusedPanelId else {
-                                        return []
-                                    }
-                                    let context = ws.tabGitContexts[focusedId] ?? nil
-                                    let isDirty = ws.tabGitBranches[focusedId]?.isDirty ?? false
-                                    return WorktreeChipProjector.project(
-                                        context,
-                                        settingsEnabled: true,
-                                        isDirty: isDirty
-                                    )
-                                }()
-                                // Workspace Pulse preview: project existing exact
-                                // notification + agent liveness truth once in the
-                                // parent. TabItemView receives an immutable value so
-                                // its typing-hot body does no metadata/store work.
-                                let unreadCount = notificationStore.unreadCount(forWorkspaceId: ws.id)
-                                let pulseRoster: (
-                                    agents: [WorkspacePulseAgent],
-                                    terminalCount: Int,
-                                    browserCount: Int,
-                                    documentCount: Int
-                                ) = {
-                                    var agents: [WorkspacePulseAgent] = []
-                                    var terminalCount = 0
-                                    var browserCount = 0
-                                    var documentCount = 0
-                                    for tabId in ws.sidebarOrderedTabIds() {
-                                        let terminalKind = ws.surfaceActivityTerminalKind(panelId: tabId)
-                                        guard AreaSizePolicy.isAgentKind(terminalKind) else {
-                                            switch ws.panels[tabId]?.panelType {
-                                            case .terminal: terminalCount += 1
-                                            case .browser: browserCount += 1
-                                            case .markdown: documentCount += 1
-                                            case nil: break
+                            ForEach(groupCoordinator.projection.rows) { row in
+                                switch row {
+                                case .group(let header):
+                                    groupHeader(header, chromeTokens: chromeTokens)
+                                case .workspace(let item):
+                                    if let ws = workspacesById[item.workspaceId] {
+                                        workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                                            .padding(.leading, item.groupId == nil ? 0 : 12)
+                                            .overlay(alignment: .bottom) {
+                                                if item.isLastGroupMember, draggedGroupId != nil,
+                                                   dropIndicator?.groupId == item.groupId,
+                                                   dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
+                                                    Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
+                                                }
                                             }
-                                            continue
-                                        }
-                                        let resolved = ws.resolvedSurfaceTabActivityState(
-                                            panelId: tabId,
-                                            hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
-                                                forWorkspaceId: ws.id,
-                                                surfaceId: tabId
-                                            ),
-                                            terminalKind: .some(terminalKind)
-                                        )
-                                        let pulseState: WorkspacePulseState
-                                        switch resolved {
-                                        case .waiting: pulseState = .waiting
-                                        case .running: pulseState = .working
-                                        case .idle: pulseState = .idle
-                                        case .cold: pulseState = .cold
-                                        case nil: continue
-                                        }
-                                        let titleBarState = ws.tabTitleBarState(panelId: tabId)
-                                        let reportedTitle = titleBarState.title?
-                                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                                        let context = WorkspacePulseAgentContextProjector.project(
-                                            title: reportedTitle?.isEmpty == false
-                                                ? titleBarState.title
-                                                : ws.panels[tabId]?.displayTitle,
-                                            subtitle: showsSidebarNotificationMessage
-                                                ? titleBarState.description
-                                                : nil
-                                        )
-                                        let attention = ws.attentionSnapshot(panelId: tabId)
-                                        let activityHelp = ws.resolvedAgentActivityHelp(
-                                            panelId: tabId,
-                                            activityState: resolved
-                                        )
-                                        agents.append(
-                                            WorkspacePulseAgent(
-                                                surfaceId: tabId,
-                                                state: pulseState,
-                                                context: context,
-                                                flagged: attention.isFlagged,
-                                                suppressed: attention.suppressed,
-                                                flagReason: attention.flagReason,
-                                                activityHelp: activityHelp
-                                            )
-                                        )
                                     }
-                                    return (agents, terminalCount, browserCount, documentCount)
-                                }()
-                                let workspacePulse = WorkspacePulseProjector.project(
-                                    hasWorkspaceDemand: unreadCount > 0,
-                                    agents: pulseRoster.agents,
-                                    terminalCount: pulseRoster.terminalCount,
-                                    browserCount: pulseRoster.browserCount,
-                                    documentCount: pulseRoster.documentCount
-                                )
-                                WorkspaceRowView(
-                                    workspaceManager: workspaceManager,
-                                    notificationStore: notificationStore,
-                                    workspace: ws,
-                                    index: index,
-                                    isActive: isActive,
-                                    worktreeChipRows: worktreeChipRows,
-                                    workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
-                                        at: index,
-                                        workspaceCount: workspaceCount
-                                    ),
-                                    canCloseWorkspace: canCloseWorkspace,
-                                    accessibilityWorkspaceCount: workspaceCount,
-                                    unreadCount: unreadCount,
-                                    workspacePulse: workspacePulse,
-                                    rowSpacing: tabRowSpacing,
-                                    setSelectionToTabs: { selection = .tabs },
-                                    selectedWorkspaceIds: $selectedWorkspaceIds,
-                                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                                    showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
-                                    dragAutoScrollController: dragAutoScrollController,
-                                    draggedWorkspaceId: $draggedWorkspaceId,
-                                    dropIndicator: $dropIndicator,
-                                    themedBackgroundColor: themedColors.background,
-                                    themedRailColor: themedColors.rail,
-                                    remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
-                                    allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
-                                    allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
-                                    sidebarFlashToken: ws.sidebarFlashToken,
-                                    sidebarFlashColorHex: ws.sidebarFlashColorHex,
-                                    chromeTokens: chromeTokens
-                                )
-                                .equatable()
+                                }
                             }
                         }
                         .padding(.vertical, 8)
@@ -8742,6 +8616,7 @@ struct WorkspaceSidebar: View {
                             lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
                             dragAutoScrollController: dragAutoScrollController,
                             draggedWorkspaceId: $draggedWorkspaceId,
+                            draggedGroupId: $draggedGroupId,
                             dropIndicator: $dropIndicator
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -8815,6 +8690,7 @@ struct WorkspaceSidebar: View {
             .frame(width: 0, height: 0)
         )
         .onAppear {
+            groupCoordinator.attach(manager: workspaceManager, notificationStore: notificationStore)
             modifierKeyMonitor.start()
             horizontalScrollMonitor.start { [workspaceManager] step in
                 if step > 0 {
@@ -8824,6 +8700,7 @@ struct WorkspaceSidebar: View {
                 }
             }
             draggedWorkspaceId = nil
+            draggedGroupId = nil
             dropIndicator = nil
             SidebarDragLifecycleNotification.postStateDidChange(
                 workspaceId: nil,
@@ -8831,11 +8708,13 @@ struct WorkspaceSidebar: View {
             )
         }
         .onDisappear {
+            groupCoordinator.detach()
             modifierKeyMonitor.stop()
             horizontalScrollMonitor.stop()
             dragAutoScrollController.stop()
             dragFailsafeMonitor.stop()
             draggedWorkspaceId = nil
+            draggedGroupId = nil
             dropIndicator = nil
             SidebarDragLifecycleNotification.postStateDidChange(
                 workspaceId: nil,
@@ -8860,15 +8739,297 @@ struct WorkspaceSidebar: View {
             dragAutoScrollController.stop()
             dropIndicator = nil
         }
+        .onChange(of: draggedGroupId) { groupId in
+            if groupId != nil {
+                dragFailsafeMonitor.start {
+                    SidebarDragLifecycleNotification.postClearRequest(reason: $0)
+                }
+            } else if draggedWorkspaceId == nil {
+                dragFailsafeMonitor.stop()
+                dragAutoScrollController.stop()
+                dropIndicator = nil
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: SidebarDragLifecycleNotification.requestClear)) { notification in
-            guard draggedWorkspaceId != nil else { return }
+            guard draggedWorkspaceId != nil || draggedGroupId != nil else { return }
             let reason = SidebarDragLifecycleNotification.reason(from: notification)
 #if DEBUG
             dlog("sidebar.dragClear tab=\(debugShortSidebarWorkspaceId(draggedWorkspaceId)) reason=\(reason)")
 #endif
             draggedWorkspaceId = nil
+            draggedGroupId = nil
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var groupControls: some View {
+        Button {
+            newGroupFocusTarget = WorkspaceGroupEditorFocusTarget.capture()
+            showingNewGroup = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: draggedWorkspaceId == nil ? "folder.badge.plus" : "tray.and.arrow.down")
+                    .frame(width: 18)
+                Text(draggedWorkspaceId == nil
+                    ? String(localized: "workspaceGroup.new", defaultValue: "New Group")
+                    : String(localized: "workspaceGroup.drop.ungroup", defaultValue: "Move to Ungrouped"))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("WorkspaceGroupNew")
+        .overlay {
+            if draggedWorkspaceId != nil, let indicator = dropIndicator,
+               indicator.workspaceId == nil && indicator.groupId == nil {
+                RoundedRectangle(cornerRadius: 5).stroke(cmuxAccentColor(), lineWidth: 2)
+            }
+        }
+        .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
+            targetWorkspaceId: nil, workspaceManager: workspaceManager,
+            draggedWorkspaceId: $draggedWorkspaceId, draggedGroupId: $draggedGroupId,
+            selectedWorkspaceIds: $selectedWorkspaceIds, lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+            targetRowHeight: nil, dragAutoScrollController: dragAutoScrollController, dropIndicator: $dropIndicator
+        ))
+        .contextMenu {
+            Button(String(localized: "workspaceGroup.new", defaultValue: "New Group")) {
+                newGroupFocusTarget = WorkspaceGroupEditorFocusTarget.capture()
+                showingNewGroup = true
+            }
+        }
+        .popover(isPresented: $showingNewGroup) {
+            WorkspaceGroupNameEditor(
+                initialName: "",
+                title: String(localized: "workspaceGroup.new", defaultValue: "New Group"),
+                submitTitle: String(localized: "workspaceGroup.create", defaultValue: "Create"),
+                focusTarget: newGroupFocusTarget,
+                onSubmit: { name in _ = try workspaceManager.createWorkspaceGroup(name: name) },
+                onDismiss: { showingNewGroup = false }
+            )
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens) -> some View {
+        WorkspaceGroupHeaderView(
+            group: header.group, summary: header.summary, isActive: header.isActive,
+            scale: chromeTokens.multiplier, colorScheme: colorScheme, palette: WorkspaceColorSettings.palette(),
+            onToggleCollapse: { id in
+                guard let group = workspaceManager.workspaceGroups.first(where: { $0.id == id }) else { return }
+                try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
+            },
+            onFocus: { id in
+                guard let selected = try? workspaceManager.focusWorkspaceGroup(id: id) else { return }
+                selectedWorkspaceIds = [selected]
+                lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selected }
+                selection = .tabs
+            },
+            onRename: { try workspaceManager.renameWorkspaceGroup(id: $0, name: $1) },
+            onSetColor: { try workspaceManager.setWorkspaceGroupColor(id: $0, color: $1) },
+            onSetIcon: { try workspaceManager.setWorkspaceGroupIcon(id: $0, icon: $1) },
+            onTogglePin: { id in
+                guard let group = workspaceManager.workspaceGroups.first(where: { $0.id == id }) else { return }
+                try? workspaceManager.setWorkspaceGroupPinned(id: id, pinned: !group.isPinned)
+            },
+            onUngroup: { try? workspaceManager.deleteWorkspaceGroup(id: $0) },
+            onDelete: { try? workspaceManager.deleteWorkspaceGroup(id: $0) }
+        )
+        .equatable()
+        .opacity(draggedGroupId == header.group.id ? 0.6 : 1)
+        .overlay {
+            if dropIndicator?.groupId == header.group.id && dropIndicator?.isGroupBody == true {
+                RoundedRectangle(cornerRadius: 6).stroke(cmuxAccentColor(), lineWidth: 2)
+            }
+        }
+        .overlay(alignment: .top) {
+            if dropIndicator?.groupId == header.group.id && dropIndicator?.isGroupBody == false && dropIndicator?.edge == .top {
+                Rectangle().fill(cmuxAccentColor()).frame(height: 2)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if dropIndicator?.groupId == header.group.id && dropIndicator?.isGroupBody == false && dropIndicator?.edge == .bottom
+                && (header.group.isCollapsed || header.summary.memberCount == 0) {
+                Rectangle().fill(cmuxAccentColor()).frame(height: 2)
+            }
+        }
+        .onDrag {
+            draggedWorkspaceId = nil
+            draggedGroupId = header.group.id
+            dropIndicator = nil
+            return SidebarGroupDragPayload.provider(for: header.group.id)
+        }
+        .internalOnlyTabDrag()
+        .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes + SidebarGroupDragPayload.dropContentTypes,
+                delegate: SidebarWorkspaceDropDelegate(
+                    targetWorkspaceId: nil, targetGroupId: header.group.id, workspaceManager: workspaceManager,
+                    draggedWorkspaceId: $draggedWorkspaceId, draggedGroupId: $draggedGroupId,
+                    selectedWorkspaceIds: $selectedWorkspaceIds, lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+                    targetRowHeight: WorkspaceGroupHeaderView.height(scale: chromeTokens.multiplier),
+                    dragAutoScrollController: dragAutoScrollController, dropIndicator: $dropIndicator
+                ))
+        .padding(.horizontal, 6)
+    }
+
+    private func workspaceRow(_ ws: Workspace, item: WorkspaceGroupSidebarWorkspaceRow, chromeTokens: ChromeScaleTokens) -> some View {
+        let index = item.canonicalIndex
+        let workspaceCount = workspaceManager.workspaces.count
+        let canCloseWorkspace = workspaceCount > 1
+        let selectedContextIds: Set<UUID> = selectedWorkspaceIds.contains(ws.id) ? selectedWorkspaceIds : [ws.id]
+        let contextTargetIds = workspaceManager.workspaces.compactMap { workspace in
+            selectedContextIds.contains(workspace.id) ? workspace.id : nil
+        }
+        let remoteContextMenuTargets = workspaceManager.workspaces.filter { workspace in
+            contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
+        }
+        let isActive = workspaceManager.selectedWorkspaceId == ws.id
+        let isMultiSelected = selectedWorkspaceIds.contains(ws.id)
+        let themedColors = themedSidebarWorkspaceColors(
+            workspace: ws,
+            isActive: isActive,
+            isMultiSelected: isMultiSelected
+        )
+        // C11-104 v2: precompute worktree+branch
+        // chips for the focused surface. Reads the
+        // resolver output directly from the
+        // workspace's `panelGitContexts` (populated
+        // by the off-main probe in TabManager).
+        // Branch chip's dirty marker comes from the
+        // existing `panelGitBranches[surfaceId].isDirty`
+        // signal so the legacy UX is preserved.
+        let worktreeChipRows: [WorktreeChipRow] = {
+            guard sidebarShowBranchDirectory,
+                  let focusedId = ws.focusedPanelId else {
+                return []
+            }
+            let context = ws.tabGitContexts[focusedId] ?? nil
+            let isDirty = ws.tabGitBranches[focusedId]?.isDirty ?? false
+            return WorktreeChipProjector.project(
+                context,
+                settingsEnabled: true,
+                isDirty: isDirty
+            )
+        }()
+        // Workspace Pulse preview: project existing exact
+        // notification + agent liveness truth once in the
+        // parent. TabItemView receives an immutable value so
+        // its typing-hot body does no metadata/store work.
+        let unreadCount = notificationStore.unreadCount(forWorkspaceId: ws.id)
+        let pulseRoster: (
+            agents: [WorkspacePulseAgent],
+            terminalCount: Int,
+            browserCount: Int,
+            documentCount: Int
+        ) = {
+            var agents: [WorkspacePulseAgent] = []
+            var terminalCount = 0
+            var browserCount = 0
+            var documentCount = 0
+            for tabId in ws.sidebarOrderedTabIds() {
+                let terminalKind = ws.surfaceActivityTerminalKind(panelId: tabId)
+                guard AreaSizePolicy.isAgentKind(terminalKind) else {
+                    switch ws.panels[tabId]?.panelType {
+                    case .terminal: terminalCount += 1
+                    case .browser: browserCount += 1
+                    case .markdown: documentCount += 1
+                    case nil: break
+                    }
+                    continue
+                }
+                let resolved = ws.resolvedSurfaceTabActivityState(
+                    panelId: tabId,
+                    hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
+                        forWorkspaceId: ws.id,
+                        surfaceId: tabId
+                    ),
+                    terminalKind: .some(terminalKind)
+                )
+                let pulseState: WorkspacePulseState
+                switch resolved {
+                case .waiting: pulseState = .waiting
+                case .running: pulseState = .working
+                case .idle: pulseState = .idle
+                case .cold: pulseState = .cold
+                case nil: continue
+                }
+                let titleBarState = ws.tabTitleBarState(panelId: tabId)
+                let reportedTitle = titleBarState.title?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let context = WorkspacePulseAgentContextProjector.project(
+                    title: reportedTitle?.isEmpty == false
+                        ? titleBarState.title
+                        : ws.panels[tabId]?.displayTitle,
+                    subtitle: showsSidebarNotificationMessage
+                        ? titleBarState.description
+                        : nil
+                )
+                let attention = ws.attentionSnapshot(panelId: tabId)
+                let activityHelp = ws.resolvedAgentActivityHelp(
+                    panelId: tabId,
+                    activityState: resolved
+                )
+                agents.append(
+                    WorkspacePulseAgent(
+                        surfaceId: tabId,
+                        state: pulseState,
+                        context: context,
+                        flagged: attention.isFlagged,
+                        suppressed: attention.suppressed,
+                        flagReason: attention.flagReason,
+                        activityHelp: activityHelp
+                    )
+                )
+            }
+            return (agents, terminalCount, browserCount, documentCount)
+        }()
+        let workspacePulse = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: unreadCount > 0,
+            agents: pulseRoster.agents,
+            terminalCount: pulseRoster.terminalCount,
+            browserCount: pulseRoster.browserCount,
+            documentCount: pulseRoster.documentCount
+        )
+        return WorkspaceRowView(
+            workspaceManager: workspaceManager,
+            notificationStore: notificationStore,
+            workspace: ws,
+            index: index,
+            moveUpTarget: item.moveUpTarget,
+            moveDownTarget: item.moveDownTarget,
+            visibleWorkspaceIds: groupCoordinator.projection.visibleWorkspaceIds,
+            availableGroups: workspaceManager.workspaceGroups,
+            isActive: isActive,
+            worktreeChipRows: worktreeChipRows,
+            workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
+                at: index,
+                workspaceCount: workspaceCount
+            ),
+            canCloseWorkspace: canCloseWorkspace,
+            accessibilityWorkspaceCount: workspaceCount,
+            unreadCount: unreadCount,
+            workspacePulse: workspacePulse,
+            rowSpacing: tabRowSpacing,
+            setSelectionToTabs: { selection = .tabs },
+            selectedWorkspaceIds: $selectedWorkspaceIds,
+            lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+            showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
+            dragAutoScrollController: dragAutoScrollController,
+            draggedWorkspaceId: $draggedWorkspaceId,
+            draggedGroupId: $draggedGroupId,
+            dropIndicator: $dropIndicator,
+            themedBackgroundColor: themedColors.background,
+            themedRailColor: themedColors.rail,
+            remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
+            allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
+            allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
+            sidebarFlashToken: ws.sidebarFlashToken,
+            sidebarFlashColorHex: ws.sidebarFlashColorHex,
+            chromeTokens: chromeTokens
+        )
+        .equatable()
     }
 
     private func debugShortSidebarWorkspaceId(_ id: UUID?) -> String {
@@ -11375,6 +11536,7 @@ private struct SidebarEmptyArea: View {
     @Binding var lastSidebarSelectionIndex: Int?
     let dragAutoScrollController: SidebarDragAutoScrollController
     @Binding var draggedWorkspaceId: UUID?
+    @Binding var draggedGroupId: UUID?
     @Binding var dropIndicator: SidebarDropIndicator?
 
     var body: some View {
@@ -11393,6 +11555,7 @@ private struct SidebarEmptyArea: View {
                 targetWorkspaceId: nil,
                 workspaceManager: workspaceManager,
                 draggedWorkspaceId: $draggedWorkspaceId,
+                draggedGroupId: $draggedGroupId,
                 selectedWorkspaceIds: $selectedWorkspaceIds,
                 lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
                 targetRowHeight: nil,
@@ -11412,11 +11575,7 @@ private struct SidebarEmptyArea: View {
 
     private var shouldShowTopDropIndicator: Bool {
         guard draggedWorkspaceId != nil, let indicator = dropIndicator else { return false }
-        if indicator.workspaceId == nil {
-            return true
-        }
-        guard indicator.edge == .bottom, let lastWorkspaceId = workspaceManager.workspaces.last?.id else { return false }
-        return indicator.workspaceId == lastWorkspaceId
+        return indicator.workspaceId == nil && indicator.groupId == nil
     }
 }
 
@@ -11970,6 +12129,10 @@ private struct WorkspaceRowView: View, Equatable {
     nonisolated static func == (lhs: WorkspaceRowView, rhs: WorkspaceRowView) -> Bool {
         lhs.workspace === rhs.workspace &&
         lhs.index == rhs.index &&
+        lhs.moveUpTarget == rhs.moveUpTarget &&
+        lhs.moveDownTarget == rhs.moveDownTarget &&
+        lhs.visibleWorkspaceIds == rhs.visibleWorkspaceIds &&
+        lhs.availableGroups == rhs.availableGroups &&
         lhs.isActive == rhs.isActive &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
@@ -11997,6 +12160,10 @@ private struct WorkspaceRowView: View, Equatable {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var workspace: Workspace
     let index: Int
+    let moveUpTarget: UUID?
+    let moveDownTarget: UUID?
+    let visibleWorkspaceIds: [UUID]
+    let availableGroups: [WorkspaceGroup]
     let isActive: Bool
     /// C11-104: precomputed worktree/branch chip rows for the focused
     /// surface. Empty when the setting is disabled or the surface is
@@ -12017,6 +12184,7 @@ private struct WorkspaceRowView: View, Equatable {
     let showsModifierShortcutHints: Bool
     let dragAutoScrollController: SidebarDragAutoScrollController
     @Binding var draggedWorkspaceId: UUID?
+    @Binding var draggedGroupId: UUID?
     @Binding var dropIndicator: SidebarDropIndicator?
     let themedBackgroundColor: NSColor?
     let themedRailColor: NSColor?
@@ -13023,10 +13191,16 @@ private struct WorkspaceRowView: View, Equatable {
                     .offset(y: index == 0 ? 0 : -(rowSpacing / 2))
             }
         }
+        .overlay(alignment: .bottom) {
+            if draggedWorkspaceId != nil && dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .bottom {
+                Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 8)
+            }
+        }
         .onDrag {
             #if DEBUG
             dlog("sidebar.onDrag tab=\(workspace.id.uuidString.prefix(5))")
             #endif
+            draggedGroupId = nil
             draggedWorkspaceId = workspace.id
             dropIndicator = nil
             return SidebarWorkspaceDragPayload.provider(for: workspace.id)
@@ -13036,6 +13210,7 @@ private struct WorkspaceRowView: View, Equatable {
             targetWorkspaceId: workspace.id,
             workspaceManager: workspaceManager,
             draggedWorkspaceId: $draggedWorkspaceId,
+            draggedGroupId: $draggedGroupId,
             selectedWorkspaceIds: $selectedWorkspaceIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
             targetRowHeight: rowHeight,
@@ -13187,6 +13362,22 @@ private struct WorkspaceRowView: View, Equatable {
             .disabled(allRemoteContextMenuTargetsDisconnected)
         }
 
+        Menu(String(localized: "workspaceGroup.moveToGroup", defaultValue: "Move to Group")) {
+            Button(String(localized: "workspaceGroup.ungrouped", defaultValue: "Ungrouped")) {
+                for id in contextTargetIds() {
+                    try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: nil)
+                }
+            }
+            ForEach(availableGroups) { group in
+                Button(group.name) {
+                    for id in contextTargetIds() {
+                        try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: group.id)
+                    }
+                }
+            }
+        }
+        Divider()
+
         Menu(String(localized: "contextMenu.workspaceColor", defaultValue: "Workspace Color")) {
             if workspace.customColor != nil {
                 Button {
@@ -13256,12 +13447,12 @@ private struct WorkspaceRowView: View, Equatable {
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
             moveBy(-1)
         }
-        .disabled(index == 0)
+        .disabled(moveUpTarget == nil)
 
         Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
             moveBy(1)
         }
-        .disabled(index >= workspaceManager.workspaces.count - 1)
+        .disabled(moveDownTarget == nil)
 
         Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
             workspaceManager.moveWorkspacesToTop(Set(targetIds))
@@ -13361,18 +13552,7 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private var showsCenteredTopDropIndicator: Bool {
-        guard draggedWorkspaceId != nil, let indicator = dropIndicator else { return false }
-        if indicator.workspaceId == workspace.id && indicator.edge == .top {
-            return true
-        }
-
-        guard indicator.edge == .bottom,
-              let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }),
-              currentIndex > 0
-        else {
-            return false
-        }
-        return workspaceManager.workspaces[currentIndex - 1].id == indicator.workspaceId
+        draggedWorkspaceId != nil && dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .top
     }
 
     private var accessibilityTitle: String {
@@ -13380,9 +13560,18 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func moveBy(_ delta: Int) {
-        let targetIndex = index + delta
-        guard targetIndex >= 0, targetIndex < workspaceManager.workspaces.count else { return }
-        guard workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex) else { return }
+        // Re-resolve displayed neighbors from current model state, not a stale
+        // captured index. Other groups may be interleaved in canonical order.
+        let peers = workspaceManager.workspaces.filter {
+            $0.groupId == workspace.groupId && $0.isPinned == workspace.isPinned
+        }
+        guard let source = peers.firstIndex(where: { $0.id == workspace.id }),
+              peers.indices.contains(source + delta) else { return }
+        let target = peers[source + delta].id
+        do {
+            try workspaceManager.moveWorkspaceToGroup(workspaceId: workspace.id, groupId: workspace.groupId,
+                                                       before: delta < 0 ? target : nil, after: delta > 0 ? target : nil)
+        } catch { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
         workspaceManager.selectWorkspace(workspace)
@@ -13404,10 +13593,9 @@ private struct WorkspaceRowView: View, Equatable {
         let isShift = modifiers.contains(.shift)
         let wasSelected = workspaceManager.selectedWorkspaceId == workspace.id
 
-        if isShift, let lastIndex = lastSidebarSelectionIndex {
-            let lower = min(lastIndex, index)
-            let upper = max(lastIndex, index)
-            let rangeIds = workspaceManager.workspaces[lower...upper].map { $0.id }
+        if isShift, let rangeIds = WorkspaceGroupSidebarProjection.selectionRange(
+            anchor: workspaceManager.selectedWorkspaceId, target: workspace.id, visibleWorkspaceIds: visibleWorkspaceIds
+        ) {
             if isCommand {
                 selectedWorkspaceIds.formUnion(rangeIds)
             } else {
@@ -14401,6 +14589,8 @@ enum SidebarDropEdge {
 struct SidebarDropIndicator {
     let workspaceId: UUID?
     let edge: SidebarDropEdge
+    var groupId: UUID? = nil
+    var isGroupBody: Bool = false
 }
 
 enum SidebarDropPlanner {
@@ -14717,6 +14907,41 @@ private enum SidebarWorkspaceDragPayload {
         }
         return provider
     }
+    static func currentId() -> UUID? {
+        let board = NSPasteboard(name: .drag)
+        let type = NSPasteboard.PasteboardType(typeIdentifier)
+        guard let data = board.data(forType: type),
+              let text = String(data: data, encoding: .utf8), text.hasPrefix(prefix)
+        else { return nil }
+        return UUID(uuidString: String(text.dropFirst(prefix.count)))
+    }
+
+}
+
+private enum SidebarGroupDragPayload {
+    static let typeIdentifier = "com.stage11.c11.sidebar-group-reorder"
+    static let dropContentType = UTType(exportedAs: typeIdentifier)
+    static let dropContentTypes: [UTType] = [dropContentType]
+    private static let prefix = "c11.sidebar-group."
+
+    static func provider(for workspaceId: UUID) -> NSItemProvider {
+        let provider = NSItemProvider()
+        let payload = "\(prefix)\(workspaceId.uuidString)"
+        provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .ownProcess) { completion in
+            completion(payload.data(using: .utf8), nil)
+            return nil
+        }
+        return provider
+    }
+    static func currentId() -> UUID? {
+        let board = NSPasteboard(name: .drag)
+        let type = NSPasteboard.PasteboardType(typeIdentifier)
+        guard let data = board.data(forType: type),
+              let text = String(data: data, encoding: .utf8), text.hasPrefix(prefix)
+        else { return nil }
+        return UUID(uuidString: String(text.dropFirst(prefix.count)))
+    }
+
 }
 
 private enum BonsplitTabDragPayload {
@@ -14828,138 +15053,112 @@ private struct SidebarBonsplitTabDropDelegate: DropDelegate {
 
 private struct SidebarWorkspaceDropDelegate: DropDelegate {
     let targetWorkspaceId: UUID?
+    var targetGroupId: UUID? = nil
     let workspaceManager: WorkspaceManager
     @Binding var draggedWorkspaceId: UUID?
+    @Binding var draggedGroupId: UUID?
     @Binding var selectedWorkspaceIds: Set<UUID>
     @Binding var lastSidebarSelectionIndex: Int?
     let targetRowHeight: CGFloat?
     let dragAutoScrollController: SidebarDragAutoScrollController
     @Binding var dropIndicator: SidebarDropIndicator?
 
-    func validateDrop(info: DropInfo) -> Bool {
-        let hasType = info.hasItemsConforming(to: [SidebarWorkspaceDragPayload.typeIdentifier])
-        let hasDrag = draggedWorkspaceId != nil
-        #if DEBUG
-        dlog("sidebar.validateDrop target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end") hasType=\(hasType) hasDrag=\(hasDrag)")
-        #endif
-        return hasType && hasDrag
-    }
+    func validateDrop(info: DropInfo) -> Bool { plan(for: info) != nil }
 
-    func dropEntered(info: DropInfo) {
-        #if DEBUG
-        dlog("sidebar.dropEntered target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end")")
-        #endif
-        dragAutoScrollController.updateFromDragLocation()
-        updateDropIndicator(for: info)
-    }
+    func dropEntered(info: DropInfo) { updatePreview(info) }
 
     func dropExited(info: DropInfo) {
-#if DEBUG
-        dlog("sidebar.dropExited target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end")")
-#endif
-        if dropIndicator?.workspaceId == targetWorkspaceId {
-            dropIndicator = nil
-        }
+        // A preview belongs to the current target, even when pin-clamping puts
+        // the indicator somewhere else. The next target computes its own plan.
+        dropIndicator = nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        dragAutoScrollController.updateFromDragLocation()
-        updateDropIndicator(for: info)
-#if DEBUG
-        dlog(
-            "sidebar.dropUpdated target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end") " +
-            "indicator=\(debugIndicator(dropIndicator))"
-        )
-#endif
+        guard plan(for: info) != nil else {
+            dropIndicator = nil
+            return DropProposal(operation: .forbidden)
+        }
+        updatePreview(info)
         return DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
         defer {
             draggedWorkspaceId = nil
+            draggedGroupId = nil
             dropIndicator = nil
             dragAutoScrollController.stop()
         }
-        #if DEBUG
-        dlog("sidebar.drop target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end")")
-        #endif
-        guard let draggedWorkspaceId else {
-#if DEBUG
-            dlog("sidebar.drop.abort reason=missingDraggedTab")
-#endif
-            return false
-        }
-        guard let fromIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == draggedWorkspaceId }) else {
-#if DEBUG
-            dlog("sidebar.drop.abort reason=draggedTabMissing tab=\(draggedWorkspaceId.uuidString.prefix(5))")
-#endif
-            return false
-        }
-        let workspaceIds = workspaceManager.workspaces.map(\.id)
-        guard let targetIndex = SidebarDropPlanner.targetIndex(
-            draggedWorkspaceId: draggedWorkspaceId,
-            targetWorkspaceId: targetWorkspaceId,
-            indicator: dropIndicator,
-            workspaceIds: workspaceIds,
-            pinnedWorkspaceIds: Set(workspaceManager.workspaces.filter(\.isPinned).map(\.id))
-        ) else {
-#if DEBUG
-            dlog(
-                "sidebar.drop.abort reason=noTargetIndex tab=\(draggedWorkspaceId.uuidString.prefix(5)) " +
-                "target=\(targetWorkspaceId?.uuidString.prefix(5) ?? "end") indicator=\(debugIndicator(dropIndicator))"
-            )
-#endif
-            return false
-        }
-
-        guard fromIndex != targetIndex else {
-#if DEBUG
-            dlog("sidebar.drop.noop from=\(fromIndex) to=\(targetIndex)")
-#endif
-            syncSidebarSelection()
+        // Resolve the current model and payload again; never commit hover state.
+        guard let plan = plan(for: info), validPasteboardSource else { return false }
+        do {
+            switch plan.command {
+            case .moveWorkspace(let id, let groupId, let before, let after):
+                try workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: groupId, before: before, after: after)
+            case .moveGroup(let id, let before, let after):
+                try workspaceManager.reorderWorkspaceGroup(id: id, before: before, after: after)
+            }
+            // Dragging is structural, not focus intent. Retain multi-selection
+            // and refresh its canonical anchor without selecting a workspace.
+            selectedWorkspaceIds.formIntersection(Set(workspaceManager.workspaces.map(\.id)))
+            lastSidebarSelectionIndex = workspaceManager.selectedWorkspaceId.flatMap { selected in
+                workspaceManager.workspaces.firstIndex { $0.id == selected }
+            }
             return true
+        } catch {
+            return false
         }
-
-#if DEBUG
-        dlog("sidebar.drop.commit tab=\(draggedWorkspaceId.uuidString.prefix(5)) from=\(fromIndex) to=\(targetIndex)")
-#endif
-        _ = workspaceManager.reorderWorkspace(workspaceId: draggedWorkspaceId, toIndex: targetIndex)
-        if let selectedId = workspaceManager.selectedWorkspaceId {
-            selectedWorkspaceIds = [selectedId]
-            syncSidebarSelection(preferredSelectedWorkspaceId: selectedId)
-        } else {
-            selectedWorkspaceIds = []
-            syncSidebarSelection()
-        }
-        return true
     }
 
-    private func updateDropIndicator(for info: DropInfo) {
-        let workspaceIds = workspaceManager.workspaces.map(\.id)
-        let pinnedWorkspaceIds = Set(workspaceManager.workspaces.filter(\.isPinned).map(\.id))
-        dropIndicator = SidebarDropPlanner.indicator(
-            draggedWorkspaceId: draggedWorkspaceId,
-            targetWorkspaceId: targetWorkspaceId,
-            workspaceIds: workspaceIds,
-            pinnedWorkspaceIds: pinnedWorkspaceIds,
-            pointerY: targetWorkspaceId == nil ? nil : info.location.y,
-            targetHeight: targetRowHeight
+    private var validPasteboardSource: Bool {
+        if let id = draggedGroupId { return SidebarGroupDragPayload.currentId() == id }
+        if let id = draggedWorkspaceId { return SidebarWorkspaceDragPayload.currentId() == id }
+        return false
+    }
+
+    private func plan(for info: DropInfo) -> WorkspaceGroupDropPlanner.Plan? {
+        guard let windowId = AppDelegate.shared?.windowId(for: workspaceManager) else { return nil }
+        let source: WorkspaceGroupDropPlanner.Source
+        if let id = draggedGroupId {
+            guard info.hasItemsConforming(to: [SidebarGroupDragPayload.typeIdentifier]) else { return nil }
+            source = .group(id: id, windowId: windowId)
+        } else if let id = draggedWorkspaceId {
+            guard info.hasItemsConforming(to: [SidebarWorkspaceDragPayload.typeIdentifier]) else { return nil }
+            source = .workspace(id: id, windowId: windowId)
+        } else { return nil }
+        let edge: WorkspaceGroupDropPlanner.Edge = SidebarDropPlanner.edgeForPointer(
+            locationY: info.location.y, targetHeight: targetRowHeight ?? 1
+        ) == .top ? .top : .bottom
+        let target: WorkspaceGroupDropPlanner.Target
+        if let id = targetGroupId {
+            target = draggedGroupId == nil ? .groupBody(id) : .groupEdge(groupId: id, edge: edge)
+        } else if let id = targetWorkspaceId {
+            guard let workspace = workspaceManager.workspaces.first(where: { $0.id == id }) else { return nil }
+            target = workspace.groupId == nil
+                ? .ungroupedEdge(workspaceId: id, edge: edge)
+                : .memberEdge(workspaceId: id, edge: edge)
+        } else {
+            target = .ungroupedEdge(workspaceId: nil, edge: .bottom)
+        }
+        return try? WorkspaceGroupDropPlanner.plan(
+            windowId: windowId, groups: workspaceManager.workspaceGroups,
+            workspaces: workspaceManager.workspaceOrderEntries, source: source, target: target
         )
     }
 
-    private func syncSidebarSelection(preferredSelectedWorkspaceId: UUID? = nil) {
-        let selectedId = preferredSelectedWorkspaceId ?? workspaceManager.selectedWorkspaceId
-        if let selectedId {
-            lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selectedId }
-        } else {
-            lastSidebarSelectionIndex = nil
+    private func updatePreview(_ info: DropInfo) {
+        guard let plan = plan(for: info) else { dropIndicator = nil; return }
+        dragAutoScrollController.updateFromDragLocation()
+        switch plan.indicator {
+        case .groupBody(let id):
+            dropIndicator = SidebarDropIndicator(workspaceId: nil, edge: .bottom, groupId: id, isGroupBody: true)
+        case .groupEdge(let id, let edge):
+            dropIndicator = SidebarDropIndicator(workspaceId: nil, edge: edge == .top ? .top : .bottom, groupId: id)
+        case .memberEdge(let id, let edge):
+            dropIndicator = SidebarDropIndicator(workspaceId: id, edge: edge == .top ? .top : .bottom)
+        case .ungroupedEdge(let id, let edge):
+            dropIndicator = SidebarDropIndicator(workspaceId: id, edge: edge == .top ? .top : .bottom)
         }
-    }
-
-    private func debugIndicator(_ indicator: SidebarDropIndicator?) -> String {
-        guard let indicator else { return "nil" }
-        let tabText = indicator.workspaceId.map { String($0.uuidString.prefix(5)) } ?? "end"
-        return "\(tabText):\(indicator.edge == .top ? "top" : "bottom")"
     }
 }
 

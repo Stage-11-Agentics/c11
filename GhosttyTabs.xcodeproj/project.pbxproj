@@ -526,6 +526,11 @@
 		C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */; };
 		C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */; };
 		C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */; };
+		C11260000000000000000002 /* WorkspaceGroupSidebarProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000001 /* WorkspaceGroupSidebarProjection.swift */; };
+		C11260000000000000000102 /* WorkspaceGroupHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000101 /* WorkspaceGroupHeaderView.swift */; };
+		C11260000000000000000202 /* WorkspaceGroupDropPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000201 /* WorkspaceGroupDropPlanner.swift */; };
+		C11260000000000000000302 /* WorkspaceGroupSidebarProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */; };
+		C11260000000000000000402 /* WorkspaceGroupDropPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1083,6 +1088,11 @@
 		C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStoreTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbeTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDeliveryTests.swift; sourceTree = "<group>"; };
+		C11260000000000000000001 /* WorkspaceGroupSidebarProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sidebar/WorkspaceGroupSidebarProjection.swift"; sourceTree = "<group>"; };
+		C11260000000000000000101 /* WorkspaceGroupHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sidebar/WorkspaceGroupHeaderView.swift"; sourceTree = "<group>"; };
+		C11260000000000000000201 /* WorkspaceGroupDropPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sidebar/WorkspaceGroupDropPlanner.swift"; sourceTree = "<group>"; };
+		C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkspaceGroupSidebarProjectionTests.swift"; sourceTree = "<group>"; };
+		C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkspaceGroupDropPlannerTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1207,6 +1217,9 @@
 		A5001041 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				C11260000000000000000201 /* WorkspaceGroupDropPlanner.swift */,
+				C11260000000000000000101 /* WorkspaceGroupHeaderView.swift */,
+				C11260000000000000000001 /* WorkspaceGroupSidebarProjection.swift */,
 				C11259000000000000000101 /* WorkspaceReorderPlanner.swift */,
 				C11259000000000000000001 /* WorkspaceGroup.swift */,
 				A5001011 /* c11App.swift */,
@@ -1505,6 +1518,8 @@
 		F1000003A1B2C3D4E5F60718 /* c11Tests */ = {
 			isa = PBXGroup;
 			children = (
+				C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */,
+				C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */,
 				C11259000000000000000401 /* WorkspaceReorderPlannerTests.swift */,
 				C11259000000000000000301 /* WorkspaceGroupTests.swift */,
 				F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
@@ -1927,6 +1942,8 @@
 			files = (
 				C11259000000000000000402 /* WorkspaceReorderPlannerTests.swift in Sources */,
 				C11259000000000000000302 /* WorkspaceGroupTests.swift in Sources */,
+				C11260000000000000000402 /* WorkspaceGroupDropPlannerTests.swift in Sources */,
+				C11260000000000000000302 /* WorkspaceGroupSidebarProjectionTests.swift in Sources */,
 				C11284000000000000000032 /* BundledSkillTests.swift in Sources */,
 				C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */,
 				2BA0A65D723C9E1F886F326D /* AgentRestartRegistryTests.swift in Sources */,
@@ -2080,6 +2097,9 @@
 				C11259000000000000000202 /* WorkspaceGroupHandlers.swift in Sources */,
 				C11259000000000000000102 /* WorkspaceReorderPlanner.swift in Sources */,
 				C11259000000000000000002 /* WorkspaceGroup.swift in Sources */,
+				C11260000000000000000202 /* WorkspaceGroupDropPlanner.swift in Sources */,
+				C11260000000000000000102 /* WorkspaceGroupHeaderView.swift in Sources */,
+				C11260000000000000000002 /* WorkspaceGroupSidebarProjection.swift in Sources */,
 				C11284000000000000000012 /* BundledSkill.swift in Sources */,
 				C11284000000000000000002 /* CapabilityFeatures.swift in Sources */,
 				A5001001 /* c11App.swift in Sources */,

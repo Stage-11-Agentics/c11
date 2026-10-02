@@ -303,4 +303,53 @@ extension WorkspaceManagerSessionSnapshotTests {
         try manager.deleteWorkspaceGroup(id: group.id)
         assertChanged()
     }
+
+    func testSelectedSubsetResumePreservesWindowGroupsAndKeptMembership() throws {
+        let manager = WorkspaceManager()
+        let skipped = try XCTUnwrap(manager.selectedWorkspace)
+        let kept = manager.addWorkspace(select: true)
+        let ungrouped = manager.addWorkspace(select: false)
+        let folder = try manager.createWorkspaceGroup(name: "Services", color: "#123456", icon: "folder.fill")
+        let empty = try manager.createWorkspaceGroup(name: "Empty")
+        try manager.addWorkspacesToGroup(id: folder.id, workspaceIds: [skipped.id, kept.id])
+        try manager.setWorkspaceGroupCollapsed(id: folder.id, collapsed: true)
+        try manager.setWorkspaceGroupPinned(id: folder.id, pinned: true)
+        let saved = manager.sessionSnapshot(includeScrollback: false)
+        let window = SessionWindowSnapshot(
+            frame: nil, display: nil, workspaceManager: saved,
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240)
+        )
+        // An entirely unselected window should still be discarded.
+        var otherWindow = window
+        otherWindow.workspaceManager.workspaces = [saved.workspaces[0]]
+        let snapshot = AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion, createdAt: 123,
+            windows: [window, otherWindow]
+        )
+        let filtered = try XCTUnwrap(LaunchResumePicker.filtered(snapshot: snapshot, keep: [kept.id, ungrouped.id]))
+        XCTAssertEqual(filtered.windows.count, 1)
+        let selectedSubset = try XCTUnwrap(filtered.windows.first).workspaceManager
+        XCTAssertEqual(selectedSubset.workspaces.map(\.id), [kept.id, ungrouped.id])
+        XCTAssertEqual(selectedSubset.selectedWorkspaceIndex, 0)
+        XCTAssertEqual(selectedSubset.workspaceGroups, saved.workspaceGroups)
+
+        let restored = WorkspaceManager()
+        restored.restoreSessionSnapshot(selectedSubset)
+        XCTAssertEqual(restored.workspaces.map(\.id), [kept.id, ungrouped.id])
+        XCTAssertEqual(restored.workspaces.first?.groupId, folder.id)
+        XCTAssertNil(restored.workspaces.last?.groupId)
+        XCTAssertEqual(restored.workspaceGroups, saved.workspaceGroups)
+        XCTAssertEqual(restored.workspaceGroups.map(\.id), [folder.id, empty.id])
+        XCTAssertEqual(restored.selectedWorkspaceId, kept.id)
+
+        // Selecting only an ungrouped workspace leaves folders empty, not lost.
+        let onlyUngrouped = try XCTUnwrap(LaunchResumePicker.filtered(snapshot: snapshot, keep: [ungrouped.id]))
+        restored.restoreSessionSnapshot(try XCTUnwrap(onlyUngrouped.windows.first).workspaceManager)
+        XCTAssertEqual(restored.workspaces.map(\.id), [ungrouped.id])
+        XCTAssertNil(restored.workspaces.first?.groupId)
+        XCTAssertEqual(restored.workspaceGroups, saved.workspaceGroups)
+        XCTAssertEqual(restored.selectedWorkspaceId, ungrouped.id)
+        XCTAssertNil(LaunchResumePicker.filtered(snapshot: snapshot, keep: []))
+    }
+
 }

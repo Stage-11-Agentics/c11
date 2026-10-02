@@ -358,6 +358,52 @@ with the window and final workspace UUID order; errors, dry-runs and no-ops emit
 Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_grouped`,
 `not_member`, `group_not_found`, `workspace_not_found`, `wrong_window`, and `empty_group`.
 
+### Sidebar folder controls and attention
+
+A folder header has a chevron, icon, name, pin marker and menu, followed by fixed
+slots for member, flag, waiting and unread counts. A long name truncates with its
+full text in the tooltip. Count slots keep their width at zero and cap visually
+at `99+`; accessibility labels and tooltips retain the exact count.
+
+- Click the chevron to collapse or expand. Collapse hides sidebar member rows
+  only: the selected workspace and its live terminal remain active, and numeric
+  workspace shortcuts still use the canonical flat order. A header is highlighted
+  when it contains the selected workspace, including while collapsed. Click its
+  name to focus the current member or first member. Empty folders stay empty.
+- New Group in the sidebar menu opens a name editor and creates an empty folder.
+  The header menu offers Rename Group, Color, Icon, Pin/Unpin Group, Ungroup and
+  Delete Group. Name/icon editors commit with Save and dismiss with Cancel/Escape;
+  empty names and invalid SF Symbols cannot commit, and validation errors stay in
+  the editor. Color uses the
+  existing palette; Clear Color and Clear Icon restore the defaults. An absent or
+  unavailable symbol displays `folder.fill`.
+- Ungroup and Delete Group both leave all members running as ungrouped workspaces.
+  Closing the first or last member never promotes another member into a header
+  and never deletes the folder. Group and member pins remain independent.
+- A workspace's Move to Group menu provides the same membership choices as drag,
+  including Ungrouped. Dropping on a header joins that group at the end of the
+  member's pin segment, including empty/collapsed groups, without expanding it.
+  Dropping on member edges places the dragged workspace in that member's group.
+  The Ungrouped lane remains available during a workspace drag even when no
+  ungrouped rows exist. Dragging a header reorders the whole folder among groups.
+  Pin boundaries clamp placement; they never silently change a pin. The preview
+  describes the final clamped placement. A closed source, deleted target, foreign
+  payload, cancellation or outside drop cannot partially transfer/reorder a member.
+  Shift-click selects visible workspace rows only, excluding collapsed members.
+- Attention includes every member tab, including collapsed/offscreen members.
+  Flags count plain terminals and suppressed tabs as well as agents. Any flag
+  makes the visible group signal violet; clearing the last flag restores ordinary
+  tint. Waiting counts only resolved waiting tabs that are not suppressed. Unread
+  counts workspace notification records exactly once, including workspace-scoped
+  records; it does not manufacture a waiting tab. Transferring a member transfers
+  its contribution to the destination header. Badge changes do not select a
+  workspace, mount hidden members, or take terminal focus.
+
+The sidebar omits collapsed member rows; `tree` intentionally includes them for
+inspection. Socket list/tree/metadata reads are model oracles, not proof that the
+header rendered, a pointer drop succeeded, or the terminal retained responder
+focus. Maintainer validation must exercise those paths in the actual tagged app.
+
 ## Tab initialization quirk
 
 Tabs are lazily initialized — no PTY until they have non-zero screen bounds. Tabs created in a non-visible workspace are inert until shown.

@@ -43,6 +43,23 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertEqual(AttentionOrder.candidates(rows: projection.attentionRows, unreadTail: tail), jump)
     }
 
+    func testToggleFilterCyclesBothFiltersWithoutOpeningAnything() {
+        let model = FeedQuickViewModel()
+        var opened = 0
+        model.onOpen = { _ in opened += 1; return true }
+        model.apply(.init(projection: .init(rows: [row(1), row(2, kind: .turnEnd)]), loading: false))
+        XCTAssertEqual(model.selection.filter, .asks)
+        XCTAssertEqual(model.rows.map(\.tabID), [id(1)])
+        model.toggleFilter()
+        XCTAssertEqual(model.selection.filter, .turns)
+        XCTAssertEqual(model.rows.map(\.tabID), [id(2)])
+        XCTAssertEqual(model.selection.selectedTabID, id(2))
+        model.toggleFilter()
+        XCTAssertEqual(model.selection.filter, .asks)
+        XCTAssertEqual(model.selection.selectedTabID, id(1))
+        XCTAssertEqual(opened, 0)
+    }
+
     func testEnterOnlyOpensExactTargetAndUnavailableStaysWithoutDismissal() {
         let model = FeedQuickViewModel()
         model.apply(.init(projection: .init(rows: [row(1), row(2)]), loading: false))
@@ -70,9 +87,9 @@ final class FeedQuickViewTests: XCTestCase {
         owner.makeKeyAndOrderFront(nil)
         owner.makeFirstResponder(origin)
         let session = FeedQuickViewKeyboardSession()
-        var moves = 0, opens = 0, cancels = 0
+        var moves = 0, opens = 0, cancels = 0, toggles = 0
         func action(_ action: FeedQuickViewKeyboardSession.Action) {
-            switch action { case .move: moves += 1; case .open: opens += 1; case .cancel: cancels += 1; case .consume: break }
+            switch action { case .move: moves += 1; case .open: opens += 1; case .cancel: cancels += 1; case .toggleFilter: toggles += 1; case .consume: break }
         }
         session.start(window: owner, action: action)
         session.start(window: owner, action: action)
@@ -89,7 +106,11 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertTrue(session.handle(try event(owner, key: 125)))
         XCTAssertTrue(session.handle(try event(owner, key: 36)))
         XCTAssertTrue(session.handle(try event(owner, key: 53)))
-        XCTAssertEqual(moves, 1); XCTAssertEqual(opens, 1); XCTAssertEqual(cancels, 1)
+        XCTAssertFalse(session.handle(try event(other, key: 48)))
+        XCTAssertFalse(session.handle(try event(owner, key: 48, flags: .option)))
+        XCTAssertTrue(session.handle(try event(owner, key: 48)))
+        XCTAssertTrue(session.handle(try event(owner, key: 48, flags: .shift)))
+        XCTAssertEqual(moves, 1); XCTAssertEqual(opens, 1); XCTAssertEqual(cancels, 1); XCTAssertEqual(toggles, 2)
         let displaced = NSTextView(frame: .init(x: 0, y: 0, width: 100, height: 100))
         owner.contentView?.addSubview(displaced)
         owner.makeFirstResponder(displaced)

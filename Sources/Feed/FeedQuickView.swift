@@ -35,6 +35,13 @@ final class FeedQuickViewModel: ObservableObject {
         status = ""
     }
 
+    /// Tab and Shift-Tab flip between the two filters; selection follows `switchFilter`.
+    func toggleFilter() {
+        let all = FeedQuickViewSelection.Filter.allCases
+        let next = all[(all.firstIndex(of: selection.filter).map { $0 + 1 } ?? 0) % all.count]
+        switchFilter(next)
+    }
+
     func move(_ delta: Int) { selection.move(delta); status = "" }
     func select(_ tabID: UUID) { selection.select(tabID) }
 
@@ -134,7 +141,7 @@ struct FeedQuickView: View {
                 }
             }
             .frame(height: FeedQuickViewGeometry.size.height - FeedQuickViewGeometry.header - FeedQuickViewGeometry.status - FeedQuickViewGeometry.hint - 1)
-            Text(String(localized: "feed.quick.hint", defaultValue: "Arrows move. Return opens. Esc closes."))
+            Text(String(localized: "feed.quick.hint", defaultValue: "Arrows move. Return opens. Tab switches filter. Esc closes."))
                 .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity).frame(height: FeedQuickViewGeometry.hint)
                 .accessibilityIdentifier("feed.quick.hint")

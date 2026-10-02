@@ -173,9 +173,9 @@ end tell''' % self.args.pid
         self.eventually(lambda: self.rpc('system.identify')['focused'].get('tab_id') == newer, 'Removed selection did not choose defined neighbor')
         self.open()
         selection = self.rpc('system.identify')['focused']
-        self.inspect('feed.quick.filter.turns')
+        self.keys(48) # Tab: keyboard-first filter switch (Asks -> Turns); the Asks return below uses the pointer.
         self.eventually(lambda: [e['id'].split('.')[-1] for e in self.rows()] == [turn], 'Turns filter missing finished turn')
-        self.check(self.geometry() == empty_geometry, 'Turns filter retains exact control frames')
+        self.check(self.geometry() == empty_geometry, 'Turns filter (via Tab) retains exact control frames')
         self.check(self.rpc('system.identify')['focused'] == selection, 'Filter change never opens a tab')
         self.screenshot('03-turns-filter')
         self.inspect('feed.quick.filter.asks')

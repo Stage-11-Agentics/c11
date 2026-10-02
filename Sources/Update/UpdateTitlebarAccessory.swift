@@ -958,6 +958,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             switch action {
             case .move(let delta): model?.move(delta)
             case .open: model?.openSelected()
+            case .toggleFilter: model?.toggleFilter()
             case .cancel: self?.notificationsPopover.performClose(nil)
             case .consume: break
             }

@@ -2,7 +2,7 @@ import AppKit
 
 /// One monitor per visible quick view, scoped to its owner and popover windows.
 final class FeedQuickViewKeyboardSession {
-    enum Action { case move(Int), open, cancel, consume }
+    enum Action { case move(Int), open, cancel, toggleFilter, consume }
     weak var popoverWindow: NSWindow?
     private weak var ownerWindow: NSWindow?
     private weak var originResponder: NSResponder?
@@ -38,6 +38,7 @@ final class FeedQuickViewKeyboardSession {
         switch event.keyCode {
         case 53 where flags.isEmpty: action?(.cancel)
         case 36, 76: action?(flags.isEmpty ? .open : .consume)
+        case 48 where flags.isEmpty || flags == .shift: action?(.toggleFilter)
         case 125 where flags.isEmpty: action?(.move(1))
         case 126 where flags.isEmpty: action?(.move(-1))
         default: action?(.consume) // Read-only: never leak text/Return into a tenant PTY.

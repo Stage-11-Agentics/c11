@@ -32,7 +32,7 @@
     },
     "feed.quick.hint": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Arrows move. Return opens. Esc closes." } } }
+      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "Arrows move. Return opens. Tab switches filter. Esc closes." } } }
     },
     "feed.quick.kind.question": {
       "extractionState": "manual",

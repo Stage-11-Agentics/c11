@@ -146,7 +146,18 @@ final class SendKeyVocabularyTests: XCTestCase {
                 XCTAssertEqual(event.unshiftedCodepoint, letter.unicodeScalars.first!.value, name)
             }
         }
-        XCTAssertEqual(TerminalController.namedKeyEvent(for: "space")?.unshiftedCodepoint, 0)
+        XCTAssertEqual(TerminalController.namedKeyEvent(for: "space")?.unshiftedCodepoint, 32)
+    }
+
+    func testControlMetadataDoesNotRecordAComposerDraft() throws {
+        for name in ["ctrl-c", "ctrl-d", "ctrl-z", "ctrl-k", "sigquit"] {
+            let event = try XCTUnwrap(TerminalController.namedKeyEvent(for: name))
+            XCTAssertFalse(TerminalController.socketKeyTextIsDraft(mods: event.mods, text: event.text), name)
+        }
+        let space = try XCTUnwrap(TerminalController.namedKeyEvent(for: "space"))
+        XCTAssertTrue(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: space.text))
+        XCTAssertTrue(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: "synthetic prose"))
+        XCTAssertFalse(TerminalController.socketKeyTextIsDraft(mods: space.mods, text: "\r"))
     }
 
     func testCodepointParticipatesInEventEquality() throws {

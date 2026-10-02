@@ -1927,6 +1927,20 @@ struct CMUXCLI {
             return
         }
 
+        // C11-308 / cmux #15980: reject a sequence before authentication or
+        // --window routing can send anything to the app. The command arms
+        // retain their target validation and command-specific missing-key text.
+        if command == "send-key" || command == "send-key-tab" {
+            let (_, remainder) = parseOption(commandArgs, name: "--workspace")
+            let (_, keyRemainder) = parseOption(remainder, name: "--surface")
+            let keys = keyRemainder.first == "--" ? Array(keyRemainder.dropFirst()) : keyRemainder
+            do {
+                _ = try SendKeyArgs.single(keys)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "\(command) requires a key")
+            }
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(

@@ -6727,11 +6727,18 @@ class TerminalController {
                     activity: .working,
                     source: .submit
                 )
-            } else if let text, !text.isEmpty, text != "\r", text != "\n" {
+            } else if Self.socketKeyTextIsDraft(mods: mods, text: text) {
                 // Typed text sits in the input line until a Return: a draft.
                 terminalSurface.lastOperatorKeyAt = Date()
             }
         }
+    }
+
+    /// Ctrl letters carry encoder metadata, not composer text. Recording an
+    /// interrupt as a draft would keep C11-257's idle mailbox push buffered.
+    static func socketKeyTextIsDraft(mods: ghostty_input_mods_e, text: String?) -> Bool {
+        guard mods.rawValue & GHOSTTY_MODS_CTRL.rawValue == 0, let text else { return false }
+        return !text.isEmpty && text != "\r" && text != "\n"
     }
 
     #if DEBUG
@@ -7024,7 +7031,8 @@ class TerminalController {
             NamedKeyEvent(keycode: UInt32(keycode), mods: mods)
         }
         func printable(_ keycode: Int, _ text: String) -> NamedKeyEvent {
-            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text)
+            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text,
+                          unshiftedCodepoint: text.unicodeScalars.first!.value)
         }
         func control(_ keycode: Int, _ text: String) -> NamedKeyEvent {
             NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_CTRL, text: text,

@@ -16,7 +16,7 @@ c11 provides workspaces, areas, tabs, a socket, a CLI, and a metadata seam, all 
 
 The one exception is the **session-resume wrappers** in `Resources/bin/` (`claude` is the reference; `codex`, `grok`, `opencode`, `pi`, `copilot`, `omp` follow it). A wrapper must:
 
-- be prepended to PATH only inside c11 terminals (gated on `C11_TAB_ID` plus a live socket; `Resources/bin/claude` still reads the legacy `CMUX_SURFACE_ID`, a residual to rename);
+- be prepended to PATH only inside c11 terminals (gated on a live socket plus `CMUX_SURFACE_ID`, the legacy name every wrapper still reads; a residual to rename);
 - write nothing outside c11's own runtime (`/tmp` is fine, `~/.claude/` and friends are not);
 - capture only what resume needs (session id, `terminal_type`, lifecycle status where the TUI exposes it);
 - fall through to the real binary unchanged outside c11 or when the socket is unreachable.
@@ -77,7 +77,7 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 ## Builds
 
 - **Build on Atlas.** `remote-build.sh` ships the exact parent and submodule commits plus your dirty files, builds there, and retrieves the app and logs under `build-remote/`; it runs no local xcodebuild. Delegators and headless runs build and test only this way. In the c11 1.0 run, packaged-app validation and computer use happen on Atlas; the laptop receives the app but doesn't launch it.
-- **Admission is mandatory.** Atlas admits two builds (one while load stays above 40), same-tag requests serialize, and no Atlas build runs outside that route. Hyperion is one build at a time through `scripts/with-build-lock.sh` (`/tmp/c11-build.lock`; dead-owner takeover, exit 75 after 90 min), which every `reload*.sh` and `test-unit*.sh` uses. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` is for single-tenant CI runners only. Uncontrolled parallel builds hit load 250 on 2026-09-11.
+- **Admission is mandatory.** Atlas admits two builds (one after load stays above 40 for 60 s) and same-tag requests serialize; any Atlas build outside `remote-build.sh` must be coordinated with its slots. Hyperion is one build at a time through `scripts/with-build-lock.sh` (`/tmp/c11-build.lock`; dead-owner takeover, exit 75 after 90 min), which every `reload*.sh` and `test-unit*.sh` uses. Never call `xcodebuild` bare: `scripts/with-build-lock.sh xcodebuild …`. `C11_BUILD_LOCK=0` is for single-tenant CI runners only. Uncontrolled parallel builds hit load 250 on 2026-09-11.
 - **Hyperion does small loops only:** incremental builds and narrowed `-only-testing` slices, one at a time. Full suites go to Atlas or CI.
 - **QA launches suppress the startup dialogs.** A bare launch blocks on the Agent Skills sheet and the "Resume previous session?" picker. `launch-tagged-automation.sh --qa [fresh|resume]` sets `C11_QA_LAUNCH`; `reload.sh --tag` does not. Policy: `Sources/QALaunchPolicy.swift`.
 - **A fresh worktree needs its submodules** before any build: `git submodule update --init --recursive ghostty vendor/bonsplit`. Dirty submodules are refused by the remote route; commit and pin them first. For a local build, link the SHA-keyed GhosttyKit cache too (the build scripts repair a stale link):
@@ -88,7 +88,7 @@ Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projec
 
 ## Testing
 
-- **`c11-logic`** (`c11LogicTests`): logic only, no host app. Use it for Mailbox, Theme, workspace snapshots, the health parser, CLI runtime, persistence, parsers. Run it with `remote-build.sh --mode test`, or as a narrowed local slice under the lock (`-project GhosttyTabs.xcodeproj -scheme c11-logic -destination platform=macOS test -only-testing:c11LogicTests/<Class>`). Tests that construct a `Workspace`/`TabManager` crash the bare runner locally (`NSApp` is nil) and pass in CI; narrow to pure-logic classes and let CI cover those.
+- **`c11-logic`** (`c11LogicTests`): logic only, no host app. Use it for Mailbox, Theme, workspace snapshots, the health parser, CLI runtime, persistence, parsers. Run it with `remote-build.sh --mode test`; interactive Hyperion work may also run a narrowed local slice under the lock (`-project GhosttyTabs.xcodeproj -scheme c11-logic -destination platform=macOS test -only-testing:c11LogicTests/<Class>`). The first run after a clean checkout builds the whole app. Building `c11-unit` or `c11-ci` without the `test` action only compiles. Tests that construct a `Workspace`/`TabManager` crash the bare runner locally (`NSApp` is nil) and pass in CI; narrow to pure-logic classes and let CI cover those.
 - **`c11-unit`** (`c11Tests`): host-required; spawns a DEV.app that beachballs for about 22 s. Locally, only through `scripts/test-unit-local.sh`, which isolates the socket from your running c11 and runs both test targets.
 - **`tests_v2/`** (plain `python3` socket scripts, not pytest): live runs only through `scripts/sandbox-tests-v2.sh` in a `sandbox-up.sh` guest, never against the operator's session.
 - **There is no UI/e2e workflow.** Visible behavior is validated with `c11-computer-use`; clicks, drags, and app activation run in a sandbox guest, never on the operator's session.

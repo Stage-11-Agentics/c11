@@ -149,6 +149,37 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertEqual(JournalTestData.fold(working, child, seq: 3, context: JournalContext(eligible: false)).effect, .unattributed)
     }
 
+    // C11-275: exact Codex ownership exposes the unsupported hook coverage as
+    // degraded without opening a turn; the existing root notify still owns
+    // completion and a repeat is duplicate evidence.
+    func testCodexNotifyKeepsDegradedHookCoverageAndDeduplicatesCompletion() throws {
+        var gap = JournalTestData.draft(.stateChanged)
+        gap.agentKind = "codex"
+        gap.source = .c11
+        gap.adapter = .c11
+        gap.nativeEvent = "adapter_gap"
+        gap.signal = .adapterGap
+        let degraded = try XCTUnwrap(JournalTestData.fold(nil, gap, seq: 1).snapshot)
+        XCTAssertEqual(degraded.owner.agentKind, "codex")
+        XCTAssertEqual(degraded.phase, .unknown)
+        XCTAssertEqual(degraded.health, .degraded)
+
+        var notify = JournalTestData.draft(.turnCompleted)
+        notify.agentKind = "codex"
+        notify.adapter = .codexNotify
+        notify.nativeEvent = "agent-turn-complete"
+        let completed = try XCTUnwrap(JournalTestData.fold(degraded, notify, seq: 2).snapshot)
+        XCTAssertEqual(completed.phase, .idle)
+        XCTAssertEqual(completed.turnOutcome, "completed")
+        XCTAssertEqual(completed.health, .degraded)
+        XCTAssertEqual(completed.adapter, .codexNotify)
+
+        let duplicate = JournalTestData.fold(completed, notify, seq: 3)
+        XCTAssertEqual(duplicate.effect, .duplicateEvidence)
+        XCTAssertEqual(duplicate.snapshot?.phase, .idle)
+        XCTAssertEqual(duplicate.snapshot?.health, .degraded)
+    }
+
     // Hook/transcript overlap must not double count Q4 or reopen the native stop.
     func testTranscriptDuplicateStartCannotReopenHookBarrier() {
         let working = JournalTestData.fold(nil, JournalTestData.draft(.turnStarted), seq: 1).snapshot

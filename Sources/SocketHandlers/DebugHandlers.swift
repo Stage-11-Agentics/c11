@@ -27,6 +27,23 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugType(params: params))
         case "debug.terminal.operator_keys":
             return v2Result(id: id, self.v2DebugTerminalOperatorKeys(params: params))
+        case "debug.terminal.runtime_start_hold":
+            return v2Result(id: id, v2MainSync {
+                guard let tabId = v2UUID(params, "tab_id"),
+                      let located = AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: tabId, preferredWorkspaceId: v2UUID(params, "workspace_id")
+                      ), let terminal = located.workspace.panels[tabId] as? TerminalTab else {
+                    return .err(code: "not_found", message: "Terminal tab not found", data: nil)
+                }
+                let hold = v2Bool(params, "hold") ?? true
+                guard terminal.surface.debugHoldRuntimeStart(hold) else {
+                    return .err(code: "invalid_state", message: String(
+                        localized: "socket.debug.runtime_hold_attached",
+                        defaultValue: "The terminal runtime is already attached."
+                    ), data: nil)
+                }
+                return .ok(["held": hold, "maximum_seconds": 10])
+            })
         case "debug.app.activate":
             return v2Result(id: id, self.v2DebugActivateApp())
         case "debug.command_palette.toggle":

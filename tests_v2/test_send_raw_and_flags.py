@@ -219,6 +219,50 @@ def live(cli, socket_path, event_log):
             client.close_workspace(workspace)
 
 
+
+def queued(cli, socket_path, event_log):
+    """Bounded Debug fixture: actual handler timeout, event and attach flush."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from cmux import cmux
+    with cmux(socket_path) as client:
+        workspace = client._call("workspace.create")["workspace_id"]
+        try:
+            tab = client._call("tab.list", {"workspace_id": workspace})["tabs"][0]["id"]
+            target = {"workspace_id": workspace, "tab_id": tab}
+            client._call("debug.terminal.runtime_start_hold", {**target, "hold": True})
+            last_seq = max(json.loads(line)["seq"] for line in Path(event_log).read_text().splitlines())
+            body = r"C11_281_QUEUED\n_LITERAL"
+            proc = cli_run(cli, socket_path, "--json", "send", "--workspace", workspace,
+                           "--tab", tab, "--raw", "--no-submit", body)
+            payload = json.loads(proc.stdout)
+            assert payload["queued"] and not payload["delivered"] and not payload["submitted"], payload
+            suffix = " C11_281_QUEUED_SUFFIX"
+            proc = cli_run(cli, socket_path, "paste", "--workspace", workspace,
+                           "--tab", tab, "--no-submit", suffix)
+            assert "queued, not delivered" in proc.stdout and "has not seen it" in proc.stdout, proc.stdout
+            client._call("debug.terminal.runtime_start_hold", {**target, "hold": False})
+            client._call("workspace.select", {"workspace_id": workspace})
+
+            def screen():
+                return client._call("tab.read_text", target).get("text", "")
+
+            text = wait_until(lambda: (value if body + suffix in (value := screen()) else None),
+                              "queued text did not appear after attach")
+            assert "command not found" not in text.lower(), "queued no-submit dispatched Return"
+            sent = [json.loads(line) for line in Path(event_log).read_text().splitlines()]
+            sent = [event for event in sent if event["seq"] > last_seq
+                    and event["type"] == "tab.input_sent"
+                    and event.get("surface", "").lower() == tab.lower()]
+            assert len(sent) == 2, sent
+            for event, expected in zip(sent, [body, suffix]):
+                record = event["payload"]
+                assert record["text"] == expected and record["queued"] and not record["submitted"], record
+                assert record["caller_tab_id"] == "33333333-3333-4333-8333-333333333333", record
+            print("PASS C11-281 actual queued response/human status, one attributed event per send, attach flush")
+        finally:
+            client.close_workspace(workspace)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--offline", action="store_true")
@@ -232,6 +276,7 @@ def main():
         offline(cli)
     else:
         live(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
+        queued(cli, os.environ["C11_281_SOCKET"], os.environ["C11_281_EVENT_LOG"])
 
 
 if __name__ == "__main__":

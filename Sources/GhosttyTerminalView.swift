@@ -2772,6 +2772,28 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// submits the typed line on cold start.
     private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    #if DEBUG
+    private var debugRuntimeStartHoldUntil: TimeInterval?
+
+    /// A bounded, per-tab fixture for the socket timeout/queue path. It never
+    /// tears down a live runtime and automatically releases after ten seconds.
+    @MainActor
+    func debugHoldRuntimeStart(_ hold: Bool) -> Bool {
+        guard !hold || surface == nil else { return false }
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugRuntimeStartHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugRuntimeStartHoldUntil == expiry else { return }
+                self.debugRuntimeStartHoldUntil = nil
+                self.requestBackgroundSurfaceStartIfNeeded()
+            }
+        } else {
+            requestBackgroundSurfaceStartIfNeeded()
+        }
+        return true
+    }
+    #endif
     /// Borderless, off-screen `NSWindow` used to bootstrap Ghostty's runtime surface
     /// before AppKit moves the view into a real portal-backed window. Required because
     /// `ghostty_surface_new` (via `attachToView`) gates on `view.window != nil`; for
@@ -4376,6 +4398,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         guard surface == nil else { return }
+        #if DEBUG
+        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
+        #endif
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
 

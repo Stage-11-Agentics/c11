@@ -12645,10 +12645,14 @@ extension Workspace: BonsplitDelegate {
         // the identity the sidebar needs itself — no agent round-trip: the
         // type comes from `AgentDetector`, and we stamp the overlay-resolved
         // model plus a placeholder title here. An operator who configured a
-        // launch prompt still gets it delivered below (baked positional for
+        // launch prompt still gets it delivered below (a staged file instruction for
         // claude-code, post-ready sendText for other TUIs is a follow-up).
         stampLaunchIdentity(surfaceId: panel.id, resolvedModel: resolvedModel)
-        panel.sendText(launch.command + "\n")
+        panel.submitConfiguredAgentLaunch(agent: agent, launch: launch) { [weak self, weak panel] in
+            guard let self, let panel else { return false }
+            return self.terminalPanel(for: panel.id) === panel
+                && self.bonsplitController.allPaneIds.contains(pane)
+        }
         // C11-178 rail-1: record the launch off the critical path, now with the
         // overlay-resolved axes + `config_id` + system-prompt mode (C11-179).
         recordAgentLaunchStats(

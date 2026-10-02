@@ -392,7 +392,8 @@ struct ConfigCommandCore {
         } else {
             placement = .defaultPlacement
         }
-        let resolvedPrompt = prompt?.nonEmpty ?? promptFileContents?.nonEmpty
+        let rawPrompt = prompt ?? promptFileContents
+        let resolvedPrompt = rawPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawPrompt : nil
         return ConfigLaunchInputs(
             nameOrId: nameOrId,
             placement: placement,

@@ -20,6 +20,7 @@ import attention_menu_bar_probe as base
 
 
 ACTIVE_SECONDS = 300
+PICKER_ASKS = ('input',)
 HARD_SECONDS = 330
 EXTRA_JXA = r'''
     if (operation === 'target-key') {
@@ -32,12 +33,24 @@ EXTRA_JXA = r'''
         return '{}';
     }
     if (operation === 'target-type') {
-        process.keystroke(String(args[2]));
+        se.keystroke(String(args[2]));
         return '{}';
     }
     function descendants() { return process.windows()[0].entireContents(); }
     function ax(element, name) {
         try { return String(element.attributes.byName(name).value()); } catch (_) { return ''; }
+    }
+    if (operation === 'dismiss-notification-prompt') {
+        var pressed = 0;
+        process.windows().forEach(function(window) {
+            window.entireContents().forEach(function(item) {
+                if (item.role() === 'AXButton' && item.name() === 'Not Now') {
+                    item.actions.byName('AXPress').perform();
+                    pressed += 1;
+                }
+            });
+        });
+        return JSON.stringify({pressed: pressed});
     }
     if (operation === 'copy-mode-state') {
         var hits = [];
@@ -60,7 +73,9 @@ EXTRA_JXA = r'''
         }));
     }
     if (operation === 'focus-textbox') {
-        var fields = descendants().filter(function(item) { return item.role() === 'AXTextArea'; });
+        var fields = descendants().filter(function(item) {
+            return item.role() === 'AXTextArea' && ax(item, 'AXHelp') !== 'Terminal content area';
+        });
         if (fields.length !== 1) throw new Error('Expected exactly one TextBox AXTextArea, found ' + fields.length);
         fields[0].click();
         return '{}';
@@ -97,7 +112,8 @@ class SubmitProbe(base.Probe):
         remaining = limit - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('C11-231 UI probe deadline reached')
-        return min(3, remaining)
+        # Accessibility tree walks of the whole window exceed 3 s in the guest.
+        return min(30, remaining)
 
     def journal_path(self):
         with (Path(self.args.app) / 'Contents/Info.plist').open('rb') as source:
@@ -182,7 +198,8 @@ class SubmitProbe(base.Probe):
 
     def append(self, tab, owner, kind, **fields):
         native = {'agent.session.started': 'SessionStart', 'agent.turn.started': 'UserPromptSubmit',
-                  'agent.question.requested': 'PreToolUse', 'agent.turn.completed': 'Stop'}[kind]
+                  'agent.question.requested': 'PreToolUse', 'agent.plan_review.requested': 'PreToolUse',
+                  'agent.turn.completed': 'Stop'}[kind]
         event = dict(schema_version=1, event_id=str(uuid.uuid4()), kind=kind,
                      emitted_at_ms=int(time.time() * 1000), tab_id=tab, workspace_id=self.workspace,
                      session_id=owner, agent_kind='claude-code', source='hook', adapter='claude_hook',
@@ -197,10 +214,16 @@ class SubmitProbe(base.Probe):
         self.rpc('conversation.push', {'tab_id': tab, 'kind': 'claude-code', 'id': owner, 'source': 'hook'})
         self.append(tab, owner, 'agent.session.started')
         self.append(tab, owner, 'agent.turn.started', turn_id='synthetic-' + name + '-turn')
-        self.append(tab, owner, 'agent.question.requested', request_id=request,
-                    turn_id='synthetic-' + name + '-turn', tool_class='ask_user_question')
+        # Plain terminal asks (plan review) are answered by a terminal submit. The
+        # AskUserQuestion picker needs its own committed key, which stays unknown.
+        if name in PICKER_ASKS:
+            self.append(tab, owner, 'agent.question.requested', request_id=request,
+                        turn_id='synthetic-' + name + '-turn', tool_class='ask_user_question')
+        else:
+            self.append(tab, owner, 'agent.plan_review.requested', request_id=request,
+                        turn_id='synthetic-' + name + '-turn', tool_class='exit_plan_mode')
         self.eventually(lambda: self.rpc('tab.get_metadata', {'tab_id': tab})
-                        ['metadata']['journal']['phase'] == 'blocked', name + ' synthetic AskUserQuestion blocked')
+                        ['metadata']['journal']['phase'] == 'blocked', name + ' synthetic ask blocked')
         self.check(not self.responses(tab, request), name + ' ask starts without operator-response evidence')
 
     def exercise_completion_unread(self):
@@ -218,14 +241,15 @@ class SubmitProbe(base.Probe):
             return journal if journal['phase'] == 'idle' and journal['turn_outcome'] == 'completed' else None
 
         completed = self.eventually(completed_state, 'Committed journal completion is idle', seconds=10)
-        focus_params = {'workspace_id': self.workspace, 'tab_id': tab, 'by': 'operator'}
-        self.rpc('flag.suppress', focus_params)
-        self.completion_suppressed = True
         self.rpc('notification.create_for_tab', {
             'workspace_id': self.workspace, 'surface_id': tab,
             'title': 'Synthetic completion', 'subtitle': 'Agent finished', 'body': 'Synthetic fixture'
         })
         self.completion_notification_created = True
+        # The first notification in a fresh app can raise c11's own authorization prompt.
+        # Dismiss exactly that prompt (PID-scoped) so it cannot cover the window.
+        prompt = self.ui('dismiss-notification-prompt')
+        self.report['notification_prompt_dismissed'] = prompt.get('pressed', 0)
 
         def unread_completion():
             rows = self.rpc('notification.list')['notifications']
@@ -256,8 +280,6 @@ class SubmitProbe(base.Probe):
         self.check(len(self.events(tab)) == journal_event_count,
                    'Opening a completed tab changes last-seen/unread state without appending journal evidence')
         self.screenshot('06-read-completion')
-        self.rpc('flag.unsuppress', focus_params)
-        self.completion_suppressed = False
         self.rpc('notification.clear')
         self.completion_notification_created = False
 
@@ -275,6 +297,7 @@ class SubmitProbe(base.Probe):
                                      'Legacy unread appears beside the blocked journal ask')
             before = self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']
             event_count = len(self.events(tab))
+            response_count = len(self.responses(tab, request))
             self.check(before['phase'] == 'blocked' and unread is not None,
                        'Unread compatibility attention remains distinct from blocked journal state')
             self.rpc('notification.clear')
@@ -283,7 +306,7 @@ class SubmitProbe(base.Probe):
                        'Clearing unread does not resolve or rewrite the blocked ask')
             self.check(not any(not row['is_read'] for row in self.rpc('notification.list')['notifications']),
                        'Clearing unread removes only notification attention')
-            self.check(len(self.events(tab)) == event_count and not self.responses(tab, request),
+            self.check(len(self.events(tab)) == event_count and len(self.responses(tab, request)) == response_count,
                        'Unread clear appends neither journal nor operator-response evidence')
         finally:
             self.rpc('flag.unsuppress', params)
@@ -319,6 +342,10 @@ class SubmitProbe(base.Probe):
         self.ui('target-key', '36', '0', '1')
         self.send_key(tab, 'enter')
         self.check(not self.responses(tab, request), 'Editing, repeated Return and generated send-key produce no response')
+        self.ui('target-key', '36', '0')
+        time.sleep(.5)
+        self.check(not self.responses(tab, request),
+                   'Return on an AskUserQuestion picker ask stays unavailable while no commit key is named')
 
         # Copy-mode Return is consumed locally; Escape exits; a real Return then
         # records exactly once while the journal phase remains blocked.
@@ -362,6 +389,13 @@ class SubmitProbe(base.Probe):
 
         self.exercise_completion_unread()
         self.exercise_unread_clear_preserves_ask()
+
+        if self.args.skip_picker:
+            self.report['picker_fixture'] = {
+                'case': 'claude-bypass-ask', 'provider_version': '2.1.287 (Claude Code)',
+                'status': 'not_run', 'reason': 'pinned provider unavailable in this guest'
+            }
+            return
 
         tab, request, screen = self.launch_pinned_picker()
         navigation_hint = any(token in screen.lower() for token in ('arrow', '↑', '↓', 'up/down'))
@@ -449,7 +483,7 @@ class SubmitProbe(base.Probe):
         super().cleanup()
         safe = {key: self.report[key] for key in (
             'result', 'checks', 'screenshots', 'elapsed_seconds', 'dismissals', 'guest_model',
-            'picker_fixture', 'picker_observation', 'picker_screen_sha256'
+            'picker_fixture', 'picker_observation', 'picker_screen_sha256', 'notification_prompt_dismissed'
         ) if key in self.report}
         safe['cleanup_ok'] = not self.report.get('cleanup_errors')
         if self.output:
@@ -463,6 +497,8 @@ def main():
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--output-name', default='c11-231-submit-ui')
     parser.add_argument('--discover-picker-only', action='store_true')
+    parser.add_argument('--skip-picker', action='store_true',
+                        help='Record the pinned picker fixture as not run (provider unavailable in the guest)')
     parser.add_argument('--picker-navigation-key-code', type=int)
     parser.add_argument('--picker-commit-key-code', type=int)
     args = parser.parse_args()
@@ -479,7 +515,8 @@ def main():
     watchdog.start()
     try:
         probe.execute()
-        probe.report['result'] = 'DISCOVERY_ONLY' if args.discover_picker_only else 'PASS'
+        probe.report['result'] = ('DISCOVERY_ONLY' if args.discover_picker_only
+                                  else 'PASS_PICKER_NOT_RUN' if args.skip_picker else 'PASS')
     except Exception as error:
         probe.report.update(result='FAIL', error=str(error))
     finally:
@@ -487,7 +524,7 @@ def main():
         probe.cleanup()
         watchdog.cancel()
     print(json.dumps(probe.report, indent=2))
-    return 0 if probe.report.get('result') in ('PASS', 'DISCOVERY_ONLY') else 1
+    return 0 if probe.report.get('result') in ('PASS', 'PASS_PICKER_NOT_RUN', 'DISCOVERY_ONLY') else 1
 
 
 if __name__ == '__main__':

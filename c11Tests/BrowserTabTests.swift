@@ -2284,7 +2284,10 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
         let initialReattachCount = webView.reattachRenderingStateCount
         anchor.frame = NSRect(x: 52, y: 30, width: 248, height: 178)
         contentView.layoutSubtreeIfNeeded()
+        let forcedDisplayCount = webView.displayIfNeededCount
         portal.synchronizeWebViewForAnchor(anchor)
+        XCTAssertEqual(webView.displayIfNeededCount, forcedDisplayCount,
+                       "Portal synchronization must request repaint without forcing display")
         advanceAnimations()
 
         XCTAssertFalse(slot.isHidden, "Anchor resize should keep the portal-hosted browser visible")
@@ -2348,7 +2351,10 @@ final class BrowserWindowPortalLifecycleTests: XCTestCase {
         let webView = TrackingPortalWebView(frame: .zero, configuration: WKWebViewConfiguration())
         portal.bind(webView: webView, to: anchor, visibleInUI: true)
         contentView.layoutSubtreeIfNeeded()
+        let forcedDisplayCount = webView.displayIfNeededCount
         portal.synchronizeWebViewForAnchor(anchor)
+        XCTAssertEqual(webView.displayIfNeededCount, forcedDisplayCount,
+                       "Portal synchronization must request repaint without forcing display")
         advanceAnimations()
 
         guard let slot = webView.superview as? WindowBrowserSlotView else {

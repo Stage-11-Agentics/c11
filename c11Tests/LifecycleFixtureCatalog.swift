@@ -1,6 +1,12 @@
 import Foundation
 import XCTest
 
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
 /// One sanitized lifecycle edge from a C11-271 capture.
 struct LifecycleReplayStep: Equatable {
     let id: String
@@ -343,6 +349,123 @@ enum LifecycleFixtureCatalog {
 }
 
 final class LifecycleFixtureCatalogTests: XCTestCase {
+    func testCapturedC11271CasesReachCommittedRosterConsumersAfterReopen() throws {
+        let all = try LifecycleFixtureCatalog.load(from: LifecycleFixtureCatalog.directory())
+        let selected = Set(["claude-bypass-ask", "claude-bypass-ask-answered", "claude-session-end", "derived-late-pretool-after-stop"])
+        let tab = UUID(uuidString: "00000000-0000-0000-0000-000000000231")!
+        let workspace = UUID(uuidString: "00000000-0000-0000-0000-000000000232")!
+
+        for fixture in all where selected.contains(fixture.id) {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("c11-journal-fixture-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            var now: Int64 = 1_700_000_000_000
+            var store: JournalStore? = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { now })
+            var owner: JournalOwner?
+
+            for step in fixture.steps {
+                let subcommand: String?
+                switch step.name {
+                case "SessionStart": subcommand = "session-start"
+                case "UserPromptSubmit": subcommand = "prompt-submit"
+                case "PermissionRequest": subcommand = "permission-request"
+                case "PreToolUse": subcommand = "pre-tool-use"
+                case "PostToolUse": subcommand = "post-tool-use"
+                case "Stop": subcommand = "stop"
+                case "SessionEnd": subcommand = "session-end"
+                default: subcommand = nil
+                }
+                guard let subcommand else { continue }
+                let timestamp = 1_700_000_000_000 + Int64(step.tMs)
+                now = timestamp
+                var payload = step.attributes
+                if let toolName = step.toolName { payload["tool_name"] = toolName }
+                guard var draft = ClaudeHookMapping.map(subcommand: subcommand, object: payload) else {
+                    // Claude's PermissionRequest is not the AskUserQuestion lifecycle
+                    // signal; the captured PreToolUse is the committed ask evidence.
+                    XCTAssertEqual(step.name, "PermissionRequest", fixture.id)
+                    continue
+                }
+                draft.emittedAtMs = timestamp
+                draft.occurredAtMs = timestamp
+                draft.timeQuality = .nativeLocal
+                draft.tabID = tab
+                draft.workspaceID = workspace
+                try draft.validate()
+                let result = try store!.append(
+                    draft: draft,
+                    context: JournalContext(eligible: true, verifiedNativeClock: true))
+                owner = draft.owner
+                if step.name == "PreToolUse", step.toolName == "AskUserQuestion" {
+                    XCTAssertEqual(result.receipt.projectionEffect, .applied, fixture.id)
+                }
+            }
+
+            let exactOwner = try XCTUnwrap(owner, fixture.id)
+            store = nil
+            let reopened = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { now + 1 })
+            let rawBaseline = try XCTUnwrap(reopened.current(owner: exactOwner), fixture.id)
+            let baseline = JournalReplayPolicy.restored(rawBaseline)
+            let page = try reopened.retainedOwnerEvents(owner: exactOwner, throughSequence: baseline.lastSequence)
+            let classification = AgentRoster.classifyRestore(
+                eventsNewestFirst: page.events, throughSequence: baseline.lastSequence,
+                truncated: page.truncated, storePruned: false)
+            let turnStarted = AgentRoster.turnStartMs(
+                turnID: baseline.turnID, throughSequence: baseline.lastSequence, eventsNewestFirst: page.events)
+            let ask = AgentRoster.restoredAsk(snapshot: baseline, eventsNewestFirst: page.events)
+            let responseAsk = ask.flatMap { restored in
+                page.events.first(where: { $0.draft.eventID == restored.eventID }).flatMap { evidence in
+                    JournalOpenAsk.make(draft: evidence.draft, snapshot: baseline, committedAtMs: evidence.committedAtMs)
+                }
+            }
+
+            switch fixture.id {
+            case "claude-bypass-ask":
+                XCTAssertEqual(rawBaseline.confirmation, .confirmed)
+                XCTAssertEqual(baseline.phase, .blocked)
+                XCTAssertEqual(baseline.confirmation, .unconfirmed)
+                XCTAssertEqual(classification.label, "historical_candidate")
+                let appliedAsk = try XCTUnwrap(page.events.first {
+                    $0.effect == .applied && $0.attribution == "exact" && $0.draft.kind == .questionRequested
+                }, fixture.id)
+                XCTAssertEqual(ask?.eventID, appliedAsk.draft.eventID)
+                XCTAssertNotNil(turnStarted)
+                XCTAssertEqual(responseAsk?.eventID, appliedAsk.draft.eventID)
+                XCTAssertEqual(responseAsk?.requestID, ask?.requestID)
+                XCTAssertEqual(responseAsk?.openedAtMs, ask?.openedAtMs)
+                XCTAssertEqual(page.events.filter { $0.draft.kind == .questionRequested }.map(\.effect), [.applied])
+            case "claude-bypass-ask-answered":
+                XCTAssertEqual(baseline.phase, .idle)
+                XCTAssertNil(ask, "the committed PostToolUse resolves the ask before the baseline")
+                XCTAssertNotNil(turnStarted)
+                XCTAssertNil(responseAsk)
+                XCTAssertTrue(page.events.contains {
+                    $0.draft.kind == .attentionResolved && $0.effect == .applied && $0.attribution == "exact"
+                })
+                XCTAssertTrue(page.events.contains {
+                    $0.draft.kind == .turnCompleted && $0.effect == .applied && $0.attribution == "exact"
+                })
+            case "claude-session-end":
+                XCTAssertEqual(classification.label, "ended")
+            case "derived-late-pretool-after-stop":
+                XCTAssertEqual(baseline.phase, .idle)
+                let appliedTurn = try XCTUnwrap(page.events.first {
+                    $0.effect == .applied && $0.attribution == "exact"
+                        && $0.draft.kind == .turnStarted && $0.draft.turnID == baseline.turnID
+                }, fixture.id)
+                XCTAssertEqual(turnStarted, appliedTurn.draft.occurredAtMs)
+                let fullTrace = try reopened.retainedOwnerEvents(owner: exactOwner)
+                let lateTool = try XCTUnwrap(fullTrace.events.first {
+                    $0.draft.nativeEvent == "PreToolUse" && $0.draft.toolClass == .other
+                }, fixture.id)
+                XCTAssertEqual(lateTool.effect, .stale)
+                XCTAssertGreaterThan(lateTool.sequence, baseline.lastSequence)
+            default:
+                XCTFail("unexpected selected lifecycle fixture \(fixture.id)")
+            }
+        }
+    }
+
     func testReplayIdentityAndAttentionContract() throws {
         let cases = try LifecycleFixtureCatalog.load(from: LifecycleFixtureCatalog.directory())
         let byID = Dictionary(uniqueKeysWithValues: cases.map { ($0.id, $0) })

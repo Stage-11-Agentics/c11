@@ -2282,6 +2282,7 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        "agents.list",
         "journal.clear",
         "journal.status",
         // Feed list and display notes parse off main and do not move focus.

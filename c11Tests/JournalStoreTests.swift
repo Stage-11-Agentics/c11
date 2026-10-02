@@ -63,7 +63,7 @@ final class JournalStoreTests: XCTestCase {
 
     // Protected baseline capacity fails transactionally without an orphan receipt.
     func testStateCapacityRollsBackEventAndKeepsAsk() throws {
-        var budget = JournalBudgets(); budget.currentBytes = 1800
+        var budget = JournalBudgets(); budget.currentBytes = 1200
         let store = try JournalStore(layout: layout, budgets: budget, clock: { 1000 })
         let ask = JournalTestData.draft(.questionRequested)
         _ = try store.append(draft: ask, context: JournalContext(eligible: true))

@@ -20,6 +20,7 @@ enum JournalReducer {
             return unchanged(.child, "child_evidence")
         }
         guard context.eligible, let owner = d.owner else { return unchanged(.unattributed, "owner_unavailable") }
+        guard d.nativeEvent != "other" else { return unchanged(.observation, "unknown_native_event") }
         var s = previous ?? JournalSnapshot(owner: owner, workspaceID: d.workspaceID, appInstanceID: instanceID)
         // Drain is historical: no old file can displace an event admitted live in this run.
         if context.historical && s.appInstanceID == instanceID && s.lastLiveSequence > 0 {
@@ -58,6 +59,9 @@ enum JournalReducer {
             reason = "session_disconnected"
         case .turnStarted:
             guard supportsTurn else { return unchanged(.advisory, "unsupported_turn") }
+            if s.terminalBarrier, let turn = d.turnID, turn == s.turnID {
+                return unchanged(.duplicateEvidence, "turn_already_terminal")
+            }
             if s.phase == .blocked {
                 // A native prompt with a new turn ID is positive continuation evidence.
                 guard !transcript, d.source.rank >= s.rank,
@@ -84,6 +88,7 @@ enum JournalReducer {
         case .questionRequested, .planReviewRequested, .approvalRequested:
             guard supportsBlocked else { return unchanged(.advisory, "unsupported_blocked") }
             guard !s.terminalBarrier else { return unchanged(.advisory, "terminal_barrier") }
+            if s.phase == .blocked && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             if s.phase == .error && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             let requestReason: JournalReason = d.kind == .questionRequested ? .question : (d.kind == .planReviewRequested ? .planReview : .approval)
             if s.phase == .blocked && s.requestID == d.requestID && s.reason == requestReason {
@@ -124,6 +129,7 @@ enum JournalReducer {
                 reason = "interrupt_with_unresolved_request"
             } else {
                 if s.terminalBarrier && s.turnOutcome == "interrupted" { return unchanged(.duplicateEvidence, "turn_already_terminal") }
+                guard s.phase == .working else { return unchanged(.advisory, "interrupt_without_working_turn") }
                 s.phase = .idle
                 s.turnOutcome = "interrupted"
                 s.terminalBarrier = true
@@ -166,7 +172,8 @@ enum JournalReducer {
             return unchanged(.observation, "diagnostic_only")
         }
 
-        if fromPhase != s.phase || previous == nil || (d.kind == .turnStarted && s.turnID != previous?.turnID) {
+        if fromPhase != s.phase || previous == nil || (d.kind == .turnStarted && s.turnID != previous?.turnID)
+            || (s.phase == .blocked && (s.requestID != previous?.requestID || s.reason != previous?.reason)) {
             s.sinceMs = now
         }
         if !preserveEvidence {

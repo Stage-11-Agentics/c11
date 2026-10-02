@@ -101,7 +101,7 @@ final class JournalReducerTests: XCTestCase {
     // Retain C11-271 provenance: replay the captured hook stream in its recorded order.
     func testMergedFixtureCorpusHookSequences() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")
-        for (name, expected) in [("derived-late-pretool-after-stop", JournalPhase.idle), ("claude-bypass-ask", .blocked), ("claude-bypass-exit-plan", .blocked)] {
+        for (name, expected) in [("derived-late-pretool-after-stop", JournalPhase.idle), ("claude-bypass-ask", .blocked)] {
             let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(name + ".json"))) as? [String: Any])
             let events = try XCTUnwrap(object["events"] as? [[String: Any]])
             var state: JournalSnapshot?

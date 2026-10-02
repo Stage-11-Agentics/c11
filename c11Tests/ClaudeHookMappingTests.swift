@@ -190,7 +190,7 @@ final class ClaudeHookMappingTests: XCTestCase {
         let manifest = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: fixtureRoot.appendingPathComponent("manifest.json"))) as? [String: Any])
         let manifestCases = try XCTUnwrap(manifest["cases"] as? [[String: Any]])
-        let manifestByID = Dictionary(uniqueKeysWithValues: manifestCases.compactMap { item in
+        let manifestByID: [String: [String: Any]] = Dictionary(uniqueKeysWithValues: manifestCases.compactMap { item in
             guard let id = item["id"] as? String else { return nil }
             return (id, item)
         })

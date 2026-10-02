@@ -255,7 +255,13 @@ def main() -> int:
             _must(int(frame_clicks.get("value") or 0) >= 1, f"Expected frame click count >= 1: {frame_clicks}")
 
             c._call("browser.console.list", {"tab_id": sid})
-            c._call("browser.addscript", {"tab_id": sid, "script": "window.triggerDialogs(); true;"})
+            c._call(
+                "browser.addscript",
+                {"tab_id": sid, "script": "setTimeout(() => window.triggerDialogs(), 0); true;"},
+            )
+            # Let the first dialog reach the socket queue after addscript has
+            # returned; synchronous dialogs would hold its JavaScript result.
+            time.sleep(0.1)
             d1 = c._call("browser.dialog.accept", {"tab_id": sid, "text": "agent-text"}) or {}
             d2 = c._call("browser.dialog.dismiss", {"tab_id": sid}) or {}
             d3 = c._call("browser.dialog.accept", {"tab_id": sid}) or {}

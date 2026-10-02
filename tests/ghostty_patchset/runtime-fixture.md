@@ -1,6 +1,6 @@
 # Tagged runtime evidence for C11-294
 
-One bounded harness, `runtime-fixture.py`, supports an existing `sandbox-up.sh` guest or the owner's explicitly authorized local tagged C11-294 artifacts. It does not launch/relaunch c11 or discover targets. The controller checks the exact tagged bundle ID, bundled CLI path, socket ownership, expected socket filename, and Darwin socket peer PID's executable before creating anything. Production sockets and untagged apps fail closed. Local mode additionally requires `--local-tagged`, exactly `c11-294-base` or `c11-294-ghostty`, the matching app filename/socket, and a new output directory below `/tmp`.
+One bounded harness, `runtime-fixture.py`, supports an existing `sandbox-up.sh` guest or the owner's explicitly authorized local tagged C11-294/C11-302 artifacts. It does not launch/relaunch c11 or discover targets. The controller checks the exact tagged bundle ID, bundled CLI path, socket ownership, expected socket filename, and Darwin socket peer PID's executable before creating anything. Production sockets and untagged apps fail closed. Local mode additionally requires `--local-tagged`, exactly `c11-294-base`, `c11-294-ghostty`, `c11-302-baseline` or `c11-302-wakeups`, the matching app filename/socket, and a new output directory below `/tmp`.
 
 ## Authorized local tagged run
 

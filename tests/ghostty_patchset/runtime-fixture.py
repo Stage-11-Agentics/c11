@@ -187,8 +187,8 @@ class RPC:
         self.app = Path(args.app).resolve(strict=True)
         self.cli = Path(args.cli).resolve(strict=True)
         if args.local_tagged:
-            if args.tag not in ("c11-294-base", "c11-294-ghostty"):
-                raise RuntimeError("local mode is restricted to the two authorized C11-294 tags")
+            if args.tag not in ("c11-294-base", "c11-294-ghostty", "c11-302-baseline", "c11-302-wakeups"):
+                raise RuntimeError("local mode is restricted to the authorized C11-294/C11-302 tags")
             if self.app.name != "c11 DEV " + args.tag + ".app":
                 raise RuntimeError("local app filename does not match the exact authorized tag")
             if args.tag == "c11-294-base" and not args.comparison_only:

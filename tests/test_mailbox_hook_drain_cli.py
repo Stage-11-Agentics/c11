@@ -17,6 +17,8 @@ c11 socket, so the stall and broken-pipe paths can be forced.
   6. A hook process that spent more than ~6 s on socket calls before the
      claim leaves the mail in the inbox instead of claiming it into a
      result the harness would discard at its 10 s timeout.
+  7. Mail claimed from many workspace inboxes is reported in one bounded
+     call: with a stalled socket the hook still exits fast, output intact.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -215,7 +217,7 @@ def main() -> int:
     reports = rec.reports()
     check(len(reports) == 1 and reports[0].get("tab_id", "").upper() == TAB,
           "hook drain reports the recipient tab", json.dumps(reports))
-    check(bool(reports) and reports[0].get("deliveries") == [{"id": ulid, "recipient": "lane-c-agent"}]
+    check(bool(reports) and reports[0].get("deliveries") == [{"id": ulid, "recipient": "lane-c-agent", "workspace_id": WORKSPACE}]
           and reports[0].get("via") == "drain", "hook drain report names the envelope recipient", json.dumps(reports))
 
     # Plain drain of someone else's (title-keyed) inbox into a closed pipe.
@@ -258,9 +260,28 @@ def main() -> int:
     ulid = fx.deliver(TAB.lower(), workspace=MOVED_TO)
     run(cli, ["--socket", rec.path, "mailbox", "recv", "--drain", "--hook-format", "codex"], fx.env(rec.path), stop_input)
     reports = rec.reports()
-    check(len(reports) == 1 and reports[0].get("workspace_id", "").upper() == MOVED_TO,
+    check(len(reports) == 1 and [d.get("workspace_id", "").upper() for d in reports[0].get("deliveries", [])] == [MOVED_TO],
           "moved tab: report names the workspace that held the inbox", json.dumps(reports))
     rec.close()
+    fx.cleanup()
+
+    # 7. Many workspace groups, stalled socket: one report call, fast exit, output intact.
+    fx = Fixture()
+    stalled = FakeC11(os.path.join(tmp, "stall3.sock"), stall=True)
+    groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 16)]
+    ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
+    proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
+                   fx.env(stalled.path), stop_input)
+    out = proc.stdout.decode()
+    claimed = all(fx.listing(TAB.lower(), w) == ([], [u + ".msg"]) for w, u in zip(groups, ulids))
+    check(proc.returncode == 0 and '"decision":"block"' in out and all(u in out for u in ulids) and claimed,
+          f"{len(groups)} workspace groups, stalled socket: every message printed and claimed", out[:160])
+    check(ms < 2500, f"{len(groups)} workspace groups, stalled socket: exits in {ms:.0f} ms (one bounded report)")
+    report_calls = [r for r in stalled.requests if r.get("method") == "mailbox.report_delivered"]
+    check(len(report_calls) == 1 and len(report_calls[0]["params"]["deliveries"]) == len(groups)
+          and {d["workspace_id"] for d in report_calls[0]["params"]["deliveries"]} == set(groups),
+          "one report call carries every delivery with its own workspace", str(len(report_calls)))
+    stalled.close()
     fx.cleanup()
 
     # 6. Claim deadline: prompt-submit's status calls take ~2.5 s each before the claim.

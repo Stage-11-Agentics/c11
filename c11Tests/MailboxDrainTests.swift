@@ -226,6 +226,20 @@ final class MailboxDrainTests: XCTestCase {
         )
     }
 
+    func testPostClaimReportBudgetEndsByEightSecondsOfProcessAge() {
+        XCTAssertEqual(MailboxHookOutput.reportBudget(processElapsedSeconds: 0.2), 1)
+        XCTAssertEqual(MailboxHookOutput.reportBudget(processElapsedSeconds: nil), 1)
+        XCTAssertEqual(MailboxHookOutput.reportBudget(processElapsedSeconds: 7.5)!, 0.5, accuracy: 0.0001)
+        XCTAssertNil(MailboxHookOutput.reportBudget(processElapsedSeconds: 7.99))
+        XCTAssertNil(MailboxHookOutput.reportBudget(processElapsedSeconds: 12))
+        // The latest possible claim still leaves the full report inside the deadline.
+        let latestClaim = MailboxHookOutput.claimDeadlineSeconds
+        XCTAssertLessThanOrEqual(
+            latestClaim + (MailboxHookOutput.reportBudget(processElapsedSeconds: latestClaim) ?? 0),
+            MailboxHookOutput.postClaimDeadlineSeconds
+        )
+    }
+
     func testClaimDeadline() {
         XCTAssertTrue(MailboxHookOutput.mayClaim(processElapsedSeconds: 0.2))
         XCTAssertTrue(MailboxHookOutput.mayClaim(processElapsedSeconds: nil))

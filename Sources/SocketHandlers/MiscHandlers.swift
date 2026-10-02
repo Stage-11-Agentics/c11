@@ -362,29 +362,31 @@ extension TerminalController {
     /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
     /// `mailbox.report_delivered` — C11-257 Lane C. A CLI consumer (`c11
     /// mailbox recv --drain`, a harness hook drain) reports the envelopes it
-    /// claimed into `_read/`, and the app records one `mailbox.delivered` per
-    /// envelope. Params: `workspace_id` (UUID), `deliveries` ([{`id`,
-    /// `recipient`}]), `tab_id` (the recipient tab's UUID; omitted when the
-    /// consumer does not know it, so the event carries no surface rather than a
-    /// wrong one), `via` (default `"drain"`).
+    /// claimed into `_read/`, in one call however many workspaces they came
+    /// from, and the app records one `mailbox.delivered` per envelope.
+    /// Params: `deliveries` ([{`id`, `recipient`, `workspace_id`}]; an entry
+    /// without `workspace_id` uses the top-level `workspace_id`), `tab_id` (the
+    /// recipient tab's UUID; omitted when the consumer does not know it, so the
+    /// event carries no surface rather than a wrong one), `via` (default
+    /// `"drain"`).
     ///
     /// Telemetry: validated and emitted off-main (EventEmitter is
     /// thread-safe); nothing here touches AppKit or the model.
     private func v2MailboxReportDelivered(params: [String: Any]) -> V2CallResult {
-        guard let workspaceId = v2UUID(params, "workspace_id") else {
-            return .err(code: "invalid_workspace_id", message: "workspace_id must be a UUID", data: nil)
-        }
-        let deliveries: [(id: String, recipient: String)] = (params["deliveries"] as? [Any] ?? []).compactMap {
+        let defaultWorkspace = v2UUID(params, "workspace_id")
+        let deliveries: [(id: String, recipient: String, workspace: UUID)] = (params["deliveries"] as? [Any] ?? []).compactMap {
             guard let entry = $0 as? [String: Any],
                   let id = entry["id"] as? String, !id.isEmpty,
-                  let recipient = entry["recipient"] as? String, !recipient.isEmpty else { return nil }
-            return (id, recipient)
+                  let recipient = entry["recipient"] as? String, !recipient.isEmpty,
+                  let workspace = (entry["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) ?? defaultWorkspace
+            else { return nil }
+            return (id, recipient, workspace)
         }
         let via = v2String(params, "via") ?? "drain"
         let tabId = v2UUID(params, "tab_id")
         for delivery in deliveries {
             EventEmitter.shared.emitMailboxDelivered(
-                workspace: workspaceId,
+                workspace: delivery.workspace,
                 id: delivery.id,
                 recipient: delivery.recipient,
                 surface: tabId,

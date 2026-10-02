@@ -19041,9 +19041,9 @@ extension CMUXCLI {
             : surfaceOverride.flatMap(UUID.init(uuidString:))
         reportMailboxDrained(
             client: client,
-            workspaceId: workspaceId,
             recipientTabId: recipientTabId,
-            deliveries: claimed.map { ($0.id, tabName) }
+            deliveries: claimed.map { ($0.id, tabName, workspaceId) },
+            budget: MailboxHookOutput.reportBudgetSeconds
         )
     }
 
@@ -19151,7 +19151,7 @@ extension CMUXCLI {
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
     /// go back to the inbox (C3-order), otherwise each one is recorded as
     /// `mailbox.delivered` with `via: "drain"`, under the workspace whose inbox
-    /// held it. Returns whether it delivered.
+    /// held it. Returns whether it delivered (the write, not the report).
     @discardableResult
     private func deliverMailboxHookDrain(_ drain: MailboxHookDrain, client: SocketClient) -> Bool {
         signal(SIGPIPE, SIG_IGN)
@@ -19159,48 +19159,53 @@ extension CMUXCLI {
             drain.claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return false
         }
-        let byWorkspace = Dictionary(grouping: drain.claimed) { MailboxDrain.workspaceId(ofInbox: $0.inbox) }
-        for (workspaceId, messages) in byWorkspace {
-            guard let workspaceId else { continue }
-            reportMailboxDrained(
-                client: client,
-                workspaceId: workspaceId,
-                recipientTabId: drain.tabId,
-                deliveries: messages.map { ($0.id, $0.recipient ?? drain.tabId.uuidString.lowercased()) }
-            )
-        }
+        // Everything after the claim shares one absolute deadline tied to the
+        // process's age, so the hook has exited well before a harness kill
+        // however many workspaces the mail came from.
+        guard let budget = MailboxHookOutput.reportBudget(
+            processElapsedSeconds: Self.processElapsedSeconds()
+        ) else { return true }
+        reportMailboxDrained(
+            client: client,
+            recipientTabId: drain.tabId,
+            deliveries: drain.claimed.compactMap { message in
+                MailboxDrain.workspaceId(ofInbox: message.inbox).map {
+                    (message.id, message.recipient ?? drain.tabId.uuidString.lowercased(), $0)
+                }
+            },
+            budget: budget
+        )
         return true
     }
 
-    /// Ceiling on the post-delivery report. The envelopes are already claimed
-    /// and their text already written, so the report must never hold the hook
-    /// process near the harness's own deadline (Claude and Codex kill a hook
-    /// at 10 s and then discard its stdout). Two bounded round-trips at most:
-    /// the capability probe and the report itself.
-    static let mailboxReportDeadlineSeconds: TimeInterval = 0.5
-
-    /// Best effort: an unreachable or stalled socket only costs the
-    /// `mailbox.delivered` events. `recipientTabId` nil omits `tab_id`, so an
-    /// unknown recipient is never attributed to the caller.
+    /// Records claimed envelopes as `mailbox.delivered` in ONE socket call,
+    /// whatever the number of workspaces involved, inside `budget` seconds
+    /// in total (the capability probe and the report share it). Best effort:
+    /// an unreachable or stalled socket only costs the events, never the
+    /// delivery. `recipientTabId` nil omits `tab_id`, so an unknown recipient
+    /// is never attributed to the caller.
     private func reportMailboxDrained(
         client: SocketClient,
-        workspaceId: UUID,
         recipientTabId: UUID?,
-        deliveries: [(id: String, recipient: String)]
+        deliveries: [(id: String, recipient: String, workspaceId: UUID)],
+        budget: TimeInterval
     ) {
-        guard !deliveries.isEmpty else { return }
+        guard !deliveries.isEmpty, budget > 0 else { return }
         var params: [String: Any] = [
-            "workspace_id": workspaceId.uuidString,
-            "deliveries": deliveries.map { ["id": $0.id, "recipient": $0.recipient] },
+            "deliveries": deliveries.map {
+                ["id": $0.id, "recipient": $0.recipient, "workspace_id": $0.workspaceId.uuidString]
+            },
             "via": "drain"
         ]
         if let recipientTabId {
             params["tab_id"] = recipientTabId.uuidString
         }
+        // `sendV2` may probe capabilities first with the same per-call
+        // deadline, so each of the two round-trips gets half the budget.
         _ = try? client.sendV2(
             method: "mailbox.report_delivered",
             params: params,
-            deadline: .custom(Self.mailboxReportDeadlineSeconds)
+            deadline: .custom(budget / 2)
         )
     }
 

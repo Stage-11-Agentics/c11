@@ -1904,10 +1904,18 @@ struct CMUXCLI {
         let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
         let (createCommandText, createArgs) = isTerminalCreate
             ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
         if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
             if createArgs.contains("--command"), createCommandText == nil {
                 throw CLIError(message: String(localized: "cli.create.command.requiresValue", defaultValue: "--command requires text"))
+            }
+            if command == "new-tab" || command == "new-area" {
+                validatedCreateProfile = try validatedBrowserProfileOption(createArgs)
+                if validatedCreateProfile != nil,
+                   optionValue(createArgs, name: "--type")?.lowercased() != "browser" {
+                    throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
+                }
             }
             _ = try resolvedCreateInput(
                 raw: createCommandText,
@@ -2605,7 +2613,7 @@ struct CMUXCLI {
             let file = optionValue(createArgs, name: "--file")
             let title = optionValue(createArgs, name: "--title")
             let cwd = optionValue(createArgs, name: "--cwd")
-            let profile = optionValue(createArgs, name: "--profile")
+            let profile = validatedCreateProfile
             if profile != nil, type?.lowercased() != "browser" {
                 throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
             }
@@ -2870,7 +2878,7 @@ struct CMUXCLI {
             let url = optionValue(createArgs, name: "--url")
             let file = optionValue(createArgs, name: "--file")
             let cwd = optionValue(createArgs, name: "--cwd")
-            let profile = optionValue(createArgs, name: "--profile")
+            let profile = validatedCreateProfile
             if profile != nil, type?.lowercased() != "browser" {
                 throw CLIError(message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"))
             }
@@ -7806,10 +7814,28 @@ struct CMUXCLI {
                 throw CLIError(message: String(localized: "browser.profile.cli.unknownCommand", defaultValue: "Unknown browser profiles command \(profileCommand)"))
             }
 
+            if profileCommand == "clear" || profileCommand == "delete" {
+                let (profile, confirmed) = try parseBrowserProfileDestructiveArguments(
+                    profileArgs,
+                    command: profileCommand
+                )
+                let payload = try client.sendV2(
+                    method: "browser.profiles.\(profileCommand)",
+                    params: ["profile": profile, "confirm": confirmed]
+                )
+                output(
+                    payload,
+                    fallback: profileCommand == "delete"
+                        ? String(localized: "browser.profile.cli.deleted", defaultValue: "Deleted browser profile")
+                        : String(localized: "browser.profile.cli.cleared", defaultValue: "Cleared browser profile")
+                )
+                return
+            }
+
             var params: [String: Any] = [:]
             let (profileOpt, argsAfterProfile) = parseOption(profileArgs, name: "--profile")
             let (nameOpt, remaining) = parseOption(argsAfterProfile, name: "--name")
-            let (withoutYes, confirmed) = parseFlag(remaining, name: "--yes")
+            let (withoutYes, _) = parseFlag(remaining, name: "--yes")
             let positionals = withoutYes.filter { !$0.hasPrefix("-") }
 
             switch profileCommand {
@@ -7829,13 +7855,6 @@ struct CMUXCLI {
                 }
                 params["profile"] = profile
                 params["name"] = name
-            case "clear", "delete":
-                let profile = profileOpt ?? positionals.first
-                guard let profile, !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    throw CLIError(message: String(localized: "browser.profile.cli.operationRequiresProfile", defaultValue: "browser profiles \(profileCommand) requires <profile>"))
-                }
-                params["profile"] = profile
-                params["confirm"] = confirmed
             default:
                 break
             }
@@ -7854,10 +7873,14 @@ struct CMUXCLI {
         }
 
         if subcommand == "open" || subcommand == "open-split" || subcommand == "new" {
+            let validatedProfile = try validatedBrowserProfileOption(subArgs)
             // Parse routing flags before URL assembly so they never leak into the URL string.
             let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
             let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
             let (profileOpt, argsAfterProfile) = parseOption(argsAfterWindow, name: "--profile")
+            guard profileOpt == validatedProfile else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
             let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterProfile, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
@@ -12802,6 +12825,96 @@ struct CMUXCLI {
         let spellings = Self.flagSpellings(name)
         guard let index = args.firstIndex(where: { spellings.contains($0) }), index + 1 < args.count else { return nil }
         return args[index + 1]
+    }
+
+    /// Read an explicit profile selector without collapsing malformed or
+    /// empty values into the omitted/default-profile case.
+    private func validatedBrowserProfileOption(_ args: [String]) throws -> String? {
+        var value: String?
+        var index = 0
+        while index < args.count, args[index] != "--" {
+            let argument = args[index]
+            if argument.hasPrefix("--profile=") {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            guard argument == "--profile" else {
+                index += 1
+                continue
+            }
+            guard value == nil,
+                  index + 1 < args.count,
+                  args[index + 1] != "--",
+                  !args[index + 1].hasPrefix("-") else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            let candidate = args[index + 1]
+            guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
+            }
+            value = candidate
+            index += 2
+        }
+        return value
+    }
+
+    /// Destructive profile commands accept one selector and `--yes` only.
+    /// Rejecting every unrecognized token here prevents a typo such as
+    /// `--dry-run` from being discarded before a destructive socket request.
+    private func parseBrowserProfileDestructiveArguments(
+        _ args: [String],
+        command: String
+    ) throws -> (profile: String, confirmed: Bool) {
+        var optionProfile: String?
+        var positionals: [String] = []
+        var confirmed = false
+        var index = 0
+
+        func invalidArguments() -> CLIError {
+            CLIError(message: String(
+                localized: "browser.profile.cli.invalidDestructiveArguments",
+                defaultValue: "browser profiles \(command) requires exactly one profile target; only --profile and --yes are accepted"
+            ))
+        }
+
+        while index < args.count {
+            let argument = args[index]
+            switch argument {
+            case "--yes":
+                guard !confirmed else { throw invalidArguments() }
+                confirmed = true
+                index += 1
+            case "--profile":
+                guard optionProfile == nil,
+                      index + 1 < args.count,
+                      !args[index + 1].hasPrefix("-") else {
+                    throw invalidArguments()
+                }
+                let candidate = args[index + 1]
+                guard !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw invalidArguments()
+                }
+                optionProfile = candidate
+                index += 2
+            default:
+                guard !argument.hasPrefix("-") else { throw invalidArguments() }
+                positionals.append(argument)
+                index += 1
+            }
+        }
+
+        guard optionProfile == nil || positionals.isEmpty else { throw invalidArguments() }
+        let target: String
+        if let optionProfile {
+            target = optionProfile
+        } else if positionals.count == 1 {
+            target = positionals[0]
+        } else {
+            throw invalidArguments()
+        }
+        guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw invalidArguments()
+        }
+        return (target, confirmed)
     }
 
     /// Destructive commands refuse an explicitly empty target flag (almost

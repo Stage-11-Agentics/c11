@@ -22,6 +22,14 @@ private func drainBrowserPanelMainQueue() {
 }
 
 @MainActor
+private func waitForBrowserProfileReservationRelease(_ profileID: UUID) async {
+    let deadline = Date().addingTimeInterval(2)
+    while BrowserProfileStore.shared.isReserved(profileID), Date() < deadline {
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+}
+
+@MainActor
 private func makeTemporaryBrowserPanelProfile(named prefix: String) throws -> BrowserProfileDefinition {
     try XCTUnwrap(
         BrowserProfileStore.shared.createProfile(
@@ -152,6 +160,98 @@ final class BrowserTabProfileIsolationTests: XCTestCase {
 
 @MainActor
 final class BrowserProfileStoreLifecycleTests: XCTestCase {
+    func testDelayedClearRejectsAdmissionAndCompletesAfterWorkerTimeout() async throws {
+        try await exerciseDelayedRemoval(deleteProfile: false)
+    }
+
+    func testDelayedDeleteRejectsAdmissionAndCompletesAfterWorkerTimeout() async throws {
+        try await exerciseDelayedRemoval(deleteProfile: true)
+    }
+
+    private func exerciseDelayedRemoval(deleteProfile: Bool) async throws {
+        let store = BrowserProfileStore.shared
+        let profile = try makeTemporaryBrowserPanelProfile(named: deleteProfile ? "Delayed-delete" : "Delayed-clear")
+        let otherProfile = try XCTUnwrap(
+            store.createProfile(named: "Still-usable-\(UUID().uuidString)", recordsLastUsed: false)
+        )
+        let method = deleteProfile ? "browser.profiles.delete" : "browser.profiles.clear"
+        var pendingCompletion: ((Error?) -> Void)?
+        store.websiteDataRemovalHandler = { _, _, completion in
+            pendingCompletion = completion
+        }
+        defer {
+            store.websiteDataRemovalHandler = nil
+            store.release(profile.id)
+            _ = store.removeProfileDefinition(id: profile.id)
+            _ = store.removeProfileDefinition(id: otherProfile.id)
+        }
+
+        let controller = TerminalController.shared
+        let workspace = try XCTUnwrap(controller.workspaceManager?.selectedWorkspace)
+        let workspaceID = workspace.id
+        let profileID = profile.id
+        let profileIDString = profileID.uuidString
+        let otherProfileID = otherProfile.id
+        let existingTabIDs = Set(workspace.panels.keys)
+        let response = await Task.detached(priority: .utility) {
+            controller.v2BrowserProfileCommand(
+                method: method,
+                params: ["profile": profileIDString, "confirm": true]
+            )
+        }.value
+        guard case .err(let pendingCode, _, _) = response else {
+            return XCTFail("Expected bounded pending response before WebKit completion: \(response)")
+        }
+        XCTAssertEqual(pendingCode, "operation_pending")
+        XCTAssertTrue(store.isReserved(profile.id))
+        XCTAssertNotNil(pendingCompletion)
+
+        let duplicate = await Task.detached(priority: .utility) {
+            controller.v2BrowserProfileCommand(
+                method: method,
+                params: ["profile": profileIDString, "confirm": true]
+            )
+        }.value
+        guard case .err(let busyCode, _, _) = duplicate else {
+            return XCTFail("Expected duplicate destructive request to refuse a reserved profile: \(duplicate)")
+        }
+        XCTAssertEqual(busyCode, "busy")
+
+        let open = controller.v2BrowserOpenSplit(params: [
+            "workspace_id": workspaceID.uuidString,
+            "url": "https://example.com",
+            "profile": profileIDString
+        ])
+        guard case .err(let openCode, _, _) = open else {
+            return XCTFail("Expected browser open to refuse a reserved profile: \(open)")
+        }
+        XCTAssertEqual(openCode, "busy")
+        XCTAssertEqual(Set(workspace.panels.keys), existingTabIDs, "A reserved profile open must not create a tab")
+
+        let switchTab = BrowserTab(
+            workspaceId: workspace.id,
+            profileID: store.builtInDefaultProfileID,
+            sticksAsPreferred: false
+        )
+        XCTAssertFalse(switchTab.switchToProfile(profile.id), "A tab must not switch into a reserved profile")
+        XCTAssertEqual(switchTab.profileID, store.builtInDefaultProfileID)
+        XCTAssertTrue(switchTab.switchToProfile(otherProfileID), "A separate profile should remain usable")
+        XCTAssertTrue(store.isReserved(profileID), "The second profile must not release the held target reservation")
+
+        // The worker has already returned operation_pending. Completing the
+        // held WebKit callback afterward must still finish cleanup and release
+        // the reservation.
+        pendingCompletion?(nil)
+        await waitForBrowserProfileReservationRelease(profileID)
+        XCTAssertFalse(store.isReserved(profileID))
+        if deleteProfile {
+            XCTAssertNil(store.profileDefinition(id: profileID), "Late delete completion must remove the definition")
+        } else {
+            XCTAssertNotNil(store.profileDefinition(id: profileID), "Clear must preserve the profile definition")
+            XCTAssertTrue(switchTab.switchToProfile(profileID), "Clear completion must release profile admission")
+        }
+    }
+
     func testDelayedRemovalReservesProfileUntilCompletion() throws {
         let store = BrowserProfileStore.shared
         let profile = try makeTemporaryBrowserPanelProfile(named: "Delayed-clear")

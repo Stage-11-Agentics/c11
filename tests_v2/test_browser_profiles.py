@@ -8,8 +8,10 @@ client for tab/cookie cleanup and live-profile assertions.
 
 import json
 import os
+import plistlib
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,6 +22,7 @@ from cmux import cmux, cmuxError
 SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
 PROFILE_A = "smoke-b3"
 PROFILE_B = "smoke-b3b"
+PROFILE_MULTIWORD = "smoke-b3 extra"
 COOKIE_NAME = "c11_profile_cookie"
 
 
@@ -64,11 +67,135 @@ def _run_cli_expect_failure(cli: str, args: list[str], code: str) -> None:
     _must(code in merged, f"Expected {code} for {' '.join(args)}, got: {merged}")
 
 
+def _tab_ids(c: cmux, workspace_id: str) -> set[str]:
+    payload = c._call("tab.list", {"workspace_id": workspace_id}) or {}
+    tabs = payload.get("tabs") or []
+    _must(isinstance(tabs, list), f"tab.list returned malformed tabs: {payload}")
+    return {str(tab["id"]) for tab in tabs if isinstance(tab, dict) and tab.get("id")}
+
+
+def _expect_cli_failure_without_tab(
+    c: cmux,
+    cli: str,
+    workspace_id: str,
+    args: list[str],
+    expected: str,
+) -> None:
+    before = _tab_ids(c, workspace_id)
+    proc = subprocess.run(
+        [cli, "--socket", SOCKET_PATH, "--json", "--id-format", "both", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    merged = f"{proc.stdout}\n{proc.stderr}"
+    _must(proc.returncode != 0, f"Expected CLI failure for {args}, got: {merged}")
+    _must(expected in merged, f"Expected {expected} for {args}, got: {merged}")
+    after = _tab_ids(c, workspace_id)
+    _must(after == before, f"Invalid CLI profile selection created a tab for {args}: {before} -> {after}")
+
+
+def _expect_socket_profile_failure_without_tab(
+    c: cmux,
+    method: str,
+    params: dict[str, Any],
+    workspace_id: str,
+) -> None:
+    before = _tab_ids(c, workspace_id)
+    try:
+        c._call(method, params)
+    except cmuxError as exc:
+        _must("invalid_params" in str(exc), f"Expected invalid_params for {method} {params}, got: {exc}")
+    else:
+        raise cmuxError(f"Expected invalid_params for {method} with explicit profile {params.get('profile')!r}")
+    after = _tab_ids(c, workspace_id)
+    _must(after == before, f"Invalid socket profile selection created a tab for {method}: {before} -> {after}")
+
+
+def _assert_invalid_profile_selection(c: cmux, cli: str, workspace_id: str) -> None:
+    socket_endpoints = (
+        ("browser.open_split", {"url": "https://example.com"}),
+        ("tab.create", {"type": "browser", "url": "https://example.com"}),
+        ("area.create", {"type": "browser", "direction": "right", "url": "https://example.com"}),
+    )
+    invalid_values: list[Any] = ["", " \t\n", 17, None, {"name": PROFILE_A}]
+    for method, base in socket_endpoints:
+        for value in invalid_values:
+            _expect_socket_profile_failure_without_tab(
+                c,
+                method,
+                {**base, "workspace_id": workspace_id, "profile": value},
+                workspace_id,
+            )
+
+    cli_endpoints = (
+        ["browser", "open", "https://example.com", "--workspace", workspace_id],
+        ["new-tab", "--type", "browser", "--workspace", workspace_id],
+        ["new-area", "--type", "browser", "--direction", "right", "--workspace", workspace_id],
+    )
+    for base in cli_endpoints:
+        for value in ("", " \t\n", "--dry-run"):
+            _expect_cli_failure_without_tab(
+                c, cli, workspace_id, [*base, "--profile", value], "--profile"
+            )
+        _expect_cli_failure_without_tab(c, cli, workspace_id, [*base, "--profile"], "--profile")
+        _expect_cli_failure_without_tab(c, cli, workspace_id, [*base, "--profile=bad"], "--profile")
+        _expect_cli_failure_without_tab(
+            c,
+            cli,
+            workspace_id,
+            [*base, "--profile", "does-not-exist"],
+            "not_found",
+        )
+
+
 def _profile_rows(cli: str) -> list[dict[str, Any]]:
     payload = _run_cli_json(cli, ["browser", "profiles", "list"])
     rows = payload.get("profiles")
     _must(isinstance(rows, list), f"profiles.list returned no profiles array: {payload}")
     return [row for row in rows if isinstance(row, dict)]
+
+
+def _profile_history_snapshot(cli: str, profile_id: str) -> bytes:
+    cli_path = Path(cli).absolute()
+    app_bundle = next((parent for parent in cli_path.parents if parent.suffix == ".app"), None)
+    _must(app_bundle is not None, f"could not find the tagged app bundle for CLI: {cli}")
+    try:
+        with (app_bundle / "Contents" / "Info.plist").open("rb") as info_file:
+            bundle_id = str(plistlib.load(info_file)["CFBundleIdentifier"])
+    except (OSError, KeyError, plistlib.InvalidFileException) as exc:
+        raise cmuxError(f"could not identify the tagged app bundle for CLI {cli}: {exc}") from exc
+
+    if bundle_id.startswith("com.stage11.c11.debug."):
+        namespace = "com.stage11.c11.debug"
+    elif bundle_id.startswith("com.stage11.c11.staging."):
+        namespace = "com.stage11.c11.staging"
+    else:
+        namespace = bundle_id
+    history_path = (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / namespace
+        / "browser_profiles"
+        / profile_id.lower()
+        / "browser_history.json"
+    )
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            snapshot = history_path.read_bytes()
+            entries = json.loads(snapshot)
+        except (FileNotFoundError, json.JSONDecodeError):
+            time.sleep(0.1)
+            continue
+        _must(
+            isinstance(entries, list) and bool(entries),
+            f"expected persisted history for profile {profile_id} at {history_path}",
+        )
+        return snapshot
+    raise cmuxError(f"timed out waiting for profile history at {history_path}")
 
 
 def _current_window(c: cmux) -> str:
@@ -104,7 +231,7 @@ def main() -> int:
             # run left unused fixtures behind.
             for row in _profile_rows(cli):
                 name = str(row.get("name") or "")
-                if name in {PROFILE_A, PROFILE_B}:
+                if name in {PROFILE_A, PROFILE_B, PROFILE_MULTIWORD}:
                     _must(not row.get("in_use"), f"stale profile is still in use: {row}")
                     _run_cli_json(cli, ["browser", "profiles", "delete", name, "--yes"])
             assert_window("stale profile cleanup")
@@ -124,10 +251,17 @@ def main() -> int:
             same_name_rows = [row for row in _profile_rows(cli) if row.get("name") == PROFILE_A]
             _must(len(same_name_rows) == 1, f"duplicate add/rename changed profile count: {same_name_rows}")
             renamed = _run_cli_json(
-                cli, ["browser", "profiles", "rename", PROFILE_A, PROFILE_A]
+                cli, ["browser", "profiles", "rename", PROFILE_B, PROFILE_MULTIWORD]
             )
             assert_window("profile rename")
-            _must(renamed["id"] == profile_ids[PROFILE_A], f"rename changed id: {renamed}")
+            _must(renamed["id"] == profile_ids[PROFILE_B], f"rename changed id: {renamed}")
+            _must(renamed["name"] == PROFILE_MULTIWORD, f"rename did not change the name: {renamed}")
+            rows_after_rename = _profile_rows(cli)
+            _must(
+                not any(row.get("name") == PROFILE_B for row in rows_after_rename)
+                and any(row.get("name") == PROFILE_MULTIWORD and row.get("id") == profile_ids[PROFILE_B] for row in rows_after_rename),
+                f"rename did not replace the old name while preserving the id: {rows_after_rename}",
+            )
 
             ident = c.identify()
             focused = ident.get("focused") or {}
@@ -138,6 +272,15 @@ def main() -> int:
                 or ""
             )
             _must(bool(workspace_id), f"identify returned no workspace: {ident}")
+
+            _assert_invalid_profile_selection(c, cli, workspace_id)
+            assert_window("invalid profile selection refusal")
+
+            _run_cli_expect_failure(
+                cli,
+                ["browser", "open", "https://example.com", "--workspace", workspace_id, "--profile", PROFILE_B],
+                "not_found",
+            )
 
             _run_cli_expect_failure(
                 cli,
@@ -174,7 +317,7 @@ def main() -> int:
                     "--workspace",
                     workspace_id,
                     "--profile",
-                    PROFILE_B,
+                    PROFILE_MULTIWORD,
                 ],
             )
             explicit_tab = str(explicit.get("tab_id") or explicit.get("surface_id") or "")
@@ -202,14 +345,14 @@ def main() -> int:
             # A live tab blocks destructive lifecycle operations, and the
             # refusal leaves the definition visible.
             _run_cli_expect_failure(
-                cli, ["browser", "profiles", "delete", PROFILE_B, "--yes"], "in_use"
+                cli, ["browser", "profiles", "delete", PROFILE_MULTIWORD, "--yes"], "in_use"
             )
             _must(
                 any(row.get("id") == profile_ids[PROFILE_B] for row in _profile_rows(cli)),
                 "in-use profile disappeared after refused delete",
             )
             _run_cli_expect_failure(
-                cli, ["browser", "profiles", "delete", PROFILE_B], "confirmation_required"
+                cli, ["browser", "profiles", "delete", PROFILE_MULTIWORD], "confirmation_required"
             )
             assert_window("unconfirmed profile delete")
 
@@ -219,13 +362,15 @@ def main() -> int:
                 _close_tab(c, tab_id)
             created_tabs.clear()
 
+            history_url_a = "https://example.com/?c11-profile-history=smoke-a"
+            history_url_b = "https://example.com/?c11-profile-history=smoke-b"
             profile_a_tab = c._call(
                 "browser.open_split",
-                {"url": "https://example.com", "profile": PROFILE_A, "workspace_id": workspace_id},
+                {"url": history_url_a, "profile": PROFILE_A, "workspace_id": workspace_id},
             )
             profile_b_tab = c._call(
                 "browser.open_split",
-                {"url": "https://example.com", "profile": PROFILE_B, "workspace_id": workspace_id},
+                {"url": history_url_b, "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
             )
             tab_a = str(profile_a_tab.get("tab_id") or profile_a_tab.get("surface_id") or "")
             tab_b = str(profile_b_tab.get("tab_id") or profile_b_tab.get("surface_id") or "")
@@ -241,6 +386,15 @@ def main() -> int:
                     "url": "https://example.com/",
                 },
             )
+            for tab_id in (tab_a, tab_b):
+                _run_cli_json(
+                    cli,
+                    ["browser", tab_id, "wait", "--load-state", "complete", "--timeout-ms", "15000"],
+                )
+            history_before_rejections = {
+                profile_ids[PROFILE_A]: _profile_history_snapshot(cli, profile_ids[PROFILE_A]),
+                profile_ids[PROFILE_B]: _profile_history_snapshot(cli, profile_ids[PROFILE_B]),
+            }
             c._call(
                 "browser.cookies.set",
                 {
@@ -251,6 +405,63 @@ def main() -> int:
                 },
             )
 
+            # Leave the profiles unused so a parser bug cannot be masked by
+            # the server's in-use guard on destructive operations.
+            for tab_id in list(created_tabs):
+                _close_tab(c, tab_id)
+            created_tabs.clear()
+
+            # Malformed destructive invocations must be rejected before the
+            # socket sees a truncated target or an ignored unknown flag.
+            malformed_destructive = (
+                ["browser", "profiles", "delete", PROFILE_A, "extra", "--yes"],
+                ["browser", "profiles", "delete", PROFILE_A, "--yes", "--dry-run"],
+                ["browser", "profiles", "clear", PROFILE_A, "extra", "--yes"],
+                ["browser", "profiles", "clear", PROFILE_MULTIWORD, "--yes", "--dry-run"],
+                ["browser", "profiles", "delete", "--profile", PROFILE_A, PROFILE_MULTIWORD, "--yes"],
+            )
+            for args in malformed_destructive:
+                _run_cli_expect_failure(cli, args, "exactly one profile target")
+                assert_window("malformed destructive profile command")
+            rows_after_rejected_commands = _profile_rows(cli)
+            _must(
+                any(row.get("id") == profile_ids[PROFILE_A] for row in rows_after_rejected_commands)
+                and any(row.get("id") == profile_ids[PROFILE_B] for row in rows_after_rejected_commands),
+                f"malformed delete removed a profile: {rows_after_rejected_commands}",
+            )
+            history_after_rejections = {
+                profile_ids[PROFILE_A]: _profile_history_snapshot(cli, profile_ids[PROFILE_A]),
+                profile_ids[PROFILE_B]: _profile_history_snapshot(cli, profile_ids[PROFILE_B]),
+            }
+            _must(
+                history_after_rejections == history_before_rejections,
+                "malformed clear/delete changed synthetic profile history",
+            )
+
+            # Verify malformed clear attempts left both profiles' synthetic
+            # cookie data intact before issuing the one valid clear below.
+            malformed_recheck_a = c._call(
+                "browser.open_split",
+                {"url": "https://example.com", "profile": PROFILE_A, "workspace_id": workspace_id},
+            )
+            malformed_recheck_b = c._call(
+                "browser.open_split",
+                {"url": "https://example.com", "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
+            )
+            check_a = str(malformed_recheck_a.get("tab_id") or malformed_recheck_a.get("surface_id") or "")
+            check_b = str(malformed_recheck_b.get("tab_id") or malformed_recheck_b.get("surface_id") or "")
+            created_tabs.extend([check_a, check_b])
+            _must(check_a and check_b, "could not reopen profiles after rejected destructive commands")
+            preserved_a = c._call("browser.cookies.get", {"tab_id": check_a}).get("cookies") or []
+            preserved_b = c._call("browser.cookies.get", {"tab_id": check_b}).get("cookies") or []
+            _must(
+                any(cookie.get("name") == COOKIE_NAME and cookie.get("value") == "profile-a" for cookie in preserved_a),
+                f"rejected clear changed profile A cookie data: {preserved_a}",
+            )
+            _must(
+                any(cookie.get("name") == COOKIE_NAME and cookie.get("value") == "profile-b" for cookie in preserved_b),
+                f"rejected clear changed profile B cookie data: {preserved_b}",
+            )
             for tab_id in list(created_tabs):
                 _close_tab(c, tab_id)
             created_tabs.clear()
@@ -264,7 +475,7 @@ def main() -> int:
             )
             reopened_b = c._call(
                 "browser.open_split",
-                {"url": "https://example.com", "profile": PROFILE_B, "workspace_id": workspace_id},
+                {"url": "https://example.com", "profile": PROFILE_MULTIWORD, "workspace_id": workspace_id},
             )
             tab_a = str(reopened_a.get("tab_id") or reopened_a.get("surface_id") or "")
             tab_b = str(reopened_b.get("tab_id") or reopened_b.get("surface_id") or "")
@@ -286,10 +497,19 @@ def main() -> int:
             for tab_id in list(created_tabs):
                 _close_tab(c, tab_id)
             created_tabs.clear()
-            _run_cli_json(cli, ["browser", "profiles", "delete", PROFILE_A, "--yes"])
-            _run_cli_json(cli, ["browser", "profiles", "delete", PROFILE_B, "--yes"])
+            _run_cli_json(cli, ["browser", "profiles", "delete", PROFILE_MULTIWORD, "--yes"])
             _must(
-                not any(row.get("name") in {PROFILE_A, PROFILE_B} for row in _profile_rows(cli)),
+                any(row.get("id") == profile_ids[PROFILE_A] for row in _profile_rows(cli)),
+                "quoted multiword delete removed the wrong profile",
+            )
+            _run_cli_expect_failure(
+                cli,
+                ["browser", "open", "https://example.com", "--workspace", workspace_id, "--profile", PROFILE_MULTIWORD],
+                "not_found",
+            )
+            _run_cli_json(cli, ["browser", "profiles", "delete", PROFILE_A, "--yes"])
+            _must(
+                not any(row.get("name") in {PROFILE_A, PROFILE_B, PROFILE_MULTIWORD} for row in _profile_rows(cli)),
                 "profile delete after tab close left a synthetic definition behind",
             )
             default_row = next(row for row in _profile_rows(cli) if row.get("built_in") is True)
@@ -305,7 +525,7 @@ def main() -> int:
         finally:
             for tab_id in list(created_tabs):
                 _close_tab(c, tab_id)
-            for name in (PROFILE_A, PROFILE_B):
+            for name in (PROFILE_A, PROFILE_B, PROFILE_MULTIWORD):
                 try:
                     _run_cli_json(cli, ["browser", "profiles", "delete", name, "--yes"])
                 except Exception:

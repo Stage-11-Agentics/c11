@@ -192,8 +192,8 @@ extension TerminalController {
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
         let titleSeed = v2String(params, "title")
-        let profileRaw = v2String(params, "profile")
-        if profileRaw != nil, panelType != .browser {
+        let hasProfileArgument = params.keys.contains("profile")
+        if hasProfileArgument, panelType != .browser {
             return .err(
                 code: "invalid_params",
                 message: String(localized: "browser.profile.error.browserOnly", defaultValue: "--profile is only valid for browser tabs"),
@@ -227,7 +227,7 @@ extension TerminalController {
             }
             var preferredProfileID: UUID?
             var sticksAsPreferred = true
-            switch self.v2ResolveBrowserProfileParam(profileRaw) {
+            switch self.v2ResolveBrowserProfileParam(params: params) {
             case .none:
                 break
             case .error(let error):

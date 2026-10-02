@@ -276,6 +276,27 @@ extension TerminalController {
     }
 
     @MainActor
+    func v2ResolveBrowserProfileParam(params: [String: Any]) -> V2BrowserProfileResolution {
+        guard let value = params["profile"] else { return .none }
+        guard let raw = value as? String else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return .error(.err(
+                code: "invalid_params",
+                message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"),
+                data: nil
+            ))
+        }
+        return v2ResolveBrowserProfileParam(normalized)
+    }
+
+    @MainActor
     func v2BrowserProfilePayload(_ profile: BrowserProfileDefinition, inUse: Bool) -> [String: Any] {
         [
             "id": profile.id.uuidString,
@@ -1391,7 +1412,6 @@ extension TerminalController {
         }
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
-        let profileRaw = v2String(params, "profile")
         let respectExternalOpenRules = v2Bool(params, "respect_external_open_rules") ?? false
         let allowInsecureHTTP = v2Bool(params, "allow_insecure_http") ?? false
         let insecureHTTPConsentHost: String? = {
@@ -1408,7 +1428,7 @@ extension TerminalController {
 
             var preferredProfileID: UUID?
             var sticksAsPreferred = true
-            switch v2ResolveBrowserProfileParam(profileRaw) {
+            switch v2ResolveBrowserProfileParam(params: params) {
             case .none:
                 break
             case .error(let error):

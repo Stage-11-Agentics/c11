@@ -1801,6 +1801,22 @@ final class BrowserSessionHistoryRestoreTests: XCTestCase {
         XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
     }
 
+    func testRepeatedURLTerminationStopsAfterErrorPage() async {
+        let panel = BrowserTab(workspaceId: UUID(), initialURL: URL(string: "https://example.com"))
+        defer { panel.close() }
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 1)
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
+        let errorWebView = panel.webView
+        panel.debugSimulateWebContentProcessTermination()
+        await nextMainTurn()
+        XCTAssertTrue(panel.webView === errorWebView)
+        XCTAssertEqual(panel.debugWebContentReplacementCount, 2)
+    }
+
     func testResetSidebarContextClearsBrowserPanelsIntoNewTabState() throws {
         let workspace = Workspace()
         let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)

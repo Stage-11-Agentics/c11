@@ -3935,6 +3935,39 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
         XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1)
     }
 
+    func testDelayedUsableGeometryConvergesBeforeEpisodeExpires() async throws {
+        let workspace = Workspace(title: "Delayed attach fixture", workingDirectory: nil, portOrdinal: 0)
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        terminal.hostedView.removeFromSuperview()
+        terminal.hostedView.frame = .zero
+        workspace.debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: true)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertTrue(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        let stalled = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        XCTAssertGreaterThan(stalled, 1)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer {
+            terminal.hostedView.removeFromSuperview()
+            window.close()
+        }
+        terminal.hostedView.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+        try XCTUnwrap(window.contentView).addSubview(terminal.hostedView)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertNotNil(terminal.surface.surface)
+        XCTAssertTrue(terminal.surface.isViewInWindow)
+        XCTAssertGreaterThan(terminal.hostedView.bounds.width, 1)
+        XCTAssertGreaterThan(terminal.hostedView.bounds.height, 1)
+        XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, stalled)
+        XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
+        let settled = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, settled)
+    }
+
     func testBackgroundLayoutKeepsPortalInactiveAndPreservesFieldEditor() throws {
         let manager = WorkspaceManager()
         defer { manager.workspaces.forEach { $0.teardownAllPanels() } }

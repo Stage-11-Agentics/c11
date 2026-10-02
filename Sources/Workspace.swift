@@ -5485,6 +5485,7 @@ final class Workspace: Identifiable, ObservableObject {
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:]
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
@@ -5612,6 +5613,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,
             portOrdinal: portOrdinal,
             initialCommand: initialTerminalCommand,
+            initialInput: initialTerminalInput,
             initialEnvironmentOverrides: initialTerminalEnvironment
         )
         panels[terminalTab.id] = terminalTab
@@ -5654,6 +5656,11 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
+        // The initial root area predates delegate installation. Later areas
+        // are registered by didSplitPane, including session/blueprint restore.
+        for paneId in bonsplitController.allPaneIds {
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
+        }
 
         // Ensure bonsplit has a focused pane and our didSelectTab handler runs for the
         // initial terminal. bonsplit's createTab selects internally but does not emit
@@ -5743,6 +5750,9 @@ final class Workspace: Identifiable, ObservableObject {
         guard newIds != lastKnownTabIds else { return }
         for createdId in newIds.subtracting(lastKnownTabIds) {
             guard let panel = newTabs[createdId] else { continue }
+            // This callback runs in @Published.willSet. Register the supplied
+            // new tab directly; self.panels still contains the old collection.
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
             EventEmitter.shared.emitSurfaceCreated(
                 workspace: id,
                 surface: createdId,
@@ -8616,7 +8626,8 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         focus: Bool = true,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        initialInput: String? = nil
     ) -> TerminalTab? {
         guard let paneId = paneIdForTab(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
@@ -8639,7 +8650,8 @@ final class Workspace: Identifiable, ObservableObject {
             configTemplate: inheritedConfig,
             workingDirectory: splitWorkingDirectory,
             portOrdinal: portOrdinal,
-            initialCommand: remoteTerminalStartupCommand
+            initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput
         )
         panels[newTab.id] = newTab
         tabTitles[newTab.id] = newTab.displayTitle
@@ -8712,6 +8724,7 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         focus: Bool? = nil,
         workingDirectory: String? = nil,
+        initialInput: String? = nil,
         startupEnvironment: [String: String] = [:],
         panelId: UUID? = nil,
         createdAt: Date? = Date()
@@ -8741,6 +8754,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: resolvedWorkingDirectory,
             portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput,
             additionalEnvironment: startupEnvironment
         )
         panels[newTab.id] = newTab
@@ -12297,6 +12311,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: newPane.id)
 #if DEBUG
         let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),

@@ -289,6 +289,41 @@ extension TerminalController {
         return result
     }
 
+    /// Validate startup input before any layout or terminal mutation. Admission
+    /// shares the advertised capability policy; absent/blank input stays inert.
+    func v2ResolveCreateInitialInput(
+        params: [String: Any],
+        panelType: String? = nil,
+        hasLayout: Bool = false,
+        resolved: inout String?
+    ) -> V2CallResult? {
+        resolved = nil
+        if let raw = params["initial_input"], !(raw is String) {
+            return .err(
+                code: "invalid_params",
+                message: String(localized: "socket.create.initialInput.invalidType", defaultValue: "initial_input must be a string"),
+                data: nil
+            )
+        }
+        let decision = CreateInitialInput.decide(
+            raw: params["initial_input"] as? String, panelType: panelType, hasLayout: hasLayout
+        )
+        if let message = decision.errorMessage(panelType: panelType) {
+            return .err(code: "invalid_params", message: message, data: nil)
+        }
+        guard let input = decision.queuedInput else { return nil }
+        do {
+            resolved = try CapabilityFeatures.current.dispatch(.initialInput) { input }
+            return nil
+        } catch {
+            return .err(
+                code: "unavailable",
+                message: String(localized: "socket.create.initialInput.unavailable", defaultValue: "create.initial_input is unavailable"),
+                data: ["feature": CapabilityFeatures.ID.initialInput.rawValue]
+            )
+        }
+    }
+
     func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
@@ -299,6 +334,10 @@ extension TerminalController {
         }
         let titleSeed = v2String(params, "title")
         let force = splitForceFlag(params)
+        var initialInput: String?
+        if let error = v2ResolveCreateInitialInput(params: params, panelType: "terminal", resolved: &initialInput) {
+            return error
+        }
 
         // Validate the optional --cwd override server-side before spawning so a
         // bad path returns a clear error instead of silently landing in $HOME.
@@ -333,7 +372,7 @@ extension TerminalController {
                 result = .err(code: "pane_too_small", message: message, data: data)
 
             case .tab(let paneId, let warning):
-                guard let panel = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride) else {
+                guard let panel = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput) else {
                     result = .err(code: "internal_error", message: "Failed to create tab", data: nil)
                     return
                 }
@@ -350,11 +389,12 @@ extension TerminalController {
                     "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
                     "type": self.v2OrNull(ws.panels[panel.id]?.panelType.rawValue)
                 ]
+                if initialInput != nil { ok["initial_input"] = "queued" }
                 self.annotateSizeOutcome(&ok, requested: direction, applied: direction, becameTab: true, warning: warning)
                 result = .ok(ok)
 
             case .split(let actualDirection, let requested, let warning):
-                if let newId = workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride) {
+                if let newId = workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride, initialInput: initialInput) {
                     let paneUUID = ws.paneId(forPanelId: newId)?.id
                     // Seed pane title atomic with pane id becoming valid.
                     self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
@@ -370,6 +410,7 @@ extension TerminalController {
                         "surface_ref": self.v2Ref(kind: .surface, uuid: newId),
                         "type": self.v2OrNull(ws.panels[newId]?.panelType.rawValue)
                     ]
+                    if initialInput != nil { ok["initial_input"] = "queued" }
                     self.annotateSizeOutcome(&ok, requested: requested, applied: actualDirection, becameTab: false, warning: warning)
                     result = .ok(ok)
                 } else {
@@ -387,6 +428,10 @@ extension TerminalController {
 
         let panelType = v2PanelType(params, "type") ?? .terminal
         if let denial = v2SurfaceTypeDenial(panelType) { return denial }
+        var initialInput: String?
+        if let error = v2ResolveCreateInitialInput(params: params, panelType: panelType.rawValue, resolved: &initialInput) {
+            return error
+        }
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
@@ -444,7 +489,7 @@ extension TerminalController {
             case .markdown:
                 newPanelId = ws.newMarkdownTab(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
-                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride)?.id
+                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride, initialInput: initialInput)?.id
             }
 
             guard let newPanelId else {
@@ -453,7 +498,7 @@ extension TerminalController {
             }
 
             let windowId = self.v2ResolveWindowId(workspaceManager: workspaceManager)
-            result = .ok([
+            var ok: [String: Any] = [
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -463,7 +508,9 @@ extension TerminalController {
                 "surface_id": newPanelId.uuidString,
                 "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
-            ])
+            ]
+            if initialInput != nil { ok["initial_input"] = "queued" }
+            result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
@@ -856,6 +903,21 @@ extension TerminalController {
         // attached) the trailing `\r` is appended to the queued payload so the
         // flush on attach submits the line.
         let submit = v2Bool(params, "submit") ?? true
+        let preserveNewlines = v2Bool(params, "preserve_newlines") ?? false
+        if preserveNewlines {
+            // Raw admission and capabilities discovery consume the same policy.
+            // Validate off-main before resolving a target or queueing any bytes.
+            guard CapabilityFeatures.current.supports(.rawSend) else {
+                return .err(code: "unsupported_feature", message: String(
+                    localized: "socket.send.raw_unavailable", defaultValue: "Raw/paste delivery is unavailable."
+                ), data: ["feature": CapabilityFeatures.ID.rawSend.rawValue])
+            }
+            guard !text.isEmpty else {
+                return .err(code: "invalid_params", message: String(
+                    localized: "cli.send.text_required", defaultValue: "send requires text"
+                ), data: nil)
+            }
+        }
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
@@ -886,11 +948,12 @@ extension TerminalController {
 
         // C11-173: what actually happened, for an honest response. `submitted`
         // is the effective submit (a trailing newline in the payload means Enter
-        // even when `submit` is false); `queued` means the surface had no PTY, so
+        // even when `submit` is false, unless preserve_newlines keeps it as
+        // content); `queued` means the surface had no PTY, so
         // nothing has reached the target yet and the payload flushes on attach.
         let queued: Bool
         nonisolated(unsafe) var submitted = false
-        let wantsReturn = submit || TerminalController.trimmingTrailingNewlines(text) != text
+        let wantsReturn = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines).wantsReturn
         let phaseBSema = DispatchSemaphore(value: 0)
         if resolvedSurface != nil {
             // C11-26 review B2: revalidate the live surface pointer inside the
@@ -908,6 +971,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -924,11 +988,9 @@ extension TerminalController {
                     // bracketed-paste envelope would swallow.
                     // Same newline rule as the live path (see deliverSocketSendText):
                     // a trailing newline means "and press Enter".
-                    if wantsReturn {
-                        resolved.terminalPanel.surface.sendSubmitFormText(text)
-                    } else {
-                        resolved.terminalPanel.sendText(text)
-                    }
+                    resolved.terminalPanel.surface.sendQueuedSocketText(
+                        text, submit: submit, preserveNewlines: preserveNewlines
+                    )
                     submitted = wantsReturn
                 }
             }
@@ -948,6 +1010,7 @@ extension TerminalController {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
+                        preserveNewlines: preserveNewlines,
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
@@ -955,11 +1018,9 @@ extension TerminalController {
                     attachedLate = true
                     return
                 }
-                if wantsReturn {
-                    resolved.terminalPanel.surface.sendSubmitFormText(text)
-                } else {
-                    resolved.terminalPanel.sendText(text)
-                }
+                resolved.terminalPanel.surface.sendQueuedSocketText(
+                    text, submit: submit, preserveNewlines: preserveNewlines
+                )
                 submitted = wantsReturn
             }
             phaseBSema.wait()
@@ -1053,7 +1114,7 @@ extension TerminalController {
             terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
                 defer { finish() }
                 guard let self, let terminalSurface, let liveSurface = terminalSurface.surface else { return }
-                _ = self.sendNamedKey(liveSurface, keyName: key)
+                _ = self.sendNamedKey(liveSurface, keyName: key, stillLive: { [weak terminalSurface] in terminalSurface?.surface })
                 terminalSurface.forceRefresh(reason: "terminalController.v2SurfaceSendKey")
             }
             phaseBOutcome = .ok

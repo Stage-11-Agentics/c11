@@ -833,10 +833,74 @@ func terminalKeyboardCopyModeResolve(
     return .perform(action, count: count)
 }
 
-private final class GhosttySurfaceCallbackContext {
+/// One queued main turn, retaining only the newest scalar callback payload.
+/// Clear admission before applying: a native bounded drain can wake us again
+/// while the current turn is still executing. Never call native/UI code locked.
+final class GhosttyCallbackCoalescer<Value> {
+    private let lock = NSLock()
+    private var pending: Value?
+    private var queued = false
+    private let schedule: (@escaping () -> Void) -> Void
+#if DEBUG
+    struct Stats: Codable {
+        var requests = 0
+        var enqueued = 0
+        var drained = 0
+        var pending = 0
+        var maxPending = 0
+    }
+    private var stats = Stats()
+
+    func debugStats() -> Stats {
+        lock.lock()
+        defer { lock.unlock() }
+        return stats
+    }
+#endif
+
+    init(schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.schedule = schedule
+    }
+
+    func submit(_ value: Value, apply: @escaping (Value) -> Void) {
+        lock.lock()
+        pending = value
+#if DEBUG
+        stats.requests += 1
+#endif
+        guard !queued else {
+            lock.unlock()
+            return
+        }
+        queued = true
+#if DEBUG
+        stats.enqueued += 1
+        stats.pending += 1
+        stats.maxPending = max(stats.maxPending, stats.pending)
+#endif
+        lock.unlock()
+
+        schedule { [self] in
+            lock.lock()
+            let value = pending
+            pending = nil
+            queued = false
+#if DEBUG
+            stats.pending -= 1
+            stats.drained += 1
+#endif
+            lock.unlock()
+            if let value { apply(value) }
+        }
+    }
+}
+
+final class GhosttySurfaceCallbackContext {
     weak var surfaceView: GhosttyNSView?
     weak var terminalSurface: TerminalSurface?
     let surfaceId: UUID
+    let scrollbarUpdates = GhosttyCallbackCoalescer<GhosttyScrollbar>()
+    private let cellSizeUpdates = GhosttyCallbackCoalescer<CGSize>()
 
     init(surfaceView: GhosttyNSView, terminalSurface: TerminalSurface) {
         self.surfaceView = surfaceView
@@ -850,6 +914,50 @@ private final class GhosttySurfaceCallbackContext {
 
     var runtimeSurface: ghostty_surface_t? {
         terminalSurface?.surface ?? surfaceView?.terminalSurface?.surface
+    }
+
+    /// Each native runtime gets a new context, even when its Swift view survives.
+    /// Resolve weak targets only on main, after the native callback has returned.
+    private var currentSurfaceView: GhosttyNSView? {
+        precondition(Thread.isMainThread)
+        guard let terminalSurface,
+              terminalSurface.surfaceCallbackContext?.takeUnretainedValue() === self,
+              let surfaceView,
+              surfaceView.terminalSurface === terminalSurface else { return nil }
+        return surfaceView
+    }
+
+    func enqueueScrollbarUpdate(_ scrollbar: GhosttyScrollbar) {
+        scrollbarUpdates.submit(scrollbar) { [weak self] scrollbar in
+            guard let surfaceView = self?.currentSurfaceView else { return }
+            surfaceView.scrollbar = scrollbar
+            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
+            NotificationCenter.default.post(
+                name: .ghosttyDidUpdateScrollbar,
+                object: surfaceView,
+                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
+            )
+        }
+    }
+
+    func updateCellSize(_ cellSize: CGSize) {
+        // Surface.init reports this synchronously, before Swift receives the
+        // native surface pointer. Preserve that main-thread initialization order.
+        if Thread.isMainThread {
+            applyCellSize(cellSize)
+        } else {
+            cellSizeUpdates.submit(cellSize) { [weak self] in self?.applyCellSize($0) }
+        }
+    }
+
+    private func applyCellSize(_ cellSize: CGSize) {
+        guard let surfaceView = currentSurfaceView else { return }
+        surfaceView.cellSize = cellSize
+        NotificationCenter.default.post(
+            name: .ghosttyDidUpdateCellSize,
+            object: surfaceView,
+            userInfo: [GhosttyNotificationKey.cellSize: cellSize]
+        )
     }
 }
 
@@ -868,6 +976,7 @@ class GhosttyApp {
     }()
 
     private(set) var app: ghostty_app_t?
+    private let tickRequests = GhosttyCallbackCoalescer<Void>()
     private(set) var config: ghostty_config_t?
     private(set) var defaultBackgroundColor: NSColor = .windowBackgroundColor
     private(set) var defaultBackgroundOpacity: Double = 1.0
@@ -1067,9 +1176,8 @@ class GhosttyApp {
         runtimeConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
         runtimeConfig.supports_selection_clipboard = true
         runtimeConfig.wakeup_cb = { userdata in
-            DispatchQueue.main.async {
-                GhosttyApp.shared.tick()
-            }
+            guard let userdata else { return }
+            Unmanaged<GhosttyApp>.fromOpaque(userdata).takeUnretainedValue().scheduleTick()
         }
         runtimeConfig.action_cb = { app, target, action in
             return GhosttyApp.shared.handleAction(target: target, action: action)
@@ -1572,6 +1680,16 @@ class GhosttyApp {
         #endif
     }
 
+    private func scheduleTick() {
+        tickRequests.submit(()) { [weak self] in self?.tick() }
+    }
+
+#if DEBUG
+    func debugTickSchedulingStats() -> GhosttyCallbackCoalescer<Void>.Stats {
+        tickRequests.debugStats()
+    }
+#endif
+
     func tick() {
         guard let app = app else { return }
 
@@ -2045,6 +2163,22 @@ class GhosttyApp {
             return false
         }
         let callbackContext = Self.callbackContext(from: ghostty_surface_userdata(target.target.surface))
+        // The current native scrollbar path uses the main mailbox; coalesce its
+        // bursts. Copy scalars here and keep any future off-main delivery from
+        // reading view/model state before reaching the context's main flush.
+        if action.tag == GHOSTTY_ACTION_SCROLLBAR {
+            guard let callbackContext else { return false }
+            callbackContext.enqueueScrollbarUpdate(GhosttyScrollbar(c: action.action.scrollbar))
+            return true
+        }
+        if action.tag == GHOSTTY_ACTION_CELL_SIZE {
+            guard let callbackContext else { return false }
+            callbackContext.updateCellSize(CGSize(
+                width: CGFloat(action.action.cell_size.width),
+                height: CGFloat(action.action.cell_size.height)
+            ))
+            return true
+        }
         let callbackWorkspaceId = callbackContext?.workspaceId
         let callbackSurfaceId = callbackContext?.surfaceId
 
@@ -2158,28 +2292,6 @@ class GhosttyApp {
                 guard let workspaceManager = AppDelegate.shared?.workspaceManager else { return false }
                 return workspaceManager.toggleSplitZoom(workspaceId: workspaceId, surfaceId: surfaceId)
             }
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let scrollbar = GhosttyScrollbar(c: action.action.scrollbar)
-            surfaceView.scrollbar = scrollbar
-            surfaceView.terminalSurface?.noteScrollbar(total: scrollbar.total, len: scrollbar.len)
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateScrollbar,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
-            )
-            return true
-        case GHOSTTY_ACTION_CELL_SIZE:
-            let cellSize = CGSize(
-                width: CGFloat(action.action.cell_size.width),
-                height: CGFloat(action.action.cell_size.height)
-            )
-            surfaceView.cellSize = cellSize
-            NotificationCenter.default.post(
-                name: .ghosttyDidUpdateCellSize,
-                object: surfaceView,
-                userInfo: [GhosttyNotificationKey.cellSize: cellSize]
-            )
-            return true
         case GHOSTTY_ACTION_START_SEARCH:
             guard let terminalSurface = surfaceView.terminalSurface else { return true }
             let needle = action.action.start_search.needle.flatMap { String(cString: $0) }
@@ -2748,6 +2860,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private let configTemplate: ghostty_surface_config_s?
     private let workingDirectory: String?
     private let initialCommand: String?
+    private var initialInput: String?
     private let initialEnvironmentOverrides: [String: String]
     var requestedWorkingDirectory: String? { workingDirectory }
     private var additionalEnvironment: [String: String]
@@ -2772,6 +2885,46 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// submits the typed line on cold start.
     private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    #if DEBUG
+    private var debugRuntimeStartHoldUntil: TimeInterval?
+    private var debugPendingFlushHoldUntil: TimeInterval?
+
+    /// Let a raw-mode PTY oracle start before consuming the actual pre-attach
+    /// queue. Explicit release uses the production flush, with a bounded fallback.
+    @MainActor
+    func debugHoldPendingFlush(_ hold: Bool) {
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugPendingFlushHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugPendingFlushHoldUntil == expiry else { return }
+                self.debugPendingFlushHoldUntil = nil
+                self.flushPendingTextIfNeeded()
+            }
+        } else {
+            flushPendingTextIfNeeded()
+        }
+    }
+
+    /// A bounded, per-tab fixture for the socket timeout/queue path. It never
+    /// tears down a live runtime and automatically releases after ten seconds.
+    @MainActor
+    func debugHoldRuntimeStart(_ hold: Bool) -> Bool {
+        guard !hold || surface == nil else { return false }
+        let expiry = hold ? ProcessInfo.processInfo.systemUptime + 10 : nil
+        debugRuntimeStartHoldUntil = expiry
+        if let expiry {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.debugRuntimeStartHoldUntil == expiry else { return }
+                self.debugRuntimeStartHoldUntil = nil
+                self.requestBackgroundSurfaceStartIfNeeded()
+            }
+        } else {
+            requestBackgroundSurfaceStartIfNeeded()
+        }
+        return true
+    }
+    #endif
     /// Borderless, off-screen `NSWindow` used to bootstrap Ghostty's runtime surface
     /// before AppKit moves the view into a real portal-backed window. Required because
     /// `ghostty_surface_new` (via `attachToView`) gates on `view.window != nil`; for
@@ -2779,7 +2932,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// arrives until the user selects the tab. We attach into this window, let the
     /// PTY spawn, and release it when the real window arrives (`reconcileAttachedWindowIfNeeded`).
     private var headlessStartupWindow: NSWindow?
-    private var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
+    fileprivate var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
     private var lastFocusState: Bool = false
@@ -2874,6 +3027,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         configTemplate: ghostty_surface_config_s?,
         workingDirectory: String? = nil,
         initialCommand: String? = nil,
+        initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
@@ -2884,6 +3038,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         self.workingDirectory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCommand = initialCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.initialCommand = (trimmedCommand?.isEmpty == false) ? trimmedCommand : nil
+        self.initialInput = (initialInput?.isEmpty == false) ? initialInput : nil
         self.initialEnvironmentOverrides = Self.mergedNormalizedEnvironment(base: [:], overrides: initialEnvironmentOverrides)
         self.additionalEnvironment = Self.mergedNormalizedEnvironment(base: [:], overrides: additionalEnvironment)
         // Match Ghostty's own SurfaceView: ensure a non-zero initial frame so the backing layer
@@ -2896,12 +3051,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
         hostedView.attachSurface(self)
         TerminalSurfaceRegistry.shared.register(self)
 
-        // Surfaces with startup work (`initialCommand`) must spawn their PTY before
+        // Surfaces with startup work (`initialCommand` or `initialInput`) must spawn their PTY before
         // the user focuses the workspace; otherwise the agent restore / cold-boot
         // path stalls until the operator selects the tab. Ghostty's surface creation
         // expects a non-nil `view.window`, so we install the view in a hidden
         // bootstrap window now and swap to the real window when AppKit moves it there.
-        if self.initialCommand != nil {
+        if self.initialCommand != nil || self.initialInput != nil {
             MainActor.assumeIsolated {
                 scheduleHeadlessRuntimeStartIfNeeded(reason: "startup")
             }
@@ -3453,6 +3608,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private func createSurface(for view: GhosttyNSView) {
         #if DEBUG
+        if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
         let terminfo = getenv("TERMINFO").flatMap { String(cString: $0) } ?? "(unset)"
         let xdg = getenv("XDG_DATA_DIRS").flatMap { String(cString: $0) } ?? "(unset)"
@@ -3703,6 +3859,20 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
+        // Ghostty copies initial_input during native creation. Keep its UTF-8
+        // pointer alive alongside command/cwd, and never inherit a prior input.
+        let createWithInitialInput = { [self] in
+            if let initialInput {
+                initialInput.withCString { input in
+                    surfaceConfig.initial_input = input
+                    createSurface()
+                }
+            } else {
+                surfaceConfig.initial_input = nil
+                createSurface()
+            }
+        }
+
         let createWithCommandAndWorkingDirectory = { [self] in
             if let initialCommand, !initialCommand.isEmpty {
                 initialCommand.withCString { cCommand in
@@ -3710,19 +3880,19 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     if let workingDirectory, !workingDirectory.isEmpty {
                         workingDirectory.withCString { cWorkingDir in
                             surfaceConfig.working_directory = cWorkingDir
-                            createSurface()
+                            createWithInitialInput()
                         }
                     } else {
-                        createSurface()
+                        createWithInitialInput()
                     }
                 }
             } else if let workingDirectory, !workingDirectory.isEmpty {
                 workingDirectory.withCString { cWorkingDir in
                     surfaceConfig.working_directory = cWorkingDir
-                    createSurface()
+                    createWithInitialInput()
                 }
             } else {
-                createSurface()
+                createWithInitialInput()
             }
         }
 
@@ -3749,6 +3919,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         guard let createdSurface = surface else { return }
+        // One native creation consumes this request. Runtime reconstruction and
+        // reparenting must never execute the caller's command a second time.
+        initialInput = nil
         recordRuntimeSurfaceCreation()
 
         // Session scrollback replay must be one-shot. Reusing it on a later runtime
@@ -3991,6 +4164,24 @@ final class TerminalSurface: Identifiable, ObservableObject {
         writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
     }
 
+    /// Queue fallback for socket sends, using the same newline policy as the
+    /// attached path. A raw draft ending in a newline is still a draft for
+    /// mailbox admission; it must not look like a submitted line on attach.
+    func sendQueuedSocketText(_ text: String, submit: Bool, preserveNewlines: Bool) {
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        if delivery.wantsReturn {
+            sendSubmitFormText(text, preserveNewlines: preserveNewlines)
+        } else if preserveNewlines {
+            guard !text.isEmpty else { return }
+            writeOrDefer { [weak self] in
+                self?.writeProgrammaticText(text)
+                self?.lastOperatorKeyAt = Date()
+            }
+        } else {
+            sendText(text)
+        }
+    }
+
     /// Run an instantaneous write now, unless another writer's transaction
     /// is in flight and this is not that transaction's own work; then run it
     /// as the next transaction, in order.
@@ -4051,8 +4242,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ///   * defers the Return until the pending-text queue flushes (which
     ///     happens on surface attach, when `view.window` is guaranteed
     ///     non-nil) when the surface is not yet ready.
-    func sendSubmitFormText(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .newlines)
+    func sendSubmitFormText(_ text: String, preserveNewlines: Bool = false) {
+        let trimmed = preserveNewlines ? text : text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
         performInputTransaction { [weak self] finish in
             guard let self else { return finish() }
@@ -4413,6 +4604,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func flushPendingTextIfNeeded() {
+        #if DEBUG
+        if let expiry = debugPendingFlushHoldUntil,
+           ProcessInfo.processInfo.systemUptime < expiry { return }
+        #endif
         guard let surface = surface, !pendingTextQueue.isEmpty else { return }
         let queued = pendingTextQueue
         let queuedBytes = pendingTextBytes
@@ -4500,6 +4695,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 #if DEBUG
+    var debugCallbackContext: GhosttySurfaceCallbackContext? {
+        surfaceCallbackContext?.takeUnretainedValue()
+    }
+
     @MainActor
     func setNeedsConfirmCloseOverrideForTesting(_ value: Bool?) {
         needsConfirmCloseOverrideForTesting = value
@@ -8974,6 +9173,17 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
 
+        // ensureFocus also runs from deferred workspace/layout reconciliation.
+        // A selected terminal is not permission to leave an editor opened since
+        // that reconciliation was queued. Explicit focus uses moveFocus or a
+        // restored panel focus intent instead.
+        if Self.hasNativeTextEntryFirstResponder(in: window) {
+#if DEBUG
+            dlog("focus.ensure.skip surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") reason=nativeTextEntryFocused")
+#endif
+            return
+        }
+
         // Search focus restoration — only after confirming this is the active tab/pane.
         if surfaceView.terminalSurface?.searchState != nil {
 #if DEBUG
@@ -9119,7 +9329,24 @@ final class GhosttySurfaceScrollView: NSView {
         terminalSurface.forceRefresh(reason: "focus.surface.\(reason)")
     }
 
-    private func applyFirstResponderIfNeeded() {
+    private static func hasNativeTextEntryFirstResponder(in window: NSWindow) -> Bool {
+        if let editor = window.firstResponder as? NSTextView,
+           editor.isFieldEditor, editor.isEditable {
+            return true
+        }
+        return (window.firstResponder as? NSTextField)?.isEditable == true
+    }
+
+    /// Consume only the editor present when an explicit focus request arrives.
+    /// Deferred recovery must still respect an editor opened after this boundary.
+    static func endNativeTextEntryForExplicitFocus(in window: NSWindow) {
+        // The caller supplies its exact target window, which may not be key yet.
+        // Ending its old edit must not activate it or disturb another window.
+        guard hasNativeTextEntryFirstResponder(in: window) else { return }
+        _ = window.makeFirstResponder(nil)
+    }
+
+    private func applyFirstResponderIfNeeded(preservingNativeTextEntry: Bool = true) {
         let hasUsablePortalGeometry: Bool = {
             let size = bounds.size
             return size.width > 1 && size.height > 1
@@ -9145,6 +9372,13 @@ final class GhosttySurfaceScrollView: NSView {
 #if DEBUG
             dlog("focus.apply.skip surface=\(surfaceShort) reason=stale_target")
 #endif
+            return
+        }
+        // Visibility/layout refreshes are not a request to leave a native editor.
+        // SwiftUI popovers can use the main window's shared field editor, so a
+        // key-window check alone does not protect group name/icon entry. Keep this
+        // guard on recovery; an explicit restored terminal intent may override it.
+        if preservingNativeTextEntry, Self.hasNativeTextEntryFirstResponder(in: window) {
             return
         }
         if surfaceView.terminalSurface?.searchState != nil {
@@ -9283,7 +9517,7 @@ final class GhosttySurfaceScrollView: NSView {
         case .surface:
             searchFocusTarget = .terminal
             setActive(true)
-            applyFirstResponderIfNeeded()
+            applyFirstResponderIfNeeded(preservingNativeTextEntry: false)
             return true
         case .findField:
             guard let terminalSurface = surfaceView.terminalSurface,

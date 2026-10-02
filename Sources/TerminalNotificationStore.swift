@@ -946,6 +946,12 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.unreadCountByWorkspaceId[workspaceId] ?? 0
     }
 
+    /// All unread history for this workspace, including suppressed and workspace-scoped entries.
+    /// Signal-eligible demand remains available through unreadCount(forWorkspaceId:).
+    func rawUnreadCount(forWorkspaceId workspaceId: UUID) -> Int {
+        indexes.rawUnreadCountByWorkspaceId[workspaceId] ?? 0
+    }
+
     func hasUnreadNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
         indexes.unreadByWorkspaceSurface.contains(WorkspaceTabKey(workspaceId: workspaceId, surfaceId: surfaceId))
     }

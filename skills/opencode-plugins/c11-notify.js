@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 // c11-notify.js — c11 notification + status bridge for OpenCode.
 //
 // Runtime-loaded by c11's PATH-scoped OpenCode wrapper. Older c11 installs
-// may also have a copied plugin under ~/.config/opencode/plugins/; keeping this
-// module idempotent preserves compatibility without requiring tenant writes.
+// may also have a copied plugin under ~/.config/opencode/plugins/. New skill
+// installs/removals leave those tenant files untouched; operator cleanup is
+// optional. An older copy may still load alongside this runtime module.
 //
 // Mirrors the Claude Code hook contract:
 //   session.idle       → c11 notify "Waiting for input"  (idle_prompt equivalent)

@@ -3552,7 +3552,7 @@ class TerminalController {
                 case .key(let keyName):
                     eventKind = "key"
                     eventText = keyName
-                    if sendNamedKey(surface, keyName: keyName) {
+                    if sendNamedKey(surface, keyName: keyName, stillLive: { [weak panel = resolved.terminalPanel] in panel?.surface.surface }) {
                         didSend = true
                         result = "OK"
                     } else {
@@ -6807,15 +6807,22 @@ class TerminalController {
         surface: ghostty_surface_t,
         keycode: UInt32,
         mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE,
-        text: String? = nil
+        text: String? = nil,
+        unshiftedCodepoint: UInt32 = 0,
+        releaseAfterPress: Bool = false,
+        stillLive: @escaping () -> ghostty_surface_t? = { nil }
     ) {
         guard let terminalSurface = TerminalSurface.owning(surface) else {
-            Self.writeKeyEvent(surface: surface, keycode: keycode, mods: mods, text: text)
+            Self.writeKeyEvent(surface: surface, keycode: keycode, mods: mods, text: text,
+                               unshiftedCodepoint: unshiftedCodepoint,
+                               releaseAfterPress: releaseAfterPress, stillLive: stillLive)
             return
         }
         terminalSurface.writeOrDefer { [weak terminalSurface] in
             guard let terminalSurface, let live = terminalSurface.surface else { return }
-            Self.writeKeyEvent(surface: live, keycode: keycode, mods: mods, text: text)
+            Self.writeKeyEvent(surface: live, keycode: keycode, mods: mods, text: text,
+                               unshiftedCodepoint: unshiftedCodepoint,
+                               releaseAfterPress: releaseAfterPress, stillLive: stillLive)
             if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE {
                 // A socket-sent Return submits whatever is in the input
                 // line, exactly like a typed Return.
@@ -6825,34 +6832,71 @@ class TerminalController {
                     activity: .working,
                     source: .submit
                 )
-            } else if let text, !text.isEmpty, text != "\r", text != "\n" {
+            } else if Self.socketKeyTextIsDraft(mods: mods, text: text) {
                 // Typed text sits in the input line until a Return: a draft.
                 terminalSurface.lastOperatorKeyAt = Date()
             }
         }
     }
 
-    private static func writeKeyEvent(
+    /// Ctrl letters carry encoder metadata, not composer text. Recording an
+    /// interrupt as a draft would keep C11-257's idle mailbox push buffered.
+    static func socketKeyTextIsDraft(mods: ghostty_input_mods_e, text: String?) -> Bool {
+        guard mods.rawValue & GHOSTTY_MODS_CTRL.rawValue == 0, let text else { return false }
+        return !text.isEmpty && text != "\r" && text != "\n"
+    }
+
+    #if DEBUG
+    /// Native-call substitution for executable press/check/release tests. The
+    /// event's text pointer is valid only during this call, just like Ghostty's.
+    static var socketKeyEventSinkForTesting: ((ghostty_surface_t, ghostty_input_key_s) -> Void)?
+    #endif
+
+    private static func emitSocketKeyEvent(_ surface: ghostty_surface_t, _ event: ghostty_input_key_s) {
+        #if DEBUG
+        if let sink = socketKeyEventSinkForTesting {
+            sink(surface, event)
+            return
+        }
+        #endif
+        _ = ghostty_surface_key(surface, event)
+    }
+
+    static func writeKeyEvent(
         surface: ghostty_surface_t,
         keycode: UInt32,
         mods: ghostty_input_mods_e,
-        text: String?
+        text: String?,
+        unshiftedCodepoint: UInt32 = 0,
+        releaseAfterPress: Bool = false,
+        stillLive: () -> ghostty_surface_t? = { nil }
     ) {
         var keyEvent = ghostty_input_key_s()
         keyEvent.action = GHOSTTY_ACTION_PRESS
         keyEvent.keycode = keycode
         keyEvent.mods = mods
         keyEvent.consumed_mods = GHOSTTY_MODS_NONE
-        keyEvent.unshifted_codepoint = 0
+        keyEvent.unshifted_codepoint = unshiftedCodepoint
         keyEvent.composing = false
+        func writePressAndRelease() {
+            emitSocketKeyEvent(surface, keyEvent)
+            // A native key callback can tear down or replace the surface. Use
+            // the actual press target (including deferred writes), never its
+            // replacement, for the matching release.
+            if releaseAfterPress,
+               let releaseTarget = SendKeyRelease.target(pressed: surface, current: stillLive()) {
+                keyEvent.action = GHOSTTY_ACTION_RELEASE
+                emitSocketKeyEvent(releaseTarget, keyEvent)
+            }
+        }
         if let text {
             text.withCString { ptr in
                 keyEvent.text = ptr
-                _ = ghostty_surface_key(surface, keyEvent)
+                writePressAndRelease()
             }
         } else {
             keyEvent.text = nil
-            _ = ghostty_surface_key(surface, keyEvent)
+            writePressAndRelease()
         }
     }
 
@@ -7065,18 +7109,22 @@ class TerminalController {
         /// C11-173: the text a real keypress would carry. Ghostty's legacy
         /// encoder emits *printable* keys from the event's UTF-8 text, not from
         /// the keycode — so a keycode-only `space` encoded to zero bytes and
-        /// `send-key space` was a silent no-op. Control keys (enter, arrows,
-        /// ctrl-*) encode from the keycode alone and carry no text.
+        /// `send-key space` was a silent no-op. Editing/navigation keys keep
+        /// nil text; Ctrl+letter needs its letter and Unicode codepoint for
+        /// Ghostty's Kitty encoder (C11-308, upstream cmux #15928).
         let text: String?
+        let unshiftedCodepoint: UInt32
 
-        init(keycode: UInt32, mods: ghostty_input_mods_e, text: String? = nil) {
+        init(keycode: UInt32, mods: ghostty_input_mods_e, text: String? = nil, unshiftedCodepoint: UInt32 = 0) {
             self.keycode = keycode
             self.mods = mods
             self.text = text
+            self.unshiftedCodepoint = unshiftedCodepoint
         }
 
         static func == (lhs: NamedKeyEvent, rhs: NamedKeyEvent) -> Bool {
             lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue && lhs.text == rhs.text
+                && lhs.unshiftedCodepoint == rhs.unshiftedCodepoint
         }
     }
 
@@ -7088,15 +7136,20 @@ class TerminalController {
             NamedKeyEvent(keycode: UInt32(keycode), mods: mods)
         }
         func printable(_ keycode: Int, _ text: String) -> NamedKeyEvent {
-            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text)
+            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text,
+                          unshiftedCodepoint: text.unicodeScalars.first!.value)
+        }
+        func control(_ keycode: Int, _ text: String) -> NamedKeyEvent {
+            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_CTRL, text: text,
+                          unshiftedCodepoint: text.unicodeScalars.first!.value)
         }
         let name = keyName.lowercased()
         switch name {
         // Control combinations / signals
-        case "ctrl-c", "ctrl+c", "sigint": return ev(kVK_ANSI_C, GHOSTTY_MODS_CTRL)
-        case "ctrl-d", "ctrl+d", "eof": return ev(kVK_ANSI_D, GHOSTTY_MODS_CTRL)
-        case "ctrl-z", "ctrl+z", "sigtstp": return ev(kVK_ANSI_Z, GHOSTTY_MODS_CTRL)
-        case "ctrl-\\", "ctrl+\\", "sigquit": return ev(kVK_ANSI_Backslash, GHOSTTY_MODS_CTRL)
+        case "ctrl-c", "ctrl+c", "sigint": return control(kVK_ANSI_C, "c")
+        case "ctrl-d", "ctrl+d", "eof": return control(kVK_ANSI_D, "d")
+        case "ctrl-z", "ctrl+z", "sigtstp": return control(kVK_ANSI_Z, "z")
+        case "ctrl-\\", "ctrl+\\", "sigquit": return control(kVK_ANSI_Backslash, "\\")
         // Editing / submission keys
         case "enter", "return": return ev(kVK_Return)
         case "tab": return ev(kVK_Tab)
@@ -7131,16 +7184,18 @@ class TerminalController {
             if name.hasPrefix("ctrl-") || name.hasPrefix("ctrl+") {
                 let letter = name.dropFirst(5)
                 if letter.count == 1, let char = letter.first, let keycode = keycodeForLetter(char) {
-                    return NamedKeyEvent(keycode: keycode, mods: GHOSTTY_MODS_CTRL)
+                    return NamedKeyEvent(keycode: keycode, mods: GHOSTTY_MODS_CTRL, text: String(char),
+                                         unshiftedCodepoint: char.unicodeScalars.first!.value)
                 }
             }
             return nil
         }
     }
 
-    func sendNamedKey(_ surface: ghostty_surface_t, keyName: String) -> Bool {
+    func sendNamedKey(_ surface: ghostty_surface_t, keyName: String, stillLive: @escaping () -> ghostty_surface_t?) -> Bool {
         guard let event = Self.namedKeyEvent(for: keyName) else { return false }
-        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods, text: event.text)
+        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods, text: event.text,
+                     unshiftedCodepoint: event.unshiftedCodepoint, releaseAfterPress: true, stillLive: stillLive)
         return true
     }
 
@@ -7354,7 +7409,7 @@ class TerminalController {
                 return
             }
 
-            success = sendNamedKey(surface, keyName: keyName)
+            success = sendNamedKey(surface, keyName: keyName, stillLive: { [weak terminalTab] in terminalTab?.surface.surface })
         }
         if let error { return error }
         return success ? "OK" : "ERROR: Unknown key '\(keyName)'"
@@ -7371,7 +7426,7 @@ class TerminalController {
         var success = false
         var error: String?
         v2MainSync {
-            guard resolveTerminalPanel(from: target, workspaceManager: workspaceManager) != nil else {
+            guard let terminalPanel = resolveTerminalPanel(from: target, workspaceManager: workspaceManager) else {
                 error = "ERROR: Surface not found"
                 return
             }
@@ -7379,7 +7434,7 @@ class TerminalController {
                 error = "ERROR: Surface not ready"
                 return
             }
-            success = sendNamedKey(surface, keyName: keyName)
+            success = sendNamedKey(surface, keyName: keyName, stillLive: { [weak terminalPanel] in terminalPanel?.surface.surface })
         }
 
         if let error { return error }

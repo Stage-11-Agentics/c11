@@ -1972,6 +1972,20 @@ struct CMUXCLI {
             return
         }
 
+        // C11-308 / cmux #15980: reject a sequence before authentication or
+        // --window routing can send anything to the app. The command arms
+        // retain their target validation and command-specific missing-key text.
+        if command == "send-key" || command == "send-key-tab" {
+            let (_, remainder) = parseOption(commandArgs, name: "--workspace")
+            let (_, keyRemainder) = parseOption(remainder, name: "--surface")
+            let keys = keyRemainder.first == "--" ? Array(keyRemainder.dropFirst()) : keyRemainder
+            do {
+                _ = try SendKeyArgs.single(keys)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "\(command) requires a key")
+            }
+        }
+
         // Admission and advertised support share the feature registry. The
         // send handlers below still enforce the explicit-tab contract.
         if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
@@ -3115,7 +3129,12 @@ struct CMUXCLI {
                 throw CLIError(message: "send-key requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
-            guard let key = keyArgs.first else { throw CLIError(message: "send-key requires a key") }
+            let key: String
+            do {
+                key = try SendKeyArgs.single(keyArgs)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "send-key requires a key")
+            }
             var params: [String: Any] = ["key": key]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -3164,7 +3183,12 @@ struct CMUXCLI {
                 throw CLIError(message: "send-key-tab requires --tab")
             }
             let skpArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
-            let key = skpArgs.first ?? ""
+            let key: String
+            do {
+                key = try SendKeyArgs.single(skpArgs)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "send-key-tab requires a key")
+            }
             guard !key.isEmpty else { throw CLIError(message: "send-key-tab requires a key") }
             var params: [String: Any] = ["key": key]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -10222,6 +10246,7 @@ struct CMUXCLI {
             Usage: c11 send-key [flags] [--] <key>
 
             Send a key event to a terminal tab.
+            Pass one key per call; a second key is an error. Send the next key in its own call.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -10249,6 +10274,7 @@ struct CMUXCLI {
             Usage: c11 send-key-tab --tab <id|ref> [flags] [--] <key>
 
             Send a key event to a specific tab.
+            Pass one key per call; a second key is an error. Send the next key in its own call.
 
             Flags:
               --tab <id|ref>       Target tab (required)

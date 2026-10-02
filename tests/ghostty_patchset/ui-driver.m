@@ -9,6 +9,8 @@
 #import <Carbon/Carbon.h>
 #include <libproc.h>
 #include <signal.h>
+#include <stdint.h>
+#include <time.h>
 #include <unistd.h>
 
 static void timeout_exit(int sig) {
@@ -23,6 +25,10 @@ static void output(id object) {
 }
 static void fail(NSString *message) { output(@{@"error":message}); exit(1); }
 static pid_t target_pid;
+static uint64_t first_post_ns;
+// Give a pressed event its own delivery interval before releasing it. This is
+// fixture pacing, not confirmation that the destination consumed the event.
+static const useconds_t event_spacing_us = 20000;
 static NSString *target_tag, *target_path;
 static void verify_process(void) {
     char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
@@ -79,6 +85,11 @@ static void require_focused_window(NSDictionary *window) {
 static void post(CGEventRef event) {
     if (!event) fail(@"Could not create Quartz event");
     verify_process();
+    if (first_post_ns == 0) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC_RAW, &now) != 0) fail(@"Cannot read event-post clock; no event sent");
+        first_post_ns = (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+    }
     CGEventPostToPid(target_pid, event);
     CFRelease(event);
 }
@@ -97,6 +108,8 @@ static CGEventFlags modifiers(NSString *input) {
 static CGKeyCode keycode(NSString *key) {
     NSDictionary *keys=@{@"a":@(kVK_ANSI_A),@"c":@(kVK_ANSI_C),@"v":@(kVK_ANSI_V),@"w":@(kVK_ANSI_W),@"q":@(kVK_ANSI_Q),@"f":@(kVK_ANSI_F),@"n":@(kVK_ANSI_N),@"t":@(kVK_ANSI_T),@"return":@(kVK_Return),@"escape":@(kVK_Escape),@"tab":@(kVK_Tab),@"space":@(kVK_Space),@"delete":@(kVK_Delete),@"left":@(kVK_LeftArrow),@"right":@(kVK_RightArrow),@"up":@(kVK_UpArrow),@"down":@(kVK_DownArrow)};
     if ([key.lowercaseString isEqualToString:@"h"]) return kVK_ANSI_H;
+    if ([key.lowercaseString isEqualToString:@"leftbracket"]) return kVK_ANSI_LeftBracket;
+    if ([key.lowercaseString isEqualToString:@"rightbracket"]) return kVK_ANSI_RightBracket;
     NSNumber *number=keys[key.lowercaseString]; if (!number) fail(@"Unsupported key name"); return number.unsignedShortValue;
 }
 static CGPoint local_point(CGRect bounds, const char *x_text, const char *y_text) {
@@ -109,6 +122,8 @@ static CGPoint local_point(CGRect bounds, const char *x_text, const char *y_text
 }
 static void mouse(CGEventType type, CGPoint point, CGWindowID window) {
     CGEventRef event=CGEventCreateMouseEvent(NULL,type,point,kCGMouseButtonLeft);
+    if (!event) fail(@"Could not create Quartz mouse event");
+    CGEventSetFlags(event,0);
     CGEventSetIntegerValueField(event,kCGMouseEventWindowUnderMousePointer,window);
     CGEventSetIntegerValueField(event,kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent,window);
     CGEventSetIntegerValueField(event,kCGMouseEventClickState,1);
@@ -152,20 +167,21 @@ int main(int argc,char **argv) {
         if ([command isEqualToString:@"key"]) {
             if (argc>7) fail(@"Unexpected key arguments"); require_focused_window(window);
             CGKeyCode code=keycode(@(argv[5])); CGEventFlags flags=modifiers(argc==7?@(argv[6]):@"none");
-            for (int down=1;down>=0;--down) { CGEventRef event=CGEventCreateKeyboardEvent(NULL,code,down); CGEventSetFlags(event,flags); post(event); }
+            for (int down=1;down>=0;--down) { CGEventRef event=CGEventCreateKeyboardEvent(NULL,code,down); CGEventSetFlags(event,flags); post(event); if (down) usleep(event_spacing_us); }
         } else if ([command isEqualToString:@"text"]) {
             if (argc!=6) fail(@"Text must be one shell argument"); require_focused_window(window);
             NSString *text=@(argv[5]); if (text.length>1024) fail(@"Text limited to 1024 UTF-16 units per invocation");
             UniChar chars[1024]; [text getCharacters:chars range:NSMakeRange(0,text.length)];
-            for (int down=1;down>=0;--down) { CGEventRef event=CGEventCreateKeyboardEvent(NULL,0,down); CGEventSetFlags(event,0); CGEventKeyboardSetUnicodeString(event,text.length,chars); post(event); }
+            for (int down=1;down>=0;--down) { CGEventRef event=CGEventCreateKeyboardEvent(NULL,0,down); CGEventSetFlags(event,0); CGEventKeyboardSetUnicodeString(event,text.length,chars); post(event); if (down) usleep(event_spacing_us); }
         } else if ([command isEqualToString:@"click"] || [command isEqualToString:@"drag"]) {
             BOOL drag=[command isEqualToString:@"drag"]; if (argc!=(drag?9:7)) fail(@"Wrong pointer argument count");
             CGRect bounds=window_bounds(window); CGPoint start=local_point(bounds,argv[5],argv[6]); CGPoint finish=drag?local_point(bounds,argv[7],argv[8]):start;
             mouse(kCGEventLeftMouseDown,start,(CGWindowID)wid);
-            if (drag) for (int i=1;i<=12;++i) { usleep(15000); mouse(kCGEventLeftMouseDragged,CGPointMake(start.x+(finish.x-start.x)*i/12.0,start.y+(finish.y-start.y)*i/12.0),(CGWindowID)wid); }
+            if (drag) for (int i=1;i<=12;++i) { usleep(event_spacing_us); mouse(kCGEventLeftMouseDragged,CGPointMake(start.x+(finish.x-start.x)*i/12.0,start.y+(finish.y-start.y)*i/12.0),(CGWindowID)wid); }
+            usleep(event_spacing_us);
             mouse(kCGEventLeftMouseUp,finish,(CGWindowID)wid);
         } else fail(@"Unknown command");
-        output(@{@"status":@"posted",@"pid":@(target_pid),@"window":@(wid),@"executable":target_path,@"command":command,@"note":@"Delivery is not proof of application behavior; inspect exact-window and socket oracles"});
+        output(@{@"status":@"posted",@"pid":@(target_pid),@"window":@(wid),@"executable":target_path,@"command":command,@"first_post_ns":@(first_post_ns),@"clock":@"CLOCK_MONOTONIC_RAW",@"event_spacing_us":@(event_spacing_us),@"note":@"Delivery is not proof of application behavior; inspect exact-window and socket oracles"});
     }
     alarm(0); return 0;
 }

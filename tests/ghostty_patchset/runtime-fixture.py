@@ -26,6 +26,8 @@ import uuid
 HERE = Path(__file__).resolve()
 START, END = b"\x1b[200~", b"\x1b[201~"
 CLOCK_NAME = "CLOCK_MONOTONIC_RAW"
+METRIC_FIELDS = ("pty_ms", "read_screen_ms", "key_to_pty_ms",
+                 "key_to_read_screen_ms", "invocation_to_key_post_ms")
 
 
 def shared_ns():
@@ -281,12 +283,21 @@ def controller(args):
     stream_identities = []
     run_token = uuid.uuid4().hex
     result = {"status": "FAIL", "label": args.label, "engine_sha_claim": args.engine_sha,
+              "load_average_start": os.getloadavg(),
               "app": str(rpc.app), "bundle_binary_sha256": digest(rpc.app / "Contents/MacOS/c11"),
               "bundle_dylib_sha256": {path.name: digest(path) for path in sorted((rpc.app / "Contents/MacOS").glob("*.dylib")) if path.is_file()},
               "cli_sha256": digest(rpc.cli), "fixture_sha256": digest(HERE),
               "socket": args.socket, "pid": rpc.pid, "run_token": run_token,
               "target_mode": "local-tagged" if args.local_tagged else "sandbox",
               "comparison_only": args.comparison_only,
+              "measurement_version": "shared-raw-return-post-focus-ready-v2",
+              "metric_definitions": {
+                  "pty_ms": "full input invocation start to child PTY receipt; includes driver startup/validation/text/Return overhead",
+                  "read_screen_ms": "full input invocation start to read-screen observation; includes driver and polling overhead",
+                  "key_to_pty_ms": "Return driver's first CGEvent post timestamp to child PTY receipt (UI mode only)",
+                  "key_to_read_screen_ms": "Return driver's first CGEvent post timestamp to read-screen observation (UI mode only; includes polling)",
+                  "invocation_to_key_post_ms": "input invocation start to Return post; driver startup/validation/text overhead (UI mode only)",
+              },
               "input_mode": "appkit-quartz-pid-scoped" if driver else "socket-synthetic",
               "ui_driver": {"path": str(driver), "sha256": digest(driver), "window": args.ui_window,
                             "pid": rpc.pid, "tag": args.tag,
@@ -295,7 +306,7 @@ def controller(args):
               "clock_verification": clock_evidence,
               "workload": {"streams": args.streams, "hz_per_stream": 20, "samples": args.samples,
                            "launch": "workspace-initial-command", "workspaces_per_stream": 1},
-              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "shutdown_seconds": 18},
+              "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 2, "shutdown_seconds": 18},
               "not_proven": ["physical hardware keyboard latency", "app tick durations/message counts",
                              "GPU current frame or cursor visibility", "computer-use hide/show",
                              "B072 backend WouldBlock attribution", "completion-order injection",
@@ -335,8 +346,51 @@ def controller(args):
         if evidence.get("pid") != rpc.pid or evidence.get("window") != args.ui_window:
             raise RuntimeError("UI driver response target mismatch")
         return evidence
+    def focus_ready(pair):
+        # Observe convergence only: never refocus or retry input to make a
+        # measurement pass. Focus setup time is separate from input latency.
+        began = shared_ns()
+        until = time.monotonic() + 2
+        observations = []
+        required = ("inWindow", "isFirstResponder", "desiredFocus", "appIsActive", "windowIsKey", "isActive")
+        while time.monotonic() < until:
+            observation = {"observed_ns": shared_ns()}
+            try:
+                stats = call("debug.terminal.render_stats", params(pair), timeout=max(.01, until - time.monotonic()))["stats"]
+                observation["stats"] = stats
+                ready = (str(stats.get("panelId", "")).lower() == pair[1].lower()
+                         and all(stats.get(field) is True for field in required))
+            except Exception as error:
+                observation["error"] = repr(error)
+                observations.append(observation)
+                break
+            observations.append(observation)
+            if ready:
+                return {"ready": True, "elapsed_ms": (shared_ns() - began) / 1e6, "observations": observations}
+            time.sleep(.02)
+        return {"ready": False, "elapsed_ms": (shared_ns() - began) / 1e6, "observations": observations}
+    def miss_snapshot(pair, directory, token):
+        snapshot = {"token": token, "observed_ns": shared_ns()}
+        # Each observation is independent so an unavailable socket does not
+        # discard the child's receipt evidence or the exact bytes received.
+        for name, observe in (
+            ("ack", lambda: json.loads((directory / "ack.json").read_text())),
+            ("raw_input_hex", lambda: (directory / "raw-input.bin").read_bytes().hex()),
+            ("read_screen", lambda: read(pair)),
+            ("focus", lambda: call("debug.terminal.render_stats", params(pair))["stats"]),
+        ):
+            try:
+                snapshot[name] = observe()
+            except Exception as error:
+                snapshot[name + "_error"] = repr(error)
+        save(directory / ("miss-" + token + ".json"), snapshot)
+        return snapshot
     def probe(pair, directory, index):
         token = f"p{index:06d}"
+        readiness = focus_ready(pair) if driver else None
+        if readiness is not None and not readiness["ready"]:
+            return {"token": token, "missed": True, "stage": "focus_readiness", "input_sent": False,
+                    "readiness": readiness, "snapshot": miss_snapshot(pair, directory, token)}
         start = shared_ns()
         driver_evidence = None
         if driver:
@@ -345,6 +399,11 @@ def controller(args):
             driver_evidence = [ui_event("text", token), ui_event("key", "return")]
         else:
             call("tab.send_text", {**params(pair), "text": token + "\n", "submit": False})
+        key_post_ns = None
+        if driver:
+            key_post_ns = driver_evidence[-1].get("first_post_ns")
+            if type(key_post_ns) is not int or not start <= key_post_ns <= shared_ns():
+                raise RuntimeError("Return driver first_post_ns missing/invalid or outside invocation interval: " + repr(driver_evidence[-1]))
         end = time.monotonic() + 2
         while time.monotonic() < end:
             if (directory / "error.json").exists():
@@ -353,12 +412,29 @@ def controller(args):
             if ack_path.exists():
                 ack = json.loads(ack_path.read_text())
                 if ack["token"] == token and "ACK:" + token in read(pair):
-                    if ack.get("clock") != CLOCK_NAME or not start <= ack["received_ns"] <= shared_ns():
-                        raise RuntimeError("probe ACK clock mismatch or timestamp outside send/observe interval")
-                    return {"token": token, "driver": driver_evidence, "pty_ms": (ack["received_ns"] - start) / 1e6,
-                            "read_screen_ms": (shared_ns() - start) / 1e6}
+                    observed_ns = shared_ns()
+                    received_ns = ack.get("received_ns")
+                    if (ack.get("clock") != CLOCK_NAME or type(received_ns) is not int
+                            or not start <= received_ns <= observed_ns):
+                        raise RuntimeError("probe ACK clock mismatch or timestamp outside invocation/observation interval: " + repr(ack))
+                    if key_post_ns is not None and not start <= key_post_ns <= received_ns <= observed_ns:
+                        raise RuntimeError("invalid timing order: invocation <= Return post <= PTY ACK <= observation required")
+                    sample = {"token": token, "driver": driver_evidence, "readiness": readiness,
+                              "clock": CLOCK_NAME,
+                              "timing_ns": {"invocation_start": start, "return_first_post": key_post_ns,
+                                            "pty_received": received_ns, "read_screen_observed": observed_ns},
+                              "pty_ms": (received_ns - start) / 1e6,
+                              "read_screen_ms": (observed_ns - start) / 1e6}
+                    if key_post_ns is not None:
+                        sample.update(key_to_pty_ms=(received_ns - key_post_ns) / 1e6,
+                                      key_to_read_screen_ms=(observed_ns - key_post_ns) / 1e6,
+                                      invocation_to_key_post_ms=(key_post_ns - start) / 1e6)
+                    return sample
             time.sleep(.01)
-        return {"token": token, "driver": driver_evidence, "missed": True}
+        return {"token": token, "driver": driver_evidence, "missed": True,
+                "stage": "ack_observation", "input_sent": True, "readiness": readiness,
+                "snapshot": miss_snapshot(pair, directory, token),
+                "clock": CLOCK_NAME, "timing_ns": {"invocation_start": start, "return_first_post": key_post_ns}}
     try:
         stream_ws = None
         for i in range(args.streams):
@@ -377,6 +453,8 @@ def controller(args):
             samples.append(probe(probe_pair, probe_dir, i))
             result["responsiveness"]["sample_seconds"] = time.monotonic() - start
             save(out / "result.json", result)
+            if samples[-1].get("missed"):
+                raise RuntimeError("probe missed; stopped before another input token: " + samples[-1]["token"])
             if i % 10 == 0:
                 # Churn only our disposable workspaces; no operator topology.
                 churn, _ = workspace()
@@ -387,8 +465,7 @@ def controller(args):
             time.sleep(.05)
         result["responsiveness"] = {"clock": CLOCK_NAME, "complete": True, "sample_seconds": time.monotonic() - start, "samples": samples,
             "missed": sum(bool(s.get("missed")) for s in samples),
-            "pty_ms": percentiles([s["pty_ms"] for s in samples if "pty_ms" in s]),
-            "read_screen_ms": percentiles([s["read_screen_ms"] for s in samples if "read_screen_ms" in s])}
+            **{metric: percentiles([s[metric] for s in samples if metric in s]) for metric in METRIC_FIELDS}}
         result["stream_workers"] = stream_identities
         if any(ps(item["pid"], "lstart") != item["started"] for item in stream_identities):
             raise RuntimeError("a streaming worker exited during probing")
@@ -408,7 +485,7 @@ def controller(args):
                                  "probe": probe(probe_pair, probe_dir, args.samples)}
         selected = next((tab for tab in result["focus_state"]["tabs"]["tabs"] if tab.get("id") == probe_pair[1]), {})
         if (final.get("workspace_id") != probe_pair[0] or not selected.get("focused")
-                or not selected.get("selected") or result["focus_state"]["probe"].get("missed")):
+                or not selected.get("selected_in_area") or result["focus_state"]["probe"].get("missed")):
             raise RuntimeError("final workspace/tab focus/probe state failed")
         # Explicit bundled CLI is exercised as a separate, timed observation.
         cli = subprocess.run([str(rpc.cli), "--socket", args.socket, "read-screen", "--workspace", probe_pair[0],
@@ -443,7 +520,10 @@ def controller(args):
         for mode in ("graceful", "ignore-hup", "ignore-both", "detached"):
             pair, directory, identity = launch("shutdown-" + mode, "shutdown-" + mode)
             start = time.monotonic()
-            call("tab.close", params(pair), timeout=20)
+            # A fixture workspace contains its sole terminal; tab.close
+            # deliberately rejects closing the last tab in an area.
+            call("workspace.close", {"workspace_id": pair[0]}, timeout=20)
+            workspaces.remove(pair[0])
             while ps(identity["pid"], "lstart") == identity["started"]:
                 if time.monotonic() - start > 18:
                     raise TimeoutError("owned child still exists after shutdown budget: " + mode)
@@ -468,12 +548,13 @@ def controller(args):
         result["error"] = repr(error)
         raise
     finally:
+        result["load_average_end"] = os.getloadavg()
         if "responsiveness" in result:
             summary = result["responsiveness"]
             collected = summary["samples"]
             summary["missed"] = sum(bool(item.get("missed")) for item in collected)
-            summary["pty_ms"] = percentiles([item["pty_ms"] for item in collected if "pty_ms" in item])
-            summary["read_screen_ms"] = percentiles([item["read_screen_ms"] for item in collected if "read_screen_ms" in item])
+            for metric in METRIC_FIELDS:
+                summary[metric] = percentiles([item[metric] for item in collected if metric in item])
         # Persist partial samples/error before any cleanup that might time out.
         save(out / "result.json", result)
         cleanup = []
@@ -537,8 +618,9 @@ def main():
         candidate = json.loads(Path(args.candidate).read_text())
         if (baseline["workload"] != candidate["workload"] or baseline["guest_hardware"] != candidate["guest_hardware"]
                 or baseline["target_mode"] != candidate["target_mode"]
-                or baseline.get("input_mode", "socket-synthetic") != candidate.get("input_mode", "socket-synthetic")):
-            raise RuntimeError("baseline/candidate workload, CPU/RAM, target mode or input mode differs")
+                or baseline.get("input_mode", "socket-synthetic") != candidate.get("input_mode", "socket-synthetic")
+                or baseline.get("measurement_version") != candidate.get("measurement_version")):
+            raise RuntimeError("baseline/candidate workload, CPU/RAM, target mode, input mode or measurement version differs")
         comparison = {"baseline_status": baseline["status"], "candidate_status": candidate["status"],
                       "threshold_verdict": "orchestrator-owned", "baseline": baseline.get("responsiveness"),
                       "candidate": candidate.get("responsiveness")}

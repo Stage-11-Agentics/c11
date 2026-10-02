@@ -112,8 +112,11 @@ prefer the dedicated command over hand-composing the steps below:
 
 ```bash
 c11 launch-agent --type codex --model gpt-5.2 --effort high \
-    --prompt-file /tmp/brief.md --title "Login Impl" --json
+    --prompt "Read /abs/path/brief.md and follow it exactly." \
+    --title "Login Impl" --json
 ```
+
+**The prompt is a one-line pointer; the brief lives in a file.** Write every specific (cwd, ticket, rules, reply channel) into a brief file and pass only `Read <absolute path> and follow it exactly.` as `--prompt`. `--prompt-file` sends the file's *contents* through argv, so it is not a substitute: a long inline prompt can leave the shell at a `>` continuation prompt for as long as nobody looks, or start a tab whose agent never runs. Keep the brief file where the child can read it and where a later reader can find it.
 
 It creates the tab (in an area, a workspace, or `--new-workspace`), renders
 the right per-agent invocation (claude wrapper + skip-permissions, codex

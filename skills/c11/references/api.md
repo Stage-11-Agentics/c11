@@ -586,6 +586,8 @@ may manually retire them. An old copy can still load alongside the runtime plugi
 
 ## Troubleshooting
 
+**Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
+
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.
 - **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.

@@ -193,6 +193,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 - **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --tab <t> "npm test"`. Writing `--text "…"` types the literal string `--text` into the terminal.
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.
+- **`c11 rpc <method> [json]` is a local raw socket call** for methods without a friendly command. Prefer the command when one exists; remote calls over `c11 ssh` remain unavailable.
 - **Socket/CLI commands never steal macOS focus**, and telemetry commands run off-main — don't expect a `send` to raise a window.
 - **`send` reaches PTYs only.** It cannot drive AppKit/SwiftUI controls (the text box, settings, sidebar, find overlay). For those, ask the operator or use accessibility automation.
 

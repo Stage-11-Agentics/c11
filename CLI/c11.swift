@@ -3527,8 +3527,10 @@ struct CMUXCLI {
             } else if windowId != nil {
                 let wsId = try resolveWorkspaceId(nil, client: client)
                 socketCmd += " --tab=\(wsId)"
-            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
-                      let wsId = try? resolveWorkspaceId(envWs, client: client) {
+            } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"], !envWs.isEmpty {
+                // A malformed value must fail here: swallowing it would send an
+                // untargeted clear_notifications, which clears every workspace.
+                let wsId = try resolveWorkspaceId(envWs, client: client)
                 socketCmd += " --tab=\(wsId)"
             }
             let response = try sendV1Command(socketCmd, client: client)
@@ -9260,6 +9262,12 @@ struct CMUXCLI {
                 if let id = item["id"] as? String { return id }
             }
             throw CLIError(message: "Workspace index not found")
+        }
+
+        // A supplied value that is not a UUID, ref or index is a typo or a stale
+        // environment value; only an absent value (nil) means the current workspace.
+        if let raw {
+            throw CLIError(message: String(localized: "cli.workspace.handle.invalid", defaultValue: "Invalid workspace handle: \(raw) (expected UUID, ref like workspace:1, or index)"))
         }
 
         let current = try client.sendV2(method: "workspace.current")

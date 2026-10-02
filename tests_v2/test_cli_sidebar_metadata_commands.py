@@ -184,6 +184,35 @@ def main() -> int:
                     f"{' '.join(args)} without a target should fail explicitly, got rc={proc.returncode} output={merged!r}",
                 )
 
+            # A malformed explicit or environment workspace must fail, never fall back to
+            # the selected workspace.
+            malformed_cases = [
+                ["set-status", "stray", "value"],
+                ["clear-status", "selected"],
+                ["clear-progress"],
+                ["clear-log"],
+                ["list-status"],
+                ["sidebar-state"],
+                ["sidebar-state", "--json"],
+                ["set-workspace-metadata", "description", "stray"],
+                ["get-workspace-metadata"],
+                ["clear-workspace-metadata"],
+                ["set-workspace-description", "stray"],
+                ["set-workspace-icon", "X"],
+            ]
+            for args in malformed_cases:
+                for label, cmd, env_override in [
+                    ("explicit", [*args, "--workspace", "not-a-workspace"], {}),
+                    ("env", args, {"C11_WORKSPACE_ID": "not-a-workspace"}),
+                    ("window", ["--window", window_id, *args, "--workspace", "not-a-workspace"], {}),
+                ]:
+                    proc = _run_cli_process(cli, cmd, extra_env=env_override, clear_workspace_env=True)
+                    merged = f"{proc.stdout}\n{proc.stderr}".strip()
+                    _must(
+                        proc.returncode != 0 and ("Invalid workspace handle" in merged or "not_found" in merged),
+                        f"{label} malformed workspace for {' '.join(args)} should fail, got rc={proc.returncode} output={merged!r}",
+                    )
+
             window_scoped_status = _run_cli(
                 cli,
                 ["--window", window_id, "list-status", "--workspace", selected_workspace],

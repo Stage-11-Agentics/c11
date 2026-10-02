@@ -21,6 +21,26 @@ Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Dev
 
 The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
 
+GitHub's scheduled native CI uses GitHub-hosted `macos-15` and
+`macos-15-xlarge` runners. PRs keep the cheap Ubuntu lane;
+`ci-hourly.yml`, `ci-macos-compat.yml`, and `build-ghosttykit.yml` run
+hourly/manual against main. Each heavy workflow command uses
+`scripts/with-build-lock.sh`; the process-scoped Xcode/Zig setup does not install
+into `/usr/local` or change global Xcode state. No self-hosted runner is
+registered or used in this PR. An access-restricted runner is a follow-up that
+requires Atin to decide the repository, trigger, and network boundary.
+
+For landing, the Merge Captain gates the exact PR head with fresh review, the
+cheap PR checks, and an Atlas exact-head remote build for every Swift or native
+change after the branch includes current `origin/main`. A docs-only change is
+exempt only when the diff is limited to documentation or prose and contains no
+Swift, native workflow, script, project, submodule, test, or build-input change.
+The hourly main result is the post-merge authority; red main is fixed forward.
+For Ghostty/bonsplit pointer changes, manually dispatch `Build GhosttyKit` on the
+internal bump branch, wait for its prerelease non-`latest` artifact and bot
+checksum commit, refresh PR checks at that bot-created head, then run the
+exact-head Atlas gate before landing.
+
 Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 
 ```bash

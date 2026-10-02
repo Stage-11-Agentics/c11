@@ -175,7 +175,7 @@ exact root-level path.
     }
   },
   "ci_ignored_paths": ["**/*.md", "docs/**", "notes/**", "Resources/Localizable.xcstrings"],
-  "required_checks": ["workflow-guard-tests", "remote-daemon-tests", "web-typecheck", "build"],
+  "required_checks": ["workflow-guard-tests", "remote-daemon-tests", "web-typecheck"],
   "zulip": {
     "site": "https://zulip.stage11.ai",
     "channel": "c11",

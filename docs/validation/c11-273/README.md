@@ -23,7 +23,7 @@ The required short matched comparison is **incomplete**. An early baseline probe
 
 The bounded final comparison uses the same 120 real key-to-glyph trials, eight structural hook producers, geometry and capture method on both artifacts. It records p95/p99, capture overhead, hook timing, CPU, RSS, physical footprint and host/guest load. The pre-registered C11-270 comparison thresholds are p95 `max(baseline * 1.20, baseline + 5 ms)`, p99 `max(baseline * 1.25, baseline + 15 ms)`, and peak footprint `max(baseline * 1.25, baseline + 2048 MiB)`. More than 5% unmatched glyphs invalidates the measurement. This short run cannot establish a fleet-soak memory slope or main-thread stall distribution.
 
-A final committed-head Debug build, bounded comparison, durable results, draft PR and orchestrator-owned Fable review remain. No PR has been opened and no merge is authorized for this owner.
+The final clean Debug build at `e764720703889d0f962c5e84f4fc944412d37dcb` passed with no overlay; see [final-build.json](final-build.json), invocation `7e81965b42794cd18775c4215c280a46`. The bounded comparison, its durable results, draft PR and orchestrator-owned Fable review remain. No PR has been opened and no merge is authorized for this owner.
 
 ## Validator scenario
 

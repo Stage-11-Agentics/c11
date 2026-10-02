@@ -984,11 +984,10 @@ extension TerminalController {
         let sendStart = ProcessInfo.processInfo.systemUptime
         #endif
 
-        let resolvedSurface: ghostty_surface_t?
-        if let initialSurface = resolved.initialSurface {
-            resolvedSurface = initialSurface
-        } else {
-            resolvedSurface = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0)
+        if resolved.initialSurface == nil {
+            // This pointer is only a readiness indication. Phase B re-reads the
+            // exact tab and its live surface on main before capture or delivery.
+            _ = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0)
         }
 
         // C11-173: what actually happened, for an honest response. `submitted`
@@ -996,23 +995,39 @@ extension TerminalController {
         // even when `submit` is false, unless preserve_newlines keeps it as
         // content); `queued` means the surface had no PTY, so
         // nothing has reached the target yet and the payload flushes on attach.
-        let queued: Bool
+        nonisolated(unsafe) var queued = false
         nonisolated(unsafe) var submitted = false
         let wantsReturn = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines).wantsReturn
+        let allowUnguarded = v2Bool(params, "allow_unguarded") ?? false
+        nonisolated(unsafe) var phaseBFields: [String: Any] = [:]
+        nonisolated(unsafe) var phaseBError: V2CallResult?
         let phaseBSema = DispatchSemaphore(value: 0)
-        if resolvedSurface != nil {
-            // C11-26 review B2: revalidate the live surface pointer inside the
-            // Phase B @MainActor turn before passing it to sendSocketText.
-            // resolvedSurface was captured in Phase A (or by waitForTerminalSurfaceOffMain
-            // on the worker); TerminalSurface.teardownSurface() runs on @MainActor and
-            // nils-then-frees the underlying ghostty_surface_t, so it can fire between
-            // Phase A and this turn. Calling ghostty_surface_text on a freed pointer is
-            // undefined behavior; re-read instead and fall through to the queue path
-            // if the surface was torn down across the hop.
-            nonisolated(unsafe) var attachedAtPhaseB = false
-            Task { @MainActor in
-                defer { phaseBSema.signal() }
-                if let liveSurface = resolved.terminalPanel.surface.surface {
+        Task { @MainActor in
+            defer { phaseBSema.signal() }
+            let targetIsCurrent = SendInputGuard.targetIsCurrent(
+                expectedWorkspace: resolved.workspace,
+                currentWorkspaces: resolved.workspaceManager.workspaces,
+                expectedTab: resolved.terminalPanel,
+                currentTab: resolved.workspace.terminalPanel(for: resolved.tabId)
+            )
+            let liveSurface = targetIsCurrent ? resolved.terminalPanel.surface.surface : nil
+            let observation: PromptInputObservation
+            if !targetIsCurrent {
+                observation = .unavailable
+            } else if let liveSurface, let region = capturePromptInputRegion(surface: liveSurface) {
+                observation = .activeScreen(region)
+            } else {
+                // A cold live exact tab and a busy/unavailable capture preserve
+                // today's queue/delivery behavior, with the uncertainty exposed.
+                observation = .unknown
+            }
+
+            let decision = SendInputGuard.perform(
+                state: observation.classification.state,
+                allowUnguarded: allowUnguarded,
+                targetAvailable: targetIsCurrent
+            ) {
+                if let liveSurface {
                     submitted = deliverSocketSendText(
                         text,
                         submit: submit,
@@ -1020,57 +1035,46 @@ extension TerminalController {
                         terminalSurface: resolved.terminalPanel.surface,
                         surface: liveSurface
                     )
-                    // Ensure we present a new frame after injecting input so snapshot-based tests
-                    // (and socket-driven agents) can observe the updated terminal without requiring
-                    // a focus change to trigger a draw.
                     resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
-                    attachedAtPhaseB = true
                 } else {
-                    // Surface was torn down between Phase A and Phase B. Fall through to
-                    // the pending queue as a last resort. Use the canonical submit helper
-                    // so the Return is dispatched as a real key event once the queued text
-                    // flushes on attach, rather than appending a bare \r that the queue's
-                    // bracketed-paste envelope would swallow.
-                    // Same newline rule as the live path (see deliverSocketSendText):
-                    // a trailing newline means "and press Enter".
+                    // Use the same submit helper as attached delivery so a
+                    // queued Return is dispatched after the bracketed paste.
                     resolved.terminalPanel.surface.sendQueuedSocketText(
                         text, submit: submit, preserveNewlines: preserveNewlines
                     )
                     submitted = wantsReturn
+                    queued = true
                 }
             }
-            phaseBSema.wait()
-            queued = !attachedAtPhaseB
-        } else {
-            // Surface not available within 2s (e.g., terminal not yet attached to any window).
-            // Fall back to the pending queue as a last resort. Use the canonical submit
-            // helper so the Return flushes as a real key event on attach instead of a
-            // bare \r swallowed inside the bracketed-paste envelope. It may have attached
-            // during the hop, in which case the text goes straight through — report that
-            // rather than claiming it queued.
-            nonisolated(unsafe) var attachedLate = false
-            Task { @MainActor in
-                defer { phaseBSema.signal() }
-                if let liveSurface = resolved.terminalPanel.surface.surface {
-                    submitted = deliverSocketSendText(
-                        text,
-                        submit: submit,
-                        preserveNewlines: preserveNewlines,
-                        terminalSurface: resolved.terminalPanel.surface,
-                        surface: liveSurface
-                    )
-                    resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
-                    attachedLate = true
-                    return
-                }
-                resolved.terminalPanel.surface.sendQueuedSocketText(
-                    text, submit: submit, preserveNewlines: preserveNewlines
+
+            switch decision {
+            case .unavailable:
+                var data = observation.responseFields
+                data["reason"] = "target_unavailable"
+                phaseBError = .err(
+                    code: "not_found",
+                    message: String(localized: "socket.send.target_unavailable", defaultValue: "Target tab is no longer available."),
+                    data: data
                 )
-                submitted = wantsReturn
+            case .refuse(let reason):
+                var data = observation.responseFields
+                data["input_guard"] = SendInputGuardStatus.refused.rawValue
+                data["reason"] = reason
+                phaseBError = .err(
+                    code: "input_guard_refused",
+                    message: String(format: String(
+                        localized: "socket.send.guard_refused",
+                        defaultValue: "Input guard refused the send because a %@ is present."
+                    ), reason),
+                    data: data
+                )
+            case .deliver(let status):
+                phaseBFields = observation.responseFields
+                phaseBFields["input_guard"] = status.rawValue
             }
-            phaseBSema.wait()
-            queued = !attachedLate
         }
+        phaseBSema.wait()
+        if let phaseBError { return phaseBError }
 
         #if DEBUG
         let sendMs = (ProcessInfo.processInfo.systemUptime - sendStart) * 1000.0
@@ -1083,6 +1087,7 @@ extension TerminalController {
         envelope["submitted"] = submitted
         envelope["queued"] = queued
         envelope["delivered"] = !queued
+        for (key, value) in phaseBFields { envelope[key] = value }
         EventEmitter.shared.emitTabInputSent(
             workspace: resolved.workspaceId,
             surface: resolved.tabId,
@@ -1242,9 +1247,70 @@ extension TerminalController {
         return result
     }
 
-    /// Surface teardown is serialized on main, so try-lock native capture and
-    /// its exactly-once free stay in one main turn. Native formatting after the
-    /// lock is acquired is synchronous and unbounded; only the copy is capped.
+    /// Surface teardown is serialized on main, so try-lock and bounded native
+    /// copying stay in one main turn. Caller-owned buffers need no native free;
+    /// classification runs on this socket worker after the capture completes.
+    nonisolated func v2SurfaceInputState(params: [String: Any]) -> V2CallResult {
+        guard CapabilityFeatures.current.supports(.terminalInputState) else {
+            return .err(code: "not_supported", message: String(localized: "socket.input_state.unsupported", defaultValue: "Terminal input-state inspection is unavailable."), data: nil)
+        }
+        guard let tabRef = params["surface_id"] as? String,
+              !tabRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .err(code: "invalid_params", message: String(localized: "socket.input_state.tab_required", defaultValue: "A tab identifier is required."), data: nil)
+        }
+
+        typealias Capture = (PromptRegionSnapshot?, [String: Any])
+        let operation = SelectionReadOperation<Result<Capture, V2CallResult>>()
+        Task { @MainActor in
+            guard operation.beginCapture() else { return }
+            switch resolveSurfaceSendTargets(params: params) {
+            case .err(let error):
+                var data = PromptInputClassification(state: .unavailable, draftLength: nil)
+                    .responseFields(source: nil, observedAtMs: nil)
+                data["target_error"] = error.code
+                operation.complete(.failure(.err(code: error.code, message: error.message, data: data)))
+            case .ok(let resolved):
+                guard SendInputGuard.targetIsCurrent(
+                    expectedWorkspace: resolved.workspace,
+                    currentWorkspaces: resolved.workspaceManager.workspaces,
+                    expectedTab: resolved.terminalPanel,
+                    currentTab: resolved.workspace.terminalPanel(for: resolved.tabId)
+                ) else {
+                    let data = PromptInputClassification(state: .unavailable, draftLength: nil)
+                        .responseFields(source: nil, observedAtMs: nil)
+                    operation.complete(.failure(.err(
+                        code: "not_found",
+                        message: String(localized: "socket.send.target_unavailable", defaultValue: "Target tab is no longer available."),
+                        data: data
+                    )))
+                    return
+                }
+                let snapshot = resolved.terminalPanel.surface.surface.flatMap {
+                    capturePromptInputRegion(surface: $0)
+                }
+                operation.complete(.success((snapshot, resolved.responseEnvelope)))
+            }
+        }
+
+        guard let result = operation.wait() else {
+            return .err(code: "timeout", message: String(localized: "socket.input_state.timeout", defaultValue: "Terminal input-state inspection timed out."), data: nil)
+        }
+        switch result {
+        case .failure(let error):
+            return operation.canPublish ? error : .err(
+                code: "timeout", message: String(localized: "socket.input_state.timeout", defaultValue: "Terminal input-state inspection timed out."), data: nil
+            )
+        case .success(let (snapshot, routing)):
+            let observation = snapshot.map(PromptInputObservation.activeScreen) ?? .unavailable
+            var payload = routing
+            for (key, value) in observation.responseFields { payload[key] = value }
+            guard operation.canPublish else {
+                return .err(code: "timeout", message: String(localized: "socket.input_state.timeout", defaultValue: "Terminal input-state inspection timed out."), data: nil)
+            }
+            return .ok(payload)
+        }
+    }
+
     nonisolated func v2SurfaceReadSelection(params: [String: Any]) -> V2CallResult {
         guard CapabilityFeatures.current.supports(.terminalSelection) else {
             return .err(code: "not_supported", message: String(localized: "socket.read_selection.unsupported", defaultValue: "Terminal selection reading is unavailable."), data: nil)

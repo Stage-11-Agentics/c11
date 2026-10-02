@@ -319,6 +319,9 @@ extension TerminalController {
         if CapabilityFeatures.current.supports(.terminalSelection) {
             methods.append("tab.read_selection")
         }
+        if CapabilityFeatures.current.supports(.terminalInputState) {
+            methods.append("tab.input_state")
+        }
         if CapabilityFeatures.current.supports(.feedAsks) {
             methods.append("feed.list")
             methods.append("feed.open")

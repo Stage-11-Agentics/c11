@@ -1100,7 +1100,7 @@ extension TerminalController {
             terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
                 defer { finish() }
                 guard let self, let terminalSurface, let liveSurface = terminalSurface.surface else { return }
-                _ = self.sendNamedKey(liveSurface, keyName: key)
+                _ = self.sendNamedKey(liveSurface, keyName: key, stillLive: { [weak terminalSurface] in terminalSurface?.surface })
                 terminalSurface.forceRefresh(reason: "terminalController.v2SurfaceSendKey")
             }
             phaseBOutcome = .ok

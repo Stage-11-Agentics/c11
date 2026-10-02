@@ -121,6 +121,8 @@ class KeyboardProbe(QuickProbe):
         selection = self.focused()
         self.press(TAB)
         self.screenshot('07-tab-to-turns')  # Native focus ring must be on Turns.
+        self.pause(1.0)
+        self.screenshot('07b-tab-to-turns-settled')  # Same frame one second later: ring settled on Turns.
         self.check(self.focused() == selection, 'Filter switch via Tab never opens a tab')
         self.press(TAB, shift=True)
         self.screenshot('08-shift-tab-back-to-asks')  # Ring back on Asks.

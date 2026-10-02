@@ -216,13 +216,33 @@ Numbers below are the ones this phase actually observed.
 | tests_v2 in the guest | From the laptop, `sandbox-tests-v2.sh ghostty2 tests_v2/test_cli_id_format_defaults.py` copied the suite to Atlas, relaunched c11 in the guest, and passed both of that file's assertions against the guest socket. Wall time was about 17 seconds. |
 | Single clone, default SSH path | From the laptop with `C11_SANDBOX_HOST` unset, `sandbox-up repair1` of a released `.app` returned `clone_secs=0` and `boot_secs=29` while `tart run` stayed up after that SSH session closed. `docs/images/c11-244-no-setup.png` is the guest display: Aqua, Finder, c11, System Settings restored from the golden image, no Setup Assistant. One `cliclick` on the System Settings close button closed that window. `docs/images/c11-244-click.png` is the display after, with the four terminals in front. `sandbox-down repair1` then deleted the clone. The golden image and both scanner VMs stayed stopped. |
 
+## Second guest: first boot
+
+Measured 2026-10-02 (C11-266, Atlas, 1024×768 guest). A `--allow-second` clone boots into Setup Assistant, which covers the display, so the probe preflight fails at `Exact tagged PID is frontmost` with every identity check green. Confirm with a read-only `screencapture -x -D 1` and `NSWorkspace.frontmostApplication` (it reads `Setup Assistant`) before touching anything. With the operator's go, in your own disposable guest only, clear it with single `cliclick c:X,Y` pointer clicks, one screenshot before each click (guest points are screenshot pixels / 2):
+
+1. Update Mac Automatically: Only Download Automatically
+2. Sign In to Your Apple Account: Other Sign-In Options, Sign in Later in Settings, then Skip on the confirmation. Nothing signs in.
+3. Your Mac is Ready for FileVault: Not Now, then Continue.
+4. Welcome: Get Started.
+
+About three minutes. A `cliclick` pointer click works on the FileVault sheet. After setup, Accessibility already lists `sshd-keygen-wrapper`, `osascript` and `tart-guest-agent` as on. The first scripted key can raise a one-time "sshd-keygen-wrapper would like to control this computer" sheet: choose Open System Settings, confirm the toggle is on, close Settings. No grant is needed.
+
+Other measured gotchas:
+
+- Send Escape and shortcuts with System Events `key code`, scoped to the PID. `cliclick kp:esc` is not seen by c11's key monitor.
+- A System Events walk of c11's window tree takes about 18 s and drops the popover, so it cannot read Feed rows. Use `tests_v2/feed_quick_view_keyboard_probe.py` (keys, socket state and screenshots, no tree walk).
+- The `out` share can serve a stale copy of a file you just replaced. Stage probes under a new directory name and compare the guest `md5` with the host.
+- A relaunched tagged app can open 48 px off the display; place it with System Events (`position {0, 30}`, `size {1024, 680}`) before a probe that checks window bounds.
+- Hyperion to Atlas uploads ran at about 160 KB/s that day, so a 118 MB app stalled. Build with `remote-build.sh` (source only), then run the sandbox scripts on Atlas from `~/c11-builds/<tag>/source` with `C11_SANDBOX_HOST=local`, using `bash`, so the app never crosses the link.
+- `sandbox_guest_script` and the helpers need `bash`; `zsh` fails on `BASH_SOURCE`.
+
 ## Open risks
 
 - Ghostty on Family 5 Metal worked for the v0.66.1 probe (attached surfaces, visible shell prompts). A later guest OS or a different c11 build can still fail the same way a locked host screen fails: `ghostty_surface_new` returns `error.OutOfMemory`. Treat that as a stop, not a reason to switch designs inside a run.
 - Two running guests is a hard cap. A stuck `VZError` slot after shutdown has been reported on macOS 26.5 on an M4 Max and is only cleared by rebooting the host.
 - `tart run` can fail while the host login keychain is locked.
 - Password SSH is off. The account password is in `~/.c11-sandbox/guest-password` on Atlas (mode 600), which is also what auto-login uses. The scripts use the SSH key, not the password. Do not commit that file.
-- A second concurrent clone gets a new serial and can show Setup Assistant. The FileVault sheet did not accept a synthesized click. The default single clone keeps the golden serial and does not show it.
+- A second concurrent clone gets a new serial and boots into Setup Assistant. See "Second guest: first boot" below. The default single clone keeps the golden serial and does not show it.
 - Two clones without `--random-serial` would share a machine identifier. The script only does that for the single running guest, while the golden image and the scanner VMs are stopped.
 - Second-user fallback is unverified on 26.6: localhost VNC as another user must not prompt or steal the console. Screen Sharing would be a new network service on the operator's Mac.
 - Guest macOS will drift from the host. Rebuild the golden image deliberately. Do not let a run update it.

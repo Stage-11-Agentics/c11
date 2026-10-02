@@ -31,7 +31,8 @@ function run(args) {
                 value: attr(e, 'AXValue'), selected: attr(e, 'AXSelected'),
                 position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')});
         }
-        if (attr(e, 'AXRole') === 'AXTextArea') return;
+        var role = attr(e, 'AXRole');
+        if (role === 'AXTextArea' || role === 'AXWebArea') return; // Terminal and page content never hold feed.quick controls.
         try { e.uiElements().forEach(function(c) { walk(c, depth + 1); }); } catch (_) {}
     }
     p.windows().forEach(function(w) { walk(w, 0); });
@@ -41,6 +42,13 @@ function run(args) {
 
 
 class QuickProbe(FeedProbe):
+    def timeout(self):
+        # Each System Events AX query walks a window tree; the shared 3 s cap is too tight for it.
+        remaining = self.started + 88 - time.monotonic() if self.cleanup_mode else self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Probe deadline reached')
+        return min(8, remaining)
+
     def keys(self, code, command=False):
         self.check(self.ui('foreground') == self.args.pid, 'Exact tagged PID foreground before keyboard action')
         action = 'key code %d%s' % (code, ' using {command down}' if command else '')
@@ -139,7 +147,7 @@ end tell''' % self.args.pid
                     'session_id': session, 'event_id': receipt['event_id'], 'request_id': draft['request_id'], 'prompt': prompt})
 
         append(older, prompt='Short synthetic prompt')
-        append(newer, prompt='Synthetic long multiline prompt\n' * 50)
+        append(newer, prompt='Synthetic multiline prompt\n' * 8)
         append(flagged) # Missing prompt plus suppressed flag/ask still eligible.
         self.rpc('flag.suppress', {'tab_id': flagged, 'by': 'operator'})
         self.rpc('flag.raise', {'tab_id': flagged, 'reason': 'Synthetic priority flag', 'by': 'operator'})

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded C11-294 probes. Explicit tagged app and socket peer verification."""
+"""Bounded C11-294/C11-295 probes. Explicit tagged app and socket peer verification."""
 import argparse
 import hashlib
 import json
@@ -110,12 +110,16 @@ def worker(args):
             time.sleep(.1)
     if mode == "stream":
         save(out / "ready.json", identity)
+        started_ns = shared_ns()
+        output_bytes = 0
         for i in range(180 * 20):
             # Fixed 20 Hz / ~10 KiB/s/terminal, plus one title change per second.
             frame = (f"stream {i:06d} " + "0123456789abcdef" * 30 + "\r\n").encode()
-            os.write(1, frame)
+            output_bytes += os.write(1, frame)
             if i % 20 == 0:
-                os.write(1, f"\x1b]2;C11 stream {i}\x07".encode())
+                output_bytes += os.write(1, f"\x1b]2;C11 stream {i}\x07".encode())
+                save(out / "stream-progress.json", {"frames": i + 1, "output_bytes": output_bytes,
+                     "started_ns": started_ns, "observed_ns": shared_ns(), "clock": CLOCK_NAME})
             time.sleep(.05)
         return
     previous = termios.tcgetattr(0)
@@ -265,8 +269,6 @@ def percentiles(values):
 def controller(args):
     if bool(args.ui_driver) != bool(args.ui_window):
         raise RuntimeError("--ui-driver and --ui-window must be provided together")
-    if args.ui_driver and not args.local_tagged:
-        raise RuntimeError("UI driver input is restricted to explicit --local-tagged mode")
     if args.ui_driver:
         driver = Path(args.ui_driver)
         if not driver.is_absolute() or not driver.is_file() or not os.access(driver, os.X_OK) or args.ui_window <= 0:
@@ -290,13 +292,15 @@ def controller(args):
               "socket": args.socket, "pid": rpc.pid, "run_token": run_token,
               "target_mode": "local-tagged" if args.local_tagged else "sandbox",
               "comparison_only": args.comparison_only,
-              "measurement_version": "shared-raw-return-post-focus-ready-v2",
+              "measurement_version": "shared-raw-return-post-focus-ready-v3",
               "metric_definitions": {
                   "pty_ms": "full input invocation start to child PTY receipt; includes driver startup/validation/text/Return overhead",
                   "read_screen_ms": "full input invocation start to read-screen observation; includes driver and polling overhead",
                   "key_to_pty_ms": "Return driver's first CGEvent post timestamp to child PTY receipt (UI mode only)",
                   "key_to_read_screen_ms": "Return driver's first CGEvent post timestamp to read-screen observation (UI mode only; includes polling)",
                   "invocation_to_key_post_ms": "input invocation start to Return post; driver startup/validation/text overhead (UI mode only)",
+                  "switch_ack_ms": "workspace.select invocation to socket reply; synthetic command, not UI event or visible frame latency",
+                  "switch_observed_ms": "workspace.select invocation to matching workspace.current socket observation; not visible frame latency",
               },
               "input_mode": "appkit-quartz-pid-scoped" if driver else "socket-synthetic",
               "ui_driver": {"path": str(driver), "sha256": digest(driver), "window": args.ui_window,
@@ -305,10 +309,13 @@ def controller(args):
               "guest_hardware": subprocess.run(["/usr/sbin/sysctl", "-n", "hw.ncpu", "hw.memsize"], capture_output=True, text=True, timeout=2).stdout.strip(),
               "clock_verification": clock_evidence,
               "workload": {"streams": args.streams, "hz_per_stream": 20, "samples": args.samples,
+                           "sample_pause_seconds": args.sample_pause, "min_sample_seconds": args.min_sample_seconds,
+                           "measure_switches": args.measure_switches,
                            "launch": "workspace-initial-command", "workspaces_per_stream": 1},
               "limits": {"rpc_seconds": 4, "probe_seconds": 2, "ui_readiness_seconds": 2,
                          "shutdown_close_ms": 500, "shutdown_seconds": 18},
               "not_proven": ["physical hardware keyboard latency", "app tick durations/message counts",
+                             "visible workspace switch latency", "actual autosave count or unchanged geometry mutation count",
                              "GPU current frame or cursor visibility", "computer-use hide/show",
                              "B072 backend WouldBlock attribution", "completion-order injection",
                              "reaped-leader/stale-PGID/pre-setsid shutdown cases"]}
@@ -335,6 +342,20 @@ def controller(args):
         return pair, directory, identity
     def read(pair):
         return call("tab.read_text", params(pair)).get("text", "")
+    def switch(workspace_id):
+        began = shared_ns()
+        call("workspace.select", {"workspace_id": workspace_id})
+        ack = shared_ns()
+        observed = call("workspace.current")
+        record = {"workspace_id": workspace_id, "observed_workspace_id": observed.get("workspace_id"),
+                  "switch_ack_ms": (ack - began) / 1e6,
+                  "switch_observed_ms": (shared_ns() - began) / 1e6}
+        result["switches"]["samples"].append(record)
+        if observed.get("workspace_id") != workspace_id:
+            raise RuntimeError("workspace switch socket oracle mismatch: " + repr(record))
+    def stream_progress():
+        return [{"pid": identity["pid"], **wait_file(directory / "stream-progress.json", 3)}
+                for directory, identity in workers if identity["mode"] == "stream"]
     def ui_event(action, value):
         invoked = [str(driver), action, str(rpc.pid), args.tag, str(args.ui_window), value]
         completed = subprocess.run(invoked, capture_output=True, text=True, timeout=10)
@@ -448,6 +469,8 @@ def controller(args):
         call("tab.focus", params(probe_pair))
         samples = []
         start = time.monotonic()
+        result["stream_output_start"] = stream_progress()
+        result["switches"] = {"input_mode": "socket-synthetic", "samples": [], "complete": False}
         result["responsiveness"] = {"clock": CLOCK_NAME, "samples": samples, "complete": False}
         save(out / "result.json", result)
         for i in range(args.samples):
@@ -459,19 +482,49 @@ def controller(args):
             if i % 10 == 0:
                 # Churn only our disposable workspaces; no operator topology.
                 churn, _ = workspace()
+                close_start = shared_ns()
                 call("workspace.close", {"workspace_id": churn})
+                close_ms = (shared_ns() - close_start) / 1e6
+                result.setdefault("churn_close_ms", []).append(close_ms)
                 workspaces.remove(churn)
-                call("workspace.select", {"workspace_id": probe_pair[0]})
+                if args.measure_switches:
+                    if close_ms > 500:
+                        raise RuntimeError("churn close exceeded 500 ms ACK ceiling")
+                    switch(stream_ws)
+                    switch(probe_pair[0])
+                else:
+                    call("workspace.select", {"workspace_id": probe_pair[0]})
                 call("tab.focus", params(probe_pair))
-            time.sleep(.05)
+            # A minimum interval after every probe keeps all streaming workers
+            # active across at least the requested autosave observation window.
+            time.sleep(max(args.sample_pause, args.min_sample_seconds / max(1, args.samples - 1)))
         result["responsiveness"] = {"clock": CLOCK_NAME, "complete": True, "sample_seconds": time.monotonic() - start, "samples": samples,
             "missed": sum(bool(s.get("missed")) for s in samples),
             **{metric: percentiles([s[metric] for s in samples if metric in s]) for metric in METRIC_FIELDS}}
         result["stream_workers"] = stream_identities
+        result["responsiveness"]["input_span_seconds"] = (
+            samples[-1]["timing_ns"]["read_screen_observed"] - samples[0]["timing_ns"]["invocation_start"]
+        ) / 1e9
+        if result["responsiveness"]["input_span_seconds"] < args.min_sample_seconds:
+            raise RuntimeError("input observation span shorter than requested minimum")
+        result["stream_output_end"] = stream_progress()
+        initial_output = {item["pid"]: item for item in result["stream_output_start"]}
+        result["stream_output"] = []
+        for item in result["stream_output_end"]:
+            initial = initial_output[item["pid"]]
+            seconds = (item["observed_ns"] - initial["observed_ns"]) / 1e9
+            frames = item["frames"] - initial["frames"]
+            output_bytes = item["output_bytes"] - initial["output_bytes"]
+            result["stream_output"].append({"pid": item["pid"], "progress_interval_seconds": seconds,
+                "frames": frames, "output_bytes": output_bytes,
+                "frames_per_second": frames / seconds if seconds > 0 else None,
+                "bytes_per_second": output_bytes / seconds if seconds > 0 else None,
+                "note": "PTY producer writes, sampled about once per second; not renderer throughput"})
+        result["switches"]["complete"] = True
         if any(ps(item["pid"], "lstart") != item["started"] for item in stream_identities):
             raise RuntimeError("a streaming worker exited during probing")
         if args.comparison_only:
-            result["skipped"] = ["focus transitions", "paste", "shutdown cases"]
+            result["skipped"] = ["additional focus transitions", "paste", "shutdown cases"]
             if result["responsiveness"]["missed"]:
                 raise RuntimeError("responsiveness probes missed")
             result["status"] = "PASS_FOR_REPORTED_SCENARIOS"
@@ -572,7 +625,9 @@ def controller(args):
                     raise RuntimeError("detached keep sentinel was killed")
             record["stream_workers_alive"] = all(ps(item["pid"], "lstart") == item["started"] for item in stream_identities)
             if not record["stream_workers_alive"]:
-                raise RuntimeError("streaming workload exited during shutdown case: " + mode)
+                result.setdefault("workload_limitations", []).append(
+                    "Streaming workload no longer complete at shutdown case " + mode
+                    + "; worker lifetime is independently capped at 180 seconds. This case does not prove close under full streaming load.")
             record["complete"] = True
             save(out / "result.json", result)
         if result["responsiveness"]["missed"]:
@@ -589,6 +644,9 @@ def controller(args):
             summary["missed"] = sum(bool(item.get("missed")) for item in collected)
             for metric in METRIC_FIELDS:
                 summary[metric] = percentiles([item[metric] for item in collected if metric in item])
+        if "switches" in result:
+            for metric in ("switch_ack_ms", "switch_observed_ms"):
+                result["switches"][metric] = percentiles([item[metric] for item in result["switches"]["samples"]])
         # Persist partial samples/error before any cleanup that might time out.
         save(out / "result.json", result)
         cleanup = []
@@ -642,6 +700,9 @@ def main():
     run.add_argument("--ui-window", type=int)
     run.add_argument("--streams", type=int, default=30)
     run.add_argument("--samples", type=int, default=100)
+    run.add_argument("--sample-pause", type=float, default=.05)
+    run.add_argument("--min-sample-seconds", type=float, default=0)
+    run.add_argument("--measure-switches", action="store_true")
     run.add_argument("--label", required=True, choices=["baseline", "candidate"])
     compare = modes.add_parser("compare")
     compare.add_argument("baseline")
@@ -658,6 +719,10 @@ def main():
         comparison = {"baseline_status": baseline["status"], "candidate_status": candidate["status"],
                       "threshold_verdict": "orchestrator-owned", "baseline": baseline.get("responsiveness"),
                       "candidate": candidate.get("responsiveness")}
+        comparison["switches"] = {"baseline": baseline.get("switches"), "candidate": candidate.get("switches")}
+        comparison["stream_output"] = {"baseline": baseline.get("stream_output"), "candidate": candidate.get("stream_output")}
+        comparison["workload_limitations"] = {"baseline": baseline.get("workload_limitations", []),
+                                             "candidate": candidate.get("workload_limitations", [])}
         print(json.dumps(comparison, indent=2))
     elif args.operation == "worker":
         try:
@@ -671,8 +736,14 @@ def main():
     else:
         if not re.fullmatch(r"[0-9a-f]{40}", args.engine_sha):
             parser.error("engine-sha must be full40hex")
-        if not 1 <= args.streams <= 30 or not 1 <= args.samples <= 100:
-            parser.error("streams must be 1..30 and samples 1..100")
+        if not 1 <= args.streams <= 40 or not 1 <= args.samples <= 200:
+            parser.error("streams must be 1..40 and samples 1..200")
+        if not 0 <= args.sample_pause <= 1 or not 0 <= args.min_sample_seconds <= 60:
+            parser.error("sample-pause must be 0..1 and min-sample-seconds 0..60")
+        if args.samples * args.sample_pause > 60:
+            parser.error("sample pause budget must not exceed 60 seconds")
+        if args.min_sample_seconds and args.samples < 2:
+            parser.error("a minimum input span requires at least two samples")
         controller(args)
 
 

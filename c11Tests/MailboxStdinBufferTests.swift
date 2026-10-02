@@ -480,13 +480,19 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// Claude's Notification and AskUserQuestion hooks report idle with
     /// `--source=notification`: that drives the sidebar but is never a turn
     /// edge for the mailbox gate.
-    func testNotificationSourcedReportIsNotATurnEdge() {
-        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "notification"]), .inferred)
-        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource([:]), .reported)
-        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["tab": "x", "panel": "y"]), .reported)
-        // `claude -p` (the wrapper's C11_CLAUDE_HEADLESS marker): an agent,
-        // never at a prompt.
+    /// Only a report carrying the interactive agent PID is a turn edge.
+    /// Claude's Notification/AskUserQuestion idle is `--source=notification`;
+    /// anything without the PID (`claude -p`, `--bg`, a piped run, an unknown
+    /// caller) is headless: fail closed.
+    func testReportSourceMappingFailsClosed() {
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "notification", "pid": "4242"]), .inferred)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["pid": "4242"]), .reported)
+        XCTAssertEqual(TerminalController.reportedAgentPID(["pid": "4242"]), 4242)
         XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["source": "headless"]), .headless)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource([:]), .headless)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["tab": "x", "panel": "y"]), .headless)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["pid": "1"]), .headless)
+        XCTAssertEqual(TerminalController.reportedAgentLifecycleSource(["pid": "abc"]), .headless)
     }
 
     // MARK: - review r2: re-check after the claim hop
@@ -577,5 +583,87 @@ final class MailboxStdinBufferTests: XCTestCase {
         let flush = buffer.drainForFlush(surfaceId: tab, now: t(1), trigger: .shellPrompt)
         XCTAssertTrue(flush.fresh.isEmpty)
         XCTAssertEqual(flush.expired.map(\.id), ["m"])
+    }
+
+    // MARK: - review r3: the agent must own the terminal
+
+    private func procInfo(pgid: pid_t, fg: pid_t, tty: dev_t = 0x1000007, zombie: Bool = false)
+        -> MailboxAgentForeground.ProcessTerminalInfo {
+        .init(processGroup: pgid, terminalForegroundGroup: fg, terminalDevice: tty, isZombie: zombie)
+    }
+
+    /// The kernel decides who reads the terminal: only the agent's own
+    /// foreground process group, on the tab's tty, qualifies.
+    func testAgentOwnsTerminalOnlyAsForegroundGroupOnTabTTY() {
+        let tty: dev_t = 0x1000007
+        XCTAssertTrue(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500), tabTerminalDevice: tty))
+        // vim, the shell, or a pipeline holds the foreground (`--bg`, Ctrl-Z, exit).
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 777), tabTerminalDevice: tty))
+        // Another tab's terminal.
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, tty: 0x1000008), tabTerminalDevice: tty))
+        // No controlling terminal, a zombie, or no process: fail closed.
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, tty: -1), tabTerminalDevice: nil))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500, zombie: true), tabTerminalDevice: tty))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(nil, tabTerminalDevice: tty))
+        XCTAssertFalse(MailboxAgentForeground.agentOwnsTerminal(pid: nil, tabTTYName: nil))
+        // tty unknown to c11: the agent must still be its own terminal's foreground.
+        XCTAssertTrue(MailboxAgentForeground.agentOwnsTerminal(procInfo(pgid: 500, fg: 500), tabTerminalDevice: nil))
+    }
+
+    /// The live read returns this process's real process group.
+    func testProcessTerminalInfoReadsLiveProcess() throws {
+        let info = try XCTUnwrap(MailboxAgentForeground.processTerminalInfo(pid: getpid()))
+        XCTAssertEqual(info.processGroup, getpgrp())
+        XCTAssertFalse(info.isZombie)
+        XCTAssertNil(MailboxAgentForeground.processTerminalInfo(pid: 0))
+    }
+
+    func testAgentPushDropsWhenAgentDoesNotOwnTerminal() {
+        let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
+        XCTAssertEqual(
+            MailboxStdinBuffer.pushVerdict(
+                admittedAs: .agentPrompt, admittedTurn: atPrompt, shell: .commandRunning, turn: atPrompt,
+                lastSubmitAt: nil, lastOperatorKeyAt: nil, lastPushAt: nil,
+                surfaceAttached: true, agentOwnsTerminal: false
+            ),
+            .drop
+        )
+        // A shell push does not depend on an agent process.
+        XCTAssertEqual(
+            MailboxStdinBuffer.pushVerdict(
+                admittedAs: .shellPrompt, admittedTurn: nil, shell: .promptIdle, turn: nil,
+                lastSubmitAt: nil, lastOperatorKeyAt: nil, lastPushAt: nil,
+                surfaceAttached: true, agentOwnsTerminal: false
+            ),
+            .paste
+        )
+    }
+
+    /// Before the Return: a key typed after the paste is a draft (requeue);
+    /// an agent that lost the terminal drops.
+    func testPreReturnVerdictDraftRequeuesAndLostTerminalDrops() {
+        let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
+        func v(keyAt: Date?, owns: Bool) -> MailboxStdinBuffer.PushVerdict {
+            MailboxStdinBuffer.pushVerdict(
+                admittedAs: .agentPrompt, admittedTurn: atPrompt, shell: .commandRunning, turn: atPrompt,
+                lastSubmitAt: t(-1), lastOperatorKeyAt: keyAt, lastPushAt: nil,
+                surfaceAttached: true, agentOwnsTerminal: owns
+            )
+        }
+        XCTAssertEqual(v(keyAt: nil, owns: true), .paste)
+        XCTAssertEqual(v(keyAt: t(0.1), owns: true), .requeue)
+        XCTAssertEqual(v(keyAt: nil, owns: false), .drop)
+    }
+
+    func testAgentProcessBookkeeping() {
+        var buffer = MailboxStdinBuffer()
+        let tab = UUID()
+        buffer.noteAgentProcess(surfaceId: tab, pid: 4242)
+        XCTAssertEqual(buffer.agentPid(surfaceId: tab), 4242)
+        buffer.forgetAgent(surfaceId: tab)
+        XCTAssertNil(buffer.agentPid(surfaceId: tab))
+        buffer.noteAgentProcess(surfaceId: tab, pid: 4243)
+        buffer.removeSurface(tab)
+        XCTAssertNil(buffer.agentPid(surfaceId: tab))
     }
 }

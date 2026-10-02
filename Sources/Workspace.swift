@@ -5864,7 +5864,8 @@ final class Workspace: Identifiable, ObservableObject {
                       shell: shell,
                       isAgentKind: true,
                       lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
-                  ) == .injectNow else { return }
+                  ) == .injectNow,
+                  mailboxAgentOwnsTerminal(surfaceId: surfaceId) else { return }
         }
         guard let dispatcher = mailboxDispatcher else { return }
 
@@ -5938,13 +5939,11 @@ final class Workspace: Identifiable, ObservableObject {
         // Re-check on main for the same recipient kind the push was admitted
         // as: the agent can exit, start a turn, or the operator can start a
         // draft while the claims run.
-        let verdict = mailboxStdinBuffer.pushVerdict(
+        let verdict = mailboxPushVerdict(
             surfaceId: surfaceId,
-            admittedAs: trigger,
-            admittedTurn: admittedTurn,
-            shell: tabShellActivityStates[surfaceId] ?? .unknown,
-            lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt,
-            surfaceAttached: terminalTab.surface.surface != nil
+            terminalTab: terminalTab,
+            trigger: trigger,
+            admittedTurn: admittedTurn
         )
         switch verdict {
         case .drop:
@@ -5974,14 +5973,23 @@ final class Workspace: Identifiable, ObservableObject {
         let pastedAt = Date()
         // The same paste + delayed Return `c11 send` uses; safe for a
         // background tab with no window. Reports whether the Return went out.
-        // Re-checked once more just before the Return: an agent that exits
-        // inside the paste-settle window must not have the paste submitted to
-        // its shell. A bracketed paste alone never executes there.
-        let stillTheRecipient: () -> Bool = { [weak self] in
-            guard let self else { return false }
-            guard trigger == .agentPrompt else { return true }
-            return (self.tabShellActivityStates[surfaceId] ?? .unknown) != .promptIdle
-                && self.mailboxStdinBuffer.agentTurn(surfaceId: surfaceId) != nil
+        // The full verdict runs again just before the Return: the agent may
+        // have exited, lost the terminal, started a turn, or the operator may
+        // have typed inside the paste-settle window. A bracketed paste alone
+        // never executes, so withholding the Return keeps it inert.
+        var preReturnVerdict: MailboxStdinBuffer.PushVerdict = .paste
+        let stillTheRecipient: () -> Bool = { [weak self, weak terminalTab] in
+            guard let self, let terminalTab else {
+                preReturnVerdict = .drop
+                return false
+            }
+            preReturnVerdict = self.mailboxPushVerdict(
+                surfaceId: surfaceId,
+                terminalTab: terminalTab,
+                trigger: trigger,
+                admittedTurn: admittedTurn
+            )
+            return preReturnVerdict == .paste
         }
         terminalTab.surface.sendSubmitFormText(
             MailboxStdinBuffer.joinedBlock(claimed),
@@ -6007,18 +6015,27 @@ final class Workspace: Identifiable, ObservableObject {
                 }
             } else {
                 // No submit reached the agent: the mail is not delivered.
-                // `expired` when the agent exited before the Return, `closed`
-                // when the tab or surface went away.
                 Self.undoMailboxClaims(claimed, inbox: inbox)
-                let agentExited = trigger == .agentPrompt
-                    && (self?.panels[surfaceId] as? TerminalTab) != nil
-                    && !stillTheRecipient()
-                for entry in claimed {
-                    dispatcher.logStdinLifecycle(
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        outcome: agentExited ? .expired : .closed
-                    )
+                let tabStillThere = (self?.panels[surfaceId] as? TerminalTab) != nil
+                if tabStillThere, preReturnVerdict == .requeue, let self {
+                    // Same agent, gate closed (a draft, a new turn): wait for
+                    // the next edge. Receivers dedupe by id if the operator
+                    // submits the pasted text themselves.
+                    let evicted = self.mailboxStdinBuffer.requeueFront(surfaceId: surfaceId, entries: claimed)
+                    for entry in claimed where !evicted.contains(entry) {
+                        dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .buffered)
+                    }
+                    for entry in evicted {
+                        dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .evicted)
+                    }
+                } else {
+                    // `expired` when the agent is gone or no longer owns the
+                    // terminal, `closed` when the tab or surface went away.
+                    let outcome: MailboxDispatchLog.HandlerOutcome =
+                        tabStillThere && preReturnVerdict == .drop ? .expired : .closed
+                    for entry in claimed {
+                        dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: outcome)
+                    }
                 }
             }
             guard let self else { return }
@@ -6037,6 +6054,34 @@ final class Workspace: Identifiable, ObservableObject {
         let shell = tabShellActivityStates[surfaceId] ?? .unknown
         let trigger: MailboxStdinBuffer.FlushTrigger = shell == .promptIdle ? .shellPrompt : .agentPrompt
         startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
+    }
+
+    /// The kernel's answer to "is this tab's interactive agent the process
+    /// reading its terminal right now?" (`MailboxAgentForeground`).
+    private func mailboxAgentOwnsTerminal(surfaceId: UUID) -> Bool {
+        MailboxAgentForeground.agentOwnsTerminal(
+            pid: mailboxStdinBuffer.agentPid(surfaceId: surfaceId),
+            tabTTYName: tabTTYNames[surfaceId]
+        )
+    }
+
+    /// The push re-check, against live state, for the recipient kind the
+    /// push was admitted as. Used after the claim hop and before the Return.
+    private func mailboxPushVerdict(
+        surfaceId: UUID,
+        terminalTab: TerminalTab,
+        trigger: MailboxStdinBuffer.FlushTrigger,
+        admittedTurn: MailboxStdinBuffer.AgentTurn?
+    ) -> MailboxStdinBuffer.PushVerdict {
+        mailboxStdinBuffer.pushVerdict(
+            surfaceId: surfaceId,
+            admittedAs: trigger,
+            admittedTurn: admittedTurn,
+            shell: tabShellActivityStates[surfaceId] ?? .unknown,
+            lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt,
+            surfaceAttached: terminalTab.surface.surface != nil,
+            agentOwnsTerminal: trigger == .agentPrompt ? mailboxAgentOwnsTerminal(surfaceId: surfaceId) : true
+        )
     }
 
     private static func undoMailboxClaims(_ entries: [MailboxStdinBuffer.Entry], inbox: URL) {
@@ -6058,11 +6103,15 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceId: UUID,
         source: AgentLifecycleSource,
         activity: SidebarActivityState,
-        at eventAt: Date = Date()
+        at eventAt: Date = Date(),
+        agentPid: pid_t? = nil
     ) {
         guard panels[surfaceId] != nil else { return }
         switch source {
         case .reported:
+            if let agentPid {
+                mailboxStdinBuffer.noteAgentProcess(surfaceId: surfaceId, pid: agentPid)
+            }
             mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: activity == .idle, at: eventAt)
             if activity == .idle {
                 flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
@@ -6070,6 +6119,7 @@ final class Workspace: Identifiable, ObservableObject {
         case .submit:
             mailboxStdinBuffer.noteSubmit(surfaceId: surfaceId, at: eventAt)
         case .headless:
+            mailboxStdinBuffer.noteAgentProcess(surfaceId: surfaceId, pid: nil)
             mailboxStdinBuffer.noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
         case .inferred:
             return

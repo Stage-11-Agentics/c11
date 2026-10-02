@@ -99,6 +99,10 @@ struct MailboxStdinBuffer {
     /// Tabs with a push between its claim and its submit Return. Nothing else
     /// is typed into them until it finishes.
     private var pushesInFlight: Set<UUID> = []
+    /// The interactive agent process each tab's turn edges came from
+    /// (`C11_AGENT_INTERACTIVE_PID`). A push types only while this process's
+    /// group owns the tab's terminal.
+    private var agentPids: [UUID: pid_t] = [:]
 
     /// Inject-now vs buffer for a plain shell, purely from its activity state.
     static func decide(state: Workspace.TabShellActivityState) -> Decision {
@@ -177,11 +181,16 @@ struct MailboxStdinBuffer {
         lastSubmitAt: Date?,
         lastOperatorKeyAt: Date?,
         lastPushAt: Date?,
-        surfaceAttached: Bool
+        surfaceAttached: Bool,
+        agentOwnsTerminal: Bool = true
     ) -> PushVerdict {
         switch trigger {
         case .agentPrompt:
-            guard shell != .promptIdle, let turn else { return .drop }
+            // Fail closed: if the agent's process group is not the terminal's
+            // foreground reader (it exited, went to the background, or
+            // another program such as `vim` or the shell is reading), the
+            // mail goes back to the inbox instead of into that reader.
+            guard shell != .promptIdle, let turn, agentOwnsTerminal else { return .drop }
             guard turn == admittedTurn,
                   decideAgent(
                       turn: turn,
@@ -202,7 +211,8 @@ struct MailboxStdinBuffer {
         admittedTurn: AgentTurn?,
         shell: Workspace.TabShellActivityState,
         lastOperatorKeyAt: Date?,
-        surfaceAttached: Bool
+        surfaceAttached: Bool,
+        agentOwnsTerminal: Bool = true
     ) -> PushVerdict {
         Self.pushVerdict(
             admittedAs: trigger,
@@ -212,7 +222,8 @@ struct MailboxStdinBuffer {
             lastSubmitAt: lastSubmitAt[surfaceId],
             lastOperatorKeyAt: lastOperatorKeyAt,
             lastPushAt: lastPushAt[surfaceId],
-            surfaceAttached: surfaceAttached
+            surfaceAttached: surfaceAttached,
+            agentOwnsTerminal: agentOwnsTerminal
         )
     }
 
@@ -282,6 +293,17 @@ struct MailboxStdinBuffer {
     mutating func forgetAgent(surfaceId: UUID) {
         turns.removeValue(forKey: surfaceId)
         lastPushAt.removeValue(forKey: surfaceId)
+        agentPids.removeValue(forKey: surfaceId)
+    }
+
+    /// Record (or clear, with `nil`) the interactive agent process behind
+    /// the tab's turn edges.
+    mutating func noteAgentProcess(surfaceId: UUID, pid: pid_t?) {
+        agentPids[surfaceId] = pid
+    }
+
+    func agentPid(surfaceId: UUID) -> pid_t? {
+        agentPids[surfaceId]
     }
 
     func agentTurn(surfaceId: UUID) -> AgentTurn? {
@@ -347,6 +369,7 @@ struct MailboxStdinBuffer {
         lastSubmitAt.removeValue(forKey: surfaceId)
         lastPushAt.removeValue(forKey: surfaceId)
         pushesInFlight.remove(surfaceId)
+        agentPids.removeValue(forKey: surfaceId)
         return queues.removeValue(forKey: surfaceId) ?? []
     }
 
@@ -357,6 +380,7 @@ struct MailboxStdinBuffer {
         turns = turns.filter { surfaceIds.contains($0.key) }
         lastSubmitAt = lastSubmitAt.filter { surfaceIds.contains($0.key) }
         lastPushAt = lastPushAt.filter { surfaceIds.contains($0.key) }
+        agentPids = agentPids.filter { surfaceIds.contains($0.key) }
     }
 
     func pendingCount(surfaceId: UUID) -> Int {
@@ -365,5 +389,60 @@ struct MailboxStdinBuffer {
 
     var isEmpty: Bool {
         queues.values.allSatisfy { $0.isEmpty }
+    }
+}
+
+/// Who the kernel says is reading a terminal. The mailbox push types into an
+/// agent tab only while the agent's own process group is the foreground
+/// process group of the agent's controlling terminal, and that terminal is
+/// the tab's. One `sysctl(KERN_PROC_PID)` per check; no file I/O.
+enum MailboxAgentForeground {
+
+    /// The fields of `kinfo_proc` the check needs.
+    struct ProcessTerminalInfo: Equatable {
+        /// The process's own process group.
+        let processGroup: pid_t
+        /// The foreground process group of its controlling terminal.
+        let terminalForegroundGroup: pid_t
+        /// Its controlling terminal (`NODEV` when it has none).
+        let terminalDevice: dev_t
+        let isZombie: Bool
+    }
+
+    /// Pure decision. `tabTerminalDevice` is the tab's tty device when c11
+    /// knows it; any mismatch, missing process, zombie, missing terminal or
+    /// non-foreground group fails closed.
+    static func agentOwnsTerminal(
+        _ info: ProcessTerminalInfo?,
+        tabTerminalDevice: dev_t?
+    ) -> Bool {
+        guard let info, !info.isZombie,
+              info.terminalDevice != -1,  // NODEV: no controlling terminal
+              info.processGroup > 0,
+              info.terminalForegroundGroup == info.processGroup else { return false }
+        if let tabTerminalDevice, tabTerminalDevice != info.terminalDevice { return false }
+        return true
+    }
+
+    /// Live read for `pid`, or nil when the process does not exist.
+    static func processTerminalInfo(pid: pid_t) -> ProcessTerminalInfo? {
+        guard pid > 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return ProcessTerminalInfo(
+            processGroup: info.kp_eproc.e_pgid,
+            terminalForegroundGroup: info.kp_eproc.e_tpgid,
+            terminalDevice: info.kp_eproc.e_tdev,
+            isZombie: Int32(info.kp_proc.p_stat) == SZOMB
+        )
+    }
+
+    /// Live check for an agent process against the tab's tty name.
+    static func agentOwnsTerminal(pid: pid_t?, tabTTYName: String?) -> Bool {
+        guard let pid else { return false }
+        let tabDevice = tabTTYName.flatMap { TerminalPIDResolver.ttyDevice(for: $0) }
+        return agentOwnsTerminal(processTerminalInfo(pid: pid), tabTerminalDevice: tabDevice)
     }
 }

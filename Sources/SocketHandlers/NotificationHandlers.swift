@@ -124,12 +124,14 @@ extension TerminalController {
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
             // so a Return typed just before it is applied first.
-            if params[LegacyCodexNotifyGuard.payloadKey] != nil {
+            if params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,
-                    source: .reported
+                    source: .reported,
+                    agentPid: agentPid
                 )
             }
             TerminalNotificationStore.shared.addNotification(
@@ -177,12 +179,14 @@ extension TerminalController {
             // this is an explicit prompt edge for the mailbox stdin gate. It
             // goes through the deriver queue like every other lifecycle edge,
             // so a Return typed just before it is applied first.
-            if params[LegacyCodexNotifyGuard.payloadKey] != nil {
+            if params[LegacyCodexNotifyGuard.payloadKey] != nil,
+               let agentPid = (params["agent_pid"] as? Int).flatMap({ pid_t(exactly: $0) }), agentPid > 1 {
                 TabLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: surfaceId,
                     workspaceId: ws.id,
                     activity: .idle,
-                    source: .reported
+                    source: .reported,
+                    agentPid: agentPid
                 )
             }
             TerminalNotificationStore.shared.addNotification(

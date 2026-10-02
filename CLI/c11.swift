@@ -3055,6 +3055,12 @@ struct CMUXCLI {
             var params: [String: Any] = ["title": title, "subtitle": subtitle, "body": body]
             if let payload = nonEmptyEnv("C11_CODEX_NOTIFY_PAYLOAD_B64") {
                 params["legacy_codex_notify_payload_b64"] = payload
+                // The interactive Codex's own PID (inherited from its c11
+                // wrapper): the turn-complete edge opens the mailbox gate
+                // only for that process.
+                if let raw = nonEmptyEnv("C11_AGENT_INTERACTIVE_PID"), let pid = Int32(raw), pid > 1 {
+                    params["agent_pid"] = Int(pid)
+                }
             }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -16632,7 +16638,7 @@ struct CMUXCLI {
             throw CLIError(message: "\(commandName) requires a c11 tab id")
         }
         let response = try sendV1Command(
-            "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)\(Self.agentLifecycleReportOptions())",
             client: client
         )
         print(response)
@@ -17105,6 +17111,22 @@ struct CMUXCLI {
         _ = try client.send(command: cmd)
     }
 
+    /// The agent-identity part of a lifecycle report. An interactive agent
+    /// launch exports `C11_AGENT_INTERACTIVE_PID` from its c11 wrapper (its
+    /// own PID, inherited by its hooks and plugins); the report carries it so
+    /// c11 can check that process still owns the terminal before a mailbox
+    /// push. Without it the report is `--source=headless`: an agent that is
+    /// never at a prompt (`claude -p`, `--bg`, a piped run, an old wrapper).
+    static func agentLifecycleReportOptions(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String {
+        if let raw = environment["C11_AGENT_INTERACTIVE_PID"],
+           let pid = Int32(raw.trimmingCharacters(in: .whitespaces)), pid > 1 {
+            return " --pid=\(pid)"
+        }
+        return " --source=headless"
+    }
+
     /// `fromNotification: true` marks an idle that only means "the agent is
     /// waiting on the operator" (a Notification or AskUserQuestion hook):
     /// the sidebar shows it as idle, but the mailbox push must not treat it as
@@ -17116,13 +17138,12 @@ struct CMUXCLI {
         activity: String,
         fromNotification: Bool = false
     ) throws {
-        // A print-mode claude (the wrapper exports C11_CLAUDE_HEADLESS) never
-        // reads its terminal: its reports mark the tab as an agent but never
-        // as resting at a prompt.
-        let headless = ProcessInfo.processInfo.environment["C11_CLAUDE_HEADLESS"] == "1"
-        let source = headless ? " --source=headless" : (fromNotification ? " --source=notification" : "")
+        var options = Self.agentLifecycleReportOptions()
+        if fromNotification, options.hasPrefix(" --pid=") {
+            options += " --source=notification"
+        }
         _ = try sendV1Command(
-            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)\(source)",
+            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)\(options)",
             client: client
         )
     }

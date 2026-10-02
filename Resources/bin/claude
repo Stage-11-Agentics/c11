@@ -44,6 +44,11 @@
 # writeup.
 # ============================================================================
 
+# C11_AGENT_INTERACTIVE_PID is the positive interactive-agent marker (set
+# below only for a launch that reads its terminal). Clear any inherited value
+# first so no early exec passes a parent's marker on.
+unset C11_AGENT_INTERACTIVE_PID
+
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {
     local self_dir
@@ -151,17 +156,21 @@ done
 # the actual claude process PID, which hooks use for stale-session detection.
 export CMUX_CLAUDE_PID=$$
 
-# A print-mode run (`-p` / `--print`) never reads its terminal, so its
-# SessionStart and Stop hooks must not tell c11 it rests at a prompt: mail
-# pasted there would sit in the PTY and run in the shell after it exits.
-# Hooks inherit this marker; set or clear it on every launch so a nested
-# interactive claude never inherits a parent's.
-unset C11_CLAUDE_HEADLESS
+# Mark this launch as an interactive agent only when it reads and writes its
+# terminal: not print mode (`-p`, `--print`) and not a background session
+# (`--bg`, `--background`). c11 pushes mailbox messages only to a tab whose
+# lifecycle reports carry this PID (exec keeps it, and hooks inherit it), and
+# only while that PID's process group owns the terminal.
+claude_interactive=1
+[[ -t 0 && -t 1 ]] || claude_interactive=0
 for arg in "$@"; do
     case "$arg" in
-        -p|--print) export C11_CLAUDE_HEADLESS=1; break ;;
+        -p|--print|--print=*|--bg|--background) claude_interactive=0; break ;;
     esac
 done
+if [[ "$claude_interactive" == "1" ]]; then
+    export C11_AGENT_INTERACTIVE_PID=$$
+fi
 
 # Declare agent identity via `c11 set-agent` (source=declare). Runs in the
 # background so startup latency is unaffected. Precedence at the store level

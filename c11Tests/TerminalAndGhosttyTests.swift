@@ -3111,4 +3111,60 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         surface.sendSubmitFormText("\n\n") { reported.append($0) }
         XCTAssertEqual(reported, [false])
     }
+
+    /// An attached surface whose recipient re-check says no at Return time:
+    /// the paste is not submitted and the completion reports `false`, so the
+    /// push undoes its claim. The check runs after the paste-settle delay.
+    func testAttachedSurfaceWithholdsReturnWhenRecheckFails() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        guard let contentView = window.contentView else {
+            return XCTFail("Expected content view")
+        }
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = surface.hostedView
+        hostedView.frame = contentView.bounds
+        contentView.addSubview(hostedView)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        hostedView.reconcileGeometryNow()
+        guard surface.surface != nil else {
+            throw XCTSkip("terminal surface did not attach in this host")
+        }
+
+        var checks = 0
+        var reported: [Bool] = []
+        let done = expectation(description: "completion")
+        surface.sendSubmitFormText(
+            "<c11-msg>hi</c11-msg>",
+            shouldSubmit: { checks += 1; return false }
+        ) { dispatched in
+            reported.append(dispatched)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        XCTAssertEqual(checks, 1, "the re-check runs once, just before the Return")
+        XCTAssertEqual(reported, [false])
+
+        var passReported: [Bool] = []
+        let passed = expectation(description: "completion when the re-check passes")
+        surface.sendSubmitFormText("<c11-msg>ok</c11-msg>", shouldSubmit: { true }) { dispatched in
+            passReported.append(dispatched)
+            passed.fulfill()
+        }
+        wait(for: [passed], timeout: 2)
+        XCTAssertEqual(passReported, [true])
+    }
 }

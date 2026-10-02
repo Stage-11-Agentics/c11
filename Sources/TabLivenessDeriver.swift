@@ -45,7 +45,8 @@ enum AgentLifecycleSource: Equatable {
     case submit
     /// Inferred from a notification or other indirect evidence.
     case inferred
-    /// A report from an agent that never reads its terminal (`claude -p`):
+    /// A report from an agent that never reads its terminal (`claude -p`,
+    /// `--bg`, a piped run, or any report without the interactive marker):
     /// the tab is an agent, but never one resting at a prompt.
     case headless
 }
@@ -173,7 +174,8 @@ enum TabLivenessDeriver {
         workspaceId: UUID,
         activity: SidebarActivityState,
         source: AgentLifecycleSource = .inferred,
-        at eventAt: Date = Date()
+        at eventAt: Date = Date(),
+        agentPid: pid_t? = nil
     ) {
         TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
@@ -205,7 +207,8 @@ enum TabLivenessDeriver {
                         surfaceId: surfaceId,
                         source: source,
                         activity: activity,
-                        at: eventAt
+                        at: eventAt,
+                        agentPid: agentPid
                     )
                 }
             }

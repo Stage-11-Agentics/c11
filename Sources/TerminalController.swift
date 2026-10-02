@@ -822,19 +822,28 @@ class TerminalController {
         }
     }
 
-    /// `report_agent_activity --source=notification` is an idle that only
-    /// means the agent is waiting on the operator (a permission or question
-    /// prompt). It drives the sidebar like any report but is never a mailbox
-    /// turn edge. Every other report (no `--source`) is an explicit turn edge.
+    /// How a `report_agent_activity` counts for the mailbox gate (the
+    /// sidebar treats every report alike):
+    /// - `--source=notification`: the agent is waiting on the operator (a
+    ///   permission or question prompt), never a turn edge.
+    /// - `--pid=<n>`: an explicit turn edge from an interactive agent launch
+    ///   (its wrapper's `C11_AGENT_INTERACTIVE_PID`).
+    /// - anything else (`--source=headless`, or no PID at all): an agent that
+    ///   is never at a prompt. Fails closed for unknown callers.
     nonisolated static func reportedAgentLifecycleSource(
         _ options: [String: String]
     ) -> AgentLifecycleSource {
         switch options["source"]?.lowercased() {
         case "notification": return .inferred
-        // A print-mode agent (`claude -p`): an agent, never at a prompt.
         case "headless": return .headless
-        default: return .reported
+        default: return reportedAgentPID(options) != nil ? .reported : .headless
         }
+    }
+
+    /// The interactive agent PID a report carries (`--pid=<n>`), if any.
+    nonisolated static func reportedAgentPID(_ options: [String: String]) -> pid_t? {
+        guard let raw = options["pid"], let pid = pid_t(raw), pid > 1 else { return nil }
+        return pid
     }
 
     /// Update which window's TabManager receives socket commands.
@@ -8743,7 +8752,8 @@ class TerminalController {
                     surfaceId: target.panelId,
                     workspaceId: target.workspaceId,
                     activity: activity,
-                    source: Self.reportedAgentLifecycleSource(parsed.options)
+                    source: Self.reportedAgentLifecycleSource(parsed.options),
+                    agentPid: Self.reportedAgentPID(parsed.options)
                 )
             }
             return "OK"
@@ -8775,7 +8785,8 @@ class TerminalController {
                 surfaceId: surfaceId,
                 workspaceId: workspace.id,
                 activity: activity,
-                source: Self.reportedAgentLifecycleSource(parsed.options)
+                source: Self.reportedAgentLifecycleSource(parsed.options),
+                agentPid: Self.reportedAgentPID(parsed.options)
             )
         }
         return result

@@ -6691,7 +6691,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         </body>
         </html>
         """
-        webView.loadHTMLString(html, baseURL: URL(string: failedURL))
+        // An empty URL creates a relative URL, not nil. A crashed new-tab view
+        // has no failed navigation URL; let WebKit use its blank-document base.
+        let baseURL = failedURL.isEmpty ? nil : URL(string: failedURL)
+        webView.loadHTMLString(html, baseURL: baseURL)
     }
 
     func webView(

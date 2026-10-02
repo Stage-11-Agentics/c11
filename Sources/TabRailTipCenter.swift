@@ -155,18 +155,25 @@ final class TabRailTipCenter: NSObject, NSPopoverDelegate {
 
     func performUndo() {
         dispatchPrecondition(condition: .onQueue(.main))
+        // Keep the workspace alive and capture the exact preview pane before
+        // closing the popover. Closing it can deliver a delegate callback that
+        // ends the offer and clears `previewedRailSlot`.
+        let previewed = previewedRailSlot
+        let previewWorkspace = previewed?.workspace
+        let previewPaneId = previewed?.paneId
         // Idle before the defaults write, so the layout observer cannot
         // treat the return to Tabs as a new offer. Undo does not dismiss.
         phase = .idle
         reanchoring = false
         anchorBeforeSwitch = nil
         stamped = false
-        hidePopover()
-        if let slot = previewedRailSlot,
-           let workspace = slot.workspace,
-           workspace.bonsplitController.allPaneIds.contains(slot.paneId) {
-            workspace.bonsplitController.setRailOpen(false, inPane: slot.paneId)
+        // Clear the per-pane bit while its controller is still live, before
+        // returning to Tabs. Removal is safe if the pane closed during preview
+        // and also clears any stale persisted bit for that pane.
+        if let previewWorkspace, let previewPaneId {
+            previewWorkspace.bonsplitController.setRailOpen(false, inPane: previewPaneId)
         }
+        hidePopover()
         previewedRailSlot = nil
         TabLayoutSettings.setMode(.tabs)
     }

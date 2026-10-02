@@ -332,9 +332,13 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .grok, input: .init(event: .promptSubmit)))
     }
 
-    func testClaudeAndCodexDrainAtPromptSubmit() {
-        XCTAssertTrue(MailboxHookOutput.shouldDrain(format: .claude, input: .init(event: .promptSubmit)))
-        XCTAssertTrue(MailboxHookOutput.shouldDrain(format: .codex, input: .init(event: .promptSubmit)))
+    func testPromptSubmitNeverDrains() {
+        for format in MailboxHookFormat.allCases {
+            XCTAssertFalse(
+                MailboxHookOutput.shouldDrain(format: format, input: .init(event: .promptSubmit)),
+                "\(format): mail added to an operator's turn is not acted on; it waits for the Stop"
+            )
+        }
         XCTAssertFalse(MailboxHookOutput.shouldDrain(format: .claude, input: .init()))
     }
 
@@ -344,19 +348,9 @@ final class MailboxDrainTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(rendered.utf8)) as? [String: Any])
     }
 
-    func testPromptSubmitPayloadCarriesAdditionalContext() throws {
-        let json = try decode(MailboxHookOutput.render(
-            MailboxHookOutput.payload(event: .promptSubmit, context: "ctx")
-        ))
-        let specific = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
-        XCTAssertEqual(specific["hookEventName"] as? String, "UserPromptSubmit")
-        XCTAssertEqual(specific["additionalContext"] as? String, "ctx")
-        XCTAssertNil(json["decision"])
-    }
-
     func testStopPayloadBlocksWithMessagesAsReason() throws {
         let json = try decode(MailboxHookOutput.render(
-            MailboxHookOutput.payload(event: .stop, context: "ctx")
+            MailboxHookOutput.payload(context: "ctx")
         ))
         XCTAssertEqual(json["decision"] as? String, "block")
         XCTAssertEqual(json["reason"] as? String, "ctx")

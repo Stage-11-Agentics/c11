@@ -16910,16 +16910,9 @@ struct CMUXCLI {
                 icon: "bolt.fill",
                 color: "#4C8DFF"
             )
-            // Claude adds UserPromptSubmit stdout to the turn's context, so this
-            // prints only the mailbox JSON, and only when mail is waiting. It runs
-            // after the status calls above, so it claims only while the process
-            // is young enough to finish before Claude's hook timeout.
-            if let drain = prepareMailboxHookDrain(
-                format: .claude,
-                input: claudeMailboxHookInput(event: .promptSubmit, parsedInput: parsedInput)
-            ) {
-                deliverMailboxHookDrain(drain, client: client)
-            }
+            // Prints nothing: Claude adds UserPromptSubmit stdout to the turn's
+            // context. Mailbox mail is not drained here; it waits for this
+            // turn's Stop, where Claude takes it as its own next turn.
 
         case "notification", "notify":
             telemetry.breadcrumb("claude-hook.notification")
@@ -18748,9 +18741,9 @@ extension CMUXCLI {
         Recv flags:
           --drain                 default — print each message and move it to _read/
           --peek                  list + print only
-          --hook-format <h>       claude | codex | grok: print that harness's hook JSON
-                                  (turn-boundary drain; event from hook stdin or --event)
-          --event <e>             prompt-submit | stop (with --hook-format)
+          --hook-format <h>       claude | codex | grok: print that harness's Stop-hook JSON
+                                  (turn-end drain; event from hook stdin or --event)
+          --event <e>             stop (with --hook-format; other events never drain)
           --tab <name>            override caller's resolved tab
         """
     }
@@ -19093,7 +19086,7 @@ extension CMUXCLI {
     }
 
     /// `c11 mailbox recv --drain --hook-format claude|codex|grok [--event
-    /// prompt-submit|stop]`, run by a harness hook at every turn boundary. The
+    /// stop]`, run by a harness's Stop hook at every turn end. The
     /// event comes from the hook's stdin JSON (`hook_event_name` /
     /// `hookEventName`); `--event` overrides it. Prints the harness's hook JSON
     /// only when it claimed mail. Every failure is silent with exit 0: this
@@ -19130,7 +19123,6 @@ extension CMUXCLI {
     ) -> MailboxHookDrain? {
         let env = ProcessInfo.processInfo.environment
         guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
-              let event = input.event,
               MailboxHookOutput.shouldDrain(format: format, input: input),
               let tabId = Self.callerTabEnv(env).flatMap(UUID.init(uuidString:)),
               let stateURL = try? MailboxLayout.defaultStateURL() else {
@@ -19154,7 +19146,7 @@ extension CMUXCLI {
         )
         guard !claimed.isEmpty else { return nil }
         let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: remaining)
-        let json = MailboxHookOutput.render(MailboxHookOutput.payload(event: event, context: context))
+        let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context))
         guard !json.isEmpty else {
             claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return nil

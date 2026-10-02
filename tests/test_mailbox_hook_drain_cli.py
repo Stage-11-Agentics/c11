@@ -18,9 +18,9 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      recorded under a fresh ULID without costing the rest of the batch.
   5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
      its inbox there, with no socket call.
-  6. A hook whose pre-claim socket calls are slow stops them at the 6 s claim
-     cutoff and exits before 8 s; its mail is claimed and printed, or left in
-     the inbox, never claimed into a result the harness would discard.
+  6. Prompt-submit never drains (an agent does not act on mail added to a
+     turn the operator started); the turn's Stop delivers it. Prompt-submit's
+     own socket calls stop at the 6 s cutoff against a slow or stuck c11.
   7. After the claim a hook makes no socket request at all: against a socket
      that reads one line and stops, or reads nothing, with 70 inboxes, in the
      Codex format and through `claude-hook stop`, it exits at once with its
@@ -193,14 +193,6 @@ def check(cond: bool, label: str, detail: str = "") -> None:
         FAILURES.append(label)
 
 
-def exactly_once(fx: "Fixture", ulid: str, out: bytes, inbox_key: str = TAB.lower()) -> bool:
-    """The invariant the claim cutoff protects: a message is either claimed
-    and printed, or left in the inbox; never claimed but unprinted."""
-    root, read = fx.listing(inbox_key)
-    claimed, printed = (ulid + ".msg") in read, ulid in out.decode()
-    return (claimed and printed and root == []) or (not claimed and not printed and root == [ulid + ".msg"])
-
-
 def run(cli: str, args: list[str], env: dict, stdin: str = "", stdout=subprocess.PIPE, timeout: float = 15):
     """A hung CLI is a failed check, not a crashed test: it comes back with
     exit code -9 and whatever it printed before the timeout."""
@@ -358,39 +350,36 @@ def main() -> int:
             stuck.close()
             fx.cleanup()
 
-    # 9. Pre-claim calls bounded by the claim cutoff.
-    fx = Fixture()
-    stuck = FakeC11(os.path.join(tmp, "oneline3.sock"), stall=False, one_line=True)
-    ulid = fx.deliver(TAB.lower())
-    proc, ms = run(cli, ["--socket", stuck.path, "claude-hook", "prompt-submit"], fx.env(stuck.path),
-                   json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s"}), timeout=15)
-    # Exit status is claude-hook's own business: its status calls time out at
-    # the cutoff and it reports that as a hook error, as it always has for a
-    # stuck c11 (formerly at the 10 s kill). The mailbox invariant is what
-    # this checks.
-    check(ms < 8000 and exactly_once(fx, ulid, proc.stdout),
-          f"prompt-submit against a c11 that stops reading: exits in {ms / 1000:.1f} s (exit {proc.returncode}); "
-          f"the mail is claimed-and-printed or left in the inbox", f"listing={fx.listing(TAB.lower())}")
-    stuck.close()
-    fx.cleanup()
-
-    # 6. Claim deadline: prompt-submit's status calls take ~2.5 s each before the claim.
-    fx = Fixture()
-    slow = FakeC11(os.path.join(tmp, "slow.sock"), stall=False, delay=2.5)
-    ulid = fx.deliver(TAB.lower())
+    # 6 + 9. Prompt-submit never drains; Stop does. Its socket calls stop at
+    #        the cutoff against a c11 that is slow or stops reading.
     prompt_input = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s"})
-    proc, ms = run(cli, ["--socket", slow.path, "claude-hook", "prompt-submit"], fx.env(slow.path), prompt_input,
-                   timeout=60)
-    check(ms < 8000 and exactly_once(fx, ulid, proc.stdout),
-          f"claim cutoff: {ms / 1000:.1f} s of slow pre-claim calls, exit before 8 s, the mail claimed-and-printed "
-          f"or left in the inbox", f"stdout={proc.stdout.decode()[:120]!r} listing={fx.listing(TAB.lower())}")
-    slow.close()
-    if fx.listing(TAB.lower())[1]:
+    for label, kwargs in [("stops reading", {"one_line": True}), ("answers every call after 2.5 s", {"delay": 2.5})]:
+        fx = Fixture()
+        sock = FakeC11(os.path.join(tmp, f"ps-{len(label)}.sock"), stall=False, **kwargs)
         ulid = fx.deliver(TAB.lower())
+        proc, ms = run(cli, ["--socket", sock.path, "claude-hook", "prompt-submit"], fx.env(sock.path), prompt_input, timeout=30)
+        # Exit status is claude-hook's own business: its status calls time out
+        # at the cutoff and it reports that as a hook error, as it always has
+        # for a stuck c11 (formerly at the 10 s kill).
+        check(ms < 8000 and ulid not in proc.stdout.decode() and fx.listing(TAB.lower()) == ([ulid + ".msg"], []),
+              f"prompt-submit, c11 {label}: exits in {ms / 1000:.1f} s (exit {proc.returncode}), mail left for the Stop")
+        sock.close()
+        fx.cleanup()
+
+    fx = Fixture()
     fast = FakeC11(os.path.join(tmp, "fast.sock"), stall=False)
+    ulid = fx.deliver(TAB.lower())
     proc, ms = run(cli, ["--socket", fast.path, "claude-hook", "prompt-submit"], fx.env(fast.path), prompt_input)
-    check(ulid in proc.stdout.decode() and fx.listing(TAB.lower())[0] == [] and ulid + ".msg" in fx.listing(TAB.lower())[1],
-          f"claim deadline: a prompt-submit with time left delivers it ({ms:.0f} ms)")
+    check(proc.stdout.decode().strip() == "" and fx.listing(TAB.lower()) == ([ulid + ".msg"], []),
+          f"prompt-submit with a healthy c11: prints nothing and claims nothing ({ms:.0f} ms)")
+    proc, _ = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path),
+                  json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"}))
+    check('"decision":"block"' in proc.stdout.decode() and ulid in proc.stdout.decode()
+          and fx.listing(TAB.lower()) == ([], [ulid + ".msg"]) and fx.receipt_ids() == [ulid],
+          "the turn's Stop then delivers it as the agent's own next turn, receipted")
+    proc, _ = run(cli, ["--socket", fast.path, "mailbox", "recv", "--drain", "--hook-format", "codex", "--event", "prompt-submit"],
+                  fx.env(fast.path), "")
+    check(proc.stdout == b"", "recv --hook-format codex --event prompt-submit: nothing (Codex has no prompt-submit hook either)")
     fast.close()
     fx.cleanup()
     shutil.rmtree(tmp, ignore_errors=True)

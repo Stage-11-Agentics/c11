@@ -335,12 +335,16 @@ enum MailboxHookOutput {
     /// - Stop drains only on a genuine turn end that is not already a Stop-hook
     ///   continuation, so a turn that delivered mail always ends at its next
     ///   Stop: the agent can never be trapped in a loop by the mailbox.
-    /// - Grok discards an allowing UserPromptSubmit hook's output, so Grok
-    ///   drains at Stop only; its prompt-submit leaves the mail in the inbox.
+    /// - Prompt-submit never drains, for any harness: mail added to a turn the
+    ///   operator started is treated as non-operator input and not acted on
+    ///   (and Grok discards that output outright). It waits for the Stop.
     static func shouldDrain(format: MailboxHookFormat, input: MailboxHookInput) -> Bool {
         switch input.event {
         case .promptSubmit:
-            return format != .grok
+            // Never: an agent reads mail injected as prompt-submit context as
+            // non-operator input and declines to act on it. Mail waits for the
+            // turn's Stop, where it becomes the agent's own next turn.
+            return false
         case .stop:
             if input.stopHookActive { return false }
             // Grok also fires Stop at session teardown; only `end_turn` is a
@@ -365,22 +369,11 @@ enum MailboxHookOutput {
         return header + "\n" + framedBlocks.joined()
     }
 
-    /// Hook stdout JSON for one harness and event. Prompt-submit adds the
-    /// messages as context to the turn that is starting; Stop blocks the stop
-    /// with the messages as the reason, so the agent takes one more turn.
-    /// Claude, Codex and Grok share these two shapes.
-    static func payload(event: MailboxHookEvent, context: String) -> [String: Any] {
-        switch event {
-        case .promptSubmit:
-            return [
-                "hookSpecificOutput": [
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": context
-                ]
-            ]
-        case .stop:
-            return ["decision": "block", "reason": context]
-        }
+    /// Hook stdout JSON: the Stop is blocked with the messages as the reason,
+    /// so the agent takes one more turn of its own. Claude, Codex and Grok
+    /// share this shape. (Drains happen only at Stop; see `shouldDrain`.)
+    static func payload(context: String) -> [String: Any] {
+        ["decision": "block", "reason": context]
     }
 
     static func render(_ payload: [String: Any]) -> String {

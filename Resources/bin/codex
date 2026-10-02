@@ -247,15 +247,15 @@ if [[ -n "$c11_bin" ]]; then
         printf '{"event_name":"%s","hooks":[{"async":false,"command":"%s","timeout":10,"type":"command"}]}' \
             "$1" "$hook_command" | /usr/bin/shasum -a 256 | /usr/bin/cut -d' ' -f1
     }
-    prompt_hash="$(codex_hook_hash user_prompt_submit)"
+    # Stop only: mail drained at prompt-submit would join a turn the operator
+    # started, and the agent does not act on it there.
     stop_hash="$(codex_hook_hash stop)"
-    # A `'` in the bundle path would break the shell quoting; skip the hooks.
-    if [[ "$c11_bin" != *"'"* && -n "$prompt_hash" && -n "$stop_hash" ]]; then
+    # A `'` in the bundle path would break the shell quoting; skip the hook.
+    if [[ "$c11_bin" != *"'"* && -n "$stop_hash" ]]; then
         hook_entry="[{hooks=[{type=\"command\",command=\"${hook_command}\",timeout=10}]}]"
         codex_hook_args=(
-            -c "hooks.UserPromptSubmit=${hook_entry}"
             -c "hooks.Stop=${hook_entry}"
-            -c "hooks.state={\"/<session-flags>/config.toml:user_prompt_submit:0:0\"={trusted_hash=\"sha256:${prompt_hash}\"},\"/<session-flags>/config.toml:stop:0:0\"={trusted_hash=\"sha256:${stop_hash}\"}}"
+            -c "hooks.state={\"/<session-flags>/config.toml:stop:0:0\"={trusted_hash=\"sha256:${stop_hash}\"}}"
         )
     fi
 fi

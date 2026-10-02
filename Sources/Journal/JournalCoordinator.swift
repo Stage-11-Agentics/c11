@@ -227,9 +227,12 @@ final class JournalCoordinator: @unchecked Sendable {
     func noteOperatorSubmit(tabID: UUID, keyCode: UInt16, modifierRaw: UInt, isRepeat: Bool, synthesizing: Bool, hasMarkedText: Bool) {
         lock.lock()
         guard let ask = openAsks[tabID] else { lock.unlock(); return }
-        let terminal = AgentRoster.isTerminalSubmit(keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat, synthesizing: synthesizing, hasMarkedText: hasMarkedText)
-        let picker = AgentRoster.isPickerCommit(keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat, synthesizing: synthesizing, hasMarkedText: hasMarkedText, pickerKeyCode: ask.pickerKeyCode, pickerModifierRaw: ask.pickerModifierRaw)
-        guard terminal || picker, responseGate.begin(tab: tabID, ask: ask.eventID) else { lock.unlock(); return }
+        let accepted = AgentRoster.isOperatorSubmit(
+            keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat,
+            synthesizing: synthesizing, hasMarkedText: hasMarkedText,
+            requiresPickerCommit: ask.requiresPickerCommit,
+            pickerKeyCode: ask.pickerKeyCode, pickerModifierRaw: ask.pickerModifierRaw)
+        guard accepted, responseGate.begin(tab: tabID, ask: ask.eventID) else { lock.unlock(); return }
         let captured = ask
         lock.unlock()
         startupQueue.async { [self] in enqueueResponse(tabID: tabID, ask: captured) }
@@ -339,6 +342,7 @@ final class JournalCoordinator: @unchecked Sendable {
             openAsks[tab] = JournalOpenAsk(
                 owner: snap.owner, workspaceID: workspace, requestID: restored.requestID,
                 eventID: restored.eventID, openedAtMs: restored.openedAtMs,
+                requiresPickerCommit: JournalOpenAsk.requiresPickerCommit(draft: restored.draft),
                 pickerKeyCode: JournalOpenAsk.pickerKeyCode(draft: restored.draft),
                 pickerModifierRaw: 0)
         }
@@ -365,7 +369,8 @@ struct JournalOpenAsk: Sendable {
     let requestID: String?
     let eventID: UUID
     let openedAtMs: Int64
-    /// Nil until a named fixture records a physical picker commit key.
+    /// Exact provider pickers require their own committed key; unknown keys stay unavailable.
+    let requiresPickerCommit: Bool
     let pickerKeyCode: UInt16?
     let pickerModifierRaw: UInt
 
@@ -373,11 +378,23 @@ struct JournalOpenAsk: Sendable {
         guard let owner = draft.owner, let workspace = draft.workspaceID ?? snapshot.workspaceID else { return nil }
         let opened = draft.timeQuality == .nativeLocal ? (draft.occurredAtMs ?? committedAtMs) : committedAtMs
         return JournalOpenAsk(owner: owner, workspaceID: workspace, requestID: draft.requestID, eventID: draft.eventID,
-                              openedAtMs: opened, pickerKeyCode: pickerKeyCode(draft: draft), pickerModifierRaw: 0)
+                              openedAtMs: opened, requiresPickerCommit: requiresPickerCommit(draft: draft),
+                              pickerKeyCode: pickerKeyCode(draft: draft), pickerModifierRaw: 0)
+    }
+
+    static func requiresPickerCommit(draft: JournalDraft?) -> Bool {
+        guard let draft,
+              draft.kind == .questionRequested,
+              draft.nativeEvent == "PreToolUse",
+              draft.toolClass == .askUserQuestion,
+              draft.source == .hook,
+              draft.adapter == .claudeHook,
+              draft.agentKind == "claude-code" else { return false }
+        return true
     }
 
     static func pickerKeyCode(draft: JournalDraft?) -> UInt16? {
-        guard let draft, draft.toolClass == .askUserQuestion, draft.agentKind == "claude-code" else { return nil }
+        guard requiresPickerCommit(draft: draft) else { return nil }
         return AgentRoster.pickerCommitKeyCode
     }
 }

@@ -17,7 +17,9 @@ final class AgentRosterTests: XCTestCase {
     func testTwoOwnerDocumentKeepsNullsAndHistoricalCandidates() {
         let blocked = snapshot(tab: tabA, session: "owner-a", phase: .blocked, reason: .question, source: .hook, model: nil, confirmed: true)
         let working = snapshot(tab: tabB, session: "owner-b", phase: .working, reason: nil, source: .hook, model: "synthetic-model", confirmed: true)
-        let historical = snapshot(tab: tabC, session: "owner-c", phase: .idle, reason: nil, source: .hook, model: nil, confirmed: false)
+        var priorInstance = snapshot(tab: tabC, session: "owner-c", phase: .idle, reason: nil, source: .hook, model: nil, confirmed: true)
+        priorInstance.lastSequence = 1
+        let historical = JournalReplayPolicy.restored(priorInstance)
         let seen = Date(timeIntervalSince1970: 1_700_000_000)
         let live = [
             AgentRoster.LiveTab(tabID: tabB, workspaceID: workspace, sessionID: "owner-b", kind: "claude-code", snapshot: working, turnStartedMs: 1_699_000_000_000, flagged: false, suppressed: false, lastSeenAt: nil),
@@ -165,9 +167,61 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertFalse(AgentRoster.isTerminalSubmit(keyCode: 36, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: true))
         XCTAssertFalse(AgentRoster.isTerminalSubmit(keyCode: 123, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false))
         XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: 36, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: nil, pickerModifierRaw: 0))
-        XCTAssertTrue(AgentRoster.isPickerCommit(keyCode: 49, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: 49, pickerModifierRaw: 0))
-        XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: 125, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: 49, pickerModifierRaw: 0))
-        XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: 49, modifierRaw: 0, isRepeat: true, synthesizing: false, hasMarkedText: false, pickerKeyCode: 49, pickerModifierRaw: 0))
+        XCTAssertTrue(AgentRoster.isOperatorSubmit(
+            keyCode: 36, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false,
+            requiresPickerCommit: false, pickerKeyCode: nil, pickerModifierRaw: 0))
+        XCTAssertFalse(AgentRoster.isOperatorSubmit(
+            keyCode: 36, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false,
+            requiresPickerCommit: true, pickerKeyCode: nil, pickerModifierRaw: 0))
+        XCTAssertFalse(AgentRoster.isOperatorSubmit(
+            keyCode: 49, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false,
+            requiresPickerCommit: true, pickerKeyCode: nil, pickerModifierRaw: 0))
+        XCTAssertFalse(AgentRoster.isOperatorSubmit(
+            keyCode: 125, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false,
+            requiresPickerCommit: true, pickerKeyCode: nil, pickerModifierRaw: 0))
+        if let pickerKeyCode = AgentRoster.pickerCommitKeyCode {
+            XCTAssertTrue(AgentRoster.isPickerCommit(keyCode: pickerKeyCode, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertTrue(AgentRoster.isOperatorSubmit(
+                keyCode: pickerKeyCode, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false,
+                requiresPickerCommit: true, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: 125, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: pickerKeyCode, modifierRaw: 0, isRepeat: true, synthesizing: false, hasMarkedText: false, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: pickerKeyCode, modifierRaw: 0, isRepeat: false, synthesizing: true, hasMarkedText: false, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: pickerKeyCode, modifierRaw: 0, isRepeat: false, synthesizing: false, hasMarkedText: true, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+            XCTAssertFalse(AgentRoster.isPickerCommit(keyCode: pickerKeyCode, modifierRaw: AgentRoster.optionModifier, isRepeat: false, synthesizing: false, hasMarkedText: false, pickerKeyCode: pickerKeyCode, pickerModifierRaw: 0))
+        }
+    }
+
+    func testPickerCommitPolicyRequiresExactClaudeAskUserQuestionEvidence() {
+        var draft = JournalTestData.draft(.questionRequested)
+        draft.nativeEvent = "PreToolUse"
+        draft.toolClass = .askUserQuestion
+        XCTAssertTrue(JournalOpenAsk.requiresPickerCommit(draft: draft))
+        XCTAssertEqual(JournalOpenAsk.pickerKeyCode(draft: draft), AgentRoster.pickerCommitKeyCode)
+
+        var unrelatedNativeEvent = draft
+        unrelatedNativeEvent.nativeEvent = "other"
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: unrelatedNativeEvent))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: unrelatedNativeEvent))
+        var unrelatedKind = draft
+        unrelatedKind.kind = .approvalRequested
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: unrelatedKind))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: unrelatedKind))
+        var unrelatedTool = draft
+        unrelatedTool.toolClass = .exitPlanMode
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: unrelatedTool))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: unrelatedTool))
+        var unrelatedAgent = draft
+        unrelatedAgent.agentKind = "codex"
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: unrelatedAgent))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: unrelatedAgent))
+        var unrelatedAdapter = draft
+        unrelatedAdapter.adapter = .codexNotify
+        unrelatedAdapter.source = .hook
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: unrelatedAdapter))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: unrelatedAdapter))
+        XCTAssertFalse(JournalOpenAsk.requiresPickerCommit(draft: nil))
+        XCTAssertNil(JournalOpenAsk.pickerKeyCode(draft: nil))
     }
 
     func testLifecyclePayloadEmitsOnlyAPhaseChange() {

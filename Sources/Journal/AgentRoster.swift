@@ -1,5 +1,19 @@
 import Foundation
 
+enum JournalReplayPolicy {
+    static func restored(_ baseline: JournalSnapshot) -> JournalSnapshot {
+        var copy = baseline
+        copy.confirmation = .unconfirmed
+        copy.connection = .disconnected
+        return copy
+    }
+
+    static func attention(_ baseline: JournalSnapshot, matching owner: JournalOwner?) -> JournalSnapshot? {
+        guard baseline.owner == owner, baseline.paintsAttention else { return nil }
+        return restored(baseline)
+    }
+}
+
 /// Pure join of live tab facts and journal rows. No I/O, no AppKit, no focus.
 enum AgentRoster {
     static let restoreLimit = 64
@@ -51,7 +65,7 @@ enum AgentRoster {
     static let pickerCommitKeyCode: UInt16? = nil
 
     static func isPotentialSubmitKey(_ keyCode: UInt16) -> Bool {
-        keyCode == 36 || keyCode == 76 || keyCode == pickerCommitKeyCode
+        keyCode == 36 || keyCode == 76 || (pickerCommitKeyCode.map { $0 == keyCode } ?? false)
     }
 
     private static func isBehindBaseline(_ event: RetainedEvent, through sequence: Int64?) -> Bool {
@@ -242,6 +256,27 @@ enum AgentRoster {
     ) -> Bool {
         guard let pickerKeyCode, keyCode == pickerKeyCode, !isRepeat, !synthesizing, !hasMarkedText else { return false }
         return (modifierRaw & blockedModifiers) == (pickerModifierRaw & blockedModifiers)
+    }
+
+    static func isOperatorSubmit(
+        keyCode: UInt16,
+        modifierRaw: UInt,
+        isRepeat: Bool,
+        synthesizing: Bool,
+        hasMarkedText: Bool,
+        requiresPickerCommit: Bool,
+        pickerKeyCode: UInt16?,
+        pickerModifierRaw: UInt
+    ) -> Bool {
+        if requiresPickerCommit {
+            return isPickerCommit(
+                keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat,
+                synthesizing: synthesizing, hasMarkedText: hasMarkedText,
+                pickerKeyCode: pickerKeyCode, pickerModifierRaw: pickerModifierRaw)
+        }
+        return isTerminalSubmit(
+            keyCode: keyCode, modifierRaw: modifierRaw, isRepeat: isRepeat,
+            synthesizing: synthesizing, hasMarkedText: hasMarkedText)
     }
 
     static func sheetClock(phase: JournalPhase, activity: SheetActivity, flagged: Bool, historical: Bool, sinceMs: Int64) -> SheetClock {

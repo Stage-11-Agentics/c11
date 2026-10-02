@@ -344,9 +344,12 @@ final class JournalStoreTests: XCTestCase {
 
         let liveBaseline = try XCTUnwrap(reopened.current(owner: liveOwner))
         let livePage = try reopened.retainedOwnerEvents(owner: liveOwner, throughSequence: liveBaseline.lastSequence)
+        let repeatedStartRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedStart.eventID })
         let duplicateTurnRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedTurn.eventID })
         let duplicateAskRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == repeatedAsk.eventID })
         let advisoryRow = try XCTUnwrap(livePage.events.first { $0.draft.eventID == advisoryAsk.eventID })
+        XCTAssertEqual(repeatedStartRow.event.effect, .observation)
+        XCTAssertEqual(repeatedStartRow.event.attribution, "exact")
         XCTAssertEqual(duplicateTurnRow.event.effect, .duplicateEvidence)
         XCTAssertEqual(duplicateAskRow.event.effect, .duplicateEvidence)
         XCTAssertEqual(advisoryRow.event.effect, .advisory)
@@ -362,6 +365,8 @@ final class JournalStoreTests: XCTestCase {
         let fullEndedPage = try reopened.retainedOwnerEvents(owner: endedOwner)
         let postEndStart = try XCTUnwrap(fullEndedPage.events.first { $0.draft.eventID == startAfterEnd.eventID })
         XCTAssertEqual(postEndStart.event.effect, .observation)
+        XCTAssertEqual(postEndStart.event.attribution, "exact")
+        XCTAssertGreaterThan(postEndStart.sequence, endedBaseline.lastSequence)
         XCTAssertEqual(
             AgentRoster.classifyRestore(eventsNewestFirst: endedPage.events, throughSequence: endedBaseline.lastSequence, truncated: false, storePruned: false).label,
             "ended"
@@ -375,8 +380,8 @@ final class JournalStoreTests: XCTestCase {
         let document = AgentRoster.document(
             live: [], currents: projected, eventsByOwner: pages, truncatedOwners: [], unattributed: 0,
             storePruned: false, storageAvailable: true, healthDegraded: false, now: 15_000, liveIdentity: "unavailable")
-        let labels = Dictionary(uniqueKeysWithValues: (document["restore_candidates"] as? [[String: Any]] ?? []).compactMap {
-            guard let sessionID = $0["session_id"] as? String, let label = $0["label"] as? String else { return nil }
+        let labels: [String: String] = Dictionary(uniqueKeysWithValues: (document["restore_candidates"] as? [[String: Any]] ?? []).compactMap { candidate -> (String, String)? in
+            guard let sessionID = candidate["session_id"] as? String, let label = candidate["label"] as? String else { return nil }
             return (sessionID, label)
         })
         XCTAssertEqual(labels[liveOwner.sessionID], "historical_candidate")

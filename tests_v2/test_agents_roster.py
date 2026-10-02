@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """C11-231 journal roster through the packaged CLI and agents.list.
 
-Synthetic structural hooks only. The roster read does not reconstruct an
-EventLog, so saturating that log is not part of this check: phase, source,
-freshness, connection, and health come back from the journal. The command
-does not launch, resume, or focus an agent.
+Synthetic structural hooks only. This deliberately skips an EventLog interval
+between a committed lifecycle change and the next roster read, then checks
+snapshot recovery for phase, source, freshness, connection, and health. The
+command does not launch, resume, or focus an agent.
 """
 import json
 import os
@@ -15,7 +15,7 @@ import tempfile
 import time
 import uuid
 
-from cmux import cmux
+from cmux import cmux, cmuxError
 from test_claude_attention_batch import eventually
 
 
@@ -30,6 +30,16 @@ def main():
     if bundle == "com.stage11.c11":
         raise SystemExit("refusing the production bundle id")
     with cmux(path) as client, tempfile.TemporaryDirectory(prefix="c11-agents-") as temporary:
+        def session_ready():
+            try:
+                client._call("workspace.list", timeout_s=2)
+            except cmuxError as error:
+                if str(error).startswith("not_ready:"):
+                    return False
+                raise
+            return True
+
+        eventually(session_ready, "session restoration readiness", timeout=30)
         workspace = client.new_workspace()
         surfaces = [client.list_surfaces(workspace)[0][1]]
         for _ in range(4):
@@ -37,6 +47,14 @@ def main():
         blocked, working, historical, ended, unknown = surfaces
         sessions = {tab: str(uuid.uuid4()) for tab in surfaces}
         before = focus_ids(client.identify())
+
+        # Journal ownership is exact ConversationStore state. Establish that
+        # identity through the packaged socket before exercising hook folds;
+        # SessionStart remains in the trace as the provider lifecycle event.
+        for tab in surfaces:
+            client._call("conversation.push", {
+                "tab_id": tab, "kind": "claude-code", "id": sessions[tab], "source": "hook"
+            })
 
         def hook(tab, event, fields=None):
             env = {key: value for key, value in os.environ.items() if not key.startswith(("C11_", "CMUX_"))}
@@ -70,7 +88,7 @@ def main():
                 "agent_kind": "claude-code",
                 "source": "c11",
                 "adapter": "c11",
-                "native_event": "connection_lost",
+                "native_event": signal,
                 "signal": signal,
             }
             client._call("agent.event.append", {"event": event})
@@ -136,6 +154,50 @@ def main():
         listed = client._call("agents.list")
         assert row(listed, blocked)["state"] == "blocked"
         assert row(listed, working)["state"] == "working"
+
+        # Deliberately drop this observer's event-stream interval: append a
+        # committed AskUserQuestion transition without tailing/reading events,
+        # then recover only through the fresh agents snapshot.
+        focus_before_gap = focus_ids(client.identify())
+        hook(working, "pre-tool-use", {
+            "prompt_id": "working-turn",
+            "tool_name": "AskUserQuestion",
+            "tool_use_id": "synthetic-dropped-interval-ask",
+        })
+
+        def recovered_snapshot():
+            document = roster()
+            current = row(document, working)
+            if current["state"] == "blocked" and current["reason"] == "question":
+                return document, current
+            return None
+
+        eventually(recovered_snapshot, "fresh roster snapshot recovers the deliberately skipped event interval", timeout=8)
+        recovered = roster()
+        recovered_row = row(recovered, working)
+        assert recovered_row["source"] == "hook"
+        assert recovered_row["freshness"] == "fresh"
+        assert recovered_row["confirmation"] == "confirmed"
+        assert recovered_row["health"] == "ok"
+        control(working, sessions[working], "adapter_gap")
+
+        def degraded_snapshot():
+            document = roster()
+            current = row(document, working)
+            return (document, current) if current["health"] == "degraded" else None
+
+        eventually(degraded_snapshot, "fresh roster snapshot retains known state through an adapter gap", timeout=8)
+        degraded = roster()
+        degraded_row = row(degraded, working)
+        assert degraded_row["state"] == "blocked"
+        assert degraded_row["reason"] == "question"
+        assert degraded_row["source"] == "hook"
+        assert degraded_row["freshness"] == "fresh"
+        assert degraded_row["connection"] == "live"
+        control(working, sessions[working], "adapter_recovered")
+        eventually(lambda: row(roster(), working)["health"] == "ok", "adapter recovery returns health to ok", timeout=8)
+        assert focus_ids(client.identify()) == focus_before_gap
+        print("PASS skipped event-stream interval, degraded-source snapshot recovery, and unchanged focus")
 
         def candidate(document, tab):
             matches = [item for item in document["restore_candidates"] if str(item["tab_id"]).lower() == tab.lower()]

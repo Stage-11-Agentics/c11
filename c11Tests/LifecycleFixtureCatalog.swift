@@ -362,69 +362,104 @@ final class LifecycleFixtureCatalogTests: XCTestCase {
             var now: Int64 = 1_700_000_000_000
             var store: JournalStore? = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { now })
             var owner: JournalOwner?
-            var appliedAskID: UUID?
-            var turnID: String?
 
             for step in fixture.steps {
-                let kind: JournalKind?
+                let subcommand: String?
                 switch step.name {
-                case "SessionStart": kind = .sessionStarted
-                case "UserPromptSubmit": kind = .turnStarted
-                case "PermissionRequest" where step.toolName == "AskUserQuestion": kind = .questionRequested
-                case "PreToolUse" where step.toolName == "AskUserQuestion": kind = .questionRequested
-                case "Stop": kind = .turnCompleted
-                case "SessionEnd": kind = .sessionEnded
-                default: kind = nil
+                case "SessionStart": subcommand = "session-start"
+                case "UserPromptSubmit": subcommand = "prompt-submit"
+                case "PermissionRequest": subcommand = "permission-request"
+                case "PreToolUse": subcommand = "pre-tool-use"
+                case "PostToolUse": subcommand = "post-tool-use"
+                case "Stop": subcommand = "stop"
+                case "SessionEnd": subcommand = "session-end"
+                default: subcommand = nil
                 }
-                guard let kind, let sessionID = step.sessionID else { continue }
+                guard let subcommand else { continue }
                 let timestamp = 1_700_000_000_000 + Int64(step.tMs)
                 now = timestamp
-                var draft = JournalDraft(
-                    kind: kind, emittedAtMs: timestamp, occurredAtMs: timestamp, timeQuality: .nativeLocal,
-                    tabID: tab, workspaceID: workspace, sessionID: sessionID, agentKind: "claude-code",
-                    source: .hook, adapter: .claudeHook, nativeEvent: step.name)
-                draft.turnID = step.attributes["prompt_id"] ?? turnID ?? "fixture-turn"
-                if kind == .turnStarted { turnID = draft.turnID }
-                if kind == .questionRequested {
-                    draft.requestID = step.attributes["prompt_id"] ?? "fixture-request"
-                    draft.toolClass = .askUserQuestion
+                var payload = step.attributes
+                if let toolName = step.toolName { payload["tool_name"] = toolName }
+                guard var draft = ClaudeHookMapping.map(subcommand: subcommand, object: payload) else {
+                    // Claude's PermissionRequest is not the AskUserQuestion lifecycle
+                    // signal; the captured PreToolUse is the committed ask evidence.
+                    XCTAssertEqual(step.name, "PermissionRequest", fixture.id)
+                    continue
                 }
-                let result = try store!.append(draft: draft, context: JournalContext(eligible: true, verifiedNativeClock: true))
+                draft.emittedAtMs = timestamp
+                draft.occurredAtMs = timestamp
+                draft.timeQuality = .nativeLocal
+                draft.tabID = tab
+                draft.workspaceID = workspace
+                try draft.validate()
+                let result = try store!.append(
+                    draft: draft,
+                    context: JournalContext(eligible: true, verifiedNativeClock: true))
                 owner = draft.owner
-                if kind == .questionRequested, result.receipt.projectionEffect == .applied { appliedAskID = draft.eventID }
+                if step.name == "PreToolUse", step.toolName == "AskUserQuestion" {
+                    XCTAssertEqual(result.receipt.projectionEffect, .applied, fixture.id)
+                }
             }
 
             let exactOwner = try XCTUnwrap(owner, fixture.id)
             store = nil
             let reopened = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { now + 1 })
-            let baseline = try XCTUnwrap(reopened.current(owner: exactOwner), fixture.id)
+            let rawBaseline = try XCTUnwrap(reopened.current(owner: exactOwner), fixture.id)
+            let baseline = JournalReplayPolicy.restored(rawBaseline)
             let page = try reopened.retainedOwnerEvents(owner: exactOwner, throughSequence: baseline.lastSequence)
-            let historical = JournalReplayPolicy.restored(baseline)
             let classification = AgentRoster.classifyRestore(
                 eventsNewestFirst: page.events, throughSequence: baseline.lastSequence,
                 truncated: page.truncated, storePruned: false)
             let turnStarted = AgentRoster.turnStartMs(
                 turnID: baseline.turnID, throughSequence: baseline.lastSequence, eventsNewestFirst: page.events)
             let ask = AgentRoster.restoredAsk(snapshot: baseline, eventsNewestFirst: page.events)
+            let responseAsk = ask.flatMap { restored in
+                page.events.first(where: { $0.draft.eventID == restored.eventID }).flatMap { evidence in
+                    JournalOpenAsk.make(draft: evidence.draft, snapshot: baseline, committedAtMs: evidence.committedAtMs)
+                }
+            }
 
             switch fixture.id {
             case "claude-bypass-ask":
-                XCTAssertEqual(historical.phase, .blocked)
+                XCTAssertEqual(rawBaseline.confirmation, .confirmed)
+                XCTAssertEqual(baseline.phase, .blocked)
+                XCTAssertEqual(baseline.confirmation, .unconfirmed)
                 XCTAssertEqual(classification.label, "historical_candidate")
-                XCTAssertEqual(ask?.eventID, appliedAskID)
+                let appliedAsk = try XCTUnwrap(page.events.first {
+                    $0.effect == .applied && $0.attribution == "exact" && $0.draft.kind == .questionRequested
+                }, fixture.id)
+                XCTAssertEqual(ask?.eventID, appliedAsk.draft.eventID)
                 XCTAssertNotNil(turnStarted)
-                XCTAssertEqual(page.events.filter { $0.draft.kind == .questionRequested }.map(\.effect), [.duplicateEvidence, .applied])
+                XCTAssertEqual(responseAsk?.eventID, appliedAsk.draft.eventID)
+                XCTAssertEqual(responseAsk?.requestID, ask?.requestID)
+                XCTAssertEqual(responseAsk?.openedAtMs, ask?.openedAtMs)
+                XCTAssertEqual(page.events.filter { $0.draft.kind == .questionRequested }.map(\.effect), [.applied])
             case "claude-bypass-ask-answered":
-                XCTAssertEqual(historical.phase, .blocked, "J6 records the response but does not own ask resolution")
-                XCTAssertEqual(ask?.eventID, appliedAskID)
+                XCTAssertEqual(baseline.phase, .idle)
+                XCTAssertNil(ask, "the committed PostToolUse resolves the ask before the baseline")
                 XCTAssertNotNil(turnStarted)
-                let completeTrace = try reopened.retainedOwnerEvents(owner: exactOwner)
-                XCTAssertTrue(completeTrace.events.contains { $0.draft.kind == .turnCompleted && $0.effect == .advisory })
+                XCTAssertNil(responseAsk)
+                XCTAssertTrue(page.events.contains {
+                    $0.draft.kind == .attentionResolved && $0.effect == .applied && $0.attribution == "exact"
+                })
+                XCTAssertTrue(page.events.contains {
+                    $0.draft.kind == .turnCompleted && $0.effect == .applied && $0.attribution == "exact"
+                })
             case "claude-session-end":
                 XCTAssertEqual(classification.label, "ended")
             case "derived-late-pretool-after-stop":
-                XCTAssertEqual(historical.phase, .idle)
-                XCTAssertNotNil(turnStarted)
+                XCTAssertEqual(baseline.phase, .idle)
+                let appliedTurn = try XCTUnwrap(page.events.first {
+                    $0.effect == .applied && $0.attribution == "exact"
+                        && $0.draft.kind == .turnStarted && $0.draft.turnID == baseline.turnID
+                }, fixture.id)
+                XCTAssertEqual(turnStarted, appliedTurn.draft.occurredAtMs)
+                let fullTrace = try reopened.retainedOwnerEvents(owner: exactOwner)
+                let lateTool = try XCTUnwrap(fullTrace.events.first {
+                    $0.draft.nativeEvent == "PreToolUse" && $0.draft.toolClass == .other
+                }, fixture.id)
+                XCTAssertEqual(lateTool.effect, .stale)
+                XCTAssertGreaterThan(lateTool.sequence, baseline.lastSequence)
             default:
                 XCTFail("unexpected selected lifecycle fixture \(fixture.id)")
             }

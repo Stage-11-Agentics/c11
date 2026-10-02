@@ -66,8 +66,12 @@ def main():
 
         for index in range(3):
             append(event(index, 'agent.session.started'))
-            append(event(index, 'agent.turn.started'))
-        append(event(0, 'agent.question.requested', request_id='synthetic-open-ask'))
+            append(event(index, 'agent.turn.started', turn_id=f'synthetic-turn-{index}'))
+        append(event(0, 'agent.question.requested', request_id='synthetic-open-ask', turn_id='synthetic-turn-0'))
+        append(event(1, 'agent.question.requested', request_id='synthetic-delayed-owner-ask', turn_id='synthetic-turn-1'))
+        # Keep this baseline durable but make its exact owner arrive only after
+        # the next process has completed its startup cache pass.
+        client._call('conversation.clear', {'tab_id': tabs[1]})
         client._call('session.save', {'include_scrollback': False})
         with sqlite3.connect(root / 'lifecycle.sqlite3') as database:
             attached_event_count = database.execute(
@@ -135,7 +139,9 @@ def main():
         assert crash_live['confirmation'] == 'unconfirmed'
         with sqlite3.connect(root / 'lifecycle.sqlite3') as database:
             stored = database.execute('SELECT state FROM journal_current WHERE owner LIKE ?', (f'%{owners[1]}%',)).fetchone()
-            assert stored is not None and json.loads(stored[0])['confirmation'] == 'confirmed'
+            stored_state = json.loads(stored[0]) if stored is not None else None
+            assert stored_state is not None and stored_state['confirmation'] == 'confirmed'
+            assert stored_state['connection'] == 'live', stored_state
             rows = database.execute('SELECT event FROM journal_events WHERE tab_id=?', (tabs[1],)).fetchall()
         assert not any(json.loads(row[0])['draft'].get('signal') == 'connection_lost' for row in rows)
         print('PASS offline crash-live candidate comes from a confirmed baseline with no connection_lost event')
@@ -148,14 +154,36 @@ def main():
         for index in (0, 2):
             assert state(index)['confirmation'] == 'unconfirmed'
             assert state(index)['connection'] == 'disconnected'
-        assert state(1)['confirmation'] == 'unconfirmed'
-        live_roster = client._call('agents.list', {})
-        live_candidate = next(row for row in live_roster['restore_candidates'] if row['tab_id'] == tabs[1])
-        assert live_candidate['label'] == 'historical_candidate', live_candidate
-        restored_working = next(row for row in live_roster['tabs'] if row['tab_id'] == tabs[1])
         expected_turn_start = datetime.fromtimestamp(
             attached_turn['committed_at_ms'] / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        assert restored_working['turn_started_at'] == expected_turn_start, restored_working
+        attached = {}
+        pre_attach = client._call('agents.list', {})
+        pre_attach_row = next(row for row in pre_attach['tabs'] if row['tab_id'] == tabs[1])
+        assert pre_attach_row['session_id'] is None and pre_attach_row['turn_started_at'] is None, \
+            'fixture owner and its turn cache must be absent after startup cache pass'
+        client._call('conversation.push', {
+            'tab_id': tabs[1], 'kind': 'claude-code', 'id': owners[1], 'source': 'hook'
+        })
+
+        def restored_caches_attached():
+            document = client._call('agents.list', {})
+            row = next(row for row in document['tabs'] if row['tab_id'] == tabs[1])
+            if row['state'] == 'blocked' and row['turn_started_at'] == expected_turn_start:
+                attached.update(document=document, row=row)
+                return True
+            return False
+
+        eventually(restored_caches_attached, 'late owner registration hydrates ask and turn caches', timeout=15)
+        live_roster, restored_deferred = attached['document'], attached['row']
+        eventually(lambda: state(1)['phase'] == 'blocked'
+                   and state(1)['confirmation'] == 'unconfirmed'
+                   and state(1)['connection'] == 'disconnected',
+                   'late owner attaches the offline baseline', timeout=15)
+        live_candidate = next(row for row in live_roster['restore_candidates'] if row['tab_id'] == tabs[1])
+        assert live_candidate['label'] == 'historical_candidate', live_candidate
+        assert restored_deferred['state'] == 'blocked', restored_deferred
+        assert restored_deferred['turn_started_at'] == expected_turn_start, restored_deferred
+        assert restored_deferred['confirmation'] == 'unconfirmed'
         with sqlite3.connect(root / 'lifecycle.sqlite3') as database:
             assert database.execute(
                 'SELECT count(*) FROM journal_events WHERE tab_id=?', (tabs[1],)).fetchone()[0] == attached_event_count

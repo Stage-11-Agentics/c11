@@ -784,6 +784,8 @@ class WorkspaceManager: ObservableObject {
 
     @Published var workspaces: [Workspace] = []
     @Published var workspaceGroups: [WorkspaceGroup] = []
+    private var workspaceRefsCancellable: AnyCancellable?
+    private var knownWorkspaceRefIds: Set<UUID> = []
     @Published private(set) var isWorkspaceCycleHot: Bool = false
     @Published private(set) var pendingBackgroundWorkspaceLoadIds: Set<UUID> = []
     @Published private(set) var debugPinnedWorkspaceLoadIds: Set<UUID> = []
@@ -1137,6 +1139,16 @@ class WorkspaceManager: ObservableObject {
 #endif
 
     init(initialWorkingDirectory: String? = nil) {
+        // @Published emits during willSet. Use the supplied collection rather
+        // than walking AppDelegate's still-partially-mutated window graph.
+        workspaceRefsCancellable = $workspaces.sink { [weak self] newWorkspaces in
+            guard let self else { return }
+            let ids = Set(newWorkspaces.map(\.id))
+            for workspace in newWorkspaces where !self.knownWorkspaceRefIds.contains(workspace.id) {
+                _ = TerminalController.shared.v2EnsureHandleRef(kind: .workspace, uuid: workspace.id)
+            }
+            self.knownWorkspaceRefIds = ids
+        }
         addWorkspace(workingDirectory: initialWorkingDirectory)
         observers.append(NotificationCenter.default.addObserver(
             forName: .ghosttyDidSetTitle,
@@ -1368,6 +1380,7 @@ class WorkspaceManager: ObservableObject {
         rootDirectory overrideRootDirectory: String? = nil,
         establishRootFromWorkingDirectory: Bool = true,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
         select: Bool = true,
         eagerLoadTerminal: Bool = false,
@@ -1400,6 +1413,7 @@ class WorkspaceManager: ObservableObject {
             portOrdinal: ordinal,
             configTemplate: inheritedConfig,
             initialTerminalCommand: initialTerminalCommand,
+            initialTerminalInput: initialTerminalInput,
             initialTerminalEnvironment: initialTerminalEnvironment
         )
         newWorkspace.owningWorkspaceManager = self
@@ -3950,14 +3964,15 @@ class WorkspaceManager: ObservableObject {
 
     /// Create a new split in the specified direction
     /// Returns the new panel's ID (which is also the surface ID for terminals)
-    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil) -> UUID? {
+    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil, initialInput: String? = nil) -> UUID? {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
         return workspace.newTerminalSplit(
             from: surfaceId,
             orientation: direction.orientation,
             insertFirst: direction.insertFirst,
             focus: focus,
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
+            initialInput: initialInput
         )?.id
     }
 

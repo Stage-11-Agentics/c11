@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import socket
 import socketserver
 import subprocess
@@ -172,11 +173,11 @@ def main():
             print("PASS: non-terminal, layout and invalid-type CLI/RPC rejections are atomic")
 
             replacement, marker = command("replacement")
-            # A custom non-shell stdin consumer keeps its viewport observable
-            # until cleanup; an exited one-shot command may close its workspace.
+            # Darwin Ghostty execs the first command, so use an explicit shell
+            # program for a receipt plus a bounded, noninteractive holder.
             payload = client._call("workspace.create", {
                 "title": "C11-280 replacement fixture",
-                "initial_command": replacement + "; exec /bin/cat"
+                "initial_command": "/bin/sh -c " + shlex.quote(replacement + "; exec /bin/sleep 30")
             })
             replacement_ws = own(payload)
             replacement_tab = tab_of(payload, replacement_ws)

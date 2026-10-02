@@ -4763,7 +4763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     nonisolated static func shouldSaveSessionSnapshotOnResign() -> Bool {
-        true
+        false
     }
 
     /// Runtime seam used by the AppKit resign callback. Tests exercise this

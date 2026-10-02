@@ -295,7 +295,7 @@ class Harness:
                                      'applied': applied['applied'], 'clamped': applied['clamped'], 'passed': True})
 
         first_read, second_read = self.resize(self.second), self.resize(self.second)
-        require(same_geometry(first_read, second_read), 'repeated reads changed origin or size')
+        require(geometry(first_read) == geometry(second_read), 'repeated reads changed exact origin or size')
         self.assert_top_left(initial, second_read)
         self.assert_primary_unchanged()
         self.report['cases'].append({'case': 'read-keeps-frame-and-omits-write-edges', 'changed': False, 'passed': True})

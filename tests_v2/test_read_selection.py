@@ -40,6 +40,19 @@ def main():
         assert target.startswith('/tmp/c11-sandbox-'), 'mouse/activation requires sandbox guest'
         driver = os.environ['C11_282_UI_DRIVER']
         pid, tag, window = (os.environ[key] for key in ('C11_282_PID', 'C11_282_TAG', 'C11_282_WINDOW'))
+        subprocess.run([driver, 'check', pid, tag, window], check=True, stdout=subprocess.DEVNULL, timeout=10)
+        front = subprocess.check_output(['osascript', '-e', 'tell application "System Events" to get unix id of first application process whose frontmost is true'], timeout=10).decode().strip()
+        assert front == pid, 'verified tagged app must be frontmost in isolated guest'
+        if command in ('drag', 'click'):
+            observed = json.loads(subprocess.check_output([driver, 'list', pid, tag], timeout=10))
+            bounds = next(row['kCGWindowBounds'] for row in observed['windows'] if str(row['kCGWindowNumber']) == window)
+            def point(x,y): return f'{round(bounds["X"]+x)},{round(bounds["Y"]+y)}'
+            if command == 'drag':
+                x1,y1,x2,y2 = extra
+                events = ['dd:'+point(x1,y1), 'w:100', 'dm:'+point(x2,y2), 'w:100', 'du:'+point(x2,y2)]
+            else: events = ['c:'+point(*extra)]
+            subprocess.run(['/opt/homebrew/bin/cliclick', *events], check=True, timeout=10)
+            return {}
         return json.loads(subprocess.check_output([driver, command, pid, tag, window, *map(str, extra)], timeout=10))
 
     with cmux(target) as client:

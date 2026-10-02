@@ -6268,6 +6268,9 @@ final class Workspace: Identifiable, ObservableObject {
     private var layoutFollowUpAttemptScheduled = false
     private var layoutFollowUpAttemptVersion: Int = 0
     private var layoutFollowUpStalledAttemptCount = 0
+#if DEBUG
+    private var debugLayoutFlushCount: UInt64 = 0
+#endif
     private var isAttemptingLayoutFollowUp = false
     private var isNormalizingPinnedTabOrder = false
     private var pendingNonFocusSplitFocusReassert: PendingNonFocusSplitFocusReassert?
@@ -10638,6 +10641,23 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func flushWorkspaceWindowLayouts() {
+#if DEBUG
+        let flushStart = CACurrentMediaTime()
+        debugLayoutFlushCount &+= 1
+        let flushCount = debugLayoutFlushCount
+        let flushReason = layoutFollowUpReason ?? "nil"
+        let windowCount = NSApp.windows.count
+        // Measure at the actual flush boundary, including attempts that return
+        // immediately after convergence. Attempt-only logs miss those flushes.
+        defer {
+            let flushMs = (CACurrentMediaTime() - flushStart) * 1000
+            dlog(
+                "ws.layoutFollowUp.flush workspace=\(id.uuidString) " +
+                "count=\(flushCount) windows=\(windowCount) " +
+                "flushMs=\(String(format: "%.3f", flushMs)) reason=\(flushReason)"
+            )
+        }
+#endif
         for window in NSApp.windows {
             window.contentView?.layoutSubtreeIfNeeded()
             window.contentView?.displayIfNeeded()

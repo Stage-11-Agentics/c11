@@ -34,7 +34,34 @@ final class JournalCoordinator: @unchecked Sendable {
         let callback = sink
         lock.unlock()
         if hadProjection { callback?(tabID, nil, nil) }
+        if let owner, owner.agentKind == "codex" {
+            registerCodexHookGap(owner)
+        }
         refreshOwners([tabID])
+    }
+
+    /// Codex currently has only the root `notify` completion rail. Record that
+    /// bounded provider gap only after ConversationStore has established an
+    /// exact causal owner; a wrapper claim or a sessionless observer must not
+    /// create a live projection. The control event changes health only and is
+    /// intentionally kept off the actor, socket and typing paths.
+    private func registerCodexHookGap(_ owner: JournalOwner) {
+        startupQueue.async { [self] in
+            guard isEligible(owner), let workspaceID = target(tabID: owner.tabID) else { return }
+            var draft = JournalDraft(
+                kind: .stateChanged,
+                emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+                tabID: owner.tabID,
+                workspaceID: workspaceID,
+                sessionID: owner.sessionID,
+                agentKind: owner.agentKind,
+                source: .c11,
+                adapter: .c11,
+                nativeEvent: "adapter_gap"
+            )
+            draft.signal = .adapterGap
+            _ = try? append(draft)
+        }
     }
     func refreshOwners(_ tabIDs: [UUID]? = nil) {
         lock.lock(); let ids = tabIDs ?? Array(targets.keys); let ready = started; lock.unlock()

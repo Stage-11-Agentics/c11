@@ -9771,8 +9771,9 @@ struct CMUXCLI {
             paste with no text reads stdin. send - reads stdin explicitly.
             Default send decodes \\n and \\r as Return, \\t as Tab.
             --raw preserves literal escapes and newline content.
-            --no-submit suppresses c11's additional Return; newline content
-            can still execute in a program that does not use bracketed paste.
+            For raw/paste, --no-submit suppresses c11's additional Return.
+            Default send still treats a trailing newline as submit. Newline content
+            can execute in a program that does not use bracketed paste.
             Unknown --flags are errors before --; use -- for literal flag text.
 
             Flags:

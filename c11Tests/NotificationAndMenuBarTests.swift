@@ -957,7 +957,7 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
         XCTAssertFalse(snapshot.hasNotifications)
         XCTAssertTrue(snapshot.recentNotifications.isEmpty)
         XCTAssertEqual(snapshot.flags, [flag])
-        XCTAssertTrue(snapshot.stateHintTitle.contains("1 flag · 0 open asks"))
+        XCTAssertTrue(snapshot.attentionStateHintTitle.contains("1 flag · 0 open asks"))
     }
 
     func testSuppressedUnflaggedNoticesAreQuietWithoutChangingRoutineHistory() {

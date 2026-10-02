@@ -14155,7 +14155,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         displayedUnreadCount = actualUnreadCount
 #endif
 
-        stateHintItem.title = snapshot.stateHintTitle
+        stateHintItem.title = snapshot.attentionStateHintTitle
 
         applyShortcut(shortcutProvider(.showNotifications), to: showNotificationsItem)
         applyShortcut(shortcutProvider(.jumpToUnread), to: jumpToUnreadItem)
@@ -14345,6 +14345,12 @@ struct NotificationMenuSnapshot {
     }
 
     var stateHintTitle: String {
+        let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        return flags.isEmpty ? routineTitle : NotificationMenuSnapshotBuilder.flagCountTitle(flagCount) + " · " + routineTitle
+    }
+
+    /// Only Feed-aware consumers advertise an ask count; the legacy Notifications menu does not subscribe to Feed.
+    var attentionStateHintTitle: String {
         let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
         return NotificationMenuSnapshotBuilder.attentionCountTitle(flags: flagCount, asks: openAskCount) + " · " + routineTitle
     }

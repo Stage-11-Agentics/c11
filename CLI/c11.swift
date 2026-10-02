@@ -1390,15 +1390,26 @@ final class SocketClient {
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
         var params = params
         if let scopedWindow, params["window_id"] == nil,
-           method.hasPrefix("workspace.") || method.hasPrefix("tab.") || method.hasPrefix("area.")
+           method.hasPrefix("workspace.") || (method.hasPrefix("tab.") && method != "tab.move") || method.hasPrefix("area.")
             || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
             || ["system.identify", "system.tree", "agent.launch", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
             params["window_id"] = scopedWindow
         }
         if let scopedWindow, ["tab.move", "tab.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.suppress", "flag.unsuppress"].contains(method) {
-            // These older handlers locate tabs globally. Check the source and
-            // destination handles before allowing a window-scoped mutation.
-            try validateScopedTargets(params, window: scopedWindow, deadline: deadline)
+            // tab.move treats window_id as a destination, so its global scope
+            // is source admission rather than a synthesized destination.
+            if method == "tab.move", let destination = params["window_id"] as? String {
+                var sourceParams: [String: Any] = [:]
+                if let tab = params["tab_id"] { sourceParams["tab_id"] = tab }
+                try validateScopedTargets(sourceParams, window: scopedWindow, deadline: deadline)
+                var destinationParams = params
+                destinationParams.removeValue(forKey: "tab_id")
+                try validateScopedTargets(destinationParams, window: destination, deadline: deadline)
+            } else {
+                // These older handlers locate targets globally. Validate their
+                // membership before allowing a window-scoped mutation.
+                try validateScopedTargets(params, window: scopedWindow, deadline: deadline)
+            }
         }
         if method == "system.capabilities" {
             return try sendV2Raw(method: method, params: params, deadline: deadline)

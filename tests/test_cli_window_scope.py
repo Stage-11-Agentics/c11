@@ -243,15 +243,25 @@ class Server(socketserver.ThreadingUnixStreamServer):
             workspace = self.workspace(window, {"tab_id": params.get("tab_id")})
             tab = self.target(workspace, "tab", params)
             if method == "tab.move":
-                destination_params = {"workspace_id": params["workspace_id"]} if "workspace_id" in params else {}
-                destination = self.workspace(self.window(destination_params), destination_params) if destination_params else workspace
+                # window_id is a destination selector, not source scope. Even
+                # same-window injection chooses its selected workspace, which
+                # would silently relocate a tab from a nonselected workspace.
+                destination_params = {key: params[key] for key in ("window_id", "workspace_id") if key in params}
+                destination_window = self.window(destination_params) if destination_params else window
+                destination = self.workspace(destination_window, destination_params) if destination_params else workspace
                 if "area_id" in params:
                     area = self.target(destination, "area", params)
                     tab["area_id"], tab["area_ref"] = area["id"], area["ref"]
                 if destination is not workspace:
                     workspace["tabs"].remove(tab)
                     destination["tabs"].append(tab)
+                    if "area_id" not in params:
+                        tab["area_id"], tab["area_ref"] = destination["areas"][0]["id"], destination["areas"][0]["ref"]
                     workspace = destination
+                    window = destination_window
+                if "index" in params:
+                    workspace["tabs"].remove(tab)
+                    workspace["tabs"].insert(params["index"], tab)
             else:
                 workspace["tabs"].remove(tab)
                 workspace["tabs"].insert(params.get("index", 0), tab)
@@ -423,10 +433,21 @@ def main() -> int:
             assert not any(method == "window.focus" for method, _ in server.calls), server.calls
             return proc
 
-        def routed(method: str) -> dict:
+        def routed(method: str, *, destination: dict | None = None) -> dict:
             calls = [params for name, params in server.calls if name == method]
             assert calls, (method, server.calls)
-            assert all(matches(b, params.get("window_id")) for params in calls), server.calls
+            if method == "tab.move":
+                # Source membership is admitted in B; the endpoint's window_id
+                # only denotes an explicitly requested destination window.
+                assert all(any(matches(tab, params.get("tab_id")) for workspace in b["workspaces"]
+                               for tab in workspace["tabs"]) for params in calls), server.calls
+                if destination is None:
+                    assert all("window_id" not in params for params in calls), server.calls
+                else:
+                    assert all(matches(destination, params.get("window_id")) for params in calls), server.calls
+            else:
+                assert destination is None
+                assert all(matches(b, params.get("window_id")) for params in calls), server.calls
             assert server.windows[0]["key"] and not server.windows[1]["key"], server.windows
             return calls[-1]
 
@@ -666,6 +687,24 @@ def main() -> int:
                 run(command, "--tab", b_tab["ref"], *extra, success=False)
                 assert not any(name == method for name, _ in server.calls), server.calls
                 unchanged()
+            source_ws = b["workspaces"][1]
+            source_tab = source_ws["tabs"][1]
+            payload = json.loads(run("move-tab", "--tab", source_tab["ref"], "--index", "0").stdout)
+            assert payload["workspace_id"] == source_ws["id"] and payload["area_id"] == source_tab["area_id"], payload
+            routed("tab.move")
+            assert server.mutations == [("tab.move", b["ref"], source_ws["ref"], source_tab["ref"])], server.mutations
+            assert server.windows[0] == a and server.windows[1]["workspaces"][0] == b_ws
+            assert len(server.windows[1]["workspaces"][1]["tabs"]) == 2
+
+            payload = json.loads(run("move-tab", "--tab", b_tab["ref"], "--window", a["ref"],
+                                     "--workspace", a_ws["ref"]).stdout)
+            assert payload["window_id"] == a["id"] and payload["workspace_id"] == a_ws["id"], payload
+            routed("tab.move", destination=a)
+            assert server.mutations == [("tab.move", a["ref"], a_ws["ref"], b_tab["ref"])], server.mutations
+            assert len(server.windows[0]["workspaces"][0]["tabs"]) == 3
+            assert len(server.windows[1]["workspaces"][0]["tabs"]) == 1
+            assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["tabs"])
+            assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["tabs"])
 
             # config.launch carries scope even when requesting a new workspace.
             for extra in ([], ["--new-workspace"]):

@@ -15,6 +15,32 @@ struct JournalSpool {
         var remaining = false
     }
 
+    /// Serialize namespace clear against offline producers. The database reset
+    /// commits while the spool lock is held; only then are pre-clear drafts
+    /// removed, preserving the retained sequence boundary in SQLite.
+    func clearTogether<T>(_ clearDatabase: () throws -> T) throws -> T {
+        try layout.prepare()
+        let lock = Darwin.open(layout.spool.appendingPathComponent(".lock").path,
+                               O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
+        guard lock >= 0 else { throw JournalError.unavailable }
+        defer { close(lock) }
+        guard flock(lock, LOCK_EX) == 0 else { throw JournalError.unavailable }
+        defer { flock(lock, LOCK_UN) }
+
+        let result = try clearDatabase()
+        for name in try FileManager.default.contentsOfDirectory(atPath: layout.spool.path) where name != ".lock" {
+            let path = layout.spool.appendingPathComponent(name).path
+            var info = stat()
+            guard lstat(path, &info) == 0 else {
+                if errno == ENOENT { continue }
+                throw JournalError.unavailable
+            }
+            guard info.st_uid == getuid(), (info.st_mode & S_IFMT) == S_IFREG else { continue }
+            guard unlink(path) == 0 || errno == ENOENT else { throw JournalError.unavailable }
+        }
+        return result
+    }
+
     @discardableResult
     func write(_ draft: JournalDraft) -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + 25_000_000

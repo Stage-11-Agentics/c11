@@ -1,0 +1,44 @@
+{
+  "invocation": "60875ef7f7a5431e8e4fd905577fd8e7",
+  "head": "52056252f3f30b3bf42af24fd1c69b5ab724bf0c",
+  "parent_head": "41503ecb0add592daca125c53cdd46c550953c10",
+  "branch": "c11-1.0/C11-273-journal",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [
+    {
+      "path": "tests_v2/journal_perf_probe.py",
+      "kind": "file",
+      "sha256": "9a55e256b49e110db566b5c4241482cc7c5946e47afb38c900565f403bb25625",
+      "mode": 420
+    },
+    {
+      "path": "tests_v2/journal_ui_probe.py",
+      "kind": "file",
+      "sha256": "b3d6b0d597e537a078eab7b94835ba6f32f9235f6d4f4e10474b4631815720e9",
+      "mode": 420
+    },
+    {
+      "path": "tests_v2/test_journal_append_replay.py",
+      "kind": "file",
+      "sha256": "4f4e6e0b36f5ee9d21adb08a92066ae154165cfd72a4192adabfcc0d67ad847b",
+      "mode": 420
+    },
+    {
+      "path": "tests_v2/test_journal_restart.py",
+      "kind": "file",
+      "sha256": "b87a13fea3add960ec6109774d77b8ef80f414217d05287ba4800497eb128eff",
+      "mode": 420
+    }
+  ],
+  "dirty": true,
+  "tag": "c11-273-journal",
+  "mode": "test",
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}

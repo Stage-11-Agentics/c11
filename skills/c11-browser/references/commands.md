@@ -94,7 +94,7 @@ c11 browser <tab> download wait --timeout-ms 10000
 
 - Use `--snapshot-after` on mutating actions to return a fresh post-action snapshot.
 - Re-snapshot after navigation, modal open/close, or major DOM changes.
-- Prefer short handles in outputs by default (`tab:N`, `area:N`, `workspace:N`, `window:N`).
+- Prefer short handles in outputs by default (`tab:N`, `area:N`, `workspace:N`, `window:N`) within the current c11 process; they start over after a restart, so store the tab UUID from `c11 --id-format both tree --json` for later targeting.
 - Use `--id-format both` only when a UUID must be logged/exported.
 
 ## Known WKWebView Gaps (`not_supported`)

@@ -1858,6 +1858,37 @@ struct CMUXCLI {
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
+        var rpcCall: (method: String, params: [String: Any])?
+        if command == "rpc" {
+            if commandArgs == ["--help"] || commandArgs == ["-h"] {
+                _ = dispatchSubcommandHelp(command: command, commandArgs: commandArgs)
+                return
+            }
+            do {
+                rpcCall = try CapabilityFeatures.current.dispatch(.rpc) {
+                    try RpcCommand.parse(commandArgs)
+                }
+            } catch let error as RpcCommand.ValidationError {
+                throw CLIError(message: error.description)
+            }
+        }
+        // Remove the literal command value before inspecting create flags. A
+        // body such as "--layout" is input, not another CLI option.
+        let isTerminalCreate = ["new-workspace", "new-split", "new-area", "new-tab"].contains(command)
+        let (createCommandText, createArgs) = isTerminalCreate
+            ? parseOption(commandArgs, name: "--command") : (nil, commandArgs)
+        // Validate create input before socket discovery or any routing query.
+        if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
+            if createArgs.contains("--command"), createCommandText == nil {
+                throw CLIError(message: String(localized: "cli.create.command.requiresValue", defaultValue: "--command requires text"))
+            }
+            _ = try resolvedCreateInput(
+                raw: createCommandText,
+                panelType: command == "new-workspace" || command == "new-split" ? "terminal" : optionValue(createArgs, name: "--type"),
+                hasLayout: command == "new-workspace" && createArgs.contains("--layout")
+            )
+        }
+
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -1892,15 +1923,17 @@ struct CMUXCLI {
 
         // Check for --help/-h on subcommands before connecting to the socket,
         // so help text is available even when cmux is not running.
-        if command != "__tmux-compat",
+        if command != "rpc",
+           command != "__tmux-compat",
            command != "claude-teams",
-           (commandArgs.contains("--help") || commandArgs.contains("-h")) {
+           (createArgs.contains("--help") || createArgs.contains("-h")) {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return
             }
             print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
             return
         }
+
 
         if command == "health" {
             try runHealth(commandArgs: commandArgs, jsonOutput: jsonOutput)
@@ -1999,6 +2032,20 @@ struct CMUXCLI {
             return
         }
 
+        // C11-308 / cmux #15980: reject a sequence before authentication or
+        // --window routing can send anything to the app. The command arms
+        // retain their target validation and command-specific missing-key text.
+        if command == "send-key" || command == "send-key-tab" {
+            let (_, remainder) = parseOption(commandArgs, name: "--workspace")
+            let (_, keyRemainder) = parseOption(remainder, name: "--surface")
+            let keys = keyRemainder.first == "--" ? Array(keyRemainder.dropFirst()) : keyRemainder
+            do {
+                _ = try SendKeyArgs.single(keys)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "\(command) requires a key")
+            }
+        }
+
         // Admission and advertised support share the feature registry. The
         // send handlers below still enforce the explicit-tab contract.
         if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
@@ -2095,6 +2142,13 @@ struct CMUXCLI {
             let server = response["server"] as? [String: Any]
             response["sha_match"] = C11BuildIdentity.commitsMatch(identity.commit, server?["commit"] as? String) as Any? ?? NSNull()
             print(jsonString(formatIDs(response, mode: idFormat)))
+
+        case "rpc":
+            guard let rpcCall else { preconditionFailure("rpc must be parsed before connect") }
+            let response = try CapabilityFeatures.current.dispatch(.rpc) {
+                try client.sendV2(method: rpcCall.method, params: rpcCall.params)
+            }
+            print(jsonString(response))
 
         case "brand":
             let response = try client.sendV2(method: "system.brand")
@@ -2351,7 +2405,8 @@ struct CMUXCLI {
             )
 
         case "new-workspace":
-            let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
+            let commandOpt = createCommandText
+            let rem0 = createArgs
             let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
             let (rootOpt, rem2) = parseOption(rem1, name: "--root")
             let (layoutOpt, rem3) = parseOption(rem2, name: "--layout")
@@ -2360,6 +2415,9 @@ struct CMUXCLI {
                 throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --root <path>, --layout <path|name>, --title <text>")
             }
             var params: [String: Any] = [:]
+            if let input = try resolvedCreateInput(raw: commandOpt, panelType: "terminal", hasLayout: layoutOpt != nil) {
+                params["initial_input"] = input
+            }
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
@@ -2376,28 +2434,27 @@ struct CMUXCLI {
                 params["layout"] = try resolveBlueprintPlan(layoutRef, client: client)
             }
             let response = try client.sendV2(method: "workspace.create", params: params)
-            let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
-            print("OK \(wsId)")
-            if let commandText = commandOpt, !wsId.isEmpty {
-                let text = unescapeSendText(commandText + "\\n")
-                let sendParams: [String: Any] = ["text": text, "workspace_id": wsId]
-                _ = try client.sendV2(method: "tab.send_text", params: sendParams)
-            }
+            printV2Payload(response, jsonOutput: jsonOutput, idFormat: idFormat,
+                           fallbackText: createOKSummary(response, idFormat: idFormat, kinds: ["workspace"]))
 
         case "new-split":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (wsArg, rem0) = parseOption(createArgs, name: "--workspace")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
             let (sfArg, rem2) = parseOption(rem1, name: "--surface")
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
+            let rem5 = rem4
+            let createCommand = createCommandText
+            let initialInput = try resolvedCreateInput(raw: createCommand, panelType: "terminal")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? Self.callerTabEnv() : nil)
             // The direction is the first non-flag token (so `--allow-undersized` can
             // appear on either side of it).
-            guard let direction = rem4.first(where: { !$0.hasPrefix("-") }) else {
+            guard let direction = rem5.first(where: { !$0.hasPrefix("-") }) else {
                 throw CLIError(message: "new-split requires a direction")
             }
             var params: [String: Any] = ["direction": direction]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
@@ -2413,12 +2470,12 @@ struct CMUXCLI {
             }
             // --allow-undersized (alias --force) bypasses the size-aware split policy
             // for this one call.
-            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+            if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
             let payload = try client.sendV2(method: "tab.split", params: params)
             printSizeWarning(payload)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat))
 
         case "list-areas":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
@@ -2488,14 +2545,16 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["area", "workspace"]))
 
         case "new-area":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
-            let type = optionValue(commandArgs, name: "--type")
-            let direction = optionValue(commandArgs, name: "--direction") ?? "right"
-            let url = optionValue(commandArgs, name: "--url")
-            let file = optionValue(commandArgs, name: "--file")
-            let title = optionValue(commandArgs, name: "--title")
-            let cwd = optionValue(commandArgs, name: "--cwd")
+            let workspaceArg = workspaceFromArgsOrEnv(createArgs, windowOverride: windowId)
+            let type = optionValue(createArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: createCommandText, panelType: type)
+            let direction = optionValue(createArgs, name: "--direction") ?? "right"
+            let url = optionValue(createArgs, name: "--url")
+            let file = optionValue(createArgs, name: "--file")
+            let title = optionValue(createArgs, name: "--title")
+            let cwd = optionValue(createArgs, name: "--cwd")
             var params: [String: Any] = ["direction": direction]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             if let type { params["type"] = type }
@@ -2511,12 +2570,12 @@ struct CMUXCLI {
             }
             // --allow-undersized (alias --force) bypasses the size-aware split policy
             // for this one call.
-            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+            if createArgs.contains("--allow-undersized") || createArgs.contains("--force") {
                 params["allow_undersized"] = true
             }
             let payload = try client.sendV2(method: "area.create", params: params)
             printSizeWarning(payload)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "launch-agent":
             // Typed-agent launch: one command that owns per-agent invocation
@@ -2747,14 +2806,16 @@ struct CMUXCLI {
             printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "new-tab":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
-            let type = optionValue(commandArgs, name: "--type")
-            let paneRaw = optionValue(commandArgs, name: "--pane")
-            let url = optionValue(commandArgs, name: "--url")
-            let file = optionValue(commandArgs, name: "--file")
-            let cwd = optionValue(commandArgs, name: "--cwd")
-            let noFocus = commandArgs.contains("--no-focus")
+            let workspaceArg = workspaceFromArgsOrEnv(createArgs, windowOverride: windowId)
+            let type = optionValue(createArgs, name: "--type")
+            let initialInput = try resolvedCreateInput(raw: createCommandText, panelType: type)
+            let paneRaw = optionValue(createArgs, name: "--pane")
+            let url = optionValue(createArgs, name: "--url")
+            let file = optionValue(createArgs, name: "--file")
+            let cwd = optionValue(createArgs, name: "--cwd")
+            let noFocus = createArgs.contains("--no-focus")
             var params: [String: Any] = [:]
+            if let initialInput { params["initial_input"] = initialInput }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
@@ -2769,7 +2830,7 @@ struct CMUXCLI {
             }
             if noFocus { params["focus"] = false }
             let payload = try client.sendV2(method: "tab.create", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["tab", "area", "workspace"]))
 
         case "close-tab":
             try rejectEmptyTargetFlags(commandArgs)
@@ -3151,7 +3212,12 @@ struct CMUXCLI {
                 throw CLIError(message: "send-key requires --tab <id|ref> (or run inside a c11 tab so C11_TAB_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
-            guard let key = keyArgs.first else { throw CLIError(message: "send-key requires a key") }
+            let key: String
+            do {
+                key = try SendKeyArgs.single(keyArgs)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "send-key requires a key")
+            }
             var params: [String: Any] = ["key": key]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -3200,7 +3266,12 @@ struct CMUXCLI {
                 throw CLIError(message: "send-key-tab requires --tab")
             }
             let skpArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
-            let key = skpArgs.first ?? ""
+            let key: String
+            do {
+                key = try SendKeyArgs.single(skpArgs)
+            } catch SendKeyArgs.Failure.missingKey {
+                throw CLIError(message: "send-key-tab requires a key")
+            }
             guard !key.isEmpty else { throw CLIError(message: "send-key-tab requires a key") }
             var params: [String: Any] = ["key": key]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -9031,6 +9102,14 @@ struct CMUXCLI {
             Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
             sha_match is null when either build has no commit stamp.
             """
+        case "rpc":
+            return """
+            Usage: c11 rpc <method> [json] [--json]
+
+            Call one local socket method and print its result as JSON.
+            Params must be a JSON object. Prefer a friendly command when available.
+            Remote commands over c11 ssh remain unavailable.
+            """
         case "guide":
             return """
             Usage: c11 guide [page] [--json]
@@ -9513,7 +9592,7 @@ struct CMUXCLI {
             Flags:
               --cwd <path>           Set the working directory for the new workspace
               --root <path>          Set its stable agent-launch root (also the cwd when --cwd is omitted)
-              --command <text>       Send text+Enter to the new workspace after creation
+              --command <text>       Queue text+Return into the new shell; incompatible with --layout
               --title <text>         Set the workspace title inline (same as a follow-up rename)
               --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
@@ -9630,6 +9709,7 @@ struct CMUXCLI {
             Split the current area in the given direction.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
               --tab <id|ref>     Tab to split from (default: $C11_TAB_ID)
               --title <text>         Seed the new area's title metadata atomically with creation
@@ -9758,6 +9838,7 @@ struct CMUXCLI {
             Create a new area in the workspace.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Area type (default: terminal)
               --direction <left|right|up|down>    Split direction (default: right)
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -9859,6 +9940,7 @@ struct CMUXCLI {
             Create a new tab in an area.
 
             Flags:
+              --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Tab type (default: terminal)
               --area <id|ref>                     Target area
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -10294,6 +10376,7 @@ struct CMUXCLI {
             Usage: c11 send-key [flags] [--] <key>
 
             Send a key event to a terminal tab.
+            Pass one key per call; a second key is an error. Send the next key in its own call.
 
             Flags:
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -10321,6 +10404,7 @@ struct CMUXCLI {
             Usage: c11 send-key-tab --tab <id|ref> [flags] [--] <key>
 
             Send a key event to a specific tab.
+            Pass one key per call; a second key is an error. Send the next key in its own call.
 
             Flags:
               --tab <id|ref>       Target tab (required)
@@ -14458,6 +14542,20 @@ struct CMUXCLI {
         }
     }
 
+    private func resolvedCreateInput(raw: String?, panelType: String?, hasLayout: Bool = false) throws -> String? {
+        let decision = CreateInitialInput.decide(raw: raw, panelType: panelType, hasLayout: hasLayout)
+        if let message = decision.errorMessage(panelType: panelType) { throw CLIError(message: message) }
+        guard let input = decision.queuedInput else { return nil }
+        return try CapabilityFeatures.current.dispatch(.initialInput) { input }
+    }
+
+    private func createOKSummary(_ payload: [String: Any], idFormat: CLIIDFormat,
+                                 kinds: [String] = ["tab", "workspace"]) -> String {
+        let summary = v2OKSummary(payload, idFormat: idFormat, kinds: kinds)
+        guard payload["initial_input"] as? String == "queued" else { return summary }
+        return summary + " input=queued"
+    }
+
     private func v2OKSummary(_ payload: [String: Any], idFormat: CLIIDFormat, kinds: [String] = ["tab", "workspace"]) -> String {
         var parts = ["OK"]
         for kind in kinds {
@@ -16594,12 +16692,16 @@ struct CMUXCLI {
         }
         argv.append(nil)
 
+        // c11 ignores SIGPIPE for its own safe writes; the child must start
+        // with the normal disposition. Restore it if exec returns an error.
+        let priorSIGPIPE = signal(SIGPIPE, SIG_DFL)
         if claudeExecutablePath != nil {
             execv(launchPath, &argv)
         } else {
             execvp("claude", &argv)
         }
         let code = errno
+        _ = signal(SIGPIPE, priorSIGPIPE)
         throw CLIError(message: "Failed to launch claude: \(String(cString: strerror(code)))")
     }
 
@@ -18703,6 +18805,7 @@ struct CMUXCLI {
           version
           guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
+          rpc <method> [json] [--json]
           brand [--json]
           history [list] [--json] [--limit <1...200>]
           history back [--json]
@@ -18726,13 +18829,13 @@ struct CMUXCLI {
           workspace export-blueprint --name <name> [--workspace <ref>] [--description <text>] [--out <path>] [--force]
           ssh <destination> [--name <title>] [--port <n>] [--identity <path>] [--ssh-option <opt>] [-- <remote-command-args>]
           remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
-          new-split <left|right|up|down> [--workspace <id|ref>] [--tab <id|ref>] [--title <text>]
+          new-split <left|right|up|down> [--command <text>] [--workspace <id|ref>] [--tab <id|ref>] [--title <text>]
           list-areas [--workspace <id|ref>]
           list-area-tabs [--workspace <id|ref>] [--area <id|ref>]
           tree [--all] [--workspace <id|ref|index>]
           focus-area --area <id|ref> [--workspace <id|ref>]
-          new-area [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
-          new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
+          new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
+          new-tab [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
           close-tab [--tab <id|ref>] [--workspace <id|ref>]
           move-tab --tab <id|ref|index> [--area <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
           reorder-tab --tab <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
@@ -19100,11 +19203,10 @@ extension CMUXCLI {
           For every other tool, c11 prints the manual command and only writes
           to disk when --tool is passed explicitly — the operator stays in charge.
 
-        Plugins:
-          For OpenCode, `install --tool opencode` also copies bundled plugins
-          (notification + status bridge) into ~/.config/opencode/plugins/.
-          OpenCode auto-loads plugins from that directory at startup — no
-          opencode.json edit required.
+        OpenCode runtime plugin:
+          The bundled PATH wrapper loads the notification/status plugin for
+          that process only. Skill install/remove never writes or deletes
+          ~/.config/opencode/plugins/. Older copies remain for operator review.
         """
     }
 

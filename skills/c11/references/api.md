@@ -50,6 +50,8 @@ Most commands default to the caller's context via env vars — no flags needed w
 
 Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
 
+Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
+
 ## Environment variables
 
 Auto-exported into every c11 tab child process.
@@ -67,6 +69,23 @@ Auto-exported into every c11 tab child process.
 | `C11_AGENT_TASK` | Declared agent task ID |
 
 ## Discovery & state
+
+During initial session restoration, graph-dependent socket requests return
+v2 `error.code: "not_ready"` (v1: `ERROR: not_ready: ...`). Retry this condition
+with a short delay and a bounded deadline; it is not a successful empty tree.
+The listener starts before restored terminals. `ping` stays available for
+wrapper connectivity checks, but a successful ping does not mean restoration
+has finished. `system.ping`, `system.capabilities`, `system.brand`, and
+`auth.login` also remain available. Once `tree --all` succeeds, the initial
+restored window graph is installed and UUID-targeted commands can proceed.
+The bundled shells' UUID-scoped `report_tty` and `report_shell_state` reports
+are accepted and coalesced during restoration, then applied to the completed
+graph. Their `OK` means the report was retained; it does not bypass readiness
+for commands that read or manipulate tabs.
+
+Refs are registered when windows, workspaces, areas, and tabs are created.
+Steady commands do not rebuild the global ref table. A closed ref is never
+reassigned to another object during the process lifetime.
 
 ```bash
 c11 identify                         # JSON: caller/focused refs + each workspace's root_directory
@@ -146,9 +165,9 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # (default: the picker's last layout). No agent is launched unless --agent. Does not steal focus.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
-c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
-c11 new-area [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
-c11 new-tab [--type <terminal|browser|markdown>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
+c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
+c11 new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
+c11 new-tab [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
@@ -222,6 +241,8 @@ c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] <title>
 c11 close-tab [--tab <id|ref>]      # Close a tab (defaults to caller's)
 c11 close-workspace --workspace <id|ref>    # Close entire workspace
 ```
+
+For these four create commands, `--command` queues literal text plus Return into the new terminal shell through Ghostty startup input. It keeps the shell alive and reports `initial_input: queued`, which does not mean the command finished. Blank input is omitted. Browser/markdown tabs and areas reject nonblank `--command`; `new-workspace --layout` also rejects it before creating anything. `initial_command` remains a separate shell-replacement RPC field. Queued input is consumed at native creation and is not saved or replayed during restore.
 
 ### `new-split` vs `new-area` vs `new-tab`
 
@@ -407,6 +428,8 @@ Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still 
 - Function keys: `f1`–`f12`
 - Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
 
+`ctrl-c`, `ctrl-d`, `ctrl-z`, and `ctrl-<letter>` are real key events, so a Kitty TUI such as Claude Code or Codex can be interrupted; pass one key per call, a second key is an error, and send the next key in a second call.
+
 ## Live messages page
 
 ```bash
@@ -545,29 +568,37 @@ plus identical `CMUX_NOTIFICATION_*` aliases. Workspace-only notices export an
 empty tab ID. Existing CMUX title/subtitle/body fields remain available. Delivery
 requires authorization and successful macOS banner scheduling.
 
-## Skill + Plugin Installation (`c11 skill install`)
+## Skill Installation (`c11 skill install`)
 
-`c11 skill install --tool <tui>` copies the c11 skill bundle (and for OpenCode, a notification plugin) into the TUI's config directories. Human-run, consent-gated, reversible.
+`c11 skill install --tool <tui>` copies the c11 skill bundle into the TUI's skills directory. Human-run, consent-gated, reversible.
 
 ```bash
 c11 skill install --tool claude        # Skills → ~/.claude/skills/
-c11 skill install --tool opencode      # Skills → ~/.opencode/skills/ + plugin → ~/.config/opencode/plugins/
+c11 skill install --tool opencode      # Skills → ~/.config/opencode/skills/
 c11 skill install --tool codex         # Skills → ~/.codex/skills/
 c11 skill install --tool kimi          # Skills → ~/.kimi/skills/
 c11 skill status [--json]              # Detection + install state for all tools
 c11 skill install --tool opencode --dry-run   # Show what would be written
-c11 skill remove --tool opencode       # Reverses install (skills + plugins)
+c11 skill remove --tool opencode       # Removes c11-installed skills only
 ```
 
-For OpenCode, the installer also copies a bundled plugin (`c11-notify.js`) into `~/.config/opencode/plugins/`. The plugin bridges `session.idle`, `permission.asked`, `session.error`, and `session.status` events into c11 notifications and sidebar status updates — giving OpenCode the same "blue ring + tab highlight + Cmd+Shift+U" workflow as Claude Code. OpenCode auto-loads plugins from that directory at startup; no `opencode.json` edit is required.
+OpenCode's bundled PATH wrapper loads the notification/status plugin per process
+inside a live c11 terminal. It uses a free `OPENCODE_CONFIG_CONTENT` slot, or
+`OPENCODE_CONFIG=/dev/fd/3` while preserving existing inline content. If both
+slots are occupied, both remain unchanged and bundled-plugin injection is skipped.
+Skill installation/removal never touches `~/.config/opencode/plugins/`. Older
+copied plugins and sidecars remain for operator inspection and backup; the operator
+may manually retire them. An old copy can still load alongside the runtime plugin.
 
 > **Historical note:** `c11 install <tui>` (without the `skill` subcommand) is not a real command — it was aspirational in earlier docs. The actual install path is `c11 skill install --tool <tui>`.
 
 ## Troubleshooting
 
+**Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
+
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Tab not found"** — target tab was closed or the ref is stale. Run `c11 tree --all` for current refs.
-- **"Tab is not a terminal"** — you used `--tab` without `--workspace`. Always pass both when targeting remote tabs.
+- **"Tab is not a terminal"** — that tab is not a terminal (a browser or markdown tab, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal tab. Find one with `c11 tree`.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal tab. Find the browser tab ref with `c11 tree` and pass `--tab <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged tab.
 - **Tab doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
@@ -576,7 +607,7 @@ For OpenCode, the installer also copies a bundled plugin (`c11-notify.js`) into 
 
 ## Notes
 
-- c11 is a **local** multiplexer — not a remote session manager. For SSH work, install tmux on the remote.
+- `c11 ssh <host>` opens a remote shell and a local SSH proxy so browser traffic can egress from that host. Commands inside that shell do not run on the Mac. `c11 ping` there prints "c11 commands are not available over c11 ssh in this version" and does not return `pong`. Use the local CLI. See the SSH section in SKILL.md.
 - Socket access modes: disabled, c11-spawned processes only (`c11Only`), or all local processes. Check with `c11 capabilities`.
 
 ## New Workspace recents and pins

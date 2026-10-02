@@ -115,6 +115,13 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
+        var initialInput: String?
+        if let error = v2ResolveCreateInitialInput(
+            params: params, panelType: "terminal", hasLayout: params.keys.contains("layout"), resolved: &initialInput
+        ) {
+            return error
+        }
+
         let requestedWorkingDirectory = v2RawString(params, "working_directory")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let workingDirectory = (requestedWorkingDirectory?.isEmpty == false) ? requestedWorkingDirectory : nil
 
@@ -234,6 +241,7 @@ extension TerminalController {
                 rootDirectory: rootDirectory,
                 establishRootFromWorkingDirectory: false,
                 initialTerminalCommand: initialCommand,
+                initialTerminalInput: initialInput,
                 initialTerminalEnvironment: initialEnv,
                 select: shouldFocus,
                 eagerLoadTerminal: !shouldFocus
@@ -252,14 +260,16 @@ extension TerminalController {
         }
 
         let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-        return .ok([
+        var ok: [String: Any] = [
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": newId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: newId),
             "title": v2OrNull(customTitle),
             "root_directory": v2OrNull(rootDirectory)
-        ])
+        ]
+        if initialInput != nil { ok["initial_input"] = "queued" }
+        return .ok(ok)
     }
 
     private func v2WorkspaceSelect(params: [String: Any]) -> V2CallResult {

@@ -10653,8 +10653,6 @@ struct CMUXCLI {
             return skillCommandUsage()
         case "model-costs":
             return ModelCostsCommandCore.usage
-        case "mailbox":
-            return mailboxUsage()
         default:
             return nil
         }

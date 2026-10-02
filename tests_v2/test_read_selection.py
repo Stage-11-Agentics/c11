@@ -24,7 +24,7 @@ from cmux import cmux, cmuxError
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('phase', choices=['setup', 'boundaries', 'word', 'large', 'cleanup'])
+    parser.add_argument('phase', choices=['setup', 'boundaries', 'word', 'large', 'copy', 'cleanup'])
     parser.add_argument('--coordinates', nargs=4, type=float)
     parser.add_argument('--state', default='/tmp/c11-282-fixture.json')
     parser.add_argument('--baseline', action='store_true')
@@ -165,10 +165,11 @@ def main():
                 assert not read()['has_selection'], 'click did not clear selection'
             print('PASS: twenty real mouse select/read/read/CLI/clear cycles; word byte parity; process remains live')
 
-        elif args.phase == 'large':
+        elif args.phase in ('large', 'copy'):
             body = "import sys;sys.stdout.write('\\033[H\\033[2J\\033[3J');sys.stdout.write(''.join('%06d '%i+('a'+'\\u0301'*8)*80+'\\n' for i in range(20000)));sys.stdout.write(''.join(map(chr,[76,65,82,71,69,95,83,69,76,69,67,84,73,79,78,95,82,69,65,68,89]))+'\\n');sys.stdout.flush()"
-            send('python3 -c ' + shlex.quote(body))
-            wait_marker('LARGE_SELECTION_READY')
+            if args.phase == 'large':
+                send('python3 -c ' + shlex.quote(body))
+                wait_marker('LARGE_SELECTION_READY')
             ui('check'); ui('key', 'a', 'cmd')
             timings=[]; lengths=[]; busy_timings=[]
             if not args.baseline:
@@ -194,7 +195,7 @@ def main():
                 deadline=time.monotonic()+10
                 while time.monotonic()<deadline:
                     copied=subprocess.check_output(['pbpaste'])
-                    if copied != b'COPY_PENDING':break
+                    if copied and copied != b'COPY_PENDING':break
                     time.sleep(.01)
                 else:raise AssertionError('native copy did not complete')
                 copy_timings.append((time.monotonic()-start)*1000);native_lengths.append(len(copied))

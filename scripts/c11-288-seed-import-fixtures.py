@@ -60,13 +60,14 @@ def seed(root, port):
     safari = root / 'Library/Safari/History.db'
     create_database(
         safari,
-        'CREATE TABLE history_items(id INTEGER PRIMARY KEY, url TEXT, title TEXT);'
-        'CREATE TABLE history_visits(id INTEGER PRIMARY KEY, history_item INTEGER, visit_time REAL);',
-        'INSERT INTO history_items VALUES (?, ?, ?)',
-        [(1, url, 'c11-288-synthetic')],
+        'CREATE TABLE history_items(id INTEGER PRIMARY KEY, url TEXT);'
+        'CREATE TABLE history_visits(id INTEGER PRIMARY KEY, history_item INTEGER, visit_time REAL, title TEXT);',
+        'INSERT INTO history_items VALUES (?, ?)',
+        [(1, url)],
     )
     with sqlite3.connect(safari) as database:
-        database.execute('INSERT INTO history_visits VALUES (?, ?, ?)', (1, 1, time.time() - 978_307_200))
+        database.execute('INSERT INTO history_visits VALUES (?, ?, ?, ?)',
+                         (1, 1, time.time() - 978_307_200, 'c11-288-synthetic'))
     profiles['Safari'] = {'relativeProfile': 'Library/Safari', 'historyRows': 1,
                           'cookieCoverage': 'unsupported'}
     summary = {'fixtureRoot': str(root), 'url': url, 'profiles': profiles,

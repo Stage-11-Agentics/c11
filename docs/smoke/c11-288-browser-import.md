@@ -1,27 +1,44 @@
-# C11-288 browser import smoke (parked WIP)
+# C11-288 browser import smoke
 
-The packaged Release wizard exercised normal discovery and import in disposable macOS guests. No import fixture loader, destination override, capture-only mode, or HOME override was used. All profile data was synthetic loopback data. This smoke is incomplete and is not a handoff or release verdict.
+The packaged Release wizard exercised normal discovery and import in disposable macOS guests (macOS 26.6.2, Safari 26.6.2, Chrome 154.0.8037.98 installed in the guest). No import fixture loader, destination override, capture-only mode, or HOME override was used. All profile data was synthetic loopback data (`127.0.0.1`). No real account, password, bookmark, extension, or passkey was imported, and no real browser profile was read.
 
-## Completed observations
+## Result
 
-1. Historical source `837f9f79925a7d5e7b18854ee3577bc2fec2a3cc`: normal discovery found generated Chrome, Arc and Safari profiles in the guest's actual home. Roots were `$HOME/Library/Application Support/Google/Chrome/Default`, `$HOME/Library/Application Support/Arc/Default` and `$HOME/Library/Safari`.
-2. Created fresh destination `c11-288-chrome-denied` through the UI. An encrypted-only synthetic Chrome source triggered the actual Keychain password request. Cancel imported zero cookies and one history entry, with an explicit Safe Storage warning. Source bytes remained unchanged. This does not prove successful decryption of modern encrypted cookies.
-3. Imported the mixed Chrome fixture into `c11-288-chrome`: one plaintext cookie, one skipped encrypted row, one history entry, and the Keychain warning. Imported Arc history into `c11-288-arc`: zero cookies, one history entry, no warning. Imported generated Safari history into `c11-288-safari`: zero cookies, one history entry, and the documented unsupported `Cookies.binarycookies` warning. Four destination histories held the exact synthetic loopback URL; seven original fixture hashes matched before and after import.
-4. Canonical tag `c11-288`, clean source `a70bcae30878b6e8dfc24d31e98bc258a41b4fe5`, compiled Release successfully. Executable SHA256: `31b1856e6c11673639defadcf8f58caf8083e2db4dd8bac1e1c7cbfa6c766425`. The source includes C11-314. Compilation did not execute native unit assertions.
-5. On that canonical build, imported a declared plaintext-only Chrome subset into fresh `c11-288-chrome` (one cookie, one history entry, no warning), and Arc history into fresh `c11-288-arc` (zero cookies, one history entry, no warning). Actual profile-picker screenshots show SIGNED IN under Chrome and SIGNED OUT under Arc for the same loopback URL. The server independently recorded true then false. Source hashes after this second pass were not captured; do not claim its source immutability.
-6. Installed Chrome 154.0.8037.98 only inside the disposable guest, visited the loopback page in a fresh native Chrome profile, quit Chrome through its UI, and confirmed the persisted source history entry. Import of that browser-produced database into c11 was not completed. The guest ran macOS 26.6.2 (25G83); Safari 26.6.2 was installed. Arc was absent, so native Arc compatibility remains unverified; its detector root is `$HOME/Library/Application Support/Arc`.
-7. Both completed guest leases were deleted. The second guest was automatically deleted at its 20-minute deadline. That cleanup does not prove successful c11 UI Quit. Completed build logs and a runtime app copy were retained; the canonical build cache was deleted.
+| Browser | Scope | Outcome |
+|---|---|---|
+| Chrome 154 (native visit) | history | Imported 1 entry with title and visit count into a fresh profile. Source database hash unchanged. |
+| Chrome (synthetic, encrypted cookies only) | cookies and history | Real Keychain request appeared first. Cancel imported 0 cookies, imported history, and reported a Safe Storage warning. |
+| Chrome (synthetic, plaintext cookie) | cookies and history | Imported 1 cookie and 1 history entry. The destination profile shows the loopback page signed in; a separate profile shows it signed out. |
+| Arc | history | Application absent from the guest. Generated Arc schema imported 1 history entry, 0 cookies, no warning. Native Arc compatibility is unverified. |
+| Safari 26.6.2 (native visit) | history | **Failed**: 0 entries and the warning `no such column: history_items.title`. Fixed in this PR. |
+| Safari | cookies | Existing `Cookies.binarycookies` warning, no crash. Documented limit. |
 
-## Remaining work
+## Fix
 
-1. Obtain a normal-serial guest lease with no other guests running and no UI reservation or Validator VM priority marker. Do not start while `/tmp/c11-validator-vm-wanted` exists on the remote host. Use a 20-minute automatic deletion timer and actively drive the lease.
-2. In a fresh guest, produce loopback visits in native Chrome and Safari, quit each through its UI, and record their actual persisted history schemas and hashes. Keep the c11 browser blank before creating destinations, so profile switching cannot pre-populate the imported URL.
-3. Create fresh `c11-288-chrome-live` and `c11-288-safari-live` through the actual profile UI. Import native history through the packaged wizard. Verify destination entries and unchanged source hashes. Record counts and specific warnings. Fix and behaviorally test any actual importer regression; the generated Safari schema above does not prove compatibility with Safari's real schema.
-4. Quit c11 through its actual menu and confirmation. Verify no matching application and no original application process remain. Delete the guest immediately afterward, even on failure.
-5. Replace this WIP with the final numbered smoke note and evidence. If code changes, rebuild and test using only tag `c11-288`; C11-314 removes the WorkspaceRemoteConnectionTests skip, while Keychain tests still need their SSH limitation recorded.
-6. Push the final branch, create the draft PR only at handoff, post a validation comment with a numbered Validator scenario, and send HANDOFF REVIEW. No PR is currently open for this ticket.
+`BrowserDataImporter.importWebKitHistory` selected `history_items.title`. Real Safari stores `title` on `history_visits`; `history_items` has no such column. The wizard warned (not silent) but imported nothing from any real Safari history. The query now lives in `readWebKitHistoryRows` and takes `history_visits.title` from the most recent visit of each URL (SQLite returns bare columns from the `MAX(visit_time)` row). Counts, last-visit time, domain filter and the 5000-row cap are unchanged.
 
-## Evidence already attached to C11-288
+Test: `BrowserImportMappingTests.testSafariHistoryReadsLatestVisitTitleFromRealSchemaAndLeavesSourceUntouched` builds a database with Safari 26.6.2's observed `history_items` and `history_visits` columns, two visits to one URL plus one filtered-out host, and asserts the latest visit's title, the visit count, the last-visit date, the domain filter, and unchanged source bytes. It fails on the old query with the same SQLite error the wizard showed. The fixture seeder's Safari schema was corrected to match.
+
+## Numbered smoke steps (Validator scenario)
+
+1. Start a disposable guest with Safari and, separately, Chrome installed. Never use a real user's profiles.
+2. In the guest, visit `http://127.0.0.1:<port>/c11-288` in Chrome and in Safari, then quit each through its UI.
+3. Launch the packaged build normally. Create fresh profiles `chrome-live` and `safari-live` through the profile menu. Keep the c11 browser on a blank page while doing so.
+4. Browser menu, Import Browser Data. Pick Google Chrome, destination `chrome-live`, History only, domain filter `127.0.0.1`. Expect: imported history entries 1, cookies 0, no warning.
+5. Repeat for Safari into `safari-live`. Expect: imported history entries 1, cookies 0, no warning. (Before the fix: 0 entries and `no such column: history_items.title`.)
+6. Switch to each destination profile and open History. Expect the loopback URL with its page title.
+7. Import Safari with cookies selected. Expect the `Cookies.binarycookies` warning and no crash.
+8. Quit c11 through its menu and confirmation. Expect no remaining c11 process. Delete the guest.
+
+## Limits (labeled)
+
+- The Safari fix is proven by the behavioral test against the schema observed natively. The packaged wizard was not re-run on a fixed build; scenario steps 5 and 6 are the Validator's check.
+- Successful decryption of a modern encrypted Chromium cookie was not demonstrated; the Keychain prompt and Cancel path were.
+- Native Arc was not installed in the guest; Arc coverage is generated-schema only (detector root `$HOME/Library/Application Support/Arc`).
+- The loopback page body is not readable through `c11 browser wait/get-text` (an H-E automation issue, out of scope); sign-in state was proven from the profile-picker screenshots and the loopback server's boolean log.
+- `WorkspaceRemoteConnectionTests` is not skipped (C11-314); Keychain tests retain their SSH limitation.
+
+## Evidence attached to C11-288
 
 | Observation | Artifact |
 |---|---|
@@ -37,5 +54,5 @@ The packaged Release wizard exercised normal discovery and import in disposable 
 | Chrome selected profile, SIGNED IN | `art_01M3Z2P8WK7AD2A6DN5561BVN5` |
 | Arc selected profile, SIGNED OUT | `art_01M3Z2P90BECYKR979F54BPJJ3` |
 | Boolean-only loopback server log | `art_01M3Z2TFDF6NEEPJJE2H1CYYDK` |
-
-Safari cookies remain unsupported. Successful modern Chromium encrypted-cookie import is unverified. Native Arc coverage is unavailable. No importer code has changed; no real account, password, bookmark, extension, or passkey was imported.
+| Native Chrome 154 history import result | attached in the final native pass |
+| Native Safari schema and failing result (pre-fix) | attached in the final native pass |

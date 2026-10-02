@@ -2665,6 +2665,16 @@ struct GhosttyDisplayIDGate: Equatable {
 
 // MARK: - Terminal Surface (owns the ghostty_surface_t lifecycle)
 
+extension TerminalSurface {
+    /// The c11 surface that owns a Ghostty surface handle, through the
+    /// callback userdata c11 registers for every surface.
+    static func owning(_ surface: ghostty_surface_t) -> TerminalSurface? {
+        guard let userdata = ghostty_surface_userdata(surface) else { return nil }
+        return Unmanaged<GhosttySurfaceCallbackContext>.fromOpaque(userdata)
+            .takeUnretainedValue().terminalSurface
+    }
+}
+
 final class TerminalSurface: Identifiable, ObservableObject {
     final class SearchState: ObservableObject {
         @Published var needle: String

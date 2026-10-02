@@ -45,7 +45,8 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
         notify_log = tmp / "notify.log"
         make_executable(
             real_dir / wrapper,
-            '#!/usr/bin/env bash\nprintf "%s %s\\n" "${C11_AGENT_INTERACTIVE_PID-__UNSET__}" "$$" > "$FAKE_LOG"\n',
+            '#!/usr/bin/env bash\nprintf "%s %s\\n" "${C11_AGENT_INTERACTIVE_PID-__UNSET__}" "$$" > "$FAKE_LOG"\n'
+            'printf "%s\\n" "$@" > "$FAKE_LOG.args"\n',
         )
         # Fake c11: answers ping, accepts everything else, and records the
         # marker it sees on a `notify` (the Codex turn-complete callback).
@@ -100,8 +101,11 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
                 f"{wrapper} {argv}: real binary not reached (rc={returncode}, {err_path.read_text()!r})"
             )
         marker, pid = log.read_text().split()
+        ARGS[(wrapper, tuple(argv), tty_stdout, in_c11)] = (tmp / "real.log.args").read_text().split("\n")
         return marker, pid
 
+
+ARGS: dict = {}
 
 CASES = [
     # (wrapper, argv, tty_stdout, in_c11, expect_marker)
@@ -154,6 +158,12 @@ def main() -> int:
         if not expect_marker and marker != "__UNSET__":
             failures.append(f"{label}: expected no marker, got {marker}")
         print(f"{'ok ' if not failures or not failures[-1].startswith(label) else 'FAIL'} {label}: marker={marker} pid={pid}")
+    # `-cp`/`-pc` continue a conversation: the wrapper must not inject a
+    # fresh --session-id (Claude rejects the pair).
+    for argv in (["-cp", "hello"], ["-pc", "hello"]):
+        real_argv = ARGS.get(("claude", tuple(argv), True, True), [])
+        if "--session-id" in real_argv:
+            failures.append(f"claude {' '.join(argv)}: --session-id injected into a continue: {real_argv}")
     if failures:
         print("\n".join(failures))
         return 1

@@ -6627,6 +6627,19 @@ class TerminalController {
             keyEvent.text = nil
             _ = ghostty_surface_key(surface, keyEvent)
         }
+        // A socket-sent Return (`send-key enter`, a `\r` in `send` text)
+        // submits whatever is in the input line, exactly like a typed Return:
+        // record the submit edge so the agent turn and the mailbox draft
+        // guard see it.
+        if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE,
+           let terminalSurface = TerminalSurface.owning(surface) {
+            TabLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: terminalSurface.id,
+                workspaceId: terminalSurface.workspaceId,
+                activity: .working,
+                source: .submit
+            )
+        }
     }
 
     private func sendTextEvent(surface: ghostty_surface_t, text: String) {

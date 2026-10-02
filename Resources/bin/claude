@@ -145,9 +145,17 @@ esac
 SKIP_SESSION_ID=false
 for arg in "$@"; do
     case "$arg" in
-        --resume|--resume=*|--session-id|--session-id=*|--continue|-c)
+        --) break ;;
+        --resume|--resume=*|--session-id|--session-id=*|--continue|-c|-r)
             SKIP_SESSION_ID=true
             break
+            ;;
+        # Combined short flags carrying -c or -r (`-cp`, `-pc`, `-rp`).
+        -[!-]?*)
+            if [[ "$arg" == *[cr]* ]]; then
+                SKIP_SESSION_ID=true
+                break
+            fi
             ;;
     esac
 done

@@ -1,0 +1,3 @@
+# C11-251: Bare-shell clear/list sidebar commands act on the selected workspace
+
+Pre-existing in 0.66.1 and unchanged in 0.67.0. From a shell outside c11 (no C11_WORKSPACE_ID), clear-status, clear-progress, clear-log, list-status, list-log and sidebar-state with NO target flag act on the operator's currently selected workspace. A cron job running 'c11 clear-status <key>' silently clears whatever workspace Atin is looking at. Writes already require a target; make the destructive clear-* commands require one too (fail loudly), and decide whether list-*/sidebar-state should. See the final --tab matrix from C11-248 PR #472.

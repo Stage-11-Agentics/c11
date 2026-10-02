@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -10,8 +11,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KTZ0JE2Y39GKF6QWGFJR7H1V",
-  "last_event_id": "ev_01KTZ0K3DRYWJ14QBJXY478WNH",
-  "last_status_changed_at": "2026-06-12T22:52:15Z",
+  "last_event_id": "ev_01M3YXXY59JTB9D8K55JA99FR8",
+  "last_status_changed_at": "2026-10-02T18:27:23Z",
   "linked_files": [],
   "priority": "critical",
   "relationships_out": [
@@ -26,13 +27,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-138",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "audit-2026-06-09",
     "keystone"
   ],
   "title": "Identity & write-routing correctness (C11_* env export, socket discovery, empty-ref misroute, naming sweep)",
   "type": "task",
-  "updated_at": "2026-06-12T22:52:37Z",
+  "updated_at": "2026-10-02T18:27:23Z",
   "urgency": null
 }

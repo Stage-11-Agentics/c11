@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T08:44:14Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XWJ53T62F8V9WCQQBF37FR",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XWJ53T62F8V9WCQQBF37FR.json",
+    "size_bytes": 18480
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-280 sanitized exact-head Atlas evidence (verified redaction)",
+  "token_usage": null,
+  "type": "file"
+}

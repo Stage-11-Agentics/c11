@@ -1,0 +1,23 @@
+{
+  "base_name": "C11-257-Integrator",
+  "framework": "claude-code",
+  "last_active": "2026-10-02T06:19:51Z",
+  "model": "claude-opus-5-5",
+  "name": "C11-257-Integrator-1",
+  "origin": {
+    "op": "session.start",
+    "op_id": "op_01M3XBMQYNEGVJGC4K1AHYXGTA",
+    "reported": {
+      "branch": "main",
+      "client_version": "0.2.1",
+      "host": "Hyperion",
+      "os_user": "atin",
+      "worktree": "/Users/atin/Projects/Stage11/code/c11"
+    }
+  },
+  "parent": "agent:C11-257-Orchestrator-1",
+  "serial": 1,
+  "session": "sess_01M3XBMQYPR8SDTMAARB2NCFDR",
+  "started_at": "2026-10-02T03:48:33Z",
+  "status": "active"
+}

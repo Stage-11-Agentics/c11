@@ -1,0 +1,22 @@
+{
+  "sourceFileCount": 7,
+  "unchanged": true,
+  "before": {
+    "Library/Application Support/Google/Chrome/Local State": "98f37a86fc63c5de9e04c3e3f1ba3309f37a3c6eab880499236171bda11aef24",
+    "Library/Application Support/Google/Chrome/Default/History": "808d80488da1fc6982df57376ca1cdcc36e217399578052460733ccc79cbb122",
+    "Library/Application Support/Google/Chrome/Default/Cookies": "f51525c34429fda4732591d38bc6f6500e357d9f2dad99e8aaeb8b79d035c32f",
+    "Library/Application Support/Arc/Local State": "e786665e6b4a89ceb3e97020aa6b2099c45d5dab4fe7862ede5d4792efe1799d",
+    "Library/Application Support/Arc/Default/History": "808d80488da1fc6982df57376ca1cdcc36e217399578052460733ccc79cbb122",
+    "Library/Application Support/Arc/Default/Cookies": "f38dc6a08be8a96b6ef3fae09c853382235207c959dc0d2adc8df5259efd11be",
+    "Library/Safari/History.db": "c26b55a214c7692fab190d083a1e77126f7d810719beb1cca8f7c7d5ad6aaeaa"
+  },
+  "after": {
+    "Library/Application Support/Google/Chrome/Local State": "98f37a86fc63c5de9e04c3e3f1ba3309f37a3c6eab880499236171bda11aef24",
+    "Library/Application Support/Google/Chrome/Default/History": "808d80488da1fc6982df57376ca1cdcc36e217399578052460733ccc79cbb122",
+    "Library/Application Support/Google/Chrome/Default/Cookies": "f51525c34429fda4732591d38bc6f6500e357d9f2dad99e8aaeb8b79d035c32f",
+    "Library/Application Support/Arc/Local State": "e786665e6b4a89ceb3e97020aa6b2099c45d5dab4fe7862ede5d4792efe1799d",
+    "Library/Application Support/Arc/Default/History": "808d80488da1fc6982df57376ca1cdcc36e217399578052460733ccc79cbb122",
+    "Library/Application Support/Arc/Default/Cookies": "f38dc6a08be8a96b6ef3fae09c853382235207c959dc0d2adc8df5259efd11be",
+    "Library/Safari/History.db": "c26b55a214c7692fab190d083a1e77126f7d810719beb1cca8f7c7d5ad6aaeaa"
+  }
+}

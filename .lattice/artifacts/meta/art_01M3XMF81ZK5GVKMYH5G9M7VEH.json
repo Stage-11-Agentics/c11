@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:22:50Z",
+  "created_by": "agent:codex-merge-captain",
+  "custom_fields": {},
+  "id": "art_01M3XMF81ZK5GVKMYH5G9M7VEH",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XMF81ZK5GVKMYH5G9M7VEH.md",
+    "size_bytes": 1592
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED: C11-312 / PR #503\nPR: https://github.com/Stage-11-Agentics/c11/pull/503\nReviewed head: c5475780903dd0bd4682a824e6db9edd82a283eb\nSquash merge: aa292e8f1c4ee95def5b3d9341a58d1a5553037c\nBase imme",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

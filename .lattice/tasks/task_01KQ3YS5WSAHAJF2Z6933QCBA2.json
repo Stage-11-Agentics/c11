@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -18,15 +19,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KQ3YS5WSAHAJF2Z6933QCBA2",
-  "last_event_id": "ev_01KQ3YS5WTMRXTQQQYMVVMCJHH",
-  "last_status_changed_at": "2026-04-26T03:54:24Z",
+  "last_event_id": "ev_01M3YXY55XS5GV5TRQ9SYEYK2P",
+  "last_status_changed_at": "2026-10-02T18:27:30Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-19",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "ui",
     "pane-close",
@@ -35,6 +36,6 @@
   ],
   "title": "Pane X button still unresponsive on some panes after click-passthrough fix",
   "type": "bug",
-  "updated_at": "2026-04-26T03:54:24Z",
+  "updated_at": "2026-10-02T18:27:30Z",
   "urgency": null
 }

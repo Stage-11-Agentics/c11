@@ -1,0 +1,63 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-producers",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-275-codex-notify",
+      "linked_at": "2026-10-02T14:50:58Z",
+      "linked_by": "agent:codex-producers",
+      "repo": null
+    }
+  ],
+  "comment_count": 5,
+  "complexity": "high",
+  "created_at": "2026-10-02T01:33:38Z",
+  "created_by": "agent:codex",
+  "custom_fields": {},
+  "description": "## Why\nCodex needs explicit lifecycle observations beyond Return and notify, but enabling c11\u2019s adapter must not also grant trust to the operator\u2019s unrelated hooks. Backlog item: J4.\n\n## Evidence\n- All c11 code citations below are on origin/main `0ff8887e5e`; upstream citations are on upstream/main `920ff39ff7`.\n- c11: `Resources/bin/codex:222` prepends only the notify override; `:47` forwards the guarded legacy callback. `:160`\u2013`:209` preserve exact runtime conversation ownership and must not regress.\n- Upstream: `CLI/CMUXCLI+CodexFireAndForgetHooks.swift:181` says tenant/project/session hook layers append together, while `:220` injects --dangerously-bypass-hook-trust. This is a concrete trust-risk counterexample, not proof of isolation.\n- Research: BACKLOG.md J4/D2; report 03 Lead\u2019s hypothesis; report 01 Codex canary; Astra \u00a76 D2. Reports cite Codex 0.159.3; the implementation must verify the version it actually supports.\n\n## Scope\nIn: a reproducible trust-isolation probe, optional --enable hooks plus -c hooks.* adapter only if proven, session.started canary/degraded status, and notify fallback. Out: computed private trust hashes, persistent hooks/config installation, redirecting the operator home to hide settings, blanket trust bypass, answers, and broadening permission mode.\n\n## Approach\nFirst probe a disposable controlled profile with c11-owned hooks alongside untrusted tenant and project hooks. Compare execution with and without the bypass flag and inspect persistent writes. A successful c11 SessionStart alone is insufficient. If trust isolation is not proved, do not ship the bypass: keep notify and expose missing/degraded capability. If proved for the supported version, inject minimal optional observer hooks; preserve argv precedence, root identity and operator-selected configuration. Record a bounded launch canary deadline in the adapter contract.\n\n## Acceptance criteria\n1. The versioned probe demonstrates whether c11\u2019s hooks run while untrusted tenant/project hooks remain untrusted and do not execute because of c11\u2019s added flag. Record the actual counterexample or proof, not just a start event.\n2. If that proof fails or is inconclusive, the shipped wrapper remains on notify, adds no bypass/trusted-hash workaround and reports its limited capability. If it passes, record the supported-version gate and actual lifecycle fixture coverage.\n3. When session.started does not arrive within the declared deadline, the adapter reports degraded and preserves notify fallback; returning evidence is attributed to the current root session, not a prior launch.\n4. The F3/GAF-13 child callback cannot finish the root, duplicate notify/hook completion is not counted twice, and wrapper launches/resumes preserve existing exact conversation behavior.\n5. Controlled-profile before/after inspection shows no c11-caused tenant config or hook-trust writes; operator hooks/settings/permission mode remain in control. Socket failure does not hold the agent launch indefinitely.\n\n## Validation\nRun behavioral argv/fallback/canary tests, then the real installed Codex trust probe in a disposable fixture profile on Atlas. Never alter the operator\u2019s live ~/.codex. Use the tagged socket for lifecycle observations and real UI smoke for marks, with verified display, timer and dismissal. Re-run version compatibility probes on supported Codex changes; F2 measures hook overhead. Passing fallback with a recorded failed isolation probe is an explicitly valid result.\n\n## Dependencies\nDepends on J2 and its source/ownership schema. F3 provides the root/child and interruption fixtures. J5 supplies advisory transcript observations independently. J8 must document actual supported/degraded coverage.\nWithin-workstream prerequisites: J2 (C11-273).\n\n## Risks\nKeep disk/parsing/aggregation off main and out of typing hot paths. Bound retained data and diagnostics. Localize new UI strings in ja, uk, ko, zh-Hans, zh-Hant and ru; preserve format tokens. Sanitize public fixtures/logs; never retain prompt or tool bodies. Apply docs/aar-c11-188-attention-loop.md: evaluate the named fixtures/questions, cap review/fix cycles at three, and escalate non-convergence instead of expanding the contract.\n\nSize: M. Tier: P1. Doctrine check: optional observation and c11-owned storage only; no tenant configuration writes, automatic answers or trust broadening.\n",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01M3YKYAGKMP6Y0MW74R8EAEVV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YM625DNPGKD1WRY0TSWM5V",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3YNVRPM3BRS2P2MGFAQZQHZ",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X3XPVNN0J7YKHNTMD4BA3Q",
+  "last_event_id": "ev_01M3YP3MYRJYJBSNP9YRG11Y4V",
+  "last_status_changed_at": "2026-10-02T16:10:42Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T01:34:07Z",
+      "created_by": "agent:codex",
+      "note": null,
+      "target_task_id": "task_01M3X3XPNP88K5250NDJPYK02S",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-275",
+  "status": "in_validation",
+  "tags": [
+    "c11-1.0",
+    "ws:journal",
+    "tier:p1"
+  ],
+  "title": "Gate Codex per-process lifecycle hooks on isolated trust proof",
+  "type": "task",
+  "updated_at": "2026-10-02T16:10:42Z",
+  "urgency": null
+}

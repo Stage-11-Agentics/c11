@@ -1,0 +1,21 @@
+[2026-10-02T07:31:08.917Z] [com.stage11.c11.sparkle307:669] Ensured Sparkle installation cache at $HOME/Library/Caches/com.stage11.c11.sparkle307/org.sparkle-project.Sparkle/Installation
+[2026-10-02T07:31:08.917Z] [com.stage11.c11.sparkle307:669] update channel: stable
+[2026-10-02T07:31:08.917Z] [com.stage11.c11.sparkle307:669] feed url resolved: http://127.0.0.1:19307/proof/appcast.xml
+[2026-10-02T07:31:08.918Z] [com.stage11.c11.sparkle307:669] updater started (autoChecks=true, interval=3600s, autoDownloads=false)
+[2026-10-02T07:31:08.918Z] [com.stage11.c11.sparkle307:669] starting launch update probe
+[2026-10-02T07:31:10.754Z] [com.stage11.c11.sparkle307:669] update channel: stable
+[2026-10-02T07:31:10.754Z] [com.stage11.c11.sparkle307:669] update channel: stable
+[2026-10-02T07:31:11.095Z] [com.stage11.c11.sparkle307:669] next update check scheduled in 3600s
+[2026-10-02T07:32:23.077Z] [com.stage11.c11.sparkle307:669] checkForUpdates invoked (state=idle)
+[2026-10-02T07:32:23.078Z] [com.stage11.c11.sparkle307:669] checkForUpdatesWhenReady invoked (canCheck=true)
+[2026-10-02T07:32:23.145Z] [com.stage11.c11.sparkle307:669] update channel: stable
+[2026-10-02T07:32:23.145Z] [com.stage11.c11.sparkle307:669] update channel: stable
+[2026-10-02T07:32:23.145Z] [com.stage11.c11.sparkle307:669] show user-initiated update check
+[2026-10-02T07:32:23.145Z] [com.stage11.c11.sparkle307:669] state -> checking
+[2026-10-02T07:32:23.289Z] [com.stage11.c11.sparkle307:669] appcast loaded (items=1, first=0.67.0)
+[2026-10-02T07:32:23.290Z] [com.stage11.c11.sparkle307:669] no update found (reason=onLatestVersion, userInitiated=true, latest=0.67.0)
+[2026-10-02T07:32:23.290Z] [com.stage11.c11.sparkle307:669] show update not found: SUSparkleErrorDomain(1001) | You’re up to date! | feed=http://127.0.0.1:19307/proof/appcast.xml
+[2026-10-02T07:32:25.270Z] [com.stage11.c11.sparkle307:669] state -> notFound
+[2026-10-02T07:32:30.439Z] [com.stage11.c11.sparkle307:669] dismiss update installation
+[2026-10-02T07:32:30.439Z] [com.stage11.c11.sparkle307:669] state -> idle
+[2026-10-02T07:32:30.493Z] [com.stage11.c11.sparkle307:669] next update check scheduled in 3600s

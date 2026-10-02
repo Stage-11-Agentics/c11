@@ -1,0 +1,100 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:codex-launch",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-306-bounded-stop-transcript",
+      "linked_at": "2026-10-02T04:16:47Z",
+      "linked_by": "agent:codex-launch",
+      "repo": null
+    }
+  ],
+  "comment_count": 12,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:16Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nEvery Claude Stop reads and parses the whole transcript. The cost grows with multi-day sessions, on every turn, for every agent. Backlog item: B028.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `summarizeClaudeHookStop` calls `readTranscriptSummary` (`CLI/c11.swift` near 17340).\n- `readTranscriptSummary` at `:17366` loads the entire file with `Data(contentsOf:)`, makes a `String`, and splits every line before it walks them for the last assistant message.\n- Upstream cmux #5202 reads a bounded tail.\n- Research: Fable cluster C9, wave 1. The journal (C11-273, C11-274) must not multiply this. A Stop hook that already reads the whole file gets worse if the journal adds another full read.\n\n## Scope\nIn: the Stop summary reads a bounded tail of the transcript, enough to find the last assistant message, and does not load a multi-day JSONL into one `String`. If the tail has no assistant message, keep today's fallback to the session record.\n\nOut:\n- Journal append, fold, and replay (C11-273). Coordinate so phase 1 does not add a second full-file read on Stop.\n- Widening Claude hooks (C11-274). That ticket owns new observation. This one owns the existing Stop read.\n- The wrapper exec loop when two bundle paths are on `PATH` (B064). Tier-2 sweep. `Resources/bin/claude`, not this function.\n- Hook routing fallbacks and attention-edge cases. Not this ticket.\n- Sparkle packaging that rode along in the upstream PR. Ignore it.\n\n## Approach\nRead from the end of the file, a fixed byte cap, and parse only those lines. If a line is split at the cap, drop the partial first line. Keep the summary shape `summarizeClaudeHookStop` already returns. Do not spawn another process to do the read. The CLI is already the process.\n\n## Acceptance criteria\n1. A fixture transcript of a few megabytes, with the last assistant message near the end, still produces the same subtitle and body the Stop hook produces today.\n2. A fixture whose only assistant message is older than the tail falls back to the session record, and the read does not allocate a string the size of the file. A test can cap the bytes read.\n3. A missing transcript still takes the existing fallback. Stop does not fail the hook.\n\n## Validation\nA CLI logic test with temp files. No host app. No tagged build required unless you want one Stop against a real Claude session. No soak. No source-grep test. Do not build on Hyperion.\n\n## Dependencies\nNone inside ws:bugs. Neighbors: C11-273 and C11-274. Do not link this ticket behind the journal. It should land first so the journal does not copy the full read. Cross-workstream: the journal ids are J2 and J3. The lead links them if a real code dependency appears. F1 is C11-216 only if you do a tagged check.\n\n## Risks\nA tail so short that the last message is always missed, so every Stop says the generic \"session completed.\" Pick a cap that covers a normal assistant message and test a long one. Doctrine: the CLI reads the transcript the hook already receives. No new writes to `~/.claude`. No new strings. Public repo: a bounded file read, not a transcript dump.\n\nSize: S. Tier: P1. Doctrine check: read less of a file the hook already opens. No tenant config writes.\n",
+  "done_at": "2026-10-02T07:40:09Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XDMX70C29NX8KRCS6DYH90",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEEPVS4FAQMDENJMYWSRME",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEMTZ16HS249HJJERQDWCH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XMK5H9RVR72HWG5BQN367S",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XMWMYX81JK2SYQHXAXYYVS",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRWT5SV19JW6VR2KG7RHCW",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XRWT82DVEHCHSB8SCXWP7T",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XRWTABRS655CFF5N1HDDVE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XRWTA9ZY0477K1A5V06JY4",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM7JS186G9Z7TQ795J79Z",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM7N58WEVWBTZH64JYCYW",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWPWTXBXZGRGN5CFXVHB8Q",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K2RKR2RNP2273KYB1ATA",
+  "last_event_id": "ev_01M3XX997T2ME6PREDN841YSE2",
+  "last_status_changed_at": "2026-10-02T07:40:09Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-306",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Bound the Claude Stop hook so it does not reread the whole transcript",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:52Z",
+  "urgency": null
+}

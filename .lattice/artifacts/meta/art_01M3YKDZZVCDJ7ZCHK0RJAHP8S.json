@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T15:23:55Z",
+  "created_by": "agent:codex-browser",
+  "custom_fields": {},
+  "id": "art_01M3YKDZZVCDJ7ZCHK0RJAHP8S",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3YKDZZVCDJ7ZCHK0RJAHP8S.json",
+    "size_bytes": 1286
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Release executable hash, macOS and installed-browser versions; sanitized",
+  "token_usage": null,
+  "type": "file"
+}

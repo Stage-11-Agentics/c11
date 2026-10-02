@@ -1,0 +1,54 @@
+{
+  "source": "876fbadf08aacb56af4f62202259716f9de111e5",
+  "targeted_tests": {
+    "SingleInstancePolicyTests": 10,
+    "SocketStartupReadinessTests": 4,
+    "UpdateInstallerFailureMappingTests": 4,
+    "failures": 0
+  },
+  "builds": [
+    {
+      "invocation": "e4c4f4374f6341f49a14adad0a750015",
+      "head": "876fbadf08aacb56af4f62202259716f9de111e5",
+      "parent_head": "c7351e3ff4f8b149cd7528c7287d6d9a60887d86",
+      "branch": "c11-1.0/C11-298-single-instance",
+      "submodules": {
+        "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+        "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+      },
+      "overlay": [],
+      "dirty": false,
+      "tag": "c11-298-instance",
+      "mode": "test",
+      "compile": "ok",
+      "tests": "ok",
+      "xcode": "Xcode 26.3\nBuild version 17C529",
+      "zig": "0.15.2",
+      "app": null,
+      "executable_sha256": null,
+      "ok": true
+    },
+    {
+      "invocation": "ae8816b188d3453bac4fec3fbb9a59a1",
+      "head": "876fbadf08aacb56af4f62202259716f9de111e5",
+      "parent_head": "c7351e3ff4f8b149cd7528c7287d6d9a60887d86",
+      "branch": "c11-1.0/C11-298-single-instance",
+      "submodules": {
+        "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+        "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+      },
+      "overlay": [],
+      "dirty": false,
+      "tag": "c11-298-instance",
+      "mode": "debug",
+      "compile": "ok",
+      "tests": "na",
+      "xcode": "Xcode 26.3\nBuild version 17C529",
+      "zig": "0.15.2",
+      "app": "c11 DEV c11-298-instance.app",
+      "executable_sha256": "99283ffeff98aaad88e2cf7be99092d4b88c7e2041481586efe5330665c6968c",
+      "ok": true
+    }
+  ],
+  "cache_note": "Initial test/debug attempts rejected stale Sparkle precompiled modules after dependency update. Clearing only the owned module caches fixed both; source unchanged."
+}

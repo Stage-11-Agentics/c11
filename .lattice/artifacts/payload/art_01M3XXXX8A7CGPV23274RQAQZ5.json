@@ -1,0 +1,133 @@
+{
+  "source": "876fbadf08aacb56af4f62202259716f9de111e5",
+  "proof_only": true,
+  "runtime_status": "pending guest capacity",
+  "artifacts": [
+    {
+      "run": "36985327649",
+      "run_url": "https://github.com/Stage-11-Agentics/c11/actions/runs/36985327649",
+      "build": "29801",
+      "archive_sha256": "884ad400939723d0a30ef2b6cc91ae85b75c06ecc7db18ee925eace9aec87d24",
+      "manifest": {
+        "assets": {
+          "appcast.xml": "b4ddc71569e3dd09f17dc5270172a9e18a643a4908fdefc13d9d18bb9770ce3f",
+          "c11-macos.dmg": "ab8079809d319c62717c731f90e116264b67d6dde1aa0a9cc18590474254c895",
+          "c11d-remote-checksums.txt": "bdbd39199582c815b426f1dee5f2776617ad6059814e85866c46d609af162bb4",
+          "c11d-remote-darwin-amd64": "edcbfabccf5cdfd4fc8087ec684c833a2edf31a03ab21c586f55965523eeb89b",
+          "c11d-remote-darwin-arm64": "3211b8825005f11f179133b5428046d41e702085cbf8af0e763748280f19beba",
+          "c11d-remote-linux-amd64": "35682fad08af3b4061107aa656c2f28a2722aa9e77e890c974485c95dcb7fac0",
+          "c11d-remote-linux-arm64": "f019a7f50950e17187fccf406d978cb6af061eca38cc4c69a7dfee7c7039fedc",
+          "c11d-remote-manifest.json": "1d7dc08f1be20adb633df56b0d0028aac602acb48292510fb049f292eb527d18"
+        },
+        "build": "29801",
+        "bundleID": "com.stage11.c11.sparkle307",
+        "downloadURLPrefix": "http://127.0.0.1:19298/proof/",
+        "feedURL": "http://127.0.0.1:19298/proof/appcast.xml",
+        "proofBuild": "29801",
+        "proofFeedBase": "http://127.0.0.1:19298/proof",
+        "purpose": "proof",
+        "releaseNotesURL": "http://127.0.0.1:19298/proof/notes.html",
+        "runAttempt": "1",
+        "runID": "36985327649",
+        "runURL": "https://github.com/Stage-11-Agentics/c11/actions/runs/36985327649",
+        "schemaVersion": 1,
+        "sourceRef": "c11-1.0/C11-298-single-instance",
+        "sourceSHA": "876fbadf08aacb56af4f62202259716f9de111e5",
+        "submodules": [
+          " 5830d1976eecca0d7dee202aef8fb2338d99ed6d ghostty (heads/main)",
+          " 4d9ea33dbdb5cbdc0cef701a4153143e754786d3 homebrew-c11 (4d9ea33)",
+          " c17c6f41cd71066bda9bec82c54465fe34821c75 vendor/bonsplit (heads/main)"
+        ],
+        "targetTag": "proof-29801",
+        "toolchain": {
+          "go": "go version go1.22.12 darwin/arm64",
+          "xcode": "Xcode 16.4\nBuild version 16F6",
+          "zig": "0.15.2"
+        },
+        "validation": {
+          "appNotarization": "Accepted",
+          "appStapler": "passed",
+          "codesign": "passed",
+          "dmgNotarization": "Accepted",
+          "dmgStapler": "passed",
+          "gatekeeperApp": "passed"
+        },
+        "version": "0.67.0",
+        "workflowSHA": "7edd59b882df9a6c5eda80566d34514acdd1b332"
+      },
+      "executable_sha256": "279e3a0bba70543fa09d9c0e6d5825902da2ba94625726ece1c1e01270f463ac",
+      "independent_consumer_verification": {
+        "archive_digest": "PASS",
+        "asset_hashes": "PASS",
+        "manifest_verifier": "PASS",
+        "stapler_app": "PASS",
+        "stapler_dmg": "PASS",
+        "codesign_deep_strict": "PASS",
+        "gatekeeper": "PASS"
+      }
+    },
+    {
+      "run": "36985330895",
+      "run_url": "https://github.com/Stage-11-Agentics/c11/actions/runs/36985330895",
+      "build": "29802",
+      "archive_sha256": "1278ee25dde528e1773ef6a224348e6f8c84383abb0522655001cc6115bed49e",
+      "manifest": {
+        "assets": {
+          "appcast.xml": "1a9fc8c2bf08f15f60765f7752887e9a0902479ad03c3f311105af0b7d17105f",
+          "c11-macos.dmg": "11169860ab84992fec063985ea19da635f6cae111aff76b75d5189f7ffe1e9f1",
+          "c11d-remote-checksums.txt": "bdbd39199582c815b426f1dee5f2776617ad6059814e85866c46d609af162bb4",
+          "c11d-remote-darwin-amd64": "edcbfabccf5cdfd4fc8087ec684c833a2edf31a03ab21c586f55965523eeb89b",
+          "c11d-remote-darwin-arm64": "3211b8825005f11f179133b5428046d41e702085cbf8af0e763748280f19beba",
+          "c11d-remote-linux-amd64": "35682fad08af3b4061107aa656c2f28a2722aa9e77e890c974485c95dcb7fac0",
+          "c11d-remote-linux-arm64": "f019a7f50950e17187fccf406d978cb6af061eca38cc4c69a7dfee7c7039fedc",
+          "c11d-remote-manifest.json": "16737db459758e16e61735bb400dc603dba8fcb7ff44dd22b27d230917fc8de9"
+        },
+        "build": "29802",
+        "bundleID": "com.stage11.c11.sparkle307",
+        "downloadURLPrefix": "http://127.0.0.1:19298/proof/",
+        "feedURL": "http://127.0.0.1:19298/proof/appcast.xml",
+        "proofBuild": "29802",
+        "proofFeedBase": "http://127.0.0.1:19298/proof",
+        "purpose": "proof",
+        "releaseNotesURL": "http://127.0.0.1:19298/proof/notes.html",
+        "runAttempt": "1",
+        "runID": "36985330895",
+        "runURL": "https://github.com/Stage-11-Agentics/c11/actions/runs/36985330895",
+        "schemaVersion": 1,
+        "sourceRef": "c11-1.0/C11-298-single-instance",
+        "sourceSHA": "876fbadf08aacb56af4f62202259716f9de111e5",
+        "submodules": [
+          " 5830d1976eecca0d7dee202aef8fb2338d99ed6d ghostty (heads/main)",
+          " 4d9ea33dbdb5cbdc0cef701a4153143e754786d3 homebrew-c11 (4d9ea33)",
+          " c17c6f41cd71066bda9bec82c54465fe34821c75 vendor/bonsplit (heads/main)"
+        ],
+        "targetTag": "proof-29802",
+        "toolchain": {
+          "go": "go version go1.22.12 darwin/arm64",
+          "xcode": "Xcode 16.4\nBuild version 16F6",
+          "zig": "0.15.2"
+        },
+        "validation": {
+          "appNotarization": "Accepted",
+          "appStapler": "passed",
+          "codesign": "passed",
+          "dmgNotarization": "Accepted",
+          "dmgStapler": "passed",
+          "gatekeeperApp": "passed"
+        },
+        "version": "0.67.0",
+        "workflowSHA": "7edd59b882df9a6c5eda80566d34514acdd1b332"
+      },
+      "executable_sha256": "a5bb3027ced40b9967784d5f28639d530d10456d2a02f75c091ab64e309887bc",
+      "independent_consumer_verification": {
+        "archive_digest": "PASS",
+        "asset_hashes": "PASS",
+        "manifest_verifier": "PASS",
+        "stapler_app": "PASS",
+        "stapler_dmg": "PASS",
+        "codesign_deep_strict": "PASS",
+        "gatekeeper": "PASS"
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-10-02T15:41:21Z",
+  "created_by": "agent:luna-315",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/537"
+  },
+  "id": "art_01M3YMDXXW10NQJQWVZ6CQ5YBJ",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Draft PR for hourly Atlas native CI and internal self-hosted runner",
+  "tags": [],
+  "title": "C11-315 draft PR",
+  "token_usage": null,
+  "type": "reference"
+}

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 1.0 Run Timeline</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --implement: #2a78d6; --review: #1baf7a; --repair: #eb6834; --landing: #4a3aa7; --validation: #e87ba4;
+  --queued: #d9d8d2; --band1: rgba(235,104,52,0.07); --band2: rgba(11,11,11,0.07);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --implement: #3987e5; --review: #199e70; --repair: #d95926; --landing: #9085e9; --validation: #d55181;
+    --queued: #3a3a37; --band1: rgba(217,89,38,0.10); --band2: rgba(255,255,255,0.06);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --implement: #3987e5; --review: #199e70; --repair: #d95926; --landing: #9085e9; --validation: #d55181;
+  --queued: #3a3a37; --band1: rgba(217,89,38,0.10); --band2: rgba(255,255,255,0.06);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 28px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 36px 0 6px; }
+p.sub { color: var(--ink2); margin: 0 0 18px; max-width: 900px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+.tile .v { font-size: 28px; font-weight: 650; }
+.tile .l { color: var(--ink2); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 10px; color: var(--ink2); font-size: 13px; }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.scroll { overflow-x: auto; }
+svg text { fill: var(--ink2); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .lbl { fill: var(--ink); }
+svg .mut { fill: var(--muted); }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; max-width: 380px; display: none; }
+#tip b { font-weight: 650; } #tip .r { color: var(--ink2); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink2); font-weight: 600; }
+td.n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+.note { color: var(--ink2); font-size: 12.5px; }
+details summary { cursor: pointer; color: var(--ink2); margin: 10px 0; }
+ul.take li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>c11 1.0 run: where the time went</h1>
+<p class="sub" id="asof"></p>
+
+<div class="tiles" id="tiles"></div>
+
+<h2>Takeaways</h2>
+<div class="card"><ul class="take" id="takeaways"></ul></div>
+
+<h2>Every ticket, go to now (PDT)</h2>
+<p class="sub">One row per ticket, sorted by when an owner started it. Each bar runs left to right through its phases. An ✕ marks a FAIL review verdict. Grey bands are the Codex capacity outage. Hover a bar for details.</p>
+<div class="legend" id="legend"></div>
+<div class="card scroll"><svg id="gantt"></svg></div>
+
+<h2>Ticket-hours by phase</h2>
+<p class="sub">Every ticket's hours added up, so parallel work counts more than once. "Queued" is time from go (or from when the ticket was filed) until an owner started it: seat limits, dependency waits and the capacity hold.</p>
+<div class="two">
+  <div class="card"><svg id="phasebar"></svg></div>
+  <div class="card"><svg id="landbar"></svg></div>
+</div>
+
+<h2>GitHub macOS runners</h2>
+<p class="sub">macos-15-xlarge jobs (the <code>build</code> and <code>mailbox-unit</code> jobs) running and waiting for a runner, every 5 minutes. Ticks along the bottom are merges to main.</p>
+<div class="card scroll"><svg id="runners"></svg></div>
+
+<h2>Failure modes</h2>
+<p class="sub">From the orchestrator's run log, Lattice review verdicts and GitHub Actions data. Cost is wall-clock or ticket-hours where it can be measured.</p>
+<div class="card scroll"><table id="modes"></table></div>
+
+<h2>Review verdicts by reviewer family</h2>
+<div class="card scroll"><table id="families"></table></div>
+
+<h2>Per-ticket table</h2>
+<details open><summary>Show or hide</summary>
+<div class="card scroll"><table id="tbl"></table></div></details>
+
+<p class="note" id="method"></p>
+</main>
+<div id="tip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const P = s => new Date(s);
+const NS = 'http://www.w3.org/2000/svg';
+const PH = ['queued','implement','review','repair','landing','validation'];
+const PHL = {queued:'Queued for a seat', implement:'Implement', review:'Review', repair:'Repair + re-review', landing:'Landing (CI, rebase, captain)', validation:'Batch validation'};
+const hrs = (a,b) => (P(b)-P(a))/3.6e6;
+const fmtH = h => { const m = Math.round(h*60); return m < 60 ? m+'m' : Math.floor(m/60)+'h'+String(m%60).padStart(2,'0'); };
+const pdt = d => { const x = new Date(P(d).getTime() - 7*3.6e6); return String(x.getUTCHours()).padStart(2,'0')+':'+String(x.getUTCMinutes()).padStart(2,'0'); };
+function el(tag, attrs, parent, text) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; if (parent) parent.appendChild(e); return e; }
+const tip = document.getElementById('tip');
+function showTip(ev, html) { tip.innerHTML = html; tip.style.display = 'block'; const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14; if (x + w > innerWidth - 8) x = ev.clientX - w - 14; if (y + h > innerHeight - 8) y = innerHeight - h - 8; tip.style.left = x+'px'; tip.style.top = y+'px'; }
+const hideTip = () => tip.style.display = 'none';
+
+const workStart = t => { const s = t.segs.find(s => s[0] !== 'queued') || t.segs[0]; return P(s[1]); };
+const T = D.tickets.filter(t => t.segs.length).sort((a,b) => workStart(a) - workStart(b) || a.id.localeCompare(b.id));
+const tot = {}; PH.forEach(p => tot[p] = 0);
+T.forEach(t => t.segs.forEach(s => tot[s[0]] += hrs(s[1], s[2])));
+const merged = D.tickets.filter(t => t.merged);
+const runMerges = D.merges.filter(m => P(m) >= P(D.go));
+const leads = merged.filter(t => t.impl).map(t => hrs(t.impl, t.merged)).sort((a,b)=>a-b);
+const median = a => a.length ? a[Math.floor(a.length/2)] : 0;
+const reviewed = D.tickets.filter(t => t.reviews.length);
+const failed1 = reviewed.filter(t => t.fails > 0).length;
+const gapH = 3.155;
+const cancelledPct = Math.round(100 * D.mac_minutes_cancelled / D.mac_minutes_total);
+const statusCount = s => D.tickets.filter(t => t.status === s).length;
+
+document.getElementById('asof').textContent =
+  `Go was ${pdt(D.go)} PDT on Oct 1 (Atin: "GO. Full build mode"). Data as of ${pdt(D.now)} PDT Oct 2, ${fmtH(hrs(D.go, D.now))} later. ` +
+  `${D.tickets.length} tickets tagged c11-1.0 (spec ticket C11-272 left out): ${statusCount('done')} done, ${statusCount('in_validation')} merged awaiting batch validation, ${statusCount('in_progress')+statusCount('review')} in flight, ${statusCount('planned')+statusCount('backlog')} not started.`;
+
+const tiles = [
+  [runMerges.length, `PRs merged to main since go (${merged.length} from 1.0 tickets)`],
+  [fmtH(median(leads)), 'median ticket, work start to merge'],
+  [`${failed1}/${reviewed.length}`, 'tickets that failed at least one review (none needed a 3rd round)'],
+  [fmtH(gapH), 'longest stretch with no merge (Codex capacity hold)'],
+  [cancelledPct + '%', 'of macOS runner minutes spent on runs later cancelled'],
+];
+document.getElementById('tiles').innerHTML = tiles.map(([v,l]) => `<div class="card tile"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+
+const landQ = D.tickets.reduce((a,t)=>a+t.land_ci_queue_h,0), landR = D.tickets.reduce((a,t)=>a+t.land_ci_run_h,0);
+const take = [
+  `<b>The largest single loss was capacity, not CI.</b> Codex hit its weekly cap around 02:45 PDT (the "resets tomorrow" premise was wrong: it resets Oct 8). Work throttled, then the fleet sat idle from 05:01 to 07:53. No PR merged between ${pdt('2026-10-02T12:01:30Z')} and ${pdt('2026-10-02T15:10:00Z')}. Atin's lesson on record: keep work flowing on fallback models instead of pausing.`,
+  `<b>Queueing for a seat was the biggest pool of ticket-hours</b> (${fmtH(tot.queued)}). Most of it is the 10 already-filed tickets that only started after the capacity hold. Before the outage, admission waited on seat caps and on dependencies (journal 273, groups 259/260).`,
+  `<b>Reviews were fast and paid off.</b> A review took about 5 minutes; a repair cycle took a median of 23 minutes. Half the tickets failed review once, and the failures were real bugs, e.g. C11-294 parked main for 12 to 15 s on close, C11-273 left answered asks in waiting, C11-299 trapped duplicate Codex records. No ticket reached round 3.`,
+  `<b>Landing cost ${fmtH(tot.landing)} of ticket time</b>, measured from final PASS to merge. ${fmtH(landQ)} of that was a build job waiting for a GitHub xlarge runner and ${fmtH(landR)} was the build running. The remaining ${fmtH(tot.landing-landQ-landR)} was merge conflicts on hot files, rebases, and the Merge Captain's queue. Head-of-line blocking happened twice; once it cost 57 minutes.`,
+  `<b>CI saturation was real for the first ~3 hours</b>. At go, up to 11 xlarge jobs waited at once and a build waited as long as 47 minutes. After about 01:00 PDT there was little or no queue. Superseded pushes burned ${Math.round(D.mac_minutes_cancelled)} of ${Math.round(D.mac_minutes_total)} macOS runner minutes.`,
+  `<b>Batch validation lag is the long pink tail</b> (${fmtH(tot.validation)}). This is by design: low-risk tickets merge first and are validated in batches. It stretched because the Validator also stopped during the capacity hold. It does not block the critical path, but ${statusCount('in_validation')} merged tickets are still not done.`,
+  `<b>Atlas contention made the perf gates unreliable.</b> Load reached 50, the disk filled (ENOSPC at 8 GB free), and the two Tart VM slots were contended. The 259 perf gate needed a rerun and a noise ruling, the 260 gate was never met (moved to 261 as a release blocker), and the 273 probe was invalid on both sides (moved to the soak).`,
+];
+document.getElementById('takeaways').innerHTML = take.map(x => `<li>${x}</li>`).join('');
+
+document.getElementById('legend').innerHTML = PH.map(p => `<span style="--c:var(--${p})">${PHL[p]}</span>`).join('') + `<span style="--c:var(--band2)">Capacity hold</span>`;
+
+// ---------- Gantt ----------
+(function(){
+  const svg = document.getElementById('gantt');
+  const rowH = 17, top = 28, left = 74, right = 16;
+  const W = Math.max(900, document.querySelector('main').clientWidth - 36);
+  const H = top + T.length * rowH + 30;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const t0 = new Date(Math.min(...T.map(t => P(t.segs[0][1]))) - 15*60e3), t1 = P(D.now);
+  const x = d => left + (P(d) - t0) / (t1 - t0) * (W - left - right);
+  // capacity bands
+  const bands = [['2026-10-02T09:45:00Z','2026-10-02T12:01:30Z','var(--band1)','Codex throttled'],['2026-10-02T12:01:30Z','2026-10-02T14:53:00Z','var(--band2)','Fleet holding']];
+  bands.forEach(([a,b,c,l]) => { el('rect', {x:x(a), y:top-6, width:x(b)-x(a), height:T.length*rowH+8, fill:c}, svg); el('text', {x:(x(a)+x(b))/2, y:top-12, 'text-anchor':'middle', class:'mut'}, svg, l); });
+  // hour grid
+  const h0 = new Date(Math.ceil(t0/3.6e6)*3.6e6);
+  for (let h = h0; h <= t1; h = new Date(h.getTime()+3.6e6)) {
+    el('line', {x1:x(h), x2:x(h), y1:top-6, y2:top+T.length*rowH+2, stroke:'var(--grid)'}, svg);
+    el('text', {x:x(h), y:H-10, 'text-anchor':'middle'}, svg, pdt(h));
+  }
+  el('line', {x1:x(D.go), x2:x(D.go), y1:top-6, y2:top+T.length*rowH+2, stroke:'var(--ink2)', 'stroke-dasharray':'3 3'}, svg);
+  el('text', {x:x(D.go)+4, y:top-12, class:'lbl'}, svg, 'GO');
+  T.forEach((t, i) => {
+    const y = top + i*rowH;
+    el('text', {x:left-8, y:y+11.5, 'text-anchor':'end', class: t.status==='done' ? 'lbl' : ''}, svg, t.id);
+    const g = el('g', {}, svg);
+    t.segs.forEach(s => {
+      const xa = x(s[1]), xb = x(s[2]);
+      el('rect', {x:xa+1, y:y+2, width:Math.max(1.5, xb-xa-2), height:rowH-5, rx:3, fill:`var(--${s[0]})`}, g);
+    });
+    t.reviews.filter(v => v.v === 'FAIL' && P(v.ts) >= t0).forEach(v => el('text', {x:x(v.ts), y:y+11.5, 'text-anchor':'middle', class:'lbl', style:'font-size:10px;font-weight:700'}, g, '✕'));
+    const hit = el('rect', {x:left, y:y, width:W-left-right, height:rowH, fill:'transparent'}, svg);
+    const html = `<b>${t.id}</b> <span class="r">${t.status}${t.pr ? ' · PR #'+t.prs.join(', #') : ''} · ${t.ws} ${t.tier}</span><br>${t.title}<br><br>` +
+      t.segs.map(s => `<span style="color:var(--${s[0]})">■</span> ${PHL[s[0]]}: <b>${fmtH(hrs(s[1],s[2]))}</b> <span class="r">${pdt(s[1])}–${pdt(s[2])}</span>`).join('<br>') +
+      (t.reviews.length ? `<br><br>Reviews: ${t.reviews.map(v => `${v.fam} ${v.v} ${pdt(v.ts)}`).join(' → ')}` : '') +
+      (t.ci_runs ? `<br>CI runs on branch: ${t.ci_runs} (${t.ci_cancelled} cancelled, ${t.ci_failed} failed)` : '') +
+      (t.land_ci_queue_h + t.land_ci_run_h > 0.02 ? `<br>Landing: ${fmtH(t.land_ci_queue_h)} waiting for a runner, ${fmtH(t.land_ci_run_h)} building` : '') +
+      (t.conflicts ? `<br>Conflict or re-integration entries in log: ${t.conflicts}` : '');
+    hit.addEventListener('mousemove', e => { g.style.opacity = 1; showTip(e, html); });
+    hit.addEventListener('mouseleave', hideTip);
+  });
+  // merge rug
+  runMerges.forEach(m => el('line', {x1:x(m), x2:x(m), y1:top+T.length*rowH+4, y2:top+T.length*rowH+10, stroke:'var(--ink2)'}, svg));
+})();
+
+// ---------- Phase totals bar ----------
+function hbar(svgId, title, parts) {
+  const svg = document.getElementById(svgId);
+  const W = svg.parentElement.clientWidth - 34, H = 40 + parts.length * 26;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  el('text', {x:0, y:14, class:'lbl', style:'font-size:13px;font-weight:600'}, svg, title);
+  const max = Math.max(...parts.map(p => p[1])), lw = 190, vw = 60;
+  parts.forEach(([name, v, color], i) => {
+    const y = 30 + i*26, w = Math.max(2, v / max * (W - lw - vw));
+    el('text', {x:0, y:y+13}, svg, name);
+    const r = el('rect', {x:lw, y:y+2, width:w, height:16, rx:4, fill:color}, svg);
+    el('text', {x:lw+w+6, y:y+14, class:'lbl'}, svg, fmtH(v));
+    r.addEventListener('mousemove', e => showTip(e, `<b>${name}</b><br>${fmtH(v)} ticket-hours`)); r.addEventListener('mouseleave', hideTip);
+  });
+}
+hbar('phasebar', 'All tickets, by phase', PH.map(p => [PHL[p], tot[p], `var(--${p})`]));
+hbar('landbar', 'Landing time (final PASS to merge), split', [
+  ['Build job waiting for runner', landQ, 'var(--landing)'],
+  ['Build job running', landR, 'var(--landing)'],
+  ['Conflicts, rebases, captain queue', tot.landing - landQ - landR, 'var(--landing)'],
+]);
+
+// ---------- Runners ----------
+(function(){
+  const svg = document.getElementById('runners');
+  const W = Math.max(900, document.querySelector('main').clientWidth - 36), H = 230, left = 40, right = 140, top = 14, bot = 40;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const S = D.steps, t0 = P(S[0].t), t1 = P(S[S.length-1].t);
+  const ymax = Math.max(...S.map(s => Math.max(s.q_xl, s.r_xl))) + 1;
+  const x = d => left + (P(d) - t0) / (t1 - t0) * (W - left - right);
+  const y = v => top + (1 - v / ymax) * (H - top - bot);
+  for (let v = 0; v <= ymax; v += 2) { el('line', {x1:left, x2:W-right, y1:y(v), y2:y(v), stroke:'var(--grid)'}, svg); el('text', {x:left-6, y:y(v)+4, 'text-anchor':'end'}, svg, v); }
+  const h0 = new Date(Math.ceil(t0/3.6e6)*3.6e6);
+  for (let h = h0; h <= t1; h = new Date(h.getTime()+3.6e6)) el('text', {x:x(h), y:H-22, 'text-anchor':'middle'}, svg, pdt(h));
+  el('line', {x1:x(D.go), x2:x(D.go), y1:top, y2:H-bot, stroke:'var(--ink2)', 'stroke-dasharray':'3 3'}, svg);
+  const series = [['r_xl','Running','var(--implement)'],['q_xl','Waiting for runner','var(--repair)']];
+  series.forEach(([k, name, c]) => {
+    el('path', {d: S.map((s,i) => (i?'L':'M') + x(s.t).toFixed(1) + ' ' + y(s[k]).toFixed(1)).join(' '), fill:'none', stroke:c, 'stroke-width':2, 'stroke-linejoin':'round'}, svg);
+  });
+  // direct labels at the peak of each
+  series.forEach(([k, name, c], i) => { const last = S[S.length-1]; el('text', {x:W-right+6, y:y(last[k]) + (i ? 12 : -2), class:'lbl'}, svg, name); });
+  runMerges.forEach(m => el('line', {x1:x(m), x2:x(m), y1:H-bot+2, y2:H-bot+8, stroke:'var(--ink2)'}, svg));
+  const cross = el('line', {y1:top, y2:H-bot, stroke:'var(--axis)', visibility:'hidden'}, svg);
+  const hit = el('rect', {x:left, y:top, width:W-left-right, height:H-top-bot, fill:'transparent'}, svg);
+  hit.addEventListener('mousemove', e => {
+    const r = svg.getBoundingClientRect(), px = e.clientX - r.left;
+    const tt = new Date(t0.getTime() + (px - left) / (W - left - right) * (t1 - t0));
+    let best = S[0]; S.forEach(s => { if (Math.abs(P(s.t)-tt) < Math.abs(P(best.t)-tt)) best = s; });
+    cross.setAttribute('x1', x(best.t)); cross.setAttribute('x2', x(best.t)); cross.setAttribute('visibility','visible');
+    showTip(e, `<b>${pdt(best.t)} PDT</b><br>xlarge running: ${best.r_xl}<br>xlarge waiting: ${best.q_xl}<br>standard macOS running/waiting: ${best.r_std}/${best.q_std}`);
+  });
+  hit.addEventListener('mouseleave', () => { hideTip(); cross.setAttribute('visibility','hidden'); });
+})();
+
+// ---------- Failure modes ----------
+const modes = [
+  ['Model capacity outage', '1', 'No merges for 3h09m; ~2h throttled before that; 10 filed tickets started only after 07:40', 'Codex weekly cap hit at 02:45 PDT; "resets tomorrow" was wrong (Oct 8). Fleet held for Atin\'s decision overnight.', 'Lesson: keep flowing on fallback models (Atin 07:50). Check reset dates with /glideslope before assuming capacity.'],
+  ['Review FAIL, then repair', `${D.tickets.reduce((a,t)=>a+t.fails,0)} FAILs`, `${fmtH(tot.repair)} ticket-hours; median 23m per repair`, `${failed1} of ${reviewed.length} reviewed tickets failed once, C11-271 failed twice, none needed a 3rd round. Failures found real bugs.`, 'Working as intended. Cheap compared to finding the same bugs after merge.'],
+  ['Merge conflicts on hot files', '11 log entries (4 re-conflicts)', `Most of the ${fmtH(tot.landing-landQ-landR)} landing time not spent in CI`, 'C11-273 conflicted 3 times; 281, 283, 297 twice each. Hot files: CLI/c11.swift, CapabilityFeatures, TerminalController, SocketDispatch, WorkspaceManager, pbxproj, xcstrings.', 'Captain resolves additive merges (registry, pbxproj, xcstrings). C11-317 splits the hot files (post-1.0).'],
+  ['GitHub macOS runner saturation', 'first ~3h', `${fmtH(landQ)} of landing spent waiting; worst build wait 47m`, 'At go: 6 running and 22 queued repo-wide; up to 11 xlarge jobs waiting.', 'Atlas exact-head gate after 45m with no runner; open PRs only at handoff. C11-315 hourly CI.'],
+  ['Superseded / cancelled CI runs', '48 CI runs cancelled', `${Math.round(D.mac_minutes_cancelled)} of ${Math.round(D.mac_minutes_total)} macOS minutes (${cancelledPct}%)`, 'WIP pushes and rebases restarted the full macOS matrix.', 'Push only at handoff or repair. C11-316 GitHub merge queue (post-1.0).'],
+  ['Flaky tests', '4 distinct', 'Blocked the 306 and 263 landings; extra Atlas gate runs', 'WorkspaceRemoteConnectionTests (5 log hits), MessagesPageTests 30 ms timing, SocketControlPasswordStoreTests (Keychain over SSH), ShellGitWatcherTests cleanup.', 'C11-314 deleted the flaky timing tests (merged 08:10).'],
+  ['Merge Captain head-of-line blocking', '2', '57m once; a second time from the FRESH rule', 'Captain waited on one PR\'s checks while others were green and ready.', 'Rule: land any ready PR in dependency order; FRESH only breaks ties.'],
+  ['Two writers on one PR', '1 (#512)', 'One rebase thrown away and re-proved', 'Captain rebased while the owner merged main.', 'Rule: captain never pushes to a PR handed back to its owner.'],
+  ['Atlas host contention', '5 kinds', 'Perf gates invalid: 259 rerun, 260 unmet (moved to 261), 273 moved to soak', 'Load up to 50; ENOSPC at 8 GB free; 2 Tart VM slots contended; UI slot violation; ssh timeouts at load 37.', 'Validator now cleans the Atlas disk (keep >100 GB). Perf runs need a quiet window.'],
+  ['Batch validation lag', `${statusCount('in_validation')} still waiting`, `${fmtH(tot.validation)} ticket-hours; median 3h47m from merge to done`, 'Expected under the batch policy; the Validator also paused during the capacity hold.', 'Not on the critical path. Watch it at the sign-off freeze.'],
+  ['Orchestration incidents', '4', 'Little time; high risk', 'git commit -a in the main checkout (undone at once); installed c11 skill frontmatter corrupted by an owner\'s sync; repo-scoped self-hosted runner reachable from fork PRs (removed); home paths in evidence (C11-280).', 'set -e and absolute git -C paths; only the captain syncs skills; no self-hosted runner for now.'],
+  ['Harness false alarms', '1', 'A bisect started, then cancelled', 'Batch 2 smoke reported "no windows"; the harness was filtering on an empty title.', 'Fixed in the harness.'],
+];
+document.getElementById('modes').innerHTML = '<tr><th>Failure mode</th><th>Count</th><th>Cost</th><th>Evidence</th><th>What changed</th></tr>' + modes.map(m => `<tr>${m.map((c,i)=>`<td${i===1?' class="n"':''}>${c}</td>`).join('')}</tr>`).join('');
+
+const fams = D.reviewer_families;
+document.getElementById('families').innerHTML = '<tr><th>Reviewer family</th><th class="n">PASS</th><th class="n">FAIL</th><th class="n">FAIL rate</th></tr>' +
+  Object.entries(fams).filter(([k]) => !k.startsWith('agent:')).map(([k,v]) => `<tr><td>${k}</td><td class="n">${v.PASS}</td><td class="n">${v.FAIL}</td><td class="n">${Math.round(100*v.FAIL/(v.PASS+v.FAIL))}%</td></tr>`).join('') +
+  '<tr><td colspan="4" class="note">"codex" is a Sol reviewer whose actor name does not include its model. The rates also reflect which tickets each family was given: Astra reviewed most of the Sol-owned work.</td></tr>';
+
+const cols = ['ID','Title','Status','PR'].concat(PH.map(p => PHL[p].split(' (')[0]), ['FAILs','CI runs (cancelled)','Conflicts']);
+document.getElementById('tbl').innerHTML = '<tr>' + cols.map((c,i)=>`<th${i>3?' class="n"':''}>${c}</th>`).join('') + '</tr>' +
+  T.map(t => { const ph = {}; PH.forEach(p => ph[p] = 0); t.segs.forEach(s => ph[s[0]] += hrs(s[1],s[2]));
+    return `<tr><td>${t.id}</td><td>${t.title}</td><td>${t.status}</td><td>${t.prs.map(n=>'#'+n).join(' ')}</td>` + PH.map(p => `<td class="n">${ph[p] ? fmtH(ph[p]) : '—'}</td>`).join('') +
+      `<td class="n">${t.fails || '—'}</td><td class="n">${t.ci_runs ? t.ci_runs + ' (' + t.ci_cancelled + ')' : '—'}</td><td class="n">${t.conflicts || '—'}</td></tr>`; }).join('');
+
+document.getElementById('method').innerHTML = `How this is computed: phases come from Lattice status changes (in_progress, review, done) and review verdict comments; merge times and CI job timing come from the GitHub API (${D.wf.reduce((a,w)=>a+w.n,0)} workflow runs since 20:30 PDT). The review phase runs from handoff to the first verdict. Repair runs from a FAIL to the next verdict. Landing runs from the final PASS to the merge. Validation runs from the merge to done (or to now). Times before go (C11-216 started early) are included. Conflict counts are entries in run-state.md that mention the ticket. Some ~22:xx stamps in that log are estimates (it says so), so every duration here uses Lattice or GitHub timestamps. Rebuild: <code>python3 analyze.py && python3 build.py</code> in this folder.`;
+</script>
+</body>
+</html>

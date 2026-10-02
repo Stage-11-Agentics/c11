@@ -1,0 +1,123 @@
+<!doctype html><meta charset="utf-8"><title>C11-300 batch 1</title><style>body{max-width:1100px;margin:40px auto;font:17px system-ui;padding:0 20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f3f4;padding:16px;font:14px monospace}img{width:100%;height:auto}summary{cursor:pointer;font-weight:600;margin:16px 0}</style><h1>C11-300 — Batch 1 validation</h1><pre>C11-300 — BATCH 1 PASS (all numbered requirements observed; guest routing and permitted interactive host UI evidence distinguished).
+
+Batch 1; exact detached main 7bb785741750ddeb8ab12b4cf6472593fb8c3550; actor agent:codex-validator.
+Xcode 26.3 (17C529); Zig 0.15.2; source and submodules clean.
+Debug build/launch invocation b89fc276776b4119a587af2903b7d395 PASS, built on build host, retrieved to interactive host.
+Prestage invocation 737cb60abc264b0dad0cc4ba24d27070 PASS (no launch).
+Logic invocation 3246bfddd6be4741b549a2786f6fc4b5 PASS: 2,137 tests, 3 skipped, 0 failures.
+Command: ./scripts/remote-build.sh --tag val-1-t --mode test -- -only-testing:c11LogicTests -skip-testing:c11LogicTests/SocketControlPasswordStoreTests
+Initial unexcluded invocation 0383c050b1a24bc2999841aba355111a exited 65 with 12 assertions in 3 Keychain test cases (2,145 tests, 3 skipped). Orchestrator classified these as build host SSH/login-Keychain environment failures and explicitly authorized this rerun/exclusion. No raw assertion values are published.
+Batch smoke steps 1–6 PASS: identify, workspace/right/down splits, new terminal echo ok, about:blank + local markdown, synthesized Quit and QA resume restoring workspace UUIDs/three-area topology/ordered tab UUIDs and types, readable tree/screenshot. Window and area handles can be regenerated on restore; tab/workspace identities and topology were compared. interactive host display 1 verified as (0,0,1800,1169); display 3 as (1800,0,2560,1440). All own windows confined to display 1. UI leases acquired atomically and released; final tagged processes absent.
+
+1. PASS. Same exact build host Debug artifact QA-fresh launched inside c11-sb-val-1-299, bundle com.stage11.c11.debug.val.1, explicit socket /tmp/c11-sandbox-val-1-299.sock. Display 1 verified 1024×768; ten-minute guest guard. No production state used. Second-serial Setup Assistant prevented foreground activation for pointer UI; the guest app was cleanly Quit before its deadline. Remaining UI used the retrieved same-build tagged app on interactive host as explicitly allowed by validator.md, under a fresh UI lease and independent ten-minute PID guard. Socket /tmp/c11-debug-val-1.sock, target PID 41606, verified display 1. No test_v2 script ran on interactive host.
+2. PASS. python3 tests_v2/test_workspace_close_ownership.py --socket /tmp/c11-sandbox-val-1-299.sock exited 0 in the guest. Two windows each had &gt;=2 workspaces; wrong-window close and stale old-window close returned not_found; lists/tabs remained unchanged. Shell PID 3913 and live child PID 4130 plus the synthetic unsaved variable survived wrong close and cross-window move. Owner close removed only the target. Script removed its two own windows. Before/after trees and request/result trace retained. This is public-boundary/runtime proof; the direct-method B019 proof is the separately owner-recorded hosted host test, not an independent host-suite rerun.
+3. PASS (interactive host). Separate test window 03EB9015-9B07-4ED8-8397-98C735AA62C8; target 9CBC213D-605A-405F-96AD-44AC2E6A277C, target tab 51568950-977F-4613-A0FF-194E533501DB; sibling 9EA3E2B1-85E4-4C5F-9BF8-E2D2A96FFE7F. Bounded foreground sleep child 59043 alive before and after Cancel. Actual sidebar close glyph clicked while verified own PID was frontmost; custom Close workspace? overlay captured. PID-scoped AXPress Cancel preserved target/tab/child and sibling. Background target became selected for confirmation. An earlier 120-second fixture expired during harness inspection; the acceptance run was repeated with fresh child 59043 and proved immediately.
+4. PASS. Repeated actual sidebar close and AXPress Close Workspace. Only target disappeared; child 59043 was confirmed absent; sibling remained selected and its terminal printed C11-300-survivor-ok. Post-Cancel and post-Accept screenshots/trees retained.
+5. PASS. Explicit workspace.close with the correct test window/sibling IDs acknowledged but left final workspace and tab identities intact. Then real Workspace &gt; Close Workspace menu opened the existing final-window overlay. Cancel preserved workspace, terminal and foreground child 62002; Accept removed exactly the test window. The final-window child did not disappear during an extra five-second observation before application Quit; child termination on final-window Accept is not the step-5 requirement. Step-4 target termination passed. Child 62002 was subsequently confirmed absent after application Quit.
+6. PASS. Synthesized own App-menu Quit and confirmation Quit; PID 41606 confirmed absent before ten-minute UI deadline. UI lease released immediately. Guest app was likewise cleanly Quit, guest guard released, and only our guest clone deleted. No validation app or owned fixture child remains.
+
+Owner-recorded direct-method host evidence (not rerun here): https://github.com/Stage-11-Agentics/c11/actions/runs/36966386515/job/110710955110 — WorkspaceManagerWorkspaceOwnershipTests 4/4, WorkspaceManagerCloseWorkspacesWithConfirmationTests 8/8, WorkspaceManagerChildExitCloseTests 3/3. Whole host suite is advisory and has recorded unrelated failures; no all-host-tests-pass claim. Independent review ev_01M3XFYGYTN63K3HVV7ZA6A8CF; merged PR https://github.com/Stage-11-Agentics/c11/pull/505. These are provenance links from the ticket, not new hosted validation.
+
+No code changes or release sign-off. Required runtime close ownership, confirmation and final-workspace semantics are PASS at batch main.
+</pre>
+<details><summary>300-ownership-oracle.json</summary><pre>{
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;evidence&quot;: {
+    &quot;workspace&quot;: &quot;7D8C5F9B-409D-4567-B35A-DA417F4DEDB1&quot;,
+    &quot;tabs&quot;: [
+      &quot;E3033B7C-A9B7-448E-8A2E-D6A839C68BED&quot;
+    ],
+    &quot;shell_pid&quot;: &quot;3913&quot;,
+    &quot;child_pid&quot;: &quot;4130&quot;,
+    &quot;wrong_window&quot;: &quot;not_found&quot;,
+    &quot;move_and_stale_close&quot;: &quot;survived&quot;,
+    &quot;owner_close&quot;: &quot;removed&quot;
+  }
+}
+</pre></details>
+<details><summary>300-close-15-before.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:4 &quot;Workspace 2&quot; [selected] ◀ active
+    └── area area:13 size=100%×100% px=824×650 split=none [focused] ◀ active
+        └── tab tab:14 [terminal] &quot;~&quot; [selected] ◀ active</pre></details>
+<details><summary>300-close-15-after.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:4 &quot;Workspace 2&quot; [selected] ◀ active
+    └── area area:13 size=100%×100% px=824×650 split=none [focused] ◀ active
+        └── tab tab:14 [terminal] &quot;~&quot; [selected] ◀ active</pre></details>
+<details><summary>300-close-27-before.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:2 &quot;Workspace 1&quot; [selected] ◀ active
+    ├── area area:5 size=50%×50% px=412×325 split=H:left,V:top [focused] ◀ active
+    │   └── tab tab:6 [terminal] &quot;~&quot; [selected] ◀ active
+    ├── area area:6 size=50%×50% px=412×325 split=H:left,V:bottom
+    │   └── tab tab:8 [terminal] &quot;~&quot; [selected]
+    ├── area area:7 size=50%×50% px=412×325 split=H:right,V:top
+    │   └── tab tab:7 [terminal] &quot;~&quot; [selected]
+    └── area area:8 size=50%×50% px=412×325 split=H:right,V:bottom
+        └── tab tab:9 [terminal] &quot;~&quot; [selected]</pre></details>
+<details><summary>300-close-27-after.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:2 &quot;Workspace 1&quot; [selected] ◀ active
+    ├── area area:5 size=50%×50% px=412×325 split=H:left,V:top [focused] ◀ active
+    │   └── tab tab:6 [terminal] &quot;~&quot; [selected] ◀ active
+    ├── area area:6 size=50%×50% px=412×325 split=H:left,V:bottom
+    │   └── tab tab:8 [terminal] &quot;~&quot; [selected]
+    ├── area area:7 size=50%×50% px=412×325 split=H:right,V:top
+    │   └── tab tab:7 [terminal] &quot;~&quot; [selected]
+    └── area area:8 size=50%×50% px=412×325 split=H:right,V:bottom
+        └── tab tab:9 [terminal] &quot;~&quot; [selected]</pre></details>
+<details><summary>300-close-32-before.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:2 &quot;Workspace 1&quot; [selected] ◀ active
+    ├── area area:5 size=50%×50% px=412×325 split=H:left,V:top [focused] ◀ active
+    │   └── tab tab:6 [terminal] &quot;~&quot; [selected] ◀ active
+    ├── area area:6 size=50%×50% px=412×325 split=H:left,V:bottom
+    │   └── tab tab:8 [terminal] &quot;~&quot; [selected]
+    ├── area area:7 size=50%×50% px=412×325 split=H:right,V:top
+    │   └── tab tab:7 [terminal] &quot;~&quot; [selected]
+    └── area area:8 size=50%×50% px=412×325 split=H:right,V:bottom
+        └── tab tab:9 [terminal] &quot;~&quot; [selected]</pre></details>
+<details><summary>300-close-32-after.txt</summary><pre>window window:2 [current] ◀ active
+└── workspace workspace:2 &quot;Workspace 1&quot; [selected] ◀ active
+    ├── area area:5 size=50%×50% px=412×325 split=H:left,V:top [focused] ◀ active
+    │   └── tab tab:6 [terminal] &quot;~&quot; [selected] ◀ active
+    ├── area area:6 size=50%×50% px=412×325 split=H:left,V:bottom
+    │   └── tab tab:8 [terminal] &quot;~&quot; [selected]
+    ├── area area:7 size=50%×50% px=412×325 split=H:right,V:top
+    │   └── tab tab:7 [terminal] &quot;~&quot; [selected]
+    └── area area:8 size=50%×50% px=412×325 split=H:right,V:bottom
+        └── tab tab:9 [terminal] &quot;~&quot; [selected]</pre></details>
+<details><summary>300-interactive host-step3-5-direct.json</summary><pre>{
+  &quot;cancel&quot;: &quot;PASS&quot;,
+  &quot;background_selected&quot;: true,
+  &quot;same_child_survived_cancel_then_terminated_on_accept&quot;: 59043,
+  &quot;accept&quot;: &quot;PASS&quot;,
+  &quot;survivor_input&quot;: &quot;PASS&quot;,
+  &quot;direct_final_refusal&quot;: &quot;PASS&quot;,
+  &quot;ack&quot;: {
+    &quot;workspace_ref&quot;: &quot;workspace:2&quot;,
+    &quot;window_ref&quot;: &quot;window:2&quot;,
+    &quot;workspace_id&quot;: &quot;9EA3E2B1-85E4-4C5F-9BF8-E2D2A96FFE7F&quot;,
+    &quot;window_id&quot;: &quot;03EB9015-9B07-4ED8-8397-98C735AA62C8&quot;
+  }
+}</pre></details>
+<details><summary>300-final-result.json</summary><pre>{
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;step5_ui_final_cancel&quot;: &quot;preserved final workspace/tab/foreground child&quot;,
+  &quot;step5_ui_final_accept&quot;: &quot;closed only test window&quot;,
+  &quot;step6&quot;: &quot;synthesized App-menu Quit and sheet Quit; PID 41606 absent before ten-minute guard&quot;,
+  &quot;host&quot;: &quot;interactive host explicitly permitted by validator.md&quot;,
+  &quot;guest_routing&quot;: &quot;PASS&quot;,
+  &quot;additional_observation&quot;: &quot;The final-window child did not exit within the added five-second observation; step 5 requires window closure, not child termination. Step 4 target child termination passed.&quot;
+}</pre></details>
+<details><summary>dismissal.log</summary><pre>Synthesized App menu Quit and sheet Quit; PID 47787 absent
+Synthesized App menu Quit; PID 64166 confirmed absent
+Synthesized App menu Quit; PID 41606 confirmed absent
+</pre></details>
+<details><summary>300-extra-child-observation.json</summary><pre>{
+  &quot;pid&quot;: 62002,
+  &quot;alive_after_app_quit&quot;: false,
+  &quot;cleanup&quot;: &quot;already absent&quot;
+}</pre></details>
+<h2>300-interactive host-sidebar-hover.png</h2>
+<h2>300-interactive host-close-dialog.png</h2>
+<h2>300-interactive host-after-cancel.png</h2>
+<h2>300-interactive host-after-accept.png</h2>
+<h2>300-interactive host-final-dialog.png</h2>
+<h2>300-interactive host-final-cancel.png</h2>

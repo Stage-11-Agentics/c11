@@ -1,4 +1,5 @@
 {
+  "acceptance_criteria": [],
   "assigned_to": null,
   "branch_links": [],
   "comment_count": 0,
@@ -16,8 +17,8 @@
     }
   ],
   "id": "task_01KPHEP3C31TW8SP5N245X8XHW",
-  "last_event_id": "ev_01KT9WVBBYZRWJ4SGGWMGPN9ZA",
-  "last_status_changed_at": "2026-04-18T23:26:46Z",
+  "last_event_id": "ev_01M3YXY517VBNDR6FZKCFF9BEN",
+  "last_status_changed_at": "2026-10-02T18:27:30Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -32,7 +33,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-125",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "ui",
     "chrome",
@@ -41,6 +42,6 @@
   ],
   "title": "Pane title bar chrome & theming",
   "type": "task",
-  "updated_at": "2026-06-04T18:03:10Z",
+  "updated_at": "2026-10-02T18:27:30Z",
   "urgency": null
 }

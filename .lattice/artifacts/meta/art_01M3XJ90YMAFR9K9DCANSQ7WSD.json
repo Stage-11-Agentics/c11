@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T05:44:29Z",
+  "created_by": "agent:codex-merge-captain",
+  "custom_fields": {},
+  "id": "art_01M3XJ90YMAFR9K9DCANSQ7WSD",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3XJ90YMAFR9K9DCANSQ7WSD.md",
+    "size_bytes": 1689
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED: C11-309 / PR #509\nPR: https://github.com/Stage-11-Agentics/c11/pull/509\nHead: 5de8044fce3385ef7eb0d9847c417dee55f88bb5\nSquash merge: 7bb785741750ddeb8ab12b4cf6472593fb8c3550\nBase before merge:",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

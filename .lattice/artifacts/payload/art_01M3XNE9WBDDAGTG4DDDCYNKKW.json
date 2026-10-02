@@ -1,0 +1,45 @@
+{
+  "identity": {
+    "invocation": "8d98854c75e64066a50f5153cde035eb",
+    "head": "73e29c0cdab172004bc4f1370e22e81b7c932422",
+    "parent_head": "0541d26b1d1505afc736d25028008c22e8b0caf2",
+    "branch": "c11-1.0/C11-258-launch-runtime-file",
+    "submodules": {
+      "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-258-launch",
+    "slug": "c11-258-launch",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11LogicTests/LaunchPromptDeliveryTests",
+      "-only-testing:c11Tests/LaunchPostBootAttachmentTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "selected_results": [
+    "POSTBOOT github-copilot: unattached=3.002021074295044s attach-to-launch=0.3255650997161865s launch-to-read=2.6544017791748047s bytes=32768 sha256=fde1c94c25bf0be3c9c0790a901e394fc8fba87497fff74f5c7a61e45e10c665",
+    "POSTBOOT kimi: unattached=3.0052969455718994s attach-to-launch=0.28766322135925293s launch-to-read=2.6723437309265137s bytes=32768 sha256=401ceb1970ae9ff787eeee1a14f2aa4553c9b5dfa7a3e6263efaec9224865bc0",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.103 (12.104) seconds",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.103 (12.104) seconds",
+    "\t Executed 2 tests, with 0 failures (0 unexpected) in 12.103 (12.105) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.043 (1.046) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.043 (1.046) seconds",
+    "\t Executed 8 tests, with 0 failures (0 unexpected) in 1.043 (1.047) seconds",
+    "** TEST SUCCEEDED **"
+  ],
+  "static_review": "PASS complete repair including ABI alignment; fresh Codex context; runtime not claimed by reviewer",
+  "abi_sizes": {
+    "old_bridge": 88,
+    "linked_framework": 112
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T11:51:17Z",
+  "created_by": "agent:astra-journal",
+  "custom_fields": {},
+  "id": "art_01M3Y78N8D80GDNWKNDB88Y0YN",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01M3Y78N8D80GDNWKNDB88Y0YN.txt",
+    "size_bytes": 787
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Final dispatch integration: 47 tests and restart scenario pass",
+  "token_usage": null,
+  "type": "file"
+}

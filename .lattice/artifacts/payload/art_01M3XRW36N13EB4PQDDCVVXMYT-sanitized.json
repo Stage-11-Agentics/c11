@@ -1,0 +1,36 @@
+{
+  "invocation": "fe0f1dce727240be8922287d9ae21772",
+  "head": "a245ece6e31b302a95c1854a726b7060c127f767",
+  "submodules": {
+    "ghostty": "26c3e499ed8c4d65e3748248de7fd04c1e9a8103",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "mode": "test",
+  "tag": "c11-263",
+  "compile": "ok",
+  "tests": "ok",
+  "extra": [
+    "-only-testing:c11LogicTests",
+    "-skip-testing:c11LogicTests/SocketControlPasswordStoreTests",
+    "-skip-testing:c11LogicTests/WorkspaceRemoteConnectionTests",
+    "-only-testing:c11Tests/NotificationAndMenuBarTests/testLegacyCodexNotifyMismatchDoesNotMutateAttention",
+    "-only-testing:c11Tests/NotificationAndMenuBarTests/testLegacyCodexNotifyMatchKeepsCurrentCompletionBehavior",
+    "-resultBundlePath",
+    "legacy-repair-final.xcresult"
+  ],
+  "executed_tests": {
+    "c11Tests": 2,
+    "c11LogicTests": 2131,
+    "logic_skips": 3,
+    "failures": 0
+  },
+  "repair_files": [
+    "c11Tests/NotificationAndMenuBarTests.swift"
+  ],
+  "diff": {
+    "lines_added": 29,
+    "lines_removed": 0,
+    "production_changes": false
+  }
+}

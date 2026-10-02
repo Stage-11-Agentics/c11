@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T06:09:32Z",
+  "created_by": "agent:codex-launch",
+  "custom_fields": {},
+  "id": "art_01M3XKPWTRM2MP82XEA05W4D9Q",
+  "model": null,
+  "payload": {
+    "content_type": "text/x-python",
+    "file": "art_01M3XKPWTRM2MP82XEA05W4D9Q.py",
+    "size_bytes": 2987
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Synthetic tagged-app file-read smoke",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-09-30T22:58:31Z",
+  "created_by": "Cairn-1",
+  "custom_fields": {},
+  "id": "art_01M3T8MYPT99Y64TT600J7DVNP",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3T8MYPT99Y64TT600J7DVNP.md",
+    "size_bytes": 1055
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged as PR #457 (squash 711faff24), 2026-09-30, with Atin's explicit approval.\n\nReview trail:\n- Design: three HTML prototype rounds with Atin, plus a fresh-context design review (11 findings, folded",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

@@ -1,0 +1,37 @@
+{
+  "ticket": "C11-280",
+  "purpose": "Test-only fresh-object reconstruction fix-forward",
+  "atlas_result": {
+    "invocation": "09750f1f960643eeb636df22e97c5524",
+    "head": "41f12579e49e02b788a1edf7df1d250b4d5a1c34",
+    "parent_head": "9f2173320a9dac428edaef1512dc0271b766802a",
+    "branch": "c11-1.0/C11-280-test-fresh-object",
+    "submodules": {
+      "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+      "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+    },
+    "overlay": [],
+    "dirty": false,
+    "tag": "c11-280-fresh-object",
+    "slug": "c11-280-fresh-object",
+    "mode": "test",
+    "extra": [
+      "-only-testing:c11Tests/CreateInitialInputRuntimeTests"
+    ],
+    "release_options": [],
+    "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+    "zig_dir": "",
+    "compile": "ok",
+    "tests": "ok",
+    "xcode": "Xcode 26.3\nBuild version 17C529",
+    "zig": "0.15.2",
+    "ok": true
+  },
+  "build_log_sha256": "a40a9d859fa610b9f81484881ef7076ac3bf4fb1c61ca0dc38693fe6edba3763",
+  "selected_receipts": [
+    "INITIAL_INPUT_RUNTIME slow-rc=2.1s initial-count=1 original-pid=76822 reconstructed-pid=77077 events=[\"rc-start:1790955195.288502:76822\", \"rc-ready:1790955197.402225:76822\", \"initial:76822\", \"followup:76822\", \"reparent:76822\", \"rc-start:1790955197.905135:77077\", \"rc-ready:1790955200.018118:77077\", \"reconstructed-followup:77077\"]",
+    "Test Case '-[c11Tests.CreateInitialInputRuntimeTests testSlowShellStartupConsumesInputOnceAndReconstructionDoesNotReplayIt]' passed (5.041 seconds).",
+    "** TEST SUCCEEDED **"
+  ],
+  "hyperion_ui_used": false
+}

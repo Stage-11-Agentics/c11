@@ -1,0 +1,130 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-crashes",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-299-duplicate-restore",
+      "linked_at": "2026-10-02T04:16:32Z",
+      "linked_by": "agent:astra-crashes",
+      "repo": null
+    }
+  ],
+  "comment_count": 14,
+  "complexity": "low",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nOne saved session with two tabs sharing an id traps restore, and the whole fleet comes back empty. Backlog item: B024.\n\n## Evidence\norigin/main `0ff8887e5e`, verified.\n\n- `Sources/Workspace.swift:275` builds `Dictionary(uniqueKeysWithValues:)` over `snapshot.panels`. A duplicate key traps.\n- Upstream cmux #16182 deduplicates and skips the bad id instead of aborting the window.\n- Research: Fable cluster C4, wave 1. The trigger is a malformed snapshot, and one bad file blocks recovery.\n\n## Scope\nIn: restore skips or renames a duplicate tab id, restores the rest of the snapshot, and records which id was dropped. A duplicate does not trap. The same treatment for a duplicate pane id if that path uses `uniqueKeysWithValues` the same way (`Workspace.swift` near 8881 and 8925 are layout dictionaries. Check them. Do not change them if they are built from live state rather than the snapshot).\n\nOut:\n- Phantom empty windows (B355) and LaunchServices self-open (B004). Those ride the socket-readiness ticket.\n- Poorer-snapshot hold-back (B046) and replaced-graph teardown (B075). Tier-2 sweep.\n- Stable tab numbers (B058). Ruling D15 keeps numbers resetting. The skill chore is a different ticket. Do not persist ordinals here.\n- Parked B081 is already fixed: the close fallback requires the target to be focused. Do not reopen it.\n\n## Approach\nWhen installing a snapshot, detect duplicate ids before the dictionary literal. Keep the first, drop the rest, log the dropped id. Restore continues. Do not invent a migration that rewrites the user's session file in place beyond the normal save that follows a successful restore.\n\n## Acceptance criteria\n1. A fixture snapshot with two panels sharing an id restores the other tabs and does not crash. The duplicate is absent or has a new id, and the log names the dropped one.\n2. A normal snapshot from a real session still restores the same tabs it does today.\n3. After that restore, quitting and relaunching does not bring the duplicate back as a crash.\n\n## Validation\nA logic test that feeds a snapshot through the restore parser, if that parser can run without `NSApp`. `NewWorkspaceTitleTests`-style tests crash the bare local runner because `NSApp` is nil. Prefer a pure function. If the install path needs the host, leave the behavioral test for CI and still run the pure dedupe test via `c11-logic`. No source-grep test. No Hyperion build.\n\n## Dependencies\nNone inside ws:bugs. Cross-workstream: F1 is C11-216 only if you need a tagged relaunch. A pure test does not. The lead links F1 if you do.\n\n## Risks\nDropping the wrong duplicate could hide a live agent on the next launch. Keep the first complete record and name the drop. Doctrine: no tenant config. No new strings unless the log is user-visible. Public repo: a bad snapshot, not a crash recipe.\n\nSize: S. Tier: P1. Doctrine check: restore parsing only.\n",
+  "done_at": "2026-10-02T06:39:21Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3XDQR0SY2BQ51GQKB6CXY9E",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XE7TC4K9135MA03B5RZJDM",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEGCB92M3WTXX1SVQ9XTXC",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XET96AQZ19F59ZMEZ24X2Y",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XEY4RS87JYG0S4DH6BKV11",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XJVRS6VM0Z9G077Z4BG5E9",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XN46S423MP5QQZEBF5PJQ0",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XN4TSRTG2PD22NFN7TTP2S",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XN5QEYKQYG9K2BW0SSJ6DJ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XN6E82KQG817KAES99N8DV",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XNB1FDJCD079CFEQTBJZTN",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XNDG8JYSJ82JM6XD26YZB6",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3XNDG8FZ6P2VG3QSAD79AF9",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWJGGSJ870NYHP1CC91T2B",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM6XMW37QCYAMWJYN1G31",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3XWM8JARN2A11GF2B81SE5F",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3XWPWKZ7PPKSH4YX0GPG1RK",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3XWR4WDAY06VNT2SA23PSQ6",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01M3X6K24XNY2WNJD2515MNN5E",
+  "last_event_id": "ev_01M3XX98C9NMTK748D21N87ME0",
+  "last_status_changed_at": "2026-10-02T06:39:21Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 4,
+  "schema_version": 1,
+  "short_id": "C11-299",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p1"
+  ],
+  "title": "Restore a session that contains a duplicate tab id",
+  "type": "bug",
+  "updated_at": "2026-10-02T08:56:51Z",
+  "urgency": null
+}

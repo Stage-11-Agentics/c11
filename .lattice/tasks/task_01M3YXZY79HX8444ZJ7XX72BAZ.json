@@ -1,0 +1,32 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-10-02T18:28:29Z",
+  "created_by": "agent:claude-backlog-review",
+  "custom_fields": {},
+  "description": "Atin, 2026-10-02 backlog review: the README must be updated for 1.0. Rewrite README.md so it describes c11 as it ships at 1.0 and matches the sign-off build.\n\nScope:\n1. Every feature claim matches 1.0 behavior: workspaces \u2192 areas \u2192 tabs vocabulary (C11-248), workspace folders, the Feed and attention model (flags, suppression), the journal and agent analytics, the mailbox and messages page, saved agent configs and the A-button picker, browser profiles, exact-session resume across agents.\n2. Install section and hardware note current for the 1.0 release artifact.\n3. Screenshots or GIFs taken from the sign-off build (C11-292), not older builds.\n4. A slot for the walkthrough video (C11-124, Atin records it); link it when it exists.\n5. Voice per docs/c11-voice.md and company brand voice; no em-dashes.\n\nLand after C11-292 produces the sign-off build so screenshots and claims are checked against it. Text-only README edits may go direct to main.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01M3YXZY79HX8444ZJ7XX72BAZ",
+  "last_event_id": "ev_01M3YXZY7QGJ9NPJXWAEZV6BF6",
+  "last_status_changed_at": "2026-10-02T18:28:29Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-320",
+  "status": "backlog",
+  "tags": [
+    "c11-1.0",
+    "ws:backlog-review",
+    "tier:p1"
+  ],
+  "title": "README for 1.0: describe c11 as it ships, with screenshots from the sign-off build",
+  "type": "task",
+  "updated_at": "2026-10-02T18:28:29Z",
+  "urgency": null
+}

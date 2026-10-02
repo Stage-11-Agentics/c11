@@ -1,0 +1,78 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": {
+    "agent_type": "implement",
+    "base_name": "C11-240-Worker",
+    "framework": "claude-code",
+    "model": "claude-sonnet-5-5",
+    "name": "C11-240-Worker-1",
+    "serial": 1,
+    "session": "sess_01M3QCNGP57GBCPE76K840KBJ8"
+  },
+  "branch_links": [
+    {
+      "branch": "C11-240-workspace-picker",
+      "linked_at": "2026-09-29T22:52:34Z",
+      "linked_by": {
+        "agent_type": "implement",
+        "base_name": "C11-240-Worker",
+        "framework": "claude-code",
+        "model": "claude-sonnet-5-5",
+        "name": "C11-240-Worker-1",
+        "serial": 1,
+        "session": "sess_01M3QCNGP57GBCPE76K840KBJ8"
+      },
+      "repo": null
+    }
+  ],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-09-29T19:03:33Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "Cairn",
+    "framework": "claude-code",
+    "model": "claude-fable-5-1",
+    "name": "Cairn-1",
+    "serial": 1,
+    "session": "sess_01M3FQPZ1JQZJFBCFW5J3B3K26"
+  },
+  "custom_fields": {},
+  "description": "New Workspace sheet (Sources/CreateWorkspaceSheet.swift, hosted in a separate non-modal NSWindow from AppDelegate): make the recent-directory picker the fast path. Atin's words: \"a really core part of the workflow... bump it up a notch.\"\n\nDESIGN: Prototype approved by Atin, 2026-09-29, after three rounds.\nPrototype (the visual and behavioral reference; it holds Atin's real paths, so read it in place and never copy it into this public repo): /private/tmp/claude-501/-Users-atin-Projects-Stage11-code-overwatch/fd4968b2-46ae-44b9-bfb9-e30b29645592/scratchpad/prototype.html (logic in prototype.src.html beside it). The dashed \"Prototype controls\" panel is not part of the design.\n\nRoot causes found\n1. Auto-center on click: selectRecent sets keyboardSelectedRecentIdx, and recentsList's onChange runs proxy.scrollTo(id, anchor: .center) on every change, clicks included.\n2. Double-click is wired, but the first click recenters the list, so the second click lands on a different row.\n3. Recents cap at 50 (full today); save() keeps prefix(maxCount) of an unsorted list, so the cap can evict a pinned or recent entry.\n\nSpec\n- A click selects and fills the path field; it never scrolls. Only \u2191\u2193 scroll, from handleArrow, with scrollTo(id, anchor: nil); never from onChange. Selection is stored as a path, not an index (the index goes stale when a filter, sort or pin changes the order).\n- Double-click on a row or tile creates the workspace immediately with the selected layout. Ignore a double-click that arrives within about 400 ms of a pin change (a click on \u2605 or \u00d7 changes the layout under the cursor).\n- Pins: rectangular tiles about 120 \u00d7 86 pt above the list. A gold \u2605 sits top-left and a \u2318N badge top-right (\u00d7 on hover in the same slot, so nothing shifts). The name is centered with the parent folders under it at about 60% white. No monogram. Tiles fill row by row: five in a row, then a second row; past two full rows the grid keeps two rows and scrolls horizontally. Drag reorders them. The empty state reads \"Star a recent directory to pin it here\". Double-click creates.\n- Pinned directories also appear in the recents list in their normal sorted position (not floated to the top), with a gold star.\n- Long names (tiles): choose the rendering with a pure, unit-tested function that measures seam segments with NSString.size(withAttributes:). A seam is after - _ . or at a camelCase or letter-digit boundary. The name wraps only at seams, never mid-word, in two lines at most; if that doesn't fit, it drops to 11.5 pt; if one unbreakable segment still doesn't fit, it goes on one line with a middle ellipsis (\"Superca\u2026docious\"). Do not rely on Text lineLimit + minimumScaleFactor: SwiftUI breaks an over-long word between characters. The parent line shows the last two folders and drops to one (\"\u2026/greenwood-tech\") before truncating the tail. The tooltip always has the full path.\n- \u23181\u2013\u23189 creates from pin N immediately. MUST: today the app-level shortcut monitor treats \u2318digit as selectTab (AppDelegate ~11436); the modal guard (~10894) never trips because this is a window, not a sheet. In handleCustomShortcut, return false when event.window === createWorkspaceSheetWindow. Verify in the real app.\n- Search sits above the list beside the sort control. It has focus on open, and typing outside a text field goes to it. It shows \"N of M\". A subsequence within the directory name scores highest (prefix and word-boundary bonuses); elsewhere in the path only a contiguous substring counts. Results rank by score, the sort control is disabled during a query, and the top hit is auto-selected so \u23ce opens it. Matched characters are highlighted in gold. Implement it as an NSSearchField representable whose control(_:textView:doCommandBy:) handles moveUp/moveDown (move the selection), insertNewline (create; \u2325 switches, see below) and cancelOperation (clear a non-empty query, otherwise close). Drop the container's .focusable() and onKeyPress arrows. The Cancel button's .cancelAction must not swallow Esc while a query is non-empty. With no matches, clear the selection and disable Create so \u23ce never creates in a stale directory.\n- Already-open indicator: rows and tiles whose directory already has a workspace open in this c11 show a small green dot. Every row reserves the dot slot so names stay aligned. Double-click and \u23ce still create a new workspace (Atin's rule); \u2325 double-click and \u2325\u23ce switch to the existing workspace and close the window. Match on the workspace root directory, standardized.\n- Missing directories: stat off the main thread (a hung network mount must not stall the UI) and cache per open of the sheet. A missing directory shows struck through and dimmed, with \"missing\" in the time column. Double-click or \u23ce on it does not create; it flashes the row and explains.\n- Right-click on a row or tile opens a menu: New workspace here (\u23ce), Switch to open workspace (\u2325\u23ce, disabled unless open), Pin/Unpin, Reveal in Finder, Copy path, Remove from recents. Remove also drops the pin.\n- Rows: one line, 28 pt: name (13 medium), parent path (11 mono, raise to about 0.5 opacity for contrast), relative time (fixed width, tabular), \u00d7count (fixed width, fits 4 digits), and a pin star in a reserved slot.\n- Header on one line: \"New Workspace\" left, the subtitle right-aligned on the same baseline. (Atin, on the tagged build.)\n- The base-directory row splits in half: left, the \"Base directory\" label above the path field plus Browse; right, the \"Workspace name\" label above its field, with the default name as placeholder and the hint as a tooltip. No separate workspace-name section. (Atin, on the tagged build.)\n- Layout cards: about 96 pt squares with the letter-cell icon and label; the description moves to the tooltip.\n- Height: the window must fit a 14-inch MacBook Pro at its default resolution (1512 \u00d7 982 pt), even with the Dock showing and two rows of pins. Size it from the target screen's visibleFrame: fill that height with a small margin, keep every part on screen, and never exceed it. The recents list gives up height first (5 to 16 rows); every other section keeps its size. On a tall screen the window shrinks to fit instead of leaving empty space. Keep the list height fixed across states (one or two pin rows, no-match state) so the window never resizes mid-use. When it does resize, pin the window's top edge.\n- Data: keep pins in a separate ordered key (createWorkspace.pins.v1: [String]). Keep writing the per-entry pinned flag so older builds read it. Migrate existing pins in their current display order. Normalize paths in record() (standardize, strip a trailing slash). The recents cap is 250; at the cap, evict the oldest unpinned entry, never a pin. Never let a decode failure return [] and then save over history: fail soft and keep the stored data.\n- Accessibility: rows and tiles get .accessibilityElement(children: .combine), the .isButton trait, and an \"Open\" action; pin buttons are labeled \"Pin <name>\".\n- Footer hint: \"Click selects \u00b7 double-click or \u23ce creates \u00b7 \u2191\u2193 move \u00b7 \u23181\u2013\u23189 open a pin\".\n\nAcceptance\n- Unit tests: eviction at 250 never drops a pin; pin order persists; migration from a real v2 blob keeps every entry and pin; path normalization; fuzzy ranking; the long-name layout function on fixed fixtures.\n- Real-app validation (c11-computer-use skill, a tagged Debug build): click a row mid-list (no scroll); double-click it (creates that row's directory); \u2318N, type, \u23ce; \u23182 with another workspace open (creates, does not switch tabs); pin, unpin, reorder; 12+ pins (horizontal scroll); long names; Esc with a query (clears) and without (closes); \u2325\u23ce on an open directory (switches); a missing directory; right-click menu; a short screen.\n- Localized strings go through String(localized:).\n\nPhase 2, same PR (folded in from C11-241 and C11-242 at Atin's request: expand a ticket's scope rather than file new ones). Land and validate phase 1 first, then:\n\nPath mode in search: when the query starts with ~ or /, search switches from filtering to a path. The first row is \"Create in <path>\" for the typed path, followed by directories under it (real filesystem children listed off the main thread, plus known recents). Tab completes the highlighted child; \u23ce creates in the typed or highlighted path even if it is not a recent; a nonexistent path shows the missing state and does not create. The prototype mocks this (type ~/Projects/).\n\nCLI and socket for recents and pins, sharing the sheet's model and ranking:\n- c11 workspace recents list [--json] [--pinned]: path, lastOpenedAt, openCount, pinned, pin index, open-in-c11 and exists flags.\n- c11 workspace recents pin|unpin|remove <path>; pin --at <n> sets the pin order.\n- c11 workspace new --dir <path-or-fuzzy-query> [--layout <blueprint id>] [--name <n>]: resolves a fuzzy query with the sheet's ranking (fails loudly and lists candidates when the top two tie) and records the open in recents like the sheet does.\n- An open sheet updates live when an agent changes pins.\n- Document it in skills/c11/references/api.md and sync the installed skill per CLAUDE.md.\nPhase 2 acceptance: unit tests for path-mode resolution and CLI query resolution; the real app with path mode (complete, create, missing); and each CLI verb run against the tagged build's socket with the sheet open.",
+  "done_at": "2026-09-30T22:58:31Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3QNXAW1VKDR91JSSM5BW3AN",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3T8MYPYBBNCP28HY2KJWDWB",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3T8MYPT99Y64TT600J7DVNP",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3Q8T0QPNTNF1TCGQ1RR19VC",
+  "last_event_id": "ev_01M3T8MYPYBBNCP28HY2KJWDWD",
+  "last_status_changed_at": "2026-09-30T22:58:31Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-240",
+  "status": "done",
+  "tags": [
+    "ux",
+    "new-workspace"
+  ],
+  "title": "c11: New Workspace picker: no scroll on click, double-click creates, pins row, search, denser recents",
+  "type": "task",
+  "updated_at": "2026-09-30T22:58:31Z",
+  "urgency": null
+}

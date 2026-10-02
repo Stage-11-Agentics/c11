@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-10-02T06:43:09Z",
+  "created_by": "agent:codex-fixtures",
+  "custom_fields": {
+    "disclosure_sanitized": true,
+    "original_public_payload_removed": true
+  },
+  "id": "art_01M3XNMEMT2KZVSGJSMSQH0SD6",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3XNMEMT2KZVSGJSMSQH0SD6-sanitized.json",
+    "size_bytes": 6629
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-263 final-head native plan approval",
+  "token_usage": null,
+  "type": "file"
+}

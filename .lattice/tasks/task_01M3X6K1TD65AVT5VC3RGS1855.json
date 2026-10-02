@@ -1,0 +1,135 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:astra-hangs",
+  "branch_links": [
+    {
+      "branch": "c11-1.0/C11-295-main-stalls",
+      "linked_at": "2026-10-02T07:50:49Z",
+      "linked_by": "agent:astra-hangs",
+      "repo": null
+    }
+  ],
+  "comment_count": 12,
+  "complexity": "high",
+  "created_at": "2026-10-02T02:20:15Z",
+  "created_by": "agent:grok",
+  "custom_fields": {},
+  "description": "## Why\nAgents read cold tabs all day, and a terminal that never got a PTY accepts a send that then vanishes. The same fleet freezes when main takes the renderer lock or formats a multi-megabyte screen read while a reader is stuck on the Ghostty mailbox. Backlog items: B010 (app half), B086, B003.\n\n## Evidence\norigin/main `0ff8887e5e`, Ghostty `26c3e499e`.\n\n- B010 app half: autosave reaches `ghostty_surface_needs_confirm_quit` at `Sources/GhosttyTerminalView.swift:3960`, and that locks `renderer_state.mutex` on main (`ghostty/src/Surface.zig` near 967). The timer is a main-queue timer in `AppDelegate`. Astra overturned the \"autosave waits on a mutex the reader still holds\" story: `stream_handler.zig:131-134` unlocks before it blocks. The recorded freeze is teardown joining that blocked reader (`notes/2026-08-25-freeze-surface-deinit-deadlock.md`). This ticket stops the app from taking that mutex on the autosave and read paths. The abortable pushes are the Ghostty ticket.\n- B086: `v2SurfaceReadText` in `Sources/SocketHandlers/SurfaceHandlers.swift` formats and base64-encodes inside `Task { @MainActor }` and the socket worker `semaphore.wait()`s with no timeout. `ghostty_surface_read_text` / `dumpText` locks `renderer_state.mutex` (`Surface.zig` near 1916). Under many `read-screen` callers this is the most frequent main-thread take of that mutex. Fable also notes the unresolved-target fallback at the `v2UUID(...) ?? ws.focusedPanelId` line in this function.\n- B003: `Sources/GhosttyTerminalView.swift:2930` is `guard headlessStartupWindow == nil else { return }`. The window is cleared only when the view reaches a real window (near 2964). Portal churn can park the host with no window and leave the flag set, so every later start returns and the surface never gets a PTY. Queued `send` never flushes. Incident records, not second fixes: C11-130, C11-169, C11-235.\n- Research: Fable \u00a74 clusters C1 and C2, wave 3. Astra \u00a72 on B010 and \u00a74 cluster 4 (cold start is its own entry correction). `05-bug-reconciled.md`.\n\n## Scope\nIn:\n- Autosave and any other periodic main-thread liveness check read process-exited state, or another API that does not lock `renderer_state`, instead of `needs_confirm_quit` (B010 app half).\n- `read_text` / `read-screen`: copy the snapshot on main, format and encode off main, and bound the worker wait so a wedged main cannot pin socket threads one by one (B086).\n- Re-adopt a parked host into the bootstrap window when the flag is set and the view has no window, so a later start still runs (B003). Queued send flushes once the PTY exists.\n\nRide-alongs, same files, fix in this PR:\n- B066: `read_text` and split still fall back to the focused tab when an explicit ref does not resolve (`SurfaceHandlers` near the read fallback and the split fallback). Close and clear already reject. Apply the existing reject helper to these two. Do not change send. Destructive verbs stay fail-closed as they are.\n- B189: the socket reply is one unchecked `write` (`TerminalController` accept path does not set a send timeout; `writeSocketResponse` is a bare write). A large read can come back truncated. Loop until written or a real error, with a bound.\n- B180: autosave writes window geometry to UserDefaults even when the bytes did not change (`AppDelegate` `persistWindowGeometry`). Skip the unchanged write. Compare a stable encoding.\n- B042: new-workspace config copies a C struct and stores it on `GhosttyTerminalView` without owning the strings. Own the strings before deferred surface creation.\n- B068: a closed runtime can be created again. Closed stays closed, including a late attach callback.\n- B089: a replacement host is rejected until the area is 20% larger or the old host is gone. Same-size moves must be able to take the host.\n- B175: a restored or new background terminal starts focused inside Ghostty. It should start unfocused unless it is the selected tab.\n- B257: readiness is published before queued input is flushed. Ready means the queued send has been flushed or has failed visibly. c11 already queues a submit-on-flush. Do not claim that part is missing. Fix the ordering hole that is still there.\n\nOut:\n- Abortable mailbox pushes, paste atomicity, write-pool, and child shutdown. Those are the Ghostty ticket. This ticket depends on that bump.\n- `read-selection` and off-main selection reads. C11-282 owns that command and says not to format scrollback.\n- Starting a cold terminal from the read path when the helper already works. That is the cold-read ticket (B087). Land that first. This ticket rebases onto it and then moves formatting off main.\n- B087's helper call. Do not invent a second start-and-wait.\n- Parked rows. None of the IME or clipboard parked rows belong here.\n- Sidebar measurement (B059) and the mount cap (B012).\n\n## Approach\nWait for the Ghostty bump so teardown can abort a blocked push before this ticket re-parents hosts during churn. The process-exited read is safe earlier if the bump slips. Say which half landed if you split the PR. Prefer one PR.\n\nSnapshot on the main actor in one short hop. Do the string work on the socket worker. Put a timeout on the semaphore and return a typed error. Do not call `dumpText` for the whole format while holding the renderer mutex on main.\n\nFor the cold host, clear or replace a bootstrap window that no longer holds the view, then start. Do not force synchronous layout to cure a blank view. Portal `bind` already has a separate layout ride-along (B049) on the tier-2 sweep. Leave it there.\n\n`v2RejectUnresolvedTargetRefs` already exists. Use it at the read and split sites. An explicit `tab:99` that is gone is an error, not the operator's current screen.\n\n## Acceptance criteria\n1. On a tagged build, create a terminal with `new-surface` into an unfocused area. It gets a PTY without a human focusing it. A queued `send` shows up in the terminal. This is the C11-235 shape, and the churn shape in C11-169.\n2. `read-screen` on that tab returns text. `read-screen` on a tab id that does not exist returns not-found and does not return the focused tab's text. A multi-megabyte scrollback read returns the text, and main is not inside the format for the whole call. If main is wedged, the caller gets the timeout error instead of a stuck worker.\n3. Leave a 40-tab session up across several autosave intervals with terminals still printing. The app does not freeze, and a sample of main during an autosave is not in `needs_confirm_quit`.\n4. Closing the churned tab still returns after the Ghostty ticket's shutdown bound. This ticket must not reintroduce the 2026-08-25 join.\n5. An unchanged autosave does not write the same window-geometry defaults again.\n\n## Validation\n`tests_v2` against a tagged build's socket for create, send, read, and a stale ref. A computer-use pass that the new unfocused terminal is actually on screen and readable, not a zero-height pane. Builds and any soak on Atlas after C11-216. The freeze regression belongs in the C11-270 soak (streaming panes, churn, autosave). Do not build on Hyperion. No source-grep test.\n\n## Dependencies\nDepends on the Ghostty mailbox patch set. Depends on the cold-read ticket (B087) so `read_text` is not edited twice in the wrong order. Cross-workstream: F1 is C11-216, F2 is C11-270. The lead links those. Incident records C11-130, C11-169, and C11-235 stay open as history. This ticket is the fix.\n\n## Risks\nDeadlock: a torn screen read if the snapshot is not taken on main, or a portal reparent that frees a surface on the callback stack. Typing latency: do not add work to `forceRefresh` or `hitTest`. Main thread: the format stays off main. The short snapshot hop is the exception, with the reason in the PR. Doctrine: no tenant config writes. No new UI strings expected. Public repo: describe the stuck start and the lock, not a hang recipe.\n\nSize: L. Tier: P0. Doctrine check: app-side only. The mailbox policy change stays in the Ghostty ticket.\n",
+  "done_at": "2026-10-02T11:15:31Z",
+  "evidence_refs": [
+    {
+      "id": "art_01M3Y1Z6EDRFX4KZ8RH2GE3GEZ",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01M3Y40AQPGR0SRWMNDNVANJV0",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y419XCX9W64H9CR8G7T5X5",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4KFTAN2VNPPKA070BAMFS",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y4P3RY76DS1BKNETCVHP84",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01M3Y4Q6RTEMM4QCDJ00FPV18G",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y4TFX6E1ZT7QKEP0EFCE2P",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01M3Y5759HN921PPJYNMY8Q0JY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3Y575945DQ3N4NY8ZW241P5",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3X6K1TD65AVT5VC3RGS1855",
+  "last_event_id": "ev_01M3Y5759HN921PPJYNMY8Q0K0",
+  "last_status_changed_at": "2026-10-02T11:15:31Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [
+    {
+      "created_at": "2026-10-02T02:21:23Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X6K1QPK3S6ZW46E38NG432",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T02:21:23Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3X6K1X04S08YS80HNASRCMN",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T02:21:23Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01KTF1N1R8S08F0CADNBWNEPNZ",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:21:24Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01KWY8WP340V4JZSQWFMMQWAXP",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:21:24Z",
+      "created_by": "agent:grok",
+      "note": null,
+      "target_task_id": "task_01M3DAQZXVEDDZYHNPDANX4061",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-10-02T02:27:18Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01M29FFY3V06CKD2EPVKYC0J6V",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-10-02T03:17:51Z",
+      "created_by": "agent:c11-1.0-orchestrator",
+      "note": null,
+      "target_task_id": "task_01M3X3XPDAV6KFRYRJFP5TTJD4",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-295",
+  "status": "done",
+  "tags": [
+    "c11-1.0",
+    "ws:bugs",
+    "tier:p0"
+  ],
+  "title": "Stop autosave and screen reads from stalling main, and start cold terminals",
+  "type": "bug",
+  "updated_at": "2026-10-02T11:15:31Z",
+  "urgency": null
+}

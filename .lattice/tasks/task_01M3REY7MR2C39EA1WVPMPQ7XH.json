@@ -1,0 +1,49 @@
+{
+  "acceptance_criteria": [],
+  "assigned_to": "agent:c11-244-grok",
+  "branch_links": [
+    {
+      "branch": "c11-244-sandbox",
+      "linked_at": "2026-10-01T08:01:56Z",
+      "linked_by": "agent:c11-244-grok",
+      "repo": null
+    }
+  ],
+  "comment_count": 8,
+  "complexity": "high",
+  "created_at": "2026-09-30T06:09:57Z",
+  "created_by": "agent:cairn-tab-bar",
+  "custom_fields": {},
+  "description": "Synthesized clicks and drags against a tagged c11 build on the operator's live machine hijack their cursor and focus. On 2026-09-29 a builder's drag-validation scripts collided with Atin working on Hyperion. Give each c11 validation run its own sandbox: a macOS VM or a separate user session, with its own display, so computer-use agents can drive clicks and drags freely without touching the operator's session. Atin's steer: a sandbox or VM per c11 instance is the real fix, probably not Atlas. Deliver a script that stands one up with a tagged build, and update skills/c11-computer-use to prefer it.",
+  "done_at": "2026-10-01T09:07:18Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01M3VBFNK9AWEJ8N18AWS2465F",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01M3VBFNK8B1EYPRG9G83WFHZX",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01M3REY7MR2C39EA1WVPMPQ7XH",
+  "last_event_id": "ev_01M3VBFNK9AWEJ8N18AWS2465H",
+  "last_status_changed_at": "2026-10-01T09:07:18Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-244",
+  "status": "done",
+  "tags": [
+    "testing",
+    "computer-use"
+  ],
+  "title": "Sandboxed c11 instances for computer-use validation",
+  "type": "task",
+  "updated_at": "2026-10-01T09:07:18Z",
+  "urgency": null
+}

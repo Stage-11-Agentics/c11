@@ -21,8 +21,8 @@ optional.add_argument('--samples', type=int, default=100)
 options = optional.parse_args(values[8:])
 if bool(options.ui_driver) != bool(options.ui_window):
     sys.exit('--ui-driver and --ui-window must be supplied together')
-if tag not in ('c11-294-base', 'c11-294-ghostty') or pathlib.Path('/tmp').resolve() not in pathlib.Path(out).resolve().parents:
-    sys.exit('Local fixture requires an authorized C11-294 tag and output below /tmp')
+if tag not in ('c11-294-base', 'c11-294-ghostty', 'c11-302-baseline', 'c11-302-wakeups') or pathlib.Path('/tmp').resolve() not in pathlib.Path(out).resolve().parents:
+    sys.exit('Local fixture requires an authorized C11-294/C11-302 tag and output below /tmp')
 pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
 args = [sys.executable, script, 'run', '--local-tagged', '--tag', tag,
         '--label', label, '--engine-sha', sha, '--socket', sock,

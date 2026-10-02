@@ -5398,6 +5398,8 @@ class TerminalController {
     }
 
     private struct RenderStatsResponse: Codable {
+        let tickScheduling: GhosttyCallbackCoalescer<Void>.Stats
+        let scrollbarScheduling: GhosttyCallbackCoalescer<GhosttyScrollbar>.Stats?
         let panelId: String
         let drawCount: Int
         let lastDrawTime: Double
@@ -5443,6 +5445,8 @@ class TerminalController {
 
             let stats = terminalPanel.hostedView.debugRenderStats()
             let payload = RenderStatsResponse(
+                tickScheduling: GhosttyApp.shared.debugTickSchedulingStats(),
+                scrollbarScheduling: terminalPanel.surface.debugCallbackContext?.scrollbarUpdates.debugStats(),
                 panelId: panelId.uuidString,
                 drawCount: stats.drawCount,
                 lastDrawTime: stats.lastDrawTime,

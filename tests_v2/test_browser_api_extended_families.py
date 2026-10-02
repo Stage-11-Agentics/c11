@@ -268,11 +268,11 @@ def main() -> int:
             c._call("browser.console.list", {"tab_id": sid})
             c._call(
                 "browser.addscript",
-                {"tab_id": sid, "script": "setTimeout(() => window.triggerDialogs(), 0); true;"},
+                {"tab_id": sid, "script": "setTimeout(() => window.triggerDialogs(), 1000); true;"},
             )
-            # Let the first dialog reach the socket queue after addscript has
-            # returned; synchronous dialogs would hold its JavaScript result.
-            time.sleep(0.1)
+            # Leave enough time for addscript's JavaScript-result callback to
+            # return before the page opens a synchronous dialog.
+            time.sleep(1.1)
             d1 = c._call("browser.dialog.accept", {"tab_id": sid, "text": "agent-text"}) or {}
             d2 = c._call("browser.dialog.dismiss", {"tab_id": sid}) or {}
             d3 = c._call("browser.dialog.accept", {"tab_id": sid}) or {}

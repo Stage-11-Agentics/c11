@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:54:10Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2WV6ZVBTZRRH42A7XSKEC",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z2WV6ZVBTZRRH42A7XSKEC.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Frozen same-build pair and interleaving helpers identity 008",
+  "token_usage": null,
+  "type": "file"
+}

@@ -18,15 +18,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01M3VQSCPYJ8JXJFB98FPB3T46",
-  "last_event_id": "ev_01M3YY6X1JFMSG6M9ZQ5G7RTHA",
-  "last_status_changed_at": "2026-10-02T18:32:17Z",
+  "last_event_id": "ev_01M3YYWP6P0ZP43TTGYC589M22",
+  "last_status_changed_at": "2026-10-02T18:37:49Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-250",
-  "status": "in_planning",
+  "status": "in_progress",
   "tags": [
     "c11-1.0",
     "ws:backlog-review",
@@ -34,6 +34,6 @@
   ],
   "title": "Close safety follow-ups from the #469 review",
   "type": "chore",
-  "updated_at": "2026-10-02T18:32:17Z",
+  "updated_at": "2026-10-02T18:44:11Z",
   "urgency": null
 }

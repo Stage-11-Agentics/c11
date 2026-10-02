@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:10:40Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3V23J7628H6F3YHP9F7V7",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z3V23J7628H6F3YHP9F7V7.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding measured interleaving identity014 before first samples",
+  "token_usage": null,
+  "type": "file"
+}

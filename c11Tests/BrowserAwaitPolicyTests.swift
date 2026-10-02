@@ -94,19 +94,28 @@ final class BrowserAwaitPolicyTests: XCTestCase {
             "url": "https://app.example.com/account/settings"
         ])!
 
-        XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
-        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        // A host-only parent cookie does not apply to its subdomains.
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
+        // Host-only cookies match their exact host.
         XCTAssertTrue(filter.matches(makeCookie(domain: "app.example.com", path: "/account", secure: true)))
+        // A leading dot marks a domain cookie, which applies to subdomains.
+        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        let parentHostFilter = BrowserCookieClearFilter(params: [
+            "url": "https://example.com/account/settings"
+        ])!
+        XCTAssertTrue(parentHostFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
         XCTAssertFalse(filter.matches(makeCookie(domain: "deep.app.example.com", path: "/account", secure: true)))
         XCTAssertFalse(filter.matches(makeCookie(domain: "notexample.com", path: "/account", secure: true)))
         XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/accounts", secure: true)))
-        XCTAssertTrue(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertFalse(filter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertTrue(filter.matches(makeCookie(domain: ".example.com", path: "/account", secure: false)))
 
         let httpFilter = BrowserCookieClearFilter(params: [
             "url": "http://app.example.com/account/settings"
         ])!
-        XCTAssertFalse(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: true)))
-        XCTAssertTrue(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertFalse(httpFilter.matches(makeCookie(domain: ".example.com", path: "/account", secure: true)))
+        XCTAssertFalse(httpFilter.matches(makeCookie(domain: "example.com", path: "/account", secure: false)))
+        XCTAssertTrue(httpFilter.matches(makeCookie(domain: ".example.com", path: "/account", secure: false)))
     }
 
     private func makeCookie(domain: String, path: String, secure: Bool) -> HTTPCookie {

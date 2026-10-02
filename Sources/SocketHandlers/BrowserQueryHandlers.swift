@@ -108,10 +108,11 @@ struct BrowserCookieClearFilter {
     }
 
     private static func cookieDomainMatchesHost(_ cookieDomain: String, host: String) -> Bool {
+        let isDomainCookie = cookieDomain.hasPrefix(".")
         let cookie = normalizedDomain(cookieDomain)
         let host = normalizedDomain(host)
         guard !cookie.isEmpty, !host.isEmpty else { return false }
-        return host == cookie || host.hasSuffix(".\(cookie)")
+        return host == cookie || (isDomainCookie && host.hasSuffix(".\(cookie)"))
     }
 
     private static func cookiePathApplies(_ cookiePath: String, to requestPath: String) -> Bool {

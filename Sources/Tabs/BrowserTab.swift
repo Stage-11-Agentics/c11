@@ -4224,7 +4224,7 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
     /// Start a navigation for browser state restore and notify the caller only
-    /// after WebKit commits a same-origin document or reports a real failure.
+    /// after WebKit finishes a same-origin document or reports a real failure.
     /// The callback is always delivered from the main actor. A caller waiting
     /// on a socket worker must own the timeout; this method never blocks main.
     @discardableResult

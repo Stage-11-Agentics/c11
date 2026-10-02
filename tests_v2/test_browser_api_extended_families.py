@@ -74,7 +74,7 @@ def _wait_function(c: cmux, surface_id: str, expression: str, timeout_s: float =
 
 
 @contextmanager
-def _local_test_server() -> str:
+def _local_test_server():
     with tempfile.TemporaryDirectory(prefix="cmux-browser-ext-") as root:
         root_path = Path(root)
 
@@ -174,9 +174,11 @@ def _local_test_server() -> str:
             def do_GET(self) -> None:  # noqa: N802
                 request_path = self.path.split("?", 1)[0]
                 if request_path == "/state-target.html":
+                    self.server.state_target_cookie_headers.append(self.headers.get("Cookie", ""))
                     # A delayed response makes an incorrect "navigate then
                     # immediately write the old document" implementation
-                    # observable to the caller.
+                    # observable to the caller. Also leave time to observe
+                    # that the restored cookie is sent with the target request.
                     time.sleep(0.35)
                 if request_path == "/state-redirect":
                     port = int(self.server.server_address[1])
@@ -194,10 +196,11 @@ def _local_test_server() -> str:
             daemon_threads = True
 
         server = ThreadedTCPServer(("127.0.0.1", 0), Handler)
+        server.state_target_cookie_headers = []
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_address[1]}"
+            yield f"http://127.0.0.1:{server.server_address[1]}", server
         finally:
             server.shutdown()
             server.server_close()
@@ -205,7 +208,7 @@ def _local_test_server() -> str:
 
 
 def main() -> int:
-    with _local_test_server() as base_url:
+    with _local_test_server() as (base_url, server):
         index_url = f"{base_url}/index.html"
         second_url = f"{base_url}/second.html"
 
@@ -301,18 +304,70 @@ def main() -> int:
             )
             c._call(
                 "browser.cookies.set",
-                {"tab_id": sid, "name": "scoped_other", "value": "other", "url": other_origin_url},
+                {
+                    "tab_id": sid,
+                    "name": "scoped_other",
+                    "value": "other",
+                    "url": other_origin_url,
+                    "domain": "localhost",
+                },
+            )
+            target_cookie_before = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+            ) or {}
+            other_cookie_before = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            target_rows_before = target_cookie_before.get("cookies") or []
+            other_rows_before = other_cookie_before.get("cookies") or []
+            _must(
+                len(target_rows_before) == 1
+                and str(target_rows_before[0].get("domain", "")).lstrip(".").lower() == "127.0.0.1",
+                f"Expected scoped_target to belong to 127.0.0.1: {target_cookie_before}",
+            )
+            _must(
+                len(other_rows_before) == 1
+                and str(other_rows_before[0].get("domain", "")).lstrip(".").lower() == "localhost",
+                f"Expected scoped_other to belong to localhost: {other_cookie_before}",
             )
             _expect_error_contains(
                 "unscoped cookie clear",
                 lambda: c._call("browser.cookies.clear", {"tab_id": sid}),
                 "invalid_params",
             )
+            target_cookie_after_rejected_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}
+            ) or {}
+            other_cookie_after_rejected_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            _must(
+                bool(target_cookie_after_rejected_clear.get("cookies") or []),
+                f"Rejected unscoped clear deleted target cookie: {target_cookie_after_rejected_clear}",
+            )
+            _must(
+                bool(other_cookie_after_rejected_clear.get("cookies") or []),
+                f"Rejected unscoped clear deleted other-origin cookie: {other_cookie_after_rejected_clear}",
+            )
             c._call("browser.cookies.clear", {"tab_id": sid, "url": target_origin_url})
             target_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_target"}) or {}
             other_cookie_after = c._call("browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}) or {}
-            _must(not (target_cookie_after.get("cookies") or []), f"URL-scoped clear left target cookie: {target_cookie_after}")
-            _must(bool(other_cookie_after.get("cookies") or []), f"URL-scoped clear touched another origin: {other_cookie_after}")
+            _must(
+                not (target_cookie_after.get("cookies") or []),
+                f"URL-scoped clear left target cookie: {target_cookie_after}",
+            )
+            _must(
+                bool(other_cookie_after.get("cookies") or []),
+                f"URL-scoped clear touched another origin: {other_cookie_after}",
+            )
+            c._call("browser.cookies.clear", {"tab_id": sid, "all": True})
+            other_cookie_after_all_clear = c._call(
+                "browser.cookies.get", {"tab_id": sid, "name": "scoped_other"}
+            ) or {}
+            _must(
+                not (other_cookie_after_all_clear.get("cookies") or []),
+                f"Explicit all:true did not clear the other-origin cookie: {other_cookie_after_all_clear}",
+            )
 
             c._call("browser.storage.set", {"tab_id": sid, "type": "local", "key": "alpha", "value": "one"})
             c._call("browser.storage.set", {"tab_id": sid, "type": "session", "key": "beta", "value": "two"})
@@ -373,7 +428,7 @@ def main() -> int:
             _must(str(persisted.get("value") or "") == "yes", f"Expected state.load to restore storage key: {persisted}")
 
             # B080: loading a state file for a different origin must wait for
-            # that navigation to commit before applying storage. The old
+            # that navigation to finish before applying storage. The old
             # document is intentionally left with a different origin and the
             # target response is delayed to expose an early write.
             state_target_url = other_origin_url.replace("/index.html", "/state-target.html")
@@ -407,6 +462,27 @@ def main() -> int:
             _must(str(session_value.get("value") or "") == "session-value", f"Expected delayed session storage: {session_value}")
             state_cookie = c._call("browser.cookies.get", {"tab_id": sid, "name": "state_cookie"}) or {}
             _must(bool(state_cookie.get("cookies") or []), f"Expected state cookie on target origin: {state_cookie}")
+            _must(
+                any("state_cookie=state" in header for header in server.state_target_cookie_headers),
+                f"Expected target request to receive restored state cookie: {server.state_target_cookie_headers}",
+            )
+
+            c._call("browser.navigate", {"tab_id": sid, "url": index_url})
+            _wait_selector(c, sid, "#action-btn", timeout_s=7.0)
+            old_origin_value = c._call(
+                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "old-only"}
+            ) or {}
+            target_value_on_old_origin = c._call(
+                "browser.storage.get", {"tab_id": sid, "type": "local", "key": "state-key"}
+            ) or {}
+            _must(
+                str(old_origin_value.get("value") or "") == "old",
+                f"State load changed old-origin local storage: {old_origin_value}",
+            )
+            _must(
+                target_value_on_old_origin.get("value") is None,
+                f"Target state appeared on the old origin: {target_value_on_old_origin}",
+            )
 
             redirect_state_path = tempfile.NamedTemporaryFile(delete=False, prefix="cmux-redirect-state-", suffix=".json").name
             Path(redirect_state_path).write_text(

@@ -14,6 +14,98 @@ import UserNotifications
 #endif
 
 final class FinderServicePathResolverTests: XCTestCase {
+    @MainActor
+    func testSelfOpenAndInvalidServicesLeaveStartupRestorePending() {
+        let previousDelegate = AppDelegate.shared
+        let app = AppDelegate()
+        defer { AppDelegate.shared = previousDelegate }
+        app.application(NSApplication.shared, open: [Bundle.main.bundleURL])
+        XCTAssertFalse(app.didCompleteInitialSessionRestore)
+        XCTAssertTrue(app.listMainWindowSummaries().isEmpty)
+
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        var serviceError: NSString = ""
+        app.openWindow(pasteboard, userData: nil, error: &serviceError)
+        XCTAssertFalse(serviceError.length == 0)
+        XCTAssertFalse(app.didCompleteInitialSessionRestore)
+        pasteboard.setString(Bundle.main.bundleURL.absoluteString, forType: .string)
+        app.openTab(pasteboard, userData: nil, error: &serviceError)
+        XCTAssertFalse(app.didCompleteInitialSessionRestore)
+        XCTAssertTrue(app.listMainWindowSummaries().isEmpty)
+    }
+
+    func testInvalidServicesPasteboardDoesNotResolveAnOpenDirectory() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        XCTAssertTrue(FinderServicePathResolver.servicePathURLs(from: pasteboard).isEmpty)
+        pasteboard.setString("  \n https://example.com/project \n\t", forType: .string)
+        let directories = FinderServicePathResolver.orderedUniqueDirectories(
+            from: FinderServicePathResolver.servicePathURLs(from: pasteboard)
+        )
+        XCTAssertTrue(directories.isEmpty)
+    }
+
+    func testServicesPasteboardMixedPathsKeepsOnlyExternalDirectory() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let bundle = URL(fileURLWithPath: "/tmp/c11-services/c11.app", isDirectory: true)
+        pasteboard.setString(
+            "\(bundle.absoluteString)\n\nhttps://example.com/project\n/tmp/c11-services/project/README.md",
+            forType: .string
+        )
+        let directories = FinderServicePathResolver.orderedUniqueDirectories(
+            from: FinderServicePathResolver.servicePathURLs(from: pasteboard),
+            applicationBundleURL: bundle
+        )
+        XCTAssertEqual(directories, ["/tmp/c11-services/project"])
+    }
+
+    func testSelfBundleAndDescendantsAreExcludedBeforeFileParentResolution() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-open-paths-\(UUID())", isDirectory: true)
+        let bundle = root.appendingPathComponent("c11.app", isDirectory: true)
+        let contents = bundle.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directories = FinderServicePathResolver.orderedUniqueDirectories(
+            from: [
+                bundle,
+                URL(fileURLWithPath: bundle.path, isDirectory: false),
+                contents,
+                contents.appendingPathComponent("Info.plist"),
+                URL(string: "https://example.com/project")!,
+            ],
+            applicationBundleURL: bundle
+        )
+        XCTAssertTrue(directories.isEmpty)
+    }
+
+    func testSelfBundleSymlinksAreExcludedAndSiblingDirectoriesKeepTheirOrder() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-open-symlinks-\(UUID())", isDirectory: true)
+        let bundle = root.appendingPathComponent("c11.app", isDirectory: true)
+        let contents = bundle.appendingPathComponent("Contents", isDirectory: true)
+        let sibling = root.appendingPathComponent("c11.app-project", isDirectory: true)
+        let other = root.appendingPathComponent("other", isDirectory: true)
+        for directory in [contents, sibling, other] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundleLink = root.appendingPathComponent("app-link", isDirectory: true)
+        let contentsLink = root.appendingPathComponent("contents-link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: bundleLink, withDestinationURL: bundle)
+        try FileManager.default.createSymbolicLink(at: contentsLink, withDestinationURL: contents)
+
+        let directories = FinderServicePathResolver.orderedUniqueDirectories(
+            from: [bundleLink, sibling, contentsLink, bundleLink.appendingPathComponent("Contents/Info.plist"),
+                   bundleLink.appendingPathComponent("Contents/missing/deep/file"),
+                   other.appendingPathComponent("README.md"), sibling],
+            applicationBundleURL: bundleLink
+        )
+        XCTAssertEqual(directories, [sibling.path, other.path])
+    }
+
     func testOrderedUniqueDirectoriesUsesParentForFilesAndDedupes() {
         let input: [URL] = [
             URL(fileURLWithPath: "/tmp/cmux-services/project", isDirectory: true),

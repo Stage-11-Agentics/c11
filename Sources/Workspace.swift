@@ -5632,6 +5632,11 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
+        // The initial root area predates delegate installation. Later areas
+        // are registered by didSplitPane, including session/blueprint restore.
+        for paneId in bonsplitController.allPaneIds {
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
+        }
 
         // Ensure bonsplit has a focused pane and our didSelectTab handler runs for the
         // initial terminal. bonsplit's createTab selects internally but does not emit
@@ -5721,6 +5726,9 @@ final class Workspace: Identifiable, ObservableObject {
         guard newIds != lastKnownTabIds else { return }
         for createdId in newIds.subtracting(lastKnownTabIds) {
             guard let panel = newTabs[createdId] else { continue }
+            // This callback runs in @Published.willSet. Register the supplied
+            // new tab directly; self.panels still contains the old collection.
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
             EventEmitter.shared.emitSurfaceCreated(
                 workspace: id,
                 surface: createdId,
@@ -12266,6 +12274,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: newPane.id)
 #if DEBUG
         let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),

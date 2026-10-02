@@ -784,6 +784,8 @@ class WorkspaceManager: ObservableObject {
 
     @Published var workspaces: [Workspace] = []
     @Published var workspaceGroups: [WorkspaceGroup] = []
+    private var workspaceRefsCancellable: AnyCancellable?
+    private var knownWorkspaceRefIds: Set<UUID> = []
     @Published private(set) var isWorkspaceCycleHot: Bool = false
     @Published private(set) var pendingBackgroundWorkspaceLoadIds: Set<UUID> = []
     @Published private(set) var debugPinnedWorkspaceLoadIds: Set<UUID> = []
@@ -1137,6 +1139,16 @@ class WorkspaceManager: ObservableObject {
 #endif
 
     init(initialWorkingDirectory: String? = nil) {
+        // @Published emits during willSet. Use the supplied collection rather
+        // than walking AppDelegate's still-partially-mutated window graph.
+        workspaceRefsCancellable = $workspaces.sink { [weak self] newWorkspaces in
+            guard let self else { return }
+            let ids = Set(newWorkspaces.map(\.id))
+            for workspace in newWorkspaces where !self.knownWorkspaceRefIds.contains(workspace.id) {
+                _ = TerminalController.shared.v2EnsureHandleRef(kind: .workspace, uuid: workspace.id)
+            }
+            self.knownWorkspaceRefIds = ids
+        }
         addWorkspace(workingDirectory: initialWorkingDirectory)
         observers.append(NotificationCenter.default.addObserver(
             forName: .ghosttyDidSetTitle,

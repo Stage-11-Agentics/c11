@@ -66,6 +66,23 @@ Auto-exported into every c11 tab child process.
 
 ## Discovery & state
 
+During initial session restoration, graph-dependent socket requests return
+v2 `error.code: "not_ready"` (v1: `ERROR: not_ready: ...`). Retry this condition
+with a short delay and a bounded deadline; it is not a successful empty tree.
+The listener starts before restored terminals. `ping` stays available for
+wrapper connectivity checks, but a successful ping does not mean restoration
+has finished. `system.ping`, `system.capabilities`, `system.brand`, and
+`auth.login` also remain available. Once `tree --all` succeeds, the initial
+restored window graph is installed and UUID-targeted commands can proceed.
+The bundled shells' UUID-scoped `report_tty` and `report_shell_state` reports
+are accepted and coalesced during restoration, then applied to the completed
+graph. Their `OK` means the report was retained; it does not bypass readiness
+for commands that read or manipulate tabs.
+
+Refs are registered when windows, workspaces, areas, and tabs are created.
+Steady commands do not rebuild the global ref table. A closed ref is never
+reassigned to another object during the process lifetime.
+
 ```bash
 c11 identify                         # JSON: caller/focused refs + each workspace's root_directory
 c11 tree                             # Current workspace with ASCII floor plan (default)

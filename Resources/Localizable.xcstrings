@@ -4,23 +4,63 @@
   "strings": {
     "statusMenu.attention.none": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "No flags · no open asks" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No flags · no open asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグなし · 未対応の依頼なし" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Немає прапорців · немає відкритих запитів" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 없음 · 미해결 요청 없음" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无标记 · 无待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "沒有標記 · 沒有待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет флагов · нет открытых запросов" } }
+      }
     },
     "statusMenu.attention.flags.one": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "1 flag" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 flag" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグ：1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 прапорець" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个标记" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個標記" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 флаг" } }
+      }
     },
     "statusMenu.attention.flags.other": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%lld flags" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld flags" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "フラグ：%lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Прапорці: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "플래그 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个标记" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個標記" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Флаги: %lld" } }
+      }
     },
     "statusMenu.attention.asks.one": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "1 open ask" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 open ask" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未対応の依頼：1件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "1 відкритий запит" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미해결 요청 1개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "1 个待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "1 個待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "1 открытый запрос" } }
+      }
     },
     "statusMenu.attention.asks.other": {
       "extractionState": "manual",
-      "localizations": { "en": { "stringUnit": { "state": "translated", "value": "%lld open asks" } } }
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld open asks" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "未対応の依頼：%lld件" } },
+        "uk": { "stringUnit": { "state": "translated", "value": "Відкриті запити: %lld" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미해결 요청 %lld개" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 个待处理请求" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "%lld 個待處理請求" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Открытые запросы: %lld" } }
+      }
     },
     "shortcut.focusHistoryBack.label": {
       "extractionState": "manual",

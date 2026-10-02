@@ -62,6 +62,27 @@ final class JournalStoreTests: XCTestCase {
     }
 
     // Protected baseline capacity fails transactionally without an orphan receipt.
+    func testRestartDrainsMultipleHistoricalChangesWithoutInheritingLivePriority() throws {
+        let start = JournalTestData.draft(.turnStarted)
+        var store: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })
+        _ = try store!.append(draft: start, context: JournalContext(eligible: true))
+        store = nil
+        store = try JournalStore(layout: layout, clock: { 2000 })
+        var ask = JournalTestData.draft(.questionRequested); ask.requestID = "first-offline-request"
+        _ = try store!.append(draft: ask, context: JournalContext(eligible: true, historical: true))
+        var plan = JournalTestData.draft(.planReviewRequested); plan.requestID = "second-offline-request"
+        let second = try store!.append(draft: plan, context: JournalContext(eligible: true, historical: true))
+        XCTAssertEqual(second.receipt.projectionEffect, .applied)
+        XCTAssertEqual(second.changedSnapshot?.reason, .planReview)
+        XCTAssertEqual(second.changedSnapshot?.confirmation, .unconfirmed)
+        XCTAssertEqual(second.changedSnapshot?.lastLiveSequence, 0)
+        _ = try store!.append(draft: JournalTestData.draft(.turnStarted), context: JournalContext(eligible: true))
+        ask.eventID = UUID()
+        XCTAssertEqual(try store!.append(draft: ask, context: JournalContext(eligible: true, historical: true))
+            .receipt.projectionEffect, .stale)
+    }
+
+    // Protected baseline capacity fails transactionally without an orphan receipt.
     func testStateCapacityRollsBackEventAndKeepsAsk() throws {
         let ask = JournalTestData.draft(.questionRequested)
         var initial: JournalStore? = try JournalStore(layout: layout, clock: { 1000 })

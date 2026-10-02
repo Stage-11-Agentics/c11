@@ -22,6 +22,13 @@ enum JournalReducer {
         guard context.eligible, let owner = d.owner else { return unchanged(.unattributed, "owner_unavailable") }
         guard d.nativeEvent != "other" else { return unchanged(.observation, "unknown_native_event") }
         var s = previous ?? JournalSnapshot(owner: owner, workspaceID: d.workspaceID, appInstanceID: instanceID)
+        // Live priority belongs to one process. A historical transition after
+        // restart must not carry the old process's live watermark into this run
+        // and incorrectly suppress the remaining records in the same drain.
+        if s.appInstanceID != instanceID {
+            s.lastLiveSequence = 0
+            s.lastLiveEmittedAtMs = 0
+        }
         // Drain is historical: no old file can displace an event admitted live in this run.
         if context.historical && s.appInstanceID == instanceID && s.lastLiveSequence > 0 {
             return unchanged(.stale, "newer_live_evidence")

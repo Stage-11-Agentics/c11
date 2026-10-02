@@ -272,6 +272,13 @@ def move_workspace(client: cmux, state: dict[str, Any], name: str, destination: 
     return dict(client._call("workspace.group.move", params) or {})
 
 
+def order_group_members(client: cmux, state: dict[str, Any], role: str) -> None:
+    """Pin/group segment operations can reorder members; restore the fixture contract."""
+    members = GROUP_MEMBERS[role]
+    for name, before in reversed(list(zip(members, members[1:]))):
+        move_workspace(client, state, name, group_id(state, role), before=before)
+
+
 def expect_error(client: cmux, method: str, params: dict[str, Any], code: str) -> str:
     try:
         client._call(method, params)
@@ -403,6 +410,9 @@ def provision(client: cmux, state_path: Path, fixture_root: Path, tag: str) -> d
         client._call("workspace.group.move", {
             "window_id": window_id, "group_id": group_id(state, "empty_pinned"), "index": 1,
         })
+        for role in GROUP_ORDER:
+            if GROUP_MEMBERS[role]:
+                order_group_members(client, state, role)
         client._call("workspace.select", {
             "window_id": window_id, "workspace_id": workspace_id(state, "g60-w03"),
         })

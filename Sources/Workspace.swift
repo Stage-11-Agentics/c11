@@ -5787,7 +5787,6 @@ final class Workspace: Identifiable, ObservableObject {
         guard let panel = panels[surfaceId] else { return .surfaceNotFound }
         guard let terminalTab = panel as? TerminalTab else { return .surfaceNotTerminal }
 
-        let shell = tabShellActivityStates[surfaceId] ?? .unknown
         let isAgentKind = AreaSizePolicy.isAgentKind(surfaceActivityTerminalKind(panelId: surfaceId))
         let entry = MailboxStdinBuffer.Entry(
             id: envelopeId,
@@ -5795,17 +5794,12 @@ final class Workspace: Identifiable, ObservableObject {
             block: block,
             bufferedAt: Date()
         )
-        var decision = mailboxStdinBuffer.decide(
+        let decision = mailboxStdinBuffer.decide(
             surfaceId: surfaceId,
-            shell: shell,
             isAgentKind: isAgentKind,
+            agentOwnsTerminal: mailboxAgentOwnsTerminal(surfaceId: surfaceId),
             lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
         )
-        // The kernel check belongs to the decision too, so the trace says
-        // `buffered` (not `ok`) when the agent is not reading its terminal.
-        if decision == .injectNow, !mailboxAgentOwnsTerminal(surfaceId: surfaceId) {
-            decision = .buffer
-        }
         let immediate = decision == .injectNow
             && mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) == 0
         if let evicted = mailboxStdinBuffer.enqueue(surfaceId: surfaceId, entry: entry) {
@@ -5856,19 +5850,15 @@ final class Workspace: Identifiable, ObservableObject {
         guard mailboxStdinBuffer.pendingCount(surfaceId: surfaceId) > 0,
               !mailboxStdinBuffer.isPushInFlight(surfaceId: surfaceId),
               let terminalTab = panels[surfaceId] as? TerminalTab else { return }
-        let shell = tabShellActivityStates[surfaceId] ?? .unknown
         if trigger == .agentPrompt {
-            // An agent prompt edge whose shell is already back at its prompt
-            // is stale: the agent exited, and the shell-prompt flush owns
-            // what is queued.
-            guard shell != .promptIdle,
-                  mailboxStdinBuffer.decide(
+            // Only while the tab's interactive agent owns its terminal, at
+            // its prompt, with no draft (see `MailboxStdinBuffer.decide`).
+            guard mailboxStdinBuffer.decide(
                       surfaceId: surfaceId,
-                      shell: shell,
                       isAgentKind: true,
+                      agentOwnsTerminal: mailboxAgentOwnsTerminal(surfaceId: surfaceId),
                       lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt
-                  ) == .injectNow,
-                  mailboxAgentOwnsTerminal(surfaceId: surfaceId) else { return }
+                  ) == .injectNow else { return }
         }
         guard let dispatcher = mailboxDispatcher else { return }
 
@@ -6049,13 +6039,12 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// After a push ends without typing, retry whatever is still queued with
-    /// the trigger the tab's current state calls for: a shell back at its
-    /// prompt drops agent mail and flushes shell mail; an agent re-checks its
-    /// own gate.
+    /// After a push ends without typing, retry whatever is still queued: an
+    /// agent that still owns its terminal re-checks its gate; otherwise the
+    /// queue drops (the inbox keeps it).
     private func retryMailboxPush(surfaceId: UUID) {
-        let shell = tabShellActivityStates[surfaceId] ?? .unknown
-        let trigger: MailboxStdinBuffer.FlushTrigger = shell == .promptIdle ? .shellPrompt : .agentPrompt
+        let trigger: MailboxStdinBuffer.FlushTrigger =
+            mailboxAgentOwnsTerminal(surfaceId: surfaceId) ? .agentPrompt : .shellPrompt
         startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
     }
 
@@ -6080,7 +6069,6 @@ final class Workspace: Identifiable, ObservableObject {
             surfaceId: surfaceId,
             admittedAs: trigger,
             admittedTurn: admittedTurn,
-            shell: tabShellActivityStates[surfaceId] ?? .unknown,
             lastOperatorKeyAt: terminalTab.surface.lastOperatorKeyAt,
             surfaceAttached: terminalTab.surface.surface != nil,
             agentOwnsTerminal: trigger == .agentPrompt ? mailboxAgentOwnsTerminal(surfaceId: surfaceId) : true
@@ -7098,7 +7086,10 @@ final class Workspace: Identifiable, ObservableObject {
         // A recipient returning to its prompt is the safe moment to inject any
         // blocks buffered while it was busy. Whatever agent ran in the tab has
         // exited, so its turn edges and agent-gated blocks no longer apply.
-        if state == .promptIdle {
+        // Shell-integration state is not reliable while an agent runs (a
+        // launched agent's tab can read `promptIdle`), so the kernel decides:
+        // only when the tab's agent no longer owns the terminal is it gone.
+        if state == .promptIdle, !mailboxAgentOwnsTerminal(surfaceId: panelId) {
             mailboxStdinBuffer.forgetAgent(surfaceId: panelId)
             flushBufferedMailboxStdin(surfaceId: panelId, trigger: .shellPrompt)
         }

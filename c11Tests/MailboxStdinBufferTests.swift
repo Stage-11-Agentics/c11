@@ -31,13 +31,24 @@ final class MailboxStdinBufferTests: XCTestCase {
     /// A shell at its prompt, or a tab with no agent, is never typed into:
     /// a paste plus Return there runs as shell commands.
     func testShellsAreNeverTypedInto() {
-        let buffer = MailboxStdinBuffer()
-        for shell in [Workspace.TabShellActivityState.promptIdle, .commandRunning, .unknown] {
-            XCTAssertEqual(
-                buffer.decide(surfaceId: UUID(), shell: shell, isAgentKind: false, lastOperatorKeyAt: nil),
-                .buffer, "\(shell)"
-            )
-        }
+        var buffer = MailboxStdinBuffer()
+        // No agent at all: buffer, even if something owns the terminal.
+        XCTAssertEqual(
+            buffer.decide(surfaceId: UUID(), isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        // An agent at its prompt whose process does not own the terminal
+        // (the shell, `vim`, `--bg`): buffer.
+        let tab = UUID()
+        buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: false, lastOperatorKeyAt: nil),
+            .buffer
+        )
+        XCTAssertEqual(
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
+            .injectNow
+        )
     }
 
     // MARK: - enqueue / drain FIFO
@@ -158,7 +169,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         let tab = UUID()
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -170,12 +181,12 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteSubmit(surfaceId: tab, at: t(1))
         XCTAssertEqual(buffer.agentTurn(surfaceId: tab)?.atPrompt, false)
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(2))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
     }
@@ -184,7 +195,7 @@ final class MailboxStdinBufferTests: XCTestCase {
     func testAgentWithoutTurnEdgeBuffers() {
         let buffer = MailboxStdinBuffer()
         XCTAssertEqual(
-            buffer.decide(surfaceId: UUID(), shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: UUID(), isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
     }
@@ -198,7 +209,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
         XCTAssertTrue(buffer.isAgent(surfaceId: tab, isAgentKind: false))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -211,13 +222,13 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(0))
         buffer.notePush(surfaceId: tab, at: t(1))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         buffer.noteSubmit(surfaceId: tab, at: t(1.2))
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(5))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
     }
@@ -231,7 +242,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(10))
         let typed = t(20)
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: typed),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
             .buffer
         )
         // Typing during the turn and leaving it unsent is a draft too: the
@@ -239,14 +250,14 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(30))
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(3_600))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: typed),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: typed),
             .buffer
         )
         // The operator submits; the agent's turn ends; the gate opens.
         buffer.noteSubmit(surfaceId: tab, at: t(3_700))
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(3_710))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: t(3_700)),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(3_700)),
             .injectNow
         )
     }
@@ -271,18 +282,18 @@ final class MailboxStdinBufferTests: XCTestCase {
         var buffer = MailboxStdinBuffer()
         let shell = UUID()
         XCTAssertEqual(
-            buffer.decide(surfaceId: shell, shell: .commandRunning, isAgentKind: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: shell, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         XCTAssertEqual(
-            buffer.decide(surfaceId: shell, shell: .unknown, isAgentKind: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: shell, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         let exited = UUID()
         buffer.noteAgentTurn(surfaceId: exited, atPrompt: true, at: t(0))
         // The agent's shell is back at its prompt: it exited, so nothing types.
         XCTAssertEqual(
-            buffer.decide(surfaceId: exited, shell: .promptIdle, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: exited, isAgentKind: true, agentOwnsTerminal: false, lastOperatorKeyAt: nil),
             .buffer
         )
         buffer.forgetAgent(surfaceId: exited)
@@ -354,7 +365,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteSubmit(surfaceId: tab, at: returnAt)  // delivered late, stamped at the event
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(4))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: draftKeyAt),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: draftKeyAt),
             .buffer
         )
     }
@@ -367,7 +378,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteSubmit(surfaceId: tab, at: t(5))
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: true, at: t(20))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: t(8)),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: t(8)),
             .injectNow
         )
     }
@@ -393,21 +404,21 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.beginPush(surfaceId: agent)
         buffer.beginPush(surfaceId: shell)
         XCTAssertEqual(
-            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: agent, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         XCTAssertEqual(
-            buffer.decide(surfaceId: shell, shell: .promptIdle, isAgentKind: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: shell, isAgentKind: false, agentOwnsTerminal: false, lastOperatorKeyAt: nil),
             .buffer
         )
         XCTAssertEqual(
-            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true,
+            buffer.decide(surfaceId: agent, isAgentKind: true, agentOwnsTerminal: true,
                           lastOperatorKeyAt: nil, ignoringInFlight: true),
             .injectNow
         )
         buffer.endPush(surfaceId: agent, typedAt: nil)
         XCTAssertEqual(
-            buffer.decide(surfaceId: agent, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: agent, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .injectNow
         )
         buffer.endPush(surfaceId: shell, typedAt: t(1))
@@ -422,7 +433,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.beginPush(surfaceId: tab)
         buffer.endPush(surfaceId: tab, typedAt: t(1))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: true, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: true, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
     }
@@ -467,27 +478,28 @@ final class MailboxStdinBufferTests: XCTestCase {
     private func verdict(
         _ trigger: MailboxStdinBuffer.FlushTrigger,
         admitted: MailboxStdinBuffer.AgentTurn?,
-        shell: Workspace.TabShellActivityState,
         turn: MailboxStdinBuffer.AgentTurn?,
         submitAt: Date? = nil,
         keyAt: Date? = nil,
         pushAt: Date? = nil,
-        attached: Bool = true
+        attached: Bool = true,
+        owns: Bool = true
     ) -> MailboxStdinBuffer.PushVerdict {
         MailboxStdinBuffer.pushVerdict(
-            admittedAs: trigger, admittedTurn: admitted, shell: shell, turn: turn,
+            admittedAs: trigger, admittedTurn: admitted, turn: turn,
             lastSubmitAt: submitAt, lastOperatorKeyAt: keyAt, lastPushAt: pushAt,
-            surfaceAttached: attached
+            surfaceAttached: attached, agentOwnsTerminal: owns
         )
     }
 
-    /// The r2 finding: the agent exits while its claims are off-main and the
-    /// shell reports `promptIdle`. The push must drop, never paste into zsh.
+    /// The r2 finding: the agent exits while its claims are off-main. The
+    /// kernel no longer reports it as the terminal's reader (or its turn
+    /// record is gone), so the push drops, never pastes into zsh.
     func testAgentPushDropsWhenAgentExitedDuringHop() {
         let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .promptIdle, turn: atPrompt), .drop)
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .promptIdle, turn: nil), .drop)
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: nil), .drop)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: atPrompt, owns: false), .drop)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: nil, owns: false), .drop)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: nil), .drop)
     }
 
     /// Through the buffer: `forgetAgent` (the shell's promptIdle edge) during
@@ -501,36 +513,36 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.forgetAgent(surfaceId: tab)
         XCTAssertEqual(
             buffer.pushVerdict(surfaceId: tab, admittedAs: .agentPrompt, admittedTurn: admitted,
-                               shell: .promptIdle, lastOperatorKeyAt: nil, surfaceAttached: true),
+                               lastOperatorKeyAt: nil, surfaceAttached: true, agentOwnsTerminal: false),
             .drop
         )
     }
 
     func testAgentPushPastesWhenNothingChanged() {
         let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt), .paste)
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: atPrompt), .paste)
     }
 
     func testAgentPushRequeuesWhenGateClosedDuringHop() {
         let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
         // A new turn started.
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning,
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt,
                                turn: .init(atPrompt: false, since: t(1))), .requeue)
         // A fresh prompt edge replaced the admitted one.
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning,
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt,
                                turn: .init(atPrompt: true, since: t(2))), .requeue)
         // The operator started a draft.
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt,
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: atPrompt,
                                submitAt: t(0), keyAt: t(1)), .requeue)
         // The surface detached.
-        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, shell: .commandRunning, turn: atPrompt,
+        XCTAssertEqual(verdict(.agentPrompt, admitted: atPrompt, turn: atPrompt,
                                attached: false), .requeue)
     }
 
     /// A shell-prompt push never pastes, whatever the shell is doing.
     func testShellPushAlwaysDrops() {
-        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .promptIdle, turn: nil), .drop)
-        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, shell: .commandRunning, turn: nil), .drop)
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, turn: nil), .drop)
+        XCTAssertEqual(verdict(.shellPrompt, admitted: nil, turn: nil), .drop)
     }
 
     /// A headless agent's reports mark the tab as an agent that is never at
@@ -541,7 +553,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: tab, atPrompt: false, at: t(0))  // SessionStart, headless
         XCTAssertTrue(buffer.isAgent(surfaceId: tab, isAgentKind: false))
         XCTAssertEqual(
-            buffer.decide(surfaceId: tab, shell: .commandRunning, isAgentKind: false, lastOperatorKeyAt: nil),
+            buffer.decide(surfaceId: tab, isAgentKind: false, agentOwnsTerminal: true, lastOperatorKeyAt: nil),
             .buffer
         )
         buffer.enqueue(surfaceId: tab, entry: entry(id: "m"))
@@ -588,7 +600,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
         XCTAssertEqual(
             MailboxStdinBuffer.pushVerdict(
-                admittedAs: .agentPrompt, admittedTurn: atPrompt, shell: .commandRunning, turn: atPrompt,
+                admittedAs: .agentPrompt, admittedTurn: atPrompt, turn: atPrompt,
                 lastSubmitAt: nil, lastOperatorKeyAt: nil, lastPushAt: nil,
                 surfaceAttached: true, agentOwnsTerminal: false
             ),
@@ -602,7 +614,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         let atPrompt = MailboxStdinBuffer.AgentTurn(atPrompt: true, since: t(0))
         func v(keyAt: Date?, owns: Bool) -> MailboxStdinBuffer.PushVerdict {
             MailboxStdinBuffer.pushVerdict(
-                admittedAs: .agentPrompt, admittedTurn: atPrompt, shell: .commandRunning, turn: atPrompt,
+                admittedAs: .agentPrompt, admittedTurn: atPrompt, turn: atPrompt,
                 lastSubmitAt: t(-1), lastOperatorKeyAt: keyAt, lastPushAt: nil,
                 surfaceAttached: true, agentOwnsTerminal: owns
             )

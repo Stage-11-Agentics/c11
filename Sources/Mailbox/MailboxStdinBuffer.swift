@@ -120,17 +120,21 @@ struct MailboxStdinBuffer {
 
     /// The full gate for one tab. `isAgentKind` is the tab's detected or
     /// declared terminal type being an agent; a recorded turn edge also marks
-    /// the tab as an agent.
+    /// the tab as an agent. `agentOwnsTerminal` is the kernel's answer for
+    /// the tab's interactive agent process (`MailboxAgentForeground`); the
+    /// shell-integration state is deliberately not an input, because it is
+    /// not reliable while an agent runs (a launched agent's tab can still
+    /// read `promptIdle`).
     func decide(
         surfaceId: UUID,
-        shell: Workspace.TabShellActivityState,
         isAgentKind: Bool,
+        agentOwnsTerminal: Bool,
         lastOperatorKeyAt: Date?,
         ignoringInFlight: Bool = false
     ) -> Decision {
         if !ignoringInFlight, pushesInFlight.contains(surfaceId) { return .buffer }
-        // A shell at its prompt, or a tab with no agent: nothing to type into.
-        guard shell != .promptIdle, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
+        // No interactive agent reading the terminal: nothing to type into.
+        guard agentOwnsTerminal, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
             return .buffer
         }
         return Self.decideAgent(
@@ -162,7 +166,6 @@ struct MailboxStdinBuffer {
     static func pushVerdict(
         admittedAs trigger: FlushTrigger,
         admittedTurn: AgentTurn?,
-        shell: Workspace.TabShellActivityState,
         turn: AgentTurn?,
         lastSubmitAt: Date?,
         lastOperatorKeyAt: Date?,
@@ -176,7 +179,7 @@ struct MailboxStdinBuffer {
             // foreground reader (it exited, went to the background, or
             // another program such as `vim` or the shell is reading), the
             // mail goes back to the inbox instead of into that reader.
-            guard shell != .promptIdle, let turn, agentOwnsTerminal else { return .drop }
+            guard let turn, agentOwnsTerminal else { return .drop }
             guard turn == admittedTurn,
                   decideAgent(
                       turn: turn,
@@ -196,7 +199,6 @@ struct MailboxStdinBuffer {
         surfaceId: UUID,
         admittedAs trigger: FlushTrigger,
         admittedTurn: AgentTurn?,
-        shell: Workspace.TabShellActivityState,
         lastOperatorKeyAt: Date?,
         surfaceAttached: Bool,
         agentOwnsTerminal: Bool = true
@@ -204,7 +206,6 @@ struct MailboxStdinBuffer {
         Self.pushVerdict(
             admittedAs: trigger,
             admittedTurn: admittedTurn,
-            shell: shell,
             turn: turns[surfaceId],
             lastSubmitAt: lastSubmitAt[surfaceId],
             lastOperatorKeyAt: lastOperatorKeyAt,

@@ -20,8 +20,6 @@ extension TerminalController {
             return v2Result(id: id, self.v2SessionSave(params: params))
         case "mailbox.resolve":
             return v2Result(id: id, self.v2MailboxResolve(params: params))
-        case "mailbox.report_delivered":
-            return v2Result(id: id, self.v2MailboxReportDelivered(params: params))
         case "sidebar.state":
             return v2Result(id: id, self.v2SidebarState(params: params))
         default:
@@ -370,20 +368,30 @@ extension TerminalController {
     /// event carries no surface rather than a wrong one), `via` (default
     /// `"drain"`).
     ///
-    /// Telemetry: validated and emitted off-main (EventEmitter is
-    /// thread-safe); nothing here touches AppKit or the model.
-    private func v2MailboxReportDelivered(params: [String: Any]) -> V2CallResult {
-        let defaultWorkspace = v2UUID(params, "workspace_id")
+    /// Telemetry: on the socket-worker policy (`socketWorkerV2Methods`), so
+    /// it is validated and emitted off-main (EventEmitter is thread-safe) and
+    /// lands even while the main thread is busy; nothing here touches AppKit
+    /// or the model.
+    nonisolated static func v2MailboxReportDelivered(params: [String: Any]) -> V2CallResult {
+        let defaultWorkspace = (params["workspace_id"] as? String).flatMap(UUID.init(uuidString:))
         let deliveries: [(id: String, recipient: String, workspace: UUID)] = (params["deliveries"] as? [Any] ?? []).compactMap {
             guard let entry = $0 as? [String: Any],
                   let id = entry["id"] as? String, !id.isEmpty,
-                  let recipient = entry["recipient"] as? String, !recipient.isEmpty,
-                  let workspace = (entry["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) ?? defaultWorkspace
+                  let recipient = entry["recipient"] as? String, !recipient.isEmpty
             else { return nil }
+            // An entry that names a workspace must name a valid one; it never
+            // falls back to the top-level workspace.
+            let workspace: UUID?
+            if let raw = entry["workspace_id"] {
+                workspace = (raw as? String).flatMap(UUID.init(uuidString:))
+            } else {
+                workspace = defaultWorkspace
+            }
+            guard let workspace else { return nil }
             return (id, recipient, workspace)
         }
-        let via = v2String(params, "via") ?? "drain"
-        let tabId = v2UUID(params, "tab_id")
+        let via = (params["via"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "drain"
+        let tabId = (params["tab_id"] as? String).flatMap(UUID.init(uuidString:))
         for delivery in deliveries {
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: delivery.workspace,

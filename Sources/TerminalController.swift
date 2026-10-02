@@ -2096,6 +2096,10 @@ class TerminalController {
         "browser.eval",
         "browser.wait",
         "browser.download.wait",
+        // C11-257: delivery telemetry from `c11 mailbox` drains; emits events
+        // only (EventEmitter is thread-safe), so it is recorded even while
+        // the main thread is busy.
+        "mailbox.report_delivered",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

@@ -1106,8 +1106,20 @@ final class SocketClient {
     // responseTimeout: nil = no SO_RCVTIMEO / SO_SNDTIMEO (unbounded); >0 = the
     // deadline in seconds for writing the request (a peer that stops reading
     // cannot hold the CLI) and for the initial read of the response.
+    /// A wall-clock bound every request in this process must finish by, on top
+    /// of its own deadline. A hook drain sets it to its claim cutoff, so a c11
+    /// that stops reading or answering can never hold the hook past the point
+    /// where it may still claim mail and finish before the harness's kill.
+    static var processDeadline: Date?
+
     func send(command: String, responseTimeout: TimeInterval?) throws -> String {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
+        var responseTimeout = responseTimeout
+        if let processDeadline = Self.processDeadline {
+            let remaining = processDeadline.timeIntervalSinceNow
+            guard remaining > 0.01 else { throw CLIError(message: SocketClient.commandTimedOutMessage) }
+            responseTimeout = min(responseTimeout ?? remaining, remaining)
+        }
         let payload = Array((command + "\n").utf8)
         try configureTimeout(SO_SNDTIMEO, responseTimeout)
         var offset = 0
@@ -1387,6 +1399,13 @@ final class SocketClient {
             return CLIVersionSkew.modernResult(legacyResult)
         }
         return try sendV2Raw(method: method, params: params, deadline: deadline)
+    }
+
+    /// `sendV2` without the capability probe, for a method a legacy app does
+    /// not have under any name (so there is nothing to translate). Saves the
+    /// probe's round-trip, which the app answers on the main actor.
+    func sendV2Unprobed(method: String, params: [String: Any], deadline: SocketDeadline) throws -> [String: Any] {
+        try sendV2Raw(method: method, params: params, deadline: deadline)
     }
 
     private func sendV2Raw(
@@ -1932,6 +1951,12 @@ struct CMUXCLI {
                 resolvedPath: resolvedSocketPath,
                 environment: processEnv
             )
+        }
+        // C11-257: a process that may claim mailbox mail at a turn boundary
+        // bounds every socket request it makes (auth and probes included) to
+        // its claim cutoff, before the first one.
+        if Self.isMailboxHookDrain(command: command, commandArgs: commandArgs) {
+            Self.boundSocketToClaimCutoff()
         }
         cliTelemetry.breadcrumb(
             "socket.connect.attempt",
@@ -19157,9 +19182,33 @@ extension CMUXCLI {
         return MailboxHookDrain(json: json, claimed: claimed, tabId: tabId)
     }
 
+    /// The invocations that may claim mailbox mail inside a harness hook:
+    /// `claude-hook stop|prompt-submit` and `mailbox recv --hook-format`.
+    static func isMailboxHookDrain(command: String, commandArgs: [String]) -> Bool {
+        switch command {
+        case "claude-hook":
+            let sub = commandArgs.first?.lowercased()
+            return sub == "stop" || sub == "prompt-submit"
+        case "mailbox":
+            return commandArgs.first == "recv" && commandArgs.contains("--hook-format")
+        default:
+            return false
+        }
+    }
+
+    /// Caps every socket request this hook process makes at the claim
+    /// cutoff (`MailboxHookOutput.claimDeadlineSeconds` of process age), write
+    /// and read alike. Requests after the cutoff fail at once, and the cutoff
+    /// itself means no claim happens past it, so the hook finishes well before
+    /// the harness's 10 s kill however c11 behaves.
+    static func boundSocketToClaimCutoff() {
+        let age = processElapsedSeconds() ?? 0
+        SocketClient.processDeadline = Date(timeIntervalSinceNow: MailboxHookOutput.claimDeadlineSeconds - age)
+    }
+
     /// Seconds since this process started, from the kernel's record of its
     /// start time (so it includes everything before `main`); nil if unknown.
-    private static func processElapsedSeconds() -> TimeInterval? {
+    static func processElapsedSeconds() -> TimeInterval? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
@@ -19243,7 +19292,14 @@ extension CMUXCLI {
     static let mailboxReportSubcommand = "__report-delivered"
 
     /// Hard bound on the detached reporter's whole life, connect included.
-    static let mailboxReportLifetimeSeconds: UInt32 = 3
+    /// Long on purpose: a c11 whose main thread is stuck usually recovers, and
+    /// the reporter simply waits on its one request so the delivery is still
+    /// recorded. `C11_MAILBOX_REPORT_LIFETIME_SECONDS` (1...120) shortens it
+    /// for tests.
+    static func mailboxReportLifetimeSeconds(_ env: [String: String] = ProcessInfo.processInfo.environment) -> UInt32 {
+        let requested = env["C11_MAILBOX_REPORT_LIFETIME_SECONDS"].flatMap(UInt32.init) ?? 120
+        return min(max(requested, 1), 120)
+    }
 
     /// Starts the detached reporter and returns at once. The child gets its
     /// own session (no terminal signals, outside the harness's process group),
@@ -19278,18 +19334,22 @@ extension CMUXCLI {
     }
 
     /// The detached reporter's body: one bounded `mailbox.report_delivered`
-    /// call, the whole process killed by `alarm` if anything stalls.
+    /// call, the whole process killed by `alarm` when its lifetime ends.
     private func runDetachedMailboxReport(json: String, socketPath: String) {
-        alarm(Self.mailboxReportLifetimeSeconds)
+        let lifetime = Self.mailboxReportLifetimeSeconds()
+        alarm(lifetime)
         guard let data = json.data(using: .utf8),
               let params = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         let client = SocketClient(path: socketPath)
         guard (try? client.connect()) != nil else { return }
         defer { client.close() }
-        _ = try? client.sendV2(
+        // One request, no probe: the app handles it on a socket worker, off
+        // the main actor, and the write and the read each get nearly the whole
+        // lifetime, so a c11 that resumes reading in time still records it.
+        _ = try? client.sendV2Unprobed(
             method: "mailbox.report_delivered",
             params: params,
-            deadline: .custom(Double(Self.mailboxReportLifetimeSeconds) / 3)
+            deadline: .custom(Double(lifetime) - 0.5)
         )
     }
 

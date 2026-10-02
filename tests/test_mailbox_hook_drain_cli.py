@@ -14,13 +14,19 @@ c11 socket, so the stall and broken-pipe paths can be forced.
   5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
      its inbox there, with no socket call, and the report names that
      workspace.
-  6. A hook process that spent more than ~6 s on socket calls before the
-     claim leaves the mail in the inbox instead of claiming it into a
-     result the harness would discard at its 10 s timeout.
+  6. A hook whose pre-claim socket calls are slow stops them at the 6 s claim
+     cutoff and exits before 8 s; its mail is claimed and printed, or left in
+     the inbox, never claimed into a result the harness would discard.
   7. After the claim the hook does no socket I/O at all: with a socket that
      reads one line and then stops reading, the hook exits at once with its
-     output intact, the detached reporter is gone within its 3 s bound, and
-     a large plain-drain report is cut off by the send deadline.
+     output intact, the detached reporter ends within its lifetime, and a
+     large plain-drain report is cut off by the send deadline.
+  8. A c11 that stops reading for a while and then recovers still records
+     every delivery (the detached reporter waits), for the Codex hook format
+     and for Claude's `claude-hook stop`.
+  9. Socket calls a hook makes before its claim stop at the claim cutoff: a
+     `claude-hook prompt-submit` against a c11 that stops reading exits
+     well before 8 s and leaves the mail in the inbox.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -64,8 +70,9 @@ class FakeC11:
     reads one line per connection and then stops reading; `delay` holds every
     answer that many seconds."""
 
-    def __init__(self, path: str, stall: bool, delay: float = 0.0, one_line: bool = False):
+    def __init__(self, path: str, stall: bool, delay: float = 0.0, one_line: bool = False, pause: float = 0.0):
         self.path = path
+        self.pause = pause
         self.stall = stall or one_line
         self.one_line = one_line
         self.delay = delay
@@ -84,6 +91,8 @@ class FakeC11:
             threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
 
     def _serve(self, conn: socket.socket) -> None:
+        if self.pause:
+            time.sleep(self.pause)   # a wedged c11: reads nothing, then recovers
         buf = b""
         while True:
             try:
@@ -180,6 +189,14 @@ def check(cond: bool, label: str, detail: str = "") -> None:
     print(("PASS: " if cond else "FAIL: ") + label + (f" ({detail})" if detail and not cond else ""))
     if not cond:
         FAILURES.append(label)
+
+
+def exactly_once(fx: "Fixture", ulid: str, out: bytes, inbox_key: str = TAB.lower()) -> bool:
+    """The invariant the claim cutoff protects: a message is either claimed
+    and printed, or left in the inbox; never claimed but unprinted."""
+    root, read = fx.listing(inbox_key)
+    claimed, printed = (ulid + ".msg") in read, ulid in out.decode()
+    return (claimed and printed and root == []) or (not claimed and not printed and root == [ulid + ".msg"])
 
 
 def run(cli: str, args: list[str], env: dict, stdin: str = "", stdout=subprocess.PIPE, timeout: float = 15):
@@ -293,8 +310,10 @@ def main() -> int:
     # over 8 KB, past what the socket buffers when the peer stops reading.
     groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 71)]
     ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
+    env = fx.env(stuck.path)
+    env["C11_MAILBOX_REPORT_LIFETIME_SECONDS"] = "2"
     proc, ms = run(cli, ["--socket", stuck.path, "mailbox", "recv", "--drain", "--hook-format", "codex"],
-                   fx.env(stuck.path), stop_input, timeout=12)
+                   env, stop_input, timeout=12)
     out = proc.stdout.decode()
     taken = [(w, u) for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
     claimed = len(taken) >= 50 and all(u in out for _, u in taken)
@@ -302,9 +321,9 @@ def main() -> int:
           f"{len(groups)} workspace inboxes, socket stops reading: hook exits 0 and prints every message it claimed "
           f"({len(taken)})", f"exit {proc.returncode} {out[:120]}")
     check(ms < 500, f"{len(groups)} workspace inboxes, socket stops reading: hook exits in {ms:.0f} ms (no socket I/O after the claim)")
-    time.sleep(3.5)
+    time.sleep(3.0)
     lingering = subprocess.run(["pgrep", "-f", f"{stuck.path} mailbox __report-delivered"], capture_output=True).stdout
-    check(lingering.strip() == b"", "detached reporter is gone within its 3 s bound", lingering.decode())
+    check(lingering.strip() == b"", "detached reporter ends within its lifetime (2 s here, 120 s by default)", lingering.decode())
     stuck.close()
     fx.cleanup()
 
@@ -322,6 +341,43 @@ def main() -> int:
     stuck.close()
     fx.cleanup()
 
+    # 8. Wedged-then-recovered c11: 70 inboxes, the socket reads nothing for 4 s.
+    for label, args, stdin in [
+        ("codex hook format", ["mailbox", "recv", "--drain", "--hook-format", "codex"], stop_input),
+        ("claude-hook stop", ["claude-hook", "stop"], json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})),
+    ]:
+        fx = Fixture()
+        paused = FakeC11(os.path.join(tmp, f"pause-{len(label)}.sock"), stall=False, pause=4.0)
+        ulids = [fx.deliver(TAB.lower(), workspace=w) for w in groups]
+        proc, ms = run(cli, ["--socket", paused.path, *args], fx.env(paused.path), stdin, timeout=12)
+        out = proc.stdout.decode()
+        taken = [u for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
+        check(proc.returncode == 0 and '"decision":"block"' in out and len(taken) >= 50 and all(u in out for u in taken),
+              f"{label}, c11 not reading: hook exits 0 with every claimed message ({len(taken)})", out[:120])
+        check(ms < 1000, f"{label}, c11 not reading: hook exits in {ms:.0f} ms")
+        reports = paused.reports(wait=8.0)
+        recorded = [d["id"] for r in reports for d in r.get("deliveries", [])]
+        check(sorted(recorded) == sorted(taken), f"{label}: once c11 reads again, all {len(taken)} deliveries are recorded",
+              f"{len(recorded)} recorded")
+        paused.close()
+        fx.cleanup()
+
+    # 9. Pre-claim calls bounded by the claim cutoff.
+    fx = Fixture()
+    stuck = FakeC11(os.path.join(tmp, "oneline3.sock"), stall=False, one_line=True)
+    ulid = fx.deliver(TAB.lower())
+    proc, ms = run(cli, ["--socket", stuck.path, "claude-hook", "prompt-submit"], fx.env(stuck.path),
+                   json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s"}), timeout=15)
+    # Exit status is claude-hook's own business: its status calls time out at
+    # the cutoff and it reports that as a hook error, as it always has for a
+    # stuck c11 (formerly at the 10 s kill). The mailbox invariant is what
+    # this checks.
+    check(ms < 8000 and exactly_once(fx, ulid, proc.stdout),
+          f"prompt-submit against a c11 that stops reading: exits in {ms / 1000:.1f} s (exit {proc.returncode}); "
+          f"the mail is claimed-and-printed or left in the inbox", f"listing={fx.listing(TAB.lower())}")
+    stuck.close()
+    fx.cleanup()
+
     # 6. Claim deadline: prompt-submit's status calls take ~2.5 s each before the claim.
     fx = Fixture()
     slow = FakeC11(os.path.join(tmp, "slow.sock"), stall=False, delay=2.5)
@@ -329,13 +385,15 @@ def main() -> int:
     prompt_input = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s"})
     proc, ms = run(cli, ["--socket", slow.path, "claude-hook", "prompt-submit"], fx.env(slow.path), prompt_input,
                    timeout=60)
-    check(ms > 6000 and proc.stdout.decode().strip() == "" and fx.listing(TAB.lower()) == ([ulid + ".msg"], []),
-          f"claim deadline: after {ms / 1000:.1f} s of pre-claim calls the mail stays in the inbox",
-          f"stdout={proc.stdout.decode()[:120]!r} listing={fx.listing(TAB.lower())}")
+    check(ms < 8000 and exactly_once(fx, ulid, proc.stdout),
+          f"claim cutoff: {ms / 1000:.1f} s of slow pre-claim calls, exit before 8 s, the mail claimed-and-printed "
+          f"or left in the inbox", f"stdout={proc.stdout.decode()[:120]!r} listing={fx.listing(TAB.lower())}")
     slow.close()
+    if fx.listing(TAB.lower())[1]:
+        ulid = fx.deliver(TAB.lower())
     fast = FakeC11(os.path.join(tmp, "fast.sock"), stall=False)
     proc, ms = run(cli, ["--socket", fast.path, "claude-hook", "prompt-submit"], fx.env(fast.path), prompt_input)
-    check(ulid in proc.stdout.decode() and fx.listing(TAB.lower()) == ([], [ulid + ".msg"]),
+    check(ulid in proc.stdout.decode() and fx.listing(TAB.lower())[0] == [] and ulid + ".msg" in fx.listing(TAB.lower())[1],
           f"claim deadline: a prompt-submit with time left delivers it ({ms:.0f} ms)")
     fast.close()
     fx.cleanup()

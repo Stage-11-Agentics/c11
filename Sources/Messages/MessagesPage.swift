@@ -525,7 +525,8 @@ enum MessagesPageSource {
     static func load(
         stateURL: URL,
         fileManager: FileManager = .default,
-        eventLogCache: inout MessagesPageEventLogCache
+        eventLogCache: inout MessagesPageEventLogCache,
+        mailboxArtifacts: [MessagesPageMailboxArtifact]? = nil
     ) -> MessagesPageSourceData {
         MessagesPageSourceData(
             events: readEvents(
@@ -533,7 +534,8 @@ enum MessagesPageSource {
                 fileManager: fileManager,
                 eventLogCache: &eventLogCache
             ),
-            mailboxArtifacts: readMailboxArtifacts(stateURL: stateURL, fileManager: fileManager)
+            mailboxArtifacts: mailboxArtifacts
+                ?? readMailboxArtifacts(stateURL: stateURL, fileManager: fileManager)
         )
     }
 

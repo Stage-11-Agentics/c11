@@ -20,6 +20,12 @@ final class MessagesPageWriter {
     /// the full current + rolled log set; debounced live writes only reread
     /// files whose size or modification date changed.
     private var eventLogCache = MessagesPageEventLogCache()
+    /// Queue-confined durable mailbox snapshot. Plain `c11 send` events do
+    /// not touch envelope files, so they can reuse this snapshot; mailbox
+    /// events request a fresh scan so `_read/`, inbox, and `_rejected/` stay
+    /// authoritative.
+    private var mailboxArtifactsCache: [MessagesPageMailboxArtifact]?
+    private var mailboxRefreshRequested = true
 
     init(
         stateURL: URL? = nil,
@@ -51,6 +57,7 @@ final class MessagesPageWriter {
         }
         stateURL = resolvedStateURL
         started = true
+        mailboxRefreshRequested = true
         if observeEvents {
             eventObserver = NotificationCenter.default.addObserver(
                 forName: EventLog.eventWrittenNotification,
@@ -59,7 +66,7 @@ final class MessagesPageWriter {
             ) { [weak self] notification in
                 guard let type = notification.object as? String,
                       MessagesPageWriter.isMessageEvent(type) else { return }
-                self?.scheduleRebuild()
+                self?.scheduleRebuild(refreshMailbox: type.hasPrefix("mailbox."))
             }
         }
         lock.unlock()
@@ -96,7 +103,7 @@ final class MessagesPageWriter {
             throw EventLogLayout.Error.stateDirectoryUnavailable
         }
         try queue.sync {
-            try rebuild(stateURL: resolvedStateURL)
+            try rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: true)
         }
     }
 
@@ -106,11 +113,14 @@ final class MessagesPageWriter {
         try rebuildNow()
     }
 
-    private func scheduleRebuild() {
+    private func scheduleRebuild(refreshMailbox: Bool) {
         lock.lock()
         guard started else {
             lock.unlock()
             return
+        }
+        if refreshMailbox {
+            mailboxRefreshRequested = true
         }
         generation &+= 1
         let scheduledGeneration = generation
@@ -132,14 +142,21 @@ final class MessagesPageWriter {
         let isStarted = started
         lock.unlock()
         guard isStarted, let resolvedStateURL else { return }
-        try? rebuild(stateURL: resolvedStateURL)
+        try? rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
     }
 
-    private func rebuild(stateURL: URL) throws {
+    private func rebuild(stateURL: URL, forceMailboxRefresh: Bool) throws {
+        lock.lock()
+        let refreshMailbox = forceMailboxRefresh || mailboxRefreshRequested || mailboxArtifactsCache == nil
+        mailboxRefreshRequested = false
+        lock.unlock()
+
         let source = MessagesPageSource.load(
             stateURL: stateURL,
-            eventLogCache: &eventLogCache
+            eventLogCache: &eventLogCache,
+            mailboxArtifacts: refreshMailbox ? nil : mailboxArtifactsCache
         )
+        mailboxArtifactsCache = source.mailboxArtifacts
         let snapshot = MessagesPageBuilder.build(
             events: source.events,
             mailboxArtifacts: source.mailboxArtifacts

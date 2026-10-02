@@ -125,6 +125,36 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertTrue(owner.firstResponder === displaced)
     }
 
+    func testFilterFocusFollowsActiveFilterForTabShiftTabAndPointerWithFixedFrames() throws {
+        let model = FeedQuickViewModel()
+        model.apply(.init(projection: .init(rows: [row(1), row(2, kind: .turnEnd)]), loading: false))
+        var focus: [FeedQuickViewSelection.Filter?] = []
+        var frames: [String: CGRect] = [:]
+        let host = NSHostingView(rootView: FeedQuickView(model: model,
+            onLayout: { frames[$0] = $1 }, onFilterFocus: { focus.append($0) }))
+        host.frame = .init(origin: .zero, size: FeedQuickViewGeometry.size)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        func settle() { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15)) }
+        settle()
+        XCTAssertEqual(focus.last ?? nil, .asks, "opening focuses the default filter")
+        let filters = frames["filters"]
+        model.toggleFilter() // Tab
+        settle()
+        XCTAssertEqual(model.selection.filter, .turns)
+        XCTAssertEqual(focus.last ?? nil, .turns, "Tab moves real focus to Turns")
+        model.toggleFilter() // Shift-Tab (two filters cycle both ways)
+        settle()
+        XCTAssertEqual(focus.last ?? nil, .asks, "Shift-Tab moves real focus back to Asks")
+        model.switchFilter(.turns) // pointer selection
+        settle()
+        XCTAssertEqual(focus.last ?? nil, .turns, "pointer selection moves real focus too")
+        XCTAssertEqual(frames["filters"], filters, "focus changes never move or resize the controls")
+        XCTAssertEqual(host.fittingSize, FeedQuickViewGeometry.size)
+    }
+
     func testHostRendersSameFixedSizeAcrossEmptyLoadingLongMissingAndFilters() throws {
         let model = FeedQuickViewModel()
         var frames: [String: CGRect] = [:]

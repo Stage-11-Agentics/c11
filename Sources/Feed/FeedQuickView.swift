@@ -77,6 +77,10 @@ struct FeedQuickView: View {
         String(localized: "feed.quick.filter.turns", defaultValue: "Turns")
     ]
     var onLayout: ((String, CGRect) -> Void)?
+    /// Reports the real focused filter (not the model's selection) to executable tests.
+    var onFilterFocus: ((FeedQuickViewSelection.Filter?) -> Void)?
+    /// The native focus ring follows the active filter, whether it changed by Tab, Shift-Tab or pointer.
+    @FocusState private var focusedFilter: FeedQuickViewSelection.Filter?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,6 +96,7 @@ struct FeedQuickView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedFilter, equals: filter)
                         .feedQuickMeasure("filter.\(index)", observer: onLayout)
                         .accessibilityIdentifier(index == 0 ? "feed.quick.filter.asks" : "feed.quick.filter.turns")
                         .accessibilityLabel(filterLabels[index])
@@ -148,6 +153,9 @@ struct FeedQuickView: View {
                 .feedQuickMeasure("hint", observer: onLayout)
         }
         .frame(width: FeedQuickViewGeometry.size.width, height: FeedQuickViewGeometry.size.height)
+        .onAppear { focusedFilter = model.selection.filter }
+        .onChange(of: model.selection.filter) { _, filter in focusedFilter = filter }
+        .onChange(of: focusedFilter) { _, filter in onFilterFocus?(filter) }
         .coordinateSpace(name: "feed.quick.layout")
         .feedQuickMeasure("content", observer: onLayout)
         .background(Color(nsColor: .windowBackgroundColor))

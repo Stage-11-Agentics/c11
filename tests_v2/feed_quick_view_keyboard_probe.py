@@ -27,8 +27,16 @@ class KeyboardProbe(QuickProbe):
     def pause(self, seconds=0.5):
         time.sleep(seconds)
 
-    def press(self, code, command=False):
-        self.keys(code, command=command)
+    def keys(self, code, command=False, shift=False):
+        self.check(self.ui('foreground') == self.args.pid, 'Exact tagged PID foreground before keyboard action')
+        modifiers = [name for name, on in (('command', command), ('shift', shift)) if on]
+        action = 'key code %d%s' % (code, ' using {%s}' % ', '.join(m + ' down' for m in modifiers) if modifiers else '')
+        script = 'tell application "System Events"\nset p to first process whose unix id is %d\n' \
+                 'if not frontmost of p then error "Tagged PID not foreground"\ntell p to %s\nend tell' % (self.args.pid, action)
+        self.run(['/usr/bin/osascript', '-e', script])
+
+    def press(self, code, command=False, shift=False):
+        self.keys(code, command=command, shift=shift)
         self.pause()
 
     def focused(self):
@@ -112,11 +120,17 @@ class KeyboardProbe(QuickProbe):
         self.open_view()
         selection = self.focused()
         self.press(TAB)
-        self.screenshot('07-tab-to-turns')
+        self.screenshot('07-tab-to-turns')  # Native focus ring must be on Turns.
         self.check(self.focused() == selection, 'Filter switch via Tab never opens a tab')
+        self.press(TAB, shift=True)
+        self.screenshot('08-shift-tab-back-to-asks')  # Ring back on Asks.
+        self.press(TAB, shift=True)
+        self.screenshot('08b-shift-tab-to-turns')  # Ring on Turns again (both filters cycle both ways).
         self.press(TAB)
-        self.screenshot('08-tab-back-to-asks')
+        self.screenshot('08c-tab-to-asks')  # Ring on Asks.
         self.press(TAB)
+        self.screenshot('08d-tab-to-turns')
+        self.check(self.focused() == selection, 'Tab and Shift-Tab cycling never opens a tab')
         self.press(RETURN)  # Return on the Turns row opens exactly that finished turn.
         self.eventually(lambda: self.focused() == turn, 'Return on Turns opened the wrong tab')
         self.screenshot('09-turns-return-opened-turn')

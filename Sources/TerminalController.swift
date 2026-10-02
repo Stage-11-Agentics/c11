@@ -255,6 +255,8 @@ class TerminalController {
         "workspace.next",
         "workspace.previous",
         "workspace.last",
+        "history.back",
+        "history.forward",
         "tab.focus",
         "area.focus",
         "area.last",
@@ -2082,6 +2084,7 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
+        "history.list",
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",

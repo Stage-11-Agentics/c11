@@ -2516,6 +2516,7 @@ final class BrowserTab: TabContent, ObservableObject {
     @Published private(set) var preferredDeveloperToolsVisible: Bool = false
     private var preferredDeveloperToolsPresentation: DeveloperToolsPresentation = .unknown
     private var forceDeveloperToolsRefreshOnNextAttach: Bool = false
+    private var developerToolsReplacementRestorePending = false
     private var developerToolsRestoreRetryWorkItem: DispatchWorkItem?
     private var developerToolsRestoreRetryAttempt: Int = 0
     private let developerToolsRestoreRetryDelay: TimeInterval = 0.05
@@ -2942,7 +2943,7 @@ final class BrowserTab: TabContent, ObservableObject {
             }
         }
         navDelegate.didTerminateWebContentProcess = { [weak self] webView in
-            self?.replaceWebViewAfterContentProcessTermination(for: webView)
+            self?.scheduleWebViewReplacementAfterContentProcessTermination(for: webView)
         }
         // Set up download delegate for navigation-based downloads.
         // Downloads save to a temp file synchronously (no NSSavePanel during WebKit
@@ -3521,31 +3522,93 @@ final class BrowserTab: TabContent, ObservableObject {
                 self.webView.underPageBackgroundColor = GhosttyBackgroundTheme.color(from: notification)
             }
             .store(in: &webViewCancellables)
+
+        // App quit does not call TabContent.close(), and the main window can
+        // lose its host before ARC releases the tab. Close the inspector while
+        // its view is attached, preserving visibility intent for the snapshot.
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.willCloseNotification))
+            .sink { [weak self, weak webView] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let webView,
+                          self.isCurrentWebView(webView, instanceID: observedWebViewInstanceID) else { return }
+                    if notification.name == NSWindow.willCloseNotification {
+                        guard let closingWindow = notification.object as? NSWindow,
+                              webView.window === closingWindow else { return }
+                    }
+                    self.prepareForHostTeardown()
+                }
+            }
+            .store(in: &webViewCancellables)
     }
 
-    private func replaceWebViewAfterContentProcessTermination(for terminatedWebView: WKWebView) {
+    private var webContentReplacementGate = WebContentReplacementGate()
+    private var isClosed = false
+#if DEBUG
+    private(set) var debugWebContentReplacementCount = 0
+#endif
+
+    @discardableResult
+    private func scheduleWebViewReplacementAfterContentProcessTermination(for terminatedWebView: WKWebView) -> Bool {
+        guard !isClosed, isCurrentWebView(terminatedWebView),
+              webContentReplacementGate.enqueue(instanceID: webViewInstanceID) else { return false }
+        let terminatedInstanceID = webViewInstanceID
+        // WebKit must unwind its termination callback before we create or detach a view.
+        DispatchQueue.main.async { [weak self, weak terminatedWebView] in
+            guard let self else { return }
+            guard self.webContentReplacementGate.beginTurn(currentInstanceID: self.webViewInstanceID),
+                  !self.isClosed, let terminatedWebView,
+                  self.isCurrentWebView(terminatedWebView, instanceID: terminatedInstanceID) else { return }
+            let restoreURL = Self.remoteProxyDisplayURL(for: terminatedWebView.url) ?? self.currentURL
+            let outcome = self.webContentReplacementGate.outcome(
+                url: restoreURL, now: ProcessInfo.processInfo.systemUptime
+            )
+            guard outcome != .drop else { return }
+            self.replaceWebViewAfterContentProcessTermination(
+                for: terminatedWebView, restoreNavigation: outcome == .restoreURL
+            )
+            if outcome == .errorPage {
+                self.shouldRenderWebView = true
+                self.navigationDelegate?.loadContentProcessErrorPage(in: self.webView, failedURL: restoreURL)
+            }
+        }
+        return true
+    }
+
+    private func replaceWebViewAfterContentProcessTermination(for terminatedWebView: WKWebView, restoreNavigation: Bool) {
         replaceWebViewPreservingState(
             from: terminatedWebView,
             websiteDataStore: websiteDataStore,
-            reason: "webcontent_process_terminated"
+            reason: "webcontent_process_terminated",
+            restoreNavigation: restoreNavigation
         )
     }
 
     private func replaceWebViewPreservingState(
         from oldWebView: WKWebView,
         websiteDataStore: WKWebsiteDataStore,
-        reason: String
+        reason: String,
+        restoreNavigation: Bool = true
     ) {
-        guard oldWebView === webView else { return }
+        guard !isClosed, oldWebView === webView else { return }
 
         let wasRenderable = shouldRenderWebView
         let restoreURL = Self.remoteProxyDisplayURL(for: oldWebView.url) ?? currentURL
         let restoreURLString = restoreURL?.absoluteString
-        let shouldRestoreURL = wasRenderable && restoreURLString != nil && restoreURLString != blankURLString
+        let shouldRestoreURL = restoreNavigation && wasRenderable && restoreURLString != nil && restoreURLString != blankURLString
         let history = sessionNavigationHistorySnapshot()
         let historyCurrentURL = preferredURLStringForOmnibar()
         let desiredZoom = max(minPageZoom, min(maxPageZoom, oldWebView.pageZoom))
         let restoreDevTools = preferredDeveloperToolsVisible
+
+        shutdownDeveloperTools(in: oldWebView, restoreAfterReplacement: restoreDevTools)
+        if reason == "webcontent_process_terminated" {
+            unfocus()
+            closeOwnedPopups()
+#if DEBUG
+            debugWebContentReplacementCount += 1
+#endif
+        }
 
 #if DEBUG
         dlog(
@@ -3578,6 +3641,10 @@ final class BrowserTab: TabContent, ObservableObject {
         webViewInstanceID = UUID()
         webView = replacement
         shouldRenderWebView = wasRenderable
+        isLoading = false
+        estimatedProgress = 0
+        nativeCanGoBack = false
+        nativeCanGoForward = false
 
         bindWebView(replacement)
         applyBrowserThemeModeIfNeeded()
@@ -3615,8 +3682,9 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
 #if DEBUG
-    func debugSimulateWebContentProcessTermination() {
-        replaceWebViewAfterContentProcessTermination(for: webView)
+    @discardableResult
+    func debugSimulateWebContentProcessTermination() -> Bool {
+        scheduleWebViewReplacementAfterContentProcessTermination(for: webView)
     }
 #endif
 
@@ -3655,19 +3723,11 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
     func close() {
+        prepareForHostTeardown()
+        preferredDeveloperToolsVisible = false
         // Ensure we don't keep a hidden WKWebView (or its content view) as first responder while
         // bonsplit/SwiftUI reshuffles views during close.
         unfocus()
-
-        // Snapshot first: popup close unregisters itself from popupControllers.
-        let popupsToClose = popupControllers
-        popupControllers.removeAll()
-
-        // Close all owned popup windows before tearing down delegates
-        for popup in popupsToClose {
-            popup.closeAllChildPopups()
-            popup.closePopup()
-        }
 
         webView.stopLoading()
         webView.navigationDelegate = nil
@@ -3687,6 +3747,40 @@ final class BrowserTab: TabContent, ObservableObject {
     }
 
     // MARK: - Popup window management
+
+    private func prepareForHostTeardown() {
+        guard !isClosed else { return }
+        isClosed = true
+        webContentReplacementGate.invalidate()
+        shutdownDeveloperTools(in: webView)
+        closeOwnedPopups()
+    }
+
+    private func closeOwnedPopups() {
+        // Closing a popup unregisters itself, so iterate a snapshot.
+        let popupsToClose = popupControllers
+        popupControllers.removeAll()
+        for popup in popupsToClose {
+            popup.closeAllChildPopups()
+            popup.closePopup()
+        }
+    }
+
+    private func shutdownDeveloperTools(in oldWebView: WKWebView, restoreAfterReplacement: Bool = false) {
+        // Set this before closing: detached inspectors post a window-close event.
+        // Real host teardown uses the default and cancels replacement restoration.
+        developerToolsReplacementRestorePending = restoreAfterReplacement
+        cancelDeveloperToolsRestoreRetry()
+        developerToolsTransitionSettleWorkItem?.cancel()
+        developerToolsTransitionSettleWorkItem = nil
+        developerToolsVisibilityLossCheckWorkItem?.cancel()
+        developerToolsVisibilityLossCheckWorkItem = nil
+        pendingDeveloperToolsTransitionTargetVisible = nil
+        developerToolsTransitionTargetVisible = nil
+        forceDeveloperToolsRefreshOnNextAttach = false
+        developerToolsDetachedOpenGraceDeadline = nil
+        oldWebView.cmuxCloseInspectorBeforeHostTeardown()
+    }
 
     func createFloatingPopup(
         configuration: WKWebViewConfiguration,
@@ -4737,8 +4831,13 @@ extension BrowserTab {
                 Self.isDetachedInspectorWindow(window)
             }
             guard isDetachedInspectorWindow else { return }
+            guard !self.isClosed, !self.developerToolsReplacementRestorePending else { return }
+            let closingWebViewInstanceID = self.webViewInstanceID
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                // A close queued for the old view must not dismiss its replacement.
+                guard !self.isClosed, !self.developerToolsReplacementRestorePending,
+                      self.webViewInstanceID == closingWebViewInstanceID else { return }
                 guard self.preferredDeveloperToolsPresentation == .detached else { return }
                 guard self.preferredDeveloperToolsVisible else { return }
                 guard !self.isDeveloperToolsVisible() else { return }
@@ -4877,6 +4976,8 @@ extension BrowserTab {
         to targetVisible: Bool,
         source: String
     ) -> Bool {
+        guard !isClosed else { return false }
+        if !targetVisible { developerToolsReplacementRestorePending = false }
         if isDeveloperToolsTransitionInFlight {
             pendingDeveloperToolsTransitionTargetVisible = targetVisible
             preferredDeveloperToolsVisible = targetVisible
@@ -5028,7 +5129,7 @@ extension BrowserTab {
             cancelDeveloperToolsRestoreRetry()
             return
         }
-        if preserveVisibleIntent && preferredDeveloperToolsVisible {
+        if (preserveVisibleIntent || developerToolsReplacementRestorePending) && preferredDeveloperToolsVisible {
             return
         }
         preferredDeveloperToolsVisible = false
@@ -5070,6 +5171,7 @@ extension BrowserTab {
 
     @discardableResult
     func consumeAttachedDeveloperToolsManualCloseIfNeeded(inspector: NSObject? = nil) -> Bool {
+        guard !developerToolsReplacementRestorePending else { return false }
         guard preferredDeveloperToolsVisible else { return false }
         guard preferredDeveloperToolsPresentation != .detached else { return false }
         guard !isDeveloperToolsTransitionInFlight else { return false }
@@ -5102,7 +5204,9 @@ extension BrowserTab {
 
     /// Called after WKWebView reattaches to keep inspector stable across split/layout churn.
     func restoreDeveloperToolsAfterAttachIfNeeded() {
+        guard !isClosed else { return }
         guard preferredDeveloperToolsVisible else {
+            developerToolsReplacementRestorePending = false
             cancelDeveloperToolsRestoreRetry()
             forceDeveloperToolsRefreshOnNextAttach = false
             return
@@ -5118,6 +5222,7 @@ extension BrowserTab {
 
         let visible = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visible {
+            developerToolsReplacementRestorePending = false
             developerToolsDetachedOpenGraceDeadline = nil
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
@@ -5131,7 +5236,7 @@ extension BrowserTab {
         }
 
         let detachedOpenStillSettling = developerToolsDetachedOpenGraceDeadline.map { $0 > Date() } ?? false
-        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling {
+        if preferredDeveloperToolsPresentation == .detached && !detachedOpenStillSettling && !developerToolsReplacementRestorePending {
             preferredDeveloperToolsVisible = false
             developerToolsDetachedOpenGraceDeadline = nil
             cancelDeveloperToolsRestoreRetry()
@@ -5162,6 +5267,7 @@ extension BrowserTab {
         preferredDeveloperToolsVisible = true
         let visibleAfterShow = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
         if visibleAfterShow {
+            developerToolsReplacementRestorePending = false
             syncDeveloperToolsPresentationPreferenceFromUI()
             developerToolsLastKnownVisibleAt = Date()
             cancelDeveloperToolsRestoreRetry()
@@ -5970,6 +6076,7 @@ private extension BrowserTab {
     }
 
     func scheduleDeveloperToolsRestoreRetry() {
+        guard !isClosed else { return }
         guard preferredDeveloperToolsVisible else { return }
         guard developerToolsRestoreRetryWorkItem == nil else { return }
         guard developerToolsRestoreRetryAttempt < developerToolsRestoreRetryMaxAttempts else { return }
@@ -6180,6 +6287,17 @@ extension BrowserTab {
 }
 
 extension WKWebView {
+    func cmuxCloseInspectorBeforeHostTeardown() {
+        guard let inspector = cmuxInspectorObject() else { return }
+        // Close (rather than merely hide) while the inspector's host is still attached.
+        let close = NSSelectorFromString("close")
+        if inspector.responds(to: close) {
+            inspector.cmuxCallVoid(selector: close)
+        } else {
+            inspector.cmuxCallVoid(selector: NSSelectorFromString("hide"))
+        }
+    }
+
     func cmuxInspectorObject() -> NSObject? {
         let selector = NSSelectorFromString("_inspector")
         guard responds(to: selector),
@@ -6213,6 +6331,46 @@ private extension NSObject {
         typealias Fn = @convention(c) (AnyObject, Selector) -> Void
         let fn = unsafeBitCast(method(for: selector), to: Fn.self)
         fn(self, selector)
+    }
+}
+
+/// Coalesces one queued replacement and bounds automatic recovery for a repeatedly failing URL.
+struct WebContentReplacementGate {
+    enum Outcome { case restoreURL, errorPage, drop }
+    private var pendingInstanceID: UUID?
+    private var windowURL: String?
+    private var windowStartedAt: TimeInterval = 0
+    private var terminationsInWindow = 0
+
+    mutating func enqueue(instanceID: UUID) -> Bool {
+        guard pendingInstanceID == nil else { return false }
+        pendingInstanceID = instanceID
+        return true
+    }
+
+    mutating func beginTurn(currentInstanceID: UUID) -> Bool {
+        let pending = pendingInstanceID
+        pendingInstanceID = nil
+        return pending == currentInstanceID
+    }
+
+    mutating func invalidate() {
+        pendingInstanceID = nil
+    }
+
+    mutating func outcome(url: URL?, now: TimeInterval) -> Outcome {
+        let key = url?.absoluteString ?? "about:blank"
+        if windowURL != key || now - windowStartedAt >= 10 {
+            windowURL = key
+            windowStartedAt = now
+            terminationsInWindow = 0
+        }
+        terminationsInWindow += 1
+        switch terminationsInWindow {
+        case 1: return .restoreURL
+        case 2: return .errorPage
+        default: return .drop
+        }
     }
 }
 
@@ -6511,6 +6669,13 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         didTerminateWebContentProcess?(webView)
     }
 
+    func loadContentProcessErrorPage(in webView: WKWebView, failedURL: URL?) {
+        loadErrorPage(
+            in: webView, failedURL: failedURL?.absoluteString ?? "",
+            error: NSError(domain: NSURLErrorDomain, code: NSURLErrorUnknown)
+        )
+    }
+
     private func loadErrorPage(in webView: WKWebView, failedURL: String, error: NSError) {
         let title: String
         let message: String
@@ -6596,7 +6761,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         </body>
         </html>
         """
-        webView.loadHTMLString(html, baseURL: URL(string: failedURL))
+        // An empty URL creates a relative URL, not nil. A crashed new-tab view
+        // has no failed navigation URL; let WebKit use its blank-document base.
+        let baseURL = failedURL.isEmpty ? nil : URL(string: failedURL)
+        webView.loadHTMLString(html, baseURL: baseURL)
     }
 
     func webView(

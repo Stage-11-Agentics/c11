@@ -45,6 +45,9 @@ jobs:
       - name: Validate release asset guard
         run: node scripts/release_asset_guard.test.js
 
+      - name: Validate unpublished signing producer with synthetic tools
+        run: python3 tests/test_sign_artifact.py
+
       - name: Validate the build lock serializes builds
         run: ./tests/test_with_build_lock.sh
 
@@ -208,6 +211,7 @@ jobs:
           CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
           test -x "$CLI_BINARY"
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
 
       - name: Logic tests (gate)
         # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,

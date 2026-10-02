@@ -386,7 +386,7 @@ final class AgentModelDetectionTests: XCTestCase {
         let now = Date()
         let id = uuidV7(now)
         let lines = """
-        {"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
+        {"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"id":"\(id)","model":"gpt-6-astra"}}
         {"timestamp":"2026-01-01T09:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"root-1"}}
         """
         try place(Data((lines + "\n").utf8), at: codexPath(id: id, date: now))

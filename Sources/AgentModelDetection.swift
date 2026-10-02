@@ -96,6 +96,7 @@ struct ParsedTranscriptLine: Equatable, Sendable {
     var event: TranscriptEvent? = nil
     var lifecycle: ParsedTranscriptLifecycle? = nil
     var sessionID: String? = nil
+    var sessionMetaIdentity = false
 }
 
 /// A structural lifecycle record found in a harness transcript. This type is
@@ -423,7 +424,9 @@ struct AgentModelProbe: Sendable {
                 state.signals = TranscriptSignals()
                 return
             }
-            state.transcriptIdentityVerified = true
+            if parsed.sessionMetaIdentity {
+                state.transcriptIdentityVerified = true
+            }
         }
         guard !state.transcriptIdentityInvalid else { return }
 
@@ -639,7 +642,8 @@ struct AgentModelProbe: Sendable {
                   let payload = object["payload"] as? [String: Any] else { return ParsedTranscriptLine() }
             return ParsedTranscriptLine(
                 model: normalized(payload["model"] as? String),
-                sessionID: validOpaque(payload["id"] as? String)
+                sessionID: validOpaque(payload["id"] as? String),
+                sessionMetaIdentity: hasType(line, "session_meta")
             )
         }
         // Codex writes `timestamp` as the first key of every line, so the first

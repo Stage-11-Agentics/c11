@@ -73,6 +73,17 @@ def _wait_function(c: cmux, surface_id: str, expression: str, timeout_s: float =
     raise cmuxError(f"Timed out waiting for function: {expression}")
 
 
+def _open_browser_when_ready(c: cmux) -> dict:
+    deadline = time.monotonic() + 30.0
+    while True:
+        try:
+            return c._call("browser.open_split", {"url": "about:blank"}) or {}
+        except cmuxError as exc:
+            if "not_ready" not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 @contextmanager
 def _local_test_server():
     with tempfile.TemporaryDirectory(prefix="cmux-browser-ext-") as root:
@@ -213,7 +224,7 @@ def main() -> int:
         second_url = f"{base_url}/second.html"
 
         with cmux(SOCKET_PATH) as c:
-            opened = c._call("browser.open_split", {"url": "about:blank"}) or {}
+            opened = _open_browser_when_ready(c)
             sid = str(opened.get("tab_id") or "")
             _must(bool(sid), f"browser.open_split returned no tab_id: {opened}")
 

@@ -8998,7 +8998,7 @@ final class GhosttySurfaceScrollView: NSView {
         // A selected terminal is not permission to leave an editor opened since
         // that reconciliation was queued. Explicit focus uses moveFocus or a
         // restored panel focus intent instead.
-        if hasNativeTextEntryFirstResponder(in: window) {
+        if Self.hasNativeTextEntryFirstResponder(in: window) {
 #if DEBUG
             dlog("focus.ensure.skip surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") reason=nativeTextEntryFocused")
 #endif
@@ -9150,12 +9150,21 @@ final class GhosttySurfaceScrollView: NSView {
         terminalSurface.forceRefresh(reason: "focus.surface.\(reason)")
     }
 
-    private func hasNativeTextEntryFirstResponder(in window: NSWindow) -> Bool {
+    private static func hasNativeTextEntryFirstResponder(in window: NSWindow) -> Bool {
         if let editor = window.firstResponder as? NSTextView,
            editor.isFieldEditor, editor.isEditable {
             return true
         }
         return (window.firstResponder as? NSTextField)?.isEditable == true
+    }
+
+    /// Consume only the editor present when an explicit focus request arrives.
+    /// Deferred recovery must still respect an editor opened after this boundary.
+    static func endNativeTextEntryForExplicitFocus(in window: NSWindow) {
+        // The caller supplies its exact target window, which may not be key yet.
+        // Ending its old edit must not activate it or disturb another window.
+        guard hasNativeTextEntryFirstResponder(in: window) else { return }
+        _ = window.makeFirstResponder(nil)
     }
 
     private func applyFirstResponderIfNeeded(preservingNativeTextEntry: Bool = true) {
@@ -9190,7 +9199,7 @@ final class GhosttySurfaceScrollView: NSView {
         // SwiftUI popovers can use the main window's shared field editor, so a
         // key-window check alone does not protect group name/icon entry. Keep this
         // guard on recovery; an explicit restored terminal intent may override it.
-        if preservingNativeTextEntry, hasNativeTextEntryFirstResponder(in: window) {
+        if preservingNativeTextEntry, Self.hasNativeTextEntryFirstResponder(in: window) {
             return
         }
         if surfaceView.terminalSurface?.searchState != nil {

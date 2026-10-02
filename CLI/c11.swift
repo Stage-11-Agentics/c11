@@ -17538,39 +17538,13 @@ struct CMUXCLI {
         sessionRecord: ClaudeHookSessionRecord?
     ) -> (subtitle: String, body: String)? {
         let cwd = parsedInput.cwd ?? sessionRecord?.cwd
-        let transcriptPath = parsedInput.transcriptPath
-
-        let projectName: String? = {
-            guard let cwd = cwd, !cwd.isEmpty else { return nil }
-            let path = NSString(string: cwd).expandingTildeInPath
-            let tail = URL(fileURLWithPath: path).lastPathComponent
-            return tail.isEmpty ? path : tail
-        }()
-
-        // Try reading the transcript JSONL for a richer summary.
-        let transcript = transcriptPath.flatMap { readTranscriptSummary(path: $0) }
-
-        if let lastMsg = transcript?.lastAssistantMessage {
-            var subtitle = "Completed"
-            if let projectName, !projectName.isEmpty {
-                subtitle = "Completed in \(projectName)"
-            }
-            return (subtitle, truncate(lastMsg, maxLength: 200))
-        }
-
-        // Fallback: use session record data.
-        let lastMessage = sessionRecord?.lastBody ?? sessionRecord?.lastSubtitle
-        let hasContext = cwd != nil || lastMessage != nil
-        guard hasContext else { return nil }
-
-        var body = "Claude session completed"
-        if let projectName, !projectName.isEmpty {
-            body += " in \(projectName)"
-        }
-        if let lastMessage, !lastMessage.isEmpty {
-            body += ". Last: \(lastMessage)"
-        }
-        return ("Completed", body)
+        let transcript = parsedInput.transcriptPath.flatMap { readTranscriptSummary(path: $0) }
+        return ClaudeStopTranscript.summary(
+            cwd: cwd,
+            lastAssistantMessage: transcript?.lastAssistantMessage,
+            fallbackBody: sessionRecord?.lastBody,
+            fallbackSubtitle: sessionRecord?.lastSubtitle
+        )
     }
 
     private struct TranscriptSummary {
@@ -17578,50 +17552,9 @@ struct CMUXCLI {
     }
 
     private func readTranscriptSummary(path: String) -> TranscriptSummary? {
-        let expandedPath = NSString(string: path).expandingTildeInPath
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: expandedPath)) else {
-            return nil
-        }
-        guard let content = String(data: data, encoding: .utf8) else { return nil }
-
-        let lines = content.components(separatedBy: "\n")
-
-        var lastAssistantMessage: String?
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  let lineData = trimmed.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let message = obj["message"] as? [String: Any],
-                  let role = message["role"] as? String,
-                  role == "assistant" else {
-                continue
-            }
-
-            let text = extractMessageText(from: message)
-            guard let text, !text.isEmpty else { continue }
-            lastAssistantMessage = truncate(normalizedSingleLine(text), maxLength: 120)
-        }
-
-        guard lastAssistantMessage != nil else { return nil }
-        return TranscriptSummary(lastAssistantMessage: lastAssistantMessage)
-    }
-
-    private func extractMessageText(from message: [String: Any]) -> String? {
-        if let content = message["content"] as? String {
-            return content.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let contentArray = message["content"] as? [[String: Any]] {
-            let texts = contentArray.compactMap { block -> String? in
-                guard (block["type"] as? String) == "text",
-                      let text = block["text"] as? String else { return nil }
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            let joined = texts.joined(separator: " ")
-            return joined.isEmpty ? nil : joined
-        }
-        return nil
+        guard let result = ClaudeStopTranscript.read(path: path),
+              let message = result.lastAssistantMessage else { return nil }
+        return TranscriptSummary(lastAssistantMessage: message)
     }
 
     private func summarizeClaudeHookNotification(rawInput: String) -> (subtitle: String, body: String) {

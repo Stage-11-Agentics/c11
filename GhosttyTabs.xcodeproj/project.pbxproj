@@ -497,6 +497,9 @@
 		C2570031A1B2C3D4E5F60718 /* MailboxDrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */; };
 		C2570013A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */; };
 		C2570032A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */; };
+		C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */; };
+		C1130600A1B2C3D4E5F60702 /* ClaudeStopTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */; };
+		C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1028,6 +1031,8 @@
 		C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDrainTests.swift; sourceTree = "<group>"; };
 		C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxReceiptRecorder.swift; sourceTree = "<group>"; };
 		C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxReceiptRecorderTests.swift; sourceTree = "<group>"; };
+		C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscript.swift; sourceTree = "<group>"; };
+		C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStopTranscriptTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1184,6 +1189,7 @@
 				C1124400000000000000B011 /* TabActivitySignals.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
+				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* TabManifestView.swift */,
@@ -1538,6 +1544,7 @@
 				D8019BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintMarkdownTests.swift */,
 				D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */,
 				D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */,
+				C1130600A1B2C3D4E5F60705 /* ClaudeStopTranscriptTests.swift */,
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
@@ -1856,6 +1863,7 @@
 				53A8353DD72E0C6954D5F42A /* ChromeScaleSettingsTests.swift in Sources */,
 				9C51A1CE6AEEBF2E0B4C3E61 /* ChromeScaleTokensTests.swift in Sources */,
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,
+				C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
@@ -2018,6 +2026,7 @@
 				C1124400000000000000B012 /* TabActivitySignals.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
+				C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
 				D7010BF0A1B2C3D4E5F60718 /* AreaMetadataStore.swift in Sources */,
 				D7C24001A1B2C3D4E5F60718 /* TabManifestView.swift in Sources */,
@@ -2242,6 +2251,7 @@
 				C2570022A1B2C3D4E5F60719 /* MailboxFraming.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60719 /* CLIAdvisoryConnectivity.swift in Sources */,
+				C1130600A1B2C3D4E5F60702 /* ClaudeStopTranscript.swift in Sources */,
 				75B580E4A1859423B310E203 /* EventLogLayout.swift in Sources */,
 				365F4BE2806EC0D12A9336BD /* EventEnvelope.swift in Sources */,
 				D1510386129C337B5868E50D /* AgentLaunchStats.swift in Sources */,

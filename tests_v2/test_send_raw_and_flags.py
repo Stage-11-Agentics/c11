@@ -226,6 +226,10 @@ def offline(cli):
                     with listener.accept()[0] as connection, connection.makefile("rwb") as stream:
                         connection.settimeout(25)
                         for line in stream:
+                            if line.startswith(b"auth "):
+                                stream.write(b"OK\n")
+                                stream.flush()
+                                continue
                             request = json.loads(line)
                             requests.append(request)
                             if request["method"] == "system.capabilities":
@@ -272,6 +276,10 @@ def offline(cli):
                     with listener.accept()[0] as connection, connection.makefile("rwb") as stream:
                         connection.settimeout(25)
                         for line in stream:
+                            if line.startswith(b"auth "):
+                                stream.write(b"OK\n")
+                                stream.flush()
+                                continue
                             request = json.loads(line)
                             requests.append(request)
                             if request["method"] == "system.capabilities":

@@ -80,6 +80,13 @@ c11 browser <tab> tab list|new|switch|close ...
 c11 browser <tab> state save|load <path>
 ```
 
+`cookies clear` requires a scope unless `--all` is explicit. Use `--name`,
+`--domain`, `--url`, or `--path`; URL scopes respect cookie domain, path, and
+secure-cookie rules, so a host substring does not clear an unrelated origin.
+`state load` waits for the saved URL's navigation to finish on the expected
+origin before applying localStorage/sessionStorage. A failed or wrong-origin
+navigation returns an error without writing storage.
+
 ### Diagnostics
 
 ```bash

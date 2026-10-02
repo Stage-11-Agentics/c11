@@ -3647,3 +3647,81 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         XCTAssertEqual(afterReload.cell_height_px, beforeReload.cell_height_px)
     }
 }
+
+@MainActor
+final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
+    func testBackgroundLayoutKeepsPortalInactiveAndPreservesFieldEditor() throws {
+        let manager = WorkspaceManager()
+        defer { manager.workspaces.forEach { $0.teardownAllPanels() } }
+        let selected = try XCTUnwrap(manager.selectedWorkspace)
+        let background = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let terminal = try XCTUnwrap(background.focusedTerminalTab)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer {
+            terminal.hostedView.removeFromSuperview()
+            window.close()
+        }
+        let contentView = try XCTUnwrap(window.contentView)
+        terminal.hostedView.frame = NSRect(x: 0, y: 40, width: 400, height: 160)
+        contentView.addSubview(terminal.hostedView)
+        XCTAssertTrue(terminal.hostedView.window === window)
+        let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 200, height: 24))
+        contentView.addSubview(field)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(window.firstResponder)
+
+        // Model the false visibility edge delivered by the representable before
+        // a queued layout/ready notification for this background workspace.
+        terminal.hostedView.setActive(false)
+        terminal.hostedView.setVisibleInUI(false)
+        for _ in 0..<3 {
+            background.debugRunLayoutFollowUpForTesting(terminalFocusPanelId: terminal.id)
+            XCTAssertFalse(terminal.hostedView.debugPortalVisibleInUI)
+            XCTAssertFalse(terminal.hostedView.debugPortalActive)
+            XCTAssertTrue(terminal.hostedView.isHidden)
+            XCTAssertTrue(window.firstResponder === editor)
+            XCTAssertEqual(manager.selectedWorkspaceId, selected.id)
+        }
+    }
+
+    func testSelectedWorkspaceUsesItsOwnerRatherThanActiveWindowManager() throws {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let originalManager = app.workspaceManager
+        let otherWindowManager = WorkspaceManager()
+        let owner = WorkspaceManager()
+        defer {
+            app.workspaceManager = originalManager
+            otherWindowManager.workspaces.forEach { $0.teardownAllPanels() }
+            owner.workspaces.forEach { $0.teardownAllPanels() }
+        }
+        app.workspaceManager = otherWindowManager
+        let workspace = try XCTUnwrap(owner.selectedWorkspace)
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        terminal.hostedView.setActive(false)
+        terminal.hostedView.setVisibleInUI(false)
+
+        workspace.debugRunLayoutFollowUpForTesting()
+
+        XCTAssertTrue(terminal.hostedView.debugPortalVisibleInUI)
+        XCTAssertTrue(terminal.hostedView.debugPortalActive)
+        XCTAssertFalse(terminal.hostedView.isHidden)
+        XCTAssertEqual(owner.selectedWorkspaceId, workspace.id)
+        XCTAssertFalse(otherWindowManager.selectedWorkspaceId == workspace.id)
+    }
+
+    func testOwnerlessWorkspaceCannotReactivatePortalFromDelayedLayout() throws {
+        let workspace = Workspace(title: "Detached layout fixture", workingDirectory: nil, portOrdinal: 0)
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalTab)
+        terminal.hostedView.setActive(true)
+        terminal.hostedView.setVisibleInUI(true)
+
+        workspace.debugRunLayoutFollowUpForTesting(terminalFocusPanelId: terminal.id)
+
+        XCTAssertFalse(terminal.hostedView.debugPortalVisibleInUI)
+        XCTAssertFalse(terminal.hostedView.debugPortalActive)
+        XCTAssertTrue(terminal.hostedView.isHidden)
+    }
+}

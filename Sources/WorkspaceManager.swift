@@ -3717,9 +3717,8 @@ class WorkspaceManager: ObservableObject {
         let nextId = workspaces[nextIndex].id
         debugPrepareWorkspaceSwitch("next", from: currentId, to: nextId)
 #endif
-        activateWorkspaceCycleHotWindow()
-        prepareForExplicitWorkspaceSelection(to: workspaces[nextIndex].id)
         withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[nextIndex].id }
+        if selectedWorkspaceId == workspaces[nextIndex].id { activateWorkspaceCycleHotWindow() }
     }
 
     func selectPreviousWorkspace(cause: String = "shortcut") {
@@ -3730,9 +3729,8 @@ class WorkspaceManager: ObservableObject {
         let prevId = workspaces[prevIndex].id
         debugPrepareWorkspaceSwitch("prev", from: currentId, to: prevId)
 #endif
-        activateWorkspaceCycleHotWindow()
-        prepareForExplicitWorkspaceSelection(to: workspaces[prevIndex].id)
         withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[prevIndex].id }
+        if selectedWorkspaceId == workspaces[prevIndex].id { activateWorkspaceCycleHotWindow() }
     }
 
     private func activateWorkspaceCycleHotWindow() {
@@ -3851,13 +3849,11 @@ class WorkspaceManager: ObservableObject {
 #if DEBUG
         debugPrimeWorkspaceSwitchTrigger("select_index", to: workspaces[index].id)
 #endif
-        prepareForExplicitWorkspaceSelection(to: workspaces[index].id)
         withWorkspaceSelectionCause(cause) { selectedWorkspaceId = workspaces[index].id }
     }
 
     func selectLastWorkspace() {
         guard let lastTab = workspaces.last else { return }
-        prepareForExplicitWorkspaceSelection(to: lastTab.id)
         selectedWorkspaceId = lastTab.id
     }
 

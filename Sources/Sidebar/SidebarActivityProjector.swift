@@ -46,9 +46,10 @@ struct AgentActivityHelpProjection: Equatable {
         flagReason: String?,
         flagRaisedAt: Date?,
         suppressed: Bool,
-        now: Date = Date()
+        now: Date = Date(),
+        journal: JournalSnapshot? = nil
     ) -> AgentActivityHelpProjection {
-        let stateStartedAt: Date?
+        var stateStartedAt: Date?
         switch state {
         case .waiting:
             stateStartedAt = waitingStartedAt
@@ -74,8 +75,27 @@ struct AgentActivityHelpProjection: Equatable {
             ))
         }
 
+        var label = localizedStateLabel(state)
+        if let journal {
+            stateStartedAt = journal.isHistorical ? nil : Date(timeIntervalSince1970: Double(journal.sinceMs) / 1000)
+            if journal.isHistorical {
+                detailLines.append(String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed"))
+                detailLines.append(String(localized: "journal.state.disconnected", defaultValue: "Disconnected"))
+            }
+            if journal.health != .ok { detailLines.append(String(localized: "journal.state.degraded", defaultValue: "Degraded")) }
+            if journal.phase == .error { label = String(localized: "journal.state.error", defaultValue: "Error") }
+            if journal.phase == .unknown || (journal.isHistorical && !journal.paintsAttention) {
+                label = String(localized: "journal.state.unknown", defaultValue: "Unknown")
+            }
+            switch journal.reason {
+            case .approval: detailLines.append(String(localized: "journal.reason.approval", defaultValue: "Approval"))
+            case .question: detailLines.append(String(localized: "journal.reason.question", defaultValue: "Question"))
+            case .planReview: detailLines.append(String(localized: "journal.reason.planReview", defaultValue: "Plan review"))
+            default: break
+            }
+        }
         let help = BonsplitTabActivityHelp(
-            stateLabel: localizedStateLabel(state),
+            stateLabel: label,
             startedAt: stateStartedAt,
             durationFormat: String(
                 localized: "surface.activity.durationFormat",

@@ -445,7 +445,7 @@ struct cmuxApp: App {
                 splitCommandButton(title: String(localized: "menu.notifications.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: jumpToUnreadMenuShortcut) {
                     appDelegate.jumpToLatestUnread()
                 }
-                .disabled(!snapshot.hasUnreadNotifications)
+                .disabled(!snapshot.hasUnreadNotifications && snapshot.flags.isEmpty && !appDelegate.hasJournalAttention)
 
                 Button(String(localized: "menu.notifications.markAllRead", defaultValue: "Mark All Read")) {
                     notificationStore.markAllRead()

@@ -1753,11 +1753,13 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Tab not found", data: nil)
         }
 
-        let (fullMetadata, fullSources) = TabMetadataStore.shared.getMetadata(
+        let (storedMetadata, fullSources) = TabMetadataStore.shared.getMetadata(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
         )
 
+        var fullMetadata = storedMetadata
+        fullMetadata["journal"] = JournalCoordinator.shared.readback(tabID: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
         if let filterKeys = keys {

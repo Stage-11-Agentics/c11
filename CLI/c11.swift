@@ -1061,6 +1061,7 @@ final class SocketClient {
 
     private let path: String
     private var socketFD: Int32 = -1
+    var usesSingleLineResponses = false
 
     // Default deadline: 10 s, tunable via env. Dual-read: C11_* primary, CMUX_* compat.
     // Legacy CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC (seconds) honoured for backward compat.
@@ -1166,6 +1167,7 @@ final class SocketClient {
             data.append(buffer, count: count)
             if data.contains(UInt8(0x0A)) {
                 sawNewline = true
+                if usesSingleLineResponses { break }
             }
         }
 
@@ -1206,13 +1208,28 @@ final class SocketClient {
             }
         }
 
+        let flags = fcntl(socketFD, F_GETFL)
+        if Self.processDeadline != nil { _ = fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) }
         let result = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
                 Darwin.connect(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         if result == 0 {
+            _ = fcntl(socketFD, F_SETFL, flags)
             return
+        }
+        if let deadline = Self.processDeadline, errno == EINPROGRESS {
+            var descriptor = pollfd(fd: socketFD, events: Int16(POLLOUT), revents: 0)
+            let wait = Int32(max(0, min(250, deadline.timeIntervalSinceNow * 1000)))
+            if poll(&descriptor, 1, wait) > 0 {
+                var socketError: Int32 = 0
+                var size = socklen_t(MemoryLayout<Int32>.size)
+                if getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &size) == 0, socketError == 0 {
+                    _ = fcntl(socketFD, F_SETFL, flags)
+                    return
+                }
+            }
         }
 
         let connectErrno = errno
@@ -1911,6 +1928,11 @@ struct CMUXCLI {
             environment: processEnv
         )
 
+        if command == "agent-event" {
+            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath, explicitPassword: socketPasswordArg)
+            return
+        }
+
         if command == "version" {
             print(versionSummary())
             return
@@ -2043,6 +2065,21 @@ struct CMUXCLI {
             return
         }
 
+        // Capture the original event identity before any socket operation. Offline retry
+        // and online append use this same structural draft, never raw hook input.
+        let journalHookInput: String? = command == "claude-hook"
+            ? String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) : nil
+        let journalHookObject = journalHookInput.flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let journalHookArgs = Array(commandArgs.dropFirst())
+        let journalWorkspace = optionValue(journalHookArgs, name: "--workspace") ?? processEnv["CMUX_WORKSPACE_ID"] ?? processEnv["C11_WORKSPACE_ID"]
+        let journalTab = optionValue(journalHookArgs, name: "--surface")
+            ?? (optionValue(journalHookArgs, name: "--workspace") == nil ? Self.callerTabEnv() : nil)
+        let journalHookDraft = journalHookObject.flatMap {
+            JournalCommand.claudeDraft(subcommand: commandArgs.first ?? "", input: $0,
+                tabID: journalTab.flatMap(UUID.init(uuidString:)), workspaceID: journalWorkspace.flatMap(UUID.init(uuidString:)))
+        }
+
         // C11-308 / cmux #15980: reject a sequence before authentication or
         // --window routing can send anything to the app. The command arms
         // retain their target validation and command-specific missing-key text.
@@ -2090,6 +2127,9 @@ struct CMUXCLI {
             ]
         )
         do {
+            let previousDeadline = SocketClient.processDeadline
+            defer { SocketClient.processDeadline = previousDeadline }
+            if command == "claude-hook" { SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(0.250)) }
             try client.connect()
             cliTelemetry.breadcrumb("socket.connect.success", data: ["path": resolvedSocketPath])
         } catch {
@@ -2102,6 +2142,7 @@ struct CMUXCLI {
             if command == "claude-hook",
                let cliError = error as? CLIError,
                isAdvisoryHookConnectivityError(cliError) {
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
                 return
             }
@@ -3570,7 +3611,7 @@ struct CMUXCLI {
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
-                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry)
+                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft)
                 cliTelemetry.breadcrumb("claude-hook.completed")
             } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
                 // claude-hook is advisory — it signals c11 about Claude Code
@@ -17533,6 +17574,18 @@ struct CMUXCLI {
               UUID(uuidString: surfaceId) != nil else {
             throw CLIError(message: "\(commandName) requires a c11 tab id")
         }
+        if let native = optionValue(commandArgs, name: "--native-event"), ["agent_start", "agent_settled"].contains(native) {
+            let ref = try? client.sendV2(method: "conversation.get", params: ["tab_id": surfaceId])
+            let active = (ref?["active"] as? [String: Any]) ?? ((ref?["conversation"] as? [String: Any])?["active"] as? [String: Any])
+            let sessionID = (active?["kind"] as? String) == "pi" ? active?["id"] as? String : nil
+            let draft = JournalDraft(kind: native == "agent_start" ? .turnStarted : .turnCompleted,
+                emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000), tabID: UUID(uuidString: surfaceId),
+                workspaceID: UUID(uuidString: workspaceId), sessionID: sessionID, agentKind: "pi",
+                source: .plugin, adapter: .piPlugin, nativeEvent: native)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            if case .unsupported = delivery { /* Explicit older-app compatibility. */ }
+            else if sessionID != nil { print("OK"); return }
+        }
         let response = try sendV1Command(
             "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)\(Self.agentLifecycleReportOptions())",
             client: client
@@ -17543,14 +17596,15 @@ struct CMUXCLI {
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
-        telemetry: CLISocketSentryTelemetry
+        telemetry: CLISocketSentryTelemetry,
+        rawInput: String,
+        journalDraft: JournalDraft?
     ) throws {
         let subcommand = commandArgs.first?.lowercased() ?? "help"
         let hookArgs = Array(commandArgs.dropFirst())
         let hookWsFlag = optionValue(hookArgs, name: "--workspace")
         let workspaceArg = hookWsFlag ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let surfaceArg = optionValue(hookArgs, name: "--surface") ?? (hookWsFlag == nil ? Self.callerTabEnv() : nil)
-        let rawInput = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
         // C11-24 diagnostic: when CMUX_HOOK_DEBUG_PATH is set, dump the
         // raw stdin JSON to that path before parsing. Used to verify the
         // exact shape of the SessionStart payload Claude Code emits when
@@ -17574,6 +17628,25 @@ struct CMUXCLI {
             ]
         )
         let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
+        var journalDelivery: JournalCommand.Delivery?
+        func appendJournal(workspaceId: String, surfaceId: String) -> Bool {
+            if let journalDelivery { if case .unsupported = journalDelivery { return false }; return true }
+            guard var draft = journalDraft else { return true }
+            draft.tabID = UUID(uuidString: surfaceId)
+            draft.workspaceID = UUID(uuidString: workspaceId)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            journalDelivery = delivery
+            if case .unsupported = delivery { return false }
+            return true
+        }
+        func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
+                                 activity: String, fromNotification: Bool = false) throws {
+            if !appendJournal(workspaceId: workspaceId, surfaceId: surfaceId) {
+                try self.reportAgentActivity(client: client, workspaceId: workspaceId, surfaceId: surfaceId,
+                                             activity: activity, fromNotification: fromNotification)
+            }
+        }
+
 
         switch subcommand {
         case "session-start", "active":
@@ -17584,17 +17657,6 @@ struct CMUXCLI {
                 workspaceId: workspaceId,
                 client: client
             )
-            // A fresh, resumed or cleared session rests at its prompt. A
-            // `compact` SessionStart fires mid-turn after auto-compaction, so
-            // it must not claim the agent is idle.
-            if (parsedInput.object?["source"] as? String) != "compact" {
-                _ = try? reportAgentActivity(
-                    client: client,
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    activity: "idle"
-                )
-            }
             let claudePid: Int? = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_CLAUDE_PID"]?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -17642,6 +17704,18 @@ struct CMUXCLI {
                     }
                 }
             }
+            // A fresh, resumed or cleared session rests at its prompt. A
+            // `compact` SessionStart fires mid-turn after auto-compaction, so
+            // it must not claim the agent is idle.
+            if (parsedInput.object?["source"] as? String) != "compact" {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    activity: "idle"
+                )
+            }
+            _ = appendJournal(workspaceId: workspaceId, surfaceId: surfaceId)
             // Register PID for stale-session detection and OSC suppression,
             // but don't set a visible status. "Running" only appears when the
             // user submits a prompt (UserPromptSubmit) or Claude starts working
@@ -17859,6 +17933,7 @@ struct CMUXCLI {
                 print("OK")
                 return
             }
+            _ = appendJournal(workspaceId: cleanupWorkspace, surfaceId: cleanupSurface)
             let consumedSession = try? sessionStore.consume(
                 sessionId: parsedInput.sessionId,
                 workspaceId: cleanupWorkspace,
@@ -17925,8 +18000,8 @@ struct CMUXCLI {
             }
             print("OK")
 
-        case "pre-tool-use":
-            telemetry.breadcrumb("claude-hook.pre-tool-use")
+        case "pre-tool-use", "post-tool-use":
+            telemetry.breadcrumb("claude-hook.\(subcommand)")
             // Clears "Needs input" status and notification when Claude resumes work
             // (e.g. after permission grant). Runs async so it doesn't block tool execution.
             var workspaceId = fallbackWorkspaceId
@@ -17944,12 +18019,16 @@ struct CMUXCLI {
                 preferredSurface, workspaceId: workspaceId, client: client
             )
             let toolName = parsedInput.object?["tool_name"] as? String
+            if subcommand == "post-tool-use", toolName != "AskUserQuestion", toolName != "ExitPlanMode" {
+                print("OK")
+                return
+            }
             let permissionMode = parsedInput.object?["permission_mode"] as? String
             let bypass = permissionMode == "bypassPermissions"
             // A bypass-started session emits ExitPlanMode in plan mode while
             // its approval UI waits. The native trace has no Notification edge.
             let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
-            if toolName == "AskUserQuestion" || planApproval {
+            if subcommand == "pre-tool-use" && (toolName == "AskUserQuestion" || planApproval) {
                 let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
                 let body: String
                 if toolName == "ExitPlanMode" {
@@ -18008,7 +18087,7 @@ struct CMUXCLI {
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--tab <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 
@@ -18904,6 +18983,7 @@ struct CMUXCLI {
           area-confirm --tab <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
           list-notifications
           clear-notifications
+          agent-event append --stdin
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--tab <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--tab <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-tab <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}

@@ -3520,6 +3520,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func prepareStartupSessionSnapshotIfNeeded() {
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
+        defer {
+            if !isRunningUnderXCTestCached { JournalCoordinator.shared.start(onProjection: TabLivenessDeriver.onJournalProjection) }
+        }
         // C11-131: this can run before `applicationDidFinishLaunching` under
         // the SwiftUI lifecycle (configure → prepare is view-driven). Arm the
         // shutdown sentinel here too so `priorShutdownAtLaunch` is the real
@@ -3527,6 +3530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // dirty-recovery branch below consumes it. Idempotent.
         armShutdownSentinelIfNeeded()
         guard SessionRestorePolicy.shouldAttemptRestore() else {
+            JournalCoordinator.shared.startupSeedReady()
+            JournalCoordinator.shared.startupTabsReady()
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
@@ -3553,6 +3558,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let epoch = ResumeStartupEpochGate.shared.begin(mode: mode)
 
         guard let snapshot, !ConversationStorePolicy.isDisabled else {
+            JournalCoordinator.shared.startupSeedReady()
+            JournalCoordinator.shared.startupTabsReady()
             _ = ResumeStartupEpochGate.shared.markReady(epoch)
             return
         }
@@ -3580,12 +3587,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let completed = DispatchSemaphore(value: 0)
         let result = LifecycleResultBox<Bool>()
         Task.detached(priority: .userInitiated) {
-            defer { completed.signal() }
+            defer { JournalCoordinator.shared.startupSeedReady(); completed.signal() }
 
             // One completion chain: seed (which audits seeded duplicates),
             // collect once per kind, atomically commit, re-audit, apply the
             // selected recovery policy, and audit the final store.
             _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            JournalCoordinator.shared.refreshOwners()
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.loadForStartup(
                 preferredSocketPath: preferredConversationSocketPath,
                 allowedSurfaceIds: captureScope.markerSurfaceIds
@@ -3915,6 +3923,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func completeStartupSessionRestore() {
+        JournalCoordinator.shared.startupTabsReady()
         FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
@@ -10985,6 +10994,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.isNotificationsPopoverShown()
     }
 
+    /// Menu/shortcut admission reads only the resident immutable projections.
+    var hasJournalAttention: Bool {
+        mainWindowContexts.values.contains { context in
+            context.workspaceManager.workspaces.contains { workspace in
+                workspace.journalByTab.values.contains {
+                    $0.paintsAttention && workspace.attentionSnapshot(panelId: $0.owner.tabID).isSignalEligible
+                }
+            }
+        }
+    }
+
     func jumpToLatestUnread() {
         guard let notificationStore else { return }
 #if DEBUG
@@ -11003,6 +11023,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ) {
                 return
             }
+        }
+        let journalWorkspaces = mainWindowContexts.values.flatMap { $0.workspaceManager.workspaces }
+        let journalAttention = journalWorkspaces.flatMap { workspace in
+            workspace.journalByTab.values.filter { $0.paintsAttention && !workspace.attentionSnapshot(panelId: $0.owner.tabID).suppressed }
+                .map { (workspace.id, $0) }
+        }.sorted { $0.1.sinceMs < $1.1.sinceMs }
+        for (workspaceID, state) in journalAttention {
+            if openNotification(workspaceId: workspaceID, surfaceId: state.owner.tabID, notificationId: nil) { return }
         }
         // Prefer the latest unread that we can actually open. In early startup (especially on the VM),
         // the window-context registry can lag behind model initialization, so fall back to whatever
@@ -14092,7 +14120,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .showNotifications), to: showNotificationsItem)
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .jumpToUnread), to: jumpToUnreadItem)
 
-        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty
+        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty || AppDelegate.shared?.hasJournalAttention == true
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
 

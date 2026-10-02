@@ -748,3 +748,63 @@ Bind available chords, or Delete while recording to clear a history binding.
 Browser Cmd+[ / Cmd+] remain browser navigation and cannot be recorded for history.
 The threshold is read at startup from UserDefaults `focusHistory.dwellSeconds`
 (default 1.0; clamped to 0.2...30 seconds); it has no Settings row.
+
+## Structural lifecycle append
+
+`c11 agent-event append --stdin` accepts one JSON draft of at most 4096 bytes.
+Socket spelling: `agent.event.append`, with `params: {"event": <draft>}`.
+This is an adapter interface. Ordinary agents continue using the operating
+skill's status primitives; do not infer lifecycle events from terminal text.
+
+Required fields are `schema_version: 1`, a UUID `event_id`, a supported `agent.*`
+`kind`, integer `emitted_at_ms`, `agent_kind`, `source`, and `adapter`.
+`tab_id` and `workspace_id` are UUIDs, both supplied or both null. `session_id`
+must match the already captured exact conversation. Unknown ownership is
+recorded as unattributed and cannot change a tab. Child evidence cannot finish
+its parent. No focused-tab or cwd fallback exists.
+
+Registered adapters fix their source and confidence: `claude_hook` and
+`codex_notify` use `hook`; `opencode_plugin` and `pi_plugin` use `plugin`;
+`codex_transcript` and `grok_transcript` use `transcript`. `c11` is reserved for
+specific control observations. A caller cannot set a confidence integer.
+
+Optional structural fields include `turn_id`, `request_id`, `parent_session_id`,
+`is_child`, `occurred_at_ms`, `time_quality`, `native_event`, `adapter_version`,
+`tool_class`, `reason_code`, `signal`, and `resolution`. Unknown keys and
+free-form payloads are rejected. Never send a prompt, command, arguments,
+question, plan, output, cwd, notification body, or raw error text. Missing native
+time/IDs remain null; CLI invocation time is not native occurrence evidence.
+
+After SQLite commit, the response is:
+
+```json
+{"event_id":"11111111-1111-4111-8111-111111111111","sequence":42,"committed_at_ms":1790899200000,"replayed":false,"projection_effect":"applied"}
+```
+
+The receipt promises a local commit; repaint is asynchronous. Keep the same
+`event_id` and normalized draft for an ambiguous retry. Identical retries return
+the original sequence with `replayed:true`; changed content returns
+`idempotency_conflict`. A committed stale/advisory event is not an applied state
+transition. Receipt dedupe lasts at least 24 hours after commit, subject to the
+explicit operator clear operation when available.
+
+Delivery has a 250 ms budget, followed by a bounded best-effort spool attempt
+inside the current c11 bundle namespace. `{"spooled":true}` means pending
+delivery, not a committed receipt. Full, locked or unwritable storage can lose
+unacknowledged events. Unknown bundle identity never falls back to production
+storage. Tagged builds have separate namespaces. Only an explicit unsupported
+method response permits a producer's legacy activity fallback; a timeout does
+not.
+
+`tab.get_metadata` exposes a read-only `journal` object with phase, reason,
+confirmation, connection, health, freshness, sequence and coverage. Reading it
+never opens SQLite. Missing exact ownership returns unknown/unconfirmed.
+
+The socket envelope optionally accepts an integer `interactive_pid` beside
+`event`, for existing native interactive hooks. The PID is transport-only; it
+is absent from draft bytes, the journal and spool. Only a fresh committed native
+turn boundary may open the existing mailbox prompt gate.
+
+See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
+restart confirmation, and retention. Query/export and broader provider hooks
+are separate consumers of this append seam.

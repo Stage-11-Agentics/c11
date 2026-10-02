@@ -103,6 +103,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
+        case "agent.event.append":
+            return v2Result(id: request.id, v2JournalAppend(params: request.params))
         case "tab.read_selection":
             return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
         case "tab.read_text":

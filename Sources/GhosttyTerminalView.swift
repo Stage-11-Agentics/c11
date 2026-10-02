@@ -2220,8 +2220,12 @@ class GhosttyApp {
             let title = action.action.set_title.title
                 .flatMap { String(cString: $0) } ?? ""
             if let workspaceId = surfaceView.workspaceId,
-               let surfaceId = surfaceView.terminalSurface?.id {
-                DispatchQueue.main.async {
+               let terminalSurface = surfaceView.terminalSurface {
+                let surfaceId = terminalSurface.id
+                DispatchQueue.main.async { [weak terminalSurface] in
+                    guard let terminalSurface,
+                          surfaceView.terminalSurface === terminalSurface,
+                          terminalSurface.titleChurnFilter.admit(title) else { return }
                     NotificationCenter.default.post(
                         name: .ghosttyDidSetTitle,
                         object: surfaceView,
@@ -2676,6 +2680,9 @@ extension TerminalSurface {
 }
 
 final class TerminalSurface: Identifiable, ObservableObject {
+    // Main-thread OSC admission, before downstream coalescing/metadata precedence.
+    fileprivate var titleChurnFilter = TerminalTitleChurnFilter()
+
     final class SearchState: ObservableObject {
         @Published var needle: String
         @Published var selected: UInt?

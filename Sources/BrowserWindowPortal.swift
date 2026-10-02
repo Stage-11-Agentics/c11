@@ -3297,19 +3297,16 @@ final class WindowBrowserPortal: NSObject {
         webView.needsDisplay = true
         webView.setNeedsDisplay(webView.bounds)
 
-        containerView.layoutSubtreeIfNeeded()
-        if let scrollView = webView.enclosingScrollView {
-            scrollView.layoutSubtreeIfNeeded()
-            scrollView.contentView.layoutSubtreeIfNeeded()
-            scrollView.displayIfNeeded()
+        // The immediate/geometry passes may run inside a SwiftUI update. Leave
+        // AppKit to draw; only the queued presentation turn may flush layout.
+        if phase == "async" {
+            containerView.layoutSubtreeIfNeeded()
+            webView.enclosingScrollView?.layoutSubtreeIfNeeded()
+            webView.layoutSubtreeIfNeeded()
         }
-        webView.layoutSubtreeIfNeeded()
         if reattachRenderingState {
             webView.browserPortalReattachRenderingState(reason: "\(reason):\(phase)")
         }
-        containerView.displayIfNeeded()
-        webView.displayIfNeeded()
-        (webView.window ?? hostView.window)?.displayIfNeeded()
 #if DEBUG
         dlog(
             "\(reattachRenderingState ? "browser.portal.refresh" : "browser.portal.invalidate") " +

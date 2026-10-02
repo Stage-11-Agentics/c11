@@ -34,7 +34,7 @@ import Foundation
 // a handful of property reads and an equality check; a `Date` is allocated only
 // when the seen-panel actually changes. Nothing is written to disk here: the
 // stamps ride the existing session snapshot cadence (`last_seen_at`), so the
-// persisted value can lag by up to the autosave interval (~60 s). Precision is
+// persisted value can lag by up to the autosave interval (8 s). Precision is
 // one second on the socket. Closed panels are dropped via `forget(panelId:)`.
 
 /// Pure state machine behind `lastSeenAt`. No AppKit, no clock of its own.
@@ -140,7 +140,9 @@ final class TabSeenTracker {
     func refresh() {
         let seen = interruptions.isEmpty ? seenProvider() : nil
         guard seen != clock.current else { return }
-        clock.observe(seen: seen, at: now())
+        let date = now()
+        clock.observe(seen: seen, at: date)
+        FocusHistoryStore.shared.noteTransition(panelId: seen, at: date)
     }
 
     func setInterruption(_ reason: InterruptReason, active: Bool) {
@@ -169,6 +171,7 @@ final class TabSeenTracker {
     /// Drop a closed panel's stamp. Not for detach/move, where the id survives.
     func forget(panelId: UUID) {
         clock.forget(panelId)
+        FocusHistoryStore.shared.prune(panelId: panelId)
     }
 
     /// Idempotent. Observes app/window/Space/screen state; selection and focus

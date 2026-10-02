@@ -12,6 +12,15 @@ This card is deliberately short. It covers **orientation** — the one thing eve
 
 ## Detect c11
 
+**Ask this build:** `c11 guide` (alias `c11 --skill`) prints the skill shipped in
+the CLI's app bundle, including its build identity and skill version, with no
+socket required. `c11 guide api` prints a bundled reference page. An installed
+skill copy can be older than `c11 guide`; printing the guide does not update it.
+`c11 capabilities --json` reports the connected server's methods and enabled
+versioned features, both CLI/server identities, and `sha_match` (null when a
+commit stamp is unavailable). Use that server feature list to check support;
+the PATH CLI can belong to a different build.
+
 `C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_TAB_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
 Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `tab:3`. **A bare number from the operator is a tab ref.** With the "Show Tab Numbers in Tab Titles" setting on, every tab displays `N: title` where N is its `tab:N` ordinal — so "send that to 292" means target `tab:292` (with its `--workspace`). Always write the `tab:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_TAB_NUM`.
@@ -156,6 +165,7 @@ A few cross-cutting rules worth knowing before you reach for those:
 
 - **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-areas` / `list-area-tabs`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
 - **Per-tab `last_seen_at` says when the operator last looked at a tab.** Every tab in `c11 tree --json` / `tab.list` carries `last_seen_at` (ISO-8601, second precision, `null` = never seen) and `being_seen`. A tab is seen while it is the selected tab of the focused area in the selected workspace of the key c11 window, with c11 frontmost, the window on the active Space and visible, and the screen unlocked. Because it follows what is on screen, a socket focus change while c11 is in the background stamps nothing; while c11 is frontmost it stamps the tab that left and marks the new one `being_seen`. Details: [references/api.md](references/api.md).
+- **`c11 history --json --limit 50` reads completed, dwell-qualified seen visits.** UUID targets survive restore; `history back` / `history forward` navigate without activating the app. Live titles are returned but never persisted in history. The open visit is not listed. Schema, privacy and key bindings: [references/api.md](references/api.md#focus-history).
 - **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --tab <t> "npm test"`. Writing `--text "…"` types the literal string `--text` into the terminal.
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--tab` *together* when the target isn't your own tab; `--window` alone is not enough. An empty or stale ref (`--tab ""`, a dead `tab:99`) is an error, not a quiet fallback to whatever area is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.

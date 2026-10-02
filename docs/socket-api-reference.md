@@ -327,13 +327,14 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 - `auth.login`
 
-### Debug (`debug.*`) — 35
+### Debug (`debug.*`) — 36
 
 - `debug.app.activate`
 - `debug.bonsplit_underflow.count`
 - `debug.bonsplit_underflow.reset`
 - `debug.browser.address_bar_focused`
 - `debug.browser.favicon`
+- `debug.browser.simulate_web_content_termination` (DEBUG only; browser target via `workspace_id` and `tab_id`; returns `scheduled`, with recovery queued for the next main turn)
 - `debug.command_palette.rename_input.delete_backward`
 - `debug.command_palette.rename_input.interact`
 - `debug.command_palette.rename_input.select_all`

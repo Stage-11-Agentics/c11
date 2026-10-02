@@ -20,7 +20,7 @@ import attention_menu_bar_probe as base
 
 
 ACTIVE_SECONDS = 300
-PICKER_ASKS = ('input',)
+PICKER_ASKS = ('picker',)
 HARD_SECONDS = 330
 EXTRA_JXA = r'''
     if (operation === 'target-key') {
@@ -321,7 +321,7 @@ class SubmitProbe(base.Probe):
             if workspace['id'] != self.workspace:
                 self.rpc('workspace.close', {'workspace_id': workspace['id']})
         self.tabs['copy'] = self.rpc('tab.list', {'workspace_id': self.workspace})['tabs'][0]['id']
-        for name in ('input', 'textbox', 'completion'):
+        for name in ('input', 'picker', 'textbox', 'completion'):
             self.tabs[name] = self.rpc('tab.create', {'workspace_id': self.workspace, 'type': 'terminal'})['tab_id']
         for name, tab in self.tabs.items():
             self.rpc('tab.set_metadata', {'tab_id': tab, 'metadata': {'title': 'Synthetic ' + name}})
@@ -330,22 +330,48 @@ class SubmitProbe(base.Probe):
         self.check(all('Synthetic ' + name in topology for name in self.tabs),
                    'All synthetic validation tabs remain named and visible in workspace topology')
         self.rpc('workspace.select', {'workspace_id': self.workspace})
-        for name in ('copy', 'input', 'textbox'):
+        for name in ('copy', 'input', 'picker', 'textbox'):
             self.open_ask(name)
 
-        # Editing and repeat keys do not count. c11 send-key is a generated key,
-        # not an operator submit, even though it reaches the terminal view.
+        # Negative inputs run on an ordinary plan-review ask that a real Return answers,
+        # so each check can only pass because the guard rejected the key. Draft typing,
+        # autorepeat Return, c11 send-key and an IME/dead-key composition commit all come
+        # before the one real Return on this same still-open ask.
         tab, request = self.tabs['input'], self.requests['input']
         self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
         self.ui('activate')
         self.ui('target-type', 'synthetic draft')
+        self.check(not self.responses(tab, request), 'Typing a draft produces no response')
         self.ui('target-key', '36', '0', '1')
+        time.sleep(.5)
+        self.check(not self.responses(tab, request), 'Autorepeat Return produces no response')
         self.send_key(tab, 'enter')
-        self.check(not self.responses(tab, request), 'Editing, repeated Return and generated send-key produce no response')
+        time.sleep(.5)
+        self.check(not self.responses(tab, request), 'Generated c11 send-key enter produces no response')
+        # Option-E starts a dead-key composition (marked text); Return then commits it.
+        self.ui('target-key', '14', str(1 << 19))
+        self.screenshot('00-ime-composition-active')
+        self.ui('target-key', '36', '0')
+        time.sleep(.5)
+        self.check(not self.responses(tab, request), 'Return that commits an IME composition produces no response')
+        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+                   'Negative inputs leave the plan-review ask blocked')
+        self.ui('target-key', '36', '0')
+        self.eventually(lambda: len(self.responses(tab, request)) == 1,
+                        'One real Return records exactly one response on the same ask')
+        time.sleep(.5)
+        self.check(len(self.responses(tab, request)) == 1, 'No further response rows follow the single real Return')
+        self.check(self.rpc('tab.get_metadata', {'tab_id': tab})['metadata']['journal']['phase'] == 'blocked',
+                   'Real Return leaves the ask blocked')
+
+        # An AskUserQuestion picker has no known commit key, so Return records nothing.
+        tab, request = self.tabs['picker'], self.requests['picker']
+        self.rpc('tab.focus', {'workspace_id': self.workspace, 'tab_id': tab})
+        self.ui('activate')
         self.ui('target-key', '36', '0')
         time.sleep(.5)
         self.check(not self.responses(tab, request),
-                   'Return on an AskUserQuestion picker ask stays unavailable while no commit key is named')
+                   'Return on an AskUserQuestion picker ask stays unobserved while no commit key is named')
 
         # Copy-mode Return is consumed locally; Escape exits; a real Return then
         # records exactly once while the journal phase remains blocked.

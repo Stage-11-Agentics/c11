@@ -833,6 +833,27 @@ the open request; resume latency is reported separately. Missing evidence is
 `uncertain_count`, and `censored_count` are part of the result and must not be
 treated as zero evidence.
 
+**Which operator answers are observed.** An `operator_response` event records
+that the operator submitted an answer to an open ask. Today c11 observes:
+
+- an unmodified Return or keypad Enter pressed in the ask's terminal tab, once
+  per ask, for asks answered in the terminal (approval and plan review);
+- the text box Send action for that tab.
+
+It does not count a repeated (held) key, a key synthesized by `c11 send-key` or
+`send`, a key consumed by keyboard copy mode, a key that commits an IME
+composition, typing or editing, or merely viewing the tab.
+
+A Claude `AskUserQuestion` picker answer is **not observed**. The key that
+commits a picker choice is not yet established, so c11 fails closed and records
+nothing for those asks; it never guesses a key. For analytics this is partial
+coverage: in a window that mixes ordinary submits and picker asks,
+`operator_response` can report `status: "available"` from the ordinary submits
+while every picker answer is missing, so the wait for picker asks reads as
+censored, not as zero. The pinned Claude Code 2.1.287 picker fixture is a
+numbered sign-off step; until it passes, treat picker response coverage as
+unsupported.
+
 `c11 journal export` emits body-free NDJSON. Its first row is a manifest, then
 sequence-ordered `event` rows, optional `current_state` rows, explicit `gap`
 rows when retention or concurrent pruning/clear prevents a complete view, and

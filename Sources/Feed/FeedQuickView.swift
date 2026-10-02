@@ -38,10 +38,14 @@ final class FeedQuickViewModel: ObservableObject {
     func move(_ delta: Int) { selection.move(delta); status = "" }
     func select(_ tabID: UUID) { selection.select(tabID) }
 
+    func markUnavailable() {
+        status = String(localized: "feed.quick.unavailable", defaultValue: "That tab is unavailable")
+    }
+
     func openSelected() {
         guard let row = rows.first(where: { $0.tabID == selection.selectedTabID }) else { return }
         guard onOpen(.init(workspaceID: row.workspaceID, tabID: row.tabID)) else {
-            status = String(localized: "feed.quick.unavailable", defaultValue: "That tab is unavailable")
+            markUnavailable()
             return
         }
         onOpened()

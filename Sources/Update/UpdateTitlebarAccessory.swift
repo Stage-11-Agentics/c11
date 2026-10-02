@@ -1024,6 +1024,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
 
     private func updateFeedSnapshot(_ projection: FeedProjectionSnapshot) {
         guard let feedModel else { return }
+        let previousSelectedRow = feedModel.rows.first { $0.tabID == feedModel.selection.selectedTabID }
         var titles: [UUID: String] = [:]
         for row in projection.rows {
             let target = AttentionOrder.Target(workspaceID: row.workspaceID, tabID: row.tabID)
@@ -1032,6 +1033,11 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             }
         }
         feedModel.apply(.init(projection: projection, titles: titles, now: Date(), loading: false))
+        if let row = previousSelectedRow,
+           !feedModel.rows.contains(where: { $0.tabID == row.tabID }),
+           AppDelegate.shared?.resolveFeedTarget(.init(workspaceID: row.workspaceID, tabID: row.tabID)) == nil {
+            feedModel.markUnavailable()
+        }
     }
 
     func handleFeedQuickViewKey(_ event: NSEvent) -> Bool {

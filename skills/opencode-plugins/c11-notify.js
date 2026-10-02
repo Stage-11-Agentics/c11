@@ -69,7 +69,8 @@ export const C11NotifyPlugin = async ({ $ }) => {
     let labels = null;
     if (raw.every((item) => typeof item === "string")) labels = raw;
     else if (raw.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
-      labels = raw.map((item) => item.label).filter((label) => typeof label === "string");
+      const mapped = raw.map((item) => item.label);
+      if (mapped.every((label) => typeof label === "string")) labels = mapped;
     }
     if (!labels) return null;
     return labels.slice(0, 12).map((label) => utf8Prefix(label, 128));
@@ -88,18 +89,36 @@ export const C11NotifyPlugin = async ({ $ }) => {
       session_id: sessionID || null, agent_kind: "opencode", source: "plugin",
       adapter: "opencode_plugin", native_event: nativeEvent, ...extra,
     };
-    const unsupported = await new Promise((resolve) => {
-      const child = spawn(c11Bin, ["agent-event", "append", "--stdin"], { stdio: ["pipe", "ignore", "pipe"] });
+    const delivery = await new Promise((resolve) => {
+      const child = spawn(c11Bin, ["agent-event", "append", "--stdin"], { stdio: ["pipe", "pipe", "pipe"] });
       let error = "";
-      const timer = setTimeout(() => { child.kill(); resolve(false); }, 750);
+      let output = "";
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        finish({ committed: false, unsupported: false });
+      }, 750);
+      child.stdout.on("data", (chunk) => { if (output.length < 16384) output += chunk.toString(); });
       child.stderr.on("data", (chunk) => { if (error.length < 4096) error += chunk.toString(); });
-      child.on("error", () => { clearTimeout(timer); resolve(false); });
-      child.on("close", () => { clearTimeout(timer); resolve(error.includes("method_not_found")); });
+      child.on("error", () => { clearTimeout(timer); finish({ committed: false, unsupported: false }); });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        let receipt = null;
+        try { receipt = JSON.parse(output.trim()); } catch {}
+        const committed = code === 0 && typeof receipt?.event_id === "string"
+          && receipt.event_id.toLowerCase() === eventID.toLowerCase();
+        finish({ committed, unsupported: error.includes("method_not_found") });
+      });
       child.stdin.on("error", () => {});
       child.stdin.end(JSON.stringify(draft));
     });
-    if (unsupported && legacyActivity) await c11(["agent-hook", legacyActivity]);
-    return { eventID, unsupported };
+    if (delivery.unsupported && legacyActivity) await c11(["agent-hook", legacyActivity]);
+    return { eventID, ...delivery };
   };
 
   return {
@@ -163,7 +182,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
         }
         case "permission.asked": {
           const requestID = typeof properties.id === "string" ? properties.id : null;
-          const { eventID, unsupported } = await append("agent.approval.requested", event.type, sessionID, { request_id: requestID });
+          const { eventID, committed, unsupported } = await append("agent.approval.requested", event.type, sessionID, { request_id: requestID });
           const tab = process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
           const workspace = process.env.C11_WORKSPACE_ID || process.env.CMUX_WORKSPACE_ID;
           const prompt = utf8Prefix(
@@ -171,7 +190,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
             1024,
           );
           const options = boundOptionLabels(properties.options);
-          if (!unsupported && eventID && requestID && sessionID && tab && workspace && (prompt != null || options != null)) {
+          if (committed && !unsupported && eventID && requestID && sessionID && tab && workspace && (prompt != null || options != null)) {
             const note = {
               workspace_id: workspace,
               tab_id: tab,

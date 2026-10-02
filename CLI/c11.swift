@@ -17641,15 +17641,20 @@ struct CMUXCLI {
         )
         let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
         var journalDelivery: JournalCommand.Delivery?
+        func managedJournalDelivery(_ delivery: JournalCommand.Delivery) -> Bool {
+            switch delivery {
+            case .committed, .spooled: return true
+            case .unsupported, .lost, .rejected: return false
+            }
+        }
         func appendJournal(workspaceId: String, surfaceId: String) -> Bool {
-            if let journalDelivery { if case .unsupported = journalDelivery { return false }; return true }
+            if let journalDelivery { return managedJournalDelivery(journalDelivery) }
             guard var draft = journalDraft else { return true }
             draft.tabID = UUID(uuidString: surfaceId)
             draft.workspaceID = UUID(uuidString: workspaceId)
             let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
             journalDelivery = delivery
-            if case .unsupported = delivery { return false }
-            return true
+            return managedJournalDelivery(delivery)
         }
         func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
                                  activity: String, fromNotification: Bool = false) throws {
@@ -18075,19 +18080,21 @@ struct CMUXCLI {
                 } else {
                     if case .committed(let receipt) = journalDelivery, let eventID = receipt["event_id"] as? String {
                         let extracted = FeedDisplayExtract.claude(toolName: toolName, object: parsedInput.object)
-                        let remaining = budgetEnd.timeIntervalSinceNow
-                        if remaining > 0 {
-                            FeedCommand.sendDisplayNote(
-                                client: client,
-                                workspaceID: workspaceId,
-                                tabID: resolvedSurface,
-                                sessionID: parsedInput.sessionId ?? journalDraft?.sessionID,
-                                eventID: eventID,
-                                requestID: journalDraft?.requestID,
-                                prompt: extracted.prompt,
-                                options: extracted.options,
-                                deadline: remaining
-                            )
+                        if extracted.prompt != nil || extracted.options != nil {
+                            let remaining = budgetEnd.timeIntervalSinceNow
+                            if remaining > 0 {
+                                FeedCommand.sendDisplayNote(
+                                    client: client,
+                                    workspaceID: workspaceId,
+                                    tabID: resolvedSurface,
+                                    sessionID: parsedInput.sessionId ?? journalDraft?.sessionID,
+                                    eventID: eventID,
+                                    requestID: journalDraft?.requestID,
+                                    prompt: extracted.prompt,
+                                    options: extracted.options,
+                                    deadline: remaining
+                                )
+                            }
                         }
                     }
                     if bypass || planApproval {

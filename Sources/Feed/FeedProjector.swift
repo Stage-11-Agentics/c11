@@ -171,7 +171,7 @@ enum FeedProjector {
                 kind: blocking,
                 prompt: note?.prompt,
                 options: note?.options,
-                promptAvailable: note != nil,
+                promptAvailable: note?.prompt != nil || note?.options != nil,
                 source: journal.source.rawValue,
                 sourceRank: journal.rank,
                 openedAtMs: journal.sinceMs > 0 ? journal.sinceMs : nil,
@@ -455,7 +455,8 @@ enum FeedDisplayExtract {
             return (prompt, raw)
         }
         if let raw = first["options"] as? [[String: Any]] {
-            return (prompt, raw.compactMap { $0["label"] as? String })
+            let labels = raw.compactMap { $0["label"] as? String }
+            return labels.count == raw.count ? (prompt, labels) : (prompt, nil)
         }
         if first["options"] != nil { return (prompt, nil) }
         return (prompt, nil)

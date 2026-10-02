@@ -3522,9 +3522,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         didPrepareStartupSessionSnapshot = true
         defer {
             if !isRunningUnderXCTestCached {
-                JournalCoordinator.shared.start { tab, snap, boundary in
+                JournalCoordinator.shared.start { tab, snap, boundary, eventID in
                     TabLivenessDeriver.onJournalProjection(tabID: tab, snapshot: snap, boundary: boundary)
-                    FeedProjectionBridge.shared.noteJournal(tabID: tab, snapshot: snap)
+                    FeedProjectionBridge.shared.noteJournal(tabID: tab, snapshot: snap, eventID: eventID)
                 }
                 // This startup path runs on main. Seed flags that already exist; later publishes hop off main.
                 MainActor.assumeIsolated {

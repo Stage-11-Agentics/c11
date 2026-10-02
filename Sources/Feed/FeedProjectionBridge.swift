@@ -9,19 +9,36 @@ final class FeedProjectionBridge: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.stage11.c11.feed-projection", qos: .utility)
     private var journal: [UUID: JournalSnapshot] = [:]
+    // The structural event that produced the current live snapshot. This is
+    // process-local join state; replay/baseline projections deliberately have
+    // no identity and cannot receive a display note.
+    private var currentAskEventIDs: [UUID: UUID] = [:]
     private var attention: [UUID: FeedAttentionFact] = [:]
     private var tracker = FeedAskTracker()
     private let cache = AskDisplayCache()
 
-    private init() {}
+    init() {}
 
-    func noteJournal(tabID: UUID, snapshot: JournalSnapshot?) {
+    func noteJournal(tabID: UUID, snapshot: JournalSnapshot?, eventID: UUID? = nil) {
         let snapshot = snapshot
         queue.async { [self] in
             if let snapshot {
+                let prior = self.journal[tabID]
                 self.journal[tabID] = snapshot
+                let sameAsk = prior.flatMap(FeedProjector.blockingKind) == FeedProjector.blockingKind(snapshot)
+                    && prior?.requestID == snapshot.requestID
+                if FeedProjector.blockingKind(snapshot) != nil, snapshot.confirmation == .confirmed {
+                    if let eventID {
+                        self.currentAskEventIDs[tabID] = eventID
+                    } else if !sameAsk {
+                        self.currentAskEventIDs.removeValue(forKey: tabID)
+                    }
+                } else {
+                    self.currentAskEventIDs.removeValue(forKey: tabID)
+                }
             } else {
                 self.journal.removeValue(forKey: tabID)
+                self.currentAskEventIDs.removeValue(forKey: tabID)
                 self.cache.drop(tabID: tabID)
             }
             let events = self.tracker.consume(tabID: tabID, snapshot: snapshot)
@@ -90,6 +107,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
             guard let live,
                   FeedProjector.blockingKind(live) != nil,
                   live.requestID == requestID,
+                  self.currentAskEventIDs[tabID] == eventID,
                   live.workspaceID == workspaceID,
                   live.owner.tabID == tabID,
                   live.owner.agentKind == agentKind,

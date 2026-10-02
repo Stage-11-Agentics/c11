@@ -112,6 +112,38 @@ final class FeedProjectorTests: XCTestCase {
         }
     }
 
+    func testDisplayNoteRequiresCurrentAppendIdentity() throws {
+        let question = try blocked(.questionRequested, request: "ask-1")
+        let owner = question.owner
+        let requestID = try XCTUnwrap(question.requestID)
+        let bridge = FeedProjectionBridge()
+        let currentEvent = UUID()
+        bridge.noteJournal(tabID: owner.tabID, snapshot: question, eventID: currentEvent)
+
+        let wrong = bridge.acceptNote(
+            tabID: owner.tabID, workspaceID: question.workspaceID,
+            agentKind: owner.agentKind, sessionID: owner.sessionID,
+            eventID: UUID(), requestID: requestID, prompt: sentinel, options: nil
+        )
+        XCTAssertEqual(wrong, FeedNoteError.unmatched.rawValue)
+
+        XCTAssertNil(bridge.acceptNote(
+            tabID: owner.tabID, workspaceID: question.workspaceID,
+            agentKind: owner.agentKind, sessionID: owner.sessionID,
+            eventID: currentEvent, requestID: requestID, prompt: sentinel, options: nil
+        ))
+        let rows = bridge.list(scope: .attention)["rows"] as? [[String: Any]]
+        XCTAssertEqual(rows?.first?["prompt"] as? String, sentinel)
+
+        bridge.noteJournal(tabID: owner.tabID, snapshot: JournalReplayPolicy.restored(question))
+        let replayed = bridge.acceptNote(
+            tabID: owner.tabID, workspaceID: question.workspaceID,
+            agentKind: owner.agentKind, sessionID: owner.sessionID,
+            eventID: currentEvent, requestID: requestID, prompt: "stale", options: nil
+        )
+        XCTAssertEqual(replayed, FeedNoteError.unmatched.rawValue)
+    }
+
     // Flag plus question is one row. A sibling working fold and same-tab tool activity leave it open.
     func testFlagAndSiblingActivityKeepTheOpenQuestion() throws {
         let question = try blocked(.questionRequested, request: "ask-1")
@@ -358,6 +390,13 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertEqual(bounded.options?.count, 12)
         XCTAssertTrue(bounded.options?.allSatisfy { $0.utf8.count <= 128 } == true)
         XCTAssertEqual(FeedNoteLimits.prefix("é", maxBytes: 1), "")
+
+        let malformed: [String: Any] = ["tool_input": ["questions": [[
+            "question": "prompt",
+            "options": [["label": "known"], ["value": "missing-label"]],
+        ]]]]
+        let unknownOptions = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: malformed)
+        XCTAssertNil(unknownOptions.options)
 
         let missing = FeedDisplayExtract.claude(toolName: "AskUserQuestion", object: ["tool_input": ["questions": [["question": "Which?"]]]])
         XCTAssertEqual(missing.prompt, "Which?")

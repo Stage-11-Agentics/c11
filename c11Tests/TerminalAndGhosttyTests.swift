@@ -1530,23 +1530,32 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         XCTAssertTrue(decoy.firstResponder === decoyEditor)
     }
 
-    func testSearchOverlayMountsAndUnmountsWithSearchState() {
+    func testSearchOverlayMountsAndUnmountsWithSearchState() async {
         let surface = TerminalSurface(
             workspaceId: UUID(),
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: nil,
             workingDirectory: nil
         )
+        defer { withExtendedLifetime(surface) {} }
         let hostedView = surface.hostedView
         XCTAssertFalse(hostedView.debugHasSearchOverlay())
 
         let searchState = TerminalSurface.SearchState(needle: "example")
         hostedView.setSearchOverlay(searchState: searchState)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Mount/removal are enqueued on main. Await that queue boundary rather
+        // than assuming a nested 50 ms run loop services its pending work.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         XCTAssertTrue(hostedView.debugHasSearchOverlay())
 
         hostedView.setSearchOverlay(searchState: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Mount/removal are enqueued on main. Await that queue boundary rather
+        // than assuming a nested 50 ms run loop services its pending work.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         XCTAssertFalse(hostedView.debugHasSearchOverlay())
     }
 

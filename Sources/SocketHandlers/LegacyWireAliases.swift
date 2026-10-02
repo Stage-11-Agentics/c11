@@ -185,6 +185,74 @@ enum LegacyWireAliases {
         return out
     }
 
+    struct RoutingKeyRejection {
+        let key: String
+        let canonical: String
+        var code: String { "invalid_params" }
+        var message: String {
+            String(format: String(
+                localized: "socket.error.unsupported_routing_key",
+                defaultValue: "Unsupported parameter '%1$@'; use '%2$@'."
+            ), key, canonical)
+        }
+    }
+
+    /// The existing alias tables define the exact spellings we accept. Cache
+    /// their normalized selector forms once, rather than rebuilding per request.
+    private struct RoutingKeys {
+        var allowed: Set<String> = []
+        var canonicalByNormalized: [String: String] = [:]
+
+        mutating func add(_ key: String, canonical: String) {
+            allowed.insert(key)
+            let normalized = LegacyWireAliases.normalizedRoutingKey(key)
+            // Snake-case pairs precede the camelCase result-map pairs. Keep
+            // their public spelling when both normalize to the same selector.
+            if canonicalByNormalized[normalized] == nil {
+                canonicalByNormalized[normalized] = canonical
+            }
+        }
+    }
+
+    nonisolated private static func normalizedRoutingKey(_ key: String) -> String {
+        key.replacingOccurrences(of: "_", with: "").lowercased()
+    }
+
+    nonisolated private static let routingKeys: RoutingKeys = {
+        var keys = RoutingKeys()
+        for pair in legacyKeyPairs {
+            let selector = ["_id", "_ids", "_ref", "_refs"].contains { pair.new.hasSuffix($0) }
+                || pair.isRef
+            guard selector else { continue }
+            for key in [pair.new, pair.old] + pair.extraOld {
+                keys.add(key, canonical: pair.new)
+            }
+        }
+        for (target, sources) in paramSources {
+            let canonical = target == "pane" ? "area"
+                : keys.canonicalByNormalized[normalizedRoutingKey(target)] ?? displayKey(target)
+            for key in [target] + sources {
+                keys.add(key, canonical: canonical)
+            }
+        }
+        for key in ["window_id", "workspace_id"] {
+            keys.add(key, canonical: key)
+        }
+        return keys
+    }()
+
+    /// Inspect top-level names only. Case/underscore variants of selectors are
+    /// rejected; unrelated keys and character typos such as surfce_id remain
+    /// outside this bounded check. Alias copying is intentionally unchanged.
+    nonisolated static func unsupportedRoutingKey(_ params: [String: Any]) -> RoutingKeyRejection? {
+        for key in params.keys where !routingKeys.allowed.contains(key) {
+            if let canonical = routingKeys.canonicalByNormalized[normalizedRoutingKey(key)] {
+                return RoutingKeyRejection(key: key, canonical: canonical)
+            }
+        }
+        return nil
+    }
+
     // MARK: - Results (outbound)
 
     /// Walks a JSON-shaped result: every `new`/`old` key pair is completed

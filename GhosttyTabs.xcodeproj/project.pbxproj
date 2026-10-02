@@ -505,6 +505,7 @@
 		FDA0BE0001234A1CD69B5467 /* FullDiskAccessProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7017BF1A1B2C3D4E5F60718 /* FullDiskAccessProbeTests.swift */; };
 		FE01AA00000000000000B001 /* SendKeyVocabularyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */; };
 		FFE880D945D44532D09BE71C /* ConversationStoreFailureModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96951AF465673123431D362B /* ConversationStoreFailureModeTests.swift */; };
+		C11279000000000000000002 /* LegacyWireRoutingKeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */; };
 		C11259000000000000000002 /* WorkspaceGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11259000000000000000001 /* WorkspaceGroup.swift */; };
 		C11259000000000000000102 /* WorkspaceReorderPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11259000000000000000101 /* WorkspaceReorderPlanner.swift */; };
 		C11259000000000000000202 /* WorkspaceGroupHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11259000000000000000201 /* WorkspaceGroupHandlers.swift */; };
@@ -1075,6 +1076,7 @@
 		FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentManifestTests.swift; sourceTree = "<group>"; };
 		FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SendKeyVocabularyTests.swift; sourceTree = "<group>"; };
 		IC000002 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AppIcon.icon; sourceTree = "<group>"; };
+		C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyWireRoutingKeyTests.swift; sourceTree = "<group>"; };
 		C11259000000000000000001 /* WorkspaceGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceGroup.swift; sourceTree = "<group>"; };
 		C11259000000000000000101 /* WorkspaceReorderPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceReorderPlanner.swift; sourceTree = "<group>"; };
 		C11259000000000000000201 /* WorkspaceGroupHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceGroupHandlers.swift; sourceTree = "<group>"; };
@@ -1707,6 +1709,7 @@
 				C1124400000000000000B003 /* AgentModelDetectionTests.swift */,
 				C1124400000000000000B013 /* TabActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketTabRefValidatorTests.swift */,
+				C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */,
 				36732611CC1BEFB8D99BB606 /* SocketTabRefRejectionWiringTests.swift */,
 				91488CE83CF7CEC3B741B1E5 /* EventLogTests.swift */,
 				D25710000000000000000003 /* MessagesPageTests.swift */,
@@ -2085,6 +2088,7 @@
 				C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */,
 				C1124400000000000000B014 /* TabActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketTabRefValidatorTests.swift in Sources */,
+				C11279000000000000000002 /* LegacyWireRoutingKeyTests.swift in Sources */,
 				0D76F685D48115A43B14C5D5 /* EventLogTests.swift in Sources */,
 				D25700000000000000000003 /* MessagesPageTests.swift in Sources */,
 				8713E62944414CDC27EA1AD8 /* AgentLaunchStatsTests.swift in Sources */,

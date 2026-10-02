@@ -10412,7 +10412,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func reconcileFocusState() {
-        guard !isReconcilingFocusState else { return }
+        guard isSelectedInOwningWindowForReconciliation, !isReconcilingFocusState else { return }
         isReconcilingFocusState = true
         defer { isReconcilingFocusState = false }
 
@@ -10681,6 +10681,13 @@ final class Workspace: Identifiable, ObservableObject {
         let postFlushMs = (CACurrentMediaTime() - attemptStart) * 1000
 #endif
 
+        // A queued layout pass can outlive workspace selection. Keep background
+        // geometry/startup work, but discard its obsolete first-responder intent.
+        if !isSelectedInOwningWindowForReconciliation {
+            layoutFollowUpTerminalFocusTabId = nil
+            layoutFollowUpBrowserExitFocusTabId = nil
+        }
+
         let geometryPendingBefore = layoutFollowUpNeedsGeometryPass
         let terminalPortalPendingBefore = terminalPortalVisibilityNeedsFollowUp()
         let browserVisibilityPendingBefore = browserPortalVisibilityNeedsFollowUp()
@@ -10861,7 +10868,29 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
+    private var isSelectedInOwningWindowForReconciliation: Bool {
+        // The active app manager may belong to a different window. Resolve this
+        // workspace's owner, including registered-window fallback during moves.
+        guard let manager = owningWorkspaceManager ?? AppDelegate.shared?.workspaceManagerFor(workspaceId: id) else {
+            return false
+        }
+        return manager.selectedWorkspaceId == id
+    }
+
+#if DEBUG
+    func debugRunLayoutFollowUpForTesting(terminalFocusPanelId: UUID? = nil) {
+        beginEventDrivenLayoutFollowUp(
+            reason: "test.workspace.layout",
+            terminalFocusPanelId: terminalFocusPanelId
+        )
+        reconcileFocusState()
+    }
+#endif
+
     private func renderedVisiblePanelIdsForCurrentLayout() -> Set<UUID> {
+        // Bonsplit retains a selected tab in every hidden workspace. Those tabs
+        // are not visible UI and must not be reactivated by delayed layout work.
+        guard isSelectedInOwningWindowForReconciliation else { return [] }
         let renderedPaneIds = bonsplitController.zoomedPaneId.map { [$0] } ?? bonsplitController.allPaneIds
         var visiblePanelIds: Set<UUID> = []
 

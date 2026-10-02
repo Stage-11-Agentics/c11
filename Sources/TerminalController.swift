@@ -5,6 +5,88 @@ import Foundation
 import Bonsplit
 import WebKit
 
+// C11-295 / C11-282 shared caller policy. Each main hop owns a one-shot
+// completion with the same monotonic deadline. Late producers retain their own
+// payload until cleanup; they never write into a returned stack variable.
+final class TerminalReadCompletion<Value>: @unchecked Sendable {
+    let deadline: DispatchTime
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var value: Value?
+    private var finished = false
+    private var abandoned = false
+
+    init(deadline: DispatchTime) { self.deadline = deadline }
+
+    var isAbandoned: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return abandoned || DispatchTime.now() >= deadline
+    }
+
+    @discardableResult
+    func complete(_ value: Value) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished, !abandoned, DispatchTime.now() < deadline else { return false }
+        self.value = value
+        finished = true
+        semaphore.signal()
+        return true
+    }
+
+    func wait() -> Value? {
+        _ = semaphore.wait(timeout: deadline)
+        lock.lock()
+        defer { lock.unlock() }
+        guard finished, DispatchTime.now() < deadline else {
+            abandoned = true
+            value = nil
+            return nil
+        }
+        return value
+    }
+}
+
+/// Independently owned region bytes, never a borrowed Ghostty allocation.
+struct TerminalReadBytes {
+    var viewport: Data?
+    var screen: Data?
+    var history: Data?
+    var active: Data?
+
+    func formatted(includeScrollback: Bool, lineLimit: Int?) -> String? {
+        func decode(_ data: Data?) -> String? { data.map { String(decoding: $0, as: UTF8.self) } }
+        var output: String
+        if includeScrollback {
+            var candidates: [String] = []
+            if let screen = decode(screen) { candidates.append(screen) }
+            if history != nil || active != nil {
+                var merged = decode(history) ?? ""
+                if let active = decode(active) {
+                    if !merged.isEmpty, !merged.hasSuffix("\n"), !active.isEmpty { merged.append("\n") }
+                    merged.append(active)
+                }
+                candidates.append(merged)
+            }
+            func score(_ text: String) -> (Int, Int) {
+                (text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count, text.utf8.count)
+            }
+            guard let best = candidates.max(by: { score($0) < score($1) }) else { return nil }
+            output = best
+        } else {
+            guard let viewport = decode(viewport) else { return nil }
+            output = viewport
+        }
+        if let lineLimit {
+            guard lineLimit > 0 else { return "" }
+            let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
+            if lines.count > lineLimit { output = lines.suffix(lineLimit).joined(separator: "\n") }
+        }
+        return output
+    }
+}
+
 extension Notification.Name {
     static let socketListenerDidStart = Notification.Name("cmux.socketListenerDidStart")
     static let terminalSurfaceDidBecomeReady = Notification.Name("cmux.terminalSurfaceDidBecomeReady")
@@ -1652,11 +1734,58 @@ class TerminalController {
         }
     }
 
-    private nonisolated static func writeSocketResponse(_ response: String, to socket: Int32) {
-        let payload = response + "\n"
-        payload.withCString { ptr in
-            _ = write(socket, ptr, strlen(ptr))
+    nonisolated static func configureAcceptedClientSocket(_ socket: Int32) -> Bool {
+        var noSigPipe: Int32 = 1
+        return setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe,
+                          socklen_t(MemoryLayout<Int32>.size)) == 0
+    }
+
+    /// The caller owns the socket and must end the connection on failure: some
+    /// bytes may already have been sent, so another reply would corrupt framing.
+    nonisolated static func writeSocketResponse(_ response: String, to socket: Int32) -> Bool {
+        let deadline = DispatchTime.now() + .seconds(5)
+        let payload = Array((response + "\n").utf8)
+        // Darwin's sosendcheck tests SS_NBIO for buffer-space waits;
+        // MSG_DONTWAIT alone only prevents waiting for the send-buffer lock.
+        // This connection thread exclusively owns the descriptor, so temporarily
+        // changing its mode cannot race another reader/writer.
+        let originalFlags = fcntl(socket, F_GETFL)
+        guard originalFlags >= 0,
+              fcntl(socket, F_SETFL, originalFlags | O_NONBLOCK) == 0 else { return false }
+        let succeeded = payload.withUnsafeBytes { bytes in
+            var offset = 0
+            while offset < bytes.count {
+                guard DispatchTime.now() < deadline else { return false }
+                // Partial progress never resets the budget.
+                let written = send(socket, bytes.baseAddress!.advanced(by: offset),
+                                   bytes.count - offset, MSG_DONTWAIT)
+                if written > 0 {
+                    offset += written
+                    continue
+                }
+                guard written < 0 else { return false }
+                let sendError = errno
+                if sendError == EINTR { continue }
+                guard sendError == EAGAIN || sendError == EWOULDBLOCK else { return false }
+
+                let now = DispatchTime.now()
+                guard now < deadline else { return false }
+                let remaining = deadline.uptimeNanoseconds - now.uptimeNanoseconds
+                let milliseconds = Int32((remaining + 999_999) / 1_000_000)
+                var descriptor = pollfd(fd: socket, events: Int16(POLLOUT), revents: 0)
+                let ready = poll(&descriptor, 1, milliseconds)
+                if ready < 0 && errno == EINTR { continue }
+                guard ready > 0,
+                      descriptor.revents & Int16(POLLERR | POLLHUP | POLLNVAL) == 0 else {
+                    return false
+                }
+            }
+            return true
         }
+        // Restore blocking reads before serving another command. Failure to
+        // restore also ends the connection, even if the entire frame was sent.
+        let restored = fcntl(socket, F_SETFL, originalFlags) == 0
+        return succeeded && restored
     }
 
     private func passwordAuthRequiredResponse(for command: String) -> String {
@@ -1935,6 +2064,10 @@ class TerminalController {
             // This thread lives as long as the listener, so drain per connection
             // rather than at thread exit (C11-211).
             autoreleasepool {
+                guard Self.configureAcceptedClientSocket(clientSocket) else {
+                    close(clientSocket)
+                    return
+                }
                 // Capture peer PID immediately — before the client can disconnect.
                 // ncat --send-only closes the connection right after writing, so by
                 // the time a new thread starts the peer may already be gone.
@@ -2041,8 +2174,8 @@ class TerminalController {
             let pid = peerPid ?? getPeerPid(socket)
             if let pid {
                 guard isDescendant(pid) else {
-                    let msg = "ERROR: Access denied — only processes started inside c11 can connect\n"
-                    msg.withCString { ptr in _ = write(socket, ptr, strlen(ptr)) }
+                    _ = Self.writeSocketResponse(
+                        "ERROR: Access denied — only processes started inside c11 can connect", to: socket)
                     return
                 }
             }
@@ -2055,8 +2188,7 @@ class TerminalController {
             // with no data is harmless.
             if pid == nil {
                 guard peerHasSameUID(socket) else {
-                    let msg = "ERROR: Unable to verify client process\n"
-                    msg.withCString { ptr in _ = write(socket, ptr, strlen(ptr)) }
+                    _ = Self.writeSocketResponse("ERROR: Unable to verify client process", to: socket)
                     return
                 }
             }
@@ -2108,7 +2240,7 @@ class TerminalController {
                     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
 
-                    writeSocketResponse(respond(trimmed), to: socket)
+                    guard writeSocketResponse(respond(trimmed), to: socket) else { return false }
                 }
                 return true
             }
@@ -2170,6 +2302,7 @@ class TerminalController {
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",
+        "tab.read_selection",
         "tab.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
@@ -3652,6 +3785,68 @@ class TerminalController {
 
 
 
+
+    // Native text allocation/formatting and byte ownership are main-thread work.
+    // try_read_text bounds lock acquisition ONLY: after OK acquisition native
+    // formatting and this byte copy still scale with the requested text size.
+    @MainActor
+    func captureTerminalReadBytes(
+        surface: ghostty_surface_t,
+        includeScrollback: Bool,
+        isAbandoned: () -> Bool,
+        read: (ghostty_surface_t, ghostty_selection_s, UnsafeMutablePointer<ghostty_text_s>) -> ghostty_text_read_status_e = ghostty_surface_try_read_text,
+        free: (ghostty_surface_t, UnsafeMutablePointer<ghostty_text_s>) -> Void = ghostty_surface_free_text
+    ) -> Result<TerminalReadBytes, V2CallResult> {
+        var bytes = TerminalReadBytes()
+        let tags = includeScrollback
+            ? [GHOSTTY_POINT_SCREEN, GHOSTTY_POINT_SURFACE, GHOSTTY_POINT_ACTIVE]
+            : [GHOSTTY_POINT_VIEWPORT]
+        for tag in tags {
+            guard !isAbandoned() else { return .failure(Self.terminalReadTimeout()) }
+            let selection = ghostty_selection_s(
+                top_left: ghostty_point_s(tag: tag, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+                bottom_right: ghostty_point_s(tag: tag, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+                rectangle: false
+            )
+            var native = ghostty_text_s()
+#if DEBUG
+            let nativeStart = ProcessInfo.processInfo.systemUptime
+#endif
+            let status = read(surface, selection, &native)
+#if DEBUG
+            let nativeMs = (ProcessInfo.processInfo.systemUptime - nativeStart) * 1000
+            dlog("terminal.read.native tag=\(tag.rawValue) status=\(status.rawValue) ms=\(nativeMs)")
+#endif
+            if status == GHOSTTY_TEXT_READ_BUSY {
+                return .failure(.err(code: "busy", message: String(localized: "socket.terminalRead.busy", defaultValue: "Terminal text is busy; retry the read"), data: nil))
+            }
+            guard status == GHOSTTY_TEXT_READ_OK else { continue }
+            // Only OK owns an allocation. Free on main even if the caller timed
+            // out during native formatting. No native pointer leaves this scope.
+            let copied: Data
+            do {
+                defer { free(surface, &native) }
+#if DEBUG
+                let copyStart = ProcessInfo.processInfo.systemUptime
+#endif
+                copied = native.text.map { Data(bytes: $0, count: Int(native.text_len)) } ?? Data()
+#if DEBUG
+                dlog("terminal.read.copy bytes=\(copied.count) ms=\((ProcessInfo.processInfo.systemUptime - copyStart) * 1000)")
+#endif
+            }
+            switch tag {
+            case GHOSTTY_POINT_VIEWPORT: bytes.viewport = copied
+            case GHOSTTY_POINT_SCREEN: bytes.screen = copied
+            case GHOSTTY_POINT_SURFACE: bytes.history = copied
+            default: bytes.active = copied
+            }
+        }
+        return .success(bytes)
+    }
+
+    nonisolated static func terminalReadTimeout() -> V2CallResult {
+        .err(code: "timeout", message: String(localized: "socket.terminalRead.timeout", defaultValue: "Terminal read timed out"), data: nil)
+    }
 
     func readTerminalTextBase64(terminalPanel terminalTab: TerminalTab, includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
         guard let surface = terminalTab.surface.surface else { return "ERROR: Terminal surface not found" }

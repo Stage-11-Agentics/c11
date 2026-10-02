@@ -1,11 +1,109 @@
 import XCTest
 import AppKit
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
 #elseif canImport(c11)
 @testable import c11
 #endif
+
+final class WindowGeometryPersistenceTests: XCTestCase {
+    private final class CountingDefaults: UserDefaults, @unchecked Sendable {
+        var geometrySets = 0
+        var geometryRemovals = 0
+
+        override func set(_ value: Any?, forKey defaultName: String) {
+            // Foundation may implement removeObject through set(nil); count
+            // that only in geometryRemovals, not as another data write.
+            if value != nil, defaultName == WindowGeometryPersistenceStore.defaultsKey {
+                geometrySets += 1
+            }
+            super.set(value, forKey: defaultName)
+        }
+
+        override func removeObject(forKey defaultName: String) {
+            if defaultName == WindowGeometryPersistenceStore.defaultsKey {
+                geometryRemovals += 1
+            }
+            super.removeObject(forKey: defaultName)
+        }
+    }
+
+    private func withDefaults(_ body: (CountingDefaults) throws -> Void) throws {
+        let suite = "c11-geometry-test-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(CountingDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(defaults)
+    }
+
+    func testRepeatedGeometrySavesOnlyMutateWhenFrameOrDisplayChanges() throws {
+        try withDefaults { defaults in
+            let frame = SessionRectSnapshot(x: 20, y: 40, width: 1120, height: 840)
+            let display = SessionDisplaySnapshot(displayID: 7, frame: frame, visibleFrame: frame)
+            for _ in 0..<20 {
+                let data = try XCTUnwrap(WindowGeometryPersistenceStore.encodedData(frame: frame, display: display))
+                WindowGeometryPersistenceStore.persist(data, defaults: defaults)
+            }
+            XCTAssertEqual(defaults.geometrySets, 1)
+            XCTAssertEqual(WindowGeometryPersistenceStore.load(defaults: defaults)?.frame, frame)
+            XCTAssertEqual(WindowGeometryPersistenceStore.load(defaults: defaults)?.display?.displayID, 7)
+
+            let movedFrame = SessionRectSnapshot(x: 21, y: 40, width: 1120, height: 840)
+            let movedData = try XCTUnwrap(WindowGeometryPersistenceStore.encodedData(frame: movedFrame, display: display))
+            WindowGeometryPersistenceStore.persist(movedData, defaults: defaults)
+            WindowGeometryPersistenceStore.persist(movedData, defaults: defaults)
+            XCTAssertEqual(defaults.geometrySets, 2)
+            XCTAssertEqual(WindowGeometryPersistenceStore.load(defaults: defaults)?.frame, movedFrame)
+
+            var changedDisplay = display
+            changedDisplay.displayID = 8
+            let changedData = try XCTUnwrap(WindowGeometryPersistenceStore.encodedData(frame: movedFrame, display: changedDisplay))
+            WindowGeometryPersistenceStore.persist(changedData, defaults: defaults)
+            WindowGeometryPersistenceStore.persist(changedData, defaults: defaults)
+            XCTAssertEqual(defaults.geometrySets, 3)
+            XCTAssertEqual(WindowGeometryPersistenceStore.load(defaults: defaults)?.display?.displayID, 8)
+            XCTAssertEqual(defaults.geometryRemovals, 0)
+        }
+    }
+
+    func testLegacyGeometryNormalizesOnceAndUsesExistingKeyAndPayload() throws {
+        try withDefaults { defaults in
+            let key = "cmux.session.lastWindowGeometry.v1"
+            let legacy = Data(#"{"frame":{"y":40,"x":20,"width":1120,"height":840}}"#.utf8)
+            defaults.set(legacy, forKey: key)
+            let loaded = try XCTUnwrap(WindowGeometryPersistenceStore.load(defaults: defaults))
+            XCTAssertNil(loaded.display)
+            let stable = try XCTUnwrap(WindowGeometryPersistenceStore.encodedData(frame: loaded.frame, display: loaded.display))
+            XCTAssertEqual(String(decoding: stable, as: UTF8.self), #"{"frame":{"height":840,"width":1120,"x":20,"y":40}}"#)
+            WindowGeometryPersistenceStore.persist(stable, defaults: defaults)
+            WindowGeometryPersistenceStore.persist(stable, defaults: defaults)
+            XCTAssertEqual(defaults.geometrySets, 2, "One seed write and one normalization")
+            XCTAssertEqual(defaults.data(forKey: key), stable)
+
+            // A later external defaults change must not be hidden by a cache.
+            defaults.set(legacy, forKey: key)
+            WindowGeometryPersistenceStore.persist(stable, defaults: defaults)
+            XCTAssertEqual(defaults.geometrySets, 4)
+            XCTAssertEqual(defaults.data(forKey: key), stable)
+        }
+    }
+
+    func testGeometryRemovalOnlyMutatesAnExistingKey() throws {
+        try withDefaults { defaults in
+            WindowGeometryPersistenceStore.persist(nil, defaults: defaults)
+            XCTAssertEqual(defaults.geometryRemovals, 0)
+            let frame = SessionRectSnapshot(x: 20, y: 40, width: 1120, height: 840)
+            let data = try XCTUnwrap(WindowGeometryPersistenceStore.encodedData(frame: frame, display: nil))
+            WindowGeometryPersistenceStore.persist(data, defaults: defaults)
+            WindowGeometryPersistenceStore.persist(nil, defaults: defaults)
+            WindowGeometryPersistenceStore.persist(nil, defaults: defaults)
+            XCTAssertEqual(defaults.geometrySets, 1)
+            XCTAssertEqual(defaults.geometryRemovals, 1)
+            XCTAssertNil(defaults.object(forKey: WindowGeometryPersistenceStore.defaultsKey))
+        }
+    }
+}
 
 final class SessionPersistenceTests: XCTestCase {
     @MainActor
@@ -1722,6 +1820,191 @@ final class SocketClientCommandLoopTests: XCTestCase {
         XCTAssertEqual(readLine(), "echo:next")
 
         closeClientAndWaitForLoopExit()
+    }
+}
+
+/// B189: exercise the production writer with real kernel backpressure, not a
+/// mocked short-write sequence. No app or live CLI listener is involved.
+final class SocketResponseWriteTests: XCTestCase {
+    private var fds: [Int32] = [-1, -1]
+    private var activeWriter: WriterState?
+
+    private final class WriterState: @unchecked Sendable {
+        let lock = NSLock()
+        let completion = DispatchGroup()
+        var thread: pthread_t?
+        var succeeded = false
+        var elapsed: TimeInterval = 0
+
+        func read() -> (pthread_t?, Bool, TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (thread, succeeded, elapsed)
+        }
+    }
+
+    override func setUpWithError() throws {
+        fds = [-1, -1]
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        XCTAssertTrue(TerminalController.configureAcceptedClientSocket(fds[1]))
+        var size: Int32 = 1024
+        XCTAssertEqual(setsockopt(fds[1], SOL_SOCKET, SO_SNDBUF, &size,
+                                 socklen_t(MemoryLayout<Int32>.size)), 0)
+    }
+
+    override func tearDown() {
+        guard stopWriter() else {
+            // Never recycle a descriptor while an unjoined writer might still
+            // use it. This failure intentionally leaks this pair until exit.
+            fds = [-1, -1]
+            super.tearDown()
+            return
+        }
+        for fd in fds where fd >= 0 { close(fd) }
+        super.tearDown()
+    }
+
+    @discardableResult
+    private func stopWriter() -> Bool {
+        guard let state = activeWriter else { return true }
+        if state.completion.wait(timeout: .now()) != .success {
+            // Shut down the writer endpoint itself, not just the reader: a
+            // kernel send blocked for space must be woken before descriptors close.
+            for fd in fds where fd >= 0 { shutdown(fd, SHUT_RDWR) }
+            guard state.completion.wait(timeout: .now() + .seconds(2)) == .success else {
+                XCTFail("socket writer did not exit after cancellation; descriptors retained")
+                return false
+            }
+        }
+        activeWriter = nil
+        return true
+    }
+
+    private func startWriter(_ response: String) -> (WriterState, XCTestExpectation) {
+        let state = WriterState()
+        activeWriter = state
+        state.completion.enter()
+        let done = expectation(description: "socket writer finishes")
+        let server = fds[1]
+        Thread.detachNewThread {
+            defer { state.completion.leave() }
+            state.lock.lock()
+            state.thread = pthread_self()
+            state.lock.unlock()
+            let start = DispatchTime.now().uptimeNanoseconds
+            let succeeded = TerminalController.writeSocketResponse(response, to: server)
+            let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000_000
+            state.lock.lock()
+            state.succeeded = succeeded
+            state.elapsed = elapsed
+            state.lock.unlock()
+            // Like handleClient's close, mark EOF after the transport result.
+            shutdown(server, SHUT_WR)
+            done.fulfill()
+        }
+        return (state, done)
+    }
+
+    private func drain(chunkSize: Int, delay: useconds_t) -> Data {
+        var received = Data()
+        var buffer = [UInt8](repeating: 0, count: chunkSize)
+        let deadline = DispatchTime.now() + .seconds(8)
+        while DispatchTime.now() < deadline {
+            var descriptor = pollfd(fd: fds[0], events: Int16(POLLIN), revents: 0)
+            let ready = poll(&descriptor, 1, 100)
+            if ready < 0 && errno == EINTR { continue }
+            guard ready >= 0 else { break }
+            if ready == 0 { continue }
+            let count = recv(fds[0], &buffer, buffer.count, MSG_DONTWAIT)
+            if count == 0 { return received }
+            if count < 0 {
+                if errno == EINTR || errno == EAGAIN { continue }
+                break
+            }
+            received.append(contentsOf: buffer[..<count])
+            if delay > 0 { usleep(delay) }
+        }
+        XCTFail("client did not reach EOF within the test deadline")
+        stopWriter()
+        return received
+    }
+
+    func testShortWritesDeliverCompleteUnicodeFrameExactlyOnce() {
+        let response = String(repeating: "terminal-λ-🌲", count: 8192)
+        let (state, done) = startWriter(response)
+        let received = drain(chunkSize: 1024, delay: 1_000)
+        wait(for: [done], timeout: 2)
+        XCTAssertTrue(state.read().1)
+        XCTAssertEqual(received, Data((response + "\n").utf8))
+        XCTAssertEqual(fcntl(fds[1], F_GETFL) & O_NONBLOCK, 0, "writer did not restore blocking reads")
+    }
+
+    func testIncrementalProgressDoesNotRestartFiveSecondDeadline() {
+        let response = String(repeating: "x", count: 1_048_576)
+        let (state, done) = startWriter(response)
+        let received = drain(chunkSize: 512, delay: 50_000)
+        wait(for: [done], timeout: 2)
+        let (_, succeeded, elapsed) = state.read()
+        XCTAssertFalse(succeeded)
+        XCTAssertGreaterThan(elapsed, 4.8)
+        XCTAssertLessThan(elapsed, 6.5)
+        XCTAssertGreaterThan(received.count, 8192, "reader must permit repeated partial progress")
+        XCTAssertLessThan(received.count, response.utf8.count)
+        XCTAssertFalse(received.contains(UInt8(ascii: "\n")))
+        XCTAssertEqual(fcntl(fds[1], F_GETFL) & O_NONBLOCK, 0, "failed writer did not restore blocking reads")
+    }
+
+    func testPeerCloseReturnsFailureWithoutSIGPIPE() {
+        close(fds[0])
+        fds[0] = -1
+        let start = DispatchTime.now().uptimeNanoseconds
+        XCTAssertFalse(TerminalController.writeSocketResponse("reply", to: fds[1]))
+        XCTAssertLessThan(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000_000, 1)
+    }
+
+    func testFailedReplyStopsBeforeNextQueuedCommand() {
+        let commands = Array("first\nsecond\n".utf8)
+        XCTAssertEqual(write(fds[0], commands, commands.count), commands.count)
+        close(fds[0])
+        fds[0] = -1
+        var handled: [String] = []
+        TerminalController.serveCommandLines(socket: fds[1], shouldContinue: { true }) { command in
+            handled.append(command)
+            return "reply"
+        }
+        XCTAssertEqual(handled, ["first"])
+    }
+
+    func testInterruptedBackpressureWaitStillCompletesFrame() {
+        // Target only the writer pthread, restoring the process handler after it
+        // exits. The small buffer fills while this test initially leaves it unread.
+        var handler = sigaction()
+        handler.__sigaction_u.__sa_handler = { _ in }
+        sigemptyset(&handler.sa_mask)
+        handler.sa_flags = 0
+        var previous = sigaction()
+        guard sigaction(SIGUSR2, &handler, &previous) == 0 else {
+            XCTFail("could not install writer interruption handler")
+            return
+        }
+        defer { _ = sigaction(SIGUSR2, &previous, nil) }
+
+        let response = String(repeating: "interrupted-λ", count: 8192)
+        let (state, done) = startWriter(response)
+        let deadline = DispatchTime.now() + .seconds(2)
+        while state.read().0 == nil && DispatchTime.now() < deadline { usleep(1_000) }
+        usleep(50_000)
+        if let thread = state.read().0 {
+            XCTAssertEqual(pthread_kill(thread, SIGUSR2), 0)
+        } else {
+            XCTFail("writer thread did not start")
+        }
+        let received = drain(chunkSize: 1024, delay: 1_000)
+        wait(for: [done], timeout: 2)
+        XCTAssertTrue(state.read().1)
+        XCTAssertEqual(received, Data((response + "\n").utf8))
     }
 }
 

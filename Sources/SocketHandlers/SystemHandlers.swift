@@ -308,6 +308,10 @@ extension TerminalController {
         ])
 #endif
 
+        if CapabilityFeatures.current.supports(.terminalSelection) {
+            methods.append("tab.read_selection")
+        }
+
         return [
             "protocol": "cmux-socket",
             "version": 2,

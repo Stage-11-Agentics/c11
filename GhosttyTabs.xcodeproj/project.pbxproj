@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11282000000000000000002 /* SelectionRead.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11282000000000000000001 /* SelectionRead.swift */; };
+		C11282000000000000000004 /* SelectionReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11282000000000000000003 /* SelectionReadTests.swift */; };
 		C11304000000000000000001 /* TerminalTitleChurnFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000002 /* TerminalTitleChurnFilter.swift */; };
 		C11304000000000000000003 /* TerminalTitleChurnFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */; };
 		C11299000000000000000001 /* SessionRestoreNormalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */; };
@@ -627,6 +629,8 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11282000000000000000001 /* SelectionRead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionRead.swift; sourceTree = "<group>"; };
+		C11282000000000000000003 /* SelectionReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionReadTests.swift; sourceTree = "<group>"; };
 		C11304000000000000000002 /* TerminalTitleChurnFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilter.swift; sourceTree = "<group>"; };
 		C11304000000000000000004 /* TerminalTitleChurnFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTitleChurnFilterTests.swift; sourceTree = "<group>"; };
 		C11299000000000000000002 /* SessionRestoreNormalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestoreNormalizationTests.swift; sourceTree = "<group>"; };
@@ -1318,6 +1322,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
 				C11284000000000000000011 /* BundledSkill.swift */,
 				C11284000000000000000001 /* CapabilityFeatures.swift */,
+				C11282000000000000000001 /* SelectionRead.swift */,
 				C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */,
 				C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */,
 				C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */,
@@ -1682,6 +1687,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				DH014BF1A1B2C3D4E5F60718 /* HealthFlagsTests.swift */,
 				DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */,
 				C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */,
+				C11282000000000000000003 /* SelectionReadTests.swift */,
 				DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */,
 				C1128103A1B2C3D4E5F60718 /* SendTextParseTests.swift */,
 				C11285A00000000000000005 /* RpcCommandTests.swift */,
@@ -2041,6 +2047,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C1128000A1B2C3D4E5F60003 /* CreateInitialInputTests.swift in Sources */,
+				C11282000000000000000004 /* SelectionReadTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				C1128104A1B2C3D4E5F60718 /* SendTextParseTests.swift in Sources */,
 				C11285A00000000000000004 /* RpcCommandTests.swift in Sources */,
@@ -2191,6 +2198,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11260000000000000000002 /* WorkspaceGroupSidebarProjection.swift in Sources */,
 				C11284000000000000000012 /* BundledSkill.swift in Sources */,
 				C11284000000000000000002 /* CapabilityFeatures.swift in Sources */,
+				C11282000000000000000002 /* SelectionRead.swift in Sources */,
 				A5001001 /* c11App.swift in Sources */,
 				A5001002 /* ContentView.swift in Sources */,
 				E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,

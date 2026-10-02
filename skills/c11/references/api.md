@@ -50,6 +50,14 @@ Most commands default to the caller's context via env vars — no flags needed w
 
 Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/tab environment. Tabs and workspaces outside that window are errors. Use `c11 focus-window --window <id>` for explicit focus. The command-local `c11 tree --window` flag still means “show the current window.”
 
+## Terminal selection
+
+`c11 read-selection [--workspace <id|ref>] [--tab <id|ref>]` reads the terminal selection without clearing or changing it. Omitted targets use the caller context like `read-screen`; empty or stale explicit targets fail. `--json` returns `has_selection`, `kind: terminal`, `text`, `base64`, `truncated` and routing handles. Without a selection it succeeds with empty text/base64 and `has_selection: false`; human output says `No selection.` Browser and markdown tabs return an error.
+
+Socket method: `tab.read_selection`. Discover `read_selection.terminal` version 1 before depending on it. The response is capped at 1 MiB, clipped to a complete UTF-8 scalar; base64 represents the same bytes as text. `busy` means the renderer lock was unavailable; retry later. A single five-second deadline bounds the worker's wait, including queued capture and worker encoding. Abandoned queued work skips capture; an already-running capture cleans up without publishing a late result.
+
+Native try-lock capture, formatting/allocation and the capped byte copy/free remain on main for surface lifetime safety. Only UTF-8 clipping, text/base64 encoding and response assembly run off main. The response cap and caller deadline do **not** bound native allocation or formatting time after the lock is acquired.
+
 Socket routing keys must use exact canonical or supported alias spellings: case/underscore variants return `invalid_params`, while character typos such as `surfce_id` are outside this bounded check and may still fall back to the current target.
 
 ## Environment variables
@@ -446,7 +454,7 @@ c11 send --workspace workspace:2 --tab tab:3 "ls"
 c11 send --tab tab:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
 ```
 
-`read-screen` requests startup for a cold terminal without focusing it and allows the same two-second startup wait as `send`. A successful read can be empty before the shell prints its prompt; retry the read if you need that output. An unavailable terminal returns an error after the startup wait.
+`read-screen` requests startup for a cold terminal without focusing it and allows the same two-second startup wait as `send`. A successful read can be empty before the shell prints its prompt; retry the read if you need that output. An unavailable terminal returns an error after the startup wait. The read has one five-second caller deadline, including main-queue scheduling and startup. A contended terminal text lock returns a typed `busy` error immediately; retry the read later. A `timeout` ends the caller wait, but cannot interrupt native text formatting or copying already running on main. Swift text decoding, scrollback merging, line selection and base64 encoding run off main.
 
 **Text after `❯` on an idle Claude Code screen is usually not the operator's.** When an agent ends its turn on a question, Claude Code ghosts a suggested reply into the input line ("one yes, two no", "yes, proceed"). `read-screen` returns that ghost text exactly like typed text. Treat an unsent line on an idle prompt as auto-suggest, never as an answer the operator drafted: do not press Enter on it, do not relay it, and do not report it as "typed but unsent". Only a submitted turn (the text echoed above the prompt, followed by the agent's response) is operator input.
 
@@ -466,7 +474,7 @@ c11 send --tab tab:2 --no-submit -- --literal-flag-text
 
 **Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
 
-**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
+**Targeting is strict.** An empty or unresolvable ref (`--tab ""`, a stale `tab:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-tab`, `close-workspace`, `close-window`, `workspace-action`, `tab-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a tab ref is a global handle: `--tab` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a tab within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--tab`) still targets that workspace's focused area — you named a target, just a coarser one.
 

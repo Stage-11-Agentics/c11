@@ -202,6 +202,10 @@ struct cmuxApp: App {
             Self.terminateForMissingLaunchTag()
         }
 
+        // A duplicate must leave before creating the launch workspace or
+        // touching the shared session, shutdown sentinel or control socket.
+        AppDelegate.yieldToRunningInstanceIfNeeded()
+
         Self.configureGhosttyEnvironment()
 
         // Apply saved language preference before any UI loads

@@ -139,6 +139,11 @@ final class AreaInteractionOverlayHost: NSView {
                 requestKeyboardFocus(reason: "apply")
             }
         } else {
+            // Every host receives the shared active dictionary, including its
+            // initial empty value and changes for other panels. A hidden host
+            // never took focus, so it has nothing to restore. Clearing here
+            // drops terminal keystrokes whenever another host mounts.
+            guard !isHidden else { return }
             isHidden = true
             hostingView?.removeFromSuperview()
             hostingView = nil

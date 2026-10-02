@@ -48,11 +48,10 @@ enum SkillInstallerTarget: String, CaseIterable {
         configRoot(home: home).appendingPathComponent("skills", isDirectory: true)
     }
 
-    /// Destination plugins dir for TUIs that support auto-loaded plugins.
-    /// OpenCode uses `~/.config/opencode/plugins/` (XDG convention), not
-    /// `~/.opencode/plugins/`. Only OpenCode supports plugins today.
+    /// c11 never installs plugins into a tool's persistent configuration.
+    /// OpenCode's bundled plugin is injected per process by its PATH wrapper.
     var supportsPlugins: Bool {
-        self == .opencode
+        false
     }
 
     func pluginsDir(home: URL) -> URL {
@@ -769,10 +768,9 @@ enum SkillInstaller {
         return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Install bundled plugins for a target. Currently only OpenCode has
-    /// bundled plugins (under `skills/opencode-plugins/`). Each plugin file
-    /// is copied to the target's plugins dir with a sidecar manifest
-    /// (`.c11-plugin.json`) for update detection and safe removal.
+    /// Compatibility entrypoint: persistent plugin installation is disabled.
+    /// Do not inspect or modify tenant files, even for a direct or forced call.
+    /// The OpenCode wrapper continues loading the bundled per-process plugin.
     static func installPlugins(
         target: SkillInstallerTarget,
         home: URL,
@@ -782,155 +780,21 @@ enum SkillInstaller {
         now: () -> Date = Date.init,
         fileManager: FileManager = .default
     ) throws -> SkillInstallerPluginResult {
-        guard target.supportsPlugins else {
-            return SkillInstallerPluginResult(
-                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
-            )
-        }
-
-        let plugins = try discoverPlugins(sourceDir: sourceDir, fileManager: fileManager)
-        if plugins.isEmpty {
-            return SkillInstallerPluginResult(
-                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
-            )
-        }
-
-        let destDir = target.pluginsDir(home: home)
-        try fileManager.createDirectory(at: destDir, withIntermediateDirectories: true)
-
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        let timestamp = isoFormatter.string(from: now())
-
-        var installed: [String] = []
-        var skipped: [String] = []
-
-        for pluginSource in plugins {
-            let name = pluginSource.lastPathComponent
-            let destFile = destDir.appendingPathComponent(name, isDirectory: false)
-            let manifestFile = destDir.appendingPathComponent(
-                name.replacingOccurrences(of: ".js", with: ".c11-plugin.json"),
-                isDirectory: false
-            )
-
-            let sourceHash = try fileContentHash(of: pluginSource, fileManager: fileManager)
-
-            // Check if already up-to-date
-            if !force,
-               fileManager.fileExists(atPath: destFile.path),
-               fileManager.fileExists(atPath: manifestFile.path) {
-                if let manifestData = try? Data(contentsOf: manifestFile),
-                   let record = try? JSONDecoder().decode(SkillInstallerRecord.self, from: manifestData),
-                   record.schema == SkillInstallerRecord.schemaVersion,
-                   record.sourceContentHash == sourceHash,
-                   let destHash = try? fileContentHash(of: destFile, fileManager: fileManager),
-                   destHash == sourceHash {
-                    skipped.append(name)
-                    continue
-                }
-            }
-
-            // Safety: don't clobber a user-owned plugin without --force
-            if fileManager.fileExists(atPath: destFile.path),
-               !fileManager.fileExists(atPath: manifestFile.path),
-               !force {
-                throw SkillInstallerError(
-                    code: .destNotManaged,
-                    message: "\(destFile.path) already exists but is not c11-managed. Re-run with --force to replace it.",
-                    path: destFile.path
-                )
-            }
-
-            if fileManager.fileExists(atPath: destFile.path) {
-                try fileManager.removeItem(at: destFile)
-            }
-
-            try fileManager.copyItem(at: pluginSource, to: destFile)
-
-            let record = SkillInstallerRecord(
-                schema: SkillInstallerRecord.schemaVersion,
-                packageName: name,
-                skillVersion: nil,
-                installedAt: timestamp,
-                appVersion: appIdentity.version,
-                appBuild: appIdentity.build,
-                commitShort: appIdentity.commitShort,
-                sourceContentHash: sourceHash
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let manifestData = try encoder.encode(record)
-            try manifestData.write(to: manifestFile, options: .atomic)
-
-            installed.append(name)
-        }
-
-        return SkillInstallerPluginResult(
-            target: target,
-            installed: installed,
-            removed: [],
-            skipped: skipped,
-            destDir: destDir
+        SkillInstallerPluginResult(
+            target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
         )
     }
 
-    /// Remove c11-installed plugins from a target. Only removes files with a
-    /// valid `.c11-plugin.json` sidecar manifest.
+    /// Compatibility entrypoint: old plugin copies belong to the operator.
+    /// A historical c11 sidecar cannot authorize deletion of tenant files.
     static func removePlugins(
         target: SkillInstallerTarget,
         home: URL,
         sourceDir: URL,
         fileManager: FileManager = .default
     ) throws -> SkillInstallerPluginResult {
-        guard target.supportsPlugins else {
-            return SkillInstallerPluginResult(
-                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
-            )
-        }
-
-        let plugins = try discoverPlugins(sourceDir: sourceDir, fileManager: fileManager)
-        let destDir = target.pluginsDir(home: home)
-        var removed: [String] = []
-        var skipped: [String] = []
-
-        for pluginSource in plugins {
-            let name = pluginSource.lastPathComponent
-            let destFile = destDir.appendingPathComponent(name, isDirectory: false)
-            let manifestFile = destDir.appendingPathComponent(
-                name.replacingOccurrences(of: ".js", with: ".c11-plugin.json"),
-                isDirectory: false
-            )
-
-            guard fileManager.fileExists(atPath: destFile.path) else {
-                skipped.append(name)
-                continue
-            }
-            guard fileManager.fileExists(atPath: manifestFile.path) else {
-                // User-owned; don't touch.
-                skipped.append(name)
-                continue
-            }
-
-            // Verify manifest before deleting
-            guard let manifestData = try? Data(contentsOf: manifestFile),
-                  let record = try? JSONDecoder().decode(SkillInstallerRecord.self, from: manifestData),
-                  record.schema == SkillInstallerRecord.schemaVersion,
-                  record.packageName == name else {
-                skipped.append(name)
-                continue
-            }
-
-            try fileManager.removeItem(at: destFile)
-            try? fileManager.removeItem(at: manifestFile)
-            removed.append(name)
-        }
-
-        return SkillInstallerPluginResult(
-            target: target,
-            installed: [],
-            removed: removed,
-            skipped: skipped,
-            destDir: destDir
+        SkillInstallerPluginResult(
+            target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
         )
     }
 }

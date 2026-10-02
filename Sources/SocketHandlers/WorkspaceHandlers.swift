@@ -11,6 +11,9 @@ extension TerminalController {
     /// v2 dispatch slice for the `workspace.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchWorkspace(_ method: String, id: Any?, params: [String: Any]) -> String {
+        if method.hasPrefix("workspace.group.") || method == "workspace.reorder_batch" {
+            return v2Result(id: id, v2WorkspaceGroupCommand(method, params: params))
+        }
         switch method {
         case "workspace.list":
             return v2Result(id: id, self.v2WorkspaceList(params: params))
@@ -89,6 +92,7 @@ extension TerminalController {
                     "title": ws.title,
                     "selected": ws.id == workspaceManager.selectedWorkspaceId,
                     "pinned": ws.isPinned,
+                    "group_id": v2OrNull(ws.groupId?.uuidString),
                     "listening_ports": ws.listeningPorts,
                     "remote": ws.remoteStatusPayload(),
                     "current_directory": v2OrNull(ws.currentDirectory),
@@ -109,6 +113,13 @@ extension TerminalController {
     private func v2WorkspaceCreate(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        var initialInput: String?
+        if let error = v2ResolveCreateInitialInput(
+            params: params, panelType: "terminal", hasLayout: params.keys.contains("layout"), resolved: &initialInput
+        ) {
+            return error
         }
 
         let requestedWorkingDirectory = v2RawString(params, "working_directory")?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -230,6 +241,7 @@ extension TerminalController {
                 rootDirectory: rootDirectory,
                 establishRootFromWorkingDirectory: false,
                 initialTerminalCommand: initialCommand,
+                initialTerminalInput: initialInput,
                 initialTerminalEnvironment: initialEnv,
                 select: shouldFocus,
                 eagerLoadTerminal: !shouldFocus
@@ -248,14 +260,16 @@ extension TerminalController {
         }
 
         let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-        return .ok([
+        var ok: [String: Any] = [
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": newId.uuidString,
             "workspace_ref": v2Ref(kind: .workspace, uuid: newId),
             "title": v2OrNull(customTitle),
             "root_directory": v2OrNull(rootDirectory)
-        ])
+        ]
+        if initialInput != nil { ok["initial_input"] = "queued" }
+        return .ok(ok)
     }
 
     private func v2WorkspaceSelect(params: [String: Any]) -> V2CallResult {

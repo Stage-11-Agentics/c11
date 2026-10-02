@@ -6,6 +6,46 @@ enum SessionSnapshotSchema {
     static let currentVersion = 1
 }
 
+enum WindowGeometryPersistenceStore {
+    struct Geometry: Codable, Sendable {
+        let frame: SessionRectSnapshot
+        let display: SessionDisplaySnapshot?
+    }
+
+    static let defaultsKey = "cmux.session.lastWindowGeometry.v1"
+
+    static func load(defaults: UserDefaults = .standard) -> Geometry? {
+        guard let data = defaults.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(Geometry.self, from: data)
+    }
+
+    static func encodedData(frame: SessionRectSnapshot?, display: SessionDisplaySnapshot?) -> Data? {
+        guard let frame else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(Geometry(frame: frame, display: display))
+    }
+
+    /// Compare with persisted bytes rather than a process-local cache so both
+    /// window-close saves and background autosaves skip unchanged mutations.
+    /// Older JSON key ordering can normalize once, without changing the schema.
+    static func persist(_ data: Data?, defaults: UserDefaults = .standard) {
+        if let data {
+            guard defaults.data(forKey: defaultsKey) != data else { return }
+            defaults.set(data, forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.write bytes=\(data.count)")
+#endif
+        } else {
+            guard defaults.object(forKey: defaultsKey) != nil else { return }
+            defaults.removeObject(forKey: defaultsKey)
+#if DEBUG
+            dlog("session.geometry.remove")
+#endif
+        }
+    }
+}
+
 enum SessionPersistencePolicy {
     static let defaultSidebarWidth: Double = 200
     static let minimumSidebarWidth: Double = 180
@@ -494,6 +534,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var stableDefaultTitle: String? = nil
     var customColor: String?
     var isPinned: Bool
+    var groupId: UUID? = nil
     var currentDirectory: String
     /// Stable workspace project root. Optional so pre-C11-194 snapshots decode.
     var rootDirectory: String? = nil
@@ -599,6 +640,7 @@ enum SessionRestoreNormalization {
 struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
+    var workspaceGroups: [WorkspaceGroup]? = nil
 }
 
 struct SessionWindowSnapshot: Codable, Sendable {
@@ -628,8 +670,11 @@ enum SessionPersistenceStore {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         let decoder = JSONDecoder()
-        guard let snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
+        guard var snapshot = try? decoder.decode(AppSessionSnapshot.self, from: data) else { return nil }
         guard snapshot.version == SessionSnapshotSchema.currentVersion else { return nil }
+        // A window without workspaces is not a restorable window. In particular,
+        // do not turn stale empty-window records into extra fallback workspaces.
+        snapshot.windows.removeAll { $0.workspaceManager.workspaces.isEmpty }
         guard !snapshot.windows.isEmpty else { return nil }
         return snapshot
     }

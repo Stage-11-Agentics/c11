@@ -21,7 +21,7 @@ export default function c11Lifecycle(pi: {
     try {
       await pi.exec(
         c11,
-        ["--socket", socket, "agent-hook", activity],
+        ["--socket", socket, "agent-hook", activity, "--native-event", activity === "working" ? "agent_start" : "agent_settled"],
         { timeout: 750 },
       );
     } catch {

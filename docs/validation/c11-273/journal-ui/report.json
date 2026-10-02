@@ -1,0 +1,43 @@
+{
+  "result": "PASS",
+  "checks": [
+    "Tagged PID matches exact bundle executable",
+    "Explicit socket listener belongs to tagged PID",
+    "Socket reports the exact tagged bundle identity",
+    "Guest starts with zero routine history",
+    "Guest starts with zero flags",
+    "Exactly one guest display enumerated",
+    "Exactly one visible tagged main window enumerated",
+    "Tagged window is on the verified single guest display",
+    "Exact tagged PID is frontmost",
+    "Journal ask needs no routine unread notification",
+    "01-blocked-with-no-unread window crop captured",
+    "Real menu enables Jump for journal-only attention",
+    "02-journal-jump-menu window crop captured",
+    "Synthesized input dismissed the tagged menu",
+    "Seeing target does not resolve its ask",
+    "03-seen-still-blocked window crop captured",
+    "Suppressed ask is excluded from Option-V",
+    "Operator flag retains precedence over journal suppression",
+    "04-flag-precedence window crop captured",
+    "Actual Jump menu click selects the journal target",
+    "Synthesized input dismissed the tagged menu",
+    "Both named tabs remain present in workspace topology",
+    "05-dismissed-and-readable window crop captured",
+    "Restored tagged window is uniquely identified on the guest display",
+    "Restored waiting mark exposes Unconfirmed in actual UI accessibility help",
+    "06-restored-unconfirmed window crop captured",
+    "Synthesized input dismissed the tagged menu",
+    "Synthesized input dismissed the tagged menu"
+  ],
+  "screenshots": [
+    "01-blocked-with-no-unread.png",
+    "02-journal-jump-menu.png",
+    "03-seen-still-blocked.png",
+    "04-flag-precedence.png",
+    "05-dismissed-and-readable.png",
+    "06-restored-unconfirmed.png"
+  ],
+  "elapsed_seconds": 10.219,
+  "cleanup_ok": true
+}

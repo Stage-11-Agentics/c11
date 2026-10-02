@@ -249,6 +249,7 @@ extension Workspace {
             stableDefaultTitle: stableDefaultTitle,
             customColor: customColor,
             isPinned: isPinned,
+            groupId: groupId,
             currentDirectory: currentDirectory,
             rootDirectory: rootDirectory,
             rootAdoptionArmed: rootAdoptionArmed,
@@ -318,6 +319,7 @@ extension Workspace {
         setCustomTitle(snapshot.customTitle)
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
+        groupId = snapshot.groupId
         metadata = snapshot.metadata ?? [:]
 
         // Tier 1 Phase 3: restore `statusEntries` from the snapshot, stamping
@@ -339,7 +341,7 @@ extension Workspace {
                 staleFromRestart: true
             )
         }
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries = snapshot.logEntries.map { entry in
             SidebarLogEntry(
                 message: entry.message,
@@ -4754,6 +4756,7 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var title: String
     @Published var customTitle: String?
     @Published var isPinned: Bool = false
+    @Published var groupId: UUID? = nil
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
     /// Stable project-level cwd. Every new terminal surface in the workspace
@@ -4806,7 +4809,26 @@ final class Workspace: Identifiable, ObservableObject {
     let bonsplitController: BonsplitController
 
     /// Mapping from bonsplit TabID to our Panel instances
-    @Published private(set) var panels: [UUID: any TabContent] = [:]
+    @Published private(set) var panels: [UUID: any TabContent] = [:] {
+        didSet {
+            for tabID in panels.keys where oldValue[tabID] == nil {
+                JournalCoordinator.shared.register(tabID: tabID, workspaceID: id)
+            }
+            for tabID in oldValue.keys where panels[tabID] == nil {
+                // A tab move may already have installed its new workspace target.
+                if JournalCoordinator.shared.target(tabID: tabID) == id { JournalCoordinator.shared.remove(tabID: tabID) }
+                journalByTab.removeValue(forKey: tabID)
+            }
+        }
+    }
+    private(set) var journalByTab: [UUID: JournalSnapshot] = [:]
+
+    func setJournalSnapshot(_ value: JournalSnapshot?, forTab tabID: UUID) {
+        guard panels[tabID] != nil else { return }
+        journalByTab[tabID] = value
+        syncSurfaceTabActivityStateForTab(tabID)
+        objectWillChange.send()
+    }
 
     /// C11-163 events stream: single create/close chokepoint. Subscribing to
     /// `$panels` and diffing keys catches every surface lifecycle transition
@@ -5038,6 +5060,31 @@ final class Workspace: Identifiable, ObservableObject {
     /// PIDs associated with agent status entries (e.g. claude_code), keyed by status key.
     /// Used for stale-session detection: if the PID is dead, the status entry is cleared.
     var agentPIDs: [String: pid_t] = [:]
+    /// Runtime-only attribution for the currently registered PID. Unknown
+    /// attribution must never clear a sibling tab's attention.
+    private var agentPIDTabs: [String: (pid: pid_t, tabId: UUID)] = [:]
+
+    func registerAgentPID(_ pid: pid_t, key: String, tabId: UUID?) {
+        agentPIDs[key] = pid
+        if let tabId, panels[tabId] != nil {
+            agentPIDTabs[key] = (pid, tabId)
+        } else {
+            agentPIDTabs.removeValue(forKey: key)
+        }
+    }
+
+    @discardableResult
+    func removeAgentPID(key: String) -> UUID? {
+        let pid = agentPIDs.removeValue(forKey: key)
+        let association = agentPIDTabs.removeValue(forKey: key)
+        guard let association, association.pid == pid else { return nil }
+        return association.tabId
+    }
+
+    func clearAgentPIDs() {
+        agentPIDs.removeAll()
+        agentPIDTabs.removeAll()
+    }
     private var restoredTerminalScrollbackByTabId: [UUID: String] = [:]
 
     private static func isProxyOnlyRemoteError(_ detail: String) -> Bool {
@@ -5438,6 +5485,7 @@ final class Workspace: Identifiable, ObservableObject {
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
+        initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:]
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
@@ -5565,9 +5613,13 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,
             portOrdinal: portOrdinal,
             initialCommand: initialTerminalCommand,
+            initialInput: initialTerminalInput,
             initialEnvironmentOverrides: initialTerminalEnvironment
         )
         panels[terminalTab.id] = terminalTab
+        // Initialization bypasses panels.didSet. Register the first tab through
+        // the same identity-only seam used by later inserts and restored tabs.
+        JournalCoordinator.shared.register(tabID: terminalTab.id, workspaceID: self.id)
         tabTitles[terminalTab.id] = terminalTab.displayTitle
         seedTerminalInheritanceFontPoints(panelId: terminalTab.id, configTemplate: configTemplate)
 
@@ -5604,6 +5656,11 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
+        // The initial root area predates delegate installation. Later areas
+        // are registered by didSplitPane, including session/blueprint restore.
+        for paneId in bonsplitController.allPaneIds {
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
+        }
 
         // Ensure bonsplit has a focused pane and our didSelectTab handler runs for the
         // initial terminal. bonsplit's createTab selects internally but does not emit
@@ -5693,6 +5750,9 @@ final class Workspace: Identifiable, ObservableObject {
         guard newIds != lastKnownTabIds else { return }
         for createdId in newIds.subtracting(lastKnownTabIds) {
             guard let panel = newTabs[createdId] else { continue }
+            // This callback runs in @Published.willSet. Register the supplied
+            // new tab directly; self.panels still contains the old collection.
+            _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
             EventEmitter.shared.emitSurfaceCreated(
                 workspace: id,
                 surface: createdId,
@@ -6623,6 +6683,7 @@ final class Workspace: Identifiable, ObservableObject {
         let attention = attentionSnapshot(panelId: panelId)
         return TabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
+            hasJournalAttention: journalByTab[panelId]?.paintsAttention == true,
             derivedActivity: derivedActivityByTab[panelId],
             isCold: coldAgentSurfaceIds.contains(panelId),
             terminalType: terminalKind ?? surfaceActivityTerminalKind(panelId: panelId),
@@ -6686,7 +6747,8 @@ final class Workspace: Identifiable, ObservableObject {
             coldAfterSeconds: SidebarAgentColdSettings.thresholdSeconds(),
             flagReason: attention.flagReason,
             flagRaisedAt: attention.flagRaisedAt,
-            suppressed: attention.suppressed
+            suppressed: attention.suppressed,
+            journal: journalByTab[panelId]
         )
     }
 
@@ -7326,7 +7388,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func resetSidebarContext(reason: String = "unspecified") {
         statusEntries.removeAll()
-        agentPIDs.removeAll()
+        clearAgentPIDs()
         logEntries.removeAll()
         progress = nil
         gitBranch = nil
@@ -7723,6 +7785,13 @@ final class Workspace: Identifiable, ObservableObject {
             values.removeValue(forKey: FlashState.metadataKey)
             sources.removeValue(forKey: FlashState.metadataKey)
             Self.migrateLaunchStampTiers(values: &values, sources: &sources)
+            // Persisted derived liveness is not evidence from this app instance.
+            // Exact journal replay will repaint an unresolved ask asynchronously.
+            if sources[MetadataKey.activity]?.source == .derived,
+               tabSnapshot.surfaceConversations?.active?.isEligibleCausalOwner == true {
+                values.removeValue(forKey: MetadataKey.activity)
+                sources.removeValue(forKey: MetadataKey.activity)
+            }
             TabMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 surfaceId: tabId,
@@ -8557,7 +8626,8 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         focus: Bool = true,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        initialInput: String? = nil
     ) -> TerminalTab? {
         guard let paneId = paneIdForTab(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
@@ -8580,7 +8650,8 @@ final class Workspace: Identifiable, ObservableObject {
             configTemplate: inheritedConfig,
             workingDirectory: splitWorkingDirectory,
             portOrdinal: portOrdinal,
-            initialCommand: remoteTerminalStartupCommand
+            initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput
         )
         panels[newTab.id] = newTab
         tabTitles[newTab.id] = newTab.displayTitle
@@ -8653,6 +8724,7 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         focus: Bool? = nil,
         workingDirectory: String? = nil,
+        initialInput: String? = nil,
         startupEnvironment: [String: String] = [:],
         panelId: UUID? = nil,
         createdAt: Date? = Date()
@@ -8682,6 +8754,7 @@ final class Workspace: Identifiable, ObservableObject {
             workingDirectory: resolvedWorkingDirectory,
             portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
+            initialInput: initialInput,
             additionalEnvironment: startupEnvironment
         )
         panels[newTab.id] = newTab
@@ -10339,7 +10412,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func reconcileFocusState() {
-        guard !isReconcilingFocusState else { return }
+        guard isSelectedInOwningWindowForReconciliation, !isReconcilingFocusState else { return }
         isReconcilingFocusState = true
         defer { isReconcilingFocusState = false }
 
@@ -10608,6 +10681,13 @@ final class Workspace: Identifiable, ObservableObject {
         let postFlushMs = (CACurrentMediaTime() - attemptStart) * 1000
 #endif
 
+        // A queued layout pass can outlive workspace selection. Keep background
+        // geometry/startup work, but discard its obsolete first-responder intent.
+        if !isSelectedInOwningWindowForReconciliation {
+            layoutFollowUpTerminalFocusTabId = nil
+            layoutFollowUpBrowserExitFocusTabId = nil
+        }
+
         let geometryPendingBefore = layoutFollowUpNeedsGeometryPass
         let terminalPortalPendingBefore = terminalPortalVisibilityNeedsFollowUp()
         let browserVisibilityPendingBefore = browserPortalVisibilityNeedsFollowUp()
@@ -10788,7 +10868,29 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
+    private var isSelectedInOwningWindowForReconciliation: Bool {
+        // The active app manager may belong to a different window. Resolve this
+        // workspace's owner, including registered-window fallback during moves.
+        guard let manager = owningWorkspaceManager ?? AppDelegate.shared?.workspaceManagerFor(workspaceId: id) else {
+            return false
+        }
+        return manager.selectedWorkspaceId == id
+    }
+
+#if DEBUG
+    func debugRunLayoutFollowUpForTesting(terminalFocusPanelId: UUID? = nil) {
+        beginEventDrivenLayoutFollowUp(
+            reason: "test.workspace.layout",
+            terminalFocusPanelId: terminalFocusPanelId
+        )
+        reconcileFocusState()
+    }
+#endif
+
     private func renderedVisiblePanelIdsForCurrentLayout() -> Set<UUID> {
+        // Bonsplit retains a selected tab in every hidden workspace. Those tabs
+        // are not visible UI and must not be reactivated by delayed layout work.
+        guard isSelectedInOwningWindowForReconciliation else { return [] }
         let renderedPaneIds = bonsplitController.zoomedPaneId.map { [$0] } ?? bonsplitController.allPaneIds
         var visiblePanelIds: Set<UUID> = []
 
@@ -12238,6 +12340,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: newPane.id)
 #if DEBUG
         let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),

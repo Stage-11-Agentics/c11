@@ -9,6 +9,79 @@ import Combine
 import ObjectiveC.runtime
 import Darwin
 
+/// Launch-only arbitration. This policy never signals another process; the
+/// caller may yield only its own newcomer before initializing session state.
+enum SingleInstancePolicy {
+    struct ProcessDescriptor {
+        let pid: pid_t
+        let bundleIdentifier: String?
+        let launchDate: Date?
+        let isTerminated: Bool
+        let isFinishedLaunching: Bool
+        let executableURL: URL?
+        let bundleExecutableURL: URL?
+    }
+
+    static func isRealMainApplication(
+        _ process: ProcessDescriptor,
+        matchingBundleIdentifier bundleIdentifier: String
+    ) -> Bool {
+        guard !bundleIdentifier.isEmpty,
+              process.pid > 0,
+              !process.isTerminated,
+              process.bundleIdentifier == bundleIdentifier,
+              let actual = process.executableURL, actual.isFileURL,
+              let declared = process.bundleExecutableURL, declared.isFileURL else {
+            return false
+        }
+        let canonicalActual = actual.standardizedFileURL.resolvingSymlinksInPath()
+        let canonicalDeclared = declared.standardizedFileURL.resolvingSymlinksInPath()
+        // Launch Services can attribute an embedded CLI/helper to the app's
+        // registration. Even incomplete or misleading bundle metadata must
+        // not let the shipped CLI participate as a main application.
+        let embeddedCLISuffixes = ["/Contents/Resources/bin/c11", "/Contents/Resources/bin/cmux"]
+        guard !embeddedCLISuffixes.contains(where: { actual.path.hasSuffix($0) || canonicalActual.path.hasSuffix($0) }) else {
+            return false
+        }
+        // Use THAT process's bundle executable, not Bundle.main: real copied
+        // apps with the same identifier participate, and symlinks still match.
+        return canonicalActual == canonicalDeclared
+    }
+
+    /// Returns the other process to activate when this newcomer loses, or nil
+    /// when it may proceed. Finished apps take precedence over unfinished
+    /// newcomers, even if their launch date is unavailable. Within either
+    /// group, missing dates sort oldest conservatively; known dates sort by
+    /// age, then PID breaks all ties. This is a total order independent of
+    /// which contender calls it, avoiding mutual yield on simultaneous starts.
+    static func incumbent(
+        current: ProcessDescriptor,
+        running: [ProcessDescriptor]
+    ) -> ProcessDescriptor? {
+        guard let bundleIdentifier = current.bundleIdentifier,
+              isRealMainApplication(current, matchingBundleIdentifier: bundleIdentifier) else {
+            return nil
+        }
+        let candidates = running.filter {
+            $0.pid != current.pid && isRealMainApplication($0, matchingBundleIdentifier: bundleIdentifier)
+        }
+        let winner = (candidates + [current]).min(by: precedes)
+        return winner?.pid == current.pid ? nil : winner
+    }
+
+    private static func precedes(_ lhs: ProcessDescriptor, _ rhs: ProcessDescriptor) -> Bool {
+        if lhs.isFinishedLaunching != rhs.isFinishedLaunching {
+            return lhs.isFinishedLaunching
+        }
+        switch (lhs.launchDate, rhs.launchDate) {
+        case (nil, .some): return true
+        case (.some, nil): return false
+        case let (.some(left), .some(right)) where left != right: return left < right
+        default: return lhs.pid < rhs.pid
+        }
+    }
+}
+
 // Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
@@ -446,6 +519,50 @@ final class CmuxMainThreadTurnProfiler {
 #endif
 
 enum FinderServicePathResolver {
+    private static func canonicalTargetComponents(_ url: URL) -> [String] {
+        // Foundation may leave the entire path unresolved when its final
+        // component is absent. Resolve the existing ancestor first so a
+        // missing descendant reached through a bundle symlink is still self.
+        var ancestor = url.standardizedFileURL
+        var missingComponents: [String] = []
+        while ancestor.path != "/", !FileManager.default.fileExists(atPath: ancestor.path) {
+            missingComponents.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        return ancestor.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+            + missingComponents.reversed()
+    }
+
+    static func servicePathURLs(from pasteboard: NSPasteboard) -> [URL] {
+        if let pathURLs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !pathURLs.isEmpty {
+            return pathURLs
+        }
+
+        let filenamesType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
+        if let paths = pasteboard.propertyList(forType: filenamesType) as? [String] {
+            let urls = paths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map { URL(fileURLWithPath: $0) }
+            if !urls.isEmpty {
+                return urls
+            }
+        }
+
+        if let raw = pasteboard.string(forType: .string), !raw.isEmpty {
+            return raw
+                .split(whereSeparator: \.isNewline)
+                .compactMap { line -> URL? in
+                    let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return nil }
+                    if let url = URL(string: text), url.scheme != nil {
+                        return url.isFileURL ? url : nil
+                    }
+                    return URL(fileURLWithPath: text)
+                }
+        }
+
+        return []
+    }
+
     private static func canonicalDirectoryPath(_ path: String) -> String {
         guard path.count > 1 else { return path }
         var canonical = path
@@ -467,11 +584,22 @@ enum FinderServicePathResolver {
         return standardized.deletingLastPathComponent()
     }
 
-    static func orderedUniqueDirectories(from pathURLs: [URL]) -> [String] {
+    static func orderedUniqueDirectories(
+        from pathURLs: [URL],
+        applicationBundleURL: URL = Bundle.main.bundleURL
+    ) -> [String] {
         var seen: Set<String> = []
         var directories: [String] = []
+        let bundleComponents = canonicalTargetComponents(applicationBundleURL)
 
         for url in pathURLs {
+            guard url.isFileURL else { continue }
+            // Launch Services may deliver the running app itself as an open
+            // request. Compare the original target before taking a file's
+            // parent, and resolve symlinks so aliases into the bundle cannot
+            // accidentally suppress session restoration.
+            let targetComponents = canonicalTargetComponents(url)
+            guard !targetComponents.starts(with: bundleComponents) else { continue }
             let directoryURL = resolvedDirectoryURL(from: url)
             let path = canonicalDirectoryPath(directoryURL.path(percentEncoded: false))
             guard !path.isEmpty else { continue }
@@ -2183,20 +2311,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let visibleFrame: CGRect
     }
 
-    private struct PersistedWindowGeometry: Codable, Sendable {
-        let frame: SessionRectSnapshot
-        let display: SessionDisplaySnapshot?
-    }
-
-    private static let persistedWindowGeometryDefaultsKey = "cmux.session.lastWindowGeometry.v1"
-
     weak var workspaceManager: WorkspaceManager?
     weak var notificationStore: TerminalNotificationStore?
     weak var sidebarState: SidebarState?
     weak var fullscreenControlsViewModel: TitlebarControlsViewModel?
     weak var sidebarSelectionState: SidebarSelectionState?
     var shortcutLayoutCharacterProvider: (UInt16, NSEvent.ModifierFlags) -> String? = KeyboardLayout.character(forKeyCode:modifierFlags:)
-    private var workspaceObserver: NSObjectProtocol?
     private var lifecycleSnapshotObservers: [NSObjectProtocol] = []
     private var windowKeyObserver: NSObjectProtocol?
     private var shortcutMonitor: Any?
@@ -2216,7 +2336,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var browserOmnibarRepeatDelta: Int = 0
     private var browserAddressBarFocusObserver: NSObjectProtocol?
     private var browserAddressBarBlurObserver: NSObjectProtocol?
-    private let updateController = UpdateController()
+    // The delegate adaptor may initialize before c11App.init arbitrates a
+    // duplicate launch. Defer updater preferences and Sparkle construction.
+    private lazy var updateController = UpdateController()
     private lazy var titlebarAccessoryController = UpdateTitlebarAccessoryController(viewModel: updateViewModel)
     private let windowDecorationsController = WindowDecorationsController()
     private var menuBarExtraController: MenuBarExtraController?
@@ -2347,6 +2469,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var resolvedResumeRecoveryMode: ResumeRecoveryMode?
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
+    private(set) var didCompleteInitialSessionRestore = false
+    private var deferredStartupSessionRestore: ((NSWindow) -> Void)?
     private var isApplyingStartupSessionRestore = false
     private var isAwaitingStartupResumeDecision = false
     private weak var startupResumePickerParentWindow: NSWindow?
@@ -2738,23 +2862,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             PostHogAnalytics.shared.startIfNeeded()
         }
 
-        let forceDuplicateLaunchObserver = env["CMUX_UI_TEST_ENABLE_DUPLICATE_LAUNCH_OBSERVER"] == "1"
-
-        // UI tests frequently time out waiting for the main window if we do heavyweight
-        // LaunchServices registration / single-instance enforcement synchronously at startup.
-        // Skip these during XCTest (the app-under-test) so the window can appear quickly.
+        // Registration is asynchronous; instance arbitration has already run
+        // before c11App constructs its workspace and persistence state.
         if !isRunningUnderXCTest {
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.scheduleLaunchServicesBundleRegistration()
-                self.enforceSingleInstance()
-                self.observeDuplicateLaunches()
-            }
-        } else if forceDuplicateLaunchObserver {
-            // Some UI regressions specifically exercise launch-observer behavior while still
-            // running under XCTest. Allow an explicit opt-in for those cases only.
-            DispatchQueue.main.async { [weak self] in
-                self?.observeDuplicateLaunches()
+                self?.scheduleLaunchServicesBundleRegistration()
             }
         }
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -3318,6 +3430,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.sidebarState = sidebarState
         disableSuddenTerminationIfNeeded()
         installLifecycleSnapshotObserversIfNeeded()
+        TerminalController.shared.setInitialSessionRestoreReady(didCompleteInitialSessionRestore)
+        // Listen before ContentView registers a window and installs restored
+        // terminals. Their bundled wrappers perform their ping immediately.
+        if let config = socketListenerConfigurationIfEnabled() {
+            TerminalController.shared.start(
+                workspaceManager: workspaceManager,
+                socketPath: TerminalController.shared.activeSocketPath(preferredPath: config.path),
+                accessMode: config.mode
+            )
+        }
         prepareStartupSessionSnapshotIfNeeded()
         startSessionAutosaveTimerIfNeeded()
 #if DEBUG
@@ -3327,23 +3449,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupMultiWindowNotificationsUITestIfNeeded()
         setupDisplayResolutionUITestDiagnosticsIfNeeded()
 
-        // UI tests sometimes don't run SwiftUI `.onAppear` soon enough (or at all) on the VM.
-        // The automation socket is a core testing primitive, so ensure it's started here when
-        // we detect XCTest, even if the main view lifecycle is flaky.
-        let env = ProcessInfo.processInfo.environment
-        if isRunningUnderXCTest(env) {
-            let raw = UserDefaults.standard.string(forKey: SocketControlSettings.appStorageKey)
-                ?? SocketControlSettings.defaultMode.rawValue
-            let userMode = SocketControlSettings.migrateMode(raw)
-            let mode = SocketControlSettings.effectiveMode(userMode: userMode)
-            if mode != .off {
-                TerminalController.shared.start(
-                    workspaceManager: workspaceManager,
-                    socketPath: SocketControlSettings.socketPath(),
-                    accessMode: mode
-                )
-                scheduleUITestSocketSanityCheckIfNeeded()
-            }
+        // The listener now starts above for every launch, including XCTest
+        // hosts whose SwiftUI onAppear callback is delayed or skipped.
+        if isRunningUnderXCTest(ProcessInfo.processInfo.environment),
+           socketListenerConfigurationIfEnabled() != nil {
+            scheduleUITestSocketSanityCheckIfNeeded()
         }
 #endif
     }
@@ -3410,6 +3520,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func prepareStartupSessionSnapshotIfNeeded() {
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
+        defer {
+            if !isRunningUnderXCTestCached { JournalCoordinator.shared.start(onProjection: TabLivenessDeriver.onJournalProjection) }
+        }
         // C11-131: this can run before `applicationDidFinishLaunching` under
         // the SwiftUI lifecycle (configure → prepare is view-driven). Arm the
         // shutdown sentinel here too so `priorShutdownAtLaunch` is the real
@@ -3417,6 +3530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // dirty-recovery branch below consumes it. Idempotent.
         armShutdownSentinelIfNeeded()
         guard SessionRestorePolicy.shouldAttemptRestore() else {
+            JournalCoordinator.shared.startupSeedReady()
+            JournalCoordinator.shared.startupTabsReady()
             recordResolvedResumeRecoveryMode(.noResume)
             return
         }
@@ -3443,6 +3558,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let epoch = ResumeStartupEpochGate.shared.begin(mode: mode)
 
         guard let snapshot, !ConversationStorePolicy.isDisabled else {
+            JournalCoordinator.shared.startupSeedReady()
+            JournalCoordinator.shared.startupTabsReady()
             _ = ResumeStartupEpochGate.shared.markReady(epoch)
             return
         }
@@ -3470,12 +3587,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let completed = DispatchSemaphore(value: 0)
         let result = LifecycleResultBox<Bool>()
         Task.detached(priority: .userInitiated) {
-            defer { completed.signal() }
+            defer { JournalCoordinator.shared.startupSeedReady(); completed.signal() }
 
             // One completion chain: seed (which audits seeded duplicates),
             // collect once per kind, atomically commit, re-audit, apply the
             // selected recovery policy, and audit the final store.
             _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            JournalCoordinator.shared.refreshOwners()
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.loadForStartup(
                 preferredSocketPath: preferredConversationSocketPath,
                 allowedSurfaceIds: captureScope.markerSurfaceIds
@@ -3558,11 +3676,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func persistedWindowGeometry(
         defaults: UserDefaults = .standard
-    ) -> PersistedWindowGeometry? {
-        guard let data = defaults.data(forKey: Self.persistedWindowGeometryDefaultsKey) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(PersistedWindowGeometry.self, from: data)
+    ) -> WindowGeometryPersistenceStore.Geometry? {
+        WindowGeometryPersistenceStore.load(defaults: defaults)
     }
 
     private func persistWindowGeometry(
@@ -3573,16 +3688,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let data = Self.encodedPersistedWindowGeometryData(frame: frame, display: display) else {
             return
         }
-        defaults.set(data, forKey: Self.persistedWindowGeometryDefaultsKey)
+        WindowGeometryPersistenceStore.persist(data, defaults: defaults)
     }
 
     private nonisolated static func encodedPersistedWindowGeometryData(
         frame: SessionRectSnapshot?,
         display: SessionDisplaySnapshot?
     ) -> Data? {
-        guard let frame else { return nil }
-        let payload = PersistedWindowGeometry(frame: frame, display: display)
-        return try? JSONEncoder().encode(payload)
+        WindowGeometryPersistenceStore.encodedData(frame: frame, display: display)
     }
 
     private func persistWindowGeometry(from window: NSWindow?) {
@@ -3616,9 +3729,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func attemptStartupSessionRestoreIfNeeded(primaryWindow: NSWindow) {
         guard !didAttemptStartupSessionRestore else { return }
-        didAttemptStartupSessionRestore = true
-        guard !didHandleExplicitOpenIntentAtStartup else { return }
         guard let primaryContext = contextForMainTerminalWindow(primaryWindow) else { return }
+        if deferStartupUntilSocketIsListening({ [weak self] window in
+            self?.attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        }) { return }
+        didAttemptStartupSessionRestore = true
+        guard !didHandleExplicitOpenIntentAtStartup else {
+            finishInitialSessionReadiness()
+            return
+        }
 
         // C11-34: per-workspace resume picker. Sits between
         // snapshot-load and snapshot-apply: the operator picks which
@@ -3647,7 +3766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             LaunchResumePicker.presentSheet(
                 on: primaryWindow,
                 snapshot: snapshot,
-                onSheetEnded: { [weak self] in self?.endStartupResumeDecisionWait() }
+                onSheetEnded: { [weak self] in self?.startupResumeSheetDidEnd() }
             ) { [weak self] decision in
                 guard let self else { return }
                 self.endStartupResumeDecisionWait()
@@ -3687,10 +3806,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         primaryWindow: NSWindow,
         primaryContext: MainWindowContext
     ) {
+        if deferStartupUntilSocketIsListening({ [weak self] window in
+            guard let self, let context = self.contextForMainTerminalWindow(window) else { return }
+            self.applyResolvedStartupSessionRestore(primaryWindow: window, primaryContext: context)
+        }) { return }
         let startupSnapshot = startupSessionSnapshot
         let primaryWindowSnapshot = startupSnapshot?.windows.first
         if let primaryWindowSnapshot {
             isApplyingStartupSessionRestore = true
+            NSLog("session.restore.begin socket_listening=%d", TerminalController.shared.isListeningForStartupRestore ? 1 : 0)
 #if DEBUG
             dlog(
                 "session.restore.start windows=\(startupSnapshot?.windows.count ?? 0) " +
@@ -3746,6 +3870,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else {
                 completeStartupSessionRestore()
             }
+        } else {
+            completeStartupSessionRestore()
         }
     }
 
@@ -3756,10 +3882,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startupResumePickerParentWindow = nil
     }
 
+    private func startupResumeSheetDidEnd() {
+        // endSheet may notify before the decision closure runs. Give that
+        // closure its turn; only an unanswered sheet counts as cancellation.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isAwaitingStartupResumeDecision else { return }
+            self.endStartupResumeDecisionWait()
+            self.startupSessionSnapshot = nil
+            self.finishInitialSessionReadiness()
+        }
+    }
+
+    private func deferStartupUntilSocketIsListening(_ retry: @escaping (NSWindow) -> Void) -> Bool {
+        guard socketListenerConfigurationIfEnabled() != nil,
+              !TerminalController.shared.isListeningForStartupRestore else { return false }
+        deferredStartupSessionRestore = retry
+        NSLog("session.restore.deferred reason=socket_not_listening")
+        return true
+    }
+
+    /// Called after listener recovery or an explicit change to socket mode.
+    func resumeStartupSessionAfterSocketChange() {
+        guard socketListenerConfigurationIfEnabled() == nil
+                || TerminalController.shared.isListeningForStartupRestore,
+              let retry = deferredStartupSessionRestore,
+              let window = mainWindowContexts.values.compactMap(\.window).first else { return }
+        // A picker parent can close while the listener is unavailable. Keep
+        // the continuation until a registered window can receive the snapshot.
+        deferredStartupSessionRestore = nil
+        retry(window)
+    }
+
+    private func finishInitialSessionReadiness() {
+        guard !didCompleteInitialSessionRestore else { return }
+        didCompleteInitialSessionRestore = true
+        deferredStartupSessionRestore = nil
+        TerminalController.shared.setInitialSessionRestoreReady(true)
+        TerminalController.shared.v2RefreshKnownRefs()
+        NSLog("session.restore.ready")
+    }
+
     private func completeStartupSessionRestore() {
+        JournalCoordinator.shared.startupTabsReady()
         FocusHistoryStore.shared.restore(startupSessionSnapshot?.focusHistory)
         startupSessionSnapshot = nil
         isApplyingStartupSessionRestore = false
+        finishInitialSessionReadiness()
         _ = saveSessionSnapshot(includeScrollback: false)
     }
 
@@ -4183,6 +4351,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didInstallLifecycleSnapshotObservers else { return }
         didInstallLifecycleSnapshotObservers = true
 
+        let socketObserver = NotificationCenter.default.addObserver(
+            forName: .socketListenerDidStart, object: TerminalController.shared, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.resumeStartupSessionAfterSocketChange() }
+        }
+        lifecycleSnapshotObservers.append(socketObserver)
+
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         let powerOffObserver = workspaceCenter.addObserver(
             forName: NSWorkspace.willPowerOffNotification,
@@ -4479,6 +4654,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         conversationsByPanelId conversationsByTabId: [String: TabConversations]? = nil,
         forceSynchronousWrite: Bool = false
     ) -> Bool {
+        // A bind/listen failure must not let the launch seed overwrite the
+        // pending session. Preserve it on quit as well as on autosave.
+        if deferredStartupSessionRestore != nil
+            || (!didCompleteInitialSessionRestore && startupSessionSnapshot != nil) { return false }
         // While the resume picker is open, the file on disk is the only copy
         // of the session it offers; the empty launch window must not replace
         // it, whether the operator answers, quits, or c11 crashes first.
@@ -4774,10 +4953,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let writeBlock = { () -> Bool in
             if let persistedGeometryData {
-                UserDefaults.standard.set(
-                    persistedGeometryData,
-                    forKey: Self.persistedWindowGeometryDefaultsKey
-                )
+                WindowGeometryPersistenceStore.persist(persistedGeometryData)
             }
             if let snapshot {
                 return SessionPersistenceStore.save(snapshot)
@@ -5055,6 +5231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState: SidebarState,
         sidebarSelectionState: SidebarSelectionState
     ) {
+        _ = TerminalController.shared.v2EnsureHandleRef(kind: .window, uuid: windowId)
         workspaceManager.window = window
         installMainWindowCloseGuard(on: window)
 
@@ -5100,6 +5277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
+        resumeStartupSessionAfterSocketChange()
         if !isTerminatingApp {
             _ = saveSessionSnapshot(includeScrollback: false)
         }
@@ -6864,9 +7042,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         target: ServiceOpenTarget,
         error: AutoreleasingUnsafeMutablePointer<NSString>
     ) {
-        prepareForExplicitOpenIntentAtStartup()
-
-        let pathURLs = servicePathURLs(from: pasteboard)
+        let pathURLs = FinderServicePathResolver.servicePathURLs(from: pasteboard)
         guard !pathURLs.isEmpty else {
             error.pointee = Self.serviceErrorNoPath
             return
@@ -6878,6 +7054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        prepareForExplicitOpenIntentAtStartup()
         for directory in directories {
             switch target {
             case .window:
@@ -6886,34 +7063,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 openWorkspaceFromService(workingDirectory: directory)
             }
         }
-    }
-
-    private func servicePathURLs(from pasteboard: NSPasteboard) -> [URL] {
-        if let pathURLs = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !pathURLs.isEmpty {
-            return pathURLs
-        }
-
-        let filenamesType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
-        if let paths = pasteboard.propertyList(forType: filenamesType) as? [String] {
-            let urls = paths.map { URL(fileURLWithPath: $0) }
-            if !urls.isEmpty {
-                return urls
-            }
-        }
-
-        if let raw = pasteboard.string(forType: .string), !raw.isEmpty {
-            return raw
-                .split(whereSeparator: \.isNewline)
-                .map { line in
-                    let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let fileURL = URL(string: text), fileURL.isFileURL {
-                        return fileURL
-                    }
-                    return URL(fileURLWithPath: text)
-                }
-        }
-
-        return []
     }
 
     private func openWorkspaceFromService(workingDirectory: String) {
@@ -6928,11 +7077,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !didAttemptStartupSessionRestore {
             startupSessionSnapshot = nil
             didAttemptStartupSessionRestore = true
+            finishInitialSessionReadiness()
         }
     }
 
     private func externalOpenDirectories(from urls: [URL]) -> [String] {
-        FinderServicePathResolver.orderedUniqueDirectories(from: urls.filter { $0.isFileURL })
+        FinderServicePathResolver.orderedUniqueDirectories(from: urls)
     }
 
     private func openWorkspaceForExternalDirectory(
@@ -8142,6 +8292,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     workspaceId: notification.workspaceId,
                     surfaceId: notification.surfaceId,
                     notificationId: notification.id
+                )
+            },
+            onOpenFlag: { [weak self] flag in
+                _ = self?.openNotification(
+                    workspaceId: flag.workspaceId,
+                    surfaceId: flag.surfaceId,
+                    notificationId: nil
                 )
             },
             onJumpToLatestUnread: { [weak self] in
@@ -10837,6 +10994,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         titlebarAccessoryController.isNotificationsPopoverShown()
     }
 
+    /// Menu/shortcut admission reads only the resident immutable projections.
+    var hasJournalAttention: Bool {
+        mainWindowContexts.values.contains { context in
+            context.workspaceManager.workspaces.contains { workspace in
+                workspace.journalByTab.values.contains {
+                    $0.paintsAttention && workspace.attentionSnapshot(panelId: $0.owner.tabID).isSignalEligible
+                }
+            }
+        }
+    }
+
     func jumpToLatestUnread() {
         guard let notificationStore else { return }
 #if DEBUG
@@ -10855,6 +11023,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ) {
                 return
             }
+        }
+        let journalWorkspaces = mainWindowContexts.values.flatMap { $0.workspaceManager.workspaces }
+        let journalAttention = journalWorkspaces.flatMap { workspace in
+            workspace.journalByTab.values.filter { $0.paintsAttention && !workspace.attentionSnapshot(panelId: $0.owner.tabID).suppressed }
+                .map { (workspace.id, $0) }
+        }.sorted { $0.1.sinceMs < $1.1.sinceMs }
+        for (workspaceID, state) in journalAttention {
+            if openNotification(workspaceId: workspaceID, surfaceId: state.owner.tabID, notificationId: nil) { return }
         }
         // Prefer the latest unread that we can actually open. In early startup (especially on the VM),
         // the window-context registry can lag behind model initialization, so fall back to whatever
@@ -13154,48 +13330,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 #endif
 
-    private func enforceSingleInstance() {
+    static func yieldToRunningInstanceIfNeeded() {
+        // Keep the existing XCTest/app-under-test isolation. Packaged launch
+        // regressions exercise this path without any test-only environment.
+        guard !detectRunningUnderXCTest(ProcessInfo.processInfo.environment) else { return }
         guard let bundleId = Bundle.main.bundleIdentifier else { return }
-        let currentPid = ProcessInfo.processInfo.processIdentifier
-
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleId) {
-            guard app.processIdentifier != currentPid else { continue }
-            app.terminate()
-            if !app.isTerminated {
-                _ = app.forceTerminate()
-            }
+        let current = NSRunningApplication.current
+        let currentDescriptor = SingleInstancePolicy.ProcessDescriptor(
+            pid: current.processIdentifier,
+            bundleIdentifier: bundleId,
+            launchDate: current.launchDate,
+            isTerminated: false,
+            isFinishedLaunching: current.isFinishedLaunching,
+            executableURL: Bundle.main.executableURL,
+            bundleExecutableURL: Bundle.main.executableURL
+        )
+        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+        let candidates = applications.map { app in
+            SingleInstancePolicy.ProcessDescriptor(
+                pid: app.processIdentifier,
+                bundleIdentifier: app.bundleIdentifier,
+                launchDate: app.launchDate,
+                isTerminated: app.isTerminated,
+                isFinishedLaunching: app.isFinishedLaunching,
+                executableURL: app.executableURL,
+                bundleExecutableURL: app.bundleURL.flatMap { Bundle(url: $0)?.executableURL }
+            )
         }
-    }
-
-    private func observeDuplicateLaunches() {
-        guard let bundleId = Bundle.main.bundleIdentifier else { return }
-        let embeddedCLIURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/c11", isDirectory: false)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-        let currentPid = ProcessInfo.processInfo.processIdentifier
-
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard self != nil else { return }
-            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            guard app.bundleIdentifier == bundleId, app.processIdentifier != currentPid else { return }
-            if let executableURL = app.executableURL?
-                   .standardizedFileURL
-                   .resolvingSymlinksInPath(),
-               executableURL == embeddedCLIURL {
-                return
-            }
-
-            app.terminate()
-            if !app.isTerminated {
-                _ = app.forceTerminate()
-            }
-            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        }
+        guard let incumbent = SingleInstancePolicy.incumbent(current: currentDescriptor, running: candidates),
+              let app = applications.first(where: { $0.processIdentifier == incumbent.pid }),
+              !app.isTerminated else { return }
+        NSLog("instance.yield newcomer_pid=%d incumbent_pid=%d", current.processIdentifier, incumbent.pid)
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        // Do not run termination/autosave hooks for the newcomer's empty
+        // session. The incumbent alone owns its PTYs and persistence state.
+        Darwin._exit(0)
     }
 
     func userNotificationCenter(
@@ -13337,6 +13506,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             && isAwaitingStartupResumeDecision
         if window === startupResumePickerParentWindow {
             endStartupResumeDecisionWait()
+            startupSessionSnapshot = nil
+            finishInitialSessionReadiness()
         }
         // Keep geometry available as a fallback alongside the session snapshot.
         persistWindowGeometry(from: window)
@@ -13751,14 +13922,19 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu = NSMenu(title: "c11")
     private let notificationStore: TerminalNotificationStore
+    private let attentionIndex: TabAttentionIndex
     private let onShowMainWindow: () -> Void
     private let onShowNotifications: () -> Void
     private let onOpenNotification: (TerminalNotification) -> Void
+    private let onOpenFlag: (TabAttentionSnapshot) -> Void
     private let onJumpToLatestUnread: () -> Void
     private let onCheckForUpdates: () -> Void
     private let onOpenPreferences: () -> Void
     private let onQuitApp: () -> Void
     private var notificationsCancellable: AnyCancellable?
+    private var attentionCancellable: AnyCancellable?
+    private var refreshScheduled = false
+    private var removedFromMenuBar = false
     private let buildHintTitle: String?
 
     private let stateHintItem = NSMenuItem(title: String(localized: "statusMenu.noUnread", defaultValue: "No unread notifications"), action: nil, keyEquivalent: "")
@@ -13775,6 +13951,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
+    private var flagItems: [NSMenuItem] = []
+    private let flaggedSectionItem = NSMenuItem(title: String(localized: "statusMenu.flagged", defaultValue: "Flagged Tabs"), action: nil, keyEquivalent: "")
+    private let flagSectionSeparator = NSMenuItem.separator()
     private let maxInlineNotificationItems = 6
 
     init(
@@ -13782,15 +13961,19 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onShowMainWindow: @escaping () -> Void,
         onShowNotifications: @escaping () -> Void,
         onOpenNotification: @escaping (TerminalNotification) -> Void,
+        onOpenFlag: @escaping (TabAttentionSnapshot) -> Void,
         onJumpToLatestUnread: @escaping () -> Void,
         onCheckForUpdates: @escaping () -> Void,
         onOpenPreferences: @escaping () -> Void,
-        onQuitApp: @escaping () -> Void
+        onQuitApp: @escaping () -> Void,
+        attentionIndex: TabAttentionIndex = .shared
     ) {
         self.notificationStore = notificationStore
+        self.attentionIndex = attentionIndex
         self.onShowMainWindow = onShowMainWindow
         self.onShowNotifications = onShowNotifications
         self.onOpenNotification = onOpenNotification
+        self.onOpenFlag = onOpenFlag
         self.onJumpToLatestUnread = onJumpToLatestUnread
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenPreferences = onOpenPreferences
@@ -13811,7 +13994,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         notificationsCancellable = notificationStore.$notifications
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.refreshUI()
+                self?.scheduleRefreshUI()
+            }
+
+        attentionCancellable = attentionIndex.$snapshots
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.scheduleRefreshUI()
             }
 
         refreshUI()
@@ -13836,6 +14025,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         menu.addItem(showMainWindowItem)
 
         menu.addItem(notificationListSeparator)
+        flaggedSectionItem.isEnabled = false
+        menu.addItem(flaggedSectionItem)
+        menu.addItem(flagSectionSeparator)
         notificationSectionSeparator.isHidden = true
         menu.addItem(notificationSectionSeparator)
 
@@ -13881,15 +14073,37 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     }
 
     func removeFromMenuBar() {
+        removedFromMenuBar = true
         notificationsCancellable?.cancel()
         notificationsCancellable = nil
+        attentionCancellable?.cancel()
+        attentionCancellable = nil
         statusItem.menu = nil
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
+    private func scheduleRefreshUI() {
+        guard !refreshScheduled, !removedFromMenuBar else { return }
+        refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.refreshScheduled = false
+            guard !self.removedFromMenuBar else { return }
+            self.refreshUI()
+        }
+    }
+
+#if DEBUG
+    var menuForTesting: NSMenu { menu }
+    var statusItemTooltipForTesting: String? { statusItem.button?.toolTip }
+    var statusItemImageForTesting: NSImage? { statusItem.button?.image }
+#endif
+
     private func refreshUI() {
         let snapshot = NotificationMenuSnapshotBuilder.make(
             notifications: notificationStore.notifications,
+            flags: attentionIndex.oldestFlags,
+            attentionSnapshots: attentionIndex.snapshots,
             maxInlineNotificationItems: maxInlineNotificationItems
         )
         let actualUnreadCount = snapshot.unreadCount
@@ -13906,35 +14120,42 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .showNotifications), to: showNotificationsItem)
         applyShortcut(KeyboardShortcutSettings.shortcut(for: .jumpToUnread), to: jumpToUnreadItem)
 
-        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications
+        jumpToUnreadItem.isEnabled = snapshot.hasUnreadNotifications || !snapshot.flags.isEmpty || AppDelegate.shared?.hasJournalAttention == true
         markAllReadItem.isEnabled = snapshot.hasUnreadNotifications
         clearAllItem.isEnabled = snapshot.hasNotifications
 
-        rebuildInlineNotificationItems(recentNotifications: snapshot.recentNotifications)
+        rebuildInlineNotificationItems(snapshot: snapshot)
 
         if let button = statusItem.button {
-            button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount)
-            button.toolTip = makeStatusItemTooltip(displayedUnreadCount: displayedUnreadCount)
+            button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount, flagCount: snapshot.flags.count)
+            button.toolTip = makeStatusItemTooltip(displayedUnreadCount: displayedUnreadCount, snapshot: snapshot)
         }
     }
 
-    private func makeStatusItemTooltip(displayedUnreadCount: Int) -> String {
-        if displayedUnreadCount == 0 {
+    private func makeStatusItemTooltip(displayedUnreadCount: Int, snapshot: NotificationMenuSnapshot) -> String {
+        if displayedUnreadCount == 0 && snapshot.flags.isEmpty {
             return "c11"
         }
 
-        let countLine: String = displayedUnreadCount == 1
-            ? "c11: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
-            : "c11: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
-
-        let titleSummary = unreadTabTitleSummary(maxItems: maxInlineNotificationItems)
-        return titleSummary.isEmpty ? countLine : countLine + "\n" + titleSummary
+        var lines: [String] = []
+        if !snapshot.flags.isEmpty {
+            lines.append(NotificationMenuSnapshotBuilder.flagCountTitle(snapshot.flags.count))
+            lines.append(contentsOf: snapshot.flags.prefix(maxInlineNotificationItems).compactMap(\.flagReason))
+        }
+        if displayedUnreadCount > 0 {
+            lines.append(displayedUnreadCount == 1
+                ? String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
+                : String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications"))
+            let titleSummary = unreadTabTitleSummary(notifications: snapshot.signalNotifications, maxItems: maxInlineNotificationItems)
+            if !titleSummary.isEmpty { lines.append(titleSummary) }
+        }
+        return "c11: " + lines.joined(separator: "\n")
     }
 
-    private func unreadTabTitleSummary(maxItems: Int) -> String {
+    private func unreadTabTitleSummary(notifications: [TerminalNotification], maxItems: Int) -> String {
         var seen: Set<String> = []
         var ordered: [String] = []
-        for notification in notificationStore.notifications {
+        for notification in notifications {
             guard !notification.isRead else { continue }
             let raw = AppDelegate.shared?.tabTitle(for: notification.workspaceId)
             let title = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -13961,17 +14182,35 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         item.keyEquivalentModifierMask = shortcut.modifierFlags
     }
 
-    private func rebuildInlineNotificationItems(recentNotifications: [TerminalNotification]) {
-        for item in notificationItems {
+    private func rebuildInlineNotificationItems(snapshot: NotificationMenuSnapshot) {
+        for item in notificationItems + flagItems {
             menu.removeItem(item)
         }
         notificationItems.removeAll(keepingCapacity: true)
+        flagItems.removeAll(keepingCapacity: true)
 
-        notificationListSeparator.isHidden = recentNotifications.isEmpty
-        notificationSectionSeparator.isHidden = recentNotifications.isEmpty
-        guard !recentNotifications.isEmpty else { return }
+        let recentNotifications = snapshot.recentNotifications
+        notificationListSeparator.isHidden = recentNotifications.isEmpty && snapshot.flags.isEmpty
+        flaggedSectionItem.isHidden = snapshot.flags.isEmpty
+        flagSectionSeparator.isHidden = snapshot.flags.isEmpty || recentNotifications.isEmpty
+        notificationSectionSeparator.isHidden = recentNotifications.isEmpty && snapshot.flags.isEmpty
 
-        let insertionIndex = menu.index(of: showNotificationsItem)
+        let flagInsertionIndex = menu.index(of: flagSectionSeparator)
+        for (offset, flag) in snapshot.flags.enumerated() {
+            let item = NSMenuItem(title: "", action: #selector(openFlagItemAction(_:)), keyEquivalent: "")
+            item.target = self
+            let workspaceTitle = AppDelegate.shared?.tabTitle(for: flag.workspaceId) ?? flag.workspaceId.uuidString
+            let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: flag.workspaceId)?.workspaces.first { $0.id == flag.workspaceId }
+            let tabTitle = workspace?.tabTitle(panelId: flag.surfaceId) ?? flag.surfaceId.uuidString
+            let fullTitle = "⚑ \(flag.flagReason ?? "")\n\(workspaceTitle) · \(tabTitle)"
+            item.title = MenuBarNotificationLineFormatter.flagMenuTitle(fullTitle)
+            item.toolTip = fullTitle
+            item.representedObject = FlagMenuItemPayload(flag: flag)
+            menu.insertItem(item, at: flagInsertionIndex + offset)
+            flagItems.append(item)
+        }
+
+        let insertionIndex = menu.index(of: notificationSectionSeparator)
         guard insertionIndex >= 0 else { return }
 
         for (offset, notification) in recentNotifications.enumerated() {
@@ -13994,6 +14233,11 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     @objc private func openNotificationItemAction(_ sender: NSMenuItem) {
         guard let payload = sender.representedObject as? NotificationMenuItemPayload else { return }
         onOpenNotification(payload.notification)
+    }
+
+    @objc private func openFlagItemAction(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? FlagMenuItemPayload else { return }
+        onOpenFlag(payload.flag)
     }
 
     @objc private func showMainWindowAction() {
@@ -14038,17 +14282,29 @@ private final class NotificationMenuItemPayload: NSObject {
     }
 }
 
+private final class FlagMenuItemPayload: NSObject {
+    let flag: TabAttentionSnapshot
+
+    init(flag: TabAttentionSnapshot) {
+        self.flag = flag
+        super.init()
+    }
+}
+
 struct NotificationMenuSnapshot {
     let unreadCount: Int
     let hasNotifications: Bool
     let recentNotifications: [TerminalNotification]
+    let signalNotifications: [TerminalNotification]
+    let flags: [TabAttentionSnapshot]
 
     var hasUnreadNotifications: Bool {
         unreadCount > 0
     }
 
     var stateHintTitle: String {
-        NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        let routineTitle = NotificationMenuSnapshotBuilder.stateHintTitle(unreadCount: unreadCount)
+        return flags.isEmpty ? routineTitle : NotificationMenuSnapshotBuilder.flagCountTitle(flags.count) + " · " + routineTitle
     }
 }
 
@@ -14057,9 +14313,16 @@ enum NotificationMenuSnapshotBuilder {
 
     static func make(
         notifications: [TerminalNotification],
+        flags: [TabAttentionSnapshot] = [],
+        attentionSnapshots: [String: TabAttentionSnapshot] = [:],
         maxInlineNotificationItems: Int = defaultInlineNotificationLimit
     ) -> NotificationMenuSnapshot {
-        let unreadCount = notifications.reduce(into: 0) { count, notification in
+        let signalNotifications = notifications.filter { notification in
+            guard let surfaceId = notification.surfaceId else { return true }
+            let key = "\(notification.workspaceId.uuidString):\(surfaceId.uuidString)"
+            return attentionSnapshots[key]?.isSignalEligible ?? true
+        }
+        let unreadCount = signalNotifications.reduce(into: 0) { count, notification in
             if !notification.isRead {
                 count += 1
             }
@@ -14068,9 +14331,17 @@ enum NotificationMenuSnapshotBuilder {
         let inlineLimit = max(0, maxInlineNotificationItems)
         return NotificationMenuSnapshot(
             unreadCount: unreadCount,
-            hasNotifications: !notifications.isEmpty,
-            recentNotifications: Array(notifications.prefix(inlineLimit))
+            hasNotifications: !signalNotifications.isEmpty,
+            recentNotifications: Array(signalNotifications.prefix(inlineLimit)),
+            signalNotifications: signalNotifications,
+            flags: flags.filter(\.isFlagged)
         )
+    }
+
+    static func flagCountTitle(_ count: Int) -> String {
+        count == 1
+            ? String(localized: "statusMenu.flagCount.one", defaultValue: "1 flagged tab")
+            : String(localized: "statusMenu.flagCount.other", defaultValue: "\(count) flagged tabs")
     }
 
     static func stateHintTitle(unreadCount: Int) -> String {
@@ -14125,6 +14396,10 @@ enum MenuBarNotificationLineFormatter {
     ) -> String {
         let base = plainTitle(notification: notification, tabTitle: tabTitle)
         return wrappedAndTruncated(base, maxWidth: maxWidth, maxLines: maxLines)
+    }
+
+    static func flagMenuTitle(_ text: String) -> String {
+        wrappedAndTruncated(text, maxWidth: defaultMaxMenuTextWidth, maxLines: defaultMaxMenuTextLines)
     }
 
     static func attributedTitle(notification: TerminalNotification, tabTitle: String?) -> NSAttributedString {
@@ -14451,8 +14726,8 @@ enum MenuBarIconDebugSettings {
 
 enum MenuBarIconRenderer {
 
-    static func makeImage(unreadCount: Int) -> NSImage {
-        let badgeText = MenuBarBadgeLabelFormatter.badgeText(for: unreadCount)
+    static func makeImage(unreadCount: Int, flagCount: Int = 0) -> NSImage {
+        let badgeText = MenuBarBadgeLabelFormatter.badgeText(for: flagCount > 0 ? flagCount : unreadCount)
         let config = MenuBarIconDebugSettings.badgeRenderConfig()
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
@@ -14460,7 +14735,11 @@ enum MenuBarIconRenderer {
         defer { image.unlockFocus() }
 
         let glyphRect = NSRect(x: 1.0, y: 1.0, width: 11.0, height: 11.0)
-        drawGlyph(in: glyphRect)
+        if flagCount > 0 {
+            drawFlag(in: glyphRect)
+        } else {
+            drawGlyph(in: glyphRect)
+        }
 
         if let text = badgeText {
             drawBadge(text: text, in: config.badgeRect, config: config)
@@ -14468,6 +14747,18 @@ enum MenuBarIconRenderer {
 
         image.isTemplate = true
         return image
+    }
+
+    private static func drawFlag(in rect: NSRect) {
+        let pole = NSBezierPath(rect: NSRect(x: rect.minX, y: rect.minY, width: 1.5, height: rect.height))
+        NSColor.black.setFill()
+        pole.fill()
+        let pennant = NSBezierPath()
+        pennant.move(to: NSPoint(x: rect.minX + 1.5, y: rect.maxY))
+        pennant.line(to: NSPoint(x: rect.maxX, y: rect.maxY - rect.height * 0.25))
+        pennant.line(to: NSPoint(x: rect.minX + 1.5, y: rect.midY))
+        pennant.close()
+        pennant.fill()
     }
 
     private static func drawGlyph(in rect: NSRect) {

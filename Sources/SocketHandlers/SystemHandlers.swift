@@ -52,6 +52,7 @@ extension TerminalController {
 
     private func v2Capabilities() -> [String: Any] {
         var methods: [String] = [
+            "agent.event.append",
             "system.ping",
             "system.capabilities",
             "system.identify",
@@ -73,6 +74,23 @@ extension TerminalController {
             "workspace.close",
             "workspace.move_to_window",
             "workspace.reorder",
+            "workspace.reorder_batch",
+            "workspace.group.list",
+            "workspace.group.create",
+            "workspace.group.rename",
+            "workspace.group.delete",
+            "workspace.group.ungroup",
+            "workspace.group.add",
+            "workspace.group.remove",
+            "workspace.group.move",
+            "workspace.group.collapse",
+            "workspace.group.expand",
+            "workspace.group.pin",
+            "workspace.group.unpin",
+            "workspace.group.set_color",
+            "workspace.group.set_icon",
+            "workspace.group.focus",
+
             "workspace.rename",
             "workspace.set_root",
             "workspace.get_root",
@@ -249,6 +267,7 @@ extension TerminalController {
             "debug.shortcut.simulate",
             "debug.type",
             "debug.terminal.operator_keys",
+            "debug.terminal.runtime_start_hold",
             "debug.app.activate",
             "debug.command_palette.toggle",
             "debug.command_palette.rename_tab.open",
@@ -288,6 +307,10 @@ extension TerminalController {
             "debug.session.round_trip_workspaces",
         ])
 #endif
+
+        if CapabilityFeatures.current.supports(.terminalSelection) {
+            methods.append("tab.read_selection")
+        }
 
         return [
             "protocol": "cmux-socket",

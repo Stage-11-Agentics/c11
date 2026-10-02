@@ -184,6 +184,7 @@ final class TabMetadataStore: @unchecked Sendable {
     /// would make the metadata layer a command-injection vector. See
     /// `validateReservedKey` for the UUIDv4 grammar enforced at write time.
     static let reservedKeys: Set<String> = [
+        "journal",
         "role",
         "status",
         "task",
@@ -208,6 +209,7 @@ final class TabMetadataStore: @unchecked Sendable {
 
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
         switch key {
+        case "journal": return .reservedKeyInvalidType(key, "read-only journal projection")
         case "role":
             return validateKebab(key: key, value: value, maxLen: 64)
         case "status":

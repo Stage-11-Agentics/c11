@@ -197,7 +197,8 @@ enum LaunchResumePicker {
             } ?? 0
             newWindow.workspaceManager = SessionWorkspaceManagerSnapshot(
                 selectedWorkspaceIndex: newSelectedIndex,
-                workspaces: kept
+                workspaces: kept,
+                workspaceGroups: window.workspaceManager.workspaceGroups
             )
             newWindows.append(newWindow)
         }

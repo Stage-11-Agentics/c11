@@ -22,6 +22,33 @@ private enum AgentLaunchContextSnapshot {
 // tiers are preserved exactly: nonisolated members stay nonisolated (off-main);
 // processCommand/processV2Command stay main-actor. Mechanical relocation only.
 extension TerminalController {
+    nonisolated static func isStartupIndependentV2Method(_ method: String) -> Bool {
+        ["system.ping", "system.capabilities", "system.brand", "auth.login"].contains(method)
+    }
+
+    /// Gate before worker routing or async acknowledgement. The bundled shells
+    /// do not retry their TTY/state reports, so retain those until the graph is
+    /// complete; all other graph-dependent callers must retry.
+    nonisolated func startupNotReadyResponse(for command: String) -> String? {
+        guard !isInitialSessionRestoreReady else { return nil }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let request = parseV2SocketRequest(trimmed) {
+            guard !Self.isStartupIndependentV2Method(request.method) else { return nil }
+            return v2Error(id: request.id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
+        guard !trimmed.hasPrefix("{") else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1)
+        let head = parts.first.map(String.init)?.lowercased() ?? ""
+        guard !["ping", "auth", "help"].contains(head) else { return nil }
+        if ["report_tty", "report_shell_state"].contains(head) {
+            let args = parts.count > 1 ? String(parts[1]) : ""
+            if deferStartupShellReport(command: head, args: args) { return "OK" }
+            // Readiness may have completed between the first check and enqueue.
+            if isInitialSessionRestoreReady { return nil }
+        }
+        return "ERROR: not_ready: \(Self.sessionNotReadyMessage)"
+    }
+
     private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
         guard command.hasPrefix("{"),
               let data = command.data(using: .utf8),
@@ -48,6 +75,11 @@ extension TerminalController {
             return nil
         }
 
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
+            return v2Error(id: request.id, code: rejection.code, message: rejection.message)
+        }
+
         return withSocketCommandPolicy(commandKey: request.method, isV2: true) {
             socketWorkerV2Response(request)
         }
@@ -60,6 +92,10 @@ extension TerminalController {
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
 
+        if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
+            return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
+
         switch request.method {
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
@@ -67,6 +103,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
         case "tab.send_key":
             return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
+        case "agent.event.append":
+            return v2Result(id: request.id, v2JournalAppend(params: request.params))
+        case "tab.read_selection":
+            return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
         case "tab.read_text":
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
         case "tab.clear_history":
@@ -106,6 +146,7 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         if let response = Self.socketWorkerImmediateV1Response(command) {
             return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
                 response
@@ -201,6 +242,8 @@ extension TerminalController {
     /// Dispatch a v1 command to its nonisolated worker variant.
     private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
         switch head {
+        case "clear_notifications":
+            return clearNotificationsWorker(args)
         case "report_pwd":
             return reportPwdWorker(args)
         case "report_shell_state":
@@ -351,6 +394,31 @@ extension TerminalController {
             i += 1
         }
         return (positional, options)
+    }
+
+    private nonisolated func clearNotificationsWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawPanel = parsed.options["panel"] ?? parsed.options["surface"] else {
+            // Interactive all/workspace clears retain their synchronous result.
+            return nil
+        }
+        guard let panelId = UUID(uuidString: rawPanel),
+              let rawWorkspace = parsed.options["tab"],
+              let workspaceId = UUID(uuidString: rawWorkspace),
+              parsed.positional.isEmpty else {
+            return "ERROR: Scoped clear requires workspace and originating tab UUIDs"
+        }
+        // Hook-frequency parsing is worker-owned. A missing/stale association
+        // is a queued no-op, never a workspace-wide clear or focus fallback.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let workspace = self.workspaceForSidebarMutation(id: workspaceId),
+                      workspace.panels[panelId] != nil else { return }
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+            }
+        }
+        return "OK"
     }
 
     private nonisolated func reportPwdWorker(_ args: String) -> String? {
@@ -570,6 +638,7 @@ extension TerminalController {
     }
 
     func processCommand(_ command: String) -> String {
+        if let response = startupNotReadyResponse(for: command) { return response }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Empty command" }
 
@@ -926,7 +995,7 @@ extension TerminalController {
             return reloadConfig(args)
 
         case "refresh_surfaces":
-            return refreshSurfaces()
+            return refreshSurfaces(args)
 
             case "surface_health":
                 return surfaceHealth(args)
@@ -966,6 +1035,11 @@ extension TerminalController {
         let method = LegacyWireAliases.canonicalMethod(rawMethod)
         let params = LegacyWireAliases.canonicalParams(dict["params"] as? [String: Any] ?? [:])
 
+        if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
+           let rejection = LegacyWireAliases.unsupportedRoutingKey(params) {
+            return v2Error(id: id, code: rejection.code, message: rejection.message)
+        }
+
         // C11-26: Methods on the socket-worker policy must be dispatched via
         // socketWorkerV2Response (off main); reaching processV2Command for one of
         // them means the routing layer mis-targeted the request, and falling
@@ -986,7 +1060,9 @@ extension TerminalController {
             )
         }
 
-        v2MainSync { self.v2RefreshKnownRefs() }
+        if !isInitialSessionRestoreReady && !Self.isStartupIndependentV2Method(method) {
+            return v2Error(id: id, code: "not_ready", message: Self.sessionNotReadyMessage)
+        }
 
 
         return withSocketCommandPolicy(commandKey: method, isV2: true) {

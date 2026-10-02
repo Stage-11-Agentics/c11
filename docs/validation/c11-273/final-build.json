@@ -1,0 +1,22 @@
+{
+  "invocation": "7e81965b42794cd18775c4215c280a46",
+  "head": "e764720703889d0f962c5e84f4fc944412d37dcb",
+  "parent_head": "269a969e9a6153377e1fd64939c6179732a07f80",
+  "branch": "c11-1.0/C11-273-journal",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-273-journal",
+  "mode": "debug",
+  "compile": "ok",
+  "tests": "na",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "app": "c11 DEV c11-273-journal.app",
+  "executable_sha256": "9a1f6281e83912b4d59f0c92ed23560727059a5b2700120e0324c309e40ce285",
+  "ok": true,
+  "local_executable_sha256": "bfa11cdf97fc4f9963ab7e21302218aac503f4e7b4f2433e9e746eb977368f00"
+}

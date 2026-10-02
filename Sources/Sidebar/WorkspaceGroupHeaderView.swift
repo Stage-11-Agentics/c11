@@ -142,6 +142,10 @@ struct WorkspaceGroupHeaderView: View, Equatable {
         .frame(height: Self.height(scale: scale))
         .background(RoundedRectangle(cornerRadius: 5 * scale)
             .fill(isActive ? Color.accentColor.opacity(colorScheme == .dark ? 0.20 : 0.12) : Color.clear))
+        // Semantic text needs an opaque matching surface even when the sidebar
+        // material or terminal theme behind it remains dark in Light appearance.
+        .background(Color(nsColor: .controlBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 5 * scale))
         .contentShape(Rectangle())
         .contextMenu { menuContent }
         .accessibilityElement(children: .contain)

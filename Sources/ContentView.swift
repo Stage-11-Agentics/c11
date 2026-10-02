@@ -8783,6 +8783,7 @@ struct WorkspaceSidebar: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("WorkspaceGroupNew")
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
         .overlay {
             if draggedWorkspaceId != nil, let indicator = dropIndicator,
                indicator.workspaceId == nil && indicator.groupId == nil {

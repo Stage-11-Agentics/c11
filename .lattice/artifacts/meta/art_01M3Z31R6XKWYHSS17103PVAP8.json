@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:56:51Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z31R6XKWYHSS17103PVAP8",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z31R6XKWYHSS17103PVAP8.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding frozen interleaving identity 011",
+  "token_usage": null,
+  "type": "file"
+}

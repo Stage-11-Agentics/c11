@@ -9,6 +9,126 @@ import Combine
 
 @MainActor
 final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
+    func testRestoreRetiresRetainedGraphBeforeReusingItsIDs() throws {
+        let manager = WorkspaceManager()
+        let oldWorkspace = try XCTUnwrap(manager.selectedWorkspace)
+        let oldTerminal = try XCTUnwrap(oldWorkspace.focusedTerminalTab)
+        oldWorkspace.setCustomTitle("Retirement fixture")
+        oldWorkspace.metadata = ["fixture": "preserved"]
+        try TabMetadataStore.shared.setMetadata(workspaceId: oldWorkspace.id, surfaceId: oldTerminal.id,
+                                               partial: ["fixture.tag": "preserved"], mode: .merge, source: .declare)
+        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        var publications: [[UUID]] = []
+        let observation = manager.$workspaces.dropFirst().sink { publications.append($0.map(\.id)) }
+        defer {
+            observation.cancel()
+            for workspace in manager.workspaces { workspace.teardownAllPanels() }
+            oldWorkspace.teardownAllPanels()
+            TabMetadataStore.shared.removeWorkspace(workspaceId: oldWorkspace.id)
+        }
+
+        manager.restoreSessionSnapshot(snapshot)
+
+        let replacement = try XCTUnwrap(manager.selectedWorkspace)
+        XCTAssertFalse(replacement === oldWorkspace)
+        XCTAssertEqual(replacement.id, oldWorkspace.id)
+        XCTAssertTrue(oldWorkspace.panels.isEmpty, "externally retained old workspace must not retain live panels")
+        XCTAssertNil(oldWorkspace.owningWorkspaceManager)
+        XCTAssertEqual(oldTerminal.surface.portalBindingStateLabel(), "closed")
+        XCTAssertNil(oldTerminal.surface.surface)
+        let newTerminal = try XCTUnwrap(replacement.terminalPanel(for: oldTerminal.id))
+        XCTAssertEqual(newTerminal.surface.portalBindingStateLabel(), "live")
+        XCTAssertTrue(replacement.owningWorkspaceManager === manager)
+        XCTAssertEqual(replacement.customTitle, "Retirement fixture")
+        XCTAssertEqual(replacement.metadata["fixture"], "preserved")
+        XCTAssertEqual(TabMetadataStore.shared.getMetadata(workspaceId: replacement.id, surfaceId: newTerminal.id)
+            .metadata["fixture.tag"] as? String, "preserved")
+        XCTAssertEqual(publications, [[oldWorkspace.id]], "restore must publish only the replacement graph")
+    }
+
+    func testRestorePrunesDisplacedBackgroundLoads() throws {
+        let manager = WorkspaceManager()
+        let displaced = try XCTUnwrap(manager.selectedWorkspace)
+        let source = WorkspaceManager()
+        let kept = try XCTUnwrap(source.selectedWorkspace)
+        manager.requestBackgroundWorkspaceLoad(for: displaced.id)
+        manager.requestBackgroundWorkspaceLoad(for: kept.id)
+        manager.retainDebugWorkspaceLoads(for: [displaced.id, kept.id])
+        defer {
+            for workspace in manager.workspaces + source.workspaces { workspace.teardownAllPanels() }
+            displaced.teardownAllPanels()
+        }
+
+        manager.restoreSessionSnapshot(source.sessionSnapshot(includeScrollback: false))
+
+        XCTAssertTrue(displaced.panels.isEmpty)
+        XCTAssertNil(displaced.owningWorkspaceManager)
+        XCTAssertEqual(manager.pendingBackgroundWorkspaceLoadIds, [kept.id])
+        XCTAssertEqual(manager.debugPinnedWorkspaceLoadIds, [kept.id])
+        XCTAssertEqual(manager.selectedWorkspaceId, kept.id)
+    }
+
+    func testEmptyRestoreRetiresRetainedGraphAndKeepsFallback() throws {
+        let manager = WorkspaceManager()
+        let displaced = try XCTUnwrap(manager.selectedWorkspace)
+        let oldTerminal = try XCTUnwrap(displaced.focusedTerminalTab)
+        manager.requestBackgroundWorkspaceLoad(for: displaced.id)
+        defer {
+            for workspace in manager.workspaces { workspace.teardownAllPanels() }
+            displaced.teardownAllPanels()
+        }
+
+        manager.restoreSessionSnapshot(.init(selectedWorkspaceIndex: nil, workspaces: []))
+
+        XCTAssertTrue(displaced.panels.isEmpty)
+        XCTAssertEqual(oldTerminal.surface.portalBindingStateLabel(), "closed")
+        XCTAssertNil(displaced.owningWorkspaceManager)
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertNotEqual(manager.selectedWorkspaceId, displaced.id)
+        XCTAssertTrue(manager.pendingBackgroundWorkspaceLoadIds.isEmpty)
+        XCTAssertTrue(manager.selectedWorkspace?.owningWorkspaceManager === manager)
+    }
+
+    func testQueuedResumeDoesNotWriteIntoRetainedDisplacedTerminal() async throws {
+        #if DEBUG
+        let startup = ResumeStartupEpochGate.shared.snapshot()
+        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled,
+              !ConversationStorePolicy.isDisabled, startup.auditComplete, startup.mode == .clean else {
+            throw XCTSkip("resume scheduling is disabled by the host")
+        }
+        let manager = WorkspaceManager()
+        let initial = try XCTUnwrap(manager.selectedWorkspace)
+        let tabId = try XCTUnwrap(initial.focusedTerminalTab?.id)
+        let sessionId = "11111111-1111-4111-8111-111111111111"
+        await ConversationStore.shared.push(surfaceId: tabId.uuidString, kind: "codex", id: sessionId,
+                                            source: .hook, state: .suspended)
+        defer {
+            for workspace in manager.workspaces { workspace.teardownAllPanels() }
+            initial.teardownAllPanels()
+            Task { await ConversationStore.shared.clear(surfaceId: tabId.uuidString) }
+        }
+        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        manager.restoreSessionSnapshot(snapshot)
+        let displaced = try XCTUnwrap(manager.selectedWorkspace)
+        let oldTerminal = try XCTUnwrap(displaced.terminalPanel(for: tabId))
+        defer { displaced.teardownAllPanels() }
+        XCTAssertNil(oldTerminal.surface.surface, "fixture must not execute a real harness")
+        XCTAssertEqual(oldTerminal.surface.pendingInitialInputForTests, "")
+
+        manager.restoreSessionSnapshot(snapshot)
+        let replacement = try XCTUnwrap(manager.selectedWorkspace?.terminalPanel(for: tabId))
+        XCTAssertNil(replacement.surface.surface, "fixture must not execute a real harness")
+        try await Task.sleep(for: .seconds(SessionPersistencePolicy.agentRestartDelay + 0.5))
+
+        XCTAssertEqual(oldTerminal.surface.pendingInitialInputForTests, "")
+        XCTAssertFalse(oldTerminal.surface.pendingSubmitOnFlushForTests)
+        XCTAssertTrue(replacement.surface.pendingInitialInputForTests.contains(sessionId),
+                      "replacement must still receive its own scheduled resume")
+        #else
+        throw XCTSkip("pending-input observation requires Debug")
+        #endif
+    }
+
     func testSessionSnapshotSerializesWorkspacesAndRestoreRebuildsSelection() {
         let manager = WorkspaceManager()
         guard let firstWorkspace = manager.selectedWorkspace else {
@@ -355,7 +475,7 @@ extension WorkspaceManagerSessionSnapshotTests {
 }
 
 extension WorkspaceManagerSessionSnapshotTests {
-    func testCollapsedGroupProductionAdapterCountsRawUnreadSeparatelyFromWaitingAndFlags() throws {
+    func testCollapsedGroupProductionAdapterExcludesSuppressedRoutineUnreadButRetainsFlags() throws {
         let manager = WorkspaceManager()
         let plainFlagged = try XCTUnwrap(manager.selectedWorkspace)
         let suppressed = manager.addWorkspace(select: false)
@@ -370,7 +490,8 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertFalse(AreaSizePolicy.isAgentKind(plainFlagged.surfaceActivityTerminalKind(panelId: tabIds[0])))
 
         // Seed the real index and workspace projections, as production attention delivery does.
-        // Neither a flag nor suppression may remove an entry from the raw unread count.
+        // Suppressed routine unread stays in history but must not reach the header.
+        // A suppressed explicit flag remains signal eligible, exactly like a row.
         for index in 0..<2 {
             let snapshot = TabAttentionSnapshot(workspaceId: members[index].id, surfaceId: tabIds[index],
                 flagReason: index == 0 ? "Synthetic flag" : nil,
@@ -407,7 +528,7 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertEqual(store.unreadCount, 2, "Suppressed unflagged notification is excluded only from signal demand")
         XCTAssertEqual(members.map { store.rawUnreadCount(forWorkspaceId: $0.id) }, [1, 1, 1])
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
-                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
+                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 2))
         XCTAssertTrue(coordinator.projection.visibleWorkspaceIds.isEmpty)
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: UUID()), 0)
 
@@ -416,7 +537,7 @@ extension WorkspaceManagerSessionSnapshotTests {
         flushRefresh()
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: waiting.id), 2)
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
-                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 4))
+                       WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
 
         // Reading a suppressed notification changes raw history even though eligible demand stays unchanged.
         let eligibleBeforeRead = store.unreadCount

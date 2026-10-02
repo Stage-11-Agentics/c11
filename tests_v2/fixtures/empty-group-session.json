@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "createdAt": 1,
+  "windows": [
+    {
+      "frame": {"x": 50, "y": 50, "width": 1120, "height": 840},
+      "tabManager": {
+        "selectedWorkspaceIndex": 0,
+        "workspaces": [
+          {
+            "id": "00000000-0000-0000-0000-000000002620",
+            "processTitle": "C11-261 empty-group fixture",
+            "isPinned": false,
+            "currentDirectory": "/tmp/c11-groups-fixture",
+            "focusedPanelId": "00000000-0000-0000-0000-000000002621",
+            "panels": [
+              {
+                "id": "00000000-0000-0000-0000-000000002621",
+                "type": "terminal",
+                "title": "Empty-group control terminal",
+                "isPinned": false,
+                "isManuallyUnread": false,
+                "listeningPorts": [],
+                "terminal": {"workingDirectory": "/tmp/c11-groups-fixture"},
+                "metadata": {"fixture": "c11-261-empty-group"}
+              }
+            ],
+            "statusEntries": [],
+            "logEntries": [],
+            "layout": {
+              "type": "pane",
+              "pane": {
+                "panelIds": ["00000000-0000-0000-0000-000000002621"],
+                "selectedPanelId": "00000000-0000-0000-0000-000000002621"
+              }
+            }
+          }
+        ],
+        "workspaceGroups": [
+          {
+            "id": "00000000-0000-0000-0000-000000002622",
+            "name": "C11-261 Empty Folder",
+            "color": "#7C3AED",
+            "icon": "folder.fill",
+            "isCollapsed": true,
+            "isPinned": true
+          }
+        ]
+      },
+      "sidebar": {"isVisible": true, "selection": "tabs", "width": 200}
+    }
+  ]
+}

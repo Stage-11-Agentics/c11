@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:56:51Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z31R9ENJZF7EXGDDFRN8AV",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z31R9ENJZF7EXGDDFRN8AV.md",
+    "size_bytes": 21195
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Binding interleaving protocol 011 including named extension holder",
+  "token_usage": null,
+  "type": "file"
+}

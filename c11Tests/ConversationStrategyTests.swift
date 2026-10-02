@@ -196,7 +196,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected skip on ambiguous ref")
             return
         }
-        XCTAssertEqual(reason, "ambiguous")
+        XCTAssertEqual(reason, "quarantined:ambiguous_global_assignment")
     }
 
     func testCodexResumeUsesSpecificIdNotLast() {
@@ -252,7 +252,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected skip")
             return
         }
-        XCTAssertEqual(reason, "fresh-launch-only")
+        XCTAssertEqual(reason, "placeholder; no opencode session resolved yet")
     }
 
     func testKimiAliveTypesAutoApprovingLaunch() {
@@ -269,7 +269,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(text, "kimi --yolo")
+        XCTAssertEqual(text, "kimi --auto")
         XCTAssertTrue(submit)
     }
 

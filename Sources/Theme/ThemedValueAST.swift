@@ -2,6 +2,8 @@ import Foundation
 
 public indirect enum ThemedValueAST: Equatable, Sendable {
     case hex(UInt32)
+    /// Eight-digit literals retain their alpha byte even with leading zeros.
+    case rgba(UInt32)
     case variableRef([String])
     case modifier(op: ModifierOp, args: [ThemedValueAST])
     case structured(StructuredValue)

@@ -234,6 +234,10 @@ enum TabLivenessDeriver {
             let derived: SidebarActivityState? = snapshot.flatMap {
                 $0.phase == .unknown || ($0.isHistorical && !$0.paintsAttention) ? nil : ($0.phase == .working ? .working : .idle)
             }
+            if let snapshot, !snapshot.isHistorical {
+                TabActivityTracker.shared.recordActivity(surfaceId: tabID.uuidString,
+                    at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
+            }
             let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: tabID)
             applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: tabID, journal: true)
             let after = currentActivityRaw(workspaceId: workspaceID, surfaceId: tabID)

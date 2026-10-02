@@ -1827,6 +1827,11 @@ struct CMUXCLI {
             environment: processEnv
         )
 
+        if command == "agent-event" {
+            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath)
+            return
+        }
+
         if command == "version" {
             print(versionSummary())
             return
@@ -1956,10 +1961,6 @@ struct CMUXCLI {
             return
         }
 
-        if command == "agent-event" {
-            try JournalCommand.run(commandArgs, socketPath: resolvedSocketPath)
-            return
-        }
         // Capture the original event identity before any socket operation. Offline retry
         // and online append use this same structural draft, never raw hook input.
         let journalHookInput: String? = command == "claude-hook"

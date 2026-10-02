@@ -72,7 +72,8 @@ def main():
                     assert chunk, 'socket closed before complete response'
                     chunks.extend(chunk)
                 response = json.loads(chunks)
-                assert response['ok'], response.get('error')
+                if not response['ok']:
+                    raise cmuxError(response['error']['code']+': '+response['error']['message'])
                 return response['result']
 
         def parity(value):
@@ -165,19 +166,26 @@ def main():
             print('PASS: twenty real mouse select/read/read/CLI/clear cycles; word byte parity; process remains live')
 
         elif args.phase == 'large':
-            body = "import sys;sys.stdout.write('\\033[H\\033[2J\\033[3J');sys.stdout.write(''.join('%06d '%i+('a'+'\\u0301'*8)*80+'\\n' for i in range(20000)));sys.stdout.write('LARGE_SELECTION_READY\\n');sys.stdout.flush()"
+            body = "import sys;sys.stdout.write('\\033[H\\033[2J\\033[3J');sys.stdout.write(''.join('%06d '%i+('a'+'\\u0301'*8)*80+'\\n' for i in range(20000)));sys.stdout.write(''.join(map(chr,[76,65,82,71,69,95,83,69,76,69,67,84,73,79,78,95,82,69,65,68,89]))+'\\n');sys.stdout.flush()"
             send('python3 -c ' + shlex.quote(body))
             wait_marker('LARGE_SELECTION_READY')
             ui('check'); ui('key', 'a', 'cmd')
-            timings=[]; lengths=[]
+            timings=[]; lengths=[]; busy_timings=[]
             if not args.baseline:
                 for _ in range(30):
-                    start=time.monotonic(); value=read(); timings.append((time.monotonic()-start)*1000)
+                    start=time.monotonic()
+                    try: value=read()
+                    except cmuxError as error:
+                        assert str(error).startswith('busy:'), str(error)
+                        busy_timings.append((time.monotonic()-start)*1000)
+                        continue
+                    timings.append((time.monotonic()-start)*1000)
                     parity(value); assert value['has_selection'] and value['truncated']
                     assert len(value['text'].encode()) <= 1048576
                     lengths.append(len(value['text'].encode()))
-                Path('/tmp/c11-282-selection-measurement.json').write_text(json.dumps({'caller_ms':timings, 'response_bytes':lengths, 'native_main_residual':'formatting/allocation unbounded; see debug stage timings', 'soak_gate':'not performed'}))
-                print('PASS: large native user selection, capped UTF-8 response; thirty reads without selection mutation')
+                assert timings, 'no successful large selection read'
+                Path('/tmp/c11-282-selection-measurement.json').write_text(json.dumps({'caller_ms':timings, 'busy_ms':busy_timings, 'response_bytes':lengths, 'native_main_residual':'formatting/allocation unbounded; see debug stage timings', 'soak_gate':'not performed'}))
+                print('PASS: large native user selection, capped UTF-8 response; thirty attempts without selection mutation; typed renderer BUSY allowed')
             # The existing native copy user path is comparable on both artifacts.
             copy_timings=[]; native_lengths=[]
             for _ in range(20):

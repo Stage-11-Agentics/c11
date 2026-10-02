@@ -1,14 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'notes/**'
-      - 'Resources/Localizable.xcstrings'
   pull_request:
     paths-ignore:
       - '**/*.md'
@@ -29,6 +21,12 @@ jobs:
 
       - name: Validate paid-runner fork guards
         run: ./tests/test_ci_self_hosted_guard.sh
+
+      - name: Validate hourly Atlas CI policy
+        run: ./tests/test_ci_schedule_policy.sh
+
+      - name: Validate Atlas admission helpers
+        run: ./tests/test_ci_atlas_tools.sh
 
       - name: Validate create-dmg version pinning
         run: ./tests/test_ci_create_dmg_pinned.sh
@@ -98,166 +96,3 @@ jobs:
 
       - name: Typecheck
         run: bun tsc --noEmit
-
-  build:
-    # Proves the macOS app compiles against current sources. Does not run
-    # xctest — upstream's 1099-test suite validates upstream code paths, which
-    # is upstream's job. Fork-specific regressions get covered by targeted
-    # tests as they land. Heavy regression suites (typing-lag, UI resolution)
-    # can be reinstated in nightly.yml if needed.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: macos-15-xlarge
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
-
-      - name: Select Xcode
-        run: |
-          set -euo pipefail
-          XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
-          if [ ! -d "$XCODE_DIR" ]; then
-            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
-            [ -n "$XCODE_APP" ] || { echo "No Xcode.app found under /Applications" >&2; exit 1; }
-            XCODE_DIR="$XCODE_APP/Contents/Developer"
-          fi
-          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR="$XCODE_DIR"
-          XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
-          XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
-          echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
-          echo "$XCODE_VERSION_OUTPUT"
-
-      - name: Cache GhosttyKit.xcframework
-        id: cache-ghosttykit
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-        with:
-          path: GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
-
-      - name: Download pre-built GhosttyKit.xcframework
-        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
-        run: ./scripts/download-prebuilt-ghosttykit.sh
-
-      - name: Install zig
-        # Required by the cmux scheme's Run Script build phase
-        # (build-ghostty-cli-helper.sh), which compiles a small zig helper at
-        # build time.
-        run: |
-          set -euo pipefail
-          ZIG_REQUIRED="0.15.2"
-          if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
-            echo "zig ${ZIG_REQUIRED} already installed"
-            exit 0
-          fi
-          case "$(uname -m)" in
-            arm64|aarch64) ARCH="aarch64" ;;
-            x86_64) ARCH="x86_64" ;;
-            *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
-          esac
-          curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
-          tar xf /tmp/zig.tar.xz -C /tmp
-          sudo mkdir -p /usr/local/bin /usr/local/lib
-          sudo cp -f /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
-          sudo cp -rf /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
-          zig version
-
-      - name: Cache DerivedData
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
-          restore-keys: |
-            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-
-            deriveddata-build-${{ runner.os }}-
-
-      - name: Cache Swift packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-        with:
-          path: .ci-source-packages
-          key: spm-${{ runner.os }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: spm-${{ runner.os }}-
-
-      - name: Resolve Swift packages
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          mkdir -p "$SOURCE_PACKAGES_DIR"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -resolvePackageDependencies
-
-      - name: Build app
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            build
-
-      - name: SSH shell command availability
-        run: |
-          set -euo pipefail
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
-            -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
-            -disableAutomaticPackageResolution -destination "platform=macOS" \
-            -showBuildSettings -json > "$RUNNER_TEMP/c11-build-settings.json"
-          CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
-          test -x "$CLI_BINARY"
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
-
-      - name: Shell helper lifetime and git reporting
-        run: bash tests/test_shell_git_watchers.sh
-
-      - name: Logic tests (gate)
-        # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
-        # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)
-        # and stable on shared-tenant runners.
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            test
-
-      - name: Host-bound unit tests (advisory)
-        # Advisory while C11-99 Area C stabilizes the 32 expectation-timeout
-        # failures clustered in 7 host-bound classes. Failures still surface
-        # in the run log; they just don't gate merges. Flip back to hard-fail
-        # once C11-99 Area C lands 5+ consecutive green runs.
-        #
-        # C11-109: the 7 flaky classes are explicitly -skip-testing'd below.
-        # Each expectation timeout is ~10s; 32 timeouts dominated the ~6 min
-        # wall time even though `continue-on-error: true` made them advisory.
-        # Skipping recovers ~5 min per build while the remaining ~20 c11Tests
-        # still provide host-runtime signal (AppKit, Ghostty, WKWebView,
-        # UNNotificationCenter). Remove the skip flags when Area C lands.
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
-            -only-testing:c11Tests \
-            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
-            -skip-testing:c11Tests/GhosttyConfigTests \
-            -skip-testing:c11Tests/NotificationBurstCoalescerTests \
-            -skip-testing:c11Tests/WorkspaceManagerReopenClosedBrowserFocusTests \
-            -skip-testing:c11Tests/TerminalNotificationDirectInteractionTests \
-            -skip-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests \
-            -skip-testing:c11Tests/BrowserTabHostContainerViewTests \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            test

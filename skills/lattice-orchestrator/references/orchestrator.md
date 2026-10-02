@@ -139,6 +139,20 @@ is serial.** Maintain one dependency-ordered ready queue and grant the front PR 
 only finalization slot. This prevents every queued branch from repeatedly paying an
 exact review/gate against a base another merge is about to replace.
 
+### C11-315 hourly-main gate
+
+For c11 1.0, `.github/workflows/ci.yml` is the PR fast lane only: require its
+workflow guards, remote-daemon tests, and web typecheck. The native app build,
+logic/host tests, compatibility smoke, and GhosttyKit packaging run on the
+hourly main workflows on the internal Atlas runner (`self-hosted, macOS, atlas`),
+never on fork pull requests. The Merge Captain does not wait for an hourly run
+to land a ready PR. At the exact PR head, require fresh review evidence and the
+cheap checks, then use `scripts/remote-build.sh` on Atlas for changes that touch
+CI/build tooling. A Ghostty or bonsplit pointer change keeps the hosted
+GhosttyKit checksum-flow exception and is not replaced by the generic Atlas
+fallback. After landing, an hourly main failure is a fix-forward incident: do
+not reclassify an older PR as green or use a rerun to conceal a broken main.
+
 For the front PR only:
 
 1. Fetch `<remote>` and compare the PR with current `<remote>/main`. Merge

@@ -21,6 +21,20 @@ Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Dev
 
 The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
 
+GitHub's scheduled native CI uses the internal runner labels
+`self-hosted, macOS, atlas` and the same admission contract. PRs keep the cheap
+Ubuntu lane; `ci-hourly.yml`, `ci-macos-compat.yml`, and
+`build-ghosttykit.yml` run hourly/manual against main. Each heavy workflow command
+must use `scripts/ci-atlas-run.sh`, which composes the two-slot scheduler with
+`scripts/with-build-lock.sh`. The CI runner bootstrap is process-scoped and does
+not install into `/usr/local` or change global Xcode state.
+
+For landing, the Merge Captain gates the exact PR head with fresh review, the
+cheap PR checks, and an Atlas exact-head remote build when CI/build tooling is in
+the diff. The hourly main result is the post-merge authority; red main is fixed
+forward. Ghostty/bonsplit pointer changes still wait for the hosted GhosttyKit
+checksum flow rather than using the generic Atlas substitution.
+
 Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 
 ```bash

@@ -90,6 +90,19 @@ final class BrowserAwaitPolicyTests: XCTestCase {
     // retries/diagnostics, telemetry bootstrap and screenshot completion.
     func testEveryBrowserAwaitRouteUsesSocketWorkerPolicy() {
         let methods = [
+            "browser.eval",
+            "browser.wait",
+            "browser.download.wait",
+            "browser.profiles.list",
+            "browser.profiles.add",
+            "browser.profiles.rename",
+            "browser.profiles.clear",
+            "browser.profiles.delete",
+            "browser.cookies.get",
+            "browser.cookies.set",
+            "browser.cookies.clear",
+            "browser.state.save",
+            "browser.state.load",
             "browser.snapshot",
             "browser.click",
             "browser.dblclick",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Clone the golden Tart image on the sandbox host, boot it headless, and launch a c11 .app inside it.
-# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
-#        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
+# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+#        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,8 +10,8 @@ source "$SCRIPT_DIR/sandbox-common.sh"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second]
-       scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second]
+Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+       scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
 clone headless, place one .app on the Tart host, copy it into the guest,
@@ -19,6 +19,10 @@ and launch it with the automation socket. The golden image is never booted.
 A second running guest needs --allow-second and is the only clone that gets
 a new serial. Two running guests is always refused. If this command is cut
 off, scripts/sandbox-down.sh <run-id> removes the clone.
+
+--agents stages logged-in agent CLIs into the clone once the app is up
+(scripts/sandbox-agent.sh <run-id> stage). A kind that cannot be staged
+fails the whole command and the clone is removed.
 
 --app-source (or C11_SANDBOX_APP_SOURCE) names where the .app comes from.
 Every source leaves one bundle at ~/.c11-sandbox/apps/<run-id>/ on the Tart
@@ -74,10 +78,17 @@ run_id=""
 app=""
 allow_second=0
 app_source="${C11_SANDBOX_APP_SOURCE:-local-app}"
+agents=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --allow-second) allow_second=1; shift ;;
+    --agents)
+      [[ $# -ge 2 ]] || sandbox_die "--agents needs a list such as claude,codex,grok"
+      agents="$2"
+      shift 2
+      ;;
+    --agents=*) agents="${1#--agents=}"; shift ;;
     --app-source)
       [[ $# -ge 2 ]] || sandbox_die "--app-source needs a name"
       app_source="$2"
@@ -107,6 +118,9 @@ if [[ $# -gt 0 ]]; then
 fi
 [[ -n "$run_id" ]] || { usage >&2; exit 1; }
 sandbox_validate_run_id "$run_id"
+if [[ -n "$agents" ]]; then
+  [[ "$agents" =~ ^(claude|codex|grok)(,(claude|codex|grok))*$ ]] || sandbox_die "--agents takes a comma-separated list of claude, codex, grok"
+fi
 rel=".c11-sandbox/apps/${run_id}"
 
 # The case is the seam. Add a source by staging one .app into $rel on the
@@ -333,3 +347,11 @@ printf 'cli=%s\n' "\${CLI:-}"
 printf 'clone_secs=%s\n' "\$clone_secs"
 printf 'boot_secs=%s\n' "\$boot_secs"
 EOF
+
+if [[ -n "$agents" ]]; then
+  if ! "$SCRIPT_DIR/sandbox-agent.sh" "$run_id" stage "$agents"; then
+    echo "sandbox: staging agents ($agents) failed; removing the clone" >&2
+    "$SCRIPT_DIR/sandbox-down.sh" "$run_id" >&2 || true
+    exit 1
+  fi
+fi

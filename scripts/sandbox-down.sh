@@ -11,7 +11,8 @@ usage() {
   cat <<'EOF'
 Usage: scripts/sandbox-down.sh <run-id>
 
-Stop c11-sb-<run-id>, delete that clone, and remove the copied .app.
+Remove staged agent credentials from the guest, stop c11-sb-<run-id>,
+delete that clone, and remove the copied .app.
 Screenshots and test logs under the host's .c11-sandbox/out/<run-id> stay.
 This is also the recovery when sandbox-up is cut off and its cleanup does not run.
 EOF
@@ -21,6 +22,13 @@ EOF
 [[ $# -eq 1 ]] || { usage >&2; exit 1; }
 run_id="$1"
 sandbox_validate_run_id "$run_id"
+
+# Staged agent credentials go first. Deleting the clone is what removes them for
+# good; this keeps a stuck stop from leaving them readable in a live guest.
+if ! wiped="$("$SCRIPT_DIR/sandbox-agent.sh" "$run_id" wipe 2>/dev/null)"; then
+  wiped="wiped=unreachable (the clone delete below removes them)"
+fi
+printf '%s\n' "$wiped"
 
 sandbox_on_host <<EOF
 set -eu

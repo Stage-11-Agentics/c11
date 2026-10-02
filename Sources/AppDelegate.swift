@@ -6436,6 +6436,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func debugHasMainWindowCloseGuard(for window: NSWindow) -> Bool {
         mainWindowCloseGuards[ObjectIdentifier(window)] != nil
     }
+
+    func debugUnregisterMainWindow(_ window: NSWindow) {
+        unregisterMainWindow(window)
+    }
 #endif
 
     @objc private func mainWindowCloseButtonPressed(_ sender: NSButton) {

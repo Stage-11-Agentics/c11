@@ -1251,32 +1251,34 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
                        "Worker requests must not repeat the startup graph walk")
     }
 
-    func testPublishedAdditionsHaveRefsBeforeTheNewCollectionIsInstalled() throws {
+    func testPublishedAdditionsRegisterSuppliedNewIDsBeforeCreationReturns() throws {
         let controller = TerminalController.shared
         let manager = WorkspaceManager()
         defer { manager.workspaces.forEach { $0.teardownAllPanels() } }
-        var sawWorkspaceInsertion = false
+        var publishedWorkspaceIds: Set<UUID> = []
         let workspaceSubscription = manager.$workspaces.sink { newWorkspaces in
             for workspace in newWorkspaces where !manager.workspaces.contains(where: { $0.id == workspace.id }) {
-                sawWorkspaceInsertion = true
-                XCTAssertNotNil(controller.v2RefByUUID[.workspace]?[workspace.id])
+                publishedWorkspaceIds.insert(workspace.id)
             }
         }
         let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-        XCTAssertTrue(sawWorkspaceInsertion)
+        XCTAssertTrue(publishedWorkspaceIds.contains(workspace.id))
+        // Combine does not promise subscriber order. All synchronous willSet
+        // deliveries must finish before the next command can use the result.
+        XCTAssertNotNil(controller.v2RefByUUID[.workspace]?[workspace.id])
         let root = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
         XCTAssertNotNil(controller.v2RefByUUID[.pane]?[root.id])
 
-        var sawTabInsertion = false
+        var publishedTabIds: Set<UUID> = []
         let panelSubscription = workspace.$panels.sink { newPanels in
             for id in newPanels.keys where workspace.panels[id] == nil {
-                sawTabInsertion = true
-                XCTAssertNotNil(controller.v2RefByUUID[.surface]?[id],
-                                "Ref registration must consume newPanels, not the old workspace.panels")
+                publishedTabIds.insert(id)
             }
         }
-        _ = try XCTUnwrap(workspace.newBrowserSurface(inPane: root, focus: false))
-        XCTAssertTrue(sawTabInsertion)
+        let browser = try XCTUnwrap(workspace.newBrowserSurface(inPane: root, focus: false))
+        XCTAssertTrue(publishedTabIds.contains(browser.id))
+        XCTAssertNotNil(controller.v2RefByUUID[.surface]?[browser.id],
+                        "Ref registration must consume newPanels, not the old workspace.panels")
         withExtendedLifetime((workspaceSubscription, panelSubscription)) {}
     }
 

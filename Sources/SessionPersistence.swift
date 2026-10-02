@@ -494,6 +494,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var stableDefaultTitle: String? = nil
     var customColor: String?
     var isPinned: Bool
+    var groupId: UUID? = nil
     var currentDirectory: String
     /// Stable workspace project root. Optional so pre-C11-194 snapshots decode.
     var rootDirectory: String? = nil
@@ -519,6 +520,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
 struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
+    var workspaceGroups: [WorkspaceGroup]? = nil
 }
 
 struct SessionWindowSnapshot: Codable, Sendable {

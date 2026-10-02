@@ -107,6 +107,12 @@ final class EventEmitter {
         emit(.surfaceClosed, workspace: workspace, surface: surface)
     }
 
+    func emitWorkspaceReordered(windowId: UUID?, workspaceIds: [UUID]) {
+        var payload: [String: Any] = ["final_workspace_ids": workspaceIds.map(\.uuidString)]
+        if let windowId { payload["window_id"] = windowId.uuidString }
+        emit(.workspaceReordered, payload: payload)
+    }
+
     func emitWorkspaceSelected(previous: UUID?, selected: UUID) {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }

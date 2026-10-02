@@ -252,6 +252,7 @@ class TerminalController {
     static let focusIntentV2Methods: Set<String> = [
         "window.focus",
         "workspace.select",
+        "workspace.group.focus",
         "workspace.next",
         "workspace.previous",
         "workspace.last",
@@ -276,6 +277,7 @@ class TerminalController {
     enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
+        case workspaceGroup = "workspace_group"
         case pane = "area"
         case surface = "tab"
     }
@@ -2082,6 +2084,23 @@ class TerminalController {
     }
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
+        // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
+        "workspace.reorder_batch",
+        "workspace.group.list",
+        "workspace.group.create",
+        "workspace.group.rename",
+        "workspace.group.delete",
+        "workspace.group.ungroup",
+        "workspace.group.add",
+        "workspace.group.remove",
+        "workspace.group.move",
+        "workspace.group.collapse",
+        "workspace.group.expand",
+        "workspace.group.pin",
+        "workspace.group.unpin",
+        "workspace.group.set_color",
+        "workspace.group.set_icon",
+        "workspace.group.focus",
         "tab.send_text",
         "tab.send_key",
         "tab.read_text",
@@ -2237,6 +2256,7 @@ class TerminalController {
             "workspace_count": workspaceNodes.count,
             "selected_workspace_id": v2OrNull(summary.selectedWorkspaceId?.uuidString),
             "selected_workspace_ref": v2Ref(kind: .workspace, uuid: summary.selectedWorkspaceId),
+            "workspace_groups": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map { v2WorkspaceGroupRecords($0) } ?? [],
             "workspaces": workspaceNodes
         ]
     }
@@ -2403,6 +2423,7 @@ class TerminalController {
             "title": workspace.title,
             "selected": selected,
             "pinned": workspace.isPinned,
+            "group_id": v2OrNull(workspace.groupId?.uuidString),
             "root_directory": v2OrNull(workspace.rootDirectory),
             "content_area": contentArea,
             "areas": panes,
@@ -2660,6 +2681,9 @@ class TerminalController {
         for item in windows {
             _ = v2EnsureHandleRef(kind: .window, uuid: item.windowId)
             if let tm = app.workspaceManagerFor(windowId: item.windowId) {
+                for group in tm.workspaceGroups {
+                    _ = v2EnsureHandleRef(kind: .workspaceGroup, uuid: group.id)
+                }
                 for ws in tm.workspaces {
                     _ = v2EnsureHandleRef(kind: .workspace, uuid: ws.id)
                     for paneId in ws.bonsplitController.allPaneIds {

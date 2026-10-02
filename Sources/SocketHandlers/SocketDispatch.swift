@@ -60,6 +60,10 @@ extension TerminalController {
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
 
+        if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
+            return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
+
         switch request.method {
         case "tab.send_text":
             return v2Result(id: request.id, v2SurfaceSendText(params: request.params))

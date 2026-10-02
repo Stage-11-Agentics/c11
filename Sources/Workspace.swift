@@ -10907,10 +10907,12 @@ final class Workspace: Identifiable, ObservableObject {
             terminalFocusPanelId: terminalFocusPanelId
         )
         // Production callers observe the deferred attempt on the next run-loop
-        // turn. Drain that queued turn here so this synchronous DEBUG seam keeps
-        // its existing contract for focus/visibility assertions without making
-        // the production begin path re-entrant again.
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        // turn. This DEBUG-only seam intentionally drains one attempt directly
+        // so its synchronous focus/visibility assertions keep their existing
+        // contract without making the production begin path re-entrant again.
+        layoutFollowUpAttemptVersion &+= 1
+        layoutFollowUpAttemptScheduled = false
+        attemptEventDrivenLayoutFollowUp()
         reconcileFocusState()
     }
 #endif

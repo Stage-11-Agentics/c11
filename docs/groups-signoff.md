@@ -218,8 +218,21 @@ and oracle infrastructure, not a substitute for these UI steps.
    Group (empty folder, no new workspace), workspace Move to Group; no Close
    Members item. Exercise keyboard/VoiceOver names and exact counts. Drop the
    synthetic fixture file into a terminal and a Bonsplit tab between areas to
-   preserve existing drag paths. Select browser w04, then terminal w03; typing
-   reaches w03 and its shell PID remains unchanged.
+   preserve existing drag paths. For the carried C11-260 split-focus residual,
+   reset/reprovision g60, then split browser workspace w04 so a terminal area is
+   directly to the right of its browser area in the **same workspace**. Record
+   that workspace UUID, both area/tab UUIDs, and the terminal shell PID. Click
+   the browser omnibar and type `c11-C4-omnibar` without submitting or dismissing
+   its editor. Use the keyboard **Focus Area Right** shortcut (default Cmd+Opt+Right;
+   record the actual configured binding), with no click, socket focus command,
+   or workspace selection between omnibar entry and split navigation. Type
+   `printf 'c11-C4-terminal-receipt\n'` and Return through keyboard input. Expected:
+   the adjacent terminal visibly prints the receipt; its read-screen contains
+   `c11-C4-terminal-receipt`, the browser omnibar gains none of that command,
+   and the workspace/tab identities and shell PID remain unchanged. Capture
+   before/after screenshots, focused area/tab identity and the terminal receipt.
+   Cross-workspace selection is not this proof. Cleanup/quit/fresh-reprovision
+   g60 before the next chapter.
 5. **C5 geometry.** Exercise a group with 100 members, including the 99+
    count presentation, row readability, and scrolling. Record the window
    size/display identity and screenshots. First reset/reprovision g60. Run
@@ -322,12 +335,17 @@ Numbers/noise and the shared-selection-lock diagnosis are recorded at
 `ev_01M3Z62TEW4XZRMNKAB37E70SG` and `art_01M3Z62TCANQT0XPRHAW7ZZT5J`;
 raw-score artifact `art_01M3Z62T9N9WFNM61JN1NT59N9`.
 
-The Orchestrator authorized ONE separately preregistered final top-up: per-role
-selection locks, symmetric headroom, only missing churn-scroll minimums and the
-quiescence phase. Previous observations, timeouts, counts and clocks remain;
-no result is retroactively upgraded. Review proceeds on the five other repairs
-and window-2 evidence while this performance delta is pending. The top-up must
-name its actual dose, counts and aggregation rule and keep all original limits.
+The round-2 review (`ev_01M3Z6T73G534QJV310F5JRD76`) and Orchestrator require
+ONE separately preregistered final cohort: per-role selection locks, symmetric
+headroom, a complete full-dose 10Hz churn phase for typing, switch and scroll,
+then quiescence with post-state/resource/termination evidence. Do not pool new
+scroll observations with window 2: its deficient dose cannot establish the old
+typing/switch comparisons at 10Hz. Window 2's observations, timeouts, counts and
+clocks remain disclosed partial evidence, never retroactively upgraded. Carry
+forward only its complete no-churn comparisons; new churn and quiescence stay
+identifiable as their own cohort. Keep all original limits and report actual
+dose, counts, raw samples, failures, noise and resource recovery. Findings 2,
+3, 4 and 6 are resolved; C4 now specifies the exact same-workspace focus path.
 
 C11-260 watch-point dispositions: per-header palette read is hoisted to one
 read per sidebar evaluation; dead SidebarDropPlanner.indicator/targetIndex and

@@ -96,6 +96,7 @@ struct FeedQuickView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .focusable()  // Focusable regardless of the system keyboard-navigation setting.
                         .focused($focusedFilter, equals: filter)
                         .feedQuickMeasure("filter.\(index)", observer: onLayout)
                         .accessibilityIdentifier(index == 0 ? "feed.quick.filter.asks" : "feed.quick.filter.turns")

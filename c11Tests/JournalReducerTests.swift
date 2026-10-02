@@ -89,7 +89,7 @@ final class JournalReducerTests: XCTestCase {
         }
     }
 
-    // Bypass AskUserQuestion/ExitPlanMode + seen/Stop are not responses.
+    // Seeing or an uncorrelated Stop is not a response to a blocked request.
     func testBypassRequestsPersistUntilCorrelatedResolution() {
         for kind in [JournalKind.questionRequested, .planReviewRequested, .approvalRequested] {
             var ask = JournalTestData.draft(kind)
@@ -104,6 +104,27 @@ final class JournalReducerTests: XCTestCase {
             resolve.requestID = "request-a"
             XCTAssertEqual(JournalTestData.fold(blocked, resolve, seq: 4).snapshot?.phase, .working)
         }
+    }
+
+    func testOnlySameTurnClaudeHookStopResolvesApproval() throws {
+        var approval = JournalTestData.draft(.approvalRequested)
+        approval.turnID = "approval-turn"
+        let blocked = try XCTUnwrap(JournalTestData.fold(nil, approval, seq: 1).snapshot)
+        var stop = JournalTestData.draft(.turnCompleted)
+        XCTAssertEqual(JournalTestData.fold(blocked, stop, seq: 2).snapshot, blocked)
+        stop.turnID = "other-turn"
+        XCTAssertEqual(JournalTestData.fold(blocked, stop, seq: 3).snapshot, blocked)
+        stop.turnID = "approval-turn"
+        stop.adapter = .codexNotify
+        XCTAssertEqual(JournalTestData.fold(blocked, stop, seq: 4).snapshot, blocked)
+        stop.adapter = .claudeHook; stop.source = .transcript
+        XCTAssertEqual(JournalTestData.fold(blocked, stop, seq: 5).snapshot, blocked)
+        stop.source = .hook
+        let completed = try XCTUnwrap(JournalTestData.fold(blocked, stop, seq: 6).snapshot)
+        XCTAssertEqual(completed.phase, .idle)
+        XCTAssertEqual(completed.turnOutcome, "completed")
+        XCTAssertNil(completed.reason)
+        XCTAssertNil(completed.requestID)
     }
 
     // Esc captures expose gaps; a keypress cannot assert a successful interruption.
@@ -142,7 +163,7 @@ final class JournalReducerTests: XCTestCase {
     // Retain C11-271 provenance: replay the captured hook stream in its recorded order.
     func testMergedFixtureCorpusHookSequences() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")
-        for (name, expected) in [("derived-late-pretool-after-stop", JournalPhase.idle), ("claude-bypass-ask", .blocked)] {
+        for (name, expected) in [("derived-late-pretool-after-stop", JournalPhase.idle), ("claude-bypass-ask", .blocked), ("claude-bypass-ask-answered", .idle)] {
             let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(name + ".json"))) as? [String: Any])
             let events = try XCTUnwrap(object["events"] as? [[String: Any]])
             var state: JournalSnapshot?
@@ -156,16 +177,22 @@ final class JournalReducerTests: XCTestCase {
                 case "Stop": kind = .turnCompleted
                 case "PreToolUse", "PermissionRequest":
                     kind = tool == "AskUserQuestion" ? .questionRequested : (tool == "ExitPlanMode" ? .planReviewRequested : .stateChanged)
-                case "PostToolUse": kind = .stateChanged
+                case "PostToolUse": kind = (tool == "AskUserQuestion" || tool == "ExitPlanMode") ? .attentionResolved : .stateChanged
                 default: continue
                 }
                 var draft = JournalTestData.draft(kind)
                 draft.nativeEvent = native
+                let attrs = event["attrs"] as? [String: Any] ?? [:]
+                draft.turnID = attrs["prompt_id"] as? String
+                draft.requestID = attrs["tool_use_id"] as? String
+                if kind == .attentionResolved { draft.resolution = .resumed }
                 if kind == .stateChanged { draft.signal = .toolActivity }
                 // Capture timestamps are observational, not certified native causality.
                 draft.timeQuality = .observed
                 draft.occurredAtMs = (event["t_ms"] as? NSNumber)?.int64Value ?? 0
                 state = JournalTestData.fold(state, draft, seq: Int64(index + 1)).snapshot
+                if kind == .attentionResolved { XCTAssertEqual(state?.phase, .working, name) }
+
             }
             XCTAssertEqual(state?.phase, expected, name)
         }

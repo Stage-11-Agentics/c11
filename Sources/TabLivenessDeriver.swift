@@ -134,7 +134,7 @@ enum TabLivenessDeriver {
         let derived = activityState(for: state)
         TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
-            guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+            guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
             // Reconcile and realtime writes share this queue with journal projection.
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(derived: derived, workspaceId: workspaceId, surfaceId: surfaceId)
@@ -152,7 +152,7 @@ enum TabLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
@@ -175,7 +175,7 @@ enum TabLivenessDeriver {
     ) {
         TabActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
-            if JournalCoordinator.shared.snapshot(tabID: surfaceId) != nil {
+            if JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection == .live {
                 // A Return still closes the mailbox prompt gate, but cannot invent a journal turn.
                 if source == .submit {
                     DispatchQueue.main.async {
@@ -210,7 +210,7 @@ enum TabLivenessDeriver {
                           let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                         return
                     }
-                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+                    guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
                     workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                     workspace.noteMailboxAgentLifecycle(
@@ -295,7 +295,7 @@ enum TabLivenessDeriver {
 
     private static func reconcileOnQueue(surfaceId: UUID, workspaceId: UUID,
         detectedTerminalType: String?, now: Date, coldAfterSeconds: TimeInterval) {
-        guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+        guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
         let snap = TabMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
             surfaceId: surfaceId
@@ -361,7 +361,7 @@ enum TabLivenessDeriver {
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
-                guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+                guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
                 workspace.setAgentCold(false, forSurface: surfaceId)
                 workspace.setDerivedActivity(.idle, forSurface: surfaceId)
             }
@@ -393,7 +393,7 @@ enum TabLivenessDeriver {
                       let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else {
                     return
                 }
-                guard JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+                guard JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
                 if isCold,
                    let observedLastTouchedAt,
                    let currentLastTouchedAt = TabActivityTracker.shared.lastActivity(
@@ -430,7 +430,7 @@ enum TabLivenessDeriver {
         surfaceId: UUID,
         journal: Bool = false
     ) {
-        guard journal || JournalCoordinator.shared.snapshot(tabID: surfaceId) == nil else { return }
+        guard journal || JournalCoordinator.shared.snapshot(tabID: surfaceId)?.connection != .live else { return }
         if let derived {
             TabMetadataStore.shared.setInternal(
                 workspaceId: workspaceId,

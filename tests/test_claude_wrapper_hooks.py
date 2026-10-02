@@ -139,7 +139,7 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
 
     settings = parse_settings_arg(real_argv)
     hooks = settings.get("hooks", {})
-    expected_hooks = {"SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse"}
+    expected_hooks = {"SessionStart", "Stop", "SessionEnd", "Notification", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
     expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {hooks.keys()}, expected {expected_hooks}", failures)
     # PreToolUse should be async to avoid blocking tool execution
     pre_tool_use_hooks = hooks.get("PreToolUse", [{}])[0].get("hooks", [{}])
@@ -148,6 +148,11 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
         f"PreToolUse hook should have async:true, got {pre_tool_use_hooks}",
         failures,
     )
+    post = hooks.get("PostToolUse", [{}])[0]
+    expect(post.get("matcher") == "AskUserQuestion|ExitPlanMode",
+           "PostToolUse must subscribe only to the two blocking tools", failures)
+    expect(post.get("hooks", [{}])[0].get("command") == "c11 claude-hook post-tool-use",
+           "PostToolUse must deliver the resolution callback", failures)
     # SessionEnd should have a short timeout (session is exiting)
     session_end_hooks = hooks.get("SessionEnd", [{}])[0].get("hooks", [{}])
     expect(

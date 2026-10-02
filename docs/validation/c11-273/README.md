@@ -1,6 +1,6 @@
 # C11-273 validation checkpoint
 
-Implementation is pushed on `c11-1.0/C11-273-journal`. This checkpoint is not a performance PASS or a review handoff.
+Draft PR #527 is in review on `c11-1.0/C11-273-journal`. Per the orchestrator ruling, the invalid comparison is a named residual for the end-of-run C11-270 soak, not an owner handoff blocker. Prior measurements below are historical evidence, not a performance PASS.
 
 ## Artifact and scope
 
@@ -41,7 +41,7 @@ The first failed captures show a dimmed app window while retaining the glyph: [b
 
 The pre-registered C11-270 thresholds remain p95 `max(baseline * 1.20, baseline + 5 ms)`, p99 `max(baseline * 1.25, baseline + 15 ms)`, and peak footprint `max(baseline * 1.25, baseline + 2048 MiB)`. More than 5% unmatched glyphs invalidates measurement. No threshold was relaxed. This short run cannot establish a fleet-soak memory slope or main-thread stall distribution.
 
-The final clean Debug build passed with no overlay; see [final-build.json](final-build.json), invocation `7e81965b42794cd18775c4215c280a46`. Core runtime and actual key/menu UI checks pass. The remaining performance gate prevents a review-ready claim: no draft PR or HANDOFF has been sent. Fable review remains orchestrator-owned. Only evidence files changed after that build. The UI restart evidence is a window capture plus accessibility help; restored window bounds were not normalized, so it is state proof, not a restore-geometry gate.
+The final clean Debug build passed with no overlay; see [final-build.json](final-build.json), invocation `7e81965b42794cd18775c4215c280a46`. Core runtime and actual key/menu UI checks pass. The orchestrator deferred this performance residual to the end-of-run soak; draft PR #527 and its review handoff are open. Fable review remains orchestrator-owned. Only evidence files changed after that build. The UI restart evidence is a window capture plus accessibility help; restored window bounds were not normalized, so it is state proof, not a restore-geometry gate.
 
 Cleanup: both completed tag caches and their remote DerivedData directories were removed. The final guest was deleted after the bounded run, within its lease. Retained public evidence contains no account names, home paths or session identifiers.
 
@@ -51,3 +51,7 @@ Cleanup: both completed tag caches and their remote DerivedData directories were
 2. In the tagged domain bind Jump to Option-V before launch, then run `journal_ui_probe.py` with its exact app, CLI, socket and process. Use one verified display and a fully visible main window. Expect journal-only Jump, suppression/flag precedence, persistent blocked state after seeing, and Unconfirmed after force-kill/resume. Expect `cleanup_ok: true` and inspect the cropped screenshots.
 3. Run the same `journal_perf_probe.py` on a tagged main baseline and candidate under matching geometry and load. Retain calibration/miss counts and compare only valid samples using the registered thresholds. Report short-run scope separately from the deferred fleet soak.
 4. Delete the run's guest and tag caches after retaining sanitized evidence. The merge owner syncs installed skill copies from merged main.
+
+## Review repair round 1
+
+The orchestrator attests a narrow Claude PostToolUse subscription for AskUserQuestion and ExitPlanMode, correlated resolution by tool-use ID, and same-turn hook-rank Stop as verified continuation of Claude approval. The repair preserves status-pill updates after append and permits legacy activity once the journal projection disconnects. An answered-ask fixture is explicitly derived from the recorded unanswered capture with a synthetic continuation. Focused reducer, store, spool, liveness, wrapper and packaged CLI tests validate this repair; current results are recorded in the ticket validation comment at the repair head. No new performance run or self-review is part of this round.

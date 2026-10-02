@@ -15,8 +15,13 @@ unknown/advisory; pressing Esc alone does not prove interruption succeeded.
 An observed question, approval, or plan-review request is blocked independently
 of unread notifications. Seeing a tab can clear unread, but it does not answer
 the request. Existing flag and suppression policy still controls presentation.
-Journal-managed sessions receive derived `activity` from the committed fold;
-legacy shell/notification writes cannot override it.
+Live journal-managed sessions receive derived `activity` from the committed fold;
+legacy shell/notification writes cannot override it. Once disconnected, legacy
+shell and unmanaged-agent activity can update again while historical attention
+remains visible. Claude PostToolUse for AskUserQuestion and ExitPlanMode resolves
+only the matching `tool_use_id`. A Claude hook-rank Stop with the same nonempty
+`prompt_id` resolves that turn's approval; an unrelated or uncorrelated Stop does
+not resolve it.
 
 Restart projects old blocked/error evidence as **unconfirmed** and disconnected.
 Old working is not present liveness. Only matching exact restored ownership may

@@ -102,6 +102,9 @@ enum JournalCommand {
         case "prompt-submit": kind = .turnStarted
         case "stop", "idle": kind = .turnCompleted
         case "pre-tool-use": kind = tool == "AskUserQuestion" ? .questionRequested : (tool == "ExitPlanMode" ? .planReviewRequested : .stateChanged)
+        case "post-tool-use":
+            guard tool == "AskUserQuestion" || tool == "ExitPlanMode" else { return nil }
+            kind = .attentionResolved
         case "notification", "notify":
             kind = (input["notification_type"] as? String) == "permission_prompt" ? .approvalRequested : .stateChanged
         default: return nil
@@ -113,6 +116,7 @@ enum JournalCommand {
         case "prompt-submit": native = "UserPromptSubmit"
         case "stop", "idle": native = "Stop"
         case "pre-tool-use": native = "PreToolUse"
+        case "post-tool-use": native = "PostToolUse"
         default: native = "Notification"
         }
         var draft = JournalDraft(kind: kind, emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
@@ -122,9 +126,10 @@ enum JournalCommand {
             adapter: .claudeHook, nativeEvent: native)
         draft.turnID = input["prompt_id"] as? String
         draft.requestID = input["tool_use_id"] as? String
-        if subcommand == "pre-tool-use" {
+        if subcommand == "pre-tool-use" || subcommand == "post-tool-use" {
             draft.toolClass = tool == "AskUserQuestion" ? .askUserQuestion : (tool == "ExitPlanMode" ? .exitPlanMode : .other)
         }
+        if kind == .attentionResolved { draft.resolution = .resumed }
         if kind == .stateChanged { draft.signal = subcommand == "pre-tool-use" ? .toolActivity : .observation }
         return (try? draft.validate()) != nil ? draft : nil
     }

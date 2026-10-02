@@ -17678,8 +17678,8 @@ struct CMUXCLI {
             }
             print("OK")
 
-        case "pre-tool-use":
-            telemetry.breadcrumb("claude-hook.pre-tool-use")
+        case "pre-tool-use", "post-tool-use":
+            telemetry.breadcrumb("claude-hook.\(subcommand)")
             // Clears "Needs input" status and notification when Claude resumes work
             // (e.g. after permission grant). Runs async so it doesn't block tool execution.
             var workspaceId = fallbackWorkspaceId
@@ -17697,12 +17697,16 @@ struct CMUXCLI {
                 preferredSurface, workspaceId: workspaceId, client: client
             )
             let toolName = parsedInput.object?["tool_name"] as? String
+            if subcommand == "post-tool-use", toolName != "AskUserQuestion", toolName != "ExitPlanMode" {
+                print("OK")
+                return
+            }
             let permissionMode = parsedInput.object?["permission_mode"] as? String
             let bypass = permissionMode == "bypassPermissions"
             // A bypass-started session emits ExitPlanMode in plan mode while
             // its approval UI waits. The native trace has no Notification edge.
             let planApproval = toolName == "ExitPlanMode" && (bypass || permissionMode == "plan")
-            if toolName == "AskUserQuestion" || planApproval {
+            if subcommand == "pre-tool-use" && (toolName == "AskUserQuestion" || planApproval) {
                 let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
                 let body: String
                 if toolName == "ExitPlanMode" {
@@ -17735,10 +17739,6 @@ struct CMUXCLI {
             }
 
             _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
-            if appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface) {
-                print("OK")
-                return
-            }
             _ = try? reportAgentActivity(
                 client: client, workspaceId: workspaceId, surfaceId: resolvedSurface, activity: "working"
             )
@@ -17765,7 +17765,7 @@ struct CMUXCLI {
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--tab <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use|post-tool-use> [--workspace <id|index>] [--tab <id|index>]
                 """
             )
 

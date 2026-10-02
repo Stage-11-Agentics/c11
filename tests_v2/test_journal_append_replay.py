@@ -55,23 +55,30 @@ def main():
 
         try:
             hook('session-start')
-            hook('prompt-submit')
+            hook('prompt-submit', {'prompt_id': 'ask-turn'})
             phase('working')
-            hook('pre-tool-use', {'tool_name': 'AskUserQuestion', 'permission_mode': 'bypassPermissions',
+            hook('pre-tool-use', {'prompt_id': 'ask-turn', 'tool_name': 'AskUserQuestion', 'permission_mode': 'bypassPermissions',
                                  'tool_use_id': 'synthetic-ask', 'tool_input': {'questions': [{'question': 'PRIVATE-SENTINEL-C11-273'}]}})
             phase('blocked')
             before = state()
             legacy(path, f'clear_notifications --tab={workspace} --panel={tab}')
             legacy(path, f'report_agent_activity working --tab={workspace} --panel={tab}')
             legacy(path, f'report_agent_activity idle --tab={workspace} --panel={sibling}')
-            hook('pre-tool-use', {'tool_name': 'Bash'})
-            hook('stop')
+            hook('pre-tool-use', {'tool_name': 'Bash', 'prompt_id': 'earlier-turn'})
+            hook('stop', {'prompt_id': 'earlier-turn'})
             phase('blocked')
             assert state()['sequence'] == before['sequence'], 'seen, sibling, legacy or Stop changed blocked projection'
             assert state()['reason'] == 'question'
-            print('PASS seen/sibling/legacy/late tool/Stop preserve blocked request')
+            print('PASS seen/sibling/legacy/different-turn tool and Stop preserve blocked request')
+            hook('post-tool-use', {'tool_name': 'AskUserQuestion', 'tool_use_id': 'synthetic-ask',
+                                   'prompt_id': 'ask-turn'})
+            phase('working')
+            hook('pre-tool-use', {'tool_name': 'Bash', 'prompt_id': 'ask-turn'})
+            hook('stop', {'prompt_id': 'ask-turn'})
+            phase('idle')
+            print('PASS correlated answer resumes work and same-turn completion returns idle')
 
-            hook('prompt-submit')
+            hook('prompt-submit', {'prompt_id': str(uuid.uuid4())})
             phase('working')
             hook('stop')
             phase('idle')
@@ -80,7 +87,7 @@ def main():
             assert state()['phase'] == 'idle' and state()['sequence'] == before['sequence']
             print('PASS delayed PreToolUse cannot reopen terminal barrier')
 
-            hook('prompt-submit')
+            hook('prompt-submit', {'prompt_id': str(uuid.uuid4())})
             phase('working')
             capture = json.loads((Path(__file__).parent / 'fixtures' / 'c11-263-native-exit-plan-before.json').read_text())
             native_plan = next(row for row in capture['hooks']
@@ -90,7 +97,7 @@ def main():
             phase('blocked')
             assert state()['reason'] == 'plan_review'
             print('PASS recorded ExitPlanMode hook shape reaches plan-review journal projection')
-            hook('prompt-submit')
+            hook('prompt-submit', {'prompt_id': str(uuid.uuid4())})
             phase('working')
             event = draft('agent.plan_review.requested', tool_class='exit_plan_mode', request_id='synthetic-plan')
             # Lost reply after actual write: retry must return the original committed receipt.
@@ -116,6 +123,15 @@ def main():
             assert client._call('agent.event.append', {'event': stale})['projection_effect'] == 'unattributed'
             phase('blocked')
             print('PASS child and stale session cannot change current owner')
+
+            hook('session-end')
+            eventually(lambda: state()['connection'] == 'disconnected', 'ended journal projection')
+            for activity in ('working', 'idle'):
+                legacy(path, f'report_agent_activity {activity} --tab={workspace} --panel={tab}')
+                eventually(lambda: client._call('tab.get_metadata', {'tab_id': tab})['metadata'].get('activity') == activity,
+                           'legacy activity after session end: ' + activity)
+            assert state()['phase'] == 'blocked', 'historical attention must remain visible'
+            print('PASS disconnected journal retains attention and releases legacy activity writes')
 
             # Public append rejects bodies before any storage; the hook extracts only structure.
             invalid = {**event, 'event_id': str(uuid.uuid4()), 'body': 'PRIVATE-SENTINEL-C11-273'}

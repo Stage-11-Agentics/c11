@@ -133,7 +133,13 @@ enum JournalReducer {
             s.terminalRank = s.terminalBarrier ? d.source.rank : 0
         case .turnCompleted, .idleObserved:
             guard supportsTurn else { return unchanged(.advisory, "unsupported_turn") }
-            guard s.phase != .blocked else { return unchanged(.advisory, "unresolved_request") }
+            // Claude cannot emit Stop while its same-turn permission prompt is pending.
+            // An absent/mismatched turn or another adapter is not continuation evidence.
+            let resolvesClaudeApproval = d.kind == .turnCompleted && d.adapter == .claudeHook
+                && d.source == .hook && d.source.rank >= s.rank && s.reason == .approval
+                && d.turnID != nil && d.turnID == s.turnID
+            guard s.phase != .blocked || resolvesClaudeApproval else { return unchanged(.advisory, "unresolved_request") }
+            if resolvesClaudeApproval { s.requestID = nil; s.reason = nil }
             guard s.phase != .error || d.source.rank >= s.rank else { return unchanged(.advisory, "lower_confidence") }
             if s.terminalBarrier && s.phase == .idle { return duplicate("turn_already_terminal") }
             s.phase = .idle

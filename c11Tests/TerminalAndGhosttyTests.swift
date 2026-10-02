@@ -3281,3 +3281,72 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
         }
     }
 }
+
+/// B087: reading a never-presented terminal is itself a runtime demand.
+@MainActor
+final class ColdTerminalReadTests: XCTestCase {
+    func testReadStartsNeverPresentedTerminalWithoutChangingSelection() async throws {
+        let controller = TerminalController.shared
+        let originalManager = controller.workspaceManager
+        let manager = WorkspaceManager()
+        controller.workspaceManager = manager
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let selectedTab = workspace.focusedPanelId
+        let terminal = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
+        defer {
+            _ = workspace.closeTab(terminal.id, force: true)
+            controller.workspaceManager = originalManager
+        }
+        XCTAssertNil(terminal.surface.surface, "Fixture must begin cold, before any read or send")
+        XCTAssertNil(terminal.hostedView.window, "Fixture must never have been presented")
+
+        let workspaceID = workspace.id.uuidString
+        let tabID = terminal.id.uuidString
+        let result = await Task.detached {
+            controller.v2SurfaceReadText(params: ["workspace_id": workspaceID, "surface_id": tabID])
+        }.value
+
+        guard case .ok(let value) = result, let payload = value as? [String: Any] else {
+            return XCTFail("Cold read failed: \(result)")
+        }
+        XCTAssertNotNil(terminal.surface.surface)
+        XCTAssertEqual(payload["surface_id"] as? String, tabID)
+        XCTAssertNotNil(payload["text"] as? String) // The shell may not have printed yet.
+        XCTAssertEqual(workspace.focusedPanelId, selectedTab)
+        XCTAssertEqual(manager.selectedWorkspaceId, workspace.id)
+    }
+
+    func testReadRejectsWorkspaceRemovedWhileColdRuntimeBecomesReady() async throws {
+        let controller = TerminalController.shared
+        let originalManager = controller.workspaceManager
+        let manager = WorkspaceManager()
+        controller.workspaceManager = manager
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let terminal = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
+        XCTAssertNil(terminal.surface.surface)
+        // The notification fires after target resolution and before the final
+        // read hop. Keep the runtime alive to catch a stale-object read too.
+        let observer = NotificationCenter.default.addObserver(
+            forName: .terminalSurfaceDidBecomeReady,
+            object: terminal.surface,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { manager.workspaces.removeAll { $0 === workspace } }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            _ = workspace.closeTab(terminal.id, force: true)
+            controller.workspaceManager = originalManager
+        }
+        let workspaceID = workspace.id.uuidString
+        let tabID = terminal.id.uuidString
+        let result = await Task.detached {
+            controller.v2SurfaceReadText(params: ["workspace_id": workspaceID, "surface_id": tabID])
+        }.value
+        XCTAssertFalse(manager.workspaces.contains { $0 === workspace }, "Read must request cold startup")
+        guard case .err(let code, _, _) = result else {
+            return XCTFail("Read succeeded for a workspace removed during startup")
+        }
+        XCTAssertEqual(code, "not_found")
+    }
+}

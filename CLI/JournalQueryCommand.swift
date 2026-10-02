@@ -72,11 +72,19 @@ private final class JournalReadStore {
         return Data(bytes: pointer, count: Int(sqlite3_column_bytes(stmt, index)))
     }
 
-    func coverage() throws -> (first: Int64?, highWater: Int64, lastObservation: Int64) {
-        let first = try scalar("SELECT MIN(sequence) FROM journal_events")
-        let highWater = try scalar("SELECT COALESCE(MAX(seq),0) FROM sqlite_sequence WHERE name='journal_events'")
-        let observation = try scalar("SELECT value FROM journal_meta WHERE key='last_writer_observation'")
-        return (first == 0 ? nil : first, highWater, observation)
+    func coverage() throws -> (firstAvailable: Int64, highWater: Int64, retainedFrom: Int64, lastObservation: Int64) {
+        let stmt = try statement("""
+            SELECT
+              COALESCE((SELECT value FROM journal_meta WHERE key='coverage_low_water'),1),
+              COALESCE((SELECT seq FROM sqlite_sequence WHERE name='journal_events'),0),
+              COALESCE((SELECT MIN(committed_at_ms) FROM journal_events),
+                       (SELECT value FROM journal_meta WHERE key='last_writer_observation')),
+              COALESCE((SELECT value FROM journal_meta WHERE key='last_writer_observation'),0)
+            """)
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else { throw CLIError(message: "journal: storage_unavailable") }
+        return (sqlite3_column_int64(stmt, 0), sqlite3_column_int64(stmt, 1),
+                sqlite3_column_int64(stmt, 2), sqlite3_column_int64(stmt, 3))
     }
 
     func readPage(after: Int64, through: Int64, limit: Int = 500) throws -> [JournalEvent] {
@@ -138,6 +146,7 @@ enum JournalQueryCommand {
         let live = try connectIfAvailable(socketPath: socketPath, explicitPassword: explicitPassword)
         defer { live?.close() }
         let liveBundleID = try liveBundleID(from: live)
+        let liveWriterInstanceID = try liveWriterInstanceID(from: live)
         if let requested = arguments.bundleID, let liveBundleID, requested != liveBundleID {
             throw CLIError(message: "journal: --bundle-id does not match the running app namespace")
         }
@@ -163,69 +172,66 @@ enum JournalQueryCommand {
         }
 
         let store = try JournalReadStore(layout: layout)
-        let snapshot = try load(store: store, arguments: arguments)
-        let filters = try makeFilters(arguments: arguments, retainedFromMs: snapshot.retainedFromMs,
-                                      nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+        let frozen = try store.coverage()
+        let filters = try makeFilters(arguments: arguments, retainedFromMs: frozen.retainedFrom,
+                                      lastObservationMs: frozen.lastObservation)
+        let baselines = try store.baselines()
         let coverage = JournalQueryCoverage(
-            retainedFromMs: snapshot.retainedFromMs,
-            firstAvailableSequence: snapshot.firstAvailableSequence,
-            highWaterSequence: snapshot.highWaterSequence,
-            incomplete: snapshot.firstAvailableSequence.map { $0 > 1 } ?? false,
+            retainedFromMs: frozen.retainedFrom,
+            firstAvailableSequence: frozen.firstAvailable,
+            highWaterSequence: frozen.highWater,
+            incomplete: frozen.firstAvailable > 1,
             uncertainCount: 0,
             censoredCount: 0,
-            sources: [:]
+            sources: [:],
+            lastObservationMs: frozen.lastObservation
         )
 
         switch arguments.subcommand {
         case "query":
-            let result = JournalQuery.evaluate(events: snapshot.events, baselines: snapshot.baselines,
-                                               coverage: coverage, filters: filters)
+            let stream = JournalQuery.Stream(baselines: baselines, coverage: coverage,
+                                             filters: filters, writerInstanceID: liveWriterInstanceID)
+            var cursor = max(0, frozen.firstAvailable - 1)
+            while cursor < frozen.highWater {
+                let page = try autoreleasepool {
+                    try store.readPage(after: cursor, through: frozen.highWater, limit: 500)
+                }
+                guard !page.isEmpty else { break }
+                page.forEach(stream.consume)
+                cursor = page.last!.sequence
+            }
+            let result = stream.finish()
             if arguments.json {
                 printJSON(result.object)
             } else {
                 print(result.humanText)
             }
         case "export":
-            guard let data = try JournalExport.write(events: snapshot.events, baselines: snapshot.baselines,
-                                                     coverage: coverage, filters: filters, output: arguments.output) else {
-                if arguments.json {
-                    printJSON(["exported": true, "path": arguments.output as Any? ?? NSNull()])
-                } else {
-                    print("exported \(arguments.output ?? "-")")
+            let destination = try JournalExport.openOutput(arguments.output)
+            defer { if destination.path != nil { try? destination.handle.close() } }
+            let writer = try JournalExport.StreamWriter(handle: destination.handle, coverage: coverage, filters: filters)
+            var cursor = max(0, frozen.firstAvailable - 1)
+            while cursor < frozen.highWater {
+                let page = try autoreleasepool {
+                    try store.readPage(after: cursor, through: frozen.highWater, limit: 500)
                 }
-                return
+                guard !page.isEmpty else { break }
+                try writer.consume(page)
+                cursor = page.last!.sequence
             }
-            FileHandle.standardOutput.write(data)
+            try writer.finish(baselines: baselines)
+            if let path = destination.path {
+                try destination.handle.synchronize()
+                try destination.handle.close()
+                if arguments.json {
+                    printJSON(["exported": true, "path": path])
+                } else {
+                    print("exported \(path)")
+                }
+            }
         default:
             throw CLIError(message: "journal: unknown subcommand")
         }
-    }
-
-    private struct LoadedSnapshot {
-        let events: [JournalEvent]
-        let baselines: [JournalSnapshot]
-        let firstAvailableSequence: Int64?
-        let highWaterSequence: Int64
-        let retainedFromMs: Int64?
-    }
-
-    private static func load(store: JournalReadStore, arguments: Arguments) throws -> LoadedSnapshot {
-        let coverage = try store.coverage()
-        var events: [JournalEvent] = []
-        var cursor = max(0, (coverage.first ?? 1) - 1)
-        while cursor < coverage.highWater {
-            let page = try autoreleasepool {
-                try store.readPage(after: cursor, through: coverage.highWater, limit: 500)
-            }
-            guard !page.isEmpty else { break }
-            events.append(contentsOf: page)
-            cursor = page.last!.sequence
-        }
-        let retainedFrom = events.first?.committedAtMs
-        return LoadedSnapshot(events: events, baselines: try store.baselines(),
-                              firstAvailableSequence: coverage.first,
-                              highWaterSequence: coverage.highWater,
-                              retainedFromMs: retainedFrom)
     }
 
     private static func parse(_ raw: [String], globalJSON: Bool) throws -> Arguments {
@@ -272,8 +278,9 @@ enum JournalQueryCommand {
         return args[index - 1]
     }
 
-    private static func makeFilters(arguments: Arguments, retainedFromMs: Int64?, nowMs: Int64) throws -> JournalQueryFilters {
-        let to = try parseTime(arguments.to) ?? nowMs
+    private static func makeFilters(arguments: Arguments, retainedFromMs: Int64?, lastObservationMs: Int64) throws -> JournalQueryFilters {
+        let stableDefaultTo = lastObservationMs == Int64.max ? lastObservationMs : lastObservationMs + 1
+        let to = try parseTime(arguments.to) ?? stableDefaultTo
         let from = try parseTime(arguments.from) ?? retainedFromMs ?? max(0, to - 14 * 86_400_000)
         guard from <= to else { throw CLIError(message: "journal: --from must be before --to") }
         return JournalQueryFilters(agent: arguments.agent, model: arguments.model, workspace: arguments.workspace,
@@ -320,6 +327,14 @@ enum JournalQueryCommand {
         return identifier
     }
 
+    private static func liveWriterInstanceID(from client: SocketClient?) throws -> UUID? {
+        guard let client else { return nil }
+        guard let status = try? client.sendV2(method: "journal.status"),
+              status["health"] as? String == "ok",
+              let raw = status["writer_instance_id"] as? String else { return nil }
+        return UUID(uuidString: raw)
+    }
+
     private static func isUnavailable(_ error: CLIError) -> Bool {
         let message = error.message
         return message.contains("Socket not found") || message.contains("Failed to connect")
@@ -331,16 +346,75 @@ enum JournalQueryCommand {
         guard layout.directory.path.contains(expected), layout.directory.path.hasPrefix(NSHomeDirectory()) else {
             throw CLIError(message: "journal: refusing unsafe namespace path")
         }
-        let fm = FileManager.default
-        for suffix in ["", "-wal", "-shm"] {
-            let path = layout.database.path + suffix
-            if fm.fileExists(atPath: path) { try fm.removeItem(atPath: path) }
-        }
-        if fm.fileExists(atPath: layout.spool.path) {
-            for item in try fm.contentsOfDirectory(at: layout.spool, includingPropertiesForKeys: nil) {
-                try fm.removeItem(at: item)
+        do {
+            try layout.prepare()
+            let descriptor = Darwin.open(layout.database.path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
+            guard descriptor >= 0 else { throw CLIError(message: "journal: storage_unavailable") }
+            close(descriptor)
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(layout.database.path, &db,
+                                  SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
+                  let db else { throw CLIError(message: "journal: storage_unavailable") }
+            defer { sqlite3_close(db) }
+            sqlite3_busy_timeout(db, 100)
+            try execute(db, "PRAGMA journal_mode=WAL")
+            let version = try scalar(db, "PRAGMA user_version")
+            if version == 0 {
+                try execute(db, "PRAGMA auto_vacuum=INCREMENTAL")
+                try execute(db, "BEGIN IMMEDIATE")
+                do {
+                    try execute(db, "CREATE TABLE journal_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT NOT NULL UNIQUE,committed_at_ms INTEGER NOT NULL,tab_id TEXT,session_id TEXT,agent_kind TEXT NOT NULL,model_id TEXT,workspace_id TEXT,draft BLOB NOT NULL,event BLOB)")
+                    try execute(db, "CREATE INDEX journal_owner_sequence ON journal_events(tab_id,session_id,sequence)")
+                    try execute(db, "CREATE INDEX journal_dimensions ON journal_events(committed_at_ms,agent_kind,model_id,workspace_id)")
+                    try execute(db, "CREATE TABLE journal_current (owner TEXT PRIMARY KEY,state BLOB NOT NULL,observed_at_ms INTEGER NOT NULL,protected INTEGER NOT NULL)")
+                    try execute(db, "CREATE TABLE journal_meta (key TEXT PRIMARY KEY,value INTEGER NOT NULL)")
+                    try execute(db, "INSERT INTO journal_meta VALUES('fold_version',1),('coverage_low_water',1),('last_writer_observation',0)")
+                    try execute(db, "PRAGMA user_version=1")
+                    try execute(db, "COMMIT")
+                } catch {
+                    try? execute(db, "ROLLBACK")
+                    throw error
+                }
+            } else if version != 1 {
+                throw CLIError(message: "journal: unsupported_version")
             }
+            guard try scalar(db, "SELECT value FROM journal_meta WHERE key='fold_version'") == 1 else {
+                throw CLIError(message: "journal: unsupported_version")
+            }
+            try JournalSpool(layout: layout).clearTogether {
+                try execute(db, "BEGIN IMMEDIATE")
+                do {
+                    try execute(db, "DELETE FROM journal_events")
+                    try execute(db, "DELETE FROM journal_current")
+                    try execute(db, "UPDATE journal_meta SET value=COALESCE((SELECT seq+1 FROM sqlite_sequence WHERE name='journal_events'),1) WHERE key='coverage_low_water'")
+                    try execute(db, "UPDATE journal_meta SET value=\(Int64(Date().timeIntervalSince1970 * 1000)) WHERE key='last_writer_observation'")
+                    try execute(db, "COMMIT")
+                } catch {
+                    try? execute(db, "ROLLBACK")
+                    throw error
+                }
+            }
+        } catch let error as CLIError {
+            throw error
+        } catch {
+            throw CLIError(message: "journal: clear failed")
         }
+    }
+
+    private static func execute(_ db: OpaquePointer, _ sql: String) throws {
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+            throw CLIError(message: "journal: storage_unavailable")
+        }
+    }
+
+    private static func scalar(_ db: OpaquePointer, _ sql: String) throws -> Int64 {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw CLIError(message: "journal: storage_unavailable")
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw CLIError(message: "journal: storage_unavailable") }
+        return sqlite3_column_int64(statement, 0)
     }
 
     private static func printPayload(_ payload: [String: Any], json: Bool, human: String) {

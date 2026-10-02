@@ -20,6 +20,7 @@ final class JournalStoreTests: XCTestCase {
         let store = try JournalStore(layout: layout, clock: { 1000 })
         let draft = JournalTestData.draft(.questionRequested)
         let receipt = try store.append(draft: draft, context: JournalContext(eligible: true)).receipt
+        XCTAssertTrue(JournalSpool(layout: layout).write(JournalTestData.draft(.turnStarted)))
         XCTAssertEqual(try store.readPage(after: 0).count, 1)
         XCTAssertNotNil(try store.current(owner: draft.owner!))
 
@@ -27,6 +28,8 @@ final class JournalStoreTests: XCTestCase {
 
         XCTAssertTrue(try store.readPage(after: 0).isEmpty)
         XCTAssertNil(try store.current(owner: draft.owner!))
+        let spoolNames = try FileManager.default.contentsOfDirectory(atPath: layout.spool.path)
+        XCTAssertEqual(spoolNames.filter { $0.hasSuffix(".ready") }, [])
         XCTAssertGreaterThan(try store.coverage().first, receipt.sequence)
         var next = JournalTestData.draft(.turnStarted); next.eventID = UUID()
         let nextReceipt = try store.append(draft: next, context: JournalContext(eligible: true)).receipt

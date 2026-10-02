@@ -84,9 +84,20 @@ final class JournalCoordinator: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }; return storageError
     }
 
-    func clear() throws {
+    func runtimeStatus() throws -> [String: Any] {
         let store = try storage()
-        try store.clear()
+        let coverage = try store.coverage()
+        return ["writer_instance_id": store.instanceID.uuidString,
+                "first_available_sequence": coverage.first,
+                "high_water_sequence": coverage.highWater,
+                "last_observation_ms": coverage.lastObservation,
+                "health": health()?.rawValue ?? "ok"]
+    }
+
+    func clear() throws {
+        try startupQueue.sync {
+            try storage().clear()
+        }
         lock.lock()
         let tabIDs = Array(snapshots.keys)
         snapshots.removeAll()

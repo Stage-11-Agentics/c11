@@ -19,17 +19,20 @@ final class JournalStore {
     let budgets: JournalBudgets
     let instanceID: UUID
     private let clock: () -> Int64
+    private let tickClock: () -> UInt64
     private var lastPrune: Int64 = 0
     private var sincePrune = 0
     private var healthCode: JournalError?
     private var reclaiming = false
 
     init(layout: JournalStorageLayout, budgets: JournalBudgets = JournalBudgets(),
-         instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+         instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+         tickClock: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) throws {
         self.layout = layout
         self.budgets = budgets
         self.instanceID = instanceID
         self.clock = clock
+        self.tickClock = tickClock
         try queue.sync {
             do { try open() } catch {
                 if let db { sqlite3_close(db); self.db = nil }
@@ -171,7 +174,7 @@ final class JournalStore {
                 d.workspaceID.map { .text($0.uuidString) } ?? .null, .data(canonical)])
             let sequence = sqlite3_last_insert_rowid(db)
             let prior = try d.owner.flatMap { try currentOnQueue(owner: $0) }
-            let tick = DispatchTime.now().uptimeNanoseconds
+            let tick = tickClock()
             let folded = JournalReducer.fold(previous: prior, draft: d, sequence: sequence, committedAtMs: now,
                 tick: tick, instanceID: instanceID, context: context)
             let event = JournalEvent(sequence: sequence, committedAtMs: now, observedTickNs: tick,
@@ -253,7 +256,8 @@ final class JournalStore {
     /// mistaken for a post-clear event stream.
     func clear() throws {
         try queue.sync {
-            try autoreleasepool {
+            try JournalSpool(layout: layout).clearTogether {
+                try autoreleasepool {
                 try execute("BEGIN IMMEDIATE")
                 do {
                     try execute("DELETE FROM journal_events")
@@ -269,6 +273,7 @@ final class JournalStore {
                 healthCode = nil
                 sincePrune = 0
                 lastPrune = clock()
+                }
             }
         }
     }

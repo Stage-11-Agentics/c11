@@ -816,7 +816,10 @@ read-only SQLite connection. It never focuses a window or waits on the journal
 writer. Use `--agent`, `--model`, `--workspace`, `--from`, `--to`, and
 `--stall-ms` to bound the report. Times accept epoch milliseconds or ISO 8601;
 the window is `[from,to)`. When the app is down, pass `--bundle-id` to select
-the tagged c11 namespace explicitly.
+the tagged c11 namespace explicitly. The CLI command is admitted by the
+versioned `journal.analytics` v1 capability feature, discoverable through
+`c11 capabilities`; the read-only `journal.status` method reports the live
+writer identity used to distinguish current from restored state.
 
 The JSON object has `schema_version`, `units`, `window`, `coverage`,
 `time_in_state_ms`, `operator_response`, `blocked_ms`, `turns`, `errors`,
@@ -829,12 +832,16 @@ the open request; resume latency is reported separately. Missing evidence is
 treated as zero evidence.
 
 `c11 journal export` emits body-free NDJSON. Its first row is a manifest, then
-sequence-ordered `event` rows, optional `current_state` rows, and explicit
-`gap` rows when retention or a frozen high-water cutoff prevents a complete
-view. No prompt, command, argument, cwd, output, or generated timestamp is
-exported. Use `--output <local-path>` for a local file; URLs are rejected.
+sequence-ordered `event` rows, optional `current_state` rows, explicit `gap`
+rows when retention or concurrent pruning/clear prevents a complete view, and
+a final `coverage_summary` that reflects gaps discovered during the paged read.
+Pages are written directly to the output handle; unchanged snapshots produce
+byte-identical default exports. No prompt, command, argument, cwd, output, or
+generated timestamp is exported. Use `--output <local-path>` for a local file;
+URLs are rejected.
 
 `c11 journal clear --yes` is the only mutating verb. With c11 running it uses
 the `journal.clear` socket method; with c11 stopped it clears only the selected
-bundle namespace's lifecycle database and spool. It does not delete
+bundle namespace's lifecycle database and spool while preserving the sequence
+and coverage reset boundary. It does not delete
 conversations, snapshots, launch statistics, or tenant configuration.

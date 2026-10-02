@@ -20,7 +20,7 @@ def _number(value: Any) -> int | float:
     return value
 
 
-def summarize(payload: dict[str, Any]) -> dict[str, int | float]:
+def summarize(payload: dict[str, Any]) -> dict[str, int | float | None]:
     time_in_state = payload["time_in_state_ms"]
     blocked = payload["blocked_ms"]
     turns = payload["turns"]
@@ -36,7 +36,7 @@ def summarize(payload: dict[str, Any]) -> dict[str, int | float]:
     confirmed_phases = ("working", "blocked", "idle", "error", "unknown")
     return {
         "q1_time_in_state_ms": sum(_number(time_in_state.get(name, 0)) for name in confirmed_phases),
-        "q2_operator_wait_ms": _number(response["wait_ms"]) if response["wait_ms"] is not None else 0,
+        "q2_operator_wait_ms": None if response["wait_ms"] is None else _number(response["wait_ms"]),
         "q3_blocked_ms": sum(_number(value) for value in blocked.values()),
         "q4_turns_started": _number(turns["started"]),
         "q5_root_errors_and_interrupts": _number(errors["root"]) + _number(errors["interrupts"]),
@@ -54,7 +54,7 @@ def main() -> int:
         if not isinstance(payload, dict):
             raise ValueError("query payload must be an object")
         for name, value in summarize(payload).items():
-            print(f"{name}={value}")
+            print(f"{name}={json.dumps(value, separators=(',', ':'))}")
         return 0
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         print(f"journal reader: {error}", file=sys.stderr)

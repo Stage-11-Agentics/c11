@@ -1934,8 +1934,10 @@ struct CMUXCLI {
         }
 
         if command == "journal" {
-            try JournalQueryCommand.run(commandArgs, socketPath: resolvedSocketPath,
-                                        explicitPassword: socketPasswordArg, globalJSON: jsonOutput)
+            try CapabilityFeatures.current.dispatch(.journalAnalytics) {
+                try JournalQueryCommand.run(commandArgs, socketPath: resolvedSocketPath,
+                                            explicitPassword: socketPasswordArg, globalJSON: jsonOutput)
+            }
             return
         }
 

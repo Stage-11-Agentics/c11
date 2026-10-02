@@ -2,6 +2,18 @@ import Foundation
 import CoreFoundation
 
 extension TerminalController {
+    nonisolated func v2JournalStatus(params: [String: Any]) -> V2CallResult {
+        guard params.isEmpty else {
+            return .err(code: "invalid_params", message: "journal.status takes no parameters", data: nil)
+        }
+        do {
+            return .ok(try JournalCoordinator.shared.runtimeStatus())
+        } catch {
+            let code = (error as? JournalError)?.rawValue ?? JournalError.unavailable.rawValue
+            return .err(code: code, message: code, data: nil)
+        }
+    }
+
     // Worker-only: ownership uses the ConversationStore actor, SQLite uses its utility queue.
     nonisolated func v2JournalAppend(params: [String: Any]) -> V2CallResult {
         guard Set(params.keys).isSubset(of: ["event", "interactive_pid"]), let object = params["event"] as? [String: Any],

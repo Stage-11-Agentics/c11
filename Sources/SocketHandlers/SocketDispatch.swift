@@ -107,6 +107,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2JournalAppend(params: request.params))
         case "journal.clear":
             return v2Result(id: request.id, v2JournalClear(params: request.params))
+        case "journal.status":
+            return v2Result(id: request.id, v2JournalStatus(params: request.params))
         case "tab.read_selection":
             return v2Result(id: request.id, v2SurfaceReadSelection(params: request.params))
         case "tab.read_text":

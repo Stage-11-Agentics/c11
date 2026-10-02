@@ -63,8 +63,8 @@ def agent_probe(scene):
         blocked("v1:" + method, method)
     blocked_v2("workspace.last")
     blocked("v1:last_window", "last_window")
-    blocked("v1:simulate_shortcut", "simulate_shortcut cmd+2")
-    blocked_v2("debug.shortcut.simulate", {"combo": "cmd+2"})
+    blocked("v1:simulate_shortcut", "simulate_shortcut cmd+%d" % scene["shortcut_index"])
+    blocked_v2("debug.shortcut.simulate", {"combo": "cmd+%d" % scene["shortcut_index"]})
     cli(["last-window"], refused=True)
     blocked_v2("browser.focus_webview", {"workspace_id": scene["c"], "tab_id": scene["browser"]})
     blocked("v1:focus_webview", "focus_webview " + scene["browser"])
@@ -87,9 +87,9 @@ def agent_probe(scene):
     cli(["__tmux-compat", "display-message", "-p", "-t", "!", "#{session_id}"])
     cli(["launch-agent", "--type", "codex", "--workspace", scene["c"], "--title", "C11-323 launch proof"])
     cli(["send", "--workspace", scene["c"], "--tab", scene["c_tab"], "printf 'background-send-ok\\n'"])
-    cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "eval", "document.body.innerHTML='<button id=proof onclick=\"this.textContent=123\">click</button>'; true"])
-    cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "click", "#proof"])
-    cli(["browser", "--workspace", scene["c"], "--tab", scene["browser"], "snapshot"])
+    cli(["browser", scene["browser"], "eval", "document.body.innerHTML='<button id=proof onclick=\"this.textContent=123\">click</button>'; true"])
+    cli(["browser", scene["browser"], "click", "#proof"])
+    cli(["browser", scene["browser"], "snapshot"])
     cli(["ssh", os.environ["USER"] + "@127.0.0.1", "--identity", scene["identity"],
          "--ssh-option", "UserKnownHostsFile=/dev/null", "--ssh-option", "StrictHostKeyChecking=no"])
     checks.append("raw-focus-and-background-work")
@@ -114,8 +114,12 @@ def main():
         subprocess.run(["/usr/bin/osascript", "-e", f'tell application "System Events" to tell (first process whose unix id is {pid}) to click menu item "{menu_item}" of menu 1 of menu bar item "Workspace" of menu bar 1'], check=True)
         time.sleep(0.3)
     assert selected(path) == a
-    # Finder remains frontmost throughout the agent attempts.
+    # Whatever is frontmost now (Finder in a prepared guest) must stay frontmost.
+    def front():
+        return subprocess.check_output(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first process whose frontmost is true'], text=True).strip()
     subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to activate'], check=True)
+    time.sleep(0.5)
+    front_before = front()
     output = Path("/tmp/c11-323-agent-proof.json")
     output.unlink(missing_ok=True)
     identity = Path("/tmp/c11-323-guest-identity")
@@ -127,7 +131,10 @@ def main():
     with authorized.open("a") as stream:
         stream.write("\n" + identity.with_suffix(".pub").read_text())
     authorized.chmod(0o600)
-    scene = {"identity": str(identity), "socket": path, "cli": cli, "a": a, "b": b, "c": c, "c_tab": c_tab,
+    # A shortcut aimed at the selected workspace is a no-op, so aim at another one.
+    ids = [w["id"] for w in call("workspace.list", path=path)["workspaces"]]
+    shortcut_index = next(i for i in range(1, min(len(ids), 9) + 1) if ids[i - 1].lower() != a.lower())
+    scene = {"shortcut_index": shortcut_index, "identity": str(identity), "socket": path, "cli": cli, "a": a, "b": b, "c": c, "c_tab": c_tab,
              "other_tab": split["tab_id"], "other_area": split["area_id"], "browser": browser,
              "result": str(output)}
     scene_path = Path("/tmp/c11-323-scene.json")
@@ -141,8 +148,8 @@ def main():
     assert output.exists(), call("tab.read_text", {"workspace_id": b, "tab_id": b_tab}, path)
     result = json.loads(output.read_text())
     assert result["ok"] and result["caller"].lower() == b_tab.lower(), result
-    frontmost = subprocess.check_output(["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first process whose frontmost is true'], text=True).strip()
-    assert frontmost == "Finder", frontmost
+    frontmost = front()
+    assert frontmost == front_before and frontmost != "c11", (front_before, frontmost)
     print(json.dumps(result, indent=2))
     # Verify the emitter's actual serialized output, including unknown-free raw attribution.
     event_dir = Path.home() / "Library/Application Support/c11/events"

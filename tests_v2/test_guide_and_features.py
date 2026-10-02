@@ -103,8 +103,8 @@ def main():
 
     assert skill_state(skill_root) == before, "guide modified the installed skill"
     if not args.offline:
-        socket = os.environ["C11_SOCKET_PATH"]
-        payload = json.loads(run("--socket", socket, "--json", "capabilities"))
+        live_socket = os.environ["C11_SOCKET_PATH"]
+        payload = json.loads(run("--socket", live_socket, "--json", "capabilities"))
         ids = {item["id"] for item in payload["features"]}
         assert payload["features_version"] == 1
         assert {"vocabulary.workspace_area_tab", "send.explicit_tab", "events.offline"} <= ids

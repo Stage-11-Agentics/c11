@@ -8716,7 +8716,8 @@ class TerminalController {
     }
 
     func reportMeta(_ args: String) -> String {
-        upsertSidebarMetadata(
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing metadata key or value — usage: report_meta <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
@@ -8728,7 +8729,8 @@ class TerminalController {
     }
 
     func clearMeta(_ args: String) -> String {
-        clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
     }
 
     func listStatus(_ args: String) -> String {
@@ -8737,7 +8739,8 @@ class TerminalController {
     }
 
     func listMeta(_ args: String) -> String {
-        listSidebarMetadata(args, emptyMessage: "No metadata entries")
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return listSidebarMetadata(args, emptyMessage: "No metadata entries")
     }
 
     private func splitMetadataBlockArgs(_ args: String) -> (optionsPart: String, markdownPart: String?) {
@@ -8759,6 +8762,7 @@ class TerminalController {
         guard workspaceManager != nil else { return "ERROR: TabManager not available" }
 
         let parts = splitMetadataBlockArgs(args)
+        if let reject = v1RejectMissingTabRef(parts.optionsPart) { return reject }
         let parsed = parseOptionsNoStop(parts.optionsPart)
         guard let key = parsed.positional.first, !key.isEmpty else {
             return "ERROR: Missing metadata block key — usage: report_meta_block <key> [--priority=N] [--tab=X] -- <markdown>"
@@ -8819,6 +8823,7 @@ class TerminalController {
     }
 
     func clearMetaBlock(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         guard let key = parsed.positional.first, parsed.positional.count == 1 else {
             return "ERROR: Missing metadata block key — usage: clear_meta_block <key> [--tab=X]"
@@ -8838,6 +8843,7 @@ class TerminalController {
     }
 
     func listMetaBlocks(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         var result = ""
         v2MainSync {
             guard let workspace = resolveWorkspaceForReport(args) else {

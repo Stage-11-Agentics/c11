@@ -143,8 +143,16 @@ def main() -> int:
             log_response = _run_cli(cli, ["log", "--workspace", env_workspace, "--", "env log"])
             _must(log_response.startswith("OK"), f"log should succeed, got {log_response!r}")
 
+            meta_response = _send_v1(f"report_meta sentinel keep --tab={selected_workspace}")
+            _must(meta_response.startswith("OK"), f"report_meta with a target should succeed, got {meta_response!r}")
+            block_response = _send_v1(f"report_meta_block sblock --tab={selected_workspace} -- block-keep")
+            _must(block_response.startswith("OK"), f"report_meta_block with a target should succeed, got {block_response!r}")
+
             window_id = client.current_window()
             targetless_cases = [
+                ["set-status", "stray", "value"],
+                ["set-progress", "0.9", "--label", "stray"],
+                ["log", "--", "stray log"],
                 ["clear-status", "selected"],
                 ["clear-progress"],
                 ["clear-log"],
@@ -176,6 +184,15 @@ def main() -> int:
             )
 
             raw_v1_cases = [
+                "set_status stray value",
+                "set_progress 0.9 --label=stray",
+                "log stray log",
+                "report_meta stray value",
+                "report_meta_block stray -- stray",
+                "clear_meta sentinel",
+                "clear_meta_block sblock",
+                "list_meta",
+                "list_meta_blocks",
                 "clear_status selected",
                 "clear_progress",
                 "clear_log",
@@ -189,6 +206,14 @@ def main() -> int:
                     response.startswith("ERROR:") and "missing_ref" in response,
                     f"raw socket {command!r} should reject a missing target, got {response!r}",
                 )
+
+            # The raw alias family rejected above must not have touched the selected workspace.
+            kept_meta = _send_v1(f"list_meta --tab={selected_workspace}")
+            _must("sentinel=keep" in kept_meta, f"report_meta sentinel should survive rejected calls: {kept_meta!r}")
+            _must("stray" not in kept_meta, f"rejected raw writes should not create entries: {kept_meta!r}")
+            kept_blocks = _send_v1(f"list_meta_blocks --tab={selected_workspace}")
+            _must("sblock=block-keep" in kept_blocks, f"metadata block should survive rejected calls: {kept_blocks!r}")
+            _must("stray" not in kept_blocks, f"rejected raw block write should not create blocks: {kept_blocks!r}")
 
             raw_v2_state = _send_v2("sidebar.state", {})
             raw_v2_error = raw_v2_state.get("error")
@@ -205,7 +230,7 @@ def main() -> int:
             )
 
             selected_state = _run_cli(cli, ["sidebar-state", "--workspace", selected_workspace])
-            _must("status_count=1" in selected_state, f"selected status should be preserved: {selected_state!r}")
+            _must("status_count=2" in selected_state, f"selected status should be preserved: {selected_state!r}")
             _must("progress=0.25 selected" in selected_state, f"selected progress should be preserved: {selected_state!r}")
             _must("[info] selected log" in selected_state, f"selected log should be preserved: {selected_state!r}")
 
@@ -263,7 +288,7 @@ def main() -> int:
             _must("log_count=0" in cleared_env_state, f"C11 target log should clear: {cleared_env_state!r}")
 
             selected_after = _run_cli(cli, ["sidebar-state", "--workspace", selected_workspace])
-            _must("status_count=1" in selected_after, f"clears should not touch selected workspace: {selected_after!r}")
+            _must("status_count=2" in selected_after, f"clears should not touch selected workspace: {selected_after!r}")
             _must("progress=0.25 selected" in selected_after, f"selected progress should survive env clears: {selected_after!r}")
             _must("[info] selected log" in selected_after, f"selected log should survive env clears: {selected_after!r}")
 

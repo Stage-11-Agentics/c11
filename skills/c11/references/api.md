@@ -561,7 +561,7 @@ c11 clear-log [--workspace <id|ref>]
 c11 sidebar-state [--workspace <id|ref>]
 ```
 
-These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. `clear-status`, `clear-progress`, `clear-log`, `list-status`, `list-log`, and `sidebar-state` fail without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.
+These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. Every command above fails without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.
 
 **Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
 

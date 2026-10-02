@@ -3548,8 +3548,7 @@ struct CMUXCLI {
                 "clear_status",
                 commandArgs: commandArgs,
                 client: client,
-                windowOverride: windowId,
-                requiresWorkspace: true
+                windowOverride: windowId
             )
             print(response)
 
@@ -3558,8 +3557,7 @@ struct CMUXCLI {
                 "list_status",
                 commandArgs: commandArgs,
                 client: client,
-                windowOverride: windowId,
-                requiresWorkspace: true
+                windowOverride: windowId
             )
             print(response)
 
@@ -3577,8 +3575,7 @@ struct CMUXCLI {
                 "clear_progress",
                 commandArgs: commandArgs,
                 client: client,
-                windowOverride: windowId,
-                requiresWorkspace: true
+                windowOverride: windowId
             )
             print(response)
 
@@ -3596,8 +3593,7 @@ struct CMUXCLI {
                 "clear_log",
                 commandArgs: commandArgs,
                 client: client,
-                windowOverride: windowId,
-                requiresWorkspace: true
+                windowOverride: windowId
             )
             print(response)
 
@@ -3606,8 +3602,7 @@ struct CMUXCLI {
                 "list_log",
                 commandArgs: commandArgs,
                 client: client,
-                windowOverride: windowId,
-                requiresWorkspace: true
+                windowOverride: windowId
             )
             print(response)
 
@@ -3632,8 +3627,7 @@ struct CMUXCLI {
                     "sidebar_state",
                     commandArgs: commandArgs,
                     client: client,
-                    windowOverride: windowId,
-                    requiresWorkspace: true
+                    windowOverride: windowId
                 )
                 print(response)
             }
@@ -10818,7 +10812,7 @@ struct CMUXCLI {
             Flags:
               --icon <name>          Icon name (e.g. "sparkle", "hammer")
               --color <#hex>         Pill color (e.g. "#ff9500")
-              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 set-status build "compiling" --icon hammer --color "#ff9500"
@@ -10858,7 +10852,7 @@ struct CMUXCLI {
 
             Flags:
               --label <text>         Label shown next to the progress bar
-              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 set-progress 0.5 --label "Building..."
@@ -10886,7 +10880,7 @@ struct CMUXCLI {
             Flags:
               --level <level>        Log level: info, progress, success, warning, error (default: info)
               --source <name>        Source label (e.g. "build", "test")
-              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
+              --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
 
             Example:
               c11 log "Build started"
@@ -14859,8 +14853,7 @@ struct CMUXCLI {
         _ socketCommand: String,
         commandArgs: [String],
         client: SocketClient,
-        windowOverride: String?,
-        requiresWorkspace: Bool = false
+        windowOverride: String?
     ) throws -> String {
         func insertArgumentBeforeSeparator(_ value: String, into args: inout [String]) {
             if let separatorIndex = args.firstIndex(of: "--") {
@@ -14958,14 +14951,9 @@ struct CMUXCLI {
             insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
             resolvedWorkspaceId = workspaceId
         }
-        if !requiresWorkspace, !resolvedExplicitWorkspace, resolvedWorkspaceId == nil, windowOverride != nil {
-            // v1 sidebar commands have no window parameter; carry the scoped
-            // window's selected workspace explicitly instead of ambient focus.
-            let workspaceId = try resolveWorkspaceId(nil, client: client)
-            insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
-            resolvedWorkspaceId = workspaceId
-        }
-        if requiresWorkspace, resolvedWorkspaceId == nil {
+        // v1 sidebar commands have no window parameter and never use the selected
+        // workspace: a global --window alone is not a target.
+        if resolvedWorkspaceId == nil {
             throw CLIError(message: String(localized: "cli.sidebar.target.required", defaultValue: "sidebar command requires --workspace or C11_WORKSPACE_ID; it will not use the selected workspace"))
         }
 

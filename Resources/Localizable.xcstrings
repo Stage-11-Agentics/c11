@@ -70180,6 +70180,17 @@
           }
         }
       }
+    },
+    "socket.error.sessionNotReady": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session restoration is still in progress. Try again shortly."
+          }
+        }
+      }
     }
   }
 }

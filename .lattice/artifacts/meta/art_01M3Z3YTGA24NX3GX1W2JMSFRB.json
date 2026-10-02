@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T20:12:43Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z3YTGA24NX3GX1W2JMSFRB",
+  "model": null,
+  "payload": {
+    "content_type": "application/json",
+    "file": "art_01M3Z3YTGA24NX3GX1W2JMSFRB.json",
+    "size_bytes": 7001
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Measured pair identity015 frozen before first latency sample",
+  "token_usage": null,
+  "type": "file"
+}

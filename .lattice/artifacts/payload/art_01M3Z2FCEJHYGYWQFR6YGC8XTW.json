@@ -1,0 +1,33 @@
+{
+  "invocation": "21702c985990464db39ed83b8b3b5703",
+  "head": "63b353a3c33e1ccb914a49cdb117fc2ab3b5be98",
+  "parent_head": "31103a7dcf0c9dde539a69976bc225f2bbc684da",
+  "branch": "c11-1.0/C11-266-quick-view",
+  "submodules": {
+    "ghostty": "5830d1976eecca0d7dee202aef8fb2338d99ed6d",
+    "vendor/bonsplit": "c17c6f41cd71066bda9bec82c54465fe34821c75"
+  },
+  "overlay": [],
+  "dirty": false,
+  "tag": "c11-266",
+  "slug": "c11-266",
+  "mode": "test",
+  "extra": [
+    "-only-testing:c11LogicTests/FeedQuickViewSelectionTests",
+    "-only-testing:c11LogicTests/AttentionOrderTests",
+    "-only-testing:c11LogicTests/FeedProjectorTests",
+    "-only-testing:c11Tests/FeedQuickViewTests",
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testCmdIStillTriggersShowNotificationsShortcut",
+    "-only-testing:c11Tests/AppDelegateShortcutRoutingTests/testCmdPhysicalIWithDvorakCharactersDoesNotTriggerShowNotifications",
+    "-resultBundlePath",
+    "c11-266-locale-hosts.xcresult"
+  ],
+  "release_options": [],
+  "developer_dir": "/Applications/Xcode-26.3.app/Contents/Developer",
+  "zig_dir": "",
+  "compile": "ok",
+  "tests": "ok",
+  "xcode": "Xcode 26.3\nBuild version 17C529",
+  "zig": "0.15.2",
+  "ok": true
+}

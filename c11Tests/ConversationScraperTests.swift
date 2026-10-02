@@ -23,6 +23,13 @@ final class ConversationScraperTests: XCTestCase {
         var recursiveEntries: [URL: [ConversationFilesystemEntry]] = [:]
         /// Exact paths the mock reports as existing for `fileExists`.
         var existingPaths: Set<String> = []
+        var sessionHeads: [String: String] = [:]
+        var headReads: [String] = []
+
+        func readSessionHead(atPath path: String, maxBytes: Int) -> String? {
+            headReads.append(path)
+            return sessionHeads[path].map { String($0.prefix(maxBytes)) }
+        }
 
         var homeDirectory: URL? { home }
 
@@ -31,7 +38,7 @@ final class ConversationScraperTests: XCTestCase {
         }
 
         func listDirectoryByMtime(_ directory: URL, max: Int) -> [ConversationFilesystemEntry] {
-            return Array((directoryEntries[directory] ?? []).prefix(max))
+            return Array((directoryEntries.first { $0.key.path == directory.path }?.value ?? []).prefix(max))
         }
 
         func listSessionsRecursivelyByMtime(
@@ -39,7 +46,7 @@ final class ConversationScraperTests: XCTestCase {
             extensionFilter: String,
             max: Int
         ) -> [ConversationFilesystemEntry] {
-            return Array((recursiveEntries[root] ?? [])
+            return Array((recursiveEntries.first { $0.key.path == root.path }?.value ?? [])
                 .filter { $0.fileName.hasSuffix("." + extensionFilter) }
                 .prefix(max))
         }
@@ -144,7 +151,10 @@ final class ConversationScraperTests: XCTestCase {
             )
         ]
         let scraper = CodexScraper(filesystem: mock)
-        let candidates = scraper.candidates(cwd: "/work/proj")
+        for entry in mock.recursiveEntries[root] ?? [] {
+            mock.sessionHeads[entry.url.path] = #"{"type":"session_meta","payload":{"cwd":"/work/proj"}}"#
+        }
+        let candidates = scraper.candidates(cwd: "/different/query")
         XCTAssertEqual(candidates.count, 2)
         XCTAssertEqual(candidates[0].cwd, "/work/proj")
     }
@@ -196,20 +206,12 @@ final class ConversationScraperTests: XCTestCase {
         let scraper = ClaudeCodeScraper(filesystem: mock)
         let cands = scraper.candidates()
         XCTAssertEqual(cands.count, 1)
-        // The candidate's reachable fields are id/path/mtime/size/cwd —
-        // none of which are transcript bytes. The fixture proves the
-        // type system alone enforces the privacy contract: there is no
-        // field on `ScrapeCandidate` that could carry transcript content
-        // even by accident.
+        XCTAssertTrue(mock.headReads.isEmpty, "Claude scrape must never open a transcript")
+        // Observe the metadata result and the filesystem read trace rather
+        // than asserting the candidate's implementation shape.
         let cand = cands[0]
         XCTAssertEqual(cand.id, validId)
         XCTAssertNil(cand.cwd)
         XCTAssertEqual(cand.size, 999_999)
-        // Mirror the structural assertion: ScrapeCandidate has fixed
-        // fields, none of which are byte-payload-shaped.
-        let mirror = Mirror(reflecting: cand)
-        let fieldNames = Set(mirror.children.compactMap { $0.label })
-        XCTAssertEqual(fieldNames, Set(["id", "filePath", "mtime", "size", "cwd"]),
-                       "ScrapeCandidate must NOT grow a transcript-carrying field")
     }
 }

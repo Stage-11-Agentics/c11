@@ -5601,6 +5601,10 @@ final class Workspace: Identifiable, ObservableObject {
             guard let self else { return }
             TabRailTipCenter.shared.noteSheet(workspace: self, paneId: paneId, open: open)
         }
+        bonsplitController.onCountCellTapped = { [weak self] paneId in
+            guard let self else { return false }
+            return TabRailTipCenter.shared.performShowListFromCountCell(workspace: self, paneId: paneId)
+        }
 
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeBonsplitTabIds = bonsplitController.allTabIds
@@ -9041,7 +9045,8 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Keyboard/browser-open paths want "new tab at end" regardless of global new-tab placement.
         if insertAtEnd {
-            let targetIndex = max(0, bonsplitController.tabs(inPane: paneId).count - 1)
+            // Bonsplit takes an insertion index before removing the source tab.
+            let targetIndex = bonsplitController.tabs(inPane: paneId).count
             _ = bonsplitController.reorderTab(newBonsplitTabId, toIndex: targetIndex)
         }
 
@@ -9169,6 +9174,17 @@ final class Workspace: Identifiable, ObservableObject {
 
         installMarkdownTabSubscription(markdownTab)
         return markdownTab
+    }
+
+    /// Retire a graph displaced by session restore, even when external callers
+    /// still retain it. ID-keyed cleanup must finish before its replacement is
+    /// constructed. Normal close's notifications/last-workspace policy do not apply.
+    func retireForSessionRestore() {
+        mailboxDispatcher?.stop()
+        mailboxDispatcher = nil
+        teardownRemoteConnection()
+        owningWorkspaceManager = nil
+        teardownAllPanels()
     }
 
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.

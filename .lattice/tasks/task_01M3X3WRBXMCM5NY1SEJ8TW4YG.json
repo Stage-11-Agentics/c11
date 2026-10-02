@@ -18,7 +18,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01M3X3WRBXMCM5NY1SEJ8TW4YG",
-  "last_event_id": "ev_01M3YXF039AFW3JBTMBCDMDKZR",
+  "last_event_id": "ev_01M3Z40DZYGKGE0MR676GSHSN3",
   "last_status_changed_at": "2026-10-02T18:19:13Z",
   "linked_files": [],
   "priority": "medium",
@@ -42,6 +42,6 @@
   ],
   "title": "Send: inspect styled prompt input and guard against overwriting operator drafts",
   "type": "task",
-  "updated_at": "2026-10-02T18:19:13Z",
+  "updated_at": "2026-10-02T20:13:36Z",
   "urgency": null
 }

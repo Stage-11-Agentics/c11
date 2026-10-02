@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-02T19:55:05Z",
+  "created_by": "agent:luna-261",
+  "custom_fields": {},
+  "id": "art_01M3Z2YH96XKBD7N6GK3SF3N2C",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01M3Z2YH96XKBD7N6GK3SF3N2C.md",
+    "size_bytes": 20790
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Interleaved protocol 009 admission threshold and stale socket checks",
+  "token_usage": null,
+  "type": "file"
+}

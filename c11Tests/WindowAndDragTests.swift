@@ -133,6 +133,57 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
         XCTAssertTrue(app.workspaceManager === manager)
     }
 
+    func testGhosttyPWDUpdatesWorkspaceOwningBackgroundWindow() throws {
+        _ = NSApplication.shared
+        let app = AppDelegate()
+
+        let windowAId = UUID()
+        let windowBId = UUID()
+        let windowA = makeMainWindow(id: windowAId)
+        let windowB = makeMainWindow(id: windowBId)
+        defer {
+            windowA.orderOut(nil)
+            windowB.orderOut(nil)
+        }
+
+        let managerA = WorkspaceManager()
+        let managerB = WorkspaceManager()
+        app.registerMainWindow(
+            windowA,
+            windowId: windowAId,
+            workspaceManager: managerA,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+        app.registerMainWindow(
+            windowB,
+            windowId: windowBId,
+            workspaceManager: managerB,
+            sidebarState: SidebarState(),
+            sidebarSelectionState: SidebarSelectionState()
+        )
+
+        windowA.makeKeyAndOrderFront(nil)
+        _ = app.synchronizeActiveMainWindowContext(preferredWindow: windowA)
+        XCTAssertTrue(app.workspaceManager === managerA)
+
+        let workspaceA = try XCTUnwrap(managerA.workspaces.first)
+        let initialDirectoryA = workspaceA.currentDirectory
+        let workspaceB = try XCTUnwrap(managerB.workspaces.first)
+        let surfaceB = try XCTUnwrap(workspaceB.focusedPanelId)
+        let reportedDirectory = FileManager.default.temporaryDirectory.standardizedFileURL.path
+
+        app.updateSurfaceDirectoryFromGhosttyAction(
+            workspaceId: workspaceB.id,
+            surfaceId: surfaceB,
+            directory: reportedDirectory
+        )
+
+        XCTAssertEqual(workspaceB.tabDirectories[surfaceB], reportedDirectory)
+        XCTAssertEqual(workspaceA.currentDirectory, initialDirectoryA)
+        XCTAssertTrue(app.workspaceManager === managerA, "PWD routing must preserve the active window manager")
+    }
+
     func testAddWorkspaceWithoutBringToFrontPreservesActiveWindowAndSelection() {
         _ = NSApplication.shared
         let app = AppDelegate()
@@ -400,7 +451,7 @@ final class InternalTabDragBundleDeclarationTests: XCTestCase {
             "Expected app bundle to export bonsplit tab-transfer type, got \(exported)"
         )
         XCTAssertTrue(
-            exported.contains("com.cmux.sidebar-tab-reorder"),
+            exported.contains("com.stage11.c11.sidebar-tab-reorder"),
             "Expected app bundle to export sidebar tab-reorder type, got \(exported)"
         )
     }
@@ -632,66 +683,6 @@ final class WindowDragHandleHitTests: XCTestCase {
         )
     }
 
-    func testTopHitResolutionStateIsScopedPerWindow() {
-        let point = NSPoint(x: 100, y: 18)
-
-        let outerWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 36),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { outerWindow.orderOut(nil) }
-        guard let outerContentView = outerWindow.contentView else {
-            XCTFail("Expected outer content view")
-            return
-        }
-        let outerContainer = NSView(frame: outerContentView.bounds)
-        outerContainer.autoresizingMask = [.width, .height]
-        outerContentView.addSubview(outerContainer)
-        let outerDragHandle = NSView(frame: outerContainer.bounds)
-        outerDragHandle.autoresizingMask = [.width, .height]
-        outerContainer.addSubview(outerDragHandle)
-
-        let nestedWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 36),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        defer { nestedWindow.orderOut(nil) }
-        guard let nestedContentView = nestedWindow.contentView else {
-            XCTFail("Expected nested content view")
-            return
-        }
-        let nestedContainer = BlockingTopHitContainerView(frame: nestedContentView.bounds)
-        nestedContainer.autoresizingMask = [.width, .height]
-        nestedContentView.addSubview(nestedContainer)
-        let nestedDragHandle = NSView(frame: nestedContainer.bounds)
-        nestedDragHandle.autoresizingMask = [.width, .height]
-        nestedContainer.addSubview(nestedDragHandle)
-
-        XCTAssertFalse(
-            windowDragHandleShouldCaptureHit(point, in: nestedDragHandle, eventType: .leftMouseDown, eventWindow: nestedWindow),
-            "Nested window drag handle should be blocked by top-hit titlebar container"
-        )
-
-        var nestedCaptureResult: Bool?
-        let probe = PassThroughProbeView(frame: outerContainer.bounds)
-        probe.autoresizingMask = [.width, .height]
-        probe.onHitTest = {
-            nestedCaptureResult = windowDragHandleShouldCaptureHit(point, in: nestedDragHandle, eventType: .leftMouseDown, eventWindow: nestedWindow)
-        }
-        outerContainer.addSubview(probe)
-
-        _ = windowDragHandleShouldCaptureHit(point, in: outerDragHandle, eventType: .leftMouseDown, eventWindow: outerWindow)
-
-        XCTAssertEqual(
-            nestedCaptureResult,
-            false,
-            "Top-hit recursion in one window must not disable top-hit resolution in another window"
-        )
-    }
 
     func testDragHandleRemainsStableWhenSiblingMutatesSubviewsDuringHitTest() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 36))

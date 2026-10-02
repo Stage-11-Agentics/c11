@@ -183,8 +183,11 @@ def main() -> int:
                 f"an explicit workspace should work within --window scope: {window_scoped_status!r}",
             )
 
+            # set_status is an async-ack v1 command: the socket answers OK before the
+            # guarded handler runs on main, so its rejection is observed as "no entry
+            # written" (checked via list_meta below), not as an error reply.
+            _send_v1("set_status stray value")
             raw_v1_cases = [
-                "set_status stray value",
                 "set_progress 0.9 --label=stray",
                 "log stray log",
                 "report_meta stray value",

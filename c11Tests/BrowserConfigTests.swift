@@ -1061,6 +1061,13 @@ final class BrowserThemeSettingsTests: XCTestCase {
     }
 
     func testModeMigratesLegacyForcedDarkModeFlag() {
+        // The host registers the new key process-wide. A legacy install has
+        // neither that registration nor a persisted new key.
+        let registration = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        var legacyRegistration = registration
+        legacyRegistration.removeValue(forKey: BrowserThemeSettings.modeKey)
+        UserDefaults.standard.setVolatileDomain(legacyRegistration, forName: UserDefaults.registrationDomain)
+        defer { UserDefaults.standard.setVolatileDomain(registration, forName: UserDefaults.registrationDomain) }
         let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: BrowserThemeSettings.legacyForcedDarkModeEnabledKey)
         XCTAssertEqual(BrowserThemeSettings.mode(defaults: defaults), .dark)

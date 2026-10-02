@@ -1952,7 +1952,7 @@ struct CMUXCLI {
 
         // Admission and advertised support share the feature registry. The
         // send handlers below still enforce the explicit-tab contract.
-        if ["send", "send-key", "send-tab", "send-key-tab"].contains(command) {
+        if ["send", "paste", "send-key", "send-tab", "send-key-tab"].contains(command) {
             try CapabilityFeatures.current.dispatch(.explicitTab) {}
         }
         let client = SocketClient(path: resolvedSocketPath)
@@ -5311,6 +5311,7 @@ struct CMUXCLI {
             localized: "cli.send.raw_unavailable",
             defaultValue: "This server does not support raw/paste delivery. Use a build advertising send.raw."
         ))
+        guard CapabilityFeatures.current.supports(.rawSend) else { throw unavailable }
         let payload: [String: Any]
         do {
             payload = try client.sendV2(method: "system.capabilities")
@@ -5318,7 +5319,7 @@ struct CMUXCLI {
             throw unavailable
         }
         let supported = (payload["features"] as? [[String: Any]])?.contains {
-            $0["id"] as? String == "send.raw" && ($0["version"] as? Int ?? 0) >= 1
+            $0["id"] as? String == CapabilityFeatures.ID.rawSend.rawValue && ($0["version"] as? Int ?? 0) >= 1
         } ?? false
         guard supported else {
             throw unavailable

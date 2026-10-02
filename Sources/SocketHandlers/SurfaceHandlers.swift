@@ -857,6 +857,20 @@ extension TerminalController {
         // flush on attach submits the line.
         let submit = v2Bool(params, "submit") ?? true
         let preserveNewlines = v2Bool(params, "preserve_newlines") ?? false
+        if preserveNewlines {
+            // Raw admission and capabilities discovery consume the same policy.
+            // Validate off-main before resolving a target or queueing any bytes.
+            guard CapabilityFeatures.current.supports(.rawSend) else {
+                return .err(code: "unsupported_feature", message: String(
+                    localized: "socket.send.raw_unavailable", defaultValue: "Raw/paste delivery is unavailable."
+                ), data: ["feature": CapabilityFeatures.ID.rawSend.rawValue])
+            }
+            guard !text.isEmpty else {
+                return .err(code: "invalid_params", message: String(
+                    localized: "cli.send.text_required", defaultValue: "send requires text"
+                ), data: nil)
+            }
+        }
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: TabSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))

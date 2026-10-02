@@ -521,6 +521,10 @@
 		C11284000000000000000013 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
 		C11284000000000000000022 /* CapabilityFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000021 /* CapabilityFeaturesTests.swift */; };
 		C11284000000000000000032 /* BundledSkillTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000031 /* BundledSkillTests.swift */; };
+		C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */; };
+		C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */; };
+		C1128000A1B2C3D4E5F60003 /* CreateInitialInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */; };
+		C1128000A1B2C3D4E5F60004 /* CreateInitialInputRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1128000A1B2C3D4E5F60013 /* CreateInitialInputRuntimeTests.swift */; };
 		C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */; };
 		C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */; };
 		C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */; };
@@ -1079,6 +1083,9 @@
 		C11284000000000000000011 /* BundledSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkill.swift; sourceTree = "<group>"; };
 		C11284000000000000000021 /* CapabilityFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeaturesTests.swift; sourceTree = "<group>"; };
 		C11284000000000000000031 /* BundledSkillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillTests.swift; sourceTree = "<group>"; };
+		C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInitialInput.swift; sourceTree = "<group>"; };
+		C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInitialInputTests.swift; sourceTree = "<group>"; };
+		C1128000A1B2C3D4E5F60013 /* CreateInitialInputRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateInitialInputRuntimeTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStore.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbe.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDelivery.swift; sourceTree = "<group>"; };
@@ -1314,6 +1321,7 @@
 				A5001225 /* SocketControlSettings.swift */,
 				A5001600 /* SentryHelper.swift */,
 				DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */,
+				C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */,
 				DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */,
 				A5001620 /* AppleScriptSupport.swift */,
 				A5001090 /* AppDelegate.swift */,
@@ -1549,6 +1557,7 @@
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */,
 				58C7B1B978620BE162CC057E /* BrowserTabTests.swift */,
 				02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */,
+				C1128000A1B2C3D4E5F60013 /* CreateInitialInputRuntimeTests.swift */,
 				C1125801A1B2C3D4E5F60011 /* LaunchPostBootAttachmentTests.swift */,
 				71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */,
 				BEE83F8394D90ACACD8E19DD /* WindowAndDragTests.swift */,
@@ -1600,6 +1609,7 @@
 				DH013BF1A1B2C3D4E5F60718 /* HealthSentinelParserTests.swift */,
 				DH014BF1A1B2C3D4E5F60718 /* HealthFlagsTests.swift */,
 				DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */,
+				C1128000A1B2C3D4E5F60012 /* CreateInitialInputTests.swift */,
 				DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */,
 				DH023BF1A1B2C3D4E5F60718 /* TerminalControllerTelemetryWorkerTests.swift */,
 				D800CBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCaptureTests.swift */,
@@ -1950,6 +1960,7 @@
 				C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
+				C1128000A1B2C3D4E5F60003 /* CreateInitialInputTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
 				B16AE553A156E736A1DE50DB /* DefaultGridSettingsTests.swift in Sources */,
@@ -2187,6 +2198,7 @@
 				A5001226 /* SocketControlSettings.swift in Sources */,
 				A5001601 /* SentryHelper.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60718 /* HealthCommandCore.swift in Sources */,
+				C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */,
 				A5001621 /* AppleScriptSupport.swift in Sources */,
 				A5001093 /* AppDelegate.swift in Sources */,
@@ -2341,6 +2353,7 @@
 				B9000002A1B2C3D4E5F60719 /* c11.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */,
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,
+				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */,
 				DH021BF0A1B2C3D4E5F60719 /* DoctorCommand.swift in Sources */,
 				CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,
@@ -2413,6 +2426,7 @@
 				1F14445B9627DE9D3AF4FD2E /* BrowserTabTests.swift in Sources */,
 				46F6AC15863EC84DCD3770A2 /* TerminalAndGhosttyTests.swift in Sources */,
 				F2DFDC31F79D62CC65B97C66 /* TerminalControllerSocketSecurityTests.swift in Sources */,
+				C1128000A1B2C3D4E5F60004 /* CreateInitialInputRuntimeTests.swift in Sources */,
 				C1125801A1B2C3D4E5F60001 /* LaunchPostBootAttachmentTests.swift in Sources */,
 				6B524A0BA34FD46A771335AB /* WorkspaceUnitTests.swift in Sources */,
 				063BC42CEE257D6213A2E30C /* WindowAndDragTests.swift in Sources */,

@@ -1334,6 +1334,40 @@ enum WorkspaceMountPolicy {
     // During workspace cycling, keep only a minimal handoff pair (selected + retiring).
     static let maxMountedWorkspacesDuringCycle = 2
 
+    // B012: pending creation requests are a queue, not unbounded mount pins.
+    static let maxBackgroundMountedWorkspaces = 1
+
+    static func nextMountedWorkspaceIds(
+        current: [UUID],
+        selected: UUID?,
+        retiring: UUID?,
+        pendingBackgroundIds: Set<UUID>,
+        debugPinnedIds: Set<UUID>,
+        orderedWorkspaceIds: [UUID],
+        isCycleHot: Bool
+    ) -> [UUID] {
+        let existing = Set(orderedWorkspaceIds)
+        let selectedIds = Set([selected].compactMap { $0 }).intersection(existing)
+        // Debug fixture retention is deliberately outside the production cap.
+        var pinnedIds = debugPinnedIds.intersection(existing)
+        if let retiring, existing.contains(retiring) { pinnedIds.insert(retiring) }
+        let pending = pendingBackgroundIds.intersection(existing)
+            .subtracting(selectedIds).subtracting(pinnedIds)
+        // Retain the admitted load until it completes or times out. Otherwise
+        // choose in workspace order, so a completed body cannot occupy its slot.
+        let retained = current.filter { pending.contains($0) }
+        let candidates = retained + orderedWorkspaceIds.filter { pending.contains($0) && !retained.contains($0) }
+        pinnedIds.formUnion(candidates.prefix(maxBackgroundMountedWorkspaces))
+        return nextMountedWorkspaceIds(
+            current: current,
+            selected: selectedIds.first,
+            pinnedIds: pinnedIds,
+            orderedWorkspaceIds: orderedWorkspaceIds,
+            isCycleHot: isCycleHot,
+            maxMounted: max(maxMountedWorkspaces, selectedIds.union(pinnedIds).count)
+        )
+    }
+
     static func nextMountedWorkspaceIds(
         current: [UUID],
         selected: UUID?,
@@ -2601,12 +2635,14 @@ struct ContentView: View {
             reconcileMountedWorkspaceIds()
         })
 
-        view = AnyView(view.onReceive(workspaceManager.$pendingBackgroundWorkspaceLoadIds) { _ in
-            reconcileMountedWorkspaceIds()
+        view = AnyView(view.onReceive(workspaceManager.$pendingBackgroundWorkspaceLoadIds) { pendingIds in
+            // @Published emits before storage changes; use the new queue to
+            // promote the next background load when the admitted one completes.
+            reconcileMountedWorkspaceIds(pendingBackgroundIds: pendingIds)
         })
 
-        view = AnyView(view.onReceive(workspaceManager.$debugPinnedWorkspaceLoadIds) { _ in
-            reconcileMountedWorkspaceIds()
+        view = AnyView(view.onReceive(workspaceManager.$debugPinnedWorkspaceLoadIds) { pinnedIds in
+            reconcileMountedWorkspaceIds(debugPinnedIds: pinnedIds)
         })
 
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .ghosttyDidSetTitle)) { notification in
@@ -3026,29 +3062,25 @@ struct ContentView: View {
         return view
     }
 
-    private func reconcileMountedWorkspaceIds(workspaces: [Workspace]? = nil, selectedId: UUID? = nil) {
+    private func reconcileMountedWorkspaceIds(
+        workspaces: [Workspace]? = nil,
+        selectedId: UUID? = nil,
+        pendingBackgroundIds: Set<UUID>? = nil,
+        debugPinnedIds: Set<UUID>? = nil
+    ) {
         let currentTabs = workspaces ?? workspaceManager.workspaces
         let orderedWorkspaceIds = currentTabs.map { $0.id }
         let effectiveSelectedId = selectedId ?? workspaceManager.selectedWorkspaceId
-        let handoffPinnedIds = retiringWorkspaceId.map { Set([ $0 ]) } ?? []
-        let pinnedIds = handoffPinnedIds
-            .union(workspaceManager.pendingBackgroundWorkspaceLoadIds)
-            .union(workspaceManager.debugPinnedWorkspaceLoadIds)
         let isCycleHot = workspaceManager.isWorkspaceCycleHot
-        let shouldKeepHandoffPair = isCycleHot && !handoffPinnedIds.isEmpty
-        let baseMaxMounted = shouldKeepHandoffPair
-            ? WorkspaceMountPolicy.maxMountedWorkspacesDuringCycle
-            : WorkspaceMountPolicy.maxMountedWorkspaces
-        let selectedCount = effectiveSelectedId == nil ? 0 : 1
-        let maxMounted = max(baseMaxMounted, selectedCount + pinnedIds.count)
         let previousMountedIds = mountedWorkspaceIds
         mountedWorkspaceIds = WorkspaceMountPolicy.nextMountedWorkspaceIds(
             current: mountedWorkspaceIds,
             selected: effectiveSelectedId,
-            pinnedIds: pinnedIds,
+            retiring: retiringWorkspaceId,
+            pendingBackgroundIds: pendingBackgroundIds ?? workspaceManager.pendingBackgroundWorkspaceLoadIds,
+            debugPinnedIds: debugPinnedIds ?? workspaceManager.debugPinnedWorkspaceLoadIds,
             orderedWorkspaceIds: orderedWorkspaceIds,
-            isCycleHot: isCycleHot,
-            maxMounted: maxMounted
+            isCycleHot: isCycleHot
         )
         if mountedWorkspaceIds != previousMountedIds {
             let added = mountedWorkspaceIds.filter { !previousMountedIds.contains($0) }

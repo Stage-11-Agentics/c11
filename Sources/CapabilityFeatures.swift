@@ -14,6 +14,7 @@ struct CapabilityFeatures {
         case windowRouteWithoutFocus = "window.route_without_focus"
         case rpc = "cli.rpc"
         case journalAnalytics = "journal.analytics"
+        case feedAsks = "feed.asks"
     }
 
     struct Entry {
@@ -39,6 +40,7 @@ struct CapabilityFeatures {
         Entry(id: .windowRouteWithoutFocus, version: 1, enabled: true),
         Entry(id: .rpc, version: 1, enabled: true),
         Entry(id: .journalAnalytics, version: 1, enabled: true),
+        Entry(id: .feedAsks, version: 1, enabled: true),
     ])
 
     private let entries: [ID: Entry]

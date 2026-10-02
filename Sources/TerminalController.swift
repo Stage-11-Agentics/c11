@@ -400,7 +400,8 @@ class TerminalController {
         "browser.tab.switch",
         "debug.command_palette.toggle",
         "debug.notification.focus",
-        "debug.app.activate"
+        "debug.app.activate",
+        "feed.open"
     ]
 
     // C11-159: widened private->internal so per-domain socket handler
@@ -2283,6 +2284,9 @@ class TerminalController {
         "agent.event.append",
         "journal.clear",
         "journal.status",
+        // Feed list and display notes parse off main and do not move focus.
+        "feed.list",
+        "feed.note_display",
         // Folder syntax is parsed off-main; live collection validation/commit is one short main hop.
         "workspace.reorder_batch",
         "workspace.group.list",

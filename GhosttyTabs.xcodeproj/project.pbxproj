@@ -532,6 +532,9 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		998BA380BB49AA5278F556B3 /* JournalStorageLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */; };
 		A2B7B0EE04816F2F9B5CCD20 /* JournalEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732505E4F8E3443519782672 /* JournalEvent.swift */; };
 		768EEFDB4520319282C0B45C /* JournalEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732505E4F8E3443519782672 /* JournalEvent.swift */; };
+		C11274000000000000000002 /* ClaudeHookMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000001 /* ClaudeHookMapping.swift */; };
+		C11274000000000000000003 /* ClaudeHookMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000001 /* ClaudeHookMapping.swift */; };
+		C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000011 /* ClaudeHookMappingTests.swift */; };
 		E3867CBB3CF06F201C937F2F /* JournalSpool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C562C4BF3F41684F3E215BC /* JournalSpool.swift */; };
 		1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C562C4BF3F41684F3E215BC /* JournalSpool.swift */; };
 		2D304B403082C96B893A9199 /* JournalReplayPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */; };
@@ -548,6 +551,13 @@ C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */ = {isa = PBXBuildF
 		C11277000000000000000402 /* JournalQueryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11277000000000000000401 /* JournalQueryTests.swift */; };
 		C11277000000000000000502 /* JournalExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11277000000000000000501 /* JournalExportTests.swift */; };
 		EFCC13F4E9E4ABE05B000382 /* JournalHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85085E0EAE607FAB6DBB0F42 /* JournalHandlers.swift */; };
+		C1126400A1B2C3D4E5F60002 /* FeedProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */; };
+		C1126400A1B2C3D4E5F60003 /* FeedProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */; };
+		C1126400A1B2C3D4E5F60005 /* AskDisplayCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */; };
+		C1126400A1B2C3D4E5F60007 /* FeedProjectionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */; };
+		C1126400A1B2C3D4E5F60009 /* FeedHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F60008 /* FeedHandlers.swift */; };
+		C1126400A1B2C3D4E5F6000B /* FeedCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */; };
+		C1126400A1B2C3D4E5F6000D /* FeedProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1126400A1B2C3D4E5F6000C /* FeedProjectorTests.swift */; };
 		C11284000000000000000002 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
 		C11284000000000000000003 /* CapabilityFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000001 /* CapabilityFeatures.swift */; };
 		C11284000000000000000012 /* BundledSkill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11284000000000000000011 /* BundledSkill.swift */; };
@@ -1129,6 +1139,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReducer.swift; path = Journal/JournalReducer.swift; sourceTree = "<group>"; };
 		24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalStorageLayout.swift; path = Journal/JournalStorageLayout.swift; sourceTree = "<group>"; };
 		732505E4F8E3443519782672 /* JournalEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalEvent.swift; path = Journal/JournalEvent.swift; sourceTree = "<group>"; };
+		C11274000000000000000001 /* ClaudeHookMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeHookMapping.swift; path = Journal/ClaudeHookMapping.swift; sourceTree = "<group>"; };
+		C11274000000000000000011 /* ClaudeHookMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookMappingTests.swift; sourceTree = "<group>"; };
 		3C562C4BF3F41684F3E215BC /* JournalSpool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalSpool.swift; path = Journal/JournalSpool.swift; sourceTree = "<group>"; };
 		CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReplayPolicy.swift; path = Journal/JournalReplayPolicy.swift; sourceTree = "<group>"; };
 		5E6EFBCD7A7D8320A0DAFE52 /* JournalReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReducerTests.swift; path = JournalReducerTests.swift; sourceTree = "<group>"; };
@@ -1142,6 +1154,12 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 		C11277000000000000000401 /* JournalQueryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalQueryTests.swift; sourceTree = "<group>"; };
 		C11277000000000000000501 /* JournalExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalExportTests.swift; sourceTree = "<group>"; };
 		85085E0EAE607FAB6DBB0F42 /* JournalHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalHandlers.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjector.swift; path = Feed/FeedProjector.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AskDisplayCache.swift; path = Feed/AskDisplayCache.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjectionBridge.swift; path = Feed/FeedProjectionBridge.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F60008 /* FeedHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedHandlers.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedCommand.swift; path = FeedCommand.swift; sourceTree = "<group>"; };
+		C1126400A1B2C3D4E5F6000C /* FeedProjectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FeedProjectorTests.swift; path = FeedProjectorTests.swift; sourceTree = "<group>"; };
 		C11284000000000000000001 /* CapabilityFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeatures.swift; sourceTree = "<group>"; };
 		C11284000000000000000011 /* BundledSkill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkill.swift; sourceTree = "<group>"; };
 		C11284000000000000000021 /* CapabilityFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityFeaturesTests.swift; sourceTree = "<group>"; };
@@ -1289,6 +1307,10 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				CF3B6DAB8CE98E07E5ECAE1B /* JournalReplayPolicy.swift */,
 				3C562C4BF3F41684F3E215BC /* JournalSpool.swift */,
 				732505E4F8E3443519782672 /* JournalEvent.swift */,
+				C1126400A1B2C3D4E5F60001 /* FeedProjector.swift */,
+				C1126400A1B2C3D4E5F60004 /* AskDisplayCache.swift */,
+				C1126400A1B2C3D4E5F60006 /* FeedProjectionBridge.swift */,
+				C11274000000000000000001 /* ClaudeHookMapping.swift */,
 				849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */,
 				24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */,
 				EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */,
@@ -1558,6 +1580,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			isa = PBXGroup;
 			children = (
 				85085E0EAE607FAB6DBB0F42 /* JournalHandlers.swift */,
+				C1126400A1B2C3D4E5F60008 /* FeedHandlers.swift */,
 				C11259000000000000000201 /* WorkspaceGroupHandlers.swift */,
 				A1BEB5FF9085ED9C3E77A0F9 /* WindowHandlers.swift */,
 				7891BA9C4B16E7F32F658152 /* ThemeHandlers.swift */,
@@ -1590,6 +1613,7 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 			children = (
 				C11277000000000000000301 /* JournalQueryCommand.swift */,
 				FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */,
+				C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */,
 				B9000001A1B2C3D4E5F60719 /* c11.swift */,
 				DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */,
 				DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */,
@@ -1607,6 +1631,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				A8CA11BE82B440612345BE5A /* JournalSpoolTests.swift */,
 				353D9F81533C5DBA22A6231B /* JournalStoreTests.swift */,
 				5E6EFBCD7A7D8320A0DAFE52 /* JournalReducerTests.swift */,
+				C1126400A1B2C3D4E5F6000C /* FeedProjectorTests.swift */,
+				C11274000000000000000011 /* ClaudeHookMappingTests.swift */,
 				C11260000000000000000401 /* WorkspaceGroupDropPlannerTests.swift */,
 				C11260000000000000000301 /* WorkspaceGroupSidebarProjectionTests.swift */,
 				C11259000000000000000401 /* WorkspaceReorderPlannerTests.swift */,
@@ -2041,6 +2067,8 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				5A2DFF69E794B58324815D7F /* JournalSpoolTests.swift in Sources */,
 				E0487C8EB075EF8AC02786A3 /* JournalStoreTests.swift in Sources */,
 				138D04FD78E6FA414487CCB9 /* JournalReducerTests.swift in Sources */,
+				C1126400A1B2C3D4E5F6000D /* FeedProjectorTests.swift in Sources */,
+				C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */,
 				C11259000000000000000402 /* WorkspaceReorderPlannerTests.swift in Sources */,
 				C11259000000000000000302 /* WorkspaceGroupTests.swift in Sources */,
 				C11260000000000000000402 /* WorkspaceGroupDropPlannerTests.swift in Sources */,
@@ -2204,9 +2232,14 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11277000000000000000201 /* JournalExport.swift in Sources */,
 				C11277000000000000000101 /* JournalQuery.swift in Sources */,
 				EFCC13F4E9E4ABE05B000382 /* JournalHandlers.swift in Sources */,
+				C1126400A1B2C3D4E5F60009 /* FeedHandlers.swift in Sources */,
+				C1126400A1B2C3D4E5F60002 /* FeedProjector.swift in Sources */,
+				C1126400A1B2C3D4E5F60005 /* AskDisplayCache.swift in Sources */,
+				C1126400A1B2C3D4E5F60007 /* FeedProjectionBridge.swift in Sources */,
 				2D304B403082C96B893A9199 /* JournalReplayPolicy.swift in Sources */,
 				E3867CBB3CF06F201C937F2F /* JournalSpool.swift in Sources */,
 				A2B7B0EE04816F2F9B5CCD20 /* JournalEvent.swift in Sources */,
+				C11274000000000000000002 /* ClaudeHookMapping.swift in Sources */,
 				65631BA6FFA800CEC5F61F99 /* JournalCoordinator.swift in Sources */,
 				DD7DDF8F72DE2E0646F89E04 /* JournalStorageLayout.swift in Sources */,
 				31C140AD458A0058070C992D /* JournalReducer.swift in Sources */,
@@ -2478,8 +2511,11 @@ C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */ = {isa = PBXFileReference; la
 				C11277000000000000000202 /* JournalExport.swift in Sources */,
 				C11277000000000000000102 /* JournalQuery.swift in Sources */,
 				AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */,
+				C1126400A1B2C3D4E5F6000B /* FeedCommand.swift in Sources */,
+				C1126400A1B2C3D4E5F60003 /* FeedProjector.swift in Sources */,
 				1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */,
 				768EEFDB4520319282C0B45C /* JournalEvent.swift in Sources */,
+				C11274000000000000000003 /* ClaudeHookMapping.swift in Sources */,
 				998BA380BB49AA5278F556B3 /* JournalStorageLayout.swift in Sources */,
 				C11284000000000000000013 /* BundledSkill.swift in Sources */,
 				C11284000000000000000003 /* CapabilityFeatures.swift in Sources */,

@@ -41,7 +41,7 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 
 ## v1 taxonomy
 
-The seventeen taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
+The twenty taxonomy types below are the closed v1 enum. The envelope fields `workspace` / `surface` / `pane` (the `surface` field carries a tab UUID, `pane` an area UUID) mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
@@ -63,6 +63,8 @@ The seventeen taxonomy types below are the closed v1 enum. The envelope fields `
 | `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
 | `conversation.resume.decision` | workspace + surface | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
 | `hang.precursor` | — | `{cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint}` | The main-thread watchdog saw `count` stalls sharing one fingerprint inside `window_ms` — the leading edge of a wedge, emitted before the long stall lands. `durations_ms` are the counted episodes oldest-first; `span_ms` is the wall time the run covered. At most one per fingerprint per window. `runloop-idle` never produces one. |
+| `ask.opened` | workspace + surface | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking}` | A confirmed blocked ask entered the journal fold. Structural fields only: no prompt, options, plan text, or tool command. |
+| `ask.closed` | workspace + surface | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, resolution}` | That ask left the fold. `resolution` is `resumed`, `cancelled`, `unknown`, or null. Still no prompt text. |
 
 ## Stream-control markers
 

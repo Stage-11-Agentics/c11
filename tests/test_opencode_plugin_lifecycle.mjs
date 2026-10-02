@@ -14,7 +14,8 @@ writeFileSync(fakeCLI, `#!${process.execPath}\nimport fs from 'node:fs';
 const input = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(log)}, input + '\\n');
 if (process.env.JOURNAL_TEST_FAILURE) { console.error(process.env.JOURNAL_TEST_FAILURE); process.exit(1); }
-console.log('{"sequence":1,"replayed":false}');\n`, { mode: 0o700 });
+const draft = JSON.parse(input);
+console.log(JSON.stringify({event_id: draft.event_id.toUpperCase(), sequence: 1, replayed: false}));\n`, { mode: 0o700 });
 process.env.C11_AGENT_HOOK_CLI = fakeCLI;
 process.env.C11_TAB_ID = "11111111-1111-4111-8111-111111111111";
 process.env.C11_WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -42,6 +43,7 @@ try {
   await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_root" } } });
   assert.equal(events().at(-1).kind, "agent.turn.completed");
   assert(!calls.some(({ args }) => args[0] === "agent-hook"), "append and legacy must not both write activity");
+  assert(calls.some(({ args }) => args[0] === "rpc" && args[1] === "feed.note_display" && String(args[2]).includes("PRIVATE-SENTINEL")));
   assert(!readFileSync(log, "utf8").includes("PRIVATE-SENTINEL"));
   assert(!readFileSync(log, "utf8").includes("/synthetic"));
   assert.equal(new Set(events().map(event => event.event_id)).size, events().length);
@@ -53,6 +55,9 @@ try {
   assert.deepEqual([calls.length, events().length], beforeChild, "child callbacks must not clobber root");
 
   process.env.JOURNAL_TEST_FAILURE = "storage_unavailable";
+  const beforeFailedPermission = calls.length;
+  await hooks.event({ event: { type: "permission.asked", properties: { sessionID: "ses_root", id: "ask-failed", body: "MUST-NOT-LEAK" } } });
+  assert(!calls.slice(beforeFailedPermission).some(({ args }) => args[0] === "rpc" && args[1] === "feed.note_display"), "uncommitted append must not send a display note");
   await hooks["chat.message"]({ sessionID: "ses_root" });
   assert(!calls.some(({ args }) => args[0] === "agent-hook"), "ambiguous failure must not use legacy");
   process.env.JOURNAL_TEST_FAILURE = "method_not_found";

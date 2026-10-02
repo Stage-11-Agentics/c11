@@ -15,14 +15,20 @@ final class JournalCoordinator: @unchecked Sendable {
     private var seedReady = false
     private var tabsReady = false
     private var drainStarted = false
-    private var sink: (@Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?) -> Void)?
+    private var sink: (@Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?, UUID?) -> Void)?
 
     func register(tabID: UUID, workspaceID: UUID) {
         lock.lock(); let changed = targets[tabID] != workspaceID; targets[tabID] = workspaceID; lock.unlock()
         if changed { refreshOwners([tabID]) }
     }
     func remove(tabID: UUID) {
-        lock.lock(); targets.removeValue(forKey: tabID); snapshots.removeValue(forKey: tabID); lock.unlock()
+        lock.lock()
+        targets.removeValue(forKey: tabID)
+        let hadProjection = snapshots.removeValue(forKey: tabID) != nil
+        let callback = sink
+        lock.unlock()
+        // A removed tab is a real close. The sink queues its own work and does not wait on UI.
+        if hadProjection { callback?(tabID, nil, nil, nil) }
     }
     /// Called synchronously by the existing conversation actor after a real identity change.
     /// Snapshot readers never wait on that actor, including the typing/notification paths.
@@ -33,7 +39,7 @@ final class JournalCoordinator: @unchecked Sendable {
         let hadProjection = snapshots.removeValue(forKey: tabID) != nil
         let callback = sink
         lock.unlock()
-        if hadProjection { callback?(tabID, nil, nil) }
+        if hadProjection { callback?(tabID, nil, nil, nil) }
         if let owner, owner.agentKind == "codex" {
             registerCodexHookGap(owner)
         }
@@ -104,7 +110,7 @@ final class JournalCoordinator: @unchecked Sendable {
         storageError = nil
         let callback = sink
         lock.unlock()
-        for tabID in tabIDs { callback?(tabID, nil, nil) }
+        for tabID in tabIDs { callback?(tabID, nil, nil, nil) }
     }
 
     /// Existing metadata readback can expose this value without consulting SQLite.
@@ -127,7 +133,7 @@ final class JournalCoordinator: @unchecked Sendable {
             "error_code": error?.rawValue as Any? ?? NSNull()
         ]
     }
-    func start(onProjection: @escaping @Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?) -> Void) {
+    func start(onProjection: @escaping @Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?, UUID?) -> Void) {
         lock.lock()
         sink = onProjection
         guard !started else { lock.unlock(); return }
@@ -189,14 +195,20 @@ final class JournalCoordinator: @unchecked Sendable {
             let result = try storage().append(draft: draft, context: JournalContext(eligible: eligible, historical: historical, modelID: model))
             if let changed = result.changedSnapshot {
                 let boundary = JournalMailboxBoundary.make(draft: draft, result: result, historical: historical, pid: interactivePID)
-                startupQueue.async { [self] in publish(changed, boundary: boundary) }
+                let opensAsk = [JournalKind.questionRequested, .planReviewRequested, .approvalRequested].contains(draft.kind)
+                let eventID = opensAsk && !historical && !result.receipt.replayed && result.receipt.projectionEffect == .applied
+                    ? result.receipt.eventID : nil
+                // Publish before the receipt returns. The display note follows this receipt on the
+                // same caller, and a queued publish drops that note. The sink only enqueues its own
+                // work; this does not wait on the UI.
+                publish(changed, boundary: boundary, eventID: eventID)
             }
             lock.lock(); storageError = nil; lock.unlock()
             return result
         } catch { setError(error); throw error }
     }
 
-    private func publish(_ value: JournalSnapshot, boundary: JournalMailboxBoundary? = nil) {
+    private func publish(_ value: JournalSnapshot, boundary: JournalMailboxBoundary? = nil, eventID: UUID? = nil) {
         lock.lock()
         guard targets[value.owner.tabID] != nil, owners[value.owner.tabID] == value.owner else { lock.unlock(); return }
         let old = snapshots[value.owner.tabID]
@@ -204,7 +216,7 @@ final class JournalCoordinator: @unchecked Sendable {
         snapshots[value.owner.tabID] = value
         let callback = sink
         lock.unlock()
-        callback?(value.owner.tabID, value, boundary)
+        callback?(value.owner.tabID, value, boundary, eventID)
     }
 
     private func drain(store: JournalStore, first: Bool) {
@@ -229,7 +241,7 @@ final class JournalCoordinator: @unchecked Sendable {
         for value in degraded { snapshots[value.owner.tabID] = value }
         let callback = sink
         lock.unlock()
-        for value in degraded { callback?(value.owner.tabID, value, nil) }
+        for value in degraded { callback?(value.owner.tabID, value, nil, nil) }
     }
 }
 

@@ -587,7 +587,23 @@ extension Workspace {
         conversationsBySurface: [String: TabConversations],
         liveAttributedAgentSurfaceIds: Set<UUID>
     ) -> ResumeAction {
-        action
+        guard case .typeCommand = action else { return action }
+        let hasLiveWriter = conversationsBySurface.contains { rawSurfaceId, conversations in
+            guard let surfaceId = UUID(uuidString: rawSurfaceId),
+                  surfaceId != targetSurfaceId,
+                  liveAttributedAgentSurfaceIds.contains(surfaceId),
+                  let active = conversations.active,
+                  active.kind == conversation.kind,
+                  active.id == conversation.id,
+                  active.hasCausalExactEvidence else {
+                return false
+            }
+            return true
+        }
+        guard !hasLiveWriter else {
+            return .skip(reason: "live conversation writer remains on another c11 surface")
+        }
+        return action
     }
 
     nonisolated static func resumeOwnership(

@@ -336,12 +336,18 @@ enum JournalQuery {
 
             let lastAppliedSequence = orderedRows.last(where: { $0.effect == .applied })?.sequence ?? 0
             if let baseline = baselineByOwner[ownerKey], baseline.lastSequence >= lastAppliedSequence {
-                if let current = active, current.appInstanceID != baseline.appInstanceID {
-                    let closed = current.closed(at: current.lastEvidenceWall,
-                                                endTick: current.lastEvidenceTick, censored: true)
-                    result.intervals.append(closed)
-                    if closed.timingUncertain { result.uncertainCount += 1 }
-                    result.censoredCount += 1
+                if let current = active {
+                    if current.appInstanceID != baseline.appInstanceID {
+                        let closed = current.closed(at: current.lastEvidenceWall,
+                                                    endTick: current.lastEvidenceTick, censored: true)
+                        result.intervals.append(closed)
+                        if closed.timingUncertain { result.uncertainCount += 1 }
+                        result.censoredCount += 1
+                    }
+                    // The baseline is the authoritative projection at the same
+                    // high-water mark. Do not retain the event-derived interval
+                    // alongside it or the ongoing state is counted twice.
+                    active = nil
                 }
                 result.intervals.append(TimelineInterval(
                     owner: baseline.owner, phase: baseline.phase, reason: baseline.reason,

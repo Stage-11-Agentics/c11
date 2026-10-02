@@ -182,4 +182,25 @@ final class JournalQueryTests: XCTestCase {
         XCTAssertEqual(time["unconfirmed"], 4_000)
         XCTAssertEqual(time["disconnected"], 4_000)
     }
+
+    func testCurrentBaselineReplacesEventDerivedOngoingInterval() throws {
+        var baseline = JournalSnapshot(owner: JournalOwner(tabID: JournalAnalyticsFixture.tab,
+                                                            agentKind: "claude-code", sessionID: "analytics-session"),
+                                       workspaceID: JournalAnalyticsFixture.workspace,
+                                       appInstanceID: JournalAnalyticsFixture.app)
+        baseline.phase = .idle
+        baseline.sinceMs = 8_000
+        baseline.observedAtMs = 8_000
+        baseline.observedTickNs = 8_000_000_000
+        baseline.lastSequence = 7
+        baseline.confirmation = .confirmed
+        baseline.connection = .live
+
+        let result = JournalQuery.evaluate(events: JournalAnalyticsFixture.lifecycleEvents(),
+                                           baselines: [baseline],
+                                           coverage: JournalAnalyticsFixture.coverage(highWater: 7),
+                                           filters: JournalQueryFilters(fromMs: 0, toMs: 10_000))
+        let time = try XCTUnwrap(result.object["time_in_state_ms"] as? [String: Int64])
+        XCTAssertEqual(time["idle"], 2_000)
+    }
 }

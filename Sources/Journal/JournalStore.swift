@@ -19,17 +19,20 @@ final class JournalStore {
     let budgets: JournalBudgets
     let instanceID: UUID
     private let clock: () -> Int64
+    private let tickClock: () -> UInt64
     private var lastPrune: Int64 = 0
     private var sincePrune = 0
     private var healthCode: JournalError?
     private var reclaiming = false
 
     init(layout: JournalStorageLayout, budgets: JournalBudgets = JournalBudgets(),
-         instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
+         instanceID: UUID = UUID(), clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
+         tickClock: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) throws {
         self.layout = layout
         self.budgets = budgets
         self.instanceID = instanceID
         self.clock = clock
+        self.tickClock = tickClock
         try queue.sync {
             do { try open() } catch {
                 if let db { sqlite3_close(db); self.db = nil }
@@ -171,7 +174,7 @@ final class JournalStore {
                 d.workspaceID.map { .text($0.uuidString) } ?? .null, .data(canonical)])
             let sequence = sqlite3_last_insert_rowid(db)
             let prior = try d.owner.flatMap { try currentOnQueue(owner: $0) }
-            let tick = DispatchTime.now().uptimeNanoseconds
+            let tick = tickClock()
             let folded = JournalReducer.fold(previous: prior, draft: d, sequence: sequence, committedAtMs: now,
                 tick: tick, instanceID: instanceID, context: context)
             let event = JournalEvent(sequence: sequence, committedAtMs: now, observedTickNs: tick,
@@ -247,6 +250,34 @@ final class JournalStore {
              try scalar("SELECT value FROM journal_meta WHERE key='last_writer_observation'"))
         }
     }
+
+    /// Clear only this namespace's lifecycle history and current projections.
+    /// The AUTOINCREMENT sequence is retained so a pre-clear cursor cannot be
+    /// mistaken for a post-clear event stream.
+    func clear() throws {
+        try queue.sync {
+            try JournalSpool(layout: layout).clearTogether {
+                try autoreleasepool {
+                try execute("BEGIN IMMEDIATE")
+                do {
+                    try execute("DELETE FROM journal_events")
+                    try execute("DELETE FROM journal_current")
+                    let next = try scalar("SELECT COALESCE(MAX(seq),0)+1 FROM sqlite_sequence WHERE name='journal_events'")
+                    try execute("UPDATE journal_meta SET value=? WHERE key='coverage_low_water'", [.integer(next)])
+                    try execute("UPDATE journal_meta SET value=? WHERE key='last_writer_observation'", [.integer(clock())])
+                    try execute("COMMIT")
+                } catch {
+                    try? execute("ROLLBACK")
+                    throw error
+                }
+                healthCode = nil
+                sincePrune = 0
+                lastPrune = clock()
+                }
+            }
+        }
+    }
+
     func health() -> JournalError? { queue.sync { healthCode } }
     func prune(now: Int64) throws { try queue.sync { try pruneOnQueue(now: now, pressure: false) } }
 

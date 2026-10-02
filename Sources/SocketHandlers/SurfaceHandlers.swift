@@ -1267,8 +1267,18 @@ extension TerminalController {
             case .err(let error):
                 var data = PromptInputClassification(state: .unavailable, draftLength: nil)
                     .responseFields(source: nil, observedAtMs: nil)
-                data["target_error"] = error.code
-                operation.complete(.failure(.err(code: error.code, message: error.message, data: data)))
+                let code: String
+                let message: String
+                switch error {
+                case .err(let errorCode, let errorMessage, _):
+                    code = errorCode
+                    message = errorMessage
+                case .ok(_):
+                    code = "internal_error"
+                    message = "Surface target resolution returned success without a resolved target."
+                }
+                data["target_error"] = code
+                operation.complete(.failure(.err(code: code, message: message, data: data)))
             case .ok(let resolved):
                 guard SendInputGuard.targetIsCurrent(
                     expectedWorkspace: resolved.workspace,

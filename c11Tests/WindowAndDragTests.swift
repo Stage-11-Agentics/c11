@@ -1146,24 +1146,15 @@ final class ContentViewWindowObservationTests: XCTestCase {
         }
     }
 
-    private func makeWindowWithContentView() -> NSWindow {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
+    private func makeWindowWithContentView() -> NSWindow? {
+        guard let appDelegate = AppDelegate.shared else { return nil }
+        let windowId = appDelegate.createMainWindow()
+        let identifier = "cmux.main.\(windowId.uuidString)"
+        guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == identifier }) else {
+            _ = appDelegate.closeMainWindow(windowId: windowId)
+            return nil
+        }
         window.isReleasedWhenClosed = false
-
-        let workspaceManager = WorkspaceManager()
-        let sidebarState = SidebarState()
-        let sidebarSelectionState = SidebarSelectionState()
-        let rootView = ContentView(updateViewModel: UpdateViewModel(), windowId: UUID())
-            .environmentObject(workspaceManager)
-            .environmentObject(TerminalNotificationStore.shared)
-            .environmentObject(sidebarState)
-            .environmentObject(sidebarSelectionState)
-        window.contentView = NSHostingView(rootView: rootView)
         return window
     }
 
@@ -1201,20 +1192,21 @@ final class ContentViewWindowObservationTests: XCTestCase {
     private func observeLiveWindowNotifications(
         for window: NSWindow,
         accessory: NSTitlebarAccessoryViewController
-    ) async -> Bool {
-        for _ in 0..<8 {
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
             window.displayIfNeeded()
             window.contentView?.layoutSubtreeIfNeeded()
-            await drainMainQueue()
+            _ = RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
 
             accessory.isHidden = false
             accessory.view.alphaValue = 1
             NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
-            await drainMainQueue()
 
             if accessory.isHidden && accessory.view.alphaValue == 0 {
                 return true
             }
+            _ = RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
         }
         return false
     }
@@ -1224,32 +1216,36 @@ final class ContentViewWindowObservationTests: XCTestCase {
 
         var contentWindow: NSWindow? = makeWindowWithContentView()
         var contentReferences: WindowLifetimeReferences?
+        defer { contentWindow?.close() }
 
         do {
+            guard let window = contentWindow else {
+                XCTFail("The app delegate should create a live main ContentView window")
+                return
+            }
             let accessory = NSTitlebarAccessoryViewController()
             accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
             accessory.view.identifier = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
-            contentWindow?.addTitlebarAccessoryViewController(accessory)
-            contentWindow?.makeKeyAndOrderFront(nil)
-            contentWindow?.displayIfNeeded()
-            contentWindow?.contentView?.layoutSubtreeIfNeeded()
-            await drainMainQueue()
+            window.addTitlebarAccessoryViewController(accessory)
+            window.makeKeyAndOrderFront(nil)
+            window.displayIfNeeded()
+            window.contentView?.layoutSubtreeIfNeeded()
 
-            XCTAssertTrue(contentWindow?.isVisible == true, "The live ContentView window should remain available")
-            XCTAssertTrue(contentWindow?.contentView?.window === contentWindow, "The live ContentView must resolve its owning window")
+            XCTAssertTrue(window.isVisible, "The live ContentView window should remain available")
+            XCTAssertTrue(window.contentView?.window === window, "The live ContentView must resolve its owning window")
 
-            let observedLiveWindow = await observeLiveWindowNotifications(for: contentWindow!, accessory: accessory)
+            let observedLiveWindow = observeLiveWindowNotifications(for: window, accessory: accessory)
             XCTAssertTrue(observedLiveWindow, "A notification for the live window should reach ContentView")
             XCTAssertTrue(accessory.isHidden, "A notification for the live window should reach ContentView")
             XCTAssertEqual(accessory.view.alphaValue, 0)
-            contentReferences = WindowLifetimeReferences(window: contentWindow!)
+            contentReferences = WindowLifetimeReferences(window: window)
             XCTAssertNotNil(contentReferences?.hostingContent, "The live window should retain its hosting content")
             accessory.isHidden = false
             accessory.view.alphaValue = 1
 
-            contentWindow?.close()
+            window.close()
             await drainMainQueue()
-            NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
+            NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
             XCTAssertFalse(accessory.isHidden, "A closed window should no longer be observed by ContentView")
             XCTAssertEqual(accessory.view.alphaValue, 1)
         }

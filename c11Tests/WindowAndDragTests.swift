@@ -1132,4 +1132,67 @@ final class MarkdownTabPointerObserverViewTests: XCTestCase {
         XCTAssertNil(overlay.hitTest(NSPoint(x: 40, y: 30)))
     }
 }
+
+@MainActor
+final class ContentViewWindowObservationTests: XCTestCase {
+    private func makeWindowWithContentView() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+
+        let workspaceManager = WorkspaceManager()
+        let sidebarState = SidebarState()
+        let sidebarSelectionState = SidebarSelectionState()
+        let rootView = ContentView(updateViewModel: UpdateViewModel(), windowId: UUID())
+            .environmentObject(workspaceManager)
+            .environmentObject(TerminalNotificationStore.shared)
+            .environmentObject(sidebarState)
+            .environmentObject(sidebarSelectionState)
+        window.contentView = NSHostingView(rootView: rootView)
+        return window
+    }
+
+    private func drainMainQueue() async {
+        let drained = expectation(description: "main queue barrier")
+        DispatchQueue.main.async {
+            drained.fulfill()
+        }
+        await fulfillment(of: [drained], timeout: 2)
+    }
+
+    func testWindowCloseClearsObservationBeforeLaterWindowNotifications() async {
+        _ = NSApplication.shared
+
+        var contentWindow: NSWindow? = makeWindowWithContentView()
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
+        accessory.view.identifier = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
+        contentWindow?.addTitlebarAccessoryViewController(accessory)
+        contentWindow?.makeKeyAndOrderFront(nil)
+        contentWindow?.displayIfNeeded()
+        contentWindow?.contentView?.layoutSubtreeIfNeeded()
+        await drainMainQueue()
+
+        XCTAssertTrue(contentWindow?.isVisible == true, "The live ContentView window should remain available")
+        XCTAssertTrue(contentWindow?.contentView?.window === contentWindow, "The live ContentView must resolve its owning window")
+
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
+        XCTAssertTrue(accessory.isHidden, "A notification for the live window should reach ContentView")
+        XCTAssertEqual(accessory.view.alphaValue, 0)
+        accessory.isHidden = false
+        accessory.view.alphaValue = 1
+
+        contentWindow?.close()
+        await drainMainQueue()
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: contentWindow)
+        XCTAssertFalse(accessory.isHidden, "A closed window should no longer be observed by ContentView")
+        XCTAssertEqual(accessory.view.alphaValue, 1)
+        contentWindow = nil
+        await drainMainQueue()
+    }
+}
 #endif

@@ -2911,6 +2911,12 @@ struct ContentView: View {
             updateWindowGlassTint()
         })
 
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            guard let closedWindow = notification.object as? NSWindow,
+                  closedWindow === observedWindow else { return }
+            observedWindow = nil
+        })
+
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === observedWindow else { return }
